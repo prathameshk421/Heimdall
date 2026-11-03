@@ -1,0 +1,789 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Heimdall</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Heimdall guards your main branch. A separate agent writes the tests first. Reviewers from other teams check the change. A human approves before the merge.">
+<link rel="icon" href="art/logo-64.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="image" href="art/hero.webp" imagesrcset="art/hero-sm.webp 1280w, art/hero.webp 2400w" imagesizes="100vw" fetchpriority="high">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a pinned painting, then a pale painted sky where every block is a sheet of frosted glass.
+   Light only, by choice. Motion uses transform and opacity only, so the compositor does the work. */
+:root {
+  color-scheme: light;
+  --sky: #f4f1f8;
+  --ink: #1c1a2b;
+  --text: #3b3850;
+  --muted: #6e6984;
+  --line: rgba(60,48,96,.12);
+  --glass: rgba(255,255,255,.62);
+  --glass-hi: rgba(255,255,255,.86);
+  --glass-edge: rgba(255,255,255,.9);
+  --dark-glass: rgba(26,23,40,.9);
+  --crimson: #a8232c;
+  --gold: #b07d22;
+  --gold-soft: #f3d79b;
+  --pass: #24805a;
+  --fail: #c03a2c;
+  --pass-soft: rgba(36,128,90,.1);
+  --fail-soft: rgba(192,58,44,.1);
+  --code-ink: #ece8f6;
+  --code-dim: #938cab;
+  --bifrost: linear-gradient(90deg,#ff8f84,#ffc074,#fff09a,#93e6b0,#86c9ff,#b29cff);
+  --shadow: 0 1px 0 rgba(255,255,255,.9) inset, 0 24px 48px -28px rgba(52,36,92,.32);
+  --shadow-lift: 0 1px 0 rgba(255,255,255,.9) inset, 0 30px 60px -28px rgba(52,36,92,.42);
+  --ease: cubic-bezier(.2,.8,.2,1);
+  --f-display: "Instrument Serif", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --f-body: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { background: var(--sky); -webkit-text-size-adjust: 100%; }
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+body { background: var(--sky); color: var(--text); font-family: var(--f-body); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: clip; }
+a { color: inherit; }
+img { display: block; max-width: 100%; }
+code { font-family: var(--f-mono); font-size: .88em; }
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 10px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 400; text-wrap: balance; margin: 0; letter-spacing: -.02em; color: var(--ink); }
+h2 { font-size: clamp(44px, 6vw, 84px); line-height: .95; }
+h3 { font-size: clamp(27px, 2.5vw, 34px); line-height: 1.06; }
+h2 em, h3 em { color: var(--crimson); }
+p { margin: 0; text-wrap: pretty; }
+.kicker { font-family: var(--f-mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: clamp(17px, 1.3vw, 19px); color: var(--muted); max-width: 54ch; }
+.head { display: grid; gap: 20px; justify-items: center; text-align: center; max-width: 840px; margin: 0 auto clamp(44px, 5.5vw, 72px); }
+.glass { background: linear-gradient(180deg, var(--glass-hi), var(--glass)); border: 1px solid var(--glass-edge); border-radius: 28px; box-shadow: var(--shadow); }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 0; cursor: pointer; text-decoration: none; font-weight: 600; font-size: 15px; padding: 13px 20px; border-radius: 999px; transition: transform .4s var(--ease), box-shadow .4s var(--ease), background .3s; white-space: nowrap; }
+.btn svg { width: 17px; height: 17px; flex: none; }
+.btn:hover { transform: translateY(-2px); }
+.btn:active { transform: translateY(0) scale(.98); }
+.btn-solid { background: #fff; color: var(--ink); box-shadow: 0 16px 32px -16px rgba(6,7,33,.6); }
+.btn-ink { background: var(--ink); color: #fff; box-shadow: 0 14px 28px -16px rgba(28,26,43,.7); }
+.btn-clear { background: rgba(255,255,255,.14); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.45); }
+.btn-clear:hover { background: rgba(255,255,255,.22); }
+.btn-line { background: rgba(255,255,255,.7); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+
+/* ───────── NAV ───────── */
+.nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; padding-top: calc(12px + env(safe-area-inset-top, 0px)); padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); pointer-events: none; }
+.nav-in { pointer-events: auto; position: relative; margin: 0 auto; max-width: 1180px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 7px 7px 7px 10px; border-radius: 999px; color: #fff; transition: max-width .7s var(--ease), color .35s; }
+.nav-in::before { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; opacity: 0; transition: opacity .45s; background: rgba(255,255,255,.66); -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6); box-shadow: inset 0 0 0 1px rgba(255,255,255,.8), 0 12px 32px -16px rgba(52,36,92,.35); }
+.nav.solid .nav-in { max-width: 900px; color: var(--ink); }
+.nav.solid .nav-in::before { opacity: 1; }
+.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
+.brand img { width: 34px; height: 34px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(255,255,255,.75); }
+.brand span { font-family: var(--f-display); font-size: 25px; line-height: 1; letter-spacing: .06em; }
+.nav-links { display: flex; gap: 28px; }
+.nav-links a { text-decoration: none; font-size: 14px; font-weight: 500; opacity: .86; transition: opacity .2s; }
+.nav-links a:hover { opacity: 1; }
+.nav-act { display: flex; gap: 6px; align-items: center; }
+.icon-btn { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; text-decoration: none; transition: background .3s; }
+.icon-btn svg { width: 19px; height: 19px; }
+.icon-btn:hover { background: rgba(255,255,255,.18); }
+.nav.solid .icon-btn:hover { background: rgba(28,26,43,.06); }
+.nav .btn { padding: 10px 17px; font-size: 14px; }
+.nav .btn-nav { background: #fff; color: var(--ink); }
+.nav.solid .btn-nav { background: var(--ink); color: #fff; }
+
+/* ───────── HERO ───────── */
+.hero { position: relative; height: 145svh; background: #060721; }
+.hero-pin { position: sticky; top: 0; height: 100svh; min-height: 600px; overflow: hidden; isolation: isolate; color: #fff; }
+.hero-media { position: absolute; inset: 0; z-index: -2; transform-origin: 72% 85%; will-change: transform; }
+.hero-media img, .hero-media canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hero-media img { object-fit: cover; object-position: var(--fx, 50%) var(--fy, 100%); }
+.hero-media canvas { animation: shimmer 6s ease-in-out infinite; }
+@keyframes shimmer { 50% { opacity: .82; } }
+.hero-media.drawn canvas { animation: rise 2.4s var(--ease) both, shimmer 6s ease-in-out 2.4s infinite; }
+@keyframes rise { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0 0 0 0); } }
+.hero-pin::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(70% 75% at 16% 46%, rgba(6,7,33,.42), rgba(6,7,33,0) 72%), linear-gradient(180deg, rgba(6,7,33,.3), rgba(6,7,33,0) 30%); }
+.hero-copy { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: center; padding-top: 72px; padding-bottom: 10vh; will-change: transform, opacity; }
+.hero h1 { color: #fff; font-size: clamp(58px, 8.4vw, 132px); line-height: .88; letter-spacing: -.035em; text-shadow: 0 2px 30px rgba(6,7,33,.35); }
+.hero h1 em { color: var(--gold-soft); }
+.hero h1 .ln { display: block; }
+.hero-sub { margin-top: 26px; max-width: 31em; font-size: clamp(16.5px, 1.3vw, 19px); line-height: 1.6; color: rgba(255,255,255,.86); text-shadow: 0 1px 14px rgba(6,7,33,.55); }
+.hero-cta { margin-top: 32px; display: flex; gap: 10px; flex-wrap: wrap; }
+.hero-note { margin-top: 18px; font-size: 13px; color: rgba(255,255,255,.72); display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.hero-note span { display: inline-flex; align-items: center; gap: 7px; }
+.hero-note span::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--gold-soft); }
+
+/* ───────── SHEET: the pale painted sky ───────── */
+.sheet { position: relative; z-index: 5; margin-top: -14svh; border-radius: 36px 36px 0 0; background: var(--sky); box-shadow: 0 -30px 60px -30px rgba(6,7,33,.45); }
+.band { position: relative; padding-block: clamp(84px, 10vw, 136px); }
+.band > .wrap { position: relative; }
+.band::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(50% 60% at 6% 12%, rgba(250,214,192,.55), transparent 70%), radial-gradient(45% 55% at 96% 40%, rgba(196,188,236,.55), transparent 70%), radial-gradient(50% 50% at 40% 100%, rgba(186,212,242,.35), transparent 70%); }
+.band.alt::before { background: radial-gradient(50% 55% at 94% 8%, rgba(250,224,170,.5), transparent 70%), radial-gradient(45% 60% at 4% 55%, rgba(186,212,242,.5), transparent 70%), radial-gradient(45% 50% at 70% 100%, rgba(232,196,228,.4), transparent 70%); }
+.band:first-child::before { border-radius: 36px 36px 0 0; }
+
+/* problem */
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.prob { padding: clamp(28px, 3vw, 40px); display: grid; gap: 18px; align-content: start; }
+.prob .tag { justify-self: start; font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; padding: 5px 11px; border-radius: 999px; background: var(--fail-soft); color: var(--fail); }
+.prob p { color: var(--muted); font-size: 16px; max-width: 46ch; }
+.fig { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; align-items: baseline; padding-top: 18px; border-top: 1px solid var(--line); }
+.fig b { font-family: var(--f-display); font-weight: 400; font-size: clamp(46px, 4.6vw, 64px); line-height: .9; color: var(--ink); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.fig span { font-size: 14px; color: var(--text); }
+.fig cite { grid-column: 1 / -1; font-style: normal; font-family: var(--f-mono); font-size: 11px; color: var(--muted); }
+.answer { margin-top: 18px; display: flex; align-items: center; justify-content: center; gap: 14px; text-align: center; font-family: var(--f-display); font-size: clamp(26px, 2.6vw, 34px); color: var(--ink); }
+.answer i { font-style: normal; height: 2px; width: 46px; border-radius: 2px; background: var(--bifrost); }
+
+/* painted lore card */
+.painted { position: relative; overflow: hidden; isolation: isolate; border-radius: 32px; min-height: clamp(500px, 50vw, 680px); color: #fff; display: flex; margin-top: clamp(64px, 7vw, 96px); background: #1d2340; box-shadow: 0 30px 70px -36px rgba(30,20,70,.55); }
+.painted img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 66% 55%; z-index: -2; transform: scale(1.04); transition: transform 1.8s var(--ease); }
+.painted.in img { transform: scale(1); }
+.painted::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(100deg, rgba(10,12,32,.62) 0%, rgba(10,12,32,.16) 48%, rgba(10,12,32,0) 64%); }
+.painted-copy { padding: clamp(30px, 5vw, 68px); max-width: 580px; display: grid; gap: 18px; align-content: start; }
+.painted .kicker { color: rgba(255,255,255,.72); }
+.painted h3 { color: #fff; font-size: clamp(40px, 4.4vw, 62px); line-height: .96; }
+.painted h3 em { color: var(--gold-soft); }
+.painted p { color: rgba(255,255,255,.86); font-size: 17px; max-width: 38ch; }
+
+/* steps */
+.bento { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.tile { padding: clamp(24px, 2.6vw, 34px); display: grid; gap: 22px; align-content: start; transition: transform .6s var(--ease), box-shadow .6s var(--ease); min-width: 0; }
+.tile:hover { transform: translateY(-4px); box-shadow: var(--shadow-lift); }
+.tile-top { display: grid; gap: 12px; }
+.step-no { display: inline-flex; align-items: center; gap: 10px; font-family: var(--f-mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.step-no i { font-style: normal; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: #fff; font-size: 11px; letter-spacing: 0; }
+.tile p { color: var(--muted); font-size: 15.5px; max-width: 50ch; }
+.inset { background: rgba(255,255,255,.55); border: 1px solid rgba(255,255,255,.85); border-radius: 18px; padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.inset-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 500; color: var(--ink); padding: 2px 2px 0; }
+.inset-head span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { font-family: var(--f-mono); font-size: 11px; padding: 4px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.prog { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+.pill.fail { background: var(--fail-soft); color: var(--fail); }
+.pill.pass { background: var(--pass-soft); color: var(--pass); }
+.msg { display: grid; grid-template-columns: 28px 1fr; gap: 10px; background: #fff; border-radius: 13px; padding: 10px 12px; box-shadow: 0 1px 2px rgba(52,36,92,.06); }
+.av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font: 600 11px var(--f-body); color: #fff; }
+.who { font-weight: 600; font-size: 13px; color: var(--ink); }
+.who small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+.tile .msg p { color: var(--text); font-size: 14px; line-height: 1.5; }
+.ev { display: inline-block; margin-top: 6px; font-family: var(--f-mono); font-size: 11px; color: var(--muted); background: var(--sky); border-radius: 6px; padding: 2px 7px; }
+.term { background: var(--dark-glass); color: var(--code-ink); border-radius: 13px; padding: 13px 15px; font-family: var(--f-mono); font-size: 12.5px; line-height: 1.75; overflow-x: auto; }
+.term .dim { color: var(--code-dim); }
+.term .x { color: #ff9384; }
+.rules { display: grid; font-size: 14px; background: #fff; border-radius: 13px; padding: 2px 14px; box-shadow: 0 1px 2px rgba(52,36,92,.06); }
+.rules div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.rules div:last-child { border-bottom: 0; }
+.rules span:last-child { font-family: var(--f-mono); font-size: 12px; white-space: nowrap; }
+.bad { color: var(--fail); } .good { color: var(--pass); }
+.stamp { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 13px; background: var(--fail-soft); color: var(--fail); font-size: 14px; font-weight: 500; }
+.stamp svg { width: 18px; height: 18px; flex: none; }
+.stamp.ok { background: var(--pass-soft); color: var(--pass); }
+
+/* gate */
+.gate-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 18px; align-items: stretch; }
+.code { background: var(--dark-glass); color: var(--code-ink); border-radius: 28px; padding: 24px 0; font-family: var(--f-mono); font-size: 13.5px; line-height: 1.85; overflow-x: auto; min-width: 0; box-shadow: 0 30px 60px -32px rgba(26,23,40,.6), inset 0 1px 0 rgba(255,255,255,.08); }
+.code .file { padding: 0 24px 12px; color: var(--code-dim); font-size: 12px; display: flex; justify-content: space-between; gap: 12px; }
+.code pre { margin: 0; font: inherit; }
+.code .l { display: block; padding: 0 24px; white-space: pre; border-left: 3px solid transparent; transition: background .4s, border-color .4s; }
+.code .l.on { background: rgba(120,220,160,.08); border-left-color: #78dca0; }
+.code .l.off { background: rgba(255,147,132,.1); border-left-color: #ff9384; }
+.k { color: #c7b2ff; } .s { color: #ffd38a; } .fn { color: #9fd4ff; }
+.panel { display: grid; gap: 8px; align-content: start; padding: 12px; }
+.cond { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; padding: 13px 15px; border-radius: 17px; background: #fff; cursor: pointer; transition: box-shadow .3s; box-shadow: 0 1px 2px rgba(52,36,92,.06); }
+.cond:hover { box-shadow: 0 10px 22px -14px rgba(52,36,92,.35); }
+.cond b { display: block; font-weight: 500; font-size: 15px; color: var(--ink); }
+.cond small { color: var(--muted); font-size: 13px; }
+.sw { position: relative; width: 44px; height: 26px; flex: none; }
+.sw input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.sw span { position: absolute; inset: 0; border-radius: 999px; background: #dcd7e6; transition: background .3s; pointer-events: none; }
+.sw span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .4s cubic-bezier(.3,.7,.3,1.3); }
+.sw input:checked + span { background: var(--pass); }
+.sw input:checked + span::after { transform: translateX(18px); }
+.sw input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
+.check { border-radius: 17px; overflow: hidden; background: #fff; margin-top: 4px; }
+.check-top { display: flex; gap: 14px; align-items: center; padding: 15px; }
+.check-ico { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; transition: background .3s; }
+.check-ico svg { width: 18px; height: 18px; }
+.check.ok .check-ico { background: var(--pass); }
+.check.no .check-ico { background: var(--fail); }
+.check b { display: block; font-size: 15px; color: var(--ink); }
+.check small { color: var(--muted); font-size: 12.5px; font-family: var(--f-mono); }
+.check-bar { height: 4px; background: #ece8f2; }
+.check-bar i { display: block; height: 100%; width: 100%; background: var(--bifrost); transform-origin: left; transform: scaleX(0); transition: transform .7s var(--ease); }
+
+/* compare */
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.compare .tile { gap: 14px; }
+.cmp-row { display: grid; grid-template-columns: 20px 1fr; gap: 12px; padding: 13px 0; border-top: 1px solid var(--line); font-size: 15px; color: var(--text); }
+.cmp-row svg { width: 18px; height: 18px; margin-top: 3px; }
+.cmp-row .ev { display: block; width: fit-content; }
+.tile.dim { background: rgba(255,255,255,.34); box-shadow: none; }
+.tile.dim .cmp-row { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--f-mono); font-size: 11px; padding: 4px 10px; border-radius: 999px; background: #fff; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }
+
+/* realms (integrations) */
+.realms { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 72px); align-items: center; }
+.orbit { position: relative; width: min(100%, 500px); aspect-ratio: 1; margin: 0 auto; }
+.orbit .ring { position: absolute; inset: 0; border-radius: 50%; }
+.orbit .ring.r1 { inset: 7%; border: 1px solid rgba(176,125,34,.35); box-shadow: 0 0 0 6px rgba(255,255,255,.18) inset; }
+.orbit .ring.r2 { inset: 22%; border: 1px dashed rgba(176,125,34,.32); }
+.spin { position: absolute; inset: 0; animation: spin 70s linear infinite; animation-play-state: paused; }
+.orbit.run .spin, .orbit.run .orb > span { animation-play-state: running; }
+.orbit:hover .spin, .orbit:hover .orb > span { animation-play-state: paused; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.orb { position: absolute; left: 50%; top: 50%; width: 84px; height: 84px; margin: -42px; transform: rotate(var(--a)) translateY(calc(-1 * var(--r))) rotate(calc(var(--a) * -1)); }
+.orb > span { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.75), rgba(255,255,255,0) 42%), radial-gradient(circle at 50% 60%, var(--c1), var(--c2)); box-shadow: inset 0 -8px 18px rgba(0,0,0,.18), inset 0 0 0 1px rgba(255,255,255,.5), 0 14px 28px -12px var(--c2); animation: spin 70s linear infinite reverse; animation-play-state: paused; }
+.orb svg { width: 34px; height: 34px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.25)); }
+.core { position: absolute; left: 50%; top: 50%; width: 38%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; display: grid; place-items: center; text-align: center; background: radial-gradient(circle at 35% 30%, #fffaf0, #f3d79b 55%, #c99a3f); box-shadow: 0 0 0 10px rgba(243,215,155,.25), 0 0 60px 10px rgba(243,215,155,.55), inset 0 -10px 24px rgba(150,100,20,.3); }
+.core b { display: block; font-family: var(--f-display); font-weight: 400; font-size: clamp(24px, 2.6vw, 32px); color: #4a3510; line-height: 1; }
+.core small { display: block; margin-top: 6px; font-family: var(--f-mono); font-size: 11px; color: #7a5a1c; letter-spacing: .06em; }
+.realm-list { display: grid; gap: 10px; }
+.realm { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; border-radius: 20px; }
+.realm .dot { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 50% 60%, var(--c1), var(--c2)); }
+.realm .dot svg { width: 22px; height: 22px; }
+.realm b { display: block; color: var(--ink); font-weight: 600; font-size: 15px; }
+.realm p { color: var(--muted); font-size: 14px; }
+.realm .pill { align-self: start; }
+
+/* setup */
+.setup { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: 18px; align-items: stretch; }
+.prompt { background: var(--dark-glass); color: var(--code-ink); border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; box-shadow: 0 30px 60px -32px rgba(26,23,40,.6), inset 0 1px 0 rgba(255,255,255,.08); }
+.prompt-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 14px 14px 22px; border-bottom: 1px solid rgba(255,255,255,.08); font-family: var(--f-mono); font-size: 12px; color: var(--code-dim); }
+.prompt-bar .btn { padding: 9px 15px; font-size: 13.5px; }
+.prompt pre { margin: 0; padding: 20px 22px 24px; font-family: var(--f-mono); font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.prompt pre .n { color: var(--gold-soft); }
+.side { display: grid; gap: 18px; align-content: start; }
+.side .glass { padding: 24px; display: grid; gap: 14px; }
+.side h3 { font-size: 26px; }
+.side p { color: var(--muted); font-size: 15px; }
+.steps-mini { display: grid; gap: 12px; counter-reset: s; }
+.steps-mini li { list-style: none; display: grid; grid-template-columns: 28px 1fr; gap: 12px; font-size: 15px; color: var(--text); }
+.steps-mini li::before { counter-increment: s; content: counter(s); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: #fff; font: 600 12px var(--f-mono); }
+.steps-mini { margin: 0; padding: 0; }
+.repo { display: flex; align-items: center; gap: 12px; text-decoration: none; padding: 14px; border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgba(52,36,92,.06); transition: box-shadow .3s, transform .4s var(--ease); }
+.repo:hover { transform: translateY(-2px); box-shadow: 0 14px 26px -16px rgba(52,36,92,.4); }
+.repo svg { width: 26px; height: 26px; flex: none; color: var(--ink); }
+.repo b { display: block; color: var(--ink); font-size: 14.5px; }
+.repo small { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* faq */
+.faq { max-width: 840px; margin: 0 auto; padding: 6px clamp(18px, 3vw, 34px); }
+details { border-bottom: 1px solid var(--line); }
+details:last-child { border-bottom: 0; }
+summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 22px 0; font-family: var(--f-display); font-size: clamp(22px, 2vw, 27px); line-height: 1.2; color: var(--ink); }
+summary::-webkit-details-marker { display: none; }
+.plus { flex: none; width: 30px; height: 30px; border-radius: 50%; background: #fff; position: relative; box-shadow: inset 0 0 0 1px var(--line); }
+.plus::before, .plus::after { content: ""; position: absolute; left: 50%; top: 50%; width: 11px; height: 1.5px; background: var(--ink); translate: -50% -50%; }
+.plus::after { rotate: 90deg; transition: rotate .35s var(--ease); }
+details[open] .plus::after { rotate: 0deg; }
+details p { padding: 0 0 22px; color: var(--muted); max-width: 64ch; }
+
+/* footer */
+.foot { position: relative; isolation: isolate; overflow: hidden; color: #fff; min-height: clamp(600px, 60vw, 880px); display: flex; flex-direction: column; justify-content: space-between; background: #2b3047; }
+.foot > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 78% 50%; z-index: -2; }
+.foot::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, var(--sky) 0%, rgba(244,241,248,0) 17%), linear-gradient(0deg, rgba(10,12,30,.62), rgba(10,12,30,0) 46%); }
+.foot-top { padding-top: clamp(150px, 15vw, 220px); display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 30px; font-size: 14px; text-shadow: 0 1px 12px rgba(10,12,30,.6); }
+.foot-top h2 { color: #fff; font-size: clamp(38px, 4.4vw, 60px); grid-column: 1 / -1; max-width: 13em; margin-bottom: 8px; }
+.foot-top h2 em { color: var(--gold-soft); }
+.foot-top b { display: block; font-weight: 500; margin-bottom: 8px; }
+.foot-top a { display: block; text-decoration: none; opacity: .85; padding: 3px 0; }
+.foot-top a:hover { opacity: 1; }
+.wordmark { font-family: var(--f-display); font-size: clamp(64px, 17vw, 250px); line-height: .76; letter-spacing: .04em; color: rgba(255,255,255,.94); text-shadow: 0 10px 50px rgba(10,12,30,.35); user-select: none; }
+.foot-base { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12.5px; opacity: .8; padding-top: 18px; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+.runes { letter-spacing: .35em; color: var(--gold-soft); }
+
+/* toast */
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 60; translate: -50% 0; padding: 12px 18px; border-radius: 999px; background: var(--ink); color: #fff; font-size: 14px; box-shadow: 0 16px 32px -16px rgba(0,0,0,.6); opacity: 0; transform: translateY(12px); transition: opacity .35s, transform .45s var(--ease); pointer-events: none; }
+.toast.show { opacity: 1; transform: none; }
+
+/* entrance */
+.rv { transition: opacity .9s var(--ease), transform .9s var(--ease); transition-delay: calc(var(--d, 0) * 80ms); }
+.js .rv.pre { opacity: 0; transform: translateY(24px); }
+
+@media (max-width: 980px) {
+  .nav-links { display: none; }
+  .pair, .bento, .gate-grid, .compare, .realms, .setup { grid-template-columns: minmax(0, 1fr); }
+  .painted::before { background: linear-gradient(180deg, rgba(10,12,32,.66) 0%, rgba(10,12,32,.14) 52%, rgba(10,12,32,0) 72%); }
+  .painted img { object-position: 70% 50%; }
+  .foot-top { grid-template-columns: 1fr 1fr; }
+  .foot-top > div:first-of-type { grid-column: 1 / -1; }
+}
+@media (max-aspect-ratio: 1/1) {
+  .hero-media { top: 34%; }
+  .hero-media::after { content: ""; position: absolute; inset: 0 0 auto; height: 30%; background: linear-gradient(#060721, rgba(6,7,33,0)); }
+  .hero-copy { justify-content: flex-start; padding-top: 104px; }
+  .hero-pin::after { background: none; }
+}
+@media (max-width: 640px) {
+  .hero h1 { font-size: 52px; }
+  .hero-sub { margin-top: 18px; font-size: 15.5px; }
+  .hero-cta { margin-top: 24px; }
+  .hero-cta .btn { flex: 1 1 auto; }
+  .sheet { border-radius: 26px 26px 0 0; }
+  .nav .btn-nav { display: none; }
+  .orb { width: 64px; height: 64px; margin: -32px; }
+  .orb svg { width: 26px; height: 26px; }
+  .realm { grid-template-columns: 40px 1fr; }
+  .realm .pill { grid-column: 2; justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: .001s !important; }
+}
+</style>
+
+<nav class="nav" id="nav" aria-label="Main">
+  <div class="nav-in">
+    <a class="brand" href="#top" aria-label="Heimdall, back to the top"><img src="art/logo.webp" width="34" height="34" alt=""><span>HEIMDALL</span></a>
+    <div class="nav-links">
+      <a href="#problem">Why</a>
+      <a href="#how">How it works</a>
+      <a href="#gate">The gate</a>
+      <a href="#realms">Connects to</a>
+      <a href="#setup">Set up</a>
+    </div>
+    <div class="nav-act">
+      <a class="icon-btn" data-repo href="https://github.com/prathameshk421/flip_the_switch_hackathon" aria-label="Heimdall on GitHub"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><use href="#i-github"/></svg></a>
+      <a class="btn btn-nav" href="#setup">Set up</a>
+    </div>
+  </div>
+</nav>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-github" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></symbol>
+  <symbol id="i-jira" viewBox="0 0 24 24"><path fill="currentColor" d="M11.6 2.2 2.4 11.4a.9.9 0 0 0 0 1.2l4.1 4.1 5.1-5.1a3.4 3.4 0 0 1 0-4.8zM12.4 21.8l9.2-9.2a.9.9 0 0 0 0-1.2l-4.1-4.1-5.1 5.1a3.4 3.4 0 0 1 0 4.8z"/><path fill="currentColor" opacity=".7" d="m12 7.3 4.7 4.7-4.7 4.7L7.3 12z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M15.5 4.3A8.5 8.5 0 1 1 7 5.2"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M14 7.5c1.8 1.6 2.2 4.3.7 6.2a4.2 4.2 0 0 1-6.3.5"/></symbol>
+  <symbol id="i-teams" viewBox="0 0 24 24"><rect x="2.5" y="6" width="12" height="12" rx="2.5" fill="currentColor"/><path d="M5.6 9.4h5.8M8.5 9.4v6" stroke="#4b53bc" stroke-width="1.9" stroke-linecap="round"/><circle cx="18.5" cy="6.5" r="2.3" fill="currentColor" opacity=".8"/><path d="M16 10.5h5a.8.8 0 0 1 .8.8v3.9a3.3 3.3 0 0 1-5.8 2.1z" fill="currentColor" opacity=".8"/></symbol>
+  <symbol id="i-switch" viewBox="0 0 24 24"><rect x="2" y="6.5" width="20" height="11" rx="5.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16.5" cy="12" r="3.6" fill="currentColor"/></symbol>
+  <symbol id="i-slack" viewBox="0 0 24 24"><g fill="currentColor"><rect x="9.5" y="2" width="3.2" height="9" rx="1.6"/><rect x="11.3" y="13" width="3.2" height="9" rx="1.6"/><rect x="2" y="11.3" width="9" height="3.2" rx="1.6"/><rect x="13" y="9.5" width="9" height="3.2" rx="1.6"/></g></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M12 7v6M12 16.6v.4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+</svg>
+
+<!-- ═════════ HERO ═════════ -->
+<header class="hero" id="top">
+  <div class="hero-pin">
+    <div class="hero-media" id="heroMedia">
+      <img id="heroImg" src="art/hero.webp" srcset="art/hero-sm.webp 1280w, art/hero.webp 2400w" sizes="100vw" width="2400" height="1347" fetchpriority="high" decoding="async" alt="Heimdall stands on a hill at dusk with his sword beside him. The rainbow bridge rises from the ground next to him.">
+      <canvas id="bridge" aria-hidden="true"></canvas>
+    </div>
+    <div class="wrap hero-copy" id="heroCopy">
+      <h1><span class="ln">Nothing crosses</span><span class="ln">the <em>bridge</em></span><span class="ln">without proof.</span></h1>
+      <p class="hero-sub">Heimdall guards your main branch. A separate agent writes the tests before the code. Reviewers from other teams check the change with their own context. The merge opens only when the evidence is complete and a human approves.</p>
+      <div class="hero-cta">
+        <button class="btn btn-solid" type="button" data-copy><svg aria-hidden="true"><use href="#i-copy"/></svg>Copy the setup prompt</button>
+        <a class="btn btn-clear" data-repo href="https://github.com/prathameshk421/flip_the_switch_hackathon"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
+      </div>
+      <p class="hero-note"><span>Open source</span><span>Works in your team chat</span><span>No model approves a merge</span></p>
+    </div>
+  </div>
+</header>
+
+<main class="sheet">
+
+<!-- ═════════ PROBLEM ═════════ -->
+<section class="band" id="problem">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="kicker">Why Heimdall</span>
+      <h2>Two habits put bad code on <em>main.</em></h2>
+      <p class="lede">Agents write code fast. Review did not get faster. Teams fill the gap with two shortcuts, and both let bad code through.</p>
+    </div>
+    <div class="pair">
+      <article class="glass prob rv">
+        <span class="tag">Habit 1</span>
+        <h3>The quick LGTM</h3>
+        <p>Pull requests get bigger. Reviewers do not read every line, so they write "LGTM" and approve. That approval does not prove that the change is correct.</p>
+        <div class="fig"><b>91%</b><span>longer review time, with 98% more pull requests, in teams that use AI tools.</span><cite>Faros AI engineering report</cite></div>
+      </article>
+      <article class="glass prob rv" style="--d:1">
+        <span class="tag">Habit 2</span>
+        <h3>Agents that grade their own work</h3>
+        <p>One agent writes the code, the tests and the review. It agrees with itself. Its tests check what the code does. They do not check what the ticket asks for.</p>
+        <div class="fig"><b>83.8%</b><span>of pull requests from agents get merged. A merge is not a proof.</span><cite>AIDev dataset, 932,791 agent pull requests</cite></div>
+      </article>
+    </div>
+    <p class="answer rv"><i></i>Heimdall stops both.<i></i></p>
+
+    <div class="painted" id="lore">
+      <img src="art/watch.webp" srcset="art/watch-sm.webp 1280w, art/watch.webp 2400w" sizes="(max-width: 1200px) 100vw, 1160px" width="2400" height="1347" loading="lazy" decoding="async" alt="Heimdall stands on a rocky hill at dusk with his hand on his sword and looks up at the sky.">
+      <div class="painted-copy rv">
+        <span class="kicker">The name</span>
+        <h3>The guard who hears <em>the grass grow.</em></h3>
+        <p>In the old stories, Heimdall guards Bifröst, the bridge to Asgard. He needs less sleep than a bird. Nothing crosses the bridge without his permission. Your main branch needs a guard like that.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ HOW IT WORKS ═════════ -->
+<section class="band alt defer" id="how">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="kicker">How it works</span>
+      <h2>From ticket to main in <em>four steps.</em></h2>
+      <p class="lede">You write the code and answer questions. Heimdall does the rest in your team chat. It starts when a Jira ticket moves to In Progress. It stops when the GitHub check turns green.</p>
+    </div>
+    <div class="bento">
+      <article class="glass tile rv">
+        <div class="tile-top">
+          <span class="step-no"><i>1</i>Before the code</span>
+          <h3>A <em>separate</em> agent writes the tests.</h3>
+          <p>Heimdall opens a room for the ticket. The test agent asks you up to three questions. Then it writes tests that fail. It never sees your branch, so it tests the ticket, not your code. The tests are locked. Nobody can delete them to get a pass.</p>
+        </div>
+        <div class="inset">
+          <div class="inset-head"><span>PAY-142 · Refund endpoint</span><span class="pill prog">In Progress</span></div>
+          <div class="msg"><span class="av" style="background:#5d63c4">T</span><div><div class="who">Test agent<small>question 1 of 3</small></div><p>A repeat request has the same Idempotency-Key. Do we return the first refund, or an error?</p></div></div>
+          <div class="msg"><span class="av" style="background:#a8232c">M</span><div><div class="who">Maya<small>author</small></div><p>Return the first refund. See ADR-004.</p></div></div>
+          <div class="term" role="img" aria-label="Four tests fail. They are locked at commit 9f3c2a1.">
+            <div><span class="dim">$</span> go test ./refunds/...</div>
+            <div><span class="x">✗</span> refund is not more than the payment</div>
+            <div><span class="x">✗</span> repeat request returns the first refund</div>
+            <div><span class="x">✗</span> other merchants cannot refund</div>
+            <div><span class="x">✗</span> response matches the consumer contract</div>
+            <div class="dim">4 fail for the right reason · locked at 9f3c2a1</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="glass tile rv" style="--d:1">
+        <div class="tile-top">
+          <span class="step-no"><i>2</i>At the gate</span>
+          <h3>Slop stops <em>at the door.</em></h3>
+          <p>Before a reviewer sees the pull request, plain code checks it. It must link a ticket. It must change fewer than 400 lines. It must change only the files in the agreed behaviour. It must add tests. If one rule fails, the pull request goes back with that rule.</p>
+        </div>
+        <div class="inset">
+          <div class="inset-head"><span>#218 Refactor payments module</span><span class="pill fail">+1,412 −37</span></div>
+          <div class="rules">
+            <div><span>Links a ticket</span><span class="bad">✗ none</span></div>
+            <div><span>Fewer than 400 lines</span><span class="bad">✗ 1,449</span></div>
+            <div><span>Only the agreed files</span><span class="bad">✗ 31 extra</span></div>
+            <div><span>Adds tests</span><span class="good">✓ 2 files</span></div>
+          </div>
+          <div class="stamp"><svg aria-hidden="true"><use href="#i-x"/></svg>Sent back in 3 seconds. No reviewer was asked.</div>
+        </div>
+      </article>
+
+      <article class="glass tile rv">
+        <div class="tile-top">
+          <span class="step-no"><i>3</i>The review</span>
+          <h3>Reviewers from other teams, with <em>their own</em> context.</h3>
+          <p>You choose the reviewers. Each reviewer's agent joins the room with its own name. It knows what that person owns, the rules that must stay true, and the past incidents. Each finding must have evidence: a failing test, a file and line, or a recorded decision.</p>
+        </div>
+        <div class="inset">
+          <div class="inset-head"><span># pay-142-refunds</span><span class="pill prog">3 agents · 1 human</span></div>
+          <div class="msg"><span class="av" style="background:#24805a">B</span><div><div class="who">Bob's agent<small>payments</small></div><p>Partial refunds can add up to more than the payment.</p><span class="ev">TestPartialRefundCap fails</span></div></div>
+          <div class="msg"><span class="av" style="background:#9a6a18">E</span><div><div class="who">Eli's agent<small>ledger, other repo</small></div><p>The ledger still reads <code>refund_ref</code>. Its removal broke the ledger before.</p><span class="ev">INC-031 · consume.go:88</span></div></div>
+          <div class="msg"><span class="av" style="background:#5d63c4">A</span><div><div class="who">Ana's agent<small>security</small></div><p>GET /refunds/{id} has no owner check. Any merchant can read any refund.</p><span class="ev">handler.go:41</span></div></div>
+        </div>
+      </article>
+
+      <article class="glass tile rv" style="--d:1">
+        <div class="tile-top">
+          <span class="step-no"><i>4</i>The approval</span>
+          <h3>A human approves. <em>Then</em> the check turns green.</h3>
+          <p>The author's agent fixes each finding with a test, or gives a reason that a reviewer accepts. Then a human who is not the author approves in the room. Only then does the <code>heimdall/gate</code> check turn green.</p>
+        </div>
+        <div class="inset">
+          <div class="inset-head"><span>#221 PAY-142 refund endpoint</span><span class="pill pass">+286 −41</span></div>
+          <div class="rules">
+            <div><span>Behaviour agreed</span><span class="good">✓ Maya, Priya</span></div>
+            <div><span>Locked tests and CI</span><span class="good">✓ 14 of 14</span></div>
+            <div><span>Findings closed</span><span class="good">✓ 3, with tests</span></div>
+            <div><span>Human approval</span><span class="good">✓ Priya</span></div>
+          </div>
+          <div class="stamp ok"><svg aria-hidden="true"><use href="#i-check"/></svg>heimdall/gate passed. The merge is open.</div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ THE GATE ═════════ -->
+<section class="band defer" id="gate">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="kicker">The gate</span>
+      <h2>No model decides <em>the merge.</em></h2>
+      <p class="lede">Agents collect the evidence. A short function decides. It has five conditions, and you can read all of it. Turn the conditions on and off to see the result.</p>
+    </div>
+    <div class="gate-grid rv">
+      <div class="code" aria-label="The merge rule, simplified">
+        <div class="file"><span>gate/rule.go</span><span>simplified</span></div>
+<pre><span class="l"><span class="k">func</span> <span class="fn">Open</span>(pr <span class="k">PullRequest</span>) (<span class="k">bool</span>, []<span class="k">string</span>) {</span><span class="l">  <span class="k">var</span> unmet []<span class="k">string</span></span><span class="l" data-c="0">  <span class="k">if</span> !pr.Ticket.BehaviourApproved {</span><span class="l" data-c="0">    unmet = <span class="fn">append</span>(unmet, <span class="s">"behaviour not agreed"</span>)</span><span class="l">  }</span><span class="l" data-c="1">  <span class="k">if</span> !pr.LockedTests.<span class="fn">Pass</span>() || !pr.CI.<span class="fn">Green</span>() {</span><span class="l" data-c="1">    unmet = <span class="fn">append</span>(unmet, <span class="s">"tests or CI failed"</span>)</span><span class="l">  }</span><span class="l" data-c="2">  <span class="k">if</span> !pr.Slop.Passed {</span><span class="l" data-c="2">    unmet = <span class="fn">append</span>(unmet, <span class="s">"slop check failed"</span>)</span><span class="l">  }</span><span class="l" data-c="3">  <span class="k">if</span> pr.Findings.<span class="fn">Open</span>() &gt; <span class="s">0</span> {</span><span class="l" data-c="3">    unmet = <span class="fn">append</span>(unmet, <span class="s">"findings not closed"</span>)</span><span class="l">  }</span><span class="l" data-c="4">  <span class="k">if</span> pr.Approver == <span class="s">""</span> || pr.Approver == pr.Author {</span><span class="l" data-c="4">    unmet = <span class="fn">append</span>(unmet, <span class="s">"no human approval"</span>)</span><span class="l">  }</span><span class="l">  <span class="k">return</span> <span class="fn">len</span>(unmet) == <span class="s">0</span>, unmet</span><span class="l">}</span></pre>
+      </div>
+      <div class="glass panel">
+        <label class="cond" for="c0"><span><b>Behaviour agreed</b><small>A human approved the behaviour in the ticket</small></span><span class="sw"><input type="checkbox" id="c0" checked><span></span></span></label>
+        <label class="cond" for="c1"><span><b>Locked tests and CI pass</b><small>No test was deleted or made weaker</small></span><span class="sw"><input type="checkbox" id="c1" checked><span></span></span></label>
+        <label class="cond" for="c2"><span><b>Slop check passed</b><small>Ticket linked, small, in scope, with tests</small></span><span class="sw"><input type="checkbox" id="c2" checked><span></span></span></label>
+        <label class="cond" for="c3"><span><b>All findings closed</b><small>Fixed with a test, or closed with a reason</small></span><span class="sw"><input type="checkbox" id="c3"><span></span></span></label>
+        <label class="cond" for="c4"><span><b>A human approved</b><small>The approver is not the author</small></span><span class="sw"><input type="checkbox" id="c4"><span></span></span></label>
+        <div class="check no" id="check" aria-live="polite">
+          <div class="check-top"><span class="check-ico" id="checkIco"></span><span><b id="checkTitle">The merge is blocked</b><small id="checkSub">heimdall/gate · 2 conditions not met</small></span></div>
+          <div class="check-bar"><i id="checkBar"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ TWO REVIEWS ═════════ -->
+<section class="band alt defer" id="compare">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="kicker">Same diff, two reviews</span>
+      <h2>A bot reads the diff. Heimdall reads <em>what came before it.</em></h2>
+    </div>
+    <div class="compare">
+      <div class="glass tile dim rv">
+        <h3>A generic AI reviewer</h3>
+        <p>One reviewer for every change. It reads only the diff.</p>
+        <div>
+          <div class="cmp-row"><svg aria-hidden="true"><use href="#i-dot"/></svg><span>Rename <code>amt</code> to <code>amount</code>.</span></div>
+          <div class="cmp-row"><svg aria-hidden="true"><use href="#i-dot"/></svg><span>Add a docstring to <code>IssueRefund</code>.</span></div>
+          <div class="cmp-row"><svg aria-hidden="true"><use href="#i-dot"/></svg><span>LGTM.<span class="ev">misses the incident, the decision and the access gap</span></span></div>
+        </div>
+      </div>
+      <div class="glass tile rv" style="--d:1">
+        <h3>Heimdall's reviewers</h3>
+        <p>Three teams. Each one brings its own context.</p>
+        <div class="chips"><span class="chip">the diff</span><span class="chip">PAY-142</span><span class="chip">ADR-004</span><span class="chip">INC-031</span></div>
+        <div>
+          <div class="cmp-row" style="color:var(--fail)"><svg aria-hidden="true"><use href="#i-alert"/></svg><span style="color:var(--text)">Partial refunds can be more than the payment.<span class="ev">failing test attached</span></span></div>
+          <div class="cmp-row" style="color:var(--fail)"><svg aria-hidden="true"><use href="#i-alert"/></svg><span style="color:var(--text)">The ledger in another repo still reads <code>refund_ref</code>.<span class="ev">INC-031 · consume.go:88</span></span></div>
+          <div class="cmp-row" style="color:var(--fail)"><svg aria-hidden="true"><use href="#i-alert"/></svg><span style="color:var(--text)">Any merchant can read any refund.<span class="ev">handler.go:41</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ REALMS ═════════ -->
+<section class="band defer" id="realms">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="kicker">Connects to</span>
+      <h2>It works with the tools <em>you use now.</em></h2>
+      <p class="lede">Heimdall works in your team chat. You do not need a new dashboard.</p>
+    </div>
+    <div class="realms">
+      <div class="orbit rv" id="orbit" aria-hidden="true">
+        <div class="ring r1"></div><div class="ring r2"></div>
+        <div class="core"><div><b>main</b><small>heimdall/gate</small></div></div>
+        <div class="spin">
+          <div class="orb" style="--a:0deg;--r:216px;--c1:#3a3f55;--c2:#16182a"><span><svg><use href="#i-github"/></svg></span></div>
+          <div class="orb" style="--a:60deg;--r:216px;--c1:#4f8df7;--c2:#1f4fbf"><span><svg><use href="#i-jira"/></svg></span></div>
+          <div class="orb" style="--a:120deg;--r:216px;--c1:#3d7ad6;--c2:#16357a"><span><svg><use href="#i-chat"/></svg></span></div>
+          <div class="orb" style="--a:180deg;--r:216px;--c1:#7b83eb;--c2:#454db3"><span><svg><use href="#i-teams"/></svg></span></div>
+          <div class="orb" style="--a:240deg;--r:216px;--c1:#e9b25a;--c2:#a86d14"><span><svg><use href="#i-switch"/></svg></span></div>
+          <div class="orb" style="--a:300deg;--r:216px;--c1:#c17ab8;--c2:#6b2b66"><span><svg><use href="#i-slack"/></svg></span></div>
+        </div>
+      </div>
+      <div class="realm-list">
+        <div class="glass realm rv"><span class="dot" style="--c1:#3a3f55;--c2:#16182a"><svg aria-hidden="true"><use href="#i-github"/></svg></span><div><b>GitHub</b><p>Reads pull requests. Sets the required check.</p></div><span class="pill pass">Live</span></div>
+        <div class="glass realm rv"><span class="dot" style="--c1:#4f8df7;--c2:#1f4fbf"><svg aria-hidden="true"><use href="#i-jira"/></svg></span><div><b>Jira</b><p>A ticket in progress opens a room. A rejected change opens one ticket.</p></div><span class="pill pass">Live</span></div>
+        <div class="glass realm rv"><span class="dot" style="--c1:#3d7ad6;--c2:#16357a"><svg aria-hidden="true"><use href="#i-chat"/></svg></span><div><b>Mattermost</b><p>The room. Agents ask questions and post findings here.</p></div><span class="pill pass">Live</span></div>
+        <div class="glass realm rv"><span class="dot" style="--c1:#7b83eb;--c2:#454db3"><svg aria-hidden="true"><use href="#i-teams"/></svg></span><div><b>Microsoft Teams</b><p>The same room, for teams that use Teams.</p></div><span class="pill prog">Beta</span></div>
+        <div class="glass realm rv"><span class="dot" style="--c1:#e9b25a;--c2:#a86d14"><svg aria-hidden="true"><use href="#i-switch"/></svg></span><div><b>Switch</b><p>Rooms, agent names and roles, and hosts that run when your laptop is closed.</p></div><span class="pill pass">Live</span></div>
+        <div class="glass realm rv"><span class="dot" style="--c1:#c17ab8;--c2:#6b2b66"><svg aria-hidden="true"><use href="#i-slack"/></svg></span><div><b>Slack</b><p>Planned.</p></div><span class="pill prog">Later</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ SETUP ═════════ -->
+<section class="band alt defer" id="setup">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="kicker">Set up</span>
+      <h2>Set it up with <em>one prompt.</em></h2>
+      <p class="lede">Copy the prompt. Paste it into the coding agent that you use in your repository. The agent does the setup and asks you before it saves your context.</p>
+    </div>
+    <div class="setup">
+      <div class="prompt rv">
+        <div class="prompt-bar"><span>setup-prompt.txt</span><button class="btn btn-solid" type="button" data-copy><svg aria-hidden="true"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+<pre id="setupPrompt">Set up Heimdall for this repository.
+
+<span class="n">1.</span> Clone https://github.com/prathameshk421/flip_the_switch_hackathon and read the README.
+<span class="n">2.</span> Install the Heimdall skills from the skills/ folder.
+<span class="n">3.</span> Connect to Switch. Enroll this machine as a host, or use the always-on host.
+<span class="n">4.</span> Make a draft of my context pack from CODEOWNERS, the git history and my notes. Show it to me. Do not save it before I approve it.
+<span class="n">5.</span> Connect GitHub, Jira and our team chat (Mattermost or Microsoft Teams).
+<span class="n">6.</span> On main, add "heimdall/gate" as a required status check.
+<span class="n">7.</span> Tell me what you did and what I must do next.</pre>
+      </div>
+      <div class="side">
+        <div class="glass rv" style="--d:1">
+          <h3>Three things to do</h3>
+          <ol class="steps-mini">
+            <li>Copy the prompt.</li>
+            <li>Paste it into your coding agent in the repository.</li>
+            <li>Read your context pack and approve it.</li>
+          </ol>
+          <p>It takes about 15 minutes for each developer.</p>
+        </div>
+        <div class="glass rv" style="--d:2">
+          <h3>The code</h3>
+          <p>Heimdall is open source. Read the merge rule, run it yourself, or add to it.</p>
+          <a class="repo" data-repo href="https://github.com/prathameshk421/flip_the_switch_hackathon"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><use href="#i-github"/></svg><span><b>Open the repository</b><small>prathameshk421/flip_the_switch_hackathon</small></span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ QUESTIONS ═════════ -->
+<section class="band defer" id="questions">
+  <div class="wrap">
+    <div class="head rv"><span class="kicker">Questions</span><h2>Asked at <em>the gate.</em></h2></div>
+    <div class="glass faq rv">
+      <details open><summary>Is this another AI code reviewer?<span class="plus" aria-hidden="true"></span></summary><p>No. An AI reviewer comments on a diff. Heimdall starts at the ticket and writes the tests first. Each reviewer brings one team's context. A required GitHub check stays red until plain code says that all conditions are met.</p></details>
+      <details><summary>Can an agent approve a merge?<span class="plus" aria-hidden="true"></span></summary><p>No. Agents find problems and fix them. A human who is not the author approves. Only the gate can turn the check green, and the gate is plain code.</p></details>
+      <details><summary>Why can the test agent not see my branch?<span class="plus" aria-hidden="true"></span></summary><p>So that it tests the ticket, not your code. If the tests come from the code, they pass when the code is wrong. Tests from the ticket fail until the code does what the ticket asks.</p></details>
+      <details><summary>What if a reviewer agent is wrong?<span class="plus" aria-hidden="true"></span></summary><p>Each finding must have evidence. The author's agent can close a finding with a reason. If the two sides do not agree, a human decides in the room.</p></details>
+      <details><summary>Can one team see another team's memory?<span class="plus" aria-hidden="true"></span></summary><p>No. The server limits each agent to the teams that it belongs to. Personal context packs never go into team memory.</p></details>
+      <details><summary>Does a green check mean that the code is safe?<span class="plus" aria-hidden="true"></span></summary><p>It means that the change has evidence and a human approved it. Heimdall makes merges safer. It does not replace your CI or security checks, and it does not promise code without bugs.</p></details>
+    </div>
+  </div>
+</section>
+
+<footer class="foot defer">
+  <img src="art/finale.webp" srcset="art/finale-sm.webp 1280w, art/finale.webp 2400w" sizes="100vw" width="2400" height="1347" loading="lazy" decoding="async" alt="Heimdall stands at the edge of a cliff under the first stars, with a golden horn at his belt.">
+  <div class="wrap foot-top">
+    <h2>Put a guard on <em>main</em> this week.</h2>
+    <div><b>Heimdall</b><span style="opacity:.86">A merge gate for teams that build with agents.</span></div>
+    <div><b>Product</b><a href="#how">How it works</a><a href="#gate">The gate</a><a href="#realms">Connects to</a></div>
+    <div><b>Start</b><a href="#setup">Set up</a><a data-repo href="https://github.com/prathameshk421/flip_the_switch_hackathon">GitHub</a><a href="#questions">Questions</a></div>
+  </div>
+  <div class="wrap">
+    <div class="wordmark" aria-hidden="true">HEIMDALL</div>
+    <div class="foot-base"><span>Made for Flip the Switch, 2026</span><span class="runes" aria-label="Heimdall in runes">ᚺᛖᛁᛗᛞᚨᛚᛚ</span><span>Open source</span></div>
+  </div>
+</footer>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js" defer></script>
+<script>
+(() => {
+  document.documentElement.classList.add('js');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const $ = id => document.getElementById(id);
+
+  /* ── Bifröst: drawn once into a canvas that matches the painting's crop ── */
+  const IW = 2736, IH = 1536;
+  const P = [[2085, 1232], [2140, 760], [2300, 330], [2560, -80]];
+  const bez = t => { const u = 1 - t; return [0, 1].map(k => u*u*u*P[0][k] + 3*u*u*t*P[1][k] + 3*u*t*t*P[2][k] + t*t*t*P[3][k]); };
+  const dBez = t => { const u = 1 - t; return [0, 1].map(k => 3*u*u*(P[1][k]-P[0][k]) + 6*u*t*(P[2][k]-P[1][k]) + 3*t*t*(P[3][k]-P[2][k])); };
+  const BANDS = ['#ff8f84', '#ffc074', '#fff09a', '#93e6b0', '#86c9ff', '#b29cff'];
+  const media = $('heroMedia'), canvas = $('bridge');
+  function focus() { return innerWidth / innerHeight < 1 ? [.76, 1] : [.5, 1]; }
+  function drawBridge() {
+    const r = media.getBoundingClientRect(), w = r.width, h = r.height;
+    if (!w || !h) return;
+    const [fx, fy] = focus();
+    media.style.setProperty('--fx', fx * 100 + '%'); media.style.setProperty('--fy', fy * 100 + '%');
+    const s = Math.max(w / IW, h / IH), ox = (w - IW * s) * fx, oy = (h - IH * s) * fy;
+    canvas.width = Math.round(w * DPR); canvas.height = Math.round(h * DPR);
+    const c = canvas.getContext('2d');
+    c.setTransform(DPR * s, 0, 0, DPR * s, DPR * ox, DPR * oy);
+    const N = 90, pts = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, [x, y] = bez(t), [dx, dy] = dBez(t), l = Math.hypot(dx, dy) || 1;
+      pts.push([x, y, -dy / l, dx / l, 190 * (1 - .4 * t), t]);
+    }
+    const band = (f0, f1) => { c.beginPath(); pts.forEach(([x, y, nx, ny, bw], i) => c[i ? 'lineTo' : 'moveTo'](x + nx * bw * f0, y + ny * bw * f0)); for (let i = pts.length - 1; i >= 0; i--) { const [x, y, nx, ny, bw] = pts[i]; c.lineTo(x + nx * bw * f1, y + ny * bw * f1); } c.closePath(); c.fill(); };
+    // fade in at the foot and out at the top
+    const g = (alpha) => { const lg = c.createLinearGradient(P[0][0], P[0][1], P[3][0], P[3][1]); lg.addColorStop(0, `rgba(255,255,255,0)`); lg.addColorStop(.07, `rgba(255,255,255,${alpha})`); lg.addColorStop(.8, `rgba(255,255,255,${alpha})`); lg.addColorStop(1, 'rgba(255,255,255,0)'); return lg; };
+    c.globalCompositeOperation = 'screen';
+    c.filter = `blur(${Math.max(8, 34 * s * DPR)}px)`; c.fillStyle = 'rgba(255,240,215,.4)'; band(-1.2, 1.2);
+    c.filter = `blur(${Math.max(.6, 1.6 * s * DPR)}px)`;
+    BANDS.forEach((col, i) => { c.fillStyle = col; c.globalAlpha = .9; band(-.5 + i / 6, -.5 + (i + 1) / 6 + .012); });
+    c.globalAlpha = .22; c.fillStyle = '#fff'; band(-.5, -.36);
+    c.globalAlpha = 1; c.filter = 'none';
+    c.globalCompositeOperation = 'destination-in'; c.fillStyle = g(1); c.setTransform(DPR * s, 0, 0, DPR * s, DPR * ox, DPR * oy); c.fillRect(-500, -500, IW + 1000, IH + 1000);
+    c.globalCompositeOperation = 'source-over';
+  }
+  const img = $('heroImg');
+  const start = () => { drawBridge(); if (!reduce) media.classList.add('drawn'); };
+  img.complete ? start() : img.addEventListener('load', start, { once: true });
+  let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(drawBridge, 160); });
+
+  /* ── scroll effects: transform and opacity only ── */
+  const nav = $('nav'), copy = $('heroCopy');
+  let lastY = -1;
+  function frame(y) {
+    if (y === lastY) return; lastY = y;
+    const vh = innerHeight;
+    nav.classList.toggle('solid', y > vh * .3);
+    if (reduce || y > vh * 1.6) return;
+    const p = Math.min(1, y / (vh * .55));
+    copy.style.opacity = (1 - p * 1.2).toFixed(3);
+    copy.style.transform = `translate3d(0,${(-p * 60).toFixed(1)}px,0)`;
+    media.style.transform = `scale(${(1 + Math.min(1, y / vh) * .06).toFixed(4)})`;
+  }
+  let raf = 0;
+  addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; frame(scrollY); }); }, { passive: true });
+  frame(scrollY);
+
+  // smooth wheel scrolling on desktop, native on touch
+  addEventListener('load', () => {
+    if (reduce || !window.Lenis || !matchMedia('(pointer: fine)').matches) return;
+    const lenis = new Lenis({ lerp: .1, wheelMultiplier: 1 });
+    const loop = t => { lenis.raf(t); requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+    document.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click', e => {
+      const id = a.getAttribute('href'); if (id.length < 2) return;
+      const el = document.querySelector(id); if (!el) return;
+      e.preventDefault(); lenis.scrollTo(el, { offset: id === '#top' ? 0 : -70, duration: 1.2 });
+    }));
+  });
+
+  /* ── entrances ── */
+  const rvs = [...document.querySelectorAll('.rv')];
+  if (!reduce && 'IntersectionObserver' in window) {
+    rvs.forEach(el => { if (el.getBoundingClientRect().top > innerHeight) el.classList.add('pre'); });
+    const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.remove('pre'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -8% 0px' });
+    rvs.forEach(el => io.observe(el));
+    const lore = $('lore');
+    new IntersectionObserver(([e], o) => { if (e.isIntersecting) { lore.classList.add('in'); o.disconnect(); } }, { threshold: .25 }).observe(lore);
+    const orbit = $('orbit');
+    new IntersectionObserver(([e]) => orbit.classList.toggle('run', e.isIntersecting)).observe(orbit);
+  } else { $('lore').classList.add('in'); }
+
+  /* ── orbit radius follows the orbit's size ── */
+  const orbit = $('orbit');
+  const sizeOrbit = () => { const r = orbit.offsetWidth * .43; orbit.querySelectorAll('.orb').forEach(o => o.style.setProperty('--r', r + 'px')); };
+  sizeOrbit(); new ResizeObserver(sizeOrbit).observe(orbit);
+
+  /* ── copy the setup prompt ── */
+  const toast = $('toast'); let tt;
+  const say = msg => { toast.textContent = msg; toast.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => toast.classList.remove('show'), 2600); };
+  const promptText = () => $('setupPrompt').innerText.trim();
+  document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => {
+    const text = promptText();
+    const done = () => say('Copied. Paste it into your coding agent.');
+    const fallback = () => { const r = document.createRange(); r.selectNodeContents($('setupPrompt')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); say('Selected. Press Ctrl+C or Cmd+C to copy.'); };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch { fallback(); }
+  }));
+
+  /* ── the gate ── */
+  const boxes = [0, 1, 2, 3, 4].map(i => $('c' + i));
+  const lines = [...document.querySelectorAll('.code .l[data-c]')];
+  const check = $('check'), ico = $('checkIco');
+  const icon = id => `<svg viewBox="0 0 24 24" style="color:#fff"><use href="#${id}"/></svg>`;
+  function gate() {
+    const met = boxes.map(b => b.checked), n = met.filter(Boolean).length, ok = n === 5;
+    lines.forEach(l => { const on = met[+l.dataset.c]; l.classList.toggle('on', on); l.classList.toggle('off', !on); });
+    check.className = 'check ' + (ok ? 'ok' : 'no');
+    ico.innerHTML = icon(ok ? 'i-check' : 'i-x');
+    $('checkTitle').textContent = ok ? 'The merge is open' : 'The merge is blocked';
+    $('checkSub').textContent = ok ? 'heimdall/gate · all 5 conditions met' : `heimdall/gate · ${5 - n} condition${5 - n === 1 ? '' : 's'} not met`;
+    $('checkBar').style.transform = `scaleX(${n / 5})`;
+  }
+  boxes.forEach(b => b.addEventListener('change', gate)); gate();
+})();
+</script>
