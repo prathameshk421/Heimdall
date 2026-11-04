@@ -17,7 +17,7 @@ Stay on `heimdall-build` in this checkout (`.env` is gitignored, so a new worktr
 
 ## Waiting on the human
 
-T01 step 2: the OpenRouter key has to reach `/etc/switch/agents.env` on the VM. The tool permission check refused my copy from `.env` (even listing variable names), so the human runs the one-line command in the Notice below, or says how to proceed.
+T01 step 2: the OpenRouter key has to reach `/etc/switch/agents.env` on the VM. The tool permission check refused my copy from `.env` (even listing variable names), so the human copies it (a one-line blind pipe over ssh) or says how to proceed.
 
 ## Not verified yet
 
