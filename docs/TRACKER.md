@@ -1,4 +1,4 @@
-# Proofroom Build Tracker
+# Heimdall Build Tracker
 
 Live status for `IMPLEMENTATION_PLAN.md` (the plan holds the details, refs and gate definitions). Edit this file in the repo and commit; one line per change keeps merges easy.
 
@@ -40,21 +40,31 @@ Live status for `IMPLEMENTATION_PLAN.md` (the plan holds the details, refs and g
 |---|---|---|---|---|---|---|---|
 | todo | T01 | Spike S1/S11: coordinator registers, creates a room, invites an `owner-agents` agent, posts an addressed message, agent replies | Dev 1 |  | T07 | Reply seen in Mattermost |  |
 | todo | T02 | Spike S12: human vs agent posts distinguishable by sender fields; human id stable | Dev 1 |  | T01 | Two posts logged with different `sender_kind`, same human id twice |  |
-| todo | T03 | Spike S14: OpenCode harness denies bash/webfetch; uid nftables blocks GitHub; `proofroom_*` MCP call works; session reset clears context | Dev 1 |  | T07 | All four checks pass, or fallback written |  |
+| todo | T03 | Spike S14: OpenCode harness denies bash/webfetch; uid nftables blocks GitHub; `heimdall_*` MCP call works; session reset clears context | Dev 1 |  | T07 | All four checks pass, or fallback written |  |
 | todo | T04 | Spike S4: GitHub App posts a check that branch protection requires | Dev 3 |  | T07 | PR merge button blocked by the check |  |
 | todo | T05 | Spike S6: seam test against a missing route fails as JUnit `<failure>` under gotestsum | Dev 2 |  | – | XML shows `<failure>`, not `<error>` |  |
-| todo | T06 | Spike S13: Graphiti MCP + FalkorDB + Ollama `qwen3-embedding:0.6b` (dims 1024) + DeepSeek via OpenRouter with `response_format`; search filtered by `group_ids` | Dev 4 |  | T07 | Seeded fact returned for its group only |  |
-| todo | T07 | Accounts: GCP project with budget alerts, OpenRouter keys per role with limits, GitHub org and repos, Jira site, Mattermost accounts for bob, dana, ana, eli, alice | All |  | – | Every account works; keys stored outside repos |  |
+| todo | T06 | Spike S13: Graphiti MCP + FalkorDB + hosted embeddings (`voyage-4-lite`, dims 1024, V50) + DeepSeek via OpenRouter with `response_format`; search filtered by `group_ids` | Dev 4 |  | T07 | Seeded fact returned for its group only |  |
+| todo | T07 | Accounts: AWS VM (limited login from a friend; check sudo) with Budgets alerts, OpenRouter key with limit, GitHub App and repos, Jira site, Mattermost accounts for bob, dana, ana, eli, alice. Done Nov 4: OpenRouter key ($3 test cap), Jira KAN token, GitHub App installed on the account. Open: AWS VM, Mattermost users, role map | All |  | – | Every account works; keys stored outside repos |  |
 | todo | T08 | Spike S16: does Hugging Face Inference Providers serve DeepSeek V4 Flash (or a similar tool-calling model); price; credit expiry | Dev 4 |  | – | Answer written in the tracker |  |
-| todo | T09 | Spike S15: Teams connection round trip (room on Teams bridge, untagged message reaches an agent, `!proofroom` parsed) | Teams friend |  | T07 | All three seen |  |
+| todo | T09 | Spike S15: Teams connection round trip (room on Teams bridge, untagged message reaches an agent, `!heimdall` parsed) | Teams friend |  | T07 | All three seen |  |
+| todo | T90 | Spike S17: on the real remote host, `!run-cmd` and Switch's agent controller do not fight our systemd units; write the rule | Dev 1 |  | T07 | Rule written; agents survive a restart and a reboot | D92 |
+| todo | T91 | Spike S18: a container under `heimdall-runner` cannot reach the Docker socket, the metadata address, other containers or the internet; pick gVisor or the rootless fallback | Dev 1 |  | T07 | Escape tests all fail as intended; choice recorded | D91, V56 |
+| todo | T92 | Spike S19: capability probe on Mattermost and Teams (threads, cards, mentions); text-command approval works on both | Dev 1 |  | T01 | Table of capabilities filled; `!heimdall approve` works | D94 |
+| todo | T93 | Spike S20: a KAN ticket moved to In Progress is seen within one poll, a late-indexed move is seen through the overlap window, and nothing triggers twice | Dev 2 |  | T07 | Three KAN scenarios pass | D97, V55 |
+| todo | T94 | Spike S21: `heimdall doctor --host` on the real AWS VM reports sudo, systemd, Docker, nftables, IMDS and memory correctly | Dev 3 |  | T07 | Report matches reality; fallback chosen if no sudo | D90 |
 
 ## G1: skeleton and frozen interfaces (Wed 00:01 to 10:00)
 
 | Status | Id | Task | Owner | Who | Depends | Done when | Note |
 |---|---|---|---|---|---|---|---|
-| todo | T10 | Repo `proofroom`: Go module, layout, dependency-rule check, CI (vet, test, govulncheck), `docs/` copied, CLAUDE.md/AGENTS.md with precedence | Dev 3 |  | – | CI green on empty skeleton |  |
+| todo | T10 | Repo `heimdall`: Go module, layout, dependency-rule check, CI (vet, test, govulncheck), `docs/` copied, CLAUDE.md/AGENTS.md with precedence | Dev 3 |  | – | CI green on empty skeleton |  |
 | todo | T11 | Frozen interfaces as Go: event catalog structs, MCP tool schemas (`FindingIn`, `Review`, `TestSubmission`, `Verdict`), task envelope, policy schema + validation, merge-rule clause signatures, ports | Dev 3 |  | T10 | Merged; others import it |  |
-| todo | T12 | `docker compose` skeleton: server, Postgres, FalkorDB, Graphiti, Ollama; `proofroom doctor` stub | Dev 3 |  | T10 | `docker compose up` healthy |  |
+| todo | T12 | `docker compose` skeleton: server, Postgres, FalkorDB, Graphiti (Ollama only as an optional profile, D87); `heimdall doctor` stub | Dev 3 |  | T10 | `docker compose up` healthy |  |
+| todo | T13 | Integration registry (`kind`, `name`, required config, `Check()`) and provider selection from `heimdall.toml`; adapters register themselves | Dev 3 |  | T11 | A stub adapter is selectable by name with no change outside its package |  |
+| todo | T14 | `heimdall connect` CLI: list, per-kind picker, secret-file instructions, write `heimdall.toml`, run `Check()`; `--list --check --json`; `doctor` reuses it | Dev 3 |  | T13 | Mattermost, Jira and GitHub show `connected` with real credentials; Teams shows `needs config` |  |
+| todo | T15 | `heimdall-runner`: own user, rootless runtime, Unix socket job API (`run(profile, sha)` returns JUnit and a log blob); the server never holds the Docker socket | Dev 2 |  | T12, T91 | Job runs; a metadata or socket access attempt fails | D91, 12.2 |
+| todo | T16 | `docs/CODING_STANDARDS.md` adopted; strict `golangci-lint` config; dependency-rule check in CI; LLD note template for each package | Dev 3 |  | T10 | CI fails on a violation of each rule | D104 |
+| todo | T17 | Config and secrets loader (`/etc/heimdall/secrets`), `/healthz`, kill switches (`memory`, `resolver`, `chat.cards`, `gate.mode`) | Dev 3 |  | T10 | Server refuses to start on bad config; each switch has a test | D89, D93, D102 |
 
 ## G2: walking skeleton (Wed to 20:00)
 
@@ -64,16 +74,20 @@ Live status for `IMPLEMENTATION_PLAN.md` (the plan holds the details, refs and g
 | todo | T21 | Reducer and transition table with state × event table tests | Dev 3 |  | T11 | Every illegal transition refused in tests |  |
 | todo | T22 | River queues, per-change advisory lock, outbox drainer with idempotent effect keys | Dev 3 |  | T20 | Duplicate effect never executes twice |  |
 | todo | T23 | Step engine and Go-defined default workflow | Dev 3 |  | T21, T22 | Workflow runs on fakes end to end |  |
-| todo | T24 | GitHub adapter, poll mode: PRs, comments, reviews, check runs; checks, branch, commit, tree hash, tarball; backoff | Dev 3 |  | T11, T04 | Pending `proofroom/gate` on a `pay-demo` PR |  |
+| todo | T24 | GitHub adapter, poll mode: PRs, comments, reviews, check runs; checks, branch, commit, tree hash, tarball; backoff | Dev 3 |  | T11, T04 | Pending `heimdall/gate` on a `pay-demo` PR |  |
 | todo | T25 | Tracker port: file tracker and Jira JQL poller; AC parsing and ids | Dev 2 |  | T11 | File ticket and Jira ticket both create `change.triggered` |  |
 | todo | T26 | Switch client: register coordinator, rooms, invite, references, post, read_context; Switch stream with cursor and gap handling | Dev 1 |  | T01, T11 | Room opens from the engine; replies become events |  |
 | todo | T27 | Agent runtime on the VM: per-agent Unix user, harness dir, systemd unit from `!run-cmd`, nftables per uid; `admin init` step | Dev 1 |  | T03 | test-author runs under its own unit |  |
 | todo | T28 | MCP server (streamable HTTP + stdio bridge): auth by agent token, role checks, `get_task`, `ack`, `read_code`, `read_untrusted`, `submit_tests`, `ask_humans` | Dev 1 |  | T11 | test-author calls tools from OpenCode |  |
 | todo | T29 | Sandbox: Go image, module cache, JUnit parser, red-first, flake (3 runs), seam import check | Dev 2 |  | T05, T12 | Import-error test rejected; assertion-red accepted |  |
-| todo | T30 | test-author flow: bundle, task, submission, quality checks, retries, commit to `tests/proofroom/<KEY>`, pin tree hash | Dev 2 |  | T23, T28, T29 | Tests for every AC land on the branch and are pinned |  |
+| todo | T30 | test-author flow: bundle, task, submission, quality checks, retries, commit to `tests/heimdall/<KEY>`, pin tree hash | Dev 2 |  | T23, T28, T29 | Tests for every AC land on the branch and are pinned |  |
 | todo | T31 | Seed `pay-demo` (service, seam, OpenAPI, tickets, branches) and `ledger-demo` | Dev 4 |  | T07 | Repos public; `good-pr`, `bad-pr`, `injection-pr` exist |  |
-| todo | T32 | Room commands parser (`/proofroom` and `!proofroom`) from GitHub comments and mapped humans in rooms | Dev 1 |  | T26 | `start PAY-142` works from Mattermost |  |
-| todo | T33 | G2 demo run | All |  | T20 to T32 | Gate G2 passes |  |
+| todo | T32 | Room commands parser (`/heimdall` and `!heimdall`) from GitHub comments and mapped humans in rooms | Dev 1 |  | T26 | `start PAY-142` works from Mattermost |  |
+| todo | T34 | Repo profile: schema, detectors, validator (allowlisted image, limits, trial run emitting JUnit), profiler skill, PR proposal for profile and CI; replaces the fixed Go, Node and Python images in T29 | Dev 2 |  | T29, T15 | Jurist AI gets a valid profile through a PR, including its Postgres service | D98, D99, 12.2b |
+| todo | T35 | GitHub token source: `reader` and `writer(op, repo)` narrowed tokens, 50-minute cache; `doctor` reads the installation's real permissions | Dev 3 |  | T24 | A narrowed token cannot do anything outside its operation | D96, V51, V54 |
+| todo | T36 | Jira poll with overlap window and dedupe by (key, changelog id); ADF walker with golden tests on KAN tickets | Dev 2 |  | T25, T93 | KAN-1 to KAN-3 parse to the right AC; no double trigger | D97, V52 |
+| todo | T37 | Chat capabilities on the `Chat` port, `people:` mapping, text-command approvals bound to a mapped human, role and SHA | Dev 1 |  | T26, T32, T92 | Wrong-person and stale-SHA approvals are refused in tests | D94, D95 |
+| todo | T33 | G2 demo run | All |  | T20 to T32 and T34 to T37 | Gate G2 passes |  |
 
 ## G3: review loop (Thu to 20:00)
 
@@ -91,7 +105,7 @@ Live status for `IMPLEMENTATION_PLAN.md` (the plan holds the details, refs and g
 | todo | T49 | Memory: Graphiti compose, ontology, episode ledger (D51), `ask_knowledge` scoping and labels, seed backfill | Dev 4 |  | T06 | Consumer finding cites INC-031 as confirmed |  |
 | todo | T50 | G3 demo run | All |  | T40 to T49 | Gate G3 passes |  |
 
-## G4: feature freeze (Fri to 20:00)
+## G4: product experience, agent quality, then freeze (Fri to 20:00)
 
 | Status | Id | Task | Owner | Who | Depends | Done when | Note |
 |---|---|---|---|---|---|---|---|
@@ -102,10 +116,13 @@ Live status for `IMPLEMENTATION_PLAN.md` (the plan holds the details, refs and g
 | todo | T64 | Boot reconciliation | Dev 3 |  | T24, T25 | Stopped-VM events recovered after start |  |
 | todo | T65 | Chat memory: change-room digest at close; listed channels with keywords or `!remember` | Dev 4 |  | T49 | Digest episode appears after merge |  |
 | todo | T66 | Baselines: CodeRabbit and plain DeepSeek reviewer on `good-pr`, saved verbatim | Dev 4 |  | T31 | Files in `seed/baseline/` |  |
-| todo | T67 | Teams: `chat.bridge: teams`, thread replies for asks, `!proofroom` tested | Teams friend + Dev 1 |  | T09, T32 | A change room runs in Teams |  |
+| todo | T67 | Teams: `chat.bridge: teams`, thread replies for asks, `!heimdall` tested | Teams friend + Dev 1 |  | T09, T32 | A change room runs in Teams |  |
 | todo | T68 | Local mode on a clean machine (poll, file tracker, compose) | Dev 3 |  | T63 | Red-then-green in under 20 min, no Jira, no public URL |  |
 | todo | T69 | D60 live check: real agents give the same blocking set 3 of 3 | All |  | T60 to T66 | 3 identical runs logged |  |
-| todo | T70 | G4 freeze | All |  | T60 to T69 | Gate G4 passes |  |
+| todo | T71 | Reliability kit: `docs/RUNBOOK.md`, `make deploy` and `make recover`, backups, memory and cost guards, fallback video, soak test with a PR every 5 minutes for 2 hours | Dev 3 |  | T63 | Soak passes; recover works from a stopped VM | D93, D102 |
+| todo | T72 | Product experience: `heimdall setup` and `heimdall connect` polish: platform picker, credential prompts that name the secret file, clear errors, `doctor` summary | Dev 3 |  | T14, T35 | A new user connects Mattermost, GitHub and Jira in under 15 minutes without reading the docs | D105, 17 |
+| todo | T73 | Agent quality: eval corpus run on Jurist AI, prompt and skill tuning for test-author, reviewer and profiler; compare against the plain DeepSeek reviewer | Dev 4 |  | T66 | Blocking set stable 3 of 3; baseline comparison saved | D60, D105 |
+| todo | T70 | G4 freeze | All |  | T60 to T73 | Gate G4 passes |  |
 
 ## G5: ship (Sat)
 

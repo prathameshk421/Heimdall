@@ -1,4 +1,4 @@
-# Proofroom: MVP
+# Heimdall: MVP
 
 Team: 4 developers, each with Claude Code on their own laptop
 Event: Flip the Switch (WeMakeDevs x DevTools Academy x Switch), Nov 4 to 7, 2026
@@ -8,15 +8,15 @@ Status: MVP scope summary for people. Builders follow `BRAINSTORM_BACKLOG.md` Pa
 
 > **Superseded here (Nov 3, Part 8):** chat app is Mattermost, not Slack (D19); spec and test agents are one test-author (D3); merge rule is spec 12.4, not the five conditions in section 8; humans sign off tests only in sensitive domains (D33); reviewers are picked by the author (D5) and run on the remote host (D43); section 12 streams are replaced by D62; section 14 spikes by Part 8's spike table. The rest of this doc still holds.
 
-Name: **Proofroom** (D59). Tagline: **LGTM is not evidence.**
+Name: **Heimdall** (D59). Tagline: **LGTM is not evidence.**
 
-Long line: Proofroom automates engineering change assurance. It coordinates context-aware agents across development teams to write failure-first tests, independently review changes and establish evidence before code merges, requiring human intervention only when engineering judgment is needed.
+Long line: Heimdall automates engineering change assurance. It coordinates context-aware agents across development teams to write failure-first tests, independently review changes and establish evidence before code merges, requiring human intervention only when engineering judgment is needed.
 
 ---
 
 ## 1. The product in one minute
 
-Proofroom makes every merge safe and definite.
+Heimdall makes every merge safe and definite.
 
 - No LGTM. A PR cannot merge on a casual approval. The GitHub check goes green only when the tests pass, the slop check passes, every review finding is resolved with evidence, and a human approves.
 - Anti-slop at the door. A huge PR with no linked ticket or no agreed behaviour is rejected before any reviewer spends time on it.
@@ -39,7 +39,7 @@ Developer touchpoints (this is the zero-touch promise):
 
 ## 2. Who uses it
 
-| Who | What they do in Proofroom | What they get |
+| Who | What they do in Heimdall | What they get |
 |---|---|---|
 | Developer (author) | Starts work in chat, answers spec questions, approves behaviour, asks reviewers, resolves findings | A PR that is safe to merge, with evidence |
 | Reviewer (owner, security, infra, consumer team) | Gets asked into the room, reviews from their angle | Findings with proof, not opinions |
@@ -59,7 +59,7 @@ Chat apps (Slack, Teams, Discord, Telegram, Mattermost)
         - Reviewer agents (owner, security, infra, consumer)
         - Coordinator agent (assembles reviewers, tracks findings)
      -> Jira (requirements, acceptance criteria; status change to In Progress opens the room; rejects create tickets)
-     -> Graphiti team memory on FalkorDB (temporal knowledge graph fed by Jira, GitHub, chat and decisions; queried through the proofroom knowledge tool)
+     -> Graphiti team memory on FalkorDB (temporal knowledge graph fed by Jira, GitHub, chat and decisions; queried through the heimdall knowledge tool)
      -> Always-on machine (Switch remote host; runs agents when laptops are closed)
   -> Gate service (plain code, posts GitHub check)
      -> GitHub (PRs, checks, merge)
@@ -89,7 +89,7 @@ Memory note: the server scopes every memory query to the asker's teams (Graphiti
 
 ### W0. Setup (once per developer, under 15 minutes)
 
-1. Install the Proofroom skill (one command).
+1. Install the Heimdall skill (one command).
 2. Log into Switch and enroll the laptop, or choose the always-on option.
 3. Approve the personal context pack (the agent drafts it from CODEOWNERS, git history and the developer's notes; the developer edits and approves).
 4. Connect GitHub, Jira and the chat app.
@@ -112,10 +112,10 @@ Example tests for a refund endpoint:
 
 ### W2. PR to verified merge
 
-1. The PR is opened or the developer runs `proofroom review`.
+1. The PR is opened or the developer runs `heimdall review`.
 2. Slop check runs first (see section 8). If it fails, the PR is rejected with the reason and nothing else runs.
 3. The gate checks that the W1 tests exist and pass.
-4. Reviewers come from three sources, merged: the developer's named reviewers, the org policy file (`proofroom.yaml`: required agents by path, label or risk level), and CODEOWNERS as the default.
+4. Reviewers come from three sources, merged: the developer's named reviewers, the org policy file (`heimdall.yaml`: required agents by path, label or risk level), and CODEOWNERS as the default.
 5. The coordinator opens a review room and each reviewer agent joins under its own identity.
 6. Each reviewer agent pulls organizational memory and files findings. A finding has a claim, evidence (a test, a trace, a file and line, or a linked decision) and a severity.
 7. The author's agent fixes findings. Each fix references the finding and the evidence.
@@ -166,7 +166,7 @@ Priority: P0 must ship for the demo, P1 ships if time allows, P2 is later.
 | F21 | Required CI/CD checks included in the gate (build, lint, security scan, deploy preview) | P0 |
 | F22 | Jira webhook trigger: In Progress opens a room (chat message is the fallback) | P0 |
 | F23 | Reject path: one Jira ticket per rejection, follow-up tickets for out-of-scope findings | P1 |
-| F24 | Org policy file (`proofroom.yaml`) sets required reviewer agents by path, label or risk | P1 |
+| F24 | Org policy file (`heimdall.yaml`) sets required reviewer agents by path, label or risk | P1 |
 | F25 | Unit tests written as secondary evidence | P1 |
 | F26 | Test lock: tests in a protected path, commit hash pinned by the gate | P0 |
 | F27 | Branch-create webhook trigger (room opens when the dev starts) | P1 |
@@ -213,7 +213,7 @@ Humans approve. No agent approves a merge.
 
 A failing slop check rejects the PR with the failing rule. Reviewers are not pulled in.
 
-Scope note: Proofroom gates the merge. Whether code is safe in prod also depends on the org's CI/CD checks, which the gate requires but does not replace. We do not claim to guarantee prod safety.
+Scope note: Heimdall gates the merge. Whether code is safe in prod also depends on the org's CI/CD checks, which the gate requires but does not replace. We do not claim to guarantee prod safety.
 
 ---
 
@@ -226,7 +226,7 @@ Scope note: Proofroom gates the merge. Whether code is safe in prod also depends
 | Teams | Chat in, room out | Switch Teams (Azure app registration, public listener via Cloudflare named tunnel), see `docs/TEAMS_SETUP.md` | P1 (D79) | Mattermost stays default |
 | Telegram | Chat in, room out | Switch Telegram | P2 | Skip |
 | Switch agents | Both | Switch protocol (HTTP, SSE, MCP) | P0 | None; this is the core |
-| GitHub | PR events in, check out | Webhook plus Checks API | P0 | Manual `proofroom review` command |
+| GitHub | PR events in, check out | Webhook plus Checks API | P0 | Manual `heimdall review` command |
 | Jira | Webhook in (status to In Progress), ticket read, ticket create on reject | Jira webhook plus Atlassian MCP (mcp.atlassian.com/v2/mcp) | P0 trigger and read, P1 create | Chat trigger, ticket pasted into room, reject posted in room only |
 | Graphiti + FalkorDB | Memory in and out | Episodes from webhooks and decisions; search via Graphiti MCP | P1 | Repo-local markdown memory |
 | Always-on machine | Agents run remotely | Switch remote host or Railway template | P1 | Laptop only; document it |
@@ -240,7 +240,7 @@ Scope note: Proofroom gates the merge. Whether code is safe in prod also depends
 ### Two layers
 
 - Personal layer: each developer's agent holds their context pack (ownership, invariants, incidents, conventions, unknowns).
-- Team layer: Graphiti holds time-aware facts from Jira, GitHub, chat and decisions; agents query it through the proofroom knowledge tool.
+- Team layer: Graphiti holds time-aware facts from Jira, GitHub, chat and decisions; agents query it through the heimdall knowledge tool.
 
 Every fact keeps its source and date. A Slack message is recorded as a discussion. It becomes a rule only after a human confirms it.
 
@@ -329,7 +329,7 @@ Rule: a spike result is written in the room notes on Tuesday night. No spike is 
 
 ## 15. Judging map
 
-| Criterion | Weight | How Proofroom answers it |
+| Criterion | Weight | How Heimdall answers it |
 |---|---|---|
 | Use of Switch | 30% | Chat-initiated work, rooms as the shared record, agents with identities and roles, reviewers on a remote host, decisions made in the room (D47) |
 | Technical execution | 25% | Red-first tests, deterministic gate, GitHub check; **reproducible from a clone in local mode** (D38) |
@@ -391,7 +391,7 @@ Never cut:
 
 - Closed items moved to `BRAINSTORM_BACKLOG.md` Part 8; only its "Still needs the team" list is open. The lines below are kept for history.
 - Who pays for agent usage and the always-on machine during the hackathon, and who holds the credentials?
-- Name clash check for "Proofroom" has not been done. Alternatives: Merge Room, Reviewroom, Greenlight, Gateroom.
+- Name clash check for "Heimdall" has not been done. Alternatives: Merge Room, Reviewroom, Greenlight, Gateroom.
 - Confirm the remaining judging weights on the official page.
 - Confirm that Switch's remote host can run with the team's repo and provider authentication (spike S7).
 - Confirm Atlassian MCP access for the team's Jira site (spike S8).

@@ -1,9 +1,9 @@
-# Proofroom: Pitch Pack
+# Heimdall: Pitch Pack
 
 Event: Flip the Switch hackathon (Track 01, Best Business Workflow)
-Companion doc: PROOFROOM_MVP.md
+Companion doc: HEIMDALL_MVP.md
 
-> **Updated Nov 3 (backlog Part 8):** name Proofroom and tagline "LGTM is not evidence." are final (D59); the demo runs in Mattermost (D19); the demo bug is D57 (three findings from three people's context, one across repos); judging weights are 30/25/25/20 (V26).
+> **Updated Nov 3 (backlog Part 8):** name Heimdall and tagline "LGTM is not evidence." are final (D59); the demo runs in Mattermost (D19); the demo bug is D57 (three findings from three people's context, one across repos); judging weights are 30/25/25/20 (V26).
 
 Every number below is marked with its source. Before publishing anything, check each source link still says what we quote. Respondent surveys are estimates, not measurements.
 
@@ -13,9 +13,9 @@ Every number below is marked with its source. Before publishing anything, check 
 
 **Category:** Merge safety for teams that ship with AI agents.
 
-**One line:** Proofroom makes every merge safe and definite. No LGTM, no slop, and every reviewer brings the context their team actually has.
+**One line:** Heimdall makes every merge safe and definite. No LGTM, no slop, and every reviewer brings the context their team actually has.
 
-**Long line (from the team):** Proofroom automates engineering change assurance. It coordinates context-aware agents across development teams to write failure-first tests, independently review changes and establish evidence before code merges, requiring human intervention only when engineering judgment is needed.
+**Long line (from the team):** Heimdall automates engineering change assurance. It coordinates context-aware agents across development teams to write failure-first tests, independently review changes and establish evidence before code merges, requiring human intervention only when engineering judgment is needed.
 
 **Zero-touch line:** The developer writes code and answers questions. The tests are ready before the code, the reviews start the moment they push, and the agents ask in team chat (Mattermost in the demo; Slack, Teams or Telegram later) only when they need a human.
 
@@ -56,7 +56,7 @@ Each moat is a sentence a judge can repeat back.
 3. **Personal context.** Your agent knows your ownership, your invariants and your incidents. The agent that reviews your code is the one that knows what you know.
 4. **Cross-team agents.** A payments PR can bring in security, infrastructure and consumer-team agents, each reviewing from its own angle, in one room, under its own identity.
 
-Supporting line for the stage: **"A generic AI reviewer reads the diff. Proofroom reads the diff, the ticket, the decision and the incident."**
+Supporting line for the stage: **"A generic AI reviewer reads the diff. Heimdall reads the diff, the ticket, the decision and the incident."**
 
 ---
 
@@ -90,7 +90,7 @@ Length target: 2 minutes 50 seconds. Screen recording with voiceover, plus one s
 "AI made code cheap. PRs got bigger. Reviews got slower. Surveys estimate a quarter to a third of AI code is slop. The approval button still means 'I skimmed it.'"
 
 **[0:45 to 1:10] The idea (one diagram)**
-"Proofroom runs in your team chat. Work starts when a Jira ticket moves to In Progress. Agents in a Switch room hold the context: the ticket, the decision, the incident. The merge is green only when the tests pass, the slop check passes, every finding is resolved, and a human approves."
+"Heimdall runs in your team chat. Work starts when a Jira ticket moves to In Progress. Agents in a Switch room hold the context: the ticket, the decision, the incident. The merge is green only when the tests pass, the slop check passes, every finding is resolved, and a human approves."
 
 **[1:10 to 1:45] Demo part 1: before the build**
 Screen: Jira ticket PAY-142 moves to In Progress; a room opens in Mattermost. Spec agent asks one question. Developer answers. Test agent writes failing tests. Terminal shows them failing for the right reason.
@@ -105,7 +105,7 @@ Screen: GitHub check turns green after human approval.
 Voiceover: "No LGTM. The check is plain code. No model decides the merge."
 
 **[2:35 to 2:50] Close (face to camera)**
-"Proofroom. Merge safety for teams that ship with agents. Built on Switch."
+"Heimdall. Merge safety for teams that ship with agents. Built on Switch."
 
 Production notes:
 - Record at 1080p. Use the seeded repo only.
@@ -117,7 +117,7 @@ Production notes:
 
 ## 5. Live pitch (5 minutes)
 
-Slide 1. Title. "Proofroom: every merge safe and definite."
+Slide 1. Title. "Heimdall: every merge safe and definite."
 Slide 2. The problem. One number, sourced.
 Slide 3. The four moats (section 2).
 Slide 4. The lifecycle: two workflows, one room (diagram from MVP section 3).
@@ -134,10 +134,10 @@ Speaking notes for slide 6 (Switch centrality, 30% of judging): "Without Switch,
 ## 6. Q&A preparation
 
 **"Another team here also built PR review agents in a room. How is this different?"**
-A review room comments on a PR. Proofroom starts at the ticket with failing tests, gives each reviewer one person's approved context, settles disputes by re-running evidence, and gates the merge with a required GitHub check that only plain code can turn green.
+A review room comments on a PR. Heimdall starts at the ticket with failing tests, gives each reviewer one person's approved context, settles disputes by re-running evidence, and gates the merge with a required GitHub check that only plain code can turn green.
 
 **"Isn't this just CodeRabbit?"**
-An AI reviewer comments on the diff. Proofroom refuses to let a PR merge on comments alone. It starts before the code, with tests from the ticket. And reviewers come from different teams, each with its own context. Check CodeRabbit's and BugBot's current features before the pitch: they index the codebase and learn from feedback, so do not claim they have no context. The claim is: one shared reviewer, no per-team lens, no tests before code, and no merge gate with evidence.
+An AI reviewer comments on the diff. Heimdall refuses to let a PR merge on comments alone. It starts before the code, with tests from the ticket. And reviewers come from different teams, each with its own context. Check CodeRabbit's and BugBot's current features before the pitch: they index the codebase and learn from feedback, so do not claim they have no context. The claim is: one shared reviewer, no per-team lens, no tests before code, and no merge gate with evidence.
 
 **"Why do we need agents for this? Why not just tests?"**
 Tests are the bar, not the whole story. The tests come from the agreed behaviour, which comes from a human-approved spec. The reviewers catch what tests do not: authorization gaps, consumer breakage and decisions made in Slack six months ago.
@@ -164,15 +164,15 @@ Membership is explicit. Linking rooms does not grant access. Each agent reviews 
 
 ## 7. Switch hackathon submission copy
 
-**Project name:** Proofroom
+**Project name:** Heimdall
 
 **One-liner (under 140 characters):**
 Every merge safe and definite: tests from the ticket first, slop rejected at the door, cross-team agents in one Switch room, no LGTM.
 
 **Short description (about 120 words):**
-Proofroom runs in the team's chat. Work starts when a Jira ticket moves to In Progress: a Switch room opens and a test-author agent reads the ticket, asks at most three questions, and writes failing integration and contract tests before any code exists. The developer's agent builds until they pass. When the PR opens, a plain-code slop check rejects oversized or unlinked PRs at the door. The author picks reviewers; each reviewer's agent runs on a Switch remote host with that person's approved context and team memory from tickets, PRs and decisions. Findings need evidence that Proofroom re-runs, disputes are settled by evidence first and humans last, and a human approves. The GitHub check turns green only when every condition holds. No LLM decides the merge.
+Heimdall runs in the team's chat. Work starts when a Jira ticket moves to In Progress: a Switch room opens and a test-author agent reads the ticket, asks at most three questions, and writes failing integration and contract tests before any code exists. The developer's agent builds until they pass. When the PR opens, a plain-code slop check rejects oversized or unlinked PRs at the door. The author picks reviewers; each reviewer's agent runs on a Switch remote host with that person's approved context and team memory from tickets, PRs and decisions. Findings need evidence that Heimdall re-runs, disputes are settled by evidence first and humans last, and a human approves. The GitHub check turns green only when every condition holds. No LLM decides the merge.
 
-**What Switch does in Proofroom:** Chat-initiated work, rooms as the shared record, agents with their own identities and roles, remote hosts for offline owners, decisions kept in room history.
+**What Switch does in Heimdall:** Chat-initiated work, rooms as the shared record, agents with their own identities and roles, remote hosts for offline owners, decisions kept in room history.
 
 **Tech stack:** Switch (rooms, agents, remote hosts), Graphiti on FalkorDB (team memory, temporal knowledge graph), a Go gate service, Jira and GitHub connectors, with a GitHub check.
 
@@ -244,7 +244,7 @@ Length: 900 to 1,200 words. Include one screenshot per section.
 - [ ] Demo video under 3 minutes, captions on
 - [ ] Every number on a slide has a source link checked this week
 - [ ] Judging weights checked on the official page
-- [ ] Name clash check for "Proofroom" done
+- [ ] Name clash check for "Heimdall" done
 - [ ] Submission text pasted in and reviewed by all four developers
 - [ ] Backup recording of the demo ready in case the live run fails
 - [ ] Submission done by 4 PM IST on Nov 7 (hard deadline 11:59 PM IST)
@@ -255,7 +255,7 @@ Length: 900 to 1,200 words. Include one screenshot per section.
 
 | Name | Notes | Clash check |
 |---|---|---|
-| Proofroom | Current choice. Says "proof before merge." | Not done |
+| Heimdall | Current choice. Says "proof before merge." | Not done |
 | Merge Room | Plain and descriptive | Not done; likely crowded |
 | Reviewroom | Close to the earlier working name | Not done |
 | Greenlight | Good for the green check | Not done; likely crowded |

@@ -1,7 +1,7 @@
-# Proofroom: Technical Spec (v3)
+# Heimdall: Technical Spec (v3)
 
-Status: v3.4, Nov 3, 2026. Name `proofroom` (final, D59). Language: Go. v3.4 applies backlog Parts 9 to 11 (D63 to D85): a full consistency review, agent supervision (6.9), Teams in scope; OpenRouter DeepSeek models on OpenCode, no Anthropic API; reviewer agents on the VM only, no ingress (polling), chat history in memory, verified Graphiti config.
-Companion docs: `PROOFROOM_MVP.md` (scope), `PRODUCT_PITCH.md` (story), `TECH_DESIGN.md` (principles, v0.1), `BRAINSTORM_BACKLOG.md` (every fact `V#` and decision `T#`/`D#`/`U#`/`G#` cited here). Precedence (D37): backlog Parts 8 to 11 > this spec > earlier backlog parts > MVP > TECH_DESIGN > pitch.
+Status: v3.5, Nov 4, 2026. Name `heimdall` (final, D59). Language: Go. v3.5 applies backlog Part 12 (D86 to D106): AWS instead of GCP, hosted embeddings instead of Ollama, a separate sandbox runner, a generic repo profile, narrowed GitHub tokens, capability-driven chat and the hackathon reliability rules (0.5). v3.4 applies backlog Parts 9 to 11 (D63 to D85): a full consistency review, agent supervision (6.9), Teams in scope; OpenRouter DeepSeek models on OpenCode, no Anthropic API; reviewer agents on the VM only, no ingress (polling), chat history in memory, verified Graphiti config.
+Companion docs: `HEIMDALL_MVP.md` (scope), `PRODUCT_PITCH.md` (story), `TECH_DESIGN.md` (principles, v0.1), `CODING_STANDARDS.md` (code rules, D104), `BRAINSTORM_BACKLOG.md` (every fact `V#` and decision `T#`/`D#`/`U#`/`G#` cited here). Precedence (D37): backlog Parts 8 to 12 > this spec > earlier backlog parts > MVP > TECH_DESIGN > pitch.
 
 **Build for Saturday: read section 0.4 first.** This spec is the product design; section 0.4 says which parts are built this week.
 
@@ -24,7 +24,7 @@ Companion docs: `PROOFROOM_MVP.md` (scope), `PRODUCT_PITCH.md` (story), `TECH_DE
 - Auto-merge, or auto-fix without a human. GitHub merges, not us.
 - Replacing CI/CD. We add one required job and one required check.
 - Multi-tenant SaaS. One deployment per organization.
-- Test adapters beyond Go, TypeScript and Python. Any runner that emits JUnit XML works, but only those three ship.
+- A fixed language list. Any repo a profile can describe works (D98); parsers ship for `go test`, `pytest`, `jest`/`vitest` and Maven/Gradle, and any other runner must emit JUnit XML.
 
 ### 0.3 Quality bars (one team VM)
 
@@ -37,7 +37,7 @@ Companion docs: `PROOFROOM_MVP.md` (scope), `PRODUCT_PITCH.md` (story), `TECH_DE
 | All reviews in after reviewer pick | p50 < 12 min; per-reviewer timeout 30 min, then `unavailable` (waivable) |
 | Dashboard page | p95 < 300 ms server time |
 | Concurrent active changes | 50 |
-| `proofroom-server` RSS idle / 50 active changes | < 80 MB / < 400 MB |
+| `heimdall-server` RSS idle / 50 active changes | < 80 MB / < 400 MB |
 | Data loss on crash | none for accepted events (persist before ack) |
 | False block rate on the seed corpus | tracked; target < 10% |
 
@@ -50,6 +50,17 @@ The build is the IN column of D36 in `BRAINSTORM_BACKLOG.md` Part 8. In short:
 - **Not built this week:** resolver auto-apply, live/twin split, mutation testing, YAML workflow loader, OAuth dashboard, signed chain heads, rebuild and restore commands, OTel and Prometheus, load and chaos tests, testing the setup skill on Claude Code and Codex laptops (OpenCode is the VM runtime and is tested, D72), the full eval corpus (D60 defines the smaller set).
 
 Sections below that describe only Later behaviour are marked **(Later)** where they would otherwise mislead a builder.
+
+### 0.5 Hackathon reliability rules (D102, D103)
+
+Nothing may break during the demo, so every dependency has a way to degrade and every release is rehearsed.
+- **Pin everything:** the Switch version, every image by digest, vendored Go modules for deploy builds, the OpenCode version.
+- **One command to deploy and one to recover** (`make deploy`, `make recover`), idempotent and rehearsed. Deploy only tagged releases, and never during recording.
+- **Rehearse:** the D60 check (same blocking set, 3 of 3) on the tagged build, plus a 2-hour soak with a PR opened every 5 minutes.
+- **Kill switches** in policy: `memory: off`, `resolver: off`, `chat.cards: off`, `gate.mode: advisory` (the check concludes `neutral` with the full summary).
+- **Backups:** `pg_dump` of both databases and an EBS snapshot before each demo day. A recorded fallback video of a clean run before the freeze.
+- **Guards:** `docker stats` and `free -m` logged every minute with an alarm at 85% memory; the OpenRouter spend is read from the key endpoint before and after every eval run (the test cap is $3).
+- **Cut order** if time runs short: Teams, the infra role, chat memory, the resolver, Graphiti, Jira (file tracker). **Never cut** the event store, the merge rule and check, sandbox isolation, the GitHub App, Mattermost rooms, failure-first tests and text-command approvals.
 
 ---
 
@@ -70,13 +81,13 @@ flowchart TB
     LLM[OpenRouter: DeepSeek V4 Flash, one key per role]
   end
   subgraph VM[Team VM]
-    PS[proofroom-server, Go]
+    PS[heimdall-server, Go]
     PG[(Postgres: events, projections, jobs)]
     BL[(Blob volume)]
     SB[Sandbox containers]
     GR[Graphiti MCP server]
     FK[(FalkorDB)]
-    EM[Local embedder: Ollama qwen3-embedding 0.6b]
+    EM[Hosted embeddings via OpenRouter: voyage-4-lite, 1024 dims]
     SW[Switch server + Mattermost; Teams via its own public listener]
     VA[VM agents: test-author, resolver, one reviewer per person]
   end
@@ -111,23 +122,25 @@ flowchart TB
 | Control (MCP tools, authenticated webhooks, dashboard actions) | Schema-validated submissions, authenticated human decisions | Changes state through commands only |
 | Memory (Graphiti) | Time-aware team facts | Advisory. Only `confirmed` facts count as evidence |
 
-### 1.3 Deployment (one GCP VM, D35)
+### 1.3 Deployment (one AWS VM, D86)
 
-GCP `e2-standard-4` (4 vCPU, 16 GB), Ubuntu 24.04, 50 GB balanced disk, onboarded as a Switch remote host. An instance schedule stops it outside working hours. **No ingress (D64):** GitHub and Jira are polled (ETag-cached GitHub reads every 10 s, Jira JQL every 30 s), so there is no tunnel, domain, static IP or open port. People reach the dashboard (and laptops reach `/mcp`) through an IAP SSH port-forward (`gcloud compute ssh --tunnel-through-iap -- -L 8080:localhost:8080`). If the team later owns a domain on Cloudflare, a named Cloudflare Tunnel can carry `/webhooks/*` and polling switches off. **Exception, Teams (D79):** Microsoft pushes to Switch, so Switch's Teams listener (port 3978) is published through a named Cloudflare Tunnel on the team's domain, set up by the Teams admin (`docs/TEAMS_SETUP.md`). Only that listener is public; Proofroom stays private. GCP budget alerts are set at $25 and $50.
+One EC2 instance, Ubuntu 24.04, **8 vCPU and 32 GB preferred (m6i.2xlarge class); 4 vCPU and 16 GB is the floor and then needs a 4 GB swap file**, with a 100 GB encrypted gp3 volume, onboarded as a Switch remote host. There is no idle-stop schedule during the hackathon (stop and start only for real outages; the reconciler recovers, D56). AWS Budgets alerts are set at $25 and $50. **No ingress (D64):** GitHub and Jira are polled (GitHub reads every 10 s, Jira JQL every 30 s with an overlap window, D97), so there is no tunnel, domain, static IP or open port. The security group allows inbound SSH only from team addresses (or SSM Session Manager). People reach the dashboard (and `/mcp`) with an SSH port-forward (`ssh -L 8080:localhost:8080 <alias>`). If the team later owns a domain on Cloudflare, a named Cloudflare Tunnel can carry `/webhooks/*` and polling switches off. **Exception, Teams (D79):** Microsoft pushes to Switch, so Switch's Teams listener (port 3978) is published through a named Cloudflare Tunnel on the team's domain, set up by the Teams admin (`docs/TEAMS_SETUP.md`). Only that listener is public; Heimdall stays private.
+
+**Metadata and privileges (D86, D90).** IMDSv2 is required with hop limit 1, and nftables blocks `169.254.169.254` for every agent uid and every sandbox container, so nothing on the VM can read the instance role's credentials. `heimdall doctor --host` runs first on the VM and checks sudo, systemd, Docker, nftables, free memory and disk, the metadata setting and outbound reach to GitHub, Jira, OpenRouter and Switch. Secrets live in `/etc/heimdall/secrets` (D89).
 
 | Stack | Containers | Memory |
 |---|---|---|
 | Switch | server, Postgres, Mattermost (set up by Console) | ~3 GB |
-| Proofroom | `proofroom-server`, Postgres 16 | ~1 GB |
-| Memory | Graphiti MCP server, FalkorDB, Ollama with `qwen3-embedding:0.6b` (`num_ctx` 2048) | ~2 to 2.5 GB |
-| Agents | test-author, resolver, one reviewer agent per person: each an OpenCode session under its own Unix user and systemd unit, with its own harness directory (D43, D44, D80) | ~3 to 5 GB |
-| Sandbox | short-lived jobs, 1 slot on this VM | 2 GB |
+| Heimdall | `heimdall-server`, Postgres 16 | ~1 GB |
+| Memory | Graphiti MCP server, FalkorDB; embeddings are hosted (D87), so no Ollama. Ollama is an optional compose profile for offline local mode (+1 to 1.5 GB) | ~1 to 1.5 GB |
+| Agents | test-author, resolver, profiler and one reviewer agent per person: each an OpenCode session under its own Unix user and systemd unit, with its own harness directory (D43, D44, D80). Without sudo, one rootless container per agent instead (D90) | ~3 to 5 GB |
+| Sandbox | `heimdall-runner` under its own user with a rootless container runtime, short-lived jobs, 1 slot on the 16 GB size (2 on the 32 GB size) (D91) | 2 GB per slot |
 
-Peak is about 11 to 13 GB; confirm with `docker stats` on day one. Nothing of Proofroom listens publicly (only Switch's Teams listener, through the tunnel). The dashboard and `/mcp` are reachable only on the Docker network and through IAP SSH port-forwards (D64 amends D53). Local mode (D38) needs no ingress at all: GitHub is polled and the tracker is a file. Docker networks: `core`, `memory`, and `sandbox` (no egress). Spot VMs are used only for eval runs.
+Peak is about 10 to 12 GB without Ollama; confirm with `docker stats` on day one. Nothing of Heimdall listens publicly (only Switch's Teams listener, through the tunnel). The dashboard and `/mcp` are reachable only on the Docker network and through SSH port-forwards. Local mode (D38) needs no ingress at all: GitHub is polled and the tracker is a file. Docker networks: `core`, `memory`, and `sandbox` (no egress). Spot instances are used only for eval runs.
 
 ---
 
-## 2. `proofroom-server`: Go service design
+## 2. `heimdall-server`: Go service design
 
 ### 2.1 Process model
 
@@ -144,7 +157,7 @@ One binary, one process, these goroutine groups:
 | River queue `memory` | 4 | Graphiti episodes |
 | River periodic | n/a | Reminders, escalations, chain verification, pack expiry, room sync |
 | PG listener | 1 | `LISTEN change_updated` → SSE |
-| Switch stream | 1 | The coordinator's SSE stream, all open change rooms declared on the URL; reconnect on room open/archive; cursor in Postgres; `read_context` reconcile on gap, reconnect or boot. Turns only question-thread replies, `/proofroom` commands from mapped humans and Switch's unavailable reply into events (D46) |
+| Switch stream | 1 | The coordinator's SSE stream, all open change rooms declared on the URL; reconnect on room open/archive; cursor in Postgres; `read_context` reconcile on gap, reconnect or boot. Turns only question-thread replies, `/heimdall` commands from mapped humans and Switch's unavailable reply into events (D46) |
 | Reconciler | periodic, 5 min and at boot | Compare open PRs and In Progress tickets with local state; append missing events as `actor: reconcile` (D56) |
 
 Every remote call runs as a River job with an idempotency key, exponential backoff with jitter (max 8 attempts, max 10 min delay) and a dead-letter view in the admin dashboard.
@@ -152,9 +165,9 @@ Every remote call runs as a River job with an idempotency key, exponential backo
 ### 2.2 Package layout and dependency rule
 
 ```
-proofroom/                       one Go module
-  cmd/proofroom-server/          wiring only
-  cmd/proofroom/                 CLI: setup, admin, doctor, pack, eval, mcp (stdio bridge)
+heimdall/                       one Go module
+  cmd/heimdall-server/          wiring only
+  cmd/heimdall/                 CLI: setup, admin, doctor, pack, eval, mcp (stdio bridge)
   internal/domain/               pure: types, events, reducer, rules (no I/O, imports nothing internal)
     change/ finding/ evidence/ gate/ slop/ deliberation/ policy/ workflow/
   internal/app/                  use cases (HandleWebhook, SubmitReview, EvaluateGate ...)
@@ -220,17 +233,18 @@ type Memory interface {
 | Down | Behaviour |
 |---|---|
 | GitHub | Outbox retries; check keeps its last state; dashboard banner |
-| Jira | Trigger fallbacks (`/proofroom start KEY`, chat); rejection tickets queue |
+| Jira | Trigger fallbacks (`/heimdall start KEY`, chat); rejection tickets queue |
 | Switch | Posts queue; agents cannot be woken, so the gate stays red with `agents_unreachable` |
 | Graphiti/FalkorDB | `ask_knowledge` returns `unavailable`; no E3 evidence possible; episodes queue |
 | OpenRouter / model provider | VM tasks fail; one retry (OpenRouter can fall back across DeepSeek providers), then `unavailable` (red, never green) |
-| Docker | Jobs queue; gate red with `verification_pending` |
+| Docker / `heimdall-runner` | Jobs queue; gate red with `verification_pending` |
+| Heimdall itself | The required check stays "waiting" on GitHub, which blocks merges (fail closed). `/healthz` and a heartbeat banner show it; `docs/RUNBOOK.md` has `make recover` and a logged break-glass that toggles the branch protection rule. `gate.mode: advisory` publishes `neutral` instead of blocking if the gate itself misbehaves (D93) |
 
 Each adapter has a circuit breaker: 5 consecutive failures open it for 30 s, then one probe. Every call has a deadline (GitHub and Switch 10 s, Graphiti 20 s, sandbox per job).
 
 ### 2.6 Configuration
 
-`/etc/proofroom/proofroom.toml` holds infrastructure: URLs, secret file paths, worker counts, sandbox limits. `proofroom.yaml` in each repo holds policy and workflow (section 16). Secrets are read only from files under `/run/secrets`. Config is validated at boot, and the server refuses to start on any error.
+`/etc/heimdall/heimdall.toml` holds infrastructure: URLs, secret file paths, worker counts, sandbox limits. `heimdall.yaml` in each repo holds policy and workflow (section 16). Secrets are read only from files under `/etc/heimdall/secrets` (persistent, encrypted disk, mode 0400, owner `heimdall`), which containers see as Docker secrets at `/run/secrets` (D89). A reboot never loses them. Config is validated at boot, and the server refuses to start on any error.
 
 ---
 
@@ -324,7 +338,7 @@ CREATE TABLE cursor (            -- pollers (D64) and the Switch stream (D46)
 );
 ```
 
-Projections can be rebuilt with `proofroom admin rebuild`: `change`, `task`, `question`, `testset`, `review_request`, `review`, `finding`, `challenge`, `case`, `verdict`, `decision`, `approval`, `ci_status`, `run`, `person`, `agent`, `pack_meta`, `policy_version`, `usage`. Each has `last_event_seq`; projectors are idempotent upserts. The application role can only `INSERT` and `SELECT` on `event`, and triggers reject `UPDATE` and `DELETE`.
+Projections can be rebuilt with `heimdall admin rebuild`: `change`, `task`, `question`, `testset`, `review_request`, `review`, `finding`, `challenge`, `case`, `verdict`, `decision`, `approval`, `ci_status`, `run`, `person`, `agent`, `pack_meta`, `policy_version`, `usage`. Each has `last_event_seq`; projectors are idempotent upserts. The application role can only `INSERT` and `SELECT` on `event`, and triggers reject `UPDATE` and `DELETE`.
 
 ### 4.2 Hash chain
 
@@ -332,11 +346,11 @@ Projections can be rebuilt with `proofroom admin rebuild`: `change`, `task`, `qu
 
 ### 4.3 Blobs
 
-Stored at `/var/lib/proofroom/blobs/sha256/<2>/<2>/<hash>`, written atomically (temp file plus rename), with a metadata row for size, type, retention class and refcount. Packs are stored as `age` ciphertext only. Retention: logs and diffs 90 days; anything referenced by a decision, verdict or approval is kept; packs are deleted on revocation.
+Stored at `/var/lib/heimdall/blobs/sha256/<2>/<2>/<hash>`, written atomically (temp file plus rename), with a metadata row for size, type, retention class and refcount. Packs are stored as `age` ciphertext only. Retention: logs and diffs 90 days; anything referenced by a decision, verdict or approval is kept; packs are deleted on revocation.
 
 ### 4.4 Backups
 
-Nightly `pg_dump` and blob rsync off-box, plus a nightly FalkorDB RDB snapshot. `proofroom admin restore --verify` replays and checks the chain.
+Nightly `pg_dump` and blob rsync off-box, plus a nightly FalkorDB RDB snapshot. `heimdall admin restore --verify` replays and checks the chain.
 
 ---
 
@@ -353,7 +367,7 @@ workflow:
     - { id: write_tests, after: branch,      do: agent.task, with: { role: test-author, output: TestSubmission@1, deadline: 2h } }
     - { id: test_qa,     after: write_tests, do: sandbox.test_quality, with: { checks: [red_first, ac_coverage, flake, contracts] },
         on_fail: { retry: write_tests, max: 2, then: escalate } }
-    - { id: commit,      after: [test_qa, signoff], do: github.commit_tests, with: { dir: "tests/proofroom/{ticket}" } }
+    - { id: commit,      after: [test_qa, signoff], do: github.commit_tests, with: { dir: "tests/heimdall/{ticket}" } }
     - { id: wait_pr,     after: commit,      do: wait, with: { event: pr.opened } }
     - { id: slop,        after: wait_pr,     do: rule.slop, on_fail: reject }
     - { id: pick,        after: slop,        do: human.pick_reviewers, with: { default: suggest, timeout: 15m } }
@@ -399,15 +413,15 @@ Steps do no I/O themselves. They return events, effects and timers; the engine p
 | reviewer | VM (Switch remote host), `always_on`, one container and harness per person (D43, D44), OpenCode runtime | `deepseek/deepseek-v4-flash` | Review through that person's approved pack |
 | resolver | VM, OpenCode runtime | `deepseek/deepseek-v4-flash` (policy can name a stronger OpenRouter model) | Settle disputes using evidence and memory |
 | author's agent | developer's laptop | owner's choice | Build, fix, claim fixes |
-| coordinator | inside `proofroom-server`, not an LLM | n/a | Switch identity of the harness |
+| coordinator | inside `heimdall-server`, not an LLM | n/a | Switch identity of the harness |
 
-Each LLM role is a skill plus the `proofroom` MCP tools. **VM agents run on OpenCode with OpenRouter (D72)**: Switch supports OpenCode agents (V18), OpenCode talks to OpenRouter natively, and Claude Code is not used on the VM because it only officially supports Anthropic models. No Anthropic API is used anywhere. The skills stay portable to Claude Code and Codex for developers' own laptops.
+Each LLM role is a skill plus the `heimdall` MCP tools. **VM agents run on OpenCode with OpenRouter (D72)**: Switch supports OpenCode agents (V18), OpenCode talks to OpenRouter natively, and Claude Code is not used on the VM because it only officially supports Anthropic models. No Anthropic API is used anywhere. The skills stay portable to Claude Code and Codex for developers' own laptops.
 
 ### 6.2 Task lifecycle
 
-1. `task.assigned` (deadline, budget, bundle hash) → the outbox posts an addressed room message: `@bob-reviewer task tsk_01J… — call proofroom_get_task`. An agent has at most one active task; others queue (D80).
-2. The agent calls `proofroom_get_task` (its token is bound to agent and role) and receives the envelope.
-3. `proofroom_ack` within 60 s. Otherwise `task.timed_out` follows; the server restarts that agent's systemd unit once (`task.restarted`) and re-wakes it; if it still does not ack, the request is marked `unavailable` (gate red, waivable by an approver, D43). Switch's own "unavailable" auto-reply (V16) skips straight to the restart.
+1. `task.assigned` (deadline, budget, bundle hash) → the outbox posts an addressed room message: `@bob-reviewer task tsk_01J… — call heimdall_get_task`. An agent has at most one active task; others queue (D80).
+2. The agent calls `heimdall_get_task` (its token is bound to agent and role) and receives the envelope.
+3. `heimdall_ack` within 60 s. Otherwise `task.timed_out` follows; the server restarts that agent's systemd unit once (`task.restarted`) and re-wakes it; if it still does not ack, the request is marked `unavailable` (gate red, waivable by an approver, D43). Switch's own "unavailable" auto-reply (V16) skips straight to the restart.
 4. The agent submits with its role's tool. Schema and semantic validation run (6.5). On failure the agent gets structured errors and **one** repair attempt; a second failure means `task.failed`.
 5. A late submission is accepted but marked late. The first valid submission wins; later ones are attached as supplementary.
 6. After every task the server sends Switch's reset command for that agent's session, so no context carries into the next task (D80; this replaces D45's "context can carry between tasks").
@@ -423,7 +437,7 @@ Each LLM role is a skill plus the `proofroom` MCP tools. **VM agents run on Open
     "diff": "blob:sha256:...",
     "files_changed": ["internal/refunds/refunds.go", "api/openapi.yaml"],
     "acceptance_criteria": [{ "id": "AC2", "ref": "blob:sha256:..." }],
-    "ci": [{ "name": "proofroom/acceptance", "conclusion": "success" }],
+    "ci": [{ "name": "heimdall/acceptance", "conclusion": "success" }],
     "untrusted": [{ "source": "pr_body", "ref": "blob:sha256:..." }, { "source": "jira_description", "ref": "blob:sha256:..." }]
   },
   "context_budget_tokens": 150000, "output_schema": "Review@1", "deadline": "2026-11-05T14:00:00Z"
@@ -432,7 +446,7 @@ Each LLM role is a skill plus the `proofroom` MCP tools. **VM agents run on Open
 
 ### 6.4 Context engineering
 
-`proofroom_get_task` returns a server-built, deterministic **context bundle** per role, stable parts first so they cache, under a cap (test-author 40k, reviewer 60k, resolver 30k tokens). Tools are for drilling down, not discovery. The bundle is stored as a blob and its hash is recorded on `task.assigned`, so evals replay exactly what the agent saw. Bundle contents per role are in D45. Entity extraction for memory queries is plain code (paths, routes, identifiers from `oasdiff` and `go/ast`). Each agent's working directory, tool allowlist and egress are fixed by the per-role harness (D44): no repo checkout, no GitHub credentials, code only through `read_code` at the SHA the role allows.
+`heimdall_get_task` returns a server-built, deterministic **context bundle** per role, stable parts first so they cache, under a cap (test-author 40k, reviewer 60k, resolver 30k tokens). Tools are for drilling down, not discovery. The bundle is stored as a blob and its hash is recorded on `task.assigned`, so evals replay exactly what the agent saw. Bundle contents per role are in D45. Entity extraction for memory queries is plain code (paths, routes, identifiers from `oasdiff` and `go/ast`). Each agent's working directory, tool allowlist and egress are fixed by the per-role harness (D44): no repo checkout, no GitHub credentials, code only through `read_code` at the SHA the role allows.
 
 What each role may pull beyond its bundle, in priority order:
 
@@ -476,7 +490,7 @@ Rules every skill states:
 | resolver | 15 disputes with known outcomes | accuracy, correct `needs_human` rate | accuracy ≥ 0.8, zero wrong auto-applies |
 | injection | 12 payloads across every untrusted source | state changes | 0 |
 
-`proofroom eval run --suite reviewer --skill reviewer@1.1.0` runs headless in sandboxes. Skill versions are pinned in policy, and a new version ships only if it beats the old one on its suite. Results show in the admin dashboard.
+`heimdall eval run --suite reviewer --skill reviewer@1.1.0` runs headless in sandboxes. Skill versions are pinned in policy, and a new version ships only if it beats the old one on its suite. Results show in the admin dashboard.
 
 ### 6.8 Agent adapters
 
@@ -492,15 +506,19 @@ How the VM agents actually run, so they stay stable:
 | Concern | Rule |
 |---|---|
 | Runtime | OpenCode (Switch provider `opencode`), model from OpenRouter per policy, temperature 0.2 |
-| Process | One Unix user and one systemd unit per agent (`proofroom-agent@bob-reviewer`), running the session start command Switch issues for that agent (`!run-cmd`, V16). `Restart=on-failure`, start on boot |
-| Working directory | The D44 harness: `AGENTS.md` (role rules), `opencode.json` (proofroom MCP server only; `bash`, `webfetch` and edits outside `./scratch` denied), `.opencode/skills/<role>/`, `pack/` on tmpfs (reviewers), `scratch/` wiped per task. No repo checkout, no GitHub or Jira credentials |
-| Network | nftables rules matched on the agent's uid allow only the Switch server, `proofroom-server` and `openrouter.ai`. This holds even if an OpenCode permission key is wrong |
+| Process | One Unix user and one systemd unit per agent (`heimdall-agent@bob-reviewer`), running the session start command Switch issues for that agent (`!run-cmd`, V16). `Restart=on-failure`, start on boot |
+| Working directory | The D44 harness: `AGENTS.md` (role rules), `opencode.json` (heimdall MCP server only; `bash`, `webfetch` and edits outside `./scratch` denied), `.opencode/skills/<role>/`, `pack/` on tmpfs (reviewers), `scratch/` wiped per task. No repo checkout, no GitHub or Jira credentials |
+| Network | nftables rules matched on the agent's uid allow only the Switch server, `heimdall-server` and `openrouter.ai`. This holds even if an OpenCode permission key is wrong |
 | Concurrency | One active task per agent; further tasks queue in River (unique key `agent:<name>`) |
 | Isolation between tasks | After each task the server sends Switch's session reset for that agent, so nothing from one change leaks into the next and every task starts from its bundle |
 | Liveness | Ack within 60 s, else `systemctl restart` once, else `unavailable` (gate red, waivable) |
-| Output | Only through `proofroom_*` tools; schema and semantic checks, one repair attempt (6.2, 6.5) |
+| Output | Only through `heimdall_*` tools; schema and semantic checks, one repair attempt (6.2, 6.5) |
 | Cost | Per-role OpenRouter key with a credit limit (D74) |
-| Spike | S14: inside a harness, `git clone`, `curl api.github.com` and a non-allowlisted host all fail; a `proofroom_*` call works; a reset clears the session |
+| Spike | S14: inside a harness, `git clone`, `curl api.github.com` and a non-allowlisted host all fail; a `heimdall_*` call works; a reset clears the session |
+| Lifecycle owner | systemd owns the process. Switch's agent controller must not also restart these agents; S17 settles how, and if Switch insists on owning the process we drop our units and keep the uid egress rules (D92) |
+| No sudo | One rootless container per agent on an internal Docker network with an allowlisting egress proxy replaces the Unix user and nftables rules (D90) |
+| Metadata | nftables drops traffic from every agent uid to `169.254.169.254` (D86) |
+| Profiler | A fourth LLM role (OpenCode, same harness rules) that reads repo files through `read_code` and drafts the repo profile and CI proposal (D98, D99) |
 
 ---
 
@@ -509,7 +527,7 @@ How the VM agents actually run, so they stay stable:
 ```mermaid
 sequenceDiagram
   participant J as Jira
-  participant P as proofroom-server
+  participant P as heimdall-server
   participant R as Room (Mattermost)
   participant T as test-author
   participant M as Memory
@@ -535,7 +553,7 @@ sequenceDiagram
   alt fail
     P->>T: structured reasons (≤2 retries)
   else pass
-    P->>G: commit tests/proofroom/PAY-142/* (as App), pin tree hash
+    P->>G: commit tests/heimdall/PAY-142/* (as App), pin tree hash
     P->>R: "6 failing tests ready"
   end
 ```
@@ -545,14 +563,14 @@ Rules:
 - The test-author reads only the base branch.
 - At most 3 questions. If unanswered after `timeouts.question` (4 h), it proceeds on stated assumptions, written into the test header and the room.
 - `ticket.changed` on description or AC re-runs W1 as a delta and re-pins.
-- Test sign-off depends on the domain (D33). If the test-author's `expected_paths` touch a domain listed in `tests.signoff_domains` (default: the human-only domains), a domain approver must approve the tests (dashboard or `/proofroom approve-tests`) before the developer is told to build. Everywhere else no sign-off is needed. The developer can always challenge a test (section 11).
+- Test sign-off depends on the domain (D33). If the test-author's `expected_paths` touch a domain listed in `tests.signoff_domains` (default: the human-only domains), a domain approver must approve the tests (dashboard or `/heimdall approve-tests`) before the developer is told to build. Everywhere else no sign-off is needed. The developer can always challenge a test (section 11).
 
 ## 8. W2: PR to merge
 
 ```mermaid
 sequenceDiagram
   participant G as GitHub
-  participant P as proofroom-server
+  participant P as heimdall-server
   participant S as Sandbox
   participant R as Room
   participant A as Author
@@ -567,7 +585,7 @@ sequenceDiagram
   else pass
     P->>G: gate = in_progress
     P->>R: @author pick reviewers (default in 15m)
-    A->>P: pick (/proofroom review on the PR or in the room)
+    A->>P: pick (/heimdall review on the PR or in the room)
     P->>RV: tasks (ack 60s, else restart once, then unavailable)
     par
       RV->>P: reviews + findings
@@ -588,7 +606,7 @@ sequenceDiagram
 
 ### 8.1 Reviewer selection
 
-- **Who picks:** the PR author, with `/proofroom review @a @b` on the PR or in the room from their linked account. The dashboard picker is Later (D53).
+- **Who picks:** the PR author, with `/heimdall review @a @b` on the PR or in the room from their linked account. The dashboard picker is Later (D53).
 - **What is picked:** people. Each resolves to that person's reviewer agent on the VM, which runs with their approved pack (D43). Laptops are used only at setup, to build the pack.
 - **Default:** `reviewers.count = 3`, configurable per repo and path. If nobody picks before `pick_timeout`, the default applies: CODEOWNERS of the changed paths, then top recent committers to them, excluding the author.
 - **Required reviewers from policy** are added and locked. Only policy can exceed the count.
@@ -624,17 +642,17 @@ Edges: `DECIDED`, `APPLIES_TO`, `CAUSED_BY`, `DEPENDS_ON`, `OWNS`, `SUPERSEDES`,
 | Merged change summary | `change.merged` | DeepSeek V4 Flash summary: what changed, AC, findings resolved | owning team | observed |
 | Resolved findings | `finding.state_changed → resolved/upheld` | claim and resolution | owning team | observed |
 | Jira ticket | `change.triggered`, `ticket.changed` | summary, AC, links | project team | observed |
-| Incident | Jira type Incident, or `/proofroom incident` | description, cause, fix | owning team + shared | observed (confirmed when a postmortem is accepted) |
+| Incident | Jira type Incident, or `/heimdall incident` | description, cause, fix | owning team + shared | observed (confirmed when a postmortem is accepted) |
 | Change room digest (D65) | change merged or rejected | one digest of the room from Switch history (`read_context`, V35): Q&A, decisions and commands, findings summary, outcome | owning team | decisions confirmed, rest observed |
 | Team channels (D65) | rooms in `memory.rooms`, every 30 min; only threads with policy keywords or `!remember` | thread | room team | observed |
 | ADRs and docs | push to the default branch | document | repo team + shared | confirmed if ADR is accepted |
-| Backfill | `proofroom admin backfill` | 12 months of merged PRs with reviews, incidents, ADRs | as above | as above |
+| Backfill | `heimdall admin backfill` | 12 months of merged PRs with reviews, incidents, ADRs | as above | as above |
 
 The server tracks status for each episode (Graphiti stores the fact; the server stores which source produced it). Episodes go through the outbox with key `episode:<source>:<id>:<version>`. Personal packs are never ingested.
 
 ### 9.4 Query and scoping
 
-Agents never reach Graphiti. `proofroom_ask_knowledge(question, entities?, as_of?)` works like this:
+Agents never reach Graphiti. `heimdall_ask_knowledge(question, entities?, as_of?)` works like this:
 1. Resolve the caller → person → teams → `group_ids = teams ∪ {shared}`. The server sets these; callers cannot.
 2. Run a Graphiti fact and node search with those groups, limit 20.
 3. Label each item with the D51 rules: `confirmed` (at least one confirmed source episode, not validly invalidated as of `as_of`, default the head commit time), `superseded` (invalidated by a confirmed episode), `contested` (a confirmed fact an observed episode contradicts; still confirmed, shown with the contradicting source), otherwise `observed`.
@@ -646,7 +664,7 @@ Only confirmed, non-superseded items are E3 evidence.
 ### 9.5 Cost, performance, failure
 
 - DeepSeek V4 Flash extraction, selective sources, live episodes sent in order, backfill batched.
-- Local embedder: `qwen3-embedding:0.6b` (639 MB) on Ollama, `num_ctx` capped at 2048 (D31). Graphiti MCP config (D66, verified V37, V38): `llm.provider: openai` with `api_url: https://openrouter.ai/api/v1` and model `deepseek/deepseek-v4-flash` (D73; Graphiti needs JSON output, so S13 checks the chosen variant honours `response_format`), `embedder.provider: openai`, `embedder.providers.openai.api_url: http://ollama:11434/v1`, dummy key, `embedder.model: qwen3-embedding:0.6b`, `embedder.dimensions: 1024`, `database.provider: falkordb`. The Graphiti MCP server has no auth, so it stays on the internal `memory` network. If its search tools cannot filter by `group_ids` (S13), the server uses a small Python sidecar around `graphiti_core`, whose `search()` does (V39). `embeddinggemma:300m` is the fallback model.
+- Hosted embeddings (D87, V50): `mongodb/voyage-4-lite` through OpenRouter, 1024 dimensions at $0.02 per million tokens; free fallback `nvidia/nemotron-3.5-embed-1b:free` (2048 dimensions, so it needs a fresh index and must be chosen before backfill). Ollama with `qwen3-embedding:0.6b` stays an optional compose profile for offline mode. Graphiti MCP config (D66, verified V37, V38): `llm.provider: openai` with `api_url: https://openrouter.ai/api/v1` and model `deepseek/deepseek-v4-flash` (D73; Graphiti needs JSON output, so S13 checks the chosen variant honours `response_format`), `embedder.provider: openai`, `embedder.providers.openai.api_url: https://openrouter.ai/api/v1`, `embedder.model: mongodb/voyage-4-lite`, `embedder.dimensions: 1024`, `database.provider: falkordb`. The Graphiti MCP server has no auth, so it stays on the internal `memory` network. If its search tools cannot filter by `group_ids` (S13), the server uses a small Python sidecar around `graphiti_core`, whose `search()` does (V39).
 - Query cache of 60 s per (groups, normalized question).
 - If Graphiti is down: `unavailable`, no E3, episodes stay queued, dashboard alert.
 - **Alternative behind the same port:** Cognee, if Graphiti disappoints.
@@ -701,7 +719,7 @@ Every rule or fact line has provenance (`[git:3f2a1c]`, `[pr:#88]`, `[transcript
 8. **Upload** to blobs. The server keeps only metadata in Postgres.
 9. **Reviewer agent start:** decrypt into the agent's tmpfs, verify hashes, refuse packs older than `pack.max_age_days` (14). Findings from an agent with a stale pack are unverified.
 
-`proofroom pack refresh` rebuilds incrementally. Revocation deletes blobs, stops the person's reviewer agent and revokes tokens.
+`heimdall pack refresh` rebuilds incrementally. Revocation deletes blobs, stops the person's reviewer agent and revokes tokens.
 
 ---
 
@@ -761,27 +779,27 @@ All of these must hold:
 - The domain is not in `human_only_domains` (default `auth`, `money_movement`, `data_deletion`), and severity is below critical.
 - Confidence is `high`.
 
-Otherwise the verdict becomes a recommendation on a card. Every verdict is an event and a memory episode. An approver can reverse an applied verdict with `/proofroom override <case> <reason>`.
+Otherwise the verdict becomes a recommendation on a card. Every verdict is an event and a memory episode. An approver can reverse an applied verdict with `/heimdall override <case> <reason>`.
 
 ### 11.5 Human decisions
 
 Decisions arrive from strict-grammar GitHub comments by a verified actor, or (D47) the same grammar posted in the change room by a human whose Switch-linked Mattermost account maps to `people.<p>.chat`. Final merge approval is always a GitHub PR review. The dashboard decision inbox is Later (D53).
 
 ```
-/proofroom review @a @b @c                          author
-/proofroom uphold <finding>                         approver or domain owner
-/proofroom dismiss <finding> <reason ≥15 chars>     filing reviewer's person or approver
-/proofroom spec-change <text>                       approver
-/proofroom override <case> <reason>                 approver
-/proofroom waive-reviewer @x <reason>               approver
-/proofroom reject <reason>                          approver
-/proofroom approve-tests                            domain approver (sensitive domains, D33)
-/proofroom incident <text>                          member (records an incident episode)
-/proofroom start <TICKET>                           member (trigger fallback)
-/proofroom forget <memory_ref> <reason>             approver (invalidate a poisoned fact)
+/heimdall review @a @b @c                          author
+/heimdall uphold <finding>                         approver or domain owner
+/heimdall dismiss <finding> <reason ≥15 chars>     filing reviewer's person or approver
+/heimdall spec-change <text>                       approver
+/heimdall override <case> <reason>                 approver
+/heimdall waive-reviewer @x <reason>               approver
+/heimdall reject <reason>                          approver
+/heimdall approve-tests                            domain approver (sensitive domains, D33)
+/heimdall incident <text>                          member (records an incident episode)
+/heimdall start <TICKET>                           member (trigger fallback)
+/heimdall forget <memory_ref> <reason>             approver (invalidate a poisoned fact)
 ```
 
-Every command is also accepted as `!proofroom …`, because Teams can intercept messages that start with `/` (D81). Edited comments and unrecognized text are ignored and never sent to a model. Without D47, chat replies count only for answering questions and picking reviewers (V7).
+Every command is also accepted as `!heimdall …`, because Teams can intercept messages that start with `/` (D81). Edited comments and unrecognized text are ignored and never sent to a model. Without D47, chat replies count only for answering questions and picking reviewers (V7).
 
 ---
 
@@ -792,35 +810,54 @@ Every command is also accepted as `!proofroom …`, because Teams can intercept 
 | Check | When | Pass |
 |---|---|---|
 | Red-first | submission | every test fails on base with JUnit `<failure>`, zero `<error>` |
-| AC coverage | submission | every AC id tagged by at least one test (`// proofroom:AC2`) |
+| AC coverage | submission | every AC id tagged by at least one test (`// heimdall:AC2`) |
 | Flake | submission and PR | 3 runs; unstable tests quarantined and excluded from the gate |
-| Seam (contracts) | submission | tests import only `tests.seam`, the standard library and `tests.allowed_imports` (`go list -deps -test`), and exercise behaviour over HTTP. A missing route gives an assertion failure; a compile error is an `<error>` and rejects the submission with compiler output (D39) |
-| Green | PR | `proofroom/acceptance` CI job passes on head |
-| Mutation (Later) | PR | Go: `go-mutesting --git-diff-lines` or a wrapper around Gremlins, which has no diff mode (V47); Stryker (TS) or mutmut (Python) on changed lines, proofroom tests only. The score is shown and tracked; below 0.6 the change gets `tests_too_weak` and the test-author is re-woken to strengthen tests. It does not block (`tests.mutation_blocks: false`) |
+| Seam (contracts) | submission | tests import only `tests.seam`, the standard library and `tests.allowed_imports` (the Go profile checks this with `go list -deps -test`; other profiles declare their own import rule under `evidence`, D98), and exercise behaviour over HTTP. A missing route gives an assertion failure; a compile error is an `<error>` and rejects the submission with compiler output (D39) |
+| Green | PR | `heimdall/acceptance` CI job passes on head |
+| Mutation (Later) | PR | Go: `go-mutesting --git-diff-lines` or a wrapper around Gremlins, which has no diff mode (V47); Stryker (TS) or mutmut (Python) on changed lines, heimdall tests only. The score is shown and tracked; below 0.6 the change gets `tests_too_weak` and the test-author is re-woken to strengthen tests. It does not block (`tests.mutation_blocks: false`) |
 
 ### 12.2 Sandbox
 
 | Job | Command (Go example) | Limits |
 |---|---|---|
-| `red_first` | `gotestsum --junitfile /out/junit.xml -- ./tests/proofroom/...` on base + tests | 2 CPU, 2 GB, 180 s |
+| `red_first` | `gotestsum --junitfile /out/junit.xml -- ./tests/heimdall/...` on base + tests | 2 CPU, 2 GB, 180 s |
 | `repro` | same on head + finding test | 2 CPU, 2 GB, 120 s |
 | `static` | `go vet`, `staticcheck`, `semgrep --config <pinned>` on changed files | 2 CPU, 2 GB, 180 s |
 | `contract` | `oasdiff breaking base.yaml head.yaml -f json` | 1 CPU, 512 MB, 30 s |
 | `mutation` (Later) | `go-mutesting --git-diff-lines` on changed lines (V47) | 2 CPU, 2 GB, 600 s |
 
 Isolation:
-- Pinned images (`proofroom-sandbox-go`, `-node`, `-python`), one container per job.
-- Dependencies come from a read-only module cache volume, warmed by a separate fetch job. That is the only job with egress, allowlisted to the Go proxy, npm and PyPI.
+- Images come from an allowlist in `heimdall.toml` and are pinned by digest (Go, Python, Node, JVM and a generic base), one container per job. A profile cannot name any other image (D98).
+- **Untrusted code never runs in `heimdall-server`.** The server hands jobs to `heimdall-runner` over a Unix socket (`run(profile, tarball sha)` returns a JUnit summary and a log blob). The runner has its own user, a rootless container runtime and none of Heimdall's secrets, and **the server never holds the Docker socket**. Containers run under gVisor (`runsc`) if S18 passes, otherwise rootless with the default seccomp profile (D91). Jobs cannot reach the metadata address (D86).
+- Dependencies come from a read-only module cache volume, warmed by a separate fetch job. That is the only job with egress, allowlisted to the package registries the profile needs (Go proxy, npm, PyPI, Maven Central, crates.io).
 - Execution runs with `--network none`, a read-only root, tmpfs `/work` and `/out`, `--cap-drop ALL`, `no-new-privileges`, the default seccomp profile, a 512 PID limit, a non-root user, no secrets and no Docker socket.
 - Source is a tarball the server fetches at the exact SHA.
 - Output is the parsed JUnit summary plus logs capped at 5 MB in blobs. Agents get summaries; raw logs only via `read_untrusted`.
+
+### 12.2b Repo profile (D98, D99)
+
+The sandbox is generic. Each repo has `.heimdall/profile.yaml`:
+
+```yaml
+languages: [python, javascript]
+image: python:3.12-slim@sha256:...        # must be on the allowlist
+setup: pip install -r backend/requirements.txt
+test: pytest backend/tests --junitxml=/out/junit.xml
+services:                                  # throwaway containers, private network, no egress
+  - { name: db, image: "postgres:16-alpine@sha256:...", env: { POSTGRES_PASSWORD: test-only } }
+evidence:                                  # per-profile tools; the Go profile defaults to go vet, staticcheck, oasdiff, go list -deps
+  - { id: compose, run: "docker compose config -q", tier: E2 }
+paths: { tests: tests/heimdall }
+```
+
+Flow: deterministic detectors (marker files such as `go.mod`, `pyproject.toml`, `package.json`, `pom.xml`, `Cargo.toml`, `Dockerfile`, `docker-compose.yml`) build a draft; the **profiler** agent fills the gaps through `read_code` at a SHA; a **PR** proposes the profile (and, for a repo without CI, `.github/workflows/heimdall-acceptance.yml` and `heimdall.yaml`); a human merges it; Heimdall validates it (image on the allowlist, no network at execution, limits, and a trial run that produces JUnit) before the sandbox uses it. CD is out of scope, and an agent never merges its own profile.
 
 ### 12.3 Slop rule (pure)
 
 Inputs are GitHub API data plus policy. A PR passes only if:
 - the ticket key appears in the title, branch or body;
 - changed lines minus ignored paths and minus `tests.dir` are ≤ `max_changed_lines` (D49);
-- tests changed, or proofroom tests exist for the ticket;
+- tests changed, or heimdall tests exist for the ticket;
 - changed paths outside `tests.dir` are within the test-author's `expected_paths`, or the PR body has a non-empty justification section, which is never interpreted.
 
 ### 12.4 Merge rule (pure)
@@ -830,7 +867,7 @@ ok ⇔ ticket linked
    ∧ slop.passed(head)
    ∧ testset.verified ∧ testset.ac_covered ∧ (¬sensitive(testset) ∨ testset.approved)
    ∧ tree_hash(head, tests.dir) = testset.tree_hash
-   ∧ ci(head, proofroom/acceptance) = success ∧ ∀c ∈ ci_required: ci(head, c) = success
+   ∧ ci(head, heimdall/acceptance) = success ∧ ∀c ∈ ci_required: ci(head, c) = success
    ∧ ∀r ∈ review_requests: covered(r, head) ∨ waived(r)
    ∧ blocking_set = ∅ ∧ no case awaiting a human
    ∧ ∃ approval: APPROVED ∧ commit = head ∧ login ≠ author ∧ login ∈ approvers(domains(changed paths))
@@ -844,15 +881,16 @@ ok ⇔ ticket linked
 ## 13. Integrations
 
 **GitHub App.**
-- Permissions: checks write; contents write, limited in code to `tests/proofroom/**` on ticket branches and to memory and policy PRs; pull requests read/write; issues read/write; metadata read.
+- Permissions: checks write; contents write, limited in code to `tests/heimdall/**` on ticket branches and to memory and policy PRs; pull requests read/write; issues read/write; metadata read.
 - Events: `pull_request`, `pull_request_review`, `issue_comment`, `check_run`, `check_suite`, `push` (default branch), `create`.
 - Rate limits: an ETag read cache keyed by SHA and a token bucket per installation.
-- Repo setup by `admin init`, through a PR: required checks `proofroom/gate` and `proofroom/acceptance` with admin bypass off; "dismiss stale approvals on new commits" on; CODEOWNERS on `tests/proofroom/**`, `proofroom.yaml` and `.github/workflows/**` naming the human approvers team (Apps cannot be code owners; the tree-hash pin is the primary control, D49); the reusable `proofroom-acceptance.yml`.
+- **Narrowed tokens (D96, V51):** two token sources. `reader` (contents, pull requests, issues, checks, all read) serves polling and bundles. `writer(op, repo)` is minted on demand with only that operation's permission and only that repository (`checks:write` for check runs, `contents:write` for the tests branch, `pull_requests:write` and `issues:write` for comments) and cached for at most 50 minutes. The App itself holds only the five agreed permissions, and `heimdall doctor` reads the installation's real permissions from the API (V54).
+- Repo setup by `admin init`, through a PR: required checks `heimdall/gate` and `heimdall/acceptance` with admin bypass off; "dismiss stale approvals on new commits" on; CODEOWNERS on `tests/heimdall/**`, `heimdall.yaml` and `.github/workflows/**` naming the human approvers team (Apps cannot be code owners; the tree-hash pin is the primary control, D49); the reusable `heimdall-acceptance.yml`.
 - `github.mode: poll | webhook`, default `poll` (D64). Poll reads per repo every 10 s: open PRs, issue comments since the cursor, and reviews and check runs only for PRs whose head SHA or `updated_at` changed; about 1,000 to 2,000 requests per hour against at least 5,000 (D69). ETags help little because installation tokens rotate hourly. On 403/429 the adapter honours `Retry-After`/`x-ratelimit-reset` and doubles its interval.
 
 **Tracker.** Port with two adapters: Jira Cloud and `file` (`seed/tickets/<KEY>.md`). AC are the bullets under an "Acceptance criteria" heading; the server assigns `AC1..n` and tracks each by a hash of its text (D50).
 
-**Jira.** A JQL poll every 30 s (`project = PAY AND status changed to "In Progress" after <cursor>`) with a human assignee triggers a change; webhook mode is optional. Reads use REST with a project-scoped token. Writes (rejection tickets, comments) are gated by policy. A JQL backfill feeds memory.
+**Jira.** A JQL poll every 30 s (`project = PAY AND status changed to "In Progress" after <cursor>`) with a human assignee triggers a change; webhook mode is optional. Reads use REST v3 with an API token (a bot user or scoped token is Later). **Each poll re-queries from `cursor - 10 min` and deduplicates by (issue key, changelog id)**, because JQL resolves to the minute and the search index can lag (V55, S20); the 5-minute reconciler stays. Descriptions arrive as Atlassian Document Format (V52), so a small walker (`internal/adapters/jira/adf`) yields text and the bullets under a heading named "Acceptance criteria", with golden tests on real KAN tickets (D97). Writes (rejection tickets, comments) are gated by policy. A JQL backfill feeds memory.
 
 **Switch.**
 - The coordinator registers once (V1).
@@ -861,33 +899,35 @@ ok ⇔ ticket linked
 - No Switch tasks (V4).
 
 **Chat.**
+- **Capability-driven (D94, S19).** The `Chat` port reports `Capabilities{Threads, Cards, Buttons, MentionsNotify, DirectMessages}`. The application layer uses the richest form the platform supports and **always also posts the text command** (`!heimdall approve <sha7>`). `!heimdall` is the canonical chat syntax; `/heimdall` stays valid in GitHub comments. Mattermost and Teams are tested by us; Slack, Discord and Telegram work through Switch and are documented as untested.
+- **People mapping (D95).** `people:` in `heimdall.yaml` maps chat identity, GitHub login and Jira account id. Commands from unmapped humans are ignored and answered with how to link. An approval needs a mapped human, an allowed role and the head SHA.
 - One room per change.
 - Milestones posted: opened, tests ready, PR received, reviewers picked, findings summary, escalation, approved, merged or rejected.
 - @-mentions only for questions and decisions.
 - `verbosity: milestones | detailed`, plus per-person quiet hours.
 - `!agents-status` and `!run-cmd` are documented for teams (V16).
-- **Teams (D79, D81):** rooms are created on the bridge named in `chat.bridge`. In Teams, agent messages render as cards and **@-mentions from agents are plain text**, so humans are not notified by them; the coordinator therefore also posts every question and decision card as a reply in the channel thread the person follows, and the dashboard lists open asks. Commands work as `!proofroom …`.
+- **Teams (D79, D81):** rooms are created on the bridge named in `chat.bridge`. In Teams, agent messages render as cards and **@-mentions from agents are plain text**, so humans are not notified by them; the coordinator therefore also posts every question and decision card as a reply in the channel thread the person follows, and the dashboard lists open asks. Commands work as `!heimdall …`.
 
 ---
 
 ## 14. Interfaces
 
-### 14.1 MCP tools (`/mcp` streamable HTTP; `proofroom mcp` is a stdio bridge)
+### 14.1 MCP tools (`/mcp` streamable HTTP; `heimdall mcp` is a stdio bridge)
 
 | Tool | Roles |
 |---|---|
-| `proofroom_get_task`, `proofroom_ack`, `proofroom_get_change` | all |
-| `proofroom_read_untrusted(ref)` | all |
-| `proofroom_read_code(path, sha, range?)` | all (test-author: base SHA only) |
-| `proofroom_ask_knowledge(question, entities?, as_of?)` | all |
-| `proofroom_run_check(kind, args)` | reviewer, resolver (counts toward budget) |
-| `proofroom_submit_tests` | test-author |
-| `proofroom_ask_humans(questions ≤3)` | test-author, resolver |
-| `proofroom_submit_review` | reviewer |
-| `proofroom_challenge(finding, evidence)` | reviewer, author |
-| `proofroom_claim_fix(finding, sha, evidence)` | author |
-| `proofroom_submit_verdict` | resolver |
-| `proofroom_report_progress(text)` | all |
+| `heimdall_get_task`, `heimdall_ack`, `heimdall_get_change` | all |
+| `heimdall_read_untrusted(ref)` | all |
+| `heimdall_read_code(path, sha, range?)` | all (test-author: base SHA only) |
+| `heimdall_ask_knowledge(question, entities?, as_of?)` | all |
+| `heimdall_run_check(kind, args)` | reviewer, resolver (counts toward budget) |
+| `heimdall_submit_tests` | test-author |
+| `heimdall_ask_humans(questions ≤3)` | test-author, resolver |
+| `heimdall_submit_review` | reviewer |
+| `heimdall_challenge(finding, evidence)` | reviewer, author |
+| `heimdall_claim_fix(finding, sha, evidence)` | author |
+| `heimdall_submit_verdict` | resolver |
+| `heimdall_report_progress(text)` | all |
 
 Schemas are generated from Go structs and versioned (`Review@1`). The previous version stays accepted for one release.
 
@@ -924,7 +964,7 @@ type Verdict struct {
 |---|---|---|
 | `POST /webhooks/github`, `/webhooks/jira` (webhook mode only) | HMAC | ingest |
 | `/mcp` | agent bearer | agent tools |
-| `/`, `/changes/:id` | none in the build: reachable only through the IAP port-forward (D53, D64) | read-only dashboard (htmx partials) |
+| `/`, `/changes/:id` | none in the build: reachable only through the SSH port-forward (D53, D64) | read-only dashboard (htmx partials) |
 | `/inbox`, `/admin/*` (Later) | GitHub OAuth session + CSRF | decision inbox, admin |
 | `/sse/changes/:id` | same as the dashboard | live updates |
 | `/healthz`, `/readyz` | none | probes (`readyz` checks Postgres, River, Docker, Graphiti) |
@@ -966,7 +1006,7 @@ Attackers: an outside PR author, a careless or malicious insider, poisoned conte
 | Verification | Only harness-verified E1–E3 evidence blocks; verdicts apply only under 11.4; free text never changes state |
 | Output filter | Secret scan, pack-overlap cut, link-to-text rewrite and @-mention stripping on every submission and progress message |
 | Detection | Heuristics (instruction phrases, role markers, hidden Unicode, zero-width characters, HTML comments) flag inputs and show `injection_suspected`; used for visibility, not relied on for safety |
-| Memory hygiene | Only decisions, verdicts and accepted ADRs are confirmed; chat and PR text stay observed; episodes keep their source; `/proofroom forget` invalidates poisoned facts |
+| Memory hygiene | Only decisions, verdicts and accepted ADRs are confirmed; chat and PR text stay observed; episodes keep their source; `/heimdall forget` invalidates poisoned facts |
 | Regression | The injection eval suite runs in CI; any state change fails the build |
 
 ### 15.3 Developers' context
@@ -985,10 +1025,11 @@ Attackers: an outside PR author, a careless or malicious insider, poisoned conte
 |---|---|
 | Webhooks | HMAC-SHA256 over the raw body, constant-time compare, delivery-id dedup, 5-min window, 1 MB cap, 30 req/s per source |
 | Agent tokens | 32 random bytes, stored as SHA-256, bound to agent, role and person, valid only for assigned tasks, rotated on pack refresh, revocable |
-| Ingress | None (D64): GitHub and Jira are polled; dashboard and `/mcp` via IAP SSH port-forward and the Docker network only; GCP firewall denies all inbound except IAP SSH |
-| Dashboard | Build: read-only, no login, private (IAP forward only). Later: GitHub OAuth with PKCE, roles from policy, `HttpOnly`/`Secure`/`SameSite=Lax` cookies, CSRF tokens, CSP `default-src 'self'` |
-| GitHub writes | Path and branch allowlist in the adapter |
-| Secrets | `/run/secrets`, mode 0400; never in logs (a slog redaction handler), rooms, packs or blobs; gitleaks in CI |
+| Ingress | None (D64): GitHub and Jira are polled; dashboard and `/mcp` via SSH port-forward and the Docker network only; the AWS security group allows inbound SSH only from team addresses; IMDSv2 with hop limit 1, and the metadata address is blocked for agents and sandbox containers (D86) |
+| Dashboard | Build: read-only, no login, private (SSH forward only). Later: GitHub OAuth with PKCE, roles from policy, `HttpOnly`/`Secure`/`SameSite=Lax` cookies, CSRF tokens, CSP `default-src 'self'` |
+| GitHub writes | Path and branch allowlist in the adapter, plus a per-operation token narrowed to one repository and one permission (D96) |
+| Untrusted code | Runs only in `heimdall-runner` under gVisor or rootless containers; the server never holds the Docker socket (D91) |
+| Secrets | `/etc/heimdall/secrets`, mode 0400, persistent and encrypted (D89); Docker secrets inside containers; never in logs (a slog redaction handler), rooms, packs or blobs; gitleaks in CI |
 | Supply chain | `go.sum`, images pinned by digest, `govulncheck` in CI, SBOM, cosign-signed release binaries |
 | Audit | Hash-chained events, nightly verification; decisions record identity, SHA and reason |
 | Abuse and cost | Slop first, reviewer cap, budgets, per-agent rate limits, sandbox semaphore |
@@ -1023,10 +1064,10 @@ domains: { "internal/auth/**": auth, "internal/refunds/**": money_movement }
 reviewers: { count: 3, pick_timeout: 15m, required: { "internal/auth/**": [ana], "api/openapi.yaml": [eli] } }
 slop: { max_changed_lines: 400, require_ticket: true, ignore: ["go.sum"] }
 tests:
-  dir: tests/proofroom
+  dir: tests/heimdall
   seam: github.com/acme/pay-demo/app
   allowed_imports: [github.com/stretchr/testify]
-  runner: "gotestsum --junitfile junit.xml -- ./tests/proofroom/..."
+  runner: "gotestsum --junitfile junit.xml -- ./tests/heimdall/..."
   signoff_domains: [auth, money_movement, data_deletion]
   min_mutation_score: 0.6
   mutation_blocks: false
@@ -1034,7 +1075,7 @@ blocking: { min_severity: medium, min_tier: E3 }
 consensus: { min_high_reporters: 2, block_score: 1.5, min_reporters: majority, confidence: { high: 1.0, medium: 0.5, low: 0.2 }, weight: { start: 0.7, min: 0.3, max: 1.0, min_decided: 5 } }
 deliberation: { max_rounds: 2, human_only_domains: [auth, money_movement, data_deletion] }
 keys: { per_role: true }   # D74: one OpenRouter key per role, each with a credit limit
-models: { provider: openrouter, test_author: deepseek/deepseek-v4-flash, reviewer: deepseek/deepseek-v4-flash, resolver: deepseek/deepseek-v4-flash, extraction: deepseek/deepseek-v4-flash, embedding: "ollama:qwen3-embedding:0.6b" }
+models: { provider: openrouter, test_author: deepseek/deepseek-v4-flash, reviewer: deepseek/deepseek-v4-flash, resolver: deepseek/deepseek-v4-flash, extraction: deepseek/deepseek-v4-flash, embedding: "openrouter:mongodb/voyage-4-lite" }
 budgets: { test_author: 400000, reviewer: 150000, resolver: 120000, per_change: 1200000 }
 skills: { test_author: "1.0.0", reviewer: "1.0.0", resolver: "1.0.0" }
 memory: { rooms: [payments-eng], chat_keywords: [decided, decision, "we will", incident, postmortem] }
@@ -1053,24 +1094,30 @@ The file is validated against its schema at load and read from the merge base. A
 
 ## 17. Setup and operations
 
-**Install.** `curl -fsSL https://<host>/install.sh | sh` installs the signed `proofroom` binary with a checksum check. The setup skill works in Claude Code, Codex and OpenCode, drives the CLI, and stops on any failure with the fix.
+**Install.** `curl -fsSL https://<host>/install.sh | sh` installs the signed `heimdall` binary with a checksum check. The setup skill works in Claude Code, Codex and OpenCode, drives the CLI, and stops on any failure with the fix.
 
-**`proofroom admin init`** (once; idempotent and resumable, each step recorded):
-1. VM compose, secrets, GCP firewall (IAP SSH only), start the core and memory stacks.
+**`heimdall admin init`** (once; idempotent and resumable, each step recorded):
+1. `heimdall doctor --host`, then VM compose, secrets in `/etc/heimdall/secrets`, the security group (SSH only), IMDS hop limit 1, start the core and memory stacks.
 2. GitHub App from a manifest, then a PR with branch protection, CODEOWNERS and the reusable workflow.
 3. Jira token and the JQL poll (webhook optional).
 4. Coordinator and role agents in Switch (template, provider `opencode`, one owner), `addressing: owner-agents` (V34), and per agent a Unix user, harness directory and systemd unit running the start command Switch gives (`!run-cmd`) (D80).
 5. Graphiti entity types, groups and backfill.
-6. `proofroom.yaml` via PR.
+6. `heimdall.yaml` via PR.
 
-**`proofroom setup`** (once per developer, target < 15 min):
+**`heimdall setup`** (once per developer, target < 15 min):
 1. Detect the developer's own coding agent (for distilling the pack) and install the setup skill.
 2. Link their GitHub login (device flow) and check their Mattermost or Teams account is linked in Switch.
 3. Build, review and upload the pack; the server starts or refreshes their reviewer agent on the VM.
-4. `proofroom doctor`.
+4. `heimdall doctor`.
+
+**Plug-and-play integrations and `heimdall connect` (admin, once per install).** Every external system sits behind a port (`VCS`, `Tracker`, `Chat`, `AgentRuntime`, `Memory`). Adapters register themselves in a small registry (`internal/adapters/registry.go`: `name`, `kind`, `required config`, `Check()`), and `heimdall.toml` selects them by name: `vcs.provider = github`, `tracker.provider = jira | file`, `chat.bridge = mattermost | teams | slack | discord | telegram`. Adding a platform means one adapter package plus one registry line; the domain and app layers do not change. Chat platforms are Switch's job, so `chat.bridge` only names a Switch connection and the Teams-specific behaviour under Operations (D79, D81: thread replies, plain-text mentions) stays in one `chatquirks` table keyed by platform.
+- `heimdall connect` lists every registered integration with its status (`connected`, `needs config`, `error`) and what each needs.
+- `heimdall connect <kind>` runs an interactive picker for that kind, prompts for non-secret values, tells the admin which secret file to create under `/run/secrets` (it never accepts a secret in an argument), writes the choice to `heimdall.toml`, and runs the adapter's `Check()` (a read-only call).
+- `heimdall connect --list`, `--check` and `--json` are non-interactive for scripts. `heimdall doctor` runs the same checks.
+- Build order: Mattermost, Jira and GitHub first. Teams arrives later as one more adapter entry and a `chat.bridge` change.
 
 **Operations.**
-- `proofroom admin upgrade`: signed images, goose migrations (forward-only; down paths tested for the last release), 30 s graceful drain.
+- `heimdall admin upgrade`: signed images, goose migrations (forward-only; down paths tested for the last release), 30 s graceful drain.
 - Backups as in 4.4.
 - Telemetry: OpenTelemetry traces (root span per change; child spans per step, task and external call), Prometheus metrics, slog JSON logs with the trace id.
 - Key metrics: queue depth and age, outbox lag, webhook latency, gate latency, sandbox wait, agent ack latency, task success rate, tokens per change, memory lag.
@@ -1096,7 +1143,7 @@ The file is validated against its schema at load and read from the merge base. A
 | Unit | Reducer (every state × event; replay property), rules (each merge clause flipped), tiering, auto-apply, slop, policy validation, redaction patterns | `go test`, table tests, `testing/quick` |
 | Contract | MCP schemas; GitHub, Jira, Switch and Graphiti payload fixtures | golden files |
 | Integration | Real Postgres (testcontainers-go), fake GitHub/Switch/Graphiti (`httptest`), real Docker sandbox. Covers full W1 and W2 plus forged webhook, replay, self-approval, stale-SHA approval, test deletion, E4-only block attempt, challenge without new evidence, injection per source, stale reviewer pack, and Graphiti, Switch and OpenRouter each down | `go test -tags integration` |
-| Agent evals | 6.7 | `proofroom eval run` |
+| Agent evals | 6.7 | `heimdall eval run` |
 | Live smoke | Real Switch + Mattermost, GitHub repo, Jira, one agent per role | `scripts/smoke` |
 | Chaos | Kill the server mid-step, drop Postgres, flood the sandbox queue; assert no lost events and no false green | scripted |
 
@@ -1127,7 +1174,7 @@ CI runs unit, contract, integration and the injection evals on every push. Full 
 | 2 | Addressing, linking, `doctor` | a fresh agent wakes from the coordinator; doctor is green |
 | 3 | Server skeleton: config, Postgres, goose, event store and chain, reducer, River, outbox, HMAC | forged webhook rejected; replay ignored; chain verifies; `kill -9` mid-job loses nothing |
 | 4 | Step registry and the Go-defined default workflow (D54) | the default workflow runs on fakes; an invalid one fails closed |
-| 5 | GitHub App adapter (checks, tree hash, commit, branch, tarball, ETag cache) | pending `proofroom/gate` on a `pay-demo` PR |
+| 5 | GitHub App adapter (checks, tree hash, commit, branch, tarball, ETag cache) | pending `heimdall/gate` on a `pay-demo` PR |
 | 6 | Jira poller, file tracker and fallbacks | In Progress (or a file ticket) opens the room and branch |
 | 7 | Sandbox: images, module cache, JUnit parser, red-first, flake, repro | import-error test rejected, assertion-red accepted, flaky quarantined |
 | 8 | test-author skill and tools | tests for every AC land on the branch, verified |
@@ -1155,7 +1202,7 @@ CI runs unit, contract, integration and the injection evals on every push. Full 
 |---|---|
 | Agents do not wake | WP1–2 first; unavailable-reply detection; one container restart; `doctor` |
 | Graphiti extraction cost or quality | DeepSeek V4 Flash, selective episodes, custom ontology, confirmed-only evidence; Cognee behind the same port |
-| Graphiti config | Verified in source (V37): `openai` embedder provider with Ollama `api_url` and `dimensions: 1024`; S13 confirms end to end |
+| Graphiti config | Verified in source (V37): `openai` embedder provider with `api_url` and `dimensions: 1024`; hosted `voyage-4-lite` returns 1024 (V50); S13 confirms end to end |
 | DeepSeek V4 Flash tool-calling or instruction-following is weak | Server-side validation and one repair attempt; low temperature; the D60 live check 3 of 3 before recording; policy can point one role at a stronger OpenRouter model |
 | OpenCode permission keys differ from what D44 assumes | S14 on day one; the Unix-user and nftables egress rules hold even if a permission key is wrong (D80) |
 | Teams ingress or tenant consent stalls | Teams is set up by a teammate in parallel; Mattermost stays the default bridge, so the demo never depends on Teams |
@@ -1164,8 +1211,15 @@ CI runs unit, contract, integration and the injection evals on every push. Full 
 | Context leakage | Two scans, owner review, encryption, output filter, canaries |
 | Sandbox escape or exhaustion | No network, dropped capabilities, seccomp, limits, non-root, semaphore |
 | Scope for four people | Critical path, frozen interfaces, pure domain package, cut order |
+| Untrusted PR code on the VM that holds secrets | `heimdall-runner` under its own user, rootless runtime, gVisor if S18 passes, no Docker socket for the server, metadata blocked (D86, D91) |
+| Limited login, no sudo | `doctor --host` first; rootless-container harness fallback (D90) |
+| Out-of-memory kill | 32 GB preferred, hosted embeddings, swap on the small size, memory guard (D86, D87, D102) |
+| Switch controller and systemd both manage agents | S17 decides the owner (D92) |
+| Heimdall down or wrong during the demo | Fail closed, `/healthz`, runbook, break-glass, `gate.mode: advisory`, tagged releases, rehearsal (D93, D102) |
+| Chat platform differences | Capability probe and a text-command baseline everywhere (D94, S19) |
+| Jira poll misses a ticket | Overlap window, dedupe, reconciler, S20 (D97) |
 | FalkorDB license (SSPL) | Fine for self-hosting; matters only if we ever sell a hosted service, then switch to Neo4j Community or Kuzu via Graphiti's drivers |
 
 ## 23. Open questions
 
-Only the four items under "Still needs the team" in `BRAINSTORM_BACKLOG.md` Part 8 remain. Everything else is decided; answers update this spec.
+Only the three items under "Still needs the team" in `BRAINSTORM_BACKLOG.md` Part 12 remain (instance size and sudo, the role-to-person map, and whether Teams lands). Everything else is decided; answers update this spec.

@@ -1,8 +1,8 @@
 # Connecting Microsoft Teams (admin guide)
 
-**Audience:** the IT or Microsoft 365 admin at a company that installs Proofroom and wants its change rooms in Teams instead of Mattermost. This is a one-time manual setup done by that person; Proofroom only needs `chat.bridge: teams` in its policy afterwards (step 9). Our README links to this page.
+**Audience:** the IT or Microsoft 365 admin at a company that installs Heimdall and wants its change rooms in Teams instead of Mattermost. This is a one-time manual setup done by that person; Heimdall only needs `chat.bridge: teams` in its policy afterwards (step 9). Our README links to this page.
 
-Proofroom needs no code change for Teams. Teams is one more Switch chat connection. Steps are based on Switch's own guide (`docs/official/deploy/messaging-apps/microsoft-teams.md` and `docs/old/bridges/TEAMS_SETUP.md` in the Switch checkout).
+Heimdall needs no code change for Teams. Teams is one more Switch chat connection. Steps are based on Switch's own guide (`docs/official/deploy/messaging-apps/microsoft-teams.md` and `docs/old/bridges/TEAMS_SETUP.md` in the Switch checkout).
 
 **Time:** about an hour if you are the tenant admin; longer if you wait on one.
 **Cost:** a domain (about $10 a year) if you do not have one. Cloudflare Tunnel, the Azure Bot and the app registration are free for this use (Teams is a standard Bot channel); a Microsoft 365 tenant is needed (a Business trial works for the hackathon).
@@ -20,7 +20,7 @@ Pick the public hostname now and do not change it later, for example `teams.<you
 
 ## Step 1. Public HTTPS for the Teams listener (Cloudflare named tunnel)
 
-Switch's Teams listener runs on port **3978** (not the main Switch port). Only this listener is exposed; Proofroom itself stays private (D64).
+Switch's Teams listener runs on port **3978** (not the main Switch port). Only this listener is exposed; Heimdall itself stays private (D64).
 
 On the VM:
 
@@ -125,15 +125,15 @@ Select **Connect**, then **This is me** to link your Teams account. Every teamma
 2. Add the Switch app to a channel; the channel appears under **Your Rooms**.
 3. Post a message that does **not** tag any agent, then `!agents-status`. An agent answering an untagged message proves channel capture works.
 
-## Step 9. Point Proofroom at Teams
+## Step 9. Point Heimdall at Teams
 
-In `proofroom.yaml` set `chat.bridge: teams` (the connection name), so new change rooms are created as Teams channels. Existing Mattermost rooms stay where they are.
+In `heimdall.yaml` set `chat.bridge: teams` (the connection name), so new change rooms are created as Teams channels. Existing Mattermost rooms stay where they are.
 
 ## What is different in Teams
 
 - Agent messages appear as cards headed with the agent's name.
-- Only `!` commands work (no native slash commands). Use `!proofroom …` for Proofroom commands (for example `!proofroom uphold F-3`); Teams can intercept messages that start with `/`.
-- Agent @-mentions arrive as plain text and do not notify anyone. Proofroom therefore also posts questions and decision cards as replies in the thread you follow; turn on notifications for that channel.
+- Only `!` commands work (no native slash commands). Use `!heimdall …` for Heimdall commands (for example `!heimdall uphold F-3`); Teams can intercept messages that start with `/`.
+- Agent @-mentions arrive as plain text and do not notify anyone. Heimdall therefore also posts questions and decision cards as replies in the thread you follow; turn on notifications for that channel.
 - Files are not relayed yet; text is.
 - No one-to-one chats with agents; rooms are channels.
 - One Teams connection per listener port.
