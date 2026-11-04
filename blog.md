@@ -158,13 +158,57 @@ Heimdall is a merge-safety layer for pull requests that runs on Switch. A Jira t
 ### People reach Mattermost through a tunnel (Nov 4)
 **Decision.** Teammates use their own Mattermost desktop and phone apps. We publish Mattermost through a named Cloudflare Tunnel on a hostname, keep the VM's only inbound rule as SSH, and set the Site URL and Switch's Public Url to that hostname.
 **Why.** Slack, Discord, Telegram and Teams are hosted by their vendors, so every teammate already has an app that reaches them. Mattermost is the one chat server we host ourselves, and its apps need an address to connect to. A tunnel gives one without opening a port. This is the standard way to expose a self-hosted service, and teams that already use Slack or Teams can skip it entirely because Heimdall only names a Switch connection.
-**Gave up.** Cloudflare Access in front of it: the Mattermost apps cannot complete its browser login, so we rely on invite-only sign-up, MFA and rate limits.
+**Gave up.** Cloudflare Access in front of it: the Mattermost apps cannot complete its browser login, so we rely on invite-only sign-up, strong passwords and rate limits.
 **Needs from the team.** A domain on Cloudflare and a person with VM access to run the tunnel.
 
 ### The domain belongs to whoever deploys (Nov 4)
 **Decision.** Heimdall never owns or buys a domain. It takes the public address as a setting, and `heimdall connect mattermost` checks it (resolves over HTTPS, answers as Mattermost) and prints the settings to change. For the hackathon the domain is a stand-in; in a real deployment it is the customer's own, exposed however their IT exposes internal tools.
 **Why.** The tunnel is free but a domain is not, and no product should hold domains for its customers. Teams that chat in Slack, Discord or Telegram need no domain at all, and Teams needs a public name the customer controls.
 **Fallbacks for us.** A free quick tunnel for rehearsals (its address changes on every restart), then Tailscale. We have not confirmed the current student free-domain offer or Tailscale's free user limit.
+
+### Spending $50 on AWS well (Nov 4)
+**Decision.** One `m6i.xlarge` (4 vCPU, 16 GB) with swap and an 80 GB disk, stopped whenever nobody is working, running around the clock only for the demo window. This replaces the earlier plan for a 32 GB machine.
+**Why.** The account is capped at $50. Using a list price of about $0.19 an hour, the 16 GB machine costs about $4.60 a day plus about $0.35 for disk and the public address, so roughly eight days around the clock fits with a little to spare. A 32 GB machine costs twice that and would use the whole budget in about four days. Dropping Ollama for hosted embeddings is what makes 16 GB workable.
+**Avoided on purpose.** A NAT gateway (about $32 a month), a load balancer, interface endpoints, unattached public addresses, extra snapshots, and burstable instances (the `t3` family throttles or bills extra under sustained load).
+**Guards.** Budget alerts at $20, $35 and $45, a stop action at $45, and an uptime-based estimate in `heimdall doctor`, because AWS billing data arrives hours late.
+**Caveat.** The price comes from a public price table with no region stated, so we confirm the real rate in the account's region.
+
+### How we test, when an AI builds it over many sessions (Nov 4)
+**Decision.** Seven layers, cheapest first, and a hard rule: a task is done only when it has run against the real systems, with the evidence written down. The builder follows one loop every time: write the failing test first, make it pass, run the checks, try to break it, record the evidence.
+**Why.** A model that forgets between sessions and tends to believe its own work needs tests that remember what the code must do and checks it cannot argue with. Most bugs should die in layers that cost nothing: unit, property and fuzz tests, real Postgres, a real sandbox, and recorded real payloads that are checked against the live systems so they cannot drift.
+**Fakes.** The team's rule is "everything real", so test doubles are allowed only where they speed up regression runs, and never as product code. Even the agent in the full-workflow tests is real at the protocol level (it speaks to the real Switch), with only its answers scripted, so the whole flow runs at zero model cost.
+**Money.** Testing has a $3 budget. At list prices a full demo run is about 15 to 20 cents, so the budget covers spikes, live smoke tests, one pass of reduced evals and a few rehearsals. It is enforced by separate API keys with their own limits, not by trusting our code, and every live run adds a line to a committed ledger.
+**What we found while writing it.** The plan still assumed fake services, a Go-only demo repo, evals on every push (which would spend money on every commit) and four people working in parallel. All were fixed or flagged.
+**Gave up.** Full-corpus agent evals, the load test, and testing the setup skill on other people's laptops.
+
+### Test code stays out of the product, and the model is not on a leash (Nov 4)
+**Decision.** Two rules. First, test scaffolding (the scripted agent, doubles, recorders) lives only in test code, is excluded from release builds and images, and CI fails if a production binary depends on it. Second, constrain safety, not thought: code is deterministic where correctness or security needs it (the merge decision, evidence by running code, permissions, the sandbox), and the model is free everywhere judgment is needed.
+**Why.** The first drafts added fallback after fallback (a provider chain, an advisory gate mode, emergency switches, conditional isolation, an offline embedder) and tried to make the model repeatable (a fixed low temperature, exactly one repair attempt, "the same blocking set three times"). Each adds code that can break, hides the real behaviour, or fights the model. Evidence is verified by code, so a weaker or less repeatable model costs recall, not safety.
+**What changed.** The provider fallback chain, advisory mode, the feature kill switches, the no-sudo second design, the gVisor conditional and the Ollama profile are gone. Temperature is no longer forced. A rejected submission goes back to the agent with the errors, and the limit is its time and cost budget, not a count. The rehearsal check is now that each planted issue is found with verified evidence in at least two of three runs, not that three runs match.
+**Rule for spikes.** A spike picks one option and the other is deleted.
+
+### Read Switch's own source before inventing infrastructure (Nov 4)
+**Decision.** We stopped treating the agent runtime and the Switch deployment as open questions and read Switch's code. Switch already ships a headless agent controller that runs each agent as its own Linux user under systemd, and a standalone Docker Compose with restart policies and a pinned version. We use both instead of building our own supervisor and instead of Console's remote-host onboarding.
+**Why.** Console's host process runs under `tmux` and stays down after a reboot until Console relaunches it, and the `!run-cmd` command that our first design relied on was removed by Switch because it did not bring agents online. The controller gives us the per-agent isolation we wanted without code we would have to keep alive.
+**Other questions closed by reading.** OpenCode's exact permission keys are in the spec as a working config; Graphiti's search tools already filter by group and by time, so the planned Python sidecar is gone; the chat port needs no capability negotiation, because every approval is a text command; Mattermost's address for the tunnel is set through an environment variable, not the admin console. MFA is probably a paid Mattermost feature, so it is not relied on.
+**Left to runtime.** Only validations of decided designs, such as whether an agent really cannot read another agent's files on the real machine.
+**Consequence.** Switch will run from Docker Compose, so the friend sets up Docker and the stack instead of Console's host onboarding.
+
+---
+
+## Round 13: what the source said before we wrote any code
+
+**Decision.** A final read of Switch's source and a run of our own guardrails changed several settled decisions. Chat commands are the plain word `heimdall`, because Switch swallows posts starting with `!`. People are matched by their opaque sender id, because `sender_kind` cannot tell a person from an agent. Each agent's token is in its own config file, because sessions do not inherit our variable. Heimdall no longer restarts or resets agents, because sessions are per room and Switch restarts crashed ones.
+**What we gave up.** The claim that the harness can stop an agent reading its own folder or posting to its room. Agents can always do both, so we scan their posts and check independence on the board instead.
+**Why.** Each assumption was reasonable and none had met the real system. `STAGE_1_FIXES.md` now proves them first, along with fixed hooks: the old guard blocked five out of five normal commands in a test.
+**Also fixed.** A PR with no ticket now has somewhere to go, tickets map to repos, test pins are per ticket, and there is one build order.
+
+---
+
+## Round 14: walking the whole plan in order
+
+**Decision.** Rooms now come before tests, because the workflow wakes agents through a room. Live agents arrive before G2 needs one. A deploy step exists from slice 3 instead of slice 7. Local mode runs real agents, because the scripted agent never ships. Five test accounts stand in until teammates take the roles.
+**Why.** The earlier order was attractive because it avoided the VM, but the VM now exists, and that order had steps that could never pass where they sat.
 
 ---
 

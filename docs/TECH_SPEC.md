@@ -1,7 +1,7 @@
 # Heimdall: Technical Spec (v3)
 
-Status: v3.5, Nov 4, 2026. Name `heimdall` (final, D59). Language: Go. v3.5 applies backlog Part 12 (D86 to D106): AWS instead of GCP, hosted embeddings instead of Ollama, a separate sandbox runner, a generic repo profile, narrowed GitHub tokens, capability-driven chat and the hackathon reliability rules (0.5). v3.4 applies backlog Parts 9 to 11 (D63 to D85): a full consistency review, agent supervision (6.9), Teams in scope; OpenRouter DeepSeek models on OpenCode, no Anthropic API; reviewer agents on the VM only, no ingress (polling), chat history in memory, verified Graphiti config.
-Companion docs: `HEIMDALL_MVP.md` (scope), `PRODUCT_PITCH.md` (story), `TECH_DESIGN.md` (principles, v0.1), `CODING_STANDARDS.md` (code rules, D104), `BRAINSTORM_BACKLOG.md` (every fact `V#` and decision `T#`/`D#`/`U#`/`G#` cited here). Precedence (D37): backlog Parts 8 to 12 > this spec > earlier backlog parts > MVP > TECH_DESIGN > pitch.
+Status: v3.6, Nov 4, 2026. Name `heimdall` (final, D59). Language: Go. v3.6 applies backlog Part 16 (D138 to D156), the final review before development: `docs/STAGE_1_FIXES.md` runs first and proves the Switch facts it relies on. v3.5 applies backlog Part 12 (D86 to D106): AWS instead of GCP, hosted embeddings instead of Ollama, a separate sandbox runner, a generic repo profile, narrowed GitHub tokens, capability-driven chat and the hackathon reliability rules (0.5). v3.4 applies backlog Parts 9 to 11 (D63 to D85): a full consistency review, agent supervision (6.9), Teams in scope; OpenRouter DeepSeek models on OpenCode, no Anthropic API; reviewer agents on the VM only, no ingress (polling), chat history in memory, verified Graphiti config.
+Companion docs: `HEIMDALL_MVP.md` (scope), `PRODUCT_PITCH.md` (story), `TECH_DESIGN.md` (principles, v0.1), `CODING_STANDARDS.md` (code rules, D104), `TEST_STRATEGY.md` (tests, validation and cost, D111), `BRAINSTORM_BACKLOG.md` (every fact `V#` and decision `T#`/`D#`/`U#`/`G#` cited here). Precedence (D138): among backlog Parts 8 and later the highest-numbered part wins, then this spec, then earlier backlog parts, MVP, TECH_DESIGN and the pitch.
 
 **Build for Saturday: read section 0.4 first.** This spec is the product design; section 0.4 says which parts are built this week.
 
@@ -31,7 +31,7 @@ Companion docs: `HEIMDALL_MVP.md` (scope), `PRODUCT_PITCH.md` (story), `TECH_DES
 | Metric | Target |
 |---|---|
 | Webhook acknowledged | p99 < 200 ms (verify, persist, enqueue only) |
-| Slop decision on GitHub after PR open | p95 < 10 s |
+| Slop decision on GitHub after PR open | p95 < 15 s (a 10 s poll plus the decision, D155) |
 | Gate re-evaluation after a relevant event | p95 < 2 s |
 | Tests ready after In Progress (no questions) | p50 < 15 min |
 | All reviews in after reviewer pick | p50 < 12 min; per-reviewer timeout 30 min, then `unavailable` (waivable) |
@@ -47,7 +47,7 @@ Section 18's load test validates these numbers. They are product targets, not ha
 
 The build is the IN column of D36 in `BRAINSTORM_BACKLOG.md` Part 8. In short:
 - **Built:** event store with outbox and hash chain (D55), Go-defined workflow (D54), W1 with the seam rule (D39), W2 with three reviewer agents on the remote host (D43), evidence tiers E1 to E3, challenge rounds, resolver as recommendation only (D42), consensus hold (D40), merge rule and check, per-role agent harness (D44), context bundles (D45), coordinator stream (D46), Graphiti memory with guard rails (D51), packs with redaction, encryption and canaries, read-only dashboard (D53), local mode (D38), boot reconciliation (D56).
-- **Not built this week:** resolver auto-apply, live/twin split, mutation testing, YAML workflow loader, OAuth dashboard, signed chain heads, rebuild and restore commands, OTel and Prometheus, load and chaos tests, testing the setup skill on Claude Code and Codex laptops (OpenCode is the VM runtime and is tested, D72), the full eval corpus (D60 defines the smaller set).
+- **Not built this week:** webhooks (poll only, D160), `claim_fix` (D160), resolver auto-apply, live/twin split, mutation testing, YAML workflow loader, OAuth dashboard, signed chain heads, rebuild and restore commands, OTel and Prometheus, the k6 load test (a chaos-lite set and the soak are built, D117), testing the setup skill on Claude Code and Codex laptops (OpenCode is the VM runtime and is tested, D72), the full eval corpus (D60 defines the smaller set).
 
 Sections below that describe only Later behaviour are marked **(Later)** where they would otherwise mislead a builder.
 
@@ -56,11 +56,16 @@ Sections below that describe only Later behaviour are marked **(Later)** where t
 Nothing may break during the demo, so every dependency has a way to degrade and every release is rehearsed.
 - **Pin everything:** the Switch version, every image by digest, vendored Go modules for deploy builds, the OpenCode version.
 - **One command to deploy and one to recover** (`make deploy`, `make recover`), idempotent and rehearsed. Deploy only tagged releases, and never during recording.
-- **Rehearse:** the D60 check (same blocking set, 3 of 3) on the tagged build, plus a 2-hour soak with a PR opened every 5 minutes.
-- **Kill switches** in policy: `memory: off`, `resolver: off`, `chat.cards: off`, `gate.mode: advisory` (the check concludes `neutral` with the full summary).
+- **Rehearse:** the planted issues are found with verified evidence in at least 2 of 3 runs on the tagged build (D122), plus a 2-hour soak with a PR opened every 5 minutes.
+- **No escape hatches in the product.** The gate fails closed, and there is no advisory mode and no emergency feature switches (D121). If the gate is wrong during the demo, an admin toggles the branch protection rule by the logged break-glass in `docs/RUNBOOK.md`.
 - **Backups:** `pg_dump` of both databases and an EBS snapshot before each demo day. A recorded fallback video of a clean run before the freeze.
-- **Guards:** `docker stats` and `free -m` logged every minute with an alarm at 85% memory; the OpenRouter spend is read from the key endpoint before and after every eval run (the test cap is $3).
-- **Cut order** if time runs short: Teams, the infra role, chat memory, the resolver, Graphiti, Jira (file tracker). **Never cut** the event store, the merge rule and check, sandbox isolation, the GitHub App, Mattermost rooms, failure-first tests and text-command approvals.
+- **Guards:** `docker stats` and `free -m` logged every minute with an alarm at 85% memory; the OpenRouter spend is read from the key endpoint before and after every eval run (the test cap is $3). AWS spend is capped at $50 (D110), and `heimdall doctor` prints an estimate from instance uptime because billing data lags by hours.
+- **Cut order** (scope, not code fallbacks) if time runs short: Teams, guided setup for Slack, Discord and Telegram (T99), the infra role, chat memory, the resolver, Graphiti, Jira (file tracker). **Never cut** the event store, the merge rule and check, sandbox isolation, the GitHub App, Mattermost rooms, failure-first tests and text-command approvals.
+
+### 0.6 Two design rules (D121, D122)
+
+1. **Test scaffolding never ships.** Scripted agents, doubles, recorders and fixtures live only in `internal/testkit/`, `cmd/heimdall-testagent/` and `_test.go` files. No production package imports them, the release build and images exclude them, and production code has no test-mode flags or branches. CI fails the build if a production binary depends on `testkit`.
+2. **Constrain safety, not thought.** Code is deterministic where correctness or security needs it: the merge decision, evidence verification (code runs the repro), permissions, SHA-bound approvals, the sandbox, and a minimal valid shape for what an agent submits. The model is free everywhere judgment is needed: how a reviewer reasons and explores, how the test-author designs tests, how the resolver weighs a dispute. No forced temperature or seed, no fixed number of attempts, no exact-output expectations. Quality is judged by outcomes over a few runs. And no fallback exists unless a real failure needs one: a spike decides between options, and the option not chosen is deleted, not kept as a hidden second path.
 
 ---
 
@@ -78,7 +83,7 @@ flowchart TB
   subgraph SaaS
     JIRA[Jira Cloud]
     GH[GitHub]
-    LLM[OpenRouter: DeepSeek V4 Flash, one key per role]
+    LLM[OpenRouter: DeepSeek V4 Flash, one production key]
   end
   subgraph VM[Team VM]
     PS[heimdall-server, Go]
@@ -124,19 +129,19 @@ flowchart TB
 
 ### 1.3 Deployment (one AWS VM, D86)
 
-One EC2 instance, Ubuntu 24.04, **8 vCPU and 32 GB preferred (m6i.2xlarge class); 4 vCPU and 16 GB is the floor and then needs a 4 GB swap file**, with a 100 GB encrypted gp3 volume, onboarded as a Switch remote host. There is no idle-stop schedule during the hackathon (stop and start only for real outages; the reconciler recovers, D56). AWS Budgets alerts are set at $25 and $50. **No ingress (D64):** GitHub and Jira are polled (GitHub reads every 10 s, Jira JQL every 30 s with an overlap window, D97), so there is no tunnel, domain, static IP or open port. The security group allows inbound SSH only from team addresses (or SSM Session Manager). People reach the dashboard (and `/mcp`) with an SSH port-forward (`ssh -L 8080:localhost:8080 <alias>`). If the team later owns a domain on Cloudflare, a named Cloudflare Tunnel can carry `/webhooks/*` and polling switches off. **Exception, Teams (D79):** Microsoft pushes to Switch, so Switch's Teams listener (port 3978) is published through a named Cloudflare Tunnel on the team's domain, set up by the Teams admin (`docs/TEAMS_SETUP.md`). Only that listener is public; Heimdall stays private. **Exception, Mattermost (D107):** people use the Mattermost desktop and phone apps, which need a reachable server address, so Mattermost (port 8065) is published through a named Cloudflare Tunnel on a hostname such as `chat.<domain>`. The tunnel is outbound only, so the security group still has no inbound rule except SSH. Mattermost's Site URL and the Switch connection's Public Url are set to that hostname, and Cloudflare Access is **not** placed in front (the mobile and desktop apps cannot complete its browser login); Mattermost's own invite-only sign-up, MFA and rate limits protect it (`docs/MATTERMOST_ACCESS.md`).
+One EC2 instance, Ubuntu 24.04, **`r6a.large` (2 vCPU, 16 GB) in `ap-south-1` with a 4 GB swap file**, a 50 GB unencrypted gp3 volume, accepted for test data only (D135). Switch runs from its **standalone Docker Compose**, pinned to `0.31.0`, with the `collab` (Mattermost) and `gateway` profiles and restart policies from our compose override, so everything returns after a reboot (D124, D136, `docs/RUNBOOK.md`). Switch Console on a laptop is only a client of this server ("Connect to an existing server") through a port-forward. The whole AWS account is capped at **$50 (D110)**, and this size costs about $16 for 8 days around the clock, so stopping it when idle is optional (the disk is kept, and the reconciler recovers at boot, D56). AWS Budgets alerts at $10 and $25, with a budget action that stops the instance at $50 (D135). **No ingress (D64):** GitHub and Jira are polled (GitHub reads every 10 s, Jira JQL every 30 s with an overlap window, D97), so there is no tunnel, domain, static IP or open port. The security group has no inbound rules; all access is SSH over SSM Session Manager. People reach the dashboard (and `/mcp`) with an SSH port-forward (`ssh -L 8080:localhost:8080 heimdall-vm`). If the team later owns a domain on Cloudflare, a named Cloudflare Tunnel can carry `/webhooks/*` and polling switches off. **Exception, Teams (D79):** Microsoft pushes to Switch, so Switch's Teams listener (port 3978) is published through a named Cloudflare Tunnel on the team's domain, set up by the Teams admin (`docs/TEAMS_SETUP.md`). Only that listener is public; Heimdall stays private. **Exception, Mattermost (D107):** people use the Mattermost desktop and phone apps, which need a reachable server address, so Mattermost (port 8065) is published through a named Cloudflare Tunnel on a hostname such as `chat.<domain>`. The tunnel is outbound only, so the security group still has no inbound rules. Mattermost's Site URL and the Switch connection's Public Url are set to that hostname, and Cloudflare Access is **not** placed in front (the mobile and desktop apps cannot complete its browser login); Mattermost's own invite-only sign-up, strong generated passwords and rate limits protect it (`docs/MATTERMOST_ACCESS.md`).
 
 **Metadata and privileges (D86, D90).** IMDSv2 is required with hop limit 1, and nftables blocks `169.254.169.254` for every agent uid and every sandbox container, so nothing on the VM can read the instance role's credentials. `heimdall doctor --host` runs first on the VM and checks sudo, systemd, Docker, nftables, free memory and disk, the metadata setting and outbound reach to GitHub, Jira, OpenRouter and Switch. Secrets live in `/etc/heimdall/secrets` (D89).
 
 | Stack | Containers | Memory |
 |---|---|---|
-| Switch | server, Postgres, Mattermost (set up by Console) | ~3 GB |
+| Switch | server, Postgres, Mattermost (standalone compose, D124) | ~3 GB |
 | Heimdall | `heimdall-server`, Postgres 16 | ~1 GB |
-| Memory | Graphiti MCP server, FalkorDB; embeddings are hosted (D87), so no Ollama. Ollama is an optional compose profile for offline local mode (+1 to 1.5 GB) | ~1 to 1.5 GB |
-| Agents | test-author, resolver, profiler and one reviewer agent per person: each an OpenCode session under its own Unix user and systemd unit, with its own harness directory (D43, D44, D80). Without sudo, one rootless container per agent instead (D90) | ~3 to 5 GB |
-| Sandbox | `heimdall-runner` under its own user with a rootless container runtime, short-lived jobs, 1 slot on the 16 GB size (2 on the 32 GB size) (D91) | 2 GB per slot |
+| Memory | Graphiti MCP server, FalkorDB; embeddings are hosted (D87), so there is no Ollama | ~1 to 1.5 GB |
+| Agents | test-author, resolver, profiler and one reviewer agent per person: each an OpenCode session run by Switch's headless agent controller as its own Linux user under systemd, with its own harness directory (D43, D44, D80, D123). Sessions are per room (D145), so rooms are archived at close to free them; T01 measures memory per session. Needs sudo once (D90) and Node 22.13+ for the controller, which is Switch's own component | ~3 to 5 GB |
+| Sandbox | `heimdall-runner` under its own user with a rootless container runtime, short-lived jobs, 1 slot (D91) | 2 GB per slot |
 
-Peak is about 10 to 12 GB without Ollama; confirm with `docker stats` on day one. Nothing of Heimdall listens publicly (only Mattermost and Switch's Teams listener, each through its own tunnel route). The dashboard and `/mcp` are reachable only on the Docker network and through SSH port-forwards. Local mode (D38) needs no ingress at all: GitHub is polled and the tracker is a file. Docker networks: `core`, `memory`, and `sandbox` (no egress). Spot instances are used only for eval runs.
+Peak is about 10 to 12 GB without Ollama; confirm with `docker stats` on day one. Nothing of Heimdall listens publicly (only Mattermost and Switch's Teams listener, each through its own tunnel route). The dashboard and `/mcp` are reachable only on the Docker network and through SSH port-forwards. Local mode (D38, D157) needs no ingress at all: GitHub is polled and the tracker is a file. Docker networks: `core`, `memory`, and `sandbox` (no egress). Spot instances are used only for eval runs.
 
 ---
 
@@ -151,13 +156,13 @@ One binary, one process, these goroutine groups:
 | HTTP (`net/http` + chi, 10 s read/write timeouts) | n/a | MCP streamable HTTP, dashboard, SSE; webhooks only in `webhook` mode |
 | Pollers | 1 per repo, 1 per Jira project | GitHub every 10 s and Jira every 30 s (D64, D69); cursors in Postgres; each new observation becomes an event through the same handlers webhooks use |
 | River queue `events` | 16 | Load, reduce, decide, append events |
-| River queue `agents` | 32 (one active task per agent, D80) | Wake agents, ack deadlines, session reset between tasks, restart, `unavailable` marking |
-| River queue `sandbox` | 1 on the e2-standard-4 (config) | Docker jobs |
+| River queue `agents` | 32 (one active task per agent, D80) | Wake agents, ack deadlines, `unavailable` marking |
+| River queue `sandbox` | 1 on the `r6a.large` (config) | Docker jobs |
 | River queue `integrations` | 8 | GitHub, Jira and Switch writes from the outbox |
 | River queue `memory` | 4 | Graphiti episodes |
 | River periodic | n/a | Reminders, escalations, chain verification, pack expiry, room sync |
 | PG listener | 1 | `LISTEN change_updated` → SSE |
-| Switch stream | 1 | The coordinator's SSE stream, all open change rooms declared on the URL; reconnect on room open/archive; cursor in Postgres; `read_context` reconcile on gap, reconnect or boot. Turns only question-thread replies, `/heimdall` commands from mapped humans and Switch's unavailable reply into events (D46) |
+| Switch stream | 1 | The coordinator's SSE stream with `filter=all`, all open change rooms declared on the URL; reconnect on room open/archive; cursor in Postgres; `read_context` reconcile on gap, reconnect or boot. Turns only question-thread replies, `heimdall` commands from mapped humans and Switch's unavailable reply into events (D46, D139, D140). Every agent post is also scanned for secrets and canaries, which raises an alert and changes no state (D141) |
 | Reconciler | periodic, 5 min and at boot | Compare open PRs and In Progress tickets with local state; append missing events as `actor: reconcile` (D56) |
 
 Every remote call runs as a River job with an idempotency key, exponential backoff with jitter (max 8 attempts, max 10 min delay) and a dead-letter view in the admin dashboard.
@@ -179,6 +184,8 @@ heimdall/                       one Go module
   internal/platform/             config, slog, OpenTelemetry, River setup, goose migrations
   skills/                        SKILL.md per role, room instructions, versioned
   evals/                         eval corpus and expected outcomes
+  internal/testkit/              TEST-ONLY: doubles, payload recorder, helpers. Never imported by production code (D121)
+  cmd/heimdall-testagent/        TEST-ONLY scripted agent. Excluded from release builds and images (D121)
   deploy/                        compose files, systemd units, install.sh, reusable CI workflow
 ```
 
@@ -233,18 +240,27 @@ type Memory interface {
 | Down | Behaviour |
 |---|---|
 | GitHub | Outbox retries; check keeps its last state; dashboard banner |
-| Jira | Trigger fallbacks (`/heimdall start KEY`, chat); rejection tickets queue |
+| Jira | Start by hand (`heimdall start KEY` in chat, `/heimdall start KEY` on GitHub); rejection tickets queue |
 | Switch | Posts queue; agents cannot be woken, so the gate stays red with `agents_unreachable` |
 | Graphiti/FalkorDB | `ask_knowledge` returns `unavailable`; no E3 evidence possible; episodes queue |
 | OpenRouter / model provider | VM tasks fail; one retry (OpenRouter can fall back across DeepSeek providers), then `unavailable` (red, never green) |
 | Docker / `heimdall-runner` | Jobs queue; gate red with `verification_pending` |
-| Heimdall itself | The required check stays "waiting" on GitHub, which blocks merges (fail closed). `/healthz` and a heartbeat banner show it; `docs/RUNBOOK.md` has `make recover` and a logged break-glass that toggles the branch protection rule. `gate.mode: advisory` publishes `neutral` instead of blocking if the gate itself misbehaves (D93) |
+| Heimdall itself | The required check stays "waiting" on GitHub, which blocks merges (fail closed). `/healthz` and a heartbeat banner show it; `docs/RUNBOOK.md` has `make recover` and a logged break-glass that toggles the branch protection rule |
 
 Each adapter has a circuit breaker: 5 consecutive failures open it for 30 s, then one probe. Every call has a deadline (GitHub and Switch 10 s, Graphiti 20 s, sandbox per job).
 
 ### 2.6 Configuration
 
-`/etc/heimdall/heimdall.toml` holds infrastructure: URLs, secret file paths, worker counts, sandbox limits. `heimdall.yaml` in each repo holds policy and workflow (section 16). Secrets are read only from files under `/etc/heimdall/secrets` (persistent, encrypted disk, mode 0400, owner `heimdall`), which containers see as Docker secrets at `/run/secrets` (D89). A reboot never loses them. Config is validated at boot, and the server refuses to start on any error.
+`/etc/heimdall/heimdall.toml` (or the file named by `--config`) holds infrastructure: URLs, `secrets_dir`, worker counts, sandbox limits, and the project map below. `heimdall.yaml` in each repo holds policy and workflow (section 16). Secrets are read only from files under `secrets_dir`, default `/etc/heimdall/secrets` (persistent disk, mode 0400, owner `heimdall`), which containers see as Docker secrets at `/run/secrets` (D89). A reboot never loses them. On a laptop `secrets_dir` is the gitignored `secrets/`, filled from `.env` by `make secrets-local` (D148). Config is validated at boot, and the server refuses to start on any error.
+
+```toml
+secrets_dir = "/etc/heimdall/secrets"
+
+[[projects]]                 # D147: one tracker project maps to one repo in the build
+tracker_project = "KAN"
+repo = "aarush323/PBL_TOS_RISK_ANALYZER"
+base_branch = "heimdall-demo"
+```
 
 ---
 
@@ -252,7 +268,7 @@ Each adapter has a circuit breaker: 5 consecutive failures open it for 30 s, the
 
 ### 3.1 Identifiers
 
-Changes use the ticket key (`PAY-142`). Everything else is a prefixed ULID (`fnd_…`, `run_…`, `case_…`, `tsk_…`). Agents are named `<person>-<role>` (people, e.g. `bob-reviewer`) or `<role>` (shared, e.g. `test-author`). Switch agent names must match `^[a-z0-9][a-z0-9._-]*$` (V1), so no slashes (D78).
+Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no ticket (D146). Everything else is a prefixed ULID (`fnd_…`, `run_…`, `case_…`, `tsk_…`). People never see a ULID: findings have a short per-change id (`F1`, `F2`) stored in the event, used in chat and commands (D156). Agents are named `<person>-<role>` (people, e.g. `bob-reviewer`) or `<role>` (shared, e.g. `test-author`). Switch agent names must match `^[a-z0-9][a-z0-9._-]*$` (V1), so no slashes (D78).
 
 ### 3.2 Event catalog
 
@@ -260,12 +276,12 @@ Changes use the ticket key (`PAY-142`). Everything else is a prefixed ULID (`fnd
 |---|---|---|
 | `change.triggered` | ticket, repo, assignee, trigger source | Jira webhook or fallback |
 | `room.opened`, `branch.ensured` | room id; branch, base sha | Adapters |
-| `task.assigned` / `task.acked` / `task.timed_out` / `task.restarted` / `task.failed` | task id, agent, role, deadline, bundle hash, reason | Engine |
+| `task.assigned` / `task.acked` / `task.timed_out` / `task.failed` | task id, agent, role, deadline, bundle hash, reason | Engine |
 | `question.asked` / `question.answered` | ids, refs, sender, message id | test-author, room sync |
 | `tests.submitted` / `tests.verified` / `tests.rejected` / `tests.committed` | refs, AC map, run ids, reasons, sha, tree hash | Agent, sandbox, GitHub |
 | `tests.approved` | approver, tree hash (sensitive domains, D33) | Room or GitHub command |
 | `ticket.changed` | changed fields | Jira poller |
-| `pr.opened` / `pr.pushed` / `pr.closed` | number, head sha, author, merged | GitHub poller |
+| `pr.opened` / `pr.pushed` / `pr.linked` / `pr.closed` | number, head sha, author, ticket, merged | GitHub poller |
 | `slop.evaluated` | pass, failing rules | Rule |
 | `reviewers.picked` | people, by, method (dashboard, command, default) | Dashboard, command, timer |
 | `review.submitted` / `review.unavailable` / `review.waived` | reviewer, finding refs, pack date / reason / approver | Agent, engine, decision |
@@ -289,6 +305,8 @@ IN_REVIEW ⇄ DELIBERATING → ESCALATED → IN_REVIEW
 IN_REVIEW ⇄ FIXING → VERIFYING_FIX → IN_REVIEW
 IN_REVIEW → READY_FOR_APPROVAL → APPROVED → MERGED
 any → REJECTED;  WRITING_TESTS..BUILDING → WRITING_TESTS on ticket.changed;  PR states → PR_OPEN on push
+UNLINKED_PR (no ticket, D146) → slop failure, stays red; pr.linked moves the PR to its ticket's change and closes this stream
+TRIGGERED..TESTS_READY + pr.opened → the PR attaches; the state keeps its place and the gate says "tests are not ready yet" until BUILDING
 ```
 
 The reducer is a pure `func(State, Event) (State, error)`. An illegal transition is refused. A table test covers every state × event pair, and a property test checks that replaying any valid stream twice gives the same state.
@@ -366,7 +384,7 @@ workflow:
     - { id: branch,      after: open_room,   do: github.ensure_branch, with: { name: "{ticket}-{slug}" } }
     - { id: write_tests, after: branch,      do: agent.task, with: { role: test-author, output: TestSubmission@1, deadline: 2h } }
     - { id: test_qa,     after: write_tests, do: sandbox.test_quality, with: { checks: [red_first, ac_coverage, flake, contracts] },
-        on_fail: { retry: write_tests, max: 2, then: escalate } }
+        on_fail: { retry: write_tests, until: task_budget, then: escalate } }
     - { id: commit,      after: [test_qa, signoff], do: github.commit_tests, with: { dir: "tests/heimdall/{ticket}" } }
     - { id: wait_pr,     after: commit,      do: wait, with: { event: pr.opened } }
     - { id: slop,        after: wait_pr,     do: rule.slop, on_fail: reject }
@@ -415,16 +433,16 @@ Steps do no I/O themselves. They return events, effects and timers; the engine p
 | author's agent | developer's laptop | owner's choice | Build, fix, claim fixes |
 | coordinator | inside `heimdall-server`, not an LLM | n/a | Switch identity of the harness |
 
-Each LLM role is a skill plus the `heimdall` MCP tools. **VM agents run on OpenCode with OpenRouter (D72)**: Switch supports OpenCode agents (V18), OpenCode talks to OpenRouter natively, and Claude Code is not used on the VM because it only officially supports Anthropic models. No Anthropic API is used anywhere. The skills stay portable to Claude Code and Codex for developers' own laptops.
+Each LLM role is a skill plus the `heimdall` MCP tools. **VM agents run on OpenCode with OpenRouter (D72)**: Switch supports OpenCode agents (V18), OpenCode talks to OpenRouter natively, and Claude Code is not used on the VM because it only officially supports Anthropic models. No Anthropic API is used anywhere. Under OpenCode the model id carries the provider, `openrouter/deepseek/deepseek-v4-flash`, because Switch splits it at the first slash (D143). The skills stay portable to Claude Code and Codex for developers' own laptops.
 
 ### 6.2 Task lifecycle
 
-1. `task.assigned` (deadline, budget, bundle hash) → the outbox posts an addressed room message: `@bob-reviewer task tsk_01J… — call heimdall_get_task`. An agent has at most one active task; others queue (D80).
+1. `task.assigned` (deadline, budget, bundle hash) → the outbox posts an addressed room message: `@bob-reviewer you have a new task. Call heimdall_get_task.` The task id is not posted, because the agent's token finds it (D156). An agent has at most one active task; others queue (D80).
 2. The agent calls `heimdall_get_task` (its token is bound to agent and role) and receives the envelope.
-3. `heimdall_ack` within 60 s. Otherwise `task.timed_out` follows; the server restarts that agent's systemd unit once (`task.restarted`) and re-wakes it; if it still does not ack, the request is marked `unavailable` (gate red, waivable by an approver, D43). Switch's own "unavailable" auto-reply (V16) skips straight to the restart.
-4. The agent submits with its role's tool. Schema and semantic validation run (6.5). On failure the agent gets structured errors and **one** repair attempt; a second failure means `task.failed`.
+3. `heimdall_ack` within 60 s. Otherwise `task.timed_out` follows and the request is marked `unavailable` (gate red, waivable by an approver, D43). Switch's own "unavailable" auto-reply (V16) does the same at once. Switch restarts a crashed agent itself; Heimdall holds no gateway login and restarts nothing (D145).
+4. The agent submits with its role's tool. Schema and semantic validation run (6.5). On failure the agent gets structured errors and keeps working inside the task's time and cost budget; running out of budget means `task.failed` (D122).
 5. A late submission is accepted but marked late. The first valid submission wins; later ones are attached as supplementary.
-6. After every task the server sends Switch's reset command for that agent's session, so no context carries into the next task (D80; this replaces D45's "context can carry between tasks").
+6. Sessions are per room, so no context crosses from one change to another. A re-review in the same room keeps its context (D145).
 
 ### 6.3 Task envelope
 
@@ -470,11 +488,11 @@ Rules every skill states:
 - **Deduplication:** findings from different reviewers that overlap in file and lines and have similar claims (normalized token Jaccard ≥ 0.6) merge into one finding with several reporters.
 - A finding outside the diff needs category `compat | ops | security` and a reason.
 - **Anti-sycophancy:** a reviewer cannot withdraw a finding without citing changed evidence. "The author explained" is not evidence.
-- Free text only via `report_progress`: 1 per 2 min per task, at most 400 chars, through the output filter.
+- Free text through `report_progress`: 1 per 2 min per task, at most 400 chars, through the output filter. Agents also hold Switch's room tools, which cannot be denied (D141). Skills tell them to report only through `heimdall_*`, the coordinator scans their posts for secrets and canaries, and the board fails a run where a reviewer posts a finding early.
 
 ### 6.6 Cost control
 
-- Hard caps are per-role OpenRouter keys with credit limits (D74). Per-task budgets from policy are enforced from the usage OpenRouter returns per request where the runtime exposes it, otherwise from OpenRouter's activity log after the task; over budget, the task ends with `budget_exceeded`.
+- **Cost control (D128).** One production OpenRouter key with a credit limit is the hard cap. Tasks are bounded by a deadline per role and by the context bundle caps, not by a per-task dollar enforcer. Spend is read from the key's usage and shown on the dashboard. Separate keys exist only for testing (`TEST_STRATEGY.md`).
 - The VM runtimes cache stable prefixes (skill, room instructions, pack).
 - The slop rule runs before any agent, so rejected PRs cost zero tokens.
 - Reviewers are capped at the default 3 plus any policy requires.
@@ -490,7 +508,7 @@ Rules every skill states:
 | resolver | 15 disputes with known outcomes | accuracy, correct `needs_human` rate | accuracy ≥ 0.8, zero wrong auto-applies |
 | injection | 12 payloads across every untrusted source | state changes | 0 |
 
-`heimdall eval run --suite reviewer --skill reviewer@1.1.0` runs headless in sandboxes. Skill versions are pinned in policy, and a new version ships only if it beats the old one on its suite. Results show in the admin dashboard.
+Full-corpus evals are not affordable at the $3 testing budget, so the build runs the reduced corpora in `TEST_STRATEGY.md` section 4 (D60, D113); the ship bars above apply afterwards. `heimdall eval run --suite reviewer --skill reviewer@1.1.0` runs headless in sandboxes. Skill versions are pinned in policy, and a new version ships only if it beats the old one on its suite. Results show in the admin dashboard.
 
 ### 6.8 Agent adapters
 
@@ -499,26 +517,52 @@ Rules every skill states:
 | `switchroom` | default | Addressed `post_message`; liveness from participants and agent detail; detects the unavailable reply |
 | `headless` (later) | ephemeral reviews, evals | `opencode run` (or another runtime) in a fresh container, one task, destroyed |
 
-### 6.9 Agent runtime and supervision (D80)
+### 6.9 Agent runtime and supervision (D80, D123, D125)
 
-How the VM agents actually run, so they stay stable:
+How the VM agents actually run. Switch ships a **headless agent controller** for exactly this, and we use it instead of building our own supervisor.
 
 | Concern | Rule |
 |---|---|
-| Runtime | OpenCode (Switch provider `opencode`), model from OpenRouter per policy, temperature 0.2 |
-| Process | One Unix user and one systemd unit per agent (`heimdall-agent@bob-reviewer`), running the session start command Switch issues for that agent (`!run-cmd`, V16). `Restart=on-failure`, start on boot |
-| Working directory | The D44 harness: `AGENTS.md` (role rules), `opencode.json` (heimdall MCP server only; `bash`, `webfetch` and edits outside `./scratch` denied), `.opencode/skills/<role>/`, `pack/` on tmpfs (reviewers), `scratch/` wiped per task. No repo checkout, no GitHub or Jira credentials |
-| Network | nftables rules matched on the agent's uid allow only the Switch server, `heimdall-server` and `openrouter.ai`. This holds even if an OpenCode permission key is wrong |
+| Runtime | OpenCode 1.x, pinned in `RUNBOOK.md` by T01 (Switch provider `opencode`, D144), model `openrouter/deepseek/deepseek-v4-flash` (D143), with the model's own settings (no forced temperature, D122). The definition sets `auto_mode: true`, `auto_approve: false` (D141) |
+| Process | `switch-agent-controller`, enrolled with a one-time code from the gateway's Machines page and installed with `install-service --separate-users`. That creates a pool of system users (`sa<uid>-01` and so on, 16 by default), one systemd template unit per agent, a polkit rule that lets the controller start, stop, restart and reset those units and nothing else, and agent directories under `/var/lib/switch-agents/<uid>`. It runs as a system service, so it survives a reboot. Requires the server flag `FEATURE_FLAGS_ENABLED=agent_management`, Node 22.13+ (Switch's own component), the `opencode` CLI on the path, and the OpenRouter key and `SWITCH_CONTROLLER_SELF_UPDATE=off` in the controller's `--env-file` (D123, D144) |
+| Switch credentials | None in the agents. The controller holds one connection and agents reach Switch through its local relay with a token only the relay accepts |
+| Working directory | Per agent, under `<agents-dir>/agent/<agent-name>/`: `AGENTS.md` (role rules), `opencode.json` as in the example below (mode 0600, holding that agent's token, D142), `.opencode/skills/<role>/SKILL.md`, `scratch/`. No pack files (reviewers read their own pack through `heimdall_read_pack`, D156), no repo checkout, no GitHub or Jira credentials |
+| Network | nftables keyed on the agents' group (`meta skgid`) allow only the Switch relay, `heimdall-server` and `openrouter.ai`, and drop `169.254.169.254` (D86). This holds even if an OpenCode permission is wrong |
 | Concurrency | One active task per agent; further tasks queue in River (unique key `agent:<name>`) |
-| Isolation between tasks | After each task the server sends Switch's session reset for that agent, so nothing from one change leaks into the next and every task starts from its bundle |
-| Liveness | Ack within 60 s, else `systemctl restart` once, else `unavailable` (gate red, waivable) |
-| Output | Only through `heimdall_*` tools; schema and semantic checks, one repair attempt (6.2, 6.5) |
-| Cost | Per-role OpenRouter key with a credit limit (D74) |
-| Spike | S14: inside a harness, `git clone`, `curl api.github.com` and a non-allowlisted host all fail; a `heimdall_*` call works; a reset clears the session |
-| Lifecycle owner | systemd owns the process. Switch's agent controller must not also restart these agents; S17 settles how, and if Switch insists on owning the process we drop our units and keep the uid egress rules (D92) |
-| No sudo | One rootless container per agent on an internal Docker network with an allowlisting egress proxy replaces the Unix user and nftables rules (D90) |
-| Metadata | nftables drops traffic from every agent uid to `169.254.169.254` (D86) |
+| Isolation between changes | Sessions are per room and each change has its own room, so nothing crosses between changes; rooms are archived at close (D145, proven by T01) |
+| Liveness | Ack within 60 s, else `unavailable` (gate red, waivable). Switch restarts crashed agents (D145) |
+| Output | Only through `heimdall_*` tools; schema and semantic checks; on failure the agent gets the errors and keeps working within its budget (6.2, 6.5, D122) |
+| Cost | One production key with a credit limit (D128) |
 | Profiler | A fourth LLM role (OpenCode, same harness rules) that reads repo files through `read_code` and drafts the repo profile and CI proposal (D98, D99) |
+
+**Harness `opencode.json` (D125, D141, D142).**
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "share": "disabled",
+  "permission": {
+    "*": "deny",
+    "bash": "deny",
+    "webfetch": "deny",
+    "websearch": "deny",
+    "doom_loop": "deny",
+    "external_directory": { "*": "deny" },
+    "edit": { "*": "deny", "scratch/**": "allow" },
+    "heimdall_*": "allow"
+  },
+  "mcp": {
+    "heimdall": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8080/mcp",
+      "headers": { "Authorization": "Bearer __HEIMDALL_AGENT_TOKEN__" }
+    }
+  }
+}
+```
+
+Agents run on the host under systemd, so they reach the server's loopback port, not a Docker name. `admin init` replaces the placeholder per agent. Rules match in order and the last match wins, so the catch-all comes first. **Switch adds its own session rules after this file:** in `auto` mode `read`, `glob`, `grep`, `list`, `lsp`, `todowrite`, `question`, `skill`, `task` and the `switch` MCP tools are always allowed, so this file does not limit them (V59). Reads outside the working directory are stopped by `external_directory` and the separate Linux users. T03 checks all of this on the real VM.
 
 ---
 
@@ -551,7 +595,7 @@ sequenceDiagram
     P->>R: test sign-off card @domain approver
   end
   alt fail
-    P->>T: structured reasons (≤2 retries)
+    P->>T: structured reasons (retry within the task budget)
   else pass
     P->>G: commit tests/heimdall/PAY-142/* (as App), pin tree hash
     P->>R: "6 failing tests ready"
@@ -563,7 +607,7 @@ Rules:
 - The test-author reads only the base branch.
 - At most 3 questions. If unanswered after `timeouts.question` (4 h), it proceeds on stated assumptions, written into the test header and the room.
 - `ticket.changed` on description or AC re-runs W1 as a delta and re-pins.
-- Test sign-off depends on the domain (D33). If the test-author's `expected_paths` touch a domain listed in `tests.signoff_domains` (default: the human-only domains), a domain approver must approve the tests (dashboard or `/heimdall approve-tests`) before the developer is told to build. Everywhere else no sign-off is needed. The developer can always challenge a test (section 11).
+- Test sign-off follows explicit rules (D33, D131). If the ticket has the label `needs-test-signoff`, or its AC or the test-author's `expected_paths` match the policy's `tests.sensitive` list, a domain approver must approve the tests (`heimdall approve-tests` in chat, `/heimdall approve-tests` on GitHub) before the developer is told to build. Everywhere else no sign-off is needed. The developer can always challenge a test (section 11).
 
 ## 8. W2: PR to merge
 
@@ -585,8 +629,8 @@ sequenceDiagram
   else pass
     P->>G: gate = in_progress
     P->>R: @author pick reviewers (default in 15m)
-    A->>P: pick (/heimdall review on the PR or in the room)
-    P->>RV: tasks (ack 60s, else restart once, then unavailable)
+    A->>P: pick (/heimdall review on the PR, heimdall review in the room)
+    P->>RV: tasks (ack 60s, else unavailable)
     par
       RV->>P: reviews + findings
     and
@@ -606,11 +650,11 @@ sequenceDiagram
 
 ### 8.1 Reviewer selection
 
-- **Who picks:** the PR author, with `/heimdall review @a @b` on the PR or in the room from their linked account. The dashboard picker is Later (D53).
+- **Who picks:** the PR author, with `/heimdall review @a @b` on the PR or `heimdall review @a @b` in the room from their mapped account. The dashboard picker is Later (D53).
 - **What is picked:** people. Each resolves to that person's reviewer agent on the VM, which runs with their approved pack (D43). Laptops are used only at setup, to build the pack.
 - **Default:** `reviewers.count = 3`, configurable per repo and path. If nobody picks before `pick_timeout`, the default applies: CODEOWNERS of the changed paths, then top recent committers to them, excluding the author.
 - **Required reviewers from policy** are added and locked. Only policy can exceed the count.
-- **Unavailable reviewers:** if the agent does not ack after one restart, the request is marked `unavailable` and the gate stays red until an approver waives it (a recorded decision).
+- **Unavailable reviewers:** if the agent does not ack in time, the request is marked `unavailable` and the gate stays red until an approver waives it (a recorded decision).
 
 ---
 
@@ -642,9 +686,9 @@ Edges: `DECIDED`, `APPLIES_TO`, `CAUSED_BY`, `DEPENDS_ON`, `OWNS`, `SUPERSEDES`,
 | Merged change summary | `change.merged` | DeepSeek V4 Flash summary: what changed, AC, findings resolved | owning team | observed |
 | Resolved findings | `finding.state_changed → resolved/upheld` | claim and resolution | owning team | observed |
 | Jira ticket | `change.triggered`, `ticket.changed` | summary, AC, links | project team | observed |
-| Incident | Jira type Incident, or `/heimdall incident` | description, cause, fix | owning team + shared | observed (confirmed when a postmortem is accepted) |
+| Incident | Jira type Incident, or the `incident` command | description, cause, fix | owning team + shared | observed (confirmed when a postmortem is accepted) |
 | Change room digest (D65) | change merged or rejected | one digest of the room from Switch history (`read_context`, V35): Q&A, decisions and commands, findings summary, outcome | owning team | decisions confirmed, rest observed |
-| Team channels (D65) | rooms in `memory.rooms`, every 30 min; only threads with policy keywords or `!remember` | thread | room team | observed |
+| Team channels (D65) | rooms in `memory.rooms`, every 30 min; only threads with policy keywords or `heimdall remember` | thread | room team | observed |
 | ADRs and docs | push to the default branch | document | repo team + shared | confirmed if ADR is accepted |
 | Backfill | `heimdall admin backfill` | 12 months of merged PRs with reviews, incidents, ADRs | as above | as above |
 
@@ -664,7 +708,7 @@ Only confirmed, non-superseded items are E3 evidence.
 ### 9.5 Cost, performance, failure
 
 - DeepSeek V4 Flash extraction, selective sources, live episodes sent in order, backfill batched.
-- Hosted embeddings (D87, V50): `mongodb/voyage-4-lite` through OpenRouter, 1024 dimensions at $0.02 per million tokens; free fallback `nvidia/nemotron-3.5-embed-1b:free` (2048 dimensions, so it needs a fresh index and must be chosen before backfill). Ollama with `qwen3-embedding:0.6b` stays an optional compose profile for offline mode. Graphiti MCP config (D66, verified V37, V38): `llm.provider: openai` with `api_url: https://openrouter.ai/api/v1` and model `deepseek/deepseek-v4-flash` (D73; Graphiti needs JSON output, so S13 checks the chosen variant honours `response_format`), `embedder.provider: openai`, `embedder.providers.openai.api_url: https://openrouter.ai/api/v1`, `embedder.model: mongodb/voyage-4-lite`, `embedder.dimensions: 1024`, `database.provider: falkordb`. The Graphiti MCP server has no auth, so it stays on the internal `memory` network. If its search tools cannot filter by `group_ids` (S13), the server uses a small Python sidecar around `graphiti_core`, whose `search()` does (V39).
+- Hosted embeddings (D87, V50): `mongodb/voyage-4-lite` through OpenRouter, 1024 dimensions at $0.02 per million tokens. Graphiti MCP config (D66, verified V37, V38): `llm.provider: openai` with `api_url: https://openrouter.ai/api/v1` and model `deepseek/deepseek-v4-flash` (D73; Graphiti needs JSON output, so S13 checks the chosen variant honours `response_format`), `embedder.provider: openai`, `embedder.providers.openai.api_url: https://openrouter.ai/api/v1`, `embedder.model: mongodb/voyage-4-lite`, `embedder.dimensions: 1024`, `database.provider: falkordb`. The Graphiti MCP server has no auth, so it stays on the internal `memory` network. Heimdall's `Memory` adapter is a client of the Graphiti MCP server and calls `search_memory_facts` and `search_nodes` with `group_ids` and the temporal filters (`valid_at_after`, `invalid_at_before` and the like), all of which the server's tools accept (D126, read in its source).
 - Query cache of 60 s per (groups, normalized question).
 - If Graphiti is down: `unavailable`, no E3, episodes stay queued, dashboard alert.
 - **Alternative behind the same port:** Cognee, if Graphiti disappoints.
@@ -717,7 +761,7 @@ Every rule or fact line has provenance (`[git:3f2a1c]`, `[pr:#88]`, `[transcript
 6. **Sign** the manifest (ed25519, the person's key).
 7. **Encrypt** with `age` to the VM recipient.
 8. **Upload** to blobs. The server keeps only metadata in Postgres.
-9. **Reviewer agent start:** decrypt into the agent's tmpfs, verify hashes, refuse packs older than `pack.max_age_days` (14). Findings from an agent with a stale pack are unverified.
+9. **Serve:** `heimdall_read_pack` decrypts in the server, verifies hashes and returns only the calling reviewer's own pack, refusing packs older than `pack.max_age_days` (14). Ciphertext stays at rest. A stale pack gives findings that are unverified (D156).
 
 `heimdall pack refresh` rebuilds incrementally. Revocation deletes blobs, stops the person's reviewer agent and revokes tokens.
 
@@ -746,6 +790,8 @@ open | upheld → fix_claimed → verifying → resolved | open
 ```
 
 Only the filing reviewer can withdraw, and only with changed evidence. Only a runner re-run or the filing reviewer's re-verification resolves. The author's agent can only claim fixes.
+
+**Every push re-verifies (D152).** No claim is needed: E1 and E2 evidence for open findings is re-run on the new head and a pass resolves the finding. E3 and E4 findings on changed files go back to the filing reviewer. A human author challenges with `heimdall challenge F3 <evidence>`; `claim_fix` for laptop agents is Later (D160).
 
 ### 11.2b Consensus scoring (D34, amended by D40)
 
@@ -783,11 +829,11 @@ Otherwise the verdict becomes a recommendation on a card. Every verdict is an ev
 
 ### 11.5 Human decisions
 
-Decisions arrive from strict-grammar GitHub comments by a verified actor, or (D47) the same grammar posted in the change room by a human whose Switch-linked Mattermost account maps to `people.<p>.chat`. Final merge approval is always a GitHub PR review. The dashboard decision inbox is Later (D53).
+Decisions arrive from strict-grammar GitHub comments by a verified actor, or (D47) the same grammar posted in the change room by a human whose Switch sender id maps to `people.<p>.chat` (D140). Final merge approval is always a GitHub PR review. The dashboard decision inbox is Later (D53).
 
 ```
 /heimdall review @a @b @c                          author
-/heimdall uphold <finding>                         approver or domain owner
+/heimdall uphold <finding>                         approver or domain owner  (<finding> is the short id, F3)
 /heimdall dismiss <finding> <reason ≥15 chars>     filing reviewer's person or approver
 /heimdall spec-change <text>                       approver
 /heimdall override <case> <reason>                 approver
@@ -795,11 +841,13 @@ Decisions arrive from strict-grammar GitHub comments by a verified actor, or (D4
 /heimdall reject <reason>                          approver
 /heimdall approve-tests                            domain approver (sensitive domains, D33)
 /heimdall incident <text>                          member (records an incident episode)
-/heimdall start <TICKET>                           member (trigger fallback)
+/heimdall start <TICKET>                           member (start by hand)
+/heimdall challenge <finding> <evidence>           author (test path at head, run id, memory ref or decision ref, D152)
+/heimdall remember <text>                          member (records an observed fact, chat form of !remember in D65)
 /heimdall forget <memory_ref> <reason>             approver (invalidate a poisoned fact)
 ```
 
-Every command is also accepted as `!heimdall …`, because Teams can intercept messages that start with `/` (D81). Edited comments and unrecognized text are ignored and never sent to a model. Without D47, chat replies count only for answering questions and picking reviewers (V7).
+That is the GitHub form. **In chat the same grammar starts with the plain word `heimdall`** (`heimdall uphold F3`), with no `!`, `/` or `@`, because Switch and the platforms take posts starting with `!` or `/` as their own commands and never pass them on (D139, V57). An unrecognised `heimdall …` post gets one short reply with the grammar. Edited comments and other text are ignored and never sent to a model. Without D47, chat replies count only for answering questions and picking reviewers (V7).
 
 ---
 
@@ -812,7 +860,7 @@ Every command is also accepted as `!heimdall …`, because Teams can intercept m
 | Red-first | submission | every test fails on base with JUnit `<failure>`, zero `<error>` |
 | AC coverage | submission | every AC id tagged by at least one test (`// heimdall:AC2`) |
 | Flake | submission and PR | 3 runs; unstable tests quarantined and excluded from the gate |
-| Seam (contracts) | submission | tests import only `tests.seam`, the standard library and `tests.allowed_imports` (the Go profile checks this with `go list -deps -test`; other profiles declare their own import rule under `evidence`, D98), and exercise behaviour over HTTP. A missing route gives an assertion failure; a compile error is an `<error>` and rejects the submission with compiler output (D39) |
+| Seam (contracts) | submission | tests import only the profile's `seam`, the standard library and `tests.allowed_imports` (the Go profile checks this with `go list -deps -test`; other profiles declare their own import rule under `evidence`, D98), and exercise behaviour over HTTP. A missing route gives an assertion failure; a compile error is an `<error>` and rejects the submission with compiler output (D39) |
 | Green | PR | `heimdall/acceptance` CI job passes on head |
 | Mutation (Later) | PR | Go: `go-mutesting --git-diff-lines` or a wrapper around Gremlins, which has no diff mode (V47); Stryker (TS) or mutmut (Python) on changed lines, heimdall tests only. The score is shown and tracked; below 0.6 the change gets `tests_too_weak` and the test-author is re-woken to strengthen tests. It does not block (`tests.mutation_blocks: false`) |
 
@@ -820,7 +868,7 @@ Every command is also accepted as `!heimdall …`, because Teams can intercept m
 
 | Job | Command (Go example) | Limits |
 |---|---|---|
-| `red_first` | `gotestsum --junitfile /out/junit.xml -- ./tests/heimdall/...` on base + tests | 2 CPU, 2 GB, 180 s |
+| `red_first` | the profile's `acceptance` with `{dir}` = `tests/heimdall/<KEY>` (Go: `gotestsum --junitfile /out/junit.xml -- ./{dir}/...`) on base + tests | 2 CPU, 2 GB, 180 s |
 | `repro` | same on head + finding test | 2 CPU, 2 GB, 120 s |
 | `static` | `go vet`, `staticcheck`, `semgrep --config <pinned>` on changed files | 2 CPU, 2 GB, 180 s |
 | `contract` | `oasdiff breaking base.yaml head.yaml -f json` | 1 CPU, 512 MB, 30 s |
@@ -828,9 +876,9 @@ Every command is also accepted as `!heimdall …`, because Teams can intercept m
 
 Isolation:
 - Images come from an allowlist in `heimdall.toml` and are pinned by digest (Go, Python, Node, JVM and a generic base), one container per job. A profile cannot name any other image (D98).
-- **Untrusted code never runs in `heimdall-server`.** The server hands jobs to `heimdall-runner` over a Unix socket (`run(profile, tarball sha)` returns a JUnit summary and a log blob). The runner has its own user, a rootless container runtime and none of Heimdall's secrets, and **the server never holds the Docker socket**. Containers run under gVisor (`runsc`) if S18 passes, otherwise rootless with the default seccomp profile (D91). Jobs cannot reach the metadata address (D86).
-- Dependencies come from a read-only module cache volume, warmed by a separate fetch job. That is the only job with egress, allowlisted to the package registries the profile needs (Go proxy, npm, PyPI, Maven Central, crates.io).
-- Execution runs with `--network none`, a read-only root, tmpfs `/work` and `/out`, `--cap-drop ALL`, `no-new-privileges`, the default seccomp profile, a 512 PID limit, a non-root user, no secrets and no Docker socket.
+- **Untrusted code never runs in `heimdall-server`.** The server hands jobs to `heimdall-runner` over a Unix socket (`run(profile, tarball sha)` returns a JUnit summary and a log blob). The runner has its own user, a rootless container runtime and none of Heimdall's secrets, and **the server never holds the Docker socket**. Containers run rootless with the default seccomp profile (D91); stronger isolation such as gVisor is a later hardening, not a conditional path. Jobs cannot reach the metadata address (D86).
+- Dependencies come from a read-only module cache volume, warmed by a separate fetch job. That is the only job with egress, allowlisted to the package registries the profile needs (Go proxy, npm, PyPI, Maven Central, crates.io) plus any `fetch_hosts` in the merged profile (D153).
+- Execution runs with `--network none`, or for a job with services a private `--internal` network shared only with them (D153), with a read-only root, tmpfs `/work` and `/out`, `--cap-drop ALL`, `no-new-privileges`, the default seccomp profile, a 512 PID limit, a non-root user, no secrets and no Docker socket.
 - Source is a tarball the server fetches at the exact SHA.
 - Output is the parsed JUnit summary plus logs capped at 5 MB in blobs. Agents get summaries; raw logs only via `read_untrusted`.
 
@@ -842,11 +890,15 @@ The sandbox is generic. Each repo has `.heimdall/profile.yaml`:
 languages: [python, javascript]
 image: python:3.12-slim@sha256:...        # must be on the allowlist
 setup: pip install -r backend/requirements.txt
-test: pytest backend/tests --junitxml=/out/junit.xml
+test: pytest backend/tests --junitxml=/out/junit.xml        # the repo's own tests
+acceptance: pytest {dir} --import-mode=importlib --junitxml=/out/junit.xml   # Heimdall's tests; {dir} is set per job (D153)
+seam: backend.main:app                     # exists on base; tests reach the app only through it
+ac_tag: "# heimdall:{ac}"                  # comment form for this language
+fetch_hosts: [github.com]                  # beyond the registries, fetch job only; a human approves by merging
 services:                                  # throwaway containers, private network, no egress
-  - { name: db, image: "postgres:16-alpine@sha256:...", env: { POSTGRES_PASSWORD: test-only } }
+  - { name: db, image: "pgvector/pgvector:pg16@sha256:...", env: { POSTGRES_PASSWORD: test-only } }   # Jurist AI's migrations need pgvector
 evidence:                                  # per-profile tools; the Go profile defaults to go vet, staticcheck, oasdiff, go list -deps
-  - { id: compose, run: "docker compose config -q", tier: E2 }
+  - { id: compose, run: "docker compose config -q", tier: E2 }   # needs an allowlisted image with the compose CLI; no daemon is used
 paths: { tests: tests/heimdall }
 ```
 
@@ -866,7 +918,8 @@ Inputs are GitHub API data plus policy. A PR passes only if:
 ok ⇔ ticket linked
    ∧ slop.passed(head)
    ∧ testset.verified ∧ testset.ac_covered ∧ (¬sensitive(testset) ∨ testset.approved)
-   ∧ tree_hash(head, tests.dir) = testset.tree_hash
+   ∧ tree_hash(head, tests.dir/KEY) = testset.tree_hash
+   ∧ diff(merge_base, head, tests.dir) ⊆ tests.dir/KEY
    ∧ ci(head, heimdall/acceptance) = success ∧ ∀c ∈ ci_required: ci(head, c) = success
    ∧ ∀r ∈ review_requests: covered(r, head) ∨ waived(r)
    ∧ blocking_set = ∅ ∧ no case awaiting a human
@@ -874,39 +927,39 @@ ok ⇔ ticket linked
    ∧ (policy(merge_base) = policy(head) ∨ policy_owner_approved(head))
 ```
 
-`covered(r, head)` means r's last review was on a SHA whose diff to head touches none of the files r reviewed. The check summary lists every unmet clause in plain language, and a table test flips each clause.
+`heimdall/acceptance` runs all of `tests.dir`, so earlier tickets' tests guard against regressions, while each pin covers only its own ticket (D150). `covered(r, head)` means r's last review was on a SHA whose diff to head touches none of the files r reviewed. The check summary lists every unmet clause in plain language, and a table test flips each clause.
 
 ---
 
 ## 13. Integrations
 
 **GitHub App.**
-- Permissions: checks write; contents write, limited in code to `tests/heimdall/**` on ticket branches and to memory and policy PRs; pull requests read/write; issues read/write; metadata read.
+- Permissions (six, D151): checks write; contents write, limited in code to `tests/heimdall/**` on ticket branches and to memory and policy PRs; pull requests read/write; issues read/write; workflows write, minted only for the setup PR; metadata read. The installation covers selected repos only.
 - Events: `pull_request`, `pull_request_review`, `issue_comment`, `check_run`, `check_suite`, `push` (default branch), `create`.
 - Rate limits: an ETag read cache keyed by SHA and a token bucket per installation.
-- **Narrowed tokens (D96, V51):** two token sources. `reader` (contents, pull requests, issues, checks, all read) serves polling and bundles. `writer(op, repo)` is minted on demand with only that operation's permission and only that repository (`checks:write` for check runs, `contents:write` for the tests branch, `pull_requests:write` and `issues:write` for comments) and cached for at most 50 minutes. The App itself holds only the five agreed permissions, and `heimdall doctor` reads the installation's real permissions from the API (V54).
-- Repo setup by `admin init`, through a PR: required checks `heimdall/gate` and `heimdall/acceptance` with admin bypass off; "dismiss stale approvals on new commits" on; CODEOWNERS on `tests/heimdall/**`, `heimdall.yaml` and `.github/workflows/**` naming the human approvers team (Apps cannot be code owners; the tree-hash pin is the primary control, D49); the reusable `heimdall-acceptance.yml`.
+- **Narrowed tokens (D96, V51):** two token sources. `reader` (contents, pull requests, issues, checks, all read) serves polling and bundles. `writer(op, repo)` is minted on demand with only that operation's permission and only that repository (`checks:write` for check runs, `contents:write` for the tests branch, `pull_requests:write` and `issues:write` for comments) and cached for at most 50 minutes. The App itself holds only the six agreed permissions, and `heimdall doctor` reads the installation's real permissions from the API (V54).
+- Repo setup by `admin init`. Branch protection cannot go through a PR and the App holds no `administration`, so `admin init` prints one `gh api` command for a repo admin: required checks `heimdall/gate` and `heimdall/acceptance` with admin bypass off and "dismiss stale approvals on new commits" on. `doctor` then checks the result (T04 confirms what it can read). A PR carries CODEOWNERS on `tests/heimdall/**`, `heimdall.yaml` and `.github/workflows/**` naming the human approvers team (Apps cannot be code owners; the tree-hash pin is the primary control, D49); the reusable `heimdall-acceptance.yml`.
 - `github.mode: poll | webhook`, default `poll` (D64). Poll reads per repo every 10 s: open PRs, issue comments since the cursor, and reviews and check runs only for PRs whose head SHA or `updated_at` changed; about 1,000 to 2,000 requests per hour against at least 5,000 (D69). ETags help little because installation tokens rotate hourly. On 403/429 the adapter honours `Retry-After`/`x-ratelimit-reset` and doubles its interval.
 
 **Tracker.** Port with two adapters: Jira Cloud and `file` (`seed/tickets/<KEY>.md`). AC are the bullets under an "Acceptance criteria" heading; the server assigns `AC1..n` and tracks each by a hash of its text (D50).
 
-**Jira.** A JQL poll every 30 s (`project = PAY AND status changed to "In Progress" after <cursor>`) with a human assignee triggers a change; webhook mode is optional. Reads use REST v3 with an API token (a bot user or scoped token is Later). **Each poll re-queries from `cursor - 10 min` and deduplicates by (issue key, changelog id)**, because JQL resolves to the minute and the search index can lag (V55, S20); the 5-minute reconciler stays. Descriptions arrive as Atlassian Document Format (V52), so a small walker (`internal/adapters/jira/adf`) yields text and the bullets under a heading named "Acceptance criteria", with golden tests on real KAN tickets (D97). Writes (rejection tickets, comments) are gated by policy. A JQL backfill feeds memory.
+**Jira.** A JQL poll every 30 s per `[[projects]]` entry (`project = <tracker_project> AND status changed to "In Progress" after <cursor>`) with a human assignee triggers a change; webhook mode is optional. Reads use REST v3 with an API token (a bot user or scoped token is Later). **Each poll re-queries from `cursor - 10 min` and deduplicates by (issue key, changelog id)**, because JQL resolves to the minute and the search index can lag (V55, S20); the 5-minute reconciler stays. Descriptions arrive as Atlassian Document Format (V52), so a small walker (`internal/adapters/jira/adf`) yields text and the bullets under a heading named "Acceptance criteria", with golden tests on real KAN tickets (D97). Writes (rejection tickets, comments) are gated by policy. A JQL backfill feeds memory.
 
 **Switch.**
 - The coordinator registers once (V1).
 - Operations used: `create_room`, `invite_agent_to_room`, `add_users_to_room`, `create_reference`, `attach_reference_to_room`, `post_message`, `read_context`, `create_room_document`, `update_room_document`, `update_room`, `archive_room` (V2).
-- All VM agents and the coordinator share one owner (the admin), and agents use template `addressing: owner-agents`, so the coordinator can wake them (V34). Humans link their Mattermost or Teams accounts (V7).
+- All VM agents and the coordinator share one owner (the admin), and agents use template `addressing: owner-agents`, so the coordinator can wake them (V34). Humans link their Mattermost or Teams accounts (V7). The coordinator also uses `list_participants` to fill the people map.
 - No Switch tasks (V4).
 
 **Chat.**
-- **Capability-driven (D94, S19).** The `Chat` port reports `Capabilities{Threads, Cards, Buttons, MentionsNotify, DirectMessages}`. The application layer uses the richest form the platform supports and **always also posts the text command** (`!heimdall approve <sha7>`). `!heimdall` is the canonical chat syntax; `/heimdall` stays valid in GitHub comments. Mattermost and Teams are tested by us; Slack, Discord and Telegram work through Switch and are documented as untested.
-- **People mapping (D95).** `people:` in `heimdall.yaml` maps chat identity, GitHub login and Jira account id. Commands from unmapped humans are ignored and answered with how to link. An approval needs a mapped human, an allowed role and the head SHA.
+- **Minimal chat port (D127).** `Chat` has three operations: create or adopt a room, post, read. Every command is a text command starting with the plain word (`heimdall uphold F3`), identical on every platform (D139). `/heimdall` is the GitHub comment form. Final merge approval is always a GitHub review on the head commit. The only platform-specific behaviour is the Teams quirk below, selected by `chat.bridge`; there is no capability negotiation. Mattermost is tested by us (Teams if it lands); Slack, Discord and Telegram work through Switch and are documented as untested.
+- **People mapping (D95).** `people:` in `heimdall.yaml` maps the Switch sender id (`chat`, opaque and matched whole, D140), GitHub login and Jira account id. Commands from unmapped senders are ignored, which refuses agents by default; a person who is unmapped is told how to link. A decision needs a mapped human and an allowed role. A merge approval is a GitHub review on the head SHA.
 - One room per change.
 - Milestones posted: opened, tests ready, PR received, reviewers picked, findings summary, escalation, approved, merged or rejected.
 - @-mentions only for questions and decisions.
 - `verbosity: milestones | detailed`, plus per-person quiet hours.
-- `!agents-status` and `!run-cmd` are documented for teams (V16).
-- **Teams (D79, D81):** rooms are created on the bridge named in `chat.bridge`. In Teams, agent messages render as cards and **@-mentions from agents are plain text**, so humans are not notified by them; the coordinator therefore also posts every question and decision card as a reply in the channel thread the person follows, and the dashboard lists open asks. Commands work as `!heimdall …`.
+- `!agents-status` is documented for teams (V16). `!run-cmd` is not used: Switch's changelog says the command it printed did not bring an agent online, and its reply no longer carries a start command.
+- **Teams (D79, D81):** rooms are created on the bridge named in `chat.bridge`. In Teams, agent messages render as cards and **@-mentions from agents are plain text**, so humans are not notified by them; the coordinator therefore also posts every question and decision card as a reply in the channel thread the person follows, and the dashboard lists open asks. Commands work as `heimdall …`.
 
 ---
 
@@ -919,13 +972,14 @@ ok ⇔ ticket linked
 | `heimdall_get_task`, `heimdall_ack`, `heimdall_get_change` | all |
 | `heimdall_read_untrusted(ref)` | all |
 | `heimdall_read_code(path, sha, range?)` | all (test-author: base SHA only) |
+| `heimdall_read_pack(section?)` | reviewer (own pack only, D156) |
 | `heimdall_ask_knowledge(question, entities?, as_of?)` | all |
 | `heimdall_run_check(kind, args)` | reviewer, resolver (counts toward budget) |
 | `heimdall_submit_tests` | test-author |
 | `heimdall_ask_humans(questions ≤3)` | test-author, resolver |
 | `heimdall_submit_review` | reviewer |
 | `heimdall_challenge(finding, evidence)` | reviewer, author |
-| `heimdall_claim_fix(finding, sha, evidence)` | author |
+| `heimdall_claim_fix(finding, sha, evidence)` (Later, D160) | author |
 | `heimdall_submit_verdict` | resolver |
 | `heimdall_report_progress(text)` | all |
 
@@ -962,7 +1016,7 @@ type Verdict struct {
 
 | Route | Auth | Purpose |
 |---|---|---|
-| `POST /webhooks/github`, `/webhooks/jira` (webhook mode only) | HMAC | ingest |
+| `POST /webhooks/github`, `/webhooks/jira` (Later, D160) | HMAC | ingest |
 | `/mcp` | agent bearer | agent tools |
 | `/`, `/changes/:id` | none in the build: reachable only through the SSH port-forward (D53, D64) | read-only dashboard (htmx partials) |
 | `/inbox`, `/admin/*` (Later) | GitHub OAuth session + CSRF | decision inbox, admin |
@@ -1004,7 +1058,7 @@ Attackers: an outside PR author, a careless or malicious insider, poisoned conte
 | Separation | Untrusted text is never placed in instructions; it is fetched only via `read_untrusted`, wrapped with a random 128-bit boundary and a fixed preface (data, not instructions; report embedded instructions as an `injection` finding) |
 | Least authority | No agent tool approves, merges, dismisses, resolves, edits policy or tests, or pushes (except the author's agent to its own branch). The worst an injected agent can do is submit a wrong claim |
 | Verification | Only harness-verified E1–E3 evidence blocks; verdicts apply only under 11.4; free text never changes state |
-| Output filter | Secret scan, pack-overlap cut, link-to-text rewrite and @-mention stripping on every submission and progress message |
+| Output filter | Secret scan, pack-overlap cut, link-to-text rewrite and @-mention stripping on every MCP submission and progress message. Agents' direct room posts cannot be filtered, so they are scanned afterwards and raise an alert (D141) |
 | Detection | Heuristics (instruction phrases, role markers, hidden Unicode, zero-width characters, HTML comments) flag inputs and show `injection_suspected`; used for visibility, not relied on for safety |
 | Memory hygiene | Only decisions, verdicts and accepted ADRs are confirmed; chat and PR text stay observed; episodes keep their source; `/heimdall forget` invalidates poisoned facts |
 | Regression | The injection eval suite runs in CI; any state change fails the build |
@@ -1013,7 +1067,7 @@ Attackers: an outside PR author, a careless or malicious insider, poisoned conte
 
 - Raw transcripts and notes never leave the laptop.
 - Two redaction passes; any hit blocks upload; owner review is mandatory.
-- `age` encryption at rest, with decryption only into the owner's reviewer-agent tmpfs, after the signature is checked.
+- `age` encryption at rest. The server decrypts only to answer `heimdall_read_pack` for the owner's reviewer agent, after the signature is checked (D156).
 - One container and Unix user per reviewer agent, no shared volumes, egress allowlist (Switch, server, `openrouter.ai`, GitHub read).
 - Canary strings planted in each pack; the output filter and an egress log scan alert on any appearance.
 - Packs never enter team memory, and findings cite pack line ids, not content.
@@ -1025,11 +1079,11 @@ Attackers: an outside PR author, a careless or malicious insider, poisoned conte
 |---|---|
 | Webhooks | HMAC-SHA256 over the raw body, constant-time compare, delivery-id dedup, 5-min window, 1 MB cap, 30 req/s per source |
 | Agent tokens | 32 random bytes, stored as SHA-256, bound to agent, role and person, valid only for assigned tasks, rotated on pack refresh, revocable |
-| Ingress | None for Heimdall (D64): GitHub and Jira are polled; only Mattermost (people's apps, D107) and Teams (D79) are published through Cloudflare Tunnel; dashboard and `/mcp` via SSH port-forward and the Docker network only; the AWS security group allows inbound SSH only from team addresses; IMDSv2 with hop limit 1, and the metadata address is blocked for agents and sandbox containers (D86) |
+| Ingress | None for Heimdall (D64): GitHub and Jira are polled; only Mattermost (people's apps, D107) and Teams (D79) are published through Cloudflare Tunnel; dashboard and `/mcp` via SSH port-forward and the Docker network only; the AWS security group has no inbound rules and access is SSH over SSM (D135); IMDSv2 with hop limit 1, and the metadata address is blocked for agents and sandbox containers (D86) |
 | Dashboard | Build: read-only, no login, private (SSH forward only). Later: GitHub OAuth with PKCE, roles from policy, `HttpOnly`/`Secure`/`SameSite=Lax` cookies, CSRF tokens, CSP `default-src 'self'` |
 | GitHub writes | Path and branch allowlist in the adapter, plus a per-operation token narrowed to one repository and one permission (D96) |
-| Untrusted code | Runs only in `heimdall-runner` under gVisor or rootless containers; the server never holds the Docker socket (D91) |
-| Secrets | `/etc/heimdall/secrets`, mode 0400, persistent and encrypted (D89); Docker secrets inside containers; never in logs (a slog redaction handler), rooms, packs or blobs; gitleaks in CI |
+| Untrusted code | Runs only in `heimdall-runner` in rootless containers; the server never holds the Docker socket (D91) |
+| Secrets | `secrets_dir`, mode 0400, persistent (D89; the hackathon VM's disk is not encrypted, so it holds test credentials only, D135); Docker secrets inside containers; never in logs (a slog redaction handler), rooms, packs or blobs; gitleaks in CI |
 | Supply chain | `go.sum`, images pinned by digest, `govulncheck` in CI, SBOM, cosign-signed release binaries |
 | Audit | Hash-chained events, nightly verification; decisions record identity, SHA and reason |
 | Abuse and cost | Slop first, reviewer cap, budgets, per-agent rate limits, sandbox semaphore |
@@ -1043,7 +1097,7 @@ Attackers: an outside PR author, a careless or malicious insider, poisoned conte
 | author's agent | yes | own branch | no | scoped | no | own machine | no | no | no |
 | resolver | case + code (tool) | no | no | scoped | no | via server | no | no | no |
 | server | exact-SHA tarballs | test commits only | yes | yes | episodes | yes | yes | yes | no |
-| humans | per GitHub | per GitHub | via decision | dashboard | `!remember`, decisions | n/a | no | yes | per policy role |
+| humans | per GitHub | per GitHub | via decision | dashboard | `heimdall remember`, decisions | n/a | no | yes | per policy role |
 
 ---
 
@@ -1055,9 +1109,10 @@ workflow: default
 approvers: { default: [alice], auth: [ana], money_movement: [alice, bob] }
 policy_owners: [ana]
 people:
+  # chat is the opaque Switch sender id, filled by `heimdall connect people` (D140); names here are placeholders
   alice: { github: alice, chat: alice, teams: [payments] }
   bob:   { github: bob,   chat: bob,   agent: bob-reviewer, teams: [payments] }
-  dana:  { github: dana,  chat: dana,  teams: [payments] }          # the PR author in the demo
+  dana:  { github: dana,  chat: dana,  teams: [payments] }          # the PR author in the demo; github is required only for authors and approvers (D158)
   ana:   { github: ana,   chat: ana,   agent: ana-reviewer, teams: [security] }
   eli:   { github: eli,   chat: eli,   agent: eli-reviewer, teams: [consumer] }
 domains: { "internal/auth/**": auth, "internal/refunds/**": money_movement }
@@ -1065,17 +1120,15 @@ reviewers: { count: 3, pick_timeout: 15m, required: { "internal/auth/**": [ana],
 slop: { max_changed_lines: 400, require_ticket: true, ignore: ["go.sum"] }
 tests:
   dir: tests/heimdall
-  seam: github.com/acme/pay-demo/app
-  allowed_imports: [github.com/stretchr/testify]
-  runner: "gotestsum --junitfile junit.xml -- ./tests/heimdall/..."
-  signoff_domains: [auth, money_movement, data_deletion]
+  allowed_imports: [github.com/stretchr/testify]   # seam and the acceptance command live in .heimdall/profile.yaml (D153)
+  sensitive: ["backend/**/auth*", "**/migrations/**", "*delete*", "*privacy*", "*consent*"]   # D131, the Jurist AI default
   min_mutation_score: 0.6
   mutation_blocks: false
 blocking: { min_severity: medium, min_tier: E3 }
 consensus: { min_high_reporters: 2, block_score: 1.5, min_reporters: majority, confidence: { high: 1.0, medium: 0.5, low: 0.2 }, weight: { start: 0.7, min: 0.3, max: 1.0, min_decided: 5 } }
 deliberation: { max_rounds: 2, human_only_domains: [auth, money_movement, data_deletion] }
-keys: { per_role: true }   # D74: one OpenRouter key per role, each with a credit limit
-models: { provider: openrouter, test_author: deepseek/deepseek-v4-flash, reviewer: deepseek/deepseek-v4-flash, resolver: deepseek/deepseek-v4-flash, extraction: deepseek/deepseek-v4-flash, embedding: "openrouter:mongodb/voyage-4-lite" }
+keys: { openrouter: production }   # D128: one production key with a credit limit
+models: { provider: openrouter, test_author: openrouter/deepseek/deepseek-v4-flash, reviewer: openrouter/deepseek/deepseek-v4-flash, resolver: openrouter/deepseek/deepseek-v4-flash, extraction: deepseek/deepseek-v4-flash, embedding: "openrouter:mongodb/voyage-4-lite" }
 budgets: { test_author: 400000, reviewer: 150000, resolver: 120000, per_change: 1200000 }
 skills: { test_author: "1.0.0", reviewer: "1.0.0", resolver: "1.0.0" }
 memory: { rooms: [payments-eng], chat_keywords: [decided, decision, "we will", incident, postmortem] }
@@ -1085,7 +1138,7 @@ ci_required: [build, lint]
 chat: { bridge: mattermost, verbosity: milestones, decisions_in_room: true }   # bridge: teams when the Teams connection exists (D79)
 github: { mode: poll, interval: 10s }                      # D64
 tracker: { kind: jira, mode: poll, interval: 30s }         # kind: file in local mode
-agents: { runtime: opencode, temperature: 0.2, reset_between_tasks: true }   # D72, D80
+agents: { runtime: opencode }   # D72, D145
 ```
 
 The file is validated against its schema at load and read from the merge base. An invalid policy fails closed.
@@ -1097,10 +1150,10 @@ The file is validated against its schema at load and read from the merge base. A
 **Install.** `curl -fsSL https://<host>/install.sh | sh` installs the signed `heimdall` binary with a checksum check. The setup skill works in Claude Code, Codex and OpenCode, drives the CLI, and stops on any failure with the fix.
 
 **`heimdall admin init`** (once; idempotent and resumable, each step recorded):
-1. `heimdall doctor --host`, then VM compose, secrets in `/etc/heimdall/secrets`, the security group (SSH only), IMDS hop limit 1, start the core and memory stacks.
-2. GitHub App from a manifest, then a PR with branch protection, CODEOWNERS and the reusable workflow.
+1. `heimdall doctor --host`, then VM compose, secrets in `/etc/heimdall/secrets`, the security group (no public ports beyond what the install needs), IMDS hop limit 1, deploy Switch at its pinned version with generated secrets and the restart override (D124, D136, D137), start the core and memory stacks, and print how to connect Console.
+2. GitHub App from a manifest, then a PR with CODEOWNERS and the reusable workflow, then the printed branch protection command for a repo admin, which `doctor` checks (D151).
 3. Jira token and the JQL poll (webhook optional).
-4. Coordinator and role agents in Switch (template, provider `opencode`, one owner), `addressing: owner-agents` (V34), and per agent a Unix user, harness directory and systemd unit running the start command Switch gives (`!run-cmd`) (D80).
+4. Coordinator and role agents in Switch (template, provider `opencode`, one owner), `addressing: owner-agents` (V34), and the headless agent controller enrolled with `--separate-users`, so each agent runs as its own Linux user under systemd with its harness directory (D123, D80).
 5. Graphiti entity types, groups and backfill.
 6. `heimdall.yaml` via PR.
 
@@ -1112,10 +1165,24 @@ The file is validated against its schema at load and read from the merge base. A
 
 **Plug-and-play integrations and `heimdall connect` (admin, once per install).** Every external system sits behind a port (`VCS`, `Tracker`, `Chat`, `AgentRuntime`, `Memory`). Adapters register themselves in a small registry (`internal/adapters/registry.go`: `name`, `kind`, `required config`, `Check()`), and `heimdall.toml` selects them by name: `vcs.provider = github`, `tracker.provider = jira | file`, `chat.bridge = mattermost | teams | slack | discord | telegram`. Adding a platform means one adapter package plus one registry line; the domain and app layers do not change. Chat platforms are Switch's job, so `chat.bridge` only names a Switch connection and the Teams-specific behaviour under Operations (D79, D81: thread replies, plain-text mentions) stays in one `chatquirks` table keyed by platform.
 - `heimdall connect` lists every registered integration with its status (`connected`, `needs config`, `error`) and what each needs.
-- `heimdall connect <kind>` runs an interactive picker for that kind, prompts for non-secret values, tells the admin which secret file to create under `/run/secrets` (it never accepts a secret in an argument), writes the choice to `heimdall.toml`, and runs the adapter's `Check()` (a read-only call).
+- `heimdall connect <kind>` runs an interactive picker for that kind, prompts for non-secret values, tells the admin which secret file to create under `/etc/heimdall/secrets` (it never accepts a secret in an argument), writes the choice to `heimdall.toml`, and runs the adapter's `Check()` (a read-only call).
 - `heimdall connect --list`, `--check` and `--json` are non-interactive for scripts. `heimdall doctor` runs the same checks.
 - `heimdall connect mattermost` also handles the public address (D109): it asks for it or accepts "none, internal only", checks that the name resolves over HTTPS and answers as a Mattermost server (its ping endpoint, confirmed in S22), and prints the exact settings to change (Site URL, the Switch connection's Public Url) with a link to `docs/MATTERMOST_ACCESS.md`. Heimdall never owns or buys a domain; in a customer deployment the address is on the customer's own domain.
-- Build order: Mattermost, Jira and GitHub first. Teams arrives later as one more adapter entry and a `chat.bridge` change.
+- **`heimdall connect <kind>` guides the setup of every integration, not only one (D137, T99).** Each adapter's registry entry declares its guided steps as data: what the person does in the other app, which secrets it needs, what the CLI does through an API, and the check that proves it worked. The flow is the same for all: show the next manual step, wait, read the secret file, apply the setting, run the live check, and resume where it stopped. Only steps that need a person in the other app stay manual. If an API is missing for a step, the CLI prints the exact Console action instead, then checks the result. Adding an integration means adding its steps to the registry.
+- Build order: Mattermost, Jira and GitHub first, then OpenRouter and Telegram, then Slack and Discord, with Teams last.
+
+| Integration | The person does | The CLI does | Live check |
+|---|---|---|---|
+| Switch and Console | Signs in to Console | Deploys the pinned stack (`admin init`), starts or prints the port-forward | Health endpoints; server reachable through the forward |
+| GitHub | Approves the App from a manifest and installs it | Stores the key path, opens the setup PR | Installation readable; repos listed |
+| Jira | Creates an API token | Stores site, email and project | `myself` and the project both answer |
+| OpenRouter | Creates a key with a credit limit | Stores it | Key endpoint shows the limit and balance |
+| Mattermost | Provides a domain if the apps need one | Uses Switch's bundled server; sets Site URL, public address and invite-only sign-up | Ping endpoint over HTTPS; bridge active |
+| Telegram | Creates the bot, turns Group Privacy off, adds it to a group and posts | Creates the Switch connection; finds the new room | Bridge active; room and message arrived |
+| Slack | Creates the app from Switch's manifest and installs it | Prints the manifest, checks both tokens, creates the connection | Bridge active; room and message arrived |
+| Discord | Creates the bot, turns on intents, invites it, copies the server id | Prints the invite settings, creates the connection | Bridge active; room and message arrived |
+| Teams | Completes Azure and Microsoft 365 admin steps, provides a public hostname | Prints each value needed, publishes port `3978` to the tunnel, creates the connection | Public endpoint answers; bridge active; message arrived |
+| Agent controller | Copies the one-time code from the Machines page, if no API can issue it | Installs and enrols the controller with `--separate-users` | Machine online; test agent answers |
 
 **Operations.**
 - `heimdall admin upgrade`: signed images, goose migrations (forward-only; down paths tested for the last release), 30 s graceful drain.
@@ -1139,20 +1206,27 @@ The file is validated against its schema at load and read from the merge base. A
 
 ## 19. Testing
 
-| Level | Scope | Tools |
-|---|---|---|
-| Unit | Reducer (every state × event; replay property), rules (each merge clause flipped), tiering, auto-apply, slop, policy validation, redaction patterns | `go test`, table tests, `testing/quick` |
-| Contract | MCP schemas; GitHub, Jira, Switch and Graphiti payload fixtures | golden files |
-| Integration | Real Postgres (testcontainers-go), fake GitHub/Switch/Graphiti (`httptest`), real Docker sandbox. Covers full W1 and W2 plus forged webhook, replay, self-approval, stale-SHA approval, test deletion, E4-only block attempt, challenge without new evidence, injection per source, stale reviewer pack, and Graphiti, Switch and OpenRouter each down | `go test -tags integration` |
-| Agent evals | 6.7 | `heimdall eval run` |
-| Live smoke | Real Switch + Mattermost, GitHub repo, Jira, one agent per role | `scripts/smoke` |
-| Chaos | Kill the server mid-step, drop Postgres, flood the sandbox queue; assert no lost events and no false green | scripted |
+The binding strategy is `docs/TEST_STRATEGY.md` (D111 to D120): layers, the per-task loop, the definition of done, the cost budget and a matrix of red test, real check and LLM cost for every task. In summary:
 
-CI runs unit, contract, integration and the injection evals on every push. Full agent evals run nightly and before any skill bump.
+| Level | Scope | Tools | Cost |
+|---|---|---|---|
+| L0 Static | vet, staticcheck, lint, dependency rule, gitleaks | `make fast` | $0 |
+| L1 Unit, property, fuzz | Reducer (every state x event; replay property), rules (each merge clause flipped), tiering, slop, policy validation, redaction patterns; fuzz for ADF, JUnit, command grammar and the redactor | `go test`, table tests, `testing/quick`, Go fuzzing | $0 |
+| L2 Component | Adapters on real Postgres (testcontainers-go), the real `heimdall-runner` and sandbox on hermetic fixture repos, the real HTTP server | `make verify` | $0 |
+| L3 Contract | Parsers and adapters against **recorded real payloads** (GitHub, Jira ADF, Switch, Mattermost, JUnit); MCP schemas; golden files. `make drift` compares them with the live systems | golden files | $0 |
+| L4 Real integration, no LLM | Real GitHub App, Jira KAN, Switch and Mattermost with a **scripted agent** (D118): full W1 and W2 plus replayed events, self-approval, stale-SHA approval, test deletion, E4-only block attempt, challenge without new evidence, stale reviewer pack, and each dependency down | `make e2e` | $0 |
+| L5 Live LLM smoke | One real OpenCode agent per role on a tiny fixture task; structural assertions only | `make e2e` | about $0.03 per run |
+| L6 Agent evals | 6.7, reduced corpora and a priced budget; the injection suite against live agents (D115) | `make eval` | within the $3 plan |
+| L7 Rehearsal and soak | The Jurist AI scenario; the planted-issue check (D122); a 2-hour soak with scripted agents | `make rehearse`, `make soak` | about $0.15 per run; soak $0 |
+| Chaos-lite | Kill the server mid-step, kill the runner, stop Postgres, pause Switch, flood the sandbox queue; assert no lost events and no false green (D117). The k6 load test is out of scope | scripted | $0 |
+
+CI runs L0 to L3 on every push. Server-side injection defenses are in L1 and L2, so they run on every push at no cost. Live-agent evals never run on every push; they run on demand, at G3 and G4, and before a skill bump, each after a budget check (D113, D115).
 
 ---
 
 ## 20. Seed repo `pay-demo` (Go)
+
+**Status (D116).** `pay-demo` and `ledger-demo` are now **hermetic fixtures** (`testdata/repos/`), used for cheap, repeatable tests of the generic sandbox and the evals. The live demo target is Jurist AI (D101), and its scenario (a ticket, planted issues, and the frontend API client as the cross-team fact) is authored as task T75. The PAY-142 story below is the template for it.
 
 - **Service:** `POST /payments`, `POST /refunds`, `GET /refunds/{id}`, with an in-memory store and `api/openapi.yaml`.
 - **Consumer:** a separate public repo `ledger-demo` parses `refund_ref`; `pay-demo` has no copy of it, so only eli's pack and memory know (D57).
@@ -1161,6 +1235,7 @@ CI runs unit, contract, integration and the injection evals on every push. Full 
   - `good-pr`: three findings that need three people's context: partial refunds over the payment total (bob), `refund_ref` renamed (eli), any merchant can read any refund (ana). Exact content in D57.
   - `bad-pr`: 1,400 lines, no ticket.
   - `injection-pr`: payloads in the body, a comment and the code.
+- **Published as:** `aarush323/heimdall-fixture-pay`, pushed from `testdata/repos/pay-demo` by `make fixtures-push`, so real PRs and checks work (D149). Live tickets get their keys from Jira at run time; `PAY-142` is the file-tracker example.
 - **Seam:** `app.New(app.Config) http.Handler` exists on base (D39).
 - **Tickets:** `seed/tickets/PAY-142.md` mirrors the Jira ticket for local mode.
 - **Baselines:** CodeRabbit and a plain DeepSeek V4 Flash reviewer (same model as ours, so the difference is context, not model) on the same diff, saved verbatim in `seed/baseline/` (D58).
@@ -1168,6 +1243,8 @@ CI runs unit, contract, integration and the injection evals on every push. Full 
 ---
 
 ## 21. Delivery plan
+
+**History only.** `MVP_SCENARIOS.md` section 7 is the one build order, and `IMPLEMENTATION_PLAN.md` holds the tasks (D160).
 
 | WP | Package | Done when |
 |---|---|---|
@@ -1204,24 +1281,24 @@ CI runs unit, contract, integration and the injection evals on every push. Full 
 | Agents do not wake | WP1–2 first; unavailable-reply detection; one container restart; `doctor` |
 | Graphiti extraction cost or quality | DeepSeek V4 Flash, selective episodes, custom ontology, confirmed-only evidence; Cognee behind the same port |
 | Graphiti config | Verified in source (V37): `openai` embedder provider with `api_url` and `dimensions: 1024`; hosted `voyage-4-lite` returns 1024 (V50); S13 confirms end to end |
-| DeepSeek V4 Flash tool-calling or instruction-following is weak | Server-side validation and one repair attempt; low temperature; the D60 live check 3 of 3 before recording; policy can point one role at a stronger OpenRouter model |
-| OpenCode permission keys differ from what D44 assumes | S14 on day one; the Unix-user and nftables egress rules hold even if a permission key is wrong (D80) |
+| DeepSeek V4 Flash tool-calling or instruction-following is weak | Evidence is verified by code, so a weak model costs recall, not safety; the planted-issue check (2 of 3) before recording; policy can point one role at a stronger OpenRouter model |
+| Switch or OpenCode does not behave as read in the source (commands, sessions, permissions, version) | T01 to T03 run first (`STAGE_1_FIXES.md`); the Unix-user and nftables rules hold even if a permission rule is wrong (D80) |
 | Teams ingress or tenant consent stalls | Teams is set up by a teammate in parallel; Mattermost stays the default bridge, so the demo never depends on Teams |
 | Weak or crashing generated tests | Red-first (failure vs error), AC coverage, flake, mutation, retries |
 | Resolver overreach | Auto-apply only with re-verified evidence, never in human-only domains, always reversible |
 | Context leakage | Two scans, owner review, encryption, output filter, canaries |
 | Sandbox escape or exhaustion | No network, dropped capabilities, seccomp, limits, non-root, semaphore |
 | Scope for four people | Critical path, frozen interfaces, pure domain package, cut order |
-| Untrusted PR code on the VM that holds secrets | `heimdall-runner` under its own user, rootless runtime, gVisor if S18 passes, no Docker socket for the server, metadata blocked (D86, D91) |
-| Limited login, no sudo | `doctor --host` first; rootless-container harness fallback (D90) |
-| Out-of-memory kill | 32 GB preferred, hosted embeddings, swap on the small size, memory guard (D86, D87, D102) |
-| Switch controller and systemd both manage agents | S17 decides the owner (D92) |
+| Untrusted PR code on the VM that holds secrets | `heimdall-runner` under its own user, rootless runtime, no Docker socket for the server, metadata blocked (D86, D91) |
+| Limited login, no sudo | `doctor --host` fails clearly; sudo is a requirement the friend provides (D90) |
+| Out-of-memory kill | 16 GB with swap, hosted embeddings, one sandbox slot, memory guard, builds and unit tests on a laptop where possible (D87, D102, D110) |
+| AWS spend passes the $50 cap | `r6a.large` (D135), no NAT gateway or load balancer, Budgets alerts and a stop action, a local cost estimate in `doctor` (D110) |
 | Mattermost tunnel down or misconfigured (people cannot connect) | Switch and the agents keep working inside the VM; S22 tests desktop and phone apps through the tunnel before the demo; `docs/MATTERMOST_ACCESS.md` has the checklist; a second tunnel replica can run on the same token |
-| Heimdall down or wrong during the demo | Fail closed, `/healthz`, runbook, break-glass, `gate.mode: advisory`, tagged releases, rehearsal (D93, D102) |
-| Chat platform differences | Capability probe and a text-command baseline everywhere (D94, S19) |
+| Heimdall down or wrong during the demo | Fail closed, `/healthz`, runbook, break-glass, tagged releases, rehearsal (D93, D102) |
+| Chat platform differences | Text commands are identical on every platform; one Teams quirk keyed on `chat.bridge` (D127) |
 | Jira poll misses a ticket | Overlap window, dedupe, reconciler, S20 (D97) |
 | FalkorDB license (SSPL) | Fine for self-hosting; matters only if we ever sell a hosted service, then switch to Neo4j Community or Kuzu via Graphiti's drivers |
 
 ## 23. Open questions
 
-Only the three items under "Still needs the team" in `BRAINSTORM_BACKLOG.md` Part 12 remain (instance size and sudo, the role-to-person map, and whether Teams lands). Everything else is decided; answers update this spec.
+Only the human actions H1 to H6 in `docs/STAGE_1_FIXES.md` and whether Teams lands remain. Everything else is decided; T01 to T03 validate it, and a result that contradicts a decision changes this spec in the same commit.

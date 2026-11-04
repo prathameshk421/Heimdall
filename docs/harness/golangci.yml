@@ -1,0 +1,99 @@
+version: "2"
+# MODULE is replaced with the real module path by `make harness-install` (T16).
+# Verify with `golangci-lint config verify`; `make lint-selftest` proves every rule below still fires.
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - errorlint
+    - gocritic
+    - revive
+    - gosec
+    - bodyclose
+    - noctx
+    - contextcheck
+    - nilerr
+    - unparam
+    - exhaustive
+    - depguard          # R3 dependency rule, R4 no testkit in production
+    - forbidigo         # R7
+    - gochecknoglobals  # R7
+    - gochecknoinits    # R7
+    - funlen            # standards section 1
+    - gocyclo
+    - sloglint
+    - testifylint
+    - nolintlint        # R2: a //nolint needs a reason and a linter name
+  settings:
+    funlen:
+      lines: 60
+      statements: 40
+    gocyclo:
+      min-complexity: 12
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    sloglint:
+      no-global: all
+      context: all
+    forbidigo:
+      forbid:
+        - pattern: ^time\.Sleep$
+          msg: "R7: no sleeping. Use the Clock port or a fake clock."
+        - pattern: ^fmt\.(Print|Printf|Println)$
+          msg: "R7: use log/slog."
+        - pattern: ^log\.(Print|Printf|Println|Fatal|Fatalf|Panic|Panicf)$
+          msg: "R7: use log/slog."
+        - pattern: ^os\.(Getenv|LookupEnv|Environ)$
+          msg: "R7: configuration is read only in internal/platform/config."
+        - pattern: ^panic$
+          msg: "R6: return an error."
+    depguard:
+      rules:
+        domain:
+          files: ["**/internal/domain/**"]
+          list-mode: strict
+          allow: [$gostd, MODULE/internal/domain]
+        app:
+          files: ["**/internal/app/**"]
+          list-mode: strict
+          allow: [$gostd, MODULE/internal/domain, MODULE/internal/ports]
+        ports:
+          files: ["**/internal/ports/**"]
+          list-mode: strict
+          allow: [$gostd, MODULE/internal/domain]
+        adapters:
+          files: ["**/internal/adapters/**"]
+          deny:
+            - { pkg: MODULE/internal/app, desc: "R3: adapters implement ports, they do not call use cases" }
+            - { pkg: MODULE/internal/transport, desc: "R3" }
+        transport:
+          files: ["**/internal/transport/**"]
+          deny:
+            - { pkg: MODULE/internal/adapters, desc: "R3: transport calls app, never adapters" }
+        production-has-no-testkit:
+          files: ["!**/*_test.go", "!**/internal/testkit/**", "!**/cmd/heimdall-testagent/**", "!**/e2e/**"]
+          deny:
+            - { pkg: MODULE/internal/testkit, desc: "R4: test code stays out of production" }
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [funlen, gochecknoglobals, gosec, forbidigo]
+        text: "(fmt\\.Print|panic|os\\.Getenv)"
+      - path: ^cmd/
+        linters: [forbidigo]
+        text: "(fmt\\.Print|panic|os\\.Getenv|os\\.LookupEnv)"
+      - path: ^internal/platform/config/
+        linters: [forbidigo]
+        text: "os\\.(Getenv|LookupEnv)"
+
+formatters:
+  enable: [gofmt, goimports]
