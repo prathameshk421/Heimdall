@@ -182,6 +182,9 @@ func notBuiltCheck(secrets ...string) func(context.Context, config.Config) regis
 }
 
 func runConnect(args []string, stdin io.Reader, stdout, stderr io.Writer, deps connectDeps) int {
+	if len(args) > 0 && args[0] == "people" {
+		return runConnectPeople(args[1:], stdin, stdout, stderr, realPeopleDeps())
+	}
 	opts, positional, ok := parseConnectArgs(args, stderr)
 	if !ok {
 		return connectExitUsage
