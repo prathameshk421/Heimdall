@@ -140,11 +140,14 @@ func (p TestsSubmitted) Validate() error {
 	return v.join()
 }
 
-// TestsVerified is the payload of tests.verified: the sandbox ran the tests (red first, D4).
+// TestsVerified is the payload of tests.verified: the sandbox ran the tests (red first, D4). NeedsSignoff is set by the
+// engine from policy (the sensitive paths and labels, D131, D33): when true the reducer waits for tests.approved before
+// the tests can be committed.
 type TestsVerified struct {
-	RunIDs   []id.RunID `json:"run_ids"`
-	SHA      id.SHA     `json:"sha"`
-	TreeHash id.SHA     `json:"tree_hash"`
+	RunIDs       []id.RunID `json:"run_ids"`
+	SHA          id.SHA     `json:"sha"`
+	TreeHash     id.SHA     `json:"tree_hash"`
+	NeedsSignoff bool       `json:"needs_signoff"`
 }
 
 // Validate returns every problem with the payload.
