@@ -2,10 +2,14 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -32,7 +36,10 @@ type Assignment struct {
 var ErrNoTask = errors.New("no active task")
 
 // HashToken returns the lowercase hex SHA-256 of a token. Stored tokens are hashes, so a lookup is by hash.
-func HashToken(token string) string { return "" }
+func HashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
 
 // Tokens resolves a token hash to its principal. Unknown or revoked is ports.ErrUnauthorized.
 type Tokens interface {
@@ -71,14 +78,46 @@ type Deps struct {
 
 // Server answers MCP requests for the agents' tools.
 type Server struct {
-	deps Deps
+	deps  Deps
+	tools []tool
+
+	// progressMu guards progressLast, the time of each task's last accepted progress report. It is held in memory
+	// per process (TECH_SPEC 6.5), so a restart opens the window again.
+	progressMu   sync.Mutex
+	progressLast map[id.TaskID]time.Time
 }
 
 // NewServer validates the dependencies and returns the server. A nil dependency is refused.
-func NewServer(d Deps) (*Server, error) { return &Server{deps: d}, nil }
+func NewServer(d Deps) (*Server, error) {
+	switch {
+	case d.Logger == nil:
+		return nil, errors.New("mcp server logger must not be nil")
+	case d.Clock == nil:
+		return nil, errors.New("mcp server clock must not be nil")
+	case d.Tokens == nil:
+		return nil, errors.New("mcp server token store must not be nil")
+	case d.Tasks == nil:
+		return nil, errors.New("mcp server tasks must not be nil")
+	case d.Code == nil:
+		return nil, errors.New("mcp server code reader must not be nil")
+	case d.Blobs == nil:
+		return nil, errors.New("mcp server blob store must not be nil")
+	}
+	s := &Server{deps: d, progressLast: map[id.TaskID]time.Time{}}
+	tools, err := s.buildTools()
+	if err != nil {
+		return nil, fmt.Errorf("build mcp tools: %w", err)
+	}
+	s.tools = tools
+	return s, nil
+}
 
-// Handler returns the http.Handler for /mcp: POST only, bearer token required.
-func (s *Server) Handler() http.Handler { return http.NotFoundHandler() }
+// Handler returns the http.Handler for /mcp: POST only. The bearer token is checked inside the handler.
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /mcp", s.serveMCP)
+	return mux
+}
 
 // BridgeConfig configures the stdio bridge. URL is the server's /mcp endpoint; Token is the agent token and is
 // sent only as a header. In and Out are the client's stdio. Logs go to Logger, never to Out.
@@ -90,6 +129,3 @@ type BridgeConfig struct {
 	Logger *slog.Logger
 	HTTP   *http.Client
 }
-
-// Bridge relays JSON-RPC lines from In to the server and the responses to Out, until In ends or ctx is cancelled.
-func Bridge(ctx context.Context, cfg BridgeConfig) error { return nil }

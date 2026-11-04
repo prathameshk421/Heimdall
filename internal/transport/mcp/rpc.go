@@ -2,13 +2,14 @@ package mcp
 
 import "encoding/json"
 
-// The JSON-RPC 2.0 error codes used here. The first four are the protocol's own; -32001 and -32000 are this
+// The JSON-RPC 2.0 error codes used here. The first five are the protocol's own; -32001 and -32000 are this
 // server's answers when the bridge cannot get one from the server.
 const (
 	codeParseError     = -32700
 	codeInvalidRequest = -32600
 	codeMethodNotFound = -32601
 	codeInvalidParams  = -32602
+	codeInternalError  = -32603
 	codeUnauthorized   = -32001
 	codeUnreachable    = -32000
 )
@@ -45,4 +46,12 @@ type toolResult struct {
 type textContent struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+}
+
+// nullID is the id of a reply to a message whose id could not be read, as JSON-RPC requires.
+func nullID() json.RawMessage { return json.RawMessage("null") }
+
+// errorReply builds a JSON-RPC error response for id.
+func errorReply(id json.RawMessage, code int, message string) rpcReply {
+	return rpcReply{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: message}}
 }

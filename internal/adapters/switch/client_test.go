@@ -2,9 +2,7 @@ package switchchat
 
 import (
 	"context"
-	"errors"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -108,7 +106,7 @@ func TestBreakerOpensAfterFiveUnavailableAndProbesAfterCooldown(t *testing.T) {
 	_, err := c.OpenRoom(ctx, req)
 	require.ErrorIs(t, err, ports.ErrUnavailable)
 	require.Contains(t, err.Error(), "circuit open")
-	require.Equal(t, before, len(f.requests()), "an open breaker sends nothing")
+	require.Len(t, f.requests(), before, "an open breaker sends nothing")
 
 	clock.advance(31 * time.Second)
 	f.ops["create_room"] = func(map[string]any) (int, any) { return http.StatusOK, map[string]any{"id": testRoomUUID} }
@@ -137,7 +135,22 @@ func TestDeadlineIsTenSecondsAndCancellationStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := c.OpenRoom(ctx, ports.RoomRequest{ChangeID: "PAY-142", Title: "PAY-142 refunds", Key: "k1"})
-	require.True(t, errors.Is(err, context.Canceled), "a cancelled caller gets context.Canceled, got %v", err)
-	require.False(t, strings.Contains(err.Error(), testAPIKey))
+	require.ErrorIs(t, err, context.Canceled, "a cancelled caller gets context.Canceled")
+	require.NotContains(t, err.Error(), testAPIKey)
 	require.Equal(t, 10*time.Second, requestDeadline)
+}
+
+func TestACancelledCallerIsNotASwitchFailure(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	req := ports.RoomRequest{ChangeID: "PAY-142", Title: "PAY-142 refunds", Key: "k1"}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for i := 0; i < 8; i++ {
+		_, err := c.OpenRoom(cancelled, req)
+		require.ErrorIs(t, err, context.Canceled)
+		require.NotErrorIs(t, err, ports.ErrUnavailable, "the caller stopped, so Switch did not fail")
+	}
+	_, err := c.OpenRoom(context.Background(), req)
+	require.NoError(t, err, "eight cancelled calls do not open the breaker")
 }

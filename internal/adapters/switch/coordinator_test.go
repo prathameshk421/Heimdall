@@ -98,6 +98,20 @@ func TestInviteAgentRefusesAnOkFalseReply(t *testing.T) {
 	require.Error(t, c.InviteAgent(context.Background(), roomID(t, testRoomUUID), "test-author"))
 }
 
+func TestOpenRoomDoesNotAdoptAnArchivedRoomWithTheSameTitle(t *testing.T) {
+	f := newFakeSwitch(t)
+	f.mu.Lock()
+	f.rooms = []map[string]any{{"room_id": testOtherRoom, "name": "PAY-142 refunds", "archived": true}}
+	f.mu.Unlock()
+	c, _ := newTestClient(t, f)
+	room, err := c.OpenRoom(context.Background(), ports.RoomRequest{
+		ChangeID: "PAY-142", Title: "PAY-142 refunds", Key: "room_open:PAY-142:1:room",
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, testOtherRoom, string(room), "the archived room is not adopted")
+	require.Len(t, f.opCalls("create_room"), 1, "a new room is made in its place")
+}
+
 func TestCreateAndAttachReferenceSendTheOperationArguments(t *testing.T) {
 	f := newFakeSwitch(t)
 	c, _ := newTestClient(t, f)

@@ -38,12 +38,28 @@ var (
 	ghActor    = change.Actor{Kind: change.ActorGitHub, ID: "github"}
 )
 
-// fixedClock is the only clock the tests use; the engine itself reads no clock.
+// fixedClock is the only clock the tests use. The engine reads time only through it, and only for the events it writes.
 type fixedClock struct{ now time.Time }
 
 func (c fixedClock) Now() time.Time { return c.now }
 
 var _ ports.Clock = fixedClock{}
+
+// fakeIDs hands out well-formed ids. Event ids start at a prefix the harness never uses, so the events the engine
+// writes itself cannot collide with the events the harness builds.
+type fakeIDs struct{ events int }
+
+var _ ports.IDs = (*fakeIDs)(nil)
+
+func (f *fakeIDs) NewEvent() change.EventID {
+	f.events++
+	return change.EventID(fmt.Sprintf("10000000-0000-4000-8000-%012d", f.events))
+}
+
+func (f *fakeIDs) NewFinding() id.FindingID { return "fnd_01ARZ3NDEKTSV4RRFFQ69G5FAV" }
+func (f *fakeIDs) NewRun() id.RunID         { return runID }
+func (f *fakeIDs) NewCase() id.CaseID       { return "case_01ARZ3NDEKTSV4RRFFQ69G5FAV" }
+func (f *fakeIDs) NewTask() id.TaskID       { return taskID }
 
 // fakeStore keeps one change's events in memory. Append checks what the postgres store checks: the expected version,
 // the event versions, that every event and effect validates, and that the hash chain links. A test that passes here
@@ -52,7 +68,11 @@ type fakeStore struct {
 	events   []change.Event
 	effects  []change.Effect
 	appends  int
-	conflict bool
+	expected []int64 // the expected version of every Append call, in call order, refused ones included
+	// conflicts makes the next this many Append calls return ErrVersionConflict, as a second writer would.
+	conflicts int
+	// race, when set, runs once before the next Append checks the version: it is another writer's turn.
+	race func()
 }
 
 var _ ports.EventStore = (*fakeStore)(nil)
@@ -62,7 +82,14 @@ func (s *fakeStore) Load(_ context.Context, _ id.ChangeID) ([]change.Event, erro
 }
 
 func (s *fakeStore) Append(_ context.Context, cid id.ChangeID, expected int64, evs []change.Event, fx []change.Effect) (int64, error) {
-	if s.conflict {
+	s.expected = append(s.expected, expected)
+	if s.race != nil {
+		race := s.race
+		s.race = nil
+		race()
+	}
+	if s.conflicts > 0 {
+		s.conflicts--
 		return 0, fmt.Errorf("append %s: %w", cid, ports.ErrVersionConflict)
 	}
 	if head := int64(len(s.events)); head != expected {
@@ -71,39 +98,61 @@ func (s *fakeStore) Append(_ context.Context, cid id.ChangeID, expected int64, e
 	if len(evs) == 0 {
 		return 0, errors.New("append: no events")
 	}
-	prev := change.Hash{}
-	for i, e := range evs {
-		if e.ChangeID != cid {
-			return 0, fmt.Errorf("event %d is for change %s, not %s", i+1, e.ChangeID, cid)
-		}
-		if want := expected + int64(i) + 1; e.Version != want {
-			return 0, fmt.Errorf("event %d has version %d, want %d", i+1, e.Version, want)
-		}
-		if err := e.Validate(); err != nil {
-			return 0, fmt.Errorf("event %s: %w", e.Type, err)
-		}
-		if len(s.events) == 0 && i == 0 {
-			e.PrevHash = nil
-		} else {
-			p := prev
-			e.PrevHash = &p
-		}
-		h, err := change.Chain(prev, e)
-		if err != nil {
-			return 0, err
-		}
-		e.Hash = h
-		prev = h
-		s.events = append(s.events, e)
+	if err := checkEffects(fx); err != nil {
+		return 0, err
 	}
-	for _, f := range fx {
-		if err := f.Validate(); err != nil {
-			return 0, fmt.Errorf("effect %s: %w", f.Key, err)
-		}
+	if err := s.link(cid, expected, evs); err != nil {
+		return 0, err
 	}
 	s.effects = append(s.effects, fx...)
 	s.appends++
 	return int64(len(s.events)), nil
+}
+
+// link checks the new events and appends them with their hash chain. The first new event links to the last stored
+// event, as the postgres store does. Nothing is appended when one event is refused.
+func (s *fakeStore) link(cid id.ChangeID, expected int64, evs []change.Event) error {
+	prev := change.Hash{}
+	if n := len(s.events); n > 0 {
+		prev = s.events[n-1].Hash
+	}
+	linked := make([]change.Event, 0, len(evs))
+	for i, e := range evs {
+		if e.ChangeID != cid {
+			return fmt.Errorf("event %d is for change %s, not %s", i+1, e.ChangeID, cid)
+		}
+		if want := expected + int64(i) + 1; e.Version != want {
+			return fmt.Errorf("event %d has version %d, want %d", i+1, e.Version, want)
+		}
+		if err := e.Validate(); err != nil {
+			return fmt.Errorf("event %s: %w", e.Type, err)
+		}
+		p := prev
+		if len(s.events) == 0 && i == 0 {
+			e.PrevHash = nil
+		} else {
+			e.PrevHash = &p
+		}
+		h, err := change.Chain(prev, e)
+		if err != nil {
+			return err
+		}
+		e.Hash = h
+		prev = h
+		linked = append(linked, e)
+	}
+	s.events = append(s.events, linked...)
+	return nil
+}
+
+// checkEffects validates every effect of one append before any of them is stored.
+func checkEffects(fx []change.Effect) error {
+	for _, f := range fx {
+		if err := f.Validate(); err != nil {
+			return fmt.Errorf("effect %s: %w", f.Key, err)
+		}
+	}
+	return nil
 }
 
 // fakeStep is a step whose behaviour the test supplies. It counts how often the engine called it.
@@ -146,6 +195,8 @@ type harness struct {
 	store *fakeStore
 	clock fixedClock
 	n     int
+	// sensitive is the sensitive_domain condition, and the needs_signoff the sandbox reports (D33). False by default.
+	sensitive bool
 }
 
 func newHarness(t *testing.T) *harness {
@@ -201,38 +252,28 @@ func hasOf(types ...change.EventType) func(c engine.ChangeView) bool {
 // (see the package doc). Each Start emits only what the view lacks, so calling it again is harmless.
 func (h *harness) defaultSteps() []engine.Step {
 	return []engine.Step{
-		fake("switch.open_room", hasOf(change.EventRoomOpened), func(ctx context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+		fake("switch.open_room", hasOf(change.EventRoomOpened), func(_ context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
 			if c.Has(change.EventRoomOpened) {
 				return engine.Result{}, nil
 			}
 			return h.emit(change.EventRoomOpened, sysActor, change.RoomOpened{RoomID: "room-PAY-142"}), nil
 		}),
-		fake("github.ensure_branch", hasOf(change.EventBranchEnsured), func(ctx context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+		fake("github.ensure_branch", hasOf(change.EventBranchEnsured), func(_ context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
 			if c.Has(change.EventBranchEnsured) {
 				return engine.Result{}, nil
 			}
 			return h.emit(change.EventBranchEnsured, ghActor, change.BranchEnsured{Repo: repo, Branch: branch, BaseSHA: sha}), nil
 		}),
-		fake("agent.task", hasOf(change.EventTestsSubmitted), func(ctx context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
-			if c.Has(change.EventTaskAssigned) {
-				return engine.Result{Timers: []engine.Timer{{Step: "write_tests", Due: dayStart.Add(2 * time.Hour)}}}, nil
-			}
-			res := h.emit(change.EventTaskAssigned, sysActor, change.TaskAssigned{
-				TaskID: taskID, Agent: "test-author", Role: workflow.RoleTestAuthor,
-				Deadline: dayStart.Add(2 * time.Hour), BundleRef: blob,
-			})
-			res.Timers = []engine.Timer{{Step: "write_tests", Due: dayStart.Add(2 * time.Hour)}}
-			return res, nil
-		}),
-		fake("sandbox.test_quality", hasOf(change.EventTestsVerified), func(ctx context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+		h.agentTaskStep(),
+		fake("sandbox.test_quality", hasOf(change.EventTestsVerified), func(_ context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
 			if c.Has(change.EventTestsVerified) || !c.Has(change.EventTestsSubmitted) {
 				return engine.Result{}, nil
 			}
 			return h.emit(change.EventTestsVerified, sysActor, change.TestsVerified{
-				RunIDs: []id.RunID{runID}, SHA: sha, TreeHash: sha, NeedsSignoff: false,
+				RunIDs: []id.RunID{runID}, SHA: sha, TreeHash: sha, NeedsSignoff: h.sensitive,
 			}), nil
 		}),
-		fake("github.commit_tests", hasOf(change.EventTestsCommitted), func(ctx context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+		fake("github.commit_tests", hasOf(change.EventTestsCommitted), func(_ context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
 			if c.Has(change.EventTestsCommitted) {
 				return engine.Result{}, nil
 			}
@@ -248,32 +289,60 @@ func (h *harness) defaultSteps() []engine.Step {
 			return res, nil
 		}),
 		fake("wait", hasOf(change.EventPROpened), nil),
-		fake("rule.slop", hasOf(change.EventSlopEvaluated), func(ctx context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+		fake("rule.slop", hasOf(change.EventSlopEvaluated), func(_ context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
 			if c.Has(change.EventSlopEvaluated) {
 				return engine.Result{}, nil
 			}
 			return h.emit(change.EventSlopEvaluated, sysActor, change.SlopEvaluated{Pass: true}), nil
 		}),
 		h.pickStep(),
-		fake("agent.fanout", hasOf(change.EventReviewSubmitted), func(ctx context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+		fake("agent.fanout", hasOf(change.EventReviewSubmitted), func(_ context.Context, _ engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
 			return engine.Result{Timers: []engine.Timer{{Step: "review", Due: dayStart.Add(30 * time.Minute)}}}, nil
 		}),
 		fake("sandbox.verify_evidence", hasOf(change.EventReviewSubmitted), nil),
 		fake("human.approve_tests", hasOf(change.EventTestsApproved), nil),
 		fake("sandbox.mutation", hasOf(change.EventReviewSubmitted), nil),
 		fake("deliberation.run", hasOf(change.EventReviewSubmitted), nil),
-		fake("rule.merge_allowed", hasOf(change.EventGateEvaluated), func(ctx context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+		// The gate has no after edge (it runs on any event), so it is offered every run. It stays silent until a
+		// review is in, because a green gate before review would be a merge the rules never allowed.
+		fake("rule.merge_allowed", hasOf(change.EventGateEvaluated), func(_ context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+			if !c.Has(change.EventReviewSubmitted) {
+				return engine.Result{}, nil
+			}
 			return h.emit(change.EventGateEvaluated, sysActor, change.GateEvaluated{OK: true, SHA: sha, TreeHash: sha, PolicyVersion: 1}), nil
 		}),
 	}
 }
 
+// agentTaskStep is the test-author's step. The first call assigns the task and sets its deadline timer; the task is
+// done when the agent submits its tests. Its timeout records task.timed_out, as the real step would at the deadline.
+func (h *harness) agentTaskStep() *fakeStep {
+	deadline := dayStart.Add(2 * time.Hour)
+	s := fake("agent.task", hasOf(change.EventTestsSubmitted), func(_ context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+		if c.Has(change.EventTaskAssigned) {
+			return engine.Result{Timers: []engine.Timer{{Step: "write_tests", Due: deadline}}}, nil
+		}
+		res := h.emit(change.EventTaskAssigned, sysActor, change.TaskAssigned{
+			TaskID: taskID, Agent: "test-author", Role: workflow.RoleTestAuthor,
+			Deadline: deadline, BundleRef: blob,
+		})
+		res.Timers = []engine.Timer{{Step: "write_tests", Due: deadline}}
+		return res, nil
+	})
+	s.timeout = func(engine.ChangeView) (engine.Result, error) {
+		return h.emit(change.EventTaskTimedOut, sysActor, change.TaskTimedOut{
+			TaskID: taskID, Agent: "test-author", Role: workflow.RoleTestAuthor, Reason: "no submission before the deadline",
+		}), nil
+	}
+	return s
+}
+
 // pickStep waits for reviewers.picked from a person; its timeout picks the default reviewers by timer.
 func (h *harness) pickStep() *fakeStep {
-	s := fake("human.pick_reviewers", hasOf(change.EventReviewersPicked), func(ctx context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+	s := fake("human.pick_reviewers", hasOf(change.EventReviewersPicked), func(_ context.Context, _ engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
 		return engine.Result{Timers: []engine.Timer{{Step: "pick", Due: dayStart.Add(15 * time.Minute)}}}, nil
 	})
-	s.timeout = func(c engine.ChangeView) (engine.Result, error) {
+	s.timeout = func(engine.ChangeView) (engine.Result, error) {
 		return h.emit(change.EventReviewersPicked, sysActor, change.ReviewersPicked{
 			People: []change.ActorID{"ana"}, By: "heimdall", Method: change.PickTimer,
 		}), nil
@@ -298,15 +367,19 @@ func (h *harness) build(cfg engine.Config) *engine.Engine {
 	return e
 }
 
-// defaultConfig is the default workflow on the fakes, with sensitive_domain false.
+// defaultConfig is the default workflow on the fakes. sensitive_domain is h.sensitive, false unless a test sets it.
 func (h *harness) defaultConfig(steps []engine.Step) engine.Config {
 	return engine.Config{
-		Workflow:   defaultWorkflow(),
-		Steps:      steps,
-		Store:      h.store,
-		Roles:      registryRoles,
-		Schemas:    registrySchemas,
-		Conditions: map[string]engine.Condition{"sensitive_domain": func(engine.ChangeView) bool { return false }},
+		Workflow: defaultWorkflow(),
+		Steps:    steps,
+		Store:    h.store,
+		Clock:    h.clock,
+		IDs:      &fakeIDs{},
+		Roles:    registryRoles,
+		Schemas:  registrySchemas,
+		Conditions: map[string]engine.Condition{"sensitive_domain": func(engine.ChangeView) bool {
+			return h.sensitive
+		}},
 	}
 }
 

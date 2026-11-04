@@ -67,8 +67,20 @@
 //   - No SDK: the JSON-RPC surface is small (initialize, ping, tools/list, tools/call), so it is written here with the
 //     standard library and no new dependency.
 //   - Progress rate limit is held in memory per process. A restart resets it. Persisting it belongs to the app.
-//   - read_code and read_untrusted both wrap their text, and read_code allows the head SHA for reviewers and
-//     resolvers because the head is the change under review.
+//   - read_code and read_untrusted both wrap their text, and read_code allows the head SHA for every role except
+//     test-author, because the head is the change under review. read_code numbers the lines ("12: text") so an
+//     agent can cite file:line. The wrapper preface and the cut note are fixed server text.
+//   - Protocol revisions: the server speaks 2025-06-18 and 2025-03-26. An unknown revision gets 2025-06-18.
+//   - get_change answers from the envelope only, because the Tasks port has no other read of the change.
+//   - submit_tests checks the tests directory tests/heimdall/<change id> (D150). Its schema is generated from
+//     testset.Submission, so the wire form and the validator cannot drift.
+//   - ask_humans takes 1 to 3 questions of at most 400 characters each. The spec gives the count only; the length
+//     limit matches report_progress and is recorded here for the lead to confirm.
+//   - report_progress reserves the task's window before the call and gives it back when the call fails.
+//   - The bridge posts each request with a 30 s deadline, and refuses a line over 8 MiB with -32600 without posting it.
+//     A notification that fails is logged and writes nothing, because it has no id to answer.
+//   - A tool the role lacks is -32602 with the same text as an unknown tool. An argument the tool refuses is an
+//     isError result, so the agent keeps its budget.
 //   - The output filter (secret scan, canary scan) of TECH_SPEC 6.5 is not built: the security package is empty.
 //     This package caps lengths but does not scan content. Recorded as not verified.
 //
