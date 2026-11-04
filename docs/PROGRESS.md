@@ -47,3 +47,5 @@ Nothing yet. `install.sh` cannot install the controller 0.31.0 (no signature on 
 
 | Date | Task | Story / agents | Green / blocked / red |
 |---|---|---|---|
+| 2026-11-04 |  | fixture-pay / scripted | 0 / 40 / 0 |
+| 2026-11-04 | T98 | fixture-pay / scripted | 0 / 38 / 2 |

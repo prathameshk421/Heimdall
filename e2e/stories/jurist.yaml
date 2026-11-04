@@ -1,0 +1,31 @@
+# The live story: Jurist AI, the demo target (D101). PRs target the long-lived heimdall-demo branch, never main (D154).
+# Authored in T75: the ticket, the planted issues, the cross-team fact and their files do not exist yet.
+name: jurist
+repo: aarush323/PBL_TOS_RISK_ANALYZER
+base_branch: heimdall-demo
+pending: T75
+
+ticket:
+  title: Backend response change that breaks the frontend API client
+  description: To be written in T75 against the real code.
+  ac:
+    - to be written in T75
+
+stranger: user
+fix_branch: to-be-created-in-T75
+
+people:
+  author:   { chat: dev-author,   github: aarush323, role: author }
+  approver: { chat: dev-approver, github: rekdfr,    role: approver }
+  bob:      { chat: rev-backend,  role: reviewer }
+  eli:      { chat: rev-frontend, role: reviewer }
+  ana:      { chat: rev-infra,    role: reviewer }
+
+good_pr: to-be-created-in-T75
+bad_pr: to-be-created-in-T75
+injection_pr: to-be-created-in-T75
+profile: python-fastapi
+
+planted:
+  - { id: consumer-break, finder: eli, tier: E3, repro: pending, needs_memory: true }
+expected_blocking_set: [consumer-break]

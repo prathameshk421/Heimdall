@@ -1,0 +1,6 @@
+# Fake credentials with real prefixes, committed in T18 (internal/testkit/record/record_test.go) to test the scrubber.
+# They are split into two halves since then, so no later commit matches. Only these exact findings are ignored.
+352d5abcd978e0043c0c4d7788add995cbd204c5:internal/testkit/record/record_test.go:github-app-token:21
+352d5abcd978e0043c0c4d7788add995cbd204c5:internal/testkit/record/record_test.go:jwt:27
+352d5abcd978e0043c0c4d7788add995cbd204c5:internal/testkit/record/record_test.go:github-pat:19
+352d5abcd978e0043c0c4d7788add995cbd204c5:internal/testkit/record/record_test.go:slack-bot-token:26

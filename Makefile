@@ -91,12 +91,24 @@ record: ## re-record real payloads for a task into testdata/real: make record T=
 	@test -n "$(T)" || { echo "usage: make record T=T24" >&2; exit 2; }
 	HEIMDALL_RECORD=$(CURDIR)/testdata/real bash scripts/run-tagged.sh e2e '^TestTask_$(T)$$' "record $(T)"
 
-.PHONY: cost fixtures-push prototype
+.PHONY: cost fixtures-push prototype demo-check heimdall-bin
 cost: ## remaining LLM budget per purpose (T19)
 	@echo "make cost: the budget guard is not built yet (T19). No live model run is allowed until it is." >&2; exit 1
 
 fixtures-push: ## publish testdata/repos/pay-demo to the fixture repo (T31)
 	@echo "make fixtures-push: testdata/repos/pay-demo does not exist yet (T31)." >&2; exit 1
+
+# ---- the product board (T98): the progress bar for the whole project ----
+
+heimdall-bin: ## build the command-line binary the board's CLI steps run
+	@mkdir -p .cache
+	go build -o .cache/heimdall ./cmd/heimdall
+
+prototype: heimdall-bin ## the board: make prototype [STORY=fixture-pay] [AGENTS=scripted|live] [ONLY=P3] [JSON=1] [TASK=T##]
+	go run ./e2e/cmd/prototype
+
+demo-check: heimdall-bin ## the demo script as a test: every beat of the three-minute video, in order (MVP_SCENARIOS section 6)
+	go run ./e2e/cmd/prototype -demo -strict -no-history
 
 # ---- toolchain ----
 

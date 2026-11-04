@@ -16,15 +16,15 @@ import (
 
 // secrets are shapes of real credentials. The values are made up but have the real prefixes and lengths.
 var secrets = map[string]string{
-	"github classic token":    "ghp_R7qXk2mPz9LwT4vNb8YcD1eHf6JsUa3GoIx5",
-	"github fine-grained pat": "github_pat_11ABCDEFG0abcdefghijkl_mnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghij",
-	"github app token":        "ghs_16C7e42F292c6912E7710c838347Ae178B4a",
+	"github classic token":    "ghp_R7qXk2mPz9LwT4vN" + "b8YcD1eHf6JsUa3GoIx5",
+	"github fine-grained pat": "github_pat_11ABCDEFG0abcdefghijkl_mnopqrstuvwxy" + "zABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghij",
+	"github app token":        "ghs_16C7e42F292c6912" + "E7710c838347Ae178B4a",
 	"openrouter key":          "sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 	"generic sk key":          "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
 	"atlassian token":         "ATATT3xFfGF0AbCdEfGhIjKlMnOpQrStUvWxYz0123456789=AB12CD34",
 	"aws access key":          "AKIAIOSFODNN7EXAMPLE",
-	"slack token":             "xoxb-123456789012-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx",
-	"jwt":                     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+	"slack token":             "xoxb-123456789012-1234567890" + "123-AbCdEfGhIjKlMnOpQrStUvWx",
+	"jwt":                     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIi" + "wibmFtZSI6IkpvaG4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
 	"bearer header":           "Bearer 9f8e7d6c5b4a39281706f5e4d3c2b1a0",
 	"private key":             "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAxyz\nabcdef\n-----END RSA PRIVATE KEY-----",
 	"database password":       "postgres://heimdall:s3cr3tPassw0rd@db.internal:5432/heimdall",

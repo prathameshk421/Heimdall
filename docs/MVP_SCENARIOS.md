@@ -38,7 +38,7 @@ Rule: **a scenario never mentions a repo, a ticket or a person directly.** It re
 
 ## 2. The user simulator and the board (task T98)
 
-`e2e/` is a Go package (build tag `e2e`) with the only interface scenarios use. It does what a person does, through the real systems' public APIs:
+`e2e/` is a Go package with the only interface scenarios use. (Built Nov 4, T98: the simulator library is untagged so its own logic is unit-tested in `make fast`; the live per-task checks `TestTask_T##` keep the `e2e` build tag.) It does what a person does, through the real systems' public APIs:
 
 ```go
 type World interface {

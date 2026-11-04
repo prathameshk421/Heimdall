@@ -60,15 +60,15 @@ linters:
     depguard:
       rules:
         domain:
-          files: ["**/internal/domain/**"]
+          files: ["**/internal/domain/**", "!**/*_test.go"]   # tests may use testify and cmp (CODING_STANDARDS 8)
           list-mode: strict
           allow: [$gostd, github.com/prathameshk421/flip_the_switch_hackathon/internal/domain]
         app:
-          files: ["**/internal/app/**"]
+          files: ["**/internal/app/**", "!**/*_test.go"]   # tests may use testify and cmp (CODING_STANDARDS 8)
           list-mode: strict
           allow: [$gostd, github.com/prathameshk421/flip_the_switch_hackathon/internal/domain, github.com/prathameshk421/flip_the_switch_hackathon/internal/ports]
         ports:
-          files: ["**/internal/ports/**"]
+          files: ["**/internal/ports/**", "!**/*_test.go"]   # tests may use testify and cmp (CODING_STANDARDS 8)
           list-mode: strict
           allow: [$gostd, github.com/prathameshk421/flip_the_switch_hackathon/internal/domain]
         adapters:
