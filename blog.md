@@ -161,6 +161,11 @@ Heimdall is a merge-safety layer for pull requests that runs on Switch. A Jira t
 **Gave up.** Cloudflare Access in front of it: the Mattermost apps cannot complete its browser login, so we rely on invite-only sign-up, MFA and rate limits.
 **Needs from the team.** A domain on Cloudflare and a person with VM access to run the tunnel.
 
+### The domain belongs to whoever deploys (Nov 4)
+**Decision.** Heimdall never owns or buys a domain. It takes the public address as a setting, and `heimdall connect mattermost` checks it (resolves over HTTPS, answers as Mattermost) and prints the settings to change. For the hackathon the domain is a stand-in; in a real deployment it is the customer's own, exposed however their IT exposes internal tools.
+**Why.** The tunnel is free but a domain is not, and no product should hold domains for its customers. Teams that chat in Slack, Discord or Telegram need no domain at all, and Teams needs a public name the customer controls.
+**Fallbacks for us.** A free quick tunnel for rehearsals (its address changes on every restart), then Tailscale. We have not confirmed the current student free-domain offer or Tailscale's free user limit.
+
 ---
 
 ## Open questions

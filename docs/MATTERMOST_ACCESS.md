@@ -9,6 +9,13 @@ Status: v1, Nov 4, 2026. Done once by whoever has the Cloudflare domain and a lo
 - Access to the VM with sudo.
 - The Mattermost port on the VM. Switch Console shows it under the server's **Messaging apps** row (**Sign-in details**). It is usually `8065`; use whatever Console shows.
 
+## Where the domain comes from
+
+- **The tunnel is free.** Cloudflare Tunnel costs nothing. **The domain is not free:** it must be a domain you own with its DNS on Cloudflare (a free Cloudflare account is enough), and Cloudflare does not hand out free domains. Cheap ones cost a few dollars a year. The GitHub Student Developer Pack has offered a free domain for a year; check the current offer before relying on it.
+- **No domain at all (rehearsal only):** a Cloudflare quick tunnel (`cloudflared tunnel --url http://localhost:8065`) gives a free random `trycloudflare.com` address, but it changes on every restart, so Site URL and every person's app must be updated each time.
+- **Other free option:** Tailscale (each person installs it and uses its HTTPS name). Its free plan limits the number of users, which we have not checked, so confirm the team fits.
+- **In the real product the customer brings their own domain** (for example `chat.acme.com`) and exposes Mattermost however their IT exposes internal tools: Cloudflare Tunnel, a load balancer with TLS, or a VPN, with their own SSO in front if they want it. Heimdall never owns or buys a domain; it only needs the public address as a setting. Customers whose chat is Slack, Discord or Telegram need no domain for chat. Teams needs a public HTTPS name the customer controls (`TEAMS_SETUP.md`).
+
 ## Steps
 1. **Create the tunnel.** In the Cloudflare dashboard open Zero Trust, then Networks, then Tunnels, and create a tunnel named `heimdall-chat`. Choose the Linux install option and copy the token. Do not paste the token in chat or commit it; save it to `/etc/heimdall/secrets/cloudflared-chat.token` on the VM (mode 0400).
 2. **Install and run `cloudflared` on the VM** as a service using that token (the dashboard shows the exact command). It only connects outward.

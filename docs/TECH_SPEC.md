@@ -1114,6 +1114,7 @@ The file is validated against its schema at load and read from the merge base. A
 - `heimdall connect` lists every registered integration with its status (`connected`, `needs config`, `error`) and what each needs.
 - `heimdall connect <kind>` runs an interactive picker for that kind, prompts for non-secret values, tells the admin which secret file to create under `/run/secrets` (it never accepts a secret in an argument), writes the choice to `heimdall.toml`, and runs the adapter's `Check()` (a read-only call).
 - `heimdall connect --list`, `--check` and `--json` are non-interactive for scripts. `heimdall doctor` runs the same checks.
+- `heimdall connect mattermost` also handles the public address (D109): it asks for it or accepts "none, internal only", checks that the name resolves over HTTPS and answers as a Mattermost server (its ping endpoint, confirmed in S22), and prints the exact settings to change (Site URL, the Switch connection's Public Url) with a link to `docs/MATTERMOST_ACCESS.md`. Heimdall never owns or buys a domain; in a customer deployment the address is on the customer's own domain.
 - Build order: Mattermost, Jira and GitHub first. Teams arrives later as one more adapter entry and a `chat.bridge` change.
 
 **Operations.**
