@@ -4,11 +4,11 @@ Every session reads this first and updates it before stopping. Status per task i
 
 ## State
 
-Docs are final and committed on branch `heimdall-build` (not pushed). No product code exists. T101 to T103 are done and T104 is written (its VM check is T03). The VM runs Switch `0.31.0` with Mattermost, plus Node 22.23.4, OpenCode 1.19.5 and the controller 0.31.0 (installed, not enrolled; versions in `RUNBOOK.md`). Heimdall is not installed.
+Docs are final and committed on branch `heimdall-build` (not pushed). No product code exists. Stage 1 is finished (T101 to T104, T01 to T03; evidence in `TRACKER.md`, findings in backlog D163). The VM runs Switch `0.31.0` with Mattermost, plus Node 22.23.4, OpenCode 1.19.5, the enrolled controller 0.31.0 and the agent egress firewall (`RUNBOOK.md`). Heimdall is not installed.
 
 ## Next
 
-1. `STAGE_1_FIXES.md`: T03. T01 and T02 are done.
+1. Stage 1 is done.
 2. `MVP_SCENARIOS.md` section 7: slice 0 (T00, T10, T16, T18, T98). Product code goes in top-level folders, not `docs/`.
 
 ## Code layout
