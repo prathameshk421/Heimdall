@@ -4,8 +4,8 @@
 // # Purpose
 //
 // The adapter reads pull requests, comments, reviews and check runs, and writes comments, branches, commits and check
-// runs. It implements ports.PRReader, ports.PRComments, ports.BranchWriter, ports.CheckWriter and ports.CodeReader.
-// Nothing outside this package sees a GitHub type.
+// runs. It implements ports.PRReader, ports.PRComments, ports.BranchWriter, ports.CheckWriter, ports.CodeReader and
+// ports.RepoReader. Nothing outside this package sees a GitHub type.
 //
 // # API
 //
@@ -16,6 +16,8 @@
 //   - Tokens().Installation(ctx) reads the installation's real permissions and repositories (GET
 //     /app/installations/{id} with the App JWT). RequiredPermissions() is the set the product needs; doctor compares
 //     the two.
+//   - DefaultHead (ports.RepoReader) reads the default branch name, then that branch's commit, with the reader token.
+//     An empty repository, or a repository with no default branch, is ports.ErrNotFound.
 //   - RateLimitError is returned when GitHub asks for a wait longer than two minutes, or keeps refusing after
 //     three attempts. It wraps ports.ErrUnavailable, so the outbox retries it later.
 //
@@ -23,6 +25,9 @@
 //
 //   - Status codes map to ports errors: 401 and 403 (without rate-limit headers) are ports.ErrUnauthorized, which the
 //     outbox does not retry; 404 is ports.ErrNotFound; 5xx and transport failures are ports.ErrUnavailable.
+//   - A 409 is ports.ErrNotFound only on a call that sets conflictMissing (the commit lookup of DefaultHead, where GitHub
+//     answers 409 for an empty repository). On every other call a 409 stays an ordinary error, so a failed write is
+//     never mistaken for a missing repository.
 //   - Error text never carries a response body, a token or a key. A body can echo a token, so bodies are not logged.
 //   - A circuit breaker opens after five consecutive unavailable outcomes and stays open for 30 seconds. Client errors
 //     do not count against it.

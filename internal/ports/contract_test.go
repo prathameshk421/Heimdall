@@ -75,6 +75,14 @@ func (f *fakeComments) Comment(_ context.Context, _ change.Repo, _ int, _ change
 	return nil
 }
 
+type fakeRepos struct{}
+
+var _ ports.RepoReader = fakeRepos{}
+
+func (fakeRepos) DefaultHead(_ context.Context, _ change.Repo) (id.SHA, error) {
+	return shaA, nil
+}
+
 type fakeBranches struct{}
 
 var _ ports.BranchWriter = fakeBranches{}
@@ -231,6 +239,11 @@ func TestVCSContractsAreSplitByConsumer(t *testing.T) {
 
 	var comments ports.PRComments = &fakeComments{}
 	require.NoError(t, comments.Comment(ctx, repo, 7, key, "hello"))
+
+	var repos ports.RepoReader = fakeRepos{}
+	head, err := repos.DefaultHead(ctx, repo)
+	require.NoError(t, err)
+	require.Equal(t, shaA, head)
 
 	var branches ports.BranchWriter = fakeBranches{}
 	require.NoError(t, branches.EnsureBranch(ctx, repo, shaA, "PAY-142-tests"))

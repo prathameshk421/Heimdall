@@ -45,6 +45,7 @@ var (
 	_ ports.BranchWriter = (*Adapter)(nil)
 	_ ports.CheckWriter  = (*Adapter)(nil)
 	_ ports.CodeReader   = (*Adapter)(nil)
+	_ ports.RepoReader   = (*Adapter)(nil)
 )
 
 // New builds the adapter. It fails on a missing dependency, a base URL that is not absolute, or an App key that does

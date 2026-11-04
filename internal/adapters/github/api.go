@@ -127,6 +127,11 @@ type refJSON struct {
 	} `json:"object"`
 }
 
+// repoJSON is the part of a repository the adapter reads: the name of its default branch.
+type repoJSON struct {
+	DefaultBranch string `json:"default_branch"`
+}
+
 // commitJSON is the tree of a git commit.
 type commitJSON struct {
 	Tree struct {

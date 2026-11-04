@@ -53,6 +53,9 @@ type request struct {
 	accept string
 	etag   string
 	body   []byte
+	// conflictMissing maps a 409 reply to ports.ErrNotFound. GitHub answers 409 for a commit lookup in an empty
+	// repository. Only calls that set it read 409 that way; a 409 on a write stays an ordinary error.
+	conflictMissing bool
 }
 
 // response is a fully read reply. Only statuses that statusError accepts reach it.
@@ -346,6 +349,8 @@ func statusError(r request, code int) error {
 	case code == http.StatusUnauthorized || code == http.StatusForbidden:
 		return fmt.Errorf("%w: %s", ports.ErrUnauthorized, label)
 	case code == http.StatusNotFound:
+		return fmt.Errorf("%w: %s", ports.ErrNotFound, label)
+	case code == http.StatusConflict && r.conflictMissing:
 		return fmt.Errorf("%w: %s", ports.ErrNotFound, label)
 	case code >= 500:
 		return fmt.Errorf("%w: %s", ports.ErrUnavailable, label)

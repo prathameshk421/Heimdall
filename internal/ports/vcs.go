@@ -51,3 +51,11 @@ type CodeReader interface {
 	// Tarball returns the source tree at sha. The caller closes it.
 	Tarball(ctx context.Context, repo change.Repo, sha id.SHA) (io.ReadCloser, error)
 }
+
+// RepoReader reads the state of a repository's default branch. Consumer: the branch effect (internal/app/effects), which
+// needs the base commit before it makes a test branch. It returns ErrNotFound for an empty repository, which has no
+// commit to read.
+type RepoReader interface {
+	// DefaultHead returns the head commit SHA of the repository's default branch.
+	DefaultHead(ctx context.Context, repo change.Repo) (id.SHA, error)
+}
