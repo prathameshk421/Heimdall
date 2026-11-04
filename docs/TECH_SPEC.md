@@ -278,7 +278,7 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 | `room.opened`, `branch.ensured` | room id; branch, base sha | Adapters |
 | `task.assigned` / `task.acked` / `task.timed_out` / `task.failed` | task id, agent, role, deadline, bundle hash, reason | Engine |
 | `question.asked` / `question.answered` | ids, refs, sender, message id | test-author, room sync |
-| `tests.submitted` / `tests.verified` / `tests.rejected` / `tests.committed` | refs, AC map, run ids, reasons, sha, tree hash | Agent, sandbox, GitHub |
+| `tests.submitted` / `tests.verified` / `tests.rejected` / `tests.committed` | refs, AC map, run ids, reasons, sha, tree hash; `tests.verified` also carries `needs_signoff`, set by the engine from policy (sensitive paths and labels, D131, D33): true sends the change to AWAITING_TEST_SIGNOFF, false to TESTS_READY | Agent, sandbox, GitHub, engine |
 | `tests.approved` | approver, tree hash (sensitive domains, D33) | Room or GitHub command |
 | `ticket.changed` | changed fields | Jira poller |
 | `pr.opened` / `pr.pushed` / `pr.linked` / `pr.closed` | number, head sha, author, ticket, merged | GitHub poller |
@@ -341,7 +341,7 @@ CREATE TABLE event (
 CREATE INDEX event_type_time ON event (type, occurred_at);
 
 CREATE TABLE outbox (
-  id BIGSERIAL PRIMARY KEY, effect_key TEXT NOT NULL UNIQUE, kind TEXT NOT NULL,
+  id BIGSERIAL PRIMARY KEY, effect_key TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, target TEXT NOT NULL,
   payload JSONB NOT NULL, event_id UUID NOT NULL REFERENCES event(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(), done_at TIMESTAMPTZ, attempts INT NOT NULL DEFAULT 0, last_error TEXT
 );

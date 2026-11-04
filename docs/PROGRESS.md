@@ -6,6 +6,14 @@ Every session reads this first and updates it before stopping. Status per task i
 
 Branch `heimdall-build`, nothing pushed. **Done and committed:** Stage 1, slice 0, and now **T11** (frozen interfaces as Go: `finding`, `deliberation`, `testset`, `workflow`, `policy`, `slop`, `gate`, `change`, `ports`, `schema`), **T31 built** (fixtures `pay-demo`, `ledger-demo`, `internal/testkit/fixtures`; not pushed to GitHub), the **slice-0 review fixes** (shared test guard, `id`, recorder, honest board) and the **T16 hardening** (stricter lint, hooks, CI, the harness is now **installed**). `make fast` is green (950 tests). `make verify` is green except `secrets` (see "Waiting on the human"). The Sonnet slice-0 review is done: no Critical findings; its High and Medium items are fixed except those listed under "Not verified yet".
 
+## Session 3 in progress (Nov 4): slice 1 "the door"
+
+- **T17** built by a Haiku helper, reviewed, not committed yet: `internal/platform/config` (strict TOML, `[[projects]]`, `Secret` via `os.OpenRoot`, `OnceSet`, `FilePath`), `transport.NewRouter` with `/healthz`, `cmd/heimdall-server` `run()`. Evidence: 55 tests pass, lint 0 issues on the three packages, 8 mutations caught (helper's report; I re-ran the tests only). Names differ from the brief: `FilePath` (revive stutter), `run` takes a listen func, router takes a logger. Not verified: a real SIGINT/SIGTERM, a laptop run against a real `secrets/` (`make secrets-local` does not exist).
+- **T21** built by a Haiku helper, reviewed, not committed yet: `internal/domain/change/reducer.go` (`Reduce`, `Replay`, `ErrIllegalTransition`, table built in a function). Design change: `tests.verified` now carries `needs_signoff` (spec 3.2 updated); true goes to AWAITING_TEST_SIGNOFF, false to TESTS_READY, and `tests.committed` from AWAITING_TEST_SIGNOFF is illegal. Mutations caught. Choices: `pr.linked` from UNLINKED_PR goes to REJECTED (closes the stream, no new State); `pr.closed` unmerged goes to REJECTED. Not verified: invariant 2 (the reducer keeps no head sha).
+- **T20** done: `internal/adapters/postgres` (goose migrations, `Store` for EventStore and Outbox, cursor, webhook dedupe, `VerifyAll`). Evidence: `make fast` exit 0 (1885 tests, lint 0), `make verify` exit 0, helper ran 37 component tests (also with `-race`) and 12 mutations caught. Spec 4.1 now has `outbox.target`. Effects are attributed to the last event of an append. `occurred_at` is cut to microseconds before hashing. Not verified: process-level `kill -9`; the advisory lock is only caught by the backend-terminate test (UNIQUE gives the same outcome on a race).
+- T17 is committed as b3d05be and T21 as 928cd1a. Next: T22 (outbox drainer; River not added, so drainer first, see below).
+- `go mod tidy` was run (go-toml/v2, goose/v3 added; network works). River is not added yet.
+
 ## Next (in order)
 
 1. The owner decisions below (they unblock a green `make verify`).
@@ -59,6 +67,7 @@ OpenRouter: $0.149 of the $3 testing cap, read Nov 4 after T03. No live model ru
 - `workflow/task.go` has its own `validateFiles`; `finding.CheckRepoPath` does the same job. Consolidate (T11 follow-up).
 - The hash chain is per change (spec 4.2 amended). A truncated tail cannot be seen from the chain alone: the nightly job must publish per-change heads.
 - Gate: an empty review-request list passes the reviews clause; the caller must leave `ReviewsKnown` false until reviewers are picked (spec invariant 7).
+- `TestsVerified.NeedsSignoff` is a plain `bool`: a producer that omits it silently skips sign-off. Only the engine produces it; make it required (`*bool`) if another producer appears.
 - `Makefile` target `e2e`/`cost`: `TODO(T19)` marks where the budget guard goes.
 
 ## Board history
