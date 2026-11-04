@@ -1,0 +1,15 @@
+# BuildKit reads this file because it sits beside Dockerfile.server. It keeps credential files, env files,
+# tests and docs out of the build context. Everything is excluded first, then only what the server build needs
+# is added back.
+*
+!go.mod
+!go.sum
+!cmd
+!internal
+# The CLI and the test-only doubles are not part of the server image (D121).
+cmd/heimdall
+cmd/heimdall-testagent
+cmd/archcheck
+internal/testkit
+internal/lintselftest
+**/*_test.go

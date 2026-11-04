@@ -1,0 +1,58 @@
+# Graphiti MCP server config for deploy/compose.yaml (D66, D73, D87; TECH_SPEC section 12, memory stack).
+# It follows the layout of config/config-docker-falkordb.yaml in the zepai/knowledge-graph-mcp standalone image,
+# with OpenRouter as the one OpenAI-compatible endpoint for both the LLM and the embedder (D87).
+# The OpenRouter key is not in this file: the compose command reads it from the openrouter_api_key Docker secret.
+
+server:
+  transport: "http"
+  host: "0.0.0.0"
+  port: 8000
+
+llm:
+  provider: "openai"
+  model: "deepseek/deepseek-v4-flash"
+  max_tokens: 4096
+  providers:
+    openai:
+      api_key: ${OPENAI_API_KEY}
+      api_url: "https://openrouter.ai/api/v1"
+
+embedder:
+  provider: "openai"
+  model: "mongodb/voyage-4-lite"
+  dimensions: 1024
+  providers:
+    openai:
+      api_key: ${OPENAI_API_KEY}
+      api_url: "https://openrouter.ai/api/v1"
+
+database:
+  provider: "falkordb"
+  providers:
+    falkordb:
+      uri: "redis://falkordb:6379"
+      password: ""
+      database: "default_db"
+
+graphiti:
+  group_id: "main"
+  user_id: "mcp_user"
+  entity_types:
+    - name: "Preference"
+      description: "User preferences, choices, opinions, or selections (PRIORITIZE over most other types except User/Assistant)"
+    - name: "Requirement"
+      description: "Specific needs, features, or functionality that must be fulfilled"
+    - name: "Procedure"
+      description: "Standard operating procedures and sequential instructions"
+    - name: "Location"
+      description: "Physical or virtual places where activities occur"
+    - name: "Event"
+      description: "Time-bound activities, occurrences, or experiences"
+    - name: "Organization"
+      description: "Companies, institutions, groups, or formal entities"
+    - name: "Document"
+      description: "Information content in various forms (books, articles, reports, etc.)"
+    - name: "Topic"
+      description: "Subject of conversation, interest, or knowledge domain (use as last resort)"
+    - name: "Object"
+      description: "Physical items, tools, devices, or possessions (use as last resort)"

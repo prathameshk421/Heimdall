@@ -102,6 +102,9 @@ var _ ports.CodeReader = fakeCode{}
 func (fakeCode) TreeHash(_ context.Context, _ change.Repo, _ id.SHA, _ string) (id.SHA, error) {
 	return "7d3e9a1", nil
 }
+func (fakeCode) ReadFile(_ context.Context, _ change.Repo, _ id.SHA, _ string) ([]byte, error) {
+	return []byte("version: 1\n"), nil
+}
 func (fakeCode) Tarball(_ context.Context, _ change.Repo, _ id.SHA) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader([]byte("tar"))), nil
 }

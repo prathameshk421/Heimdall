@@ -45,6 +45,9 @@ type CheckWriter interface {
 type CodeReader interface {
 	// TreeHash returns the git tree hash of dir at sha.
 	TreeHash(ctx context.Context, repo change.Repo, sha id.SHA, dir string) (id.SHA, error)
+	// ReadFile returns the content of one file at sha, or ErrNotFound when the path does not exist there. The slop rule
+	// reads heimdall.yaml with it at the merge base, never at the PR head (TECH_SPEC invariant 5).
+	ReadFile(ctx context.Context, repo change.Repo, sha id.SHA, path string) ([]byte, error)
 	// Tarball returns the source tree at sha. The caller closes it.
 	Tarball(ctx context.Context, repo change.Repo, sha id.SHA) (io.ReadCloser, error)
 }

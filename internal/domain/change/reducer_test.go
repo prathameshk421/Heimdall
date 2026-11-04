@@ -84,6 +84,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventRoomOpened:       change.StateRoomOpen,
 		change.EventPROpened:         change.StateTriggered,
 		change.EventPRPushed:         change.StateTriggered,
+		change.EventSlopEvaluated:    change.StateTriggered,
 		change.EventPRClosed:         change.StateTriggered,
 		change.EventDecisionRecorded: change.StateTriggered,
 		change.EventChangeRejected:   change.StateRejected,
@@ -95,6 +96,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventQuestionAnswered: change.StateRoomOpen,
 		change.EventPROpened:         change.StateRoomOpen,
 		change.EventPRPushed:         change.StateRoomOpen,
+		change.EventSlopEvaluated:    change.StateRoomOpen,
 		change.EventPRClosed:         change.StateRoomOpen,
 		change.EventDecisionRecorded: change.StateRoomOpen,
 		change.EventChangeRejected:   change.StateRejected,
@@ -110,6 +112,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventTicketChanged:    change.StateWritingTests,
 		change.EventPROpened:         change.StateWritingTests,
 		change.EventPRPushed:         change.StateWritingTests,
+		change.EventSlopEvaluated:    change.StateWritingTests,
 		change.EventPRClosed:         change.StateWritingTests,
 		change.EventDecisionRecorded: change.StateWritingTests,
 		change.EventChangeRejected:   change.StateRejected,
@@ -122,6 +125,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventTicketChanged:    change.StateWritingTests,
 		change.EventPROpened:         change.StateVerifyingTests,
 		change.EventPRPushed:         change.StateVerifyingTests,
+		change.EventSlopEvaluated:    change.StateVerifyingTests,
 		change.EventPRClosed:         change.StateVerifyingTests,
 		change.EventDecisionRecorded: change.StateVerifyingTests,
 		change.EventChangeRejected:   change.StateRejected,
@@ -133,6 +137,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventTicketChanged:    change.StateWritingTests,
 		change.EventPROpened:         change.StateAwaitingTestSignoff,
 		change.EventPRPushed:         change.StateAwaitingTestSignoff,
+		change.EventSlopEvaluated:    change.StateAwaitingTestSignoff,
 		change.EventPRClosed:         change.StateAwaitingTestSignoff,
 		change.EventDecisionRecorded: change.StateAwaitingTestSignoff,
 		change.EventChangeRejected:   change.StateRejected,
@@ -144,6 +149,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventTicketChanged:    change.StateWritingTests,
 		change.EventPROpened:         change.StateTestsReady,
 		change.EventPRPushed:         change.StateTestsReady,
+		change.EventSlopEvaluated:    change.StateTestsReady,
 		change.EventPRClosed:         change.StateTestsReady,
 		change.EventDecisionRecorded: change.StateTestsReady,
 		change.EventChangeRejected:   change.StateRejected,
@@ -654,7 +660,7 @@ func TestStreamTicketChangeRewindsToWritingTests(t *testing.T) {
 func TestReplayNamesTheFirstRefusedEvent(t *testing.T) {
 	events := []change.Event{
 		reducerEvent(1, change.EventChangeTriggered, goldenPayload(t, change.EventChangeTriggered)),
-		reducerEvent(2, change.EventSlopEvaluated, goldenPayload(t, change.EventSlopEvaluated)),
+		reducerEvent(2, change.EventReviewersPicked, goldenPayload(t, change.EventReviewersPicked)),
 	}
 	s, err := change.Replay(events)
 	require.ErrorIs(t, err, change.ErrIllegalTransition)

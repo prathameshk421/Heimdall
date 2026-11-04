@@ -1,0 +1,13 @@
+# Example heimdall.toml for deploy/compose.yaml. Copy it somewhere outside the repository, then set
+# HEIMDALL_CONFIG to the copy. The server checks every key at boot and refuses to start on any error (spec 2.6).
+
+# The address inside the container. The compose file publishes it only on 127.0.0.1 of the host (spec 1.3, no ingress).
+listen = "0.0.0.0:8080"
+
+# Docker secrets are mounted here inside the container (D89).
+secrets_dir = "/run/secrets"
+
+[[projects]]
+tracker_project = "KAN"
+repo = "aarush323/PBL_TOS_RISK_ANALYZER"
+base_branch = "heimdall-demo"

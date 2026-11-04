@@ -1,0 +1,127 @@
+# Heimdall's stack: heimdall-server, Postgres, FalkorDB and the Graphiti MCP server (spec 1.3, TECH_SPEC section 12).
+#
+# Run from the repository root:
+#   export HEIMDALL_CONFIG=/path/to/heimdall.toml        # copy of deploy/heimdall.example.toml
+#   export HEIMDALL_SECRETS_DIR=/path/to/secrets          # one file per secret, named as in `secrets:` below
+#   docker compose -f deploy/compose.yaml up -d --build --wait
+#
+# Rules this file keeps:
+#  - No ingress (spec 1.3, D64). The only published port is heimdall-server's, bound to 127.0.0.1.
+#    Postgres, FalkorDB and Graphiti publish nothing to the host; the Graphiti MCP server has no auth.
+#  - Secrets are Docker secrets, read from files in HEIMDALL_SECRETS_DIR. No secret value is written in this
+#    file or in an environment entry (D89). The variables above name a directory, not a secret.
+#  - Image tags are pinned below. Digest pinning (D98) is applied at release.
+#  - Ollama is not started unless the local-embed profile is asked for (D87).
+
+name: heimdall
+
+services:
+  heimdall-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    image: heimdall-server:dev
+    command: ["--config", "/etc/heimdall/heimdall.toml"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - type: bind
+        source: ${HEIMDALL_CONFIG:?set HEIMDALL_CONFIG to a heimdall.toml (see deploy/heimdall.example.toml)}
+        target: /etc/heimdall/heimdall.toml
+        read_only: true
+    networks: [core, memory]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    # Same major version as the component-test image in internal/testkit/postgres.
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_DB: heimdall
+      POSTGRES_USER: heimdall
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [core]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heimdall -d heimdall"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  falkordb:
+    # FalkorDB is the graph store Graphiti uses (D66). Its web UI is switched off and nothing is published:
+    # FalkorDB has no password here, so only containers on the memory network can reach it.
+    image: falkordb/falkordb:v4.22.3
+    environment:
+      BROWSER: "0"
+    volumes:
+      - falkordb_data:/var/lib/falkordb/data
+    networks: [memory]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  graphiti:
+    # Official standalone image of the Graphiti MCP server, pinned to graphiti-core 0.31.2 (zepai/knowledge-graph-mcp,
+    # MCP server 1.1.3). It takes an external FalkorDB and reads ./graphiti/config.yaml through CONFIG_PATH.
+    # The image's config reads keys from environment variables only, so the command below loads OPENAI_API_KEY from
+    # the openrouter_api_key secret file just before it starts the server. The key is not in this file.
+    image: zepai/knowledge-graph-mcp:1.1.3-graphiti-0.31.2-standalone
+    command:
+      - sh
+      - -c
+      - 'OPENAI_API_KEY="$$(cat /run/secrets/openrouter_api_key)" && export OPENAI_API_KEY && exec uv run --no-sync main.py'
+    environment:
+      CONFIG_PATH: /app/mcp/config/config.yaml
+    secrets: [openrouter_api_key]
+    volumes:
+      - type: bind
+        source: ./graphiti/config.yaml
+        target: /app/mcp/config/config.yaml
+        read_only: true
+    networks: [memory]
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama:
+    # Offline embeddings only (D87). Off by default: start it with --profile local-embed. The Graphiti config above
+    # uses hosted embeddings; switching to this service means changing that config and rebuilding the Graphiti index.
+    image: ollama/ollama:0.40.14
+    profiles: ["local-embed"]
+    volumes:
+      - ollama_data:/root/.ollama
+    networks: [memory]
+    restart: unless-stopped
+
+networks:
+  core:
+  memory:
+
+volumes:
+  postgres_data:
+  falkordb_data:
+  ollama_data:
+
+secrets:
+  postgres_password:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds postgres_password}/postgres_password
+  openrouter_api_key:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds openrouter_api_key}/openrouter_api_key

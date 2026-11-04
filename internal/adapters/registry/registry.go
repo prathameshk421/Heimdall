@@ -126,6 +126,12 @@ func (r *Registry) Register(e Entry) error {
 	return nil
 }
 
+// SelectionField is the heimdall.toml key that selects a kind's adapter, for example "tracker.provider".
+// It is exported so that `heimdall connect` writes the same key the registry checks.
+func SelectionField(kind Kind) string {
+	return selectionField(kind)
+}
+
 // validateEntry refuses anything that could not be selected, built or checked later.
 func validateEntry(e Entry) error {
 	var problems []error

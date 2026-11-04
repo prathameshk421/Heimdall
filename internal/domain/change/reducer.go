@@ -90,6 +90,7 @@ func addBeforeBuilding(t table) {
 		return when(ticketed, to(s), refuse("a PR without a ticket has no change before BUILDING"))
 	})
 	t.each(attach, EventPRPushed, to)
+	t.each(attach, EventSlopEvaluated, to) // slop judges an attached PR at once; the gate still says tests are not ready (D146)
 	t.set(StateBuilding, EventPROpened, when(ticketed, to(StatePROpen), refuse("a PR without a ticket has no change")))
 	t.set(StateBuilding, EventPRPushed, to(StatePROpen))
 	t.each(append(attach, StateBuilding), EventPRClosed, func(s State) rule {
