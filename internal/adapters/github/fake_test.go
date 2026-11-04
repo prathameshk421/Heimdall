@@ -56,6 +56,8 @@ type fakeGitHub struct {
 	mu     sync.Mutex
 	routes map[string]http.HandlerFunc
 	reqs   []recorded
+	// gate, when set, sees every request before its route. A non-zero status refuses the request with it.
+	gate func(r *http.Request) int
 }
 
 func newFake(t *testing.T) *fakeGitHub {
@@ -81,12 +83,18 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 	})
 	h, ok := f.routes[r.Method+" "+r.URL.Path]
 	f.mu.Unlock()
+	r.Body = io.NopCloser(strings.NewReader(string(body)))
+	if f.gate != nil {
+		if code := f.gate(r); code != 0 {
+			http.Error(w, "refused by token scope", code)
+			return
+		}
+	}
 	if !ok {
 		f.t.Errorf("unscripted request %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
 		http.Error(w, "no route", http.StatusTeapot)
 		return
 	}
-	r.Body = io.NopCloser(strings.NewReader(string(body)))
 	h(w, r)
 }
 

@@ -13,6 +13,9 @@
 //   - Tokens() returns the TokenSource. Reader(ctx) mints a read-only installation token. Writer(ctx, op, repo)
 //     mints a token narrowed to one repository and one operation (OpCheckWrite, OpBranchWrite, OpCommentWrite).
 //     Each token is cached for 50 minutes on the injected Clock.
+//   - Tokens().Installation(ctx) reads the installation's real permissions and repositories (GET
+//     /app/installations/{id} with the App JWT). RequiredPermissions() is the set the product needs; doctor compares
+//     the two.
 //   - RateLimitError is returned when GitHub asks for a wait longer than two minutes, or keeps refusing after
 //     three attempts. It wraps ports.ErrUnavailable, so the outbox retries it later.
 //

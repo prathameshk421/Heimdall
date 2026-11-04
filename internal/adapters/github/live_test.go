@@ -152,3 +152,16 @@ func TestLiveGateSuccess(t *testing.T) {
 	}
 	t.Logf("posted a successful heimdall/gate on %s", pr.HeadSHA.Short())
 }
+
+// TestLiveInstallationPermissions reads the installation's real permissions. It logs the names and levels only.
+func TestLiveInstallationPermissions(t *testing.T) {
+	a := liveAdapter(t)
+	inst, err := a.Tokens().Installation(context.Background())
+	if err != nil {
+		t.Fatalf("Installation: %v", err)
+	}
+	t.Logf("installation holds %d permissions, all repositories: %t, %d selected", len(inst.Permissions), inst.Repositories.All, len(inst.Repositories.Names))
+	for name, level := range inst.Permissions {
+		t.Logf("permission %s: %s", name, level)
+	}
+}
