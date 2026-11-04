@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+// defaultMaxStep bounds a step that declares no latency bar, so a hung step ends red instead of hanging the board.
+const defaultMaxStep = 10 * time.Minute
+
 // Status is the outcome of one step.
 type Status int
 
@@ -95,6 +98,8 @@ type Result struct {
 	CostUSD    float64
 	Violations []Violation
 	CostKnown  bool
+	// Unmeasured says what could not be measured for this step, such as a cost reader that is not built yet.
+	Unmeasured []string
 }
 
 // ScenarioResult is the results of one scenario's steps in order.
@@ -115,6 +120,8 @@ type Board struct {
 	Now func() time.Time
 	// Scripted says the agents are scripted, so every step must cost $0 (quality check 8).
 	Scripted bool
+	// MaxStep bounds a step that declares no Bar. Zero means defaultMaxStep. A step with a Bar is bounded by it.
+	MaxStep time.Duration
 
 	probed map[Need]Availability
 }
@@ -192,18 +199,57 @@ func (b *Board) runStep(ctx context.Context, st Step, done map[string]Status, ca
 		r.Why = fmt.Sprintf("%s did not pass", st.After)
 		return r
 	}
+	bound := st.Bar
+	if bound <= 0 {
+		bound = b.maxStep()
+	}
+	stepCtx, cancel := context.WithTimeout(ctx, bound)
+	defer cancel()
 	before := capture.Len()
-	spent0, spendErr := b.World.Server().Spend(ctx)
+	spent0, began := b.readSpend(stepCtx, &r)
 	started := b.Now()
-	err := st.Run(ctx, &Env{World: b.World, Story: b.Story, Capture: capture, Vars: vars})
+	err := runGuarded(stepCtx, st, &Env{World: b.World, Story: b.Story, Capture: capture, Vars: vars})
 	r.Elapsed = b.Now().Sub(started)
-	if spendErr == nil {
-		if spent1, e := b.World.Server().Spend(ctx); e == nil {
+	if began {
+		if spent1, ok := b.readSpend(stepCtx, &r); ok {
 			r.CostKnown, r.CostUSD = true, max(spent1-spent0, 0)
 		}
 	}
-	b.judge(&r, st, err, capture.CheckFrom(before))
+	b.judge(&r, st, err, capture.CheckFrom(before), bound)
 	return r
+}
+
+// maxStep is the bound for a step with no declared Bar.
+func (b *Board) maxStep() time.Duration {
+	if b.MaxStep > 0 {
+		return b.MaxStep
+	}
+	return defaultMaxStep
+}
+
+// runGuarded runs a step and turns a panic into an error, so one broken step cannot stop the rest of the board.
+func runGuarded(ctx context.Context, st Step, env *Env) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("step %s panicked: %v", st.ID, p)
+		}
+	}()
+	return st.Run(ctx, env)
+}
+
+// readSpend reads the scripted spend. A reader that is not built yet is recorded as unmeasured. Any other error
+// is a quality violation, because a broken cost reading must never pass as $0.
+func (b *Board) readSpend(ctx context.Context, r *Result) (float64, bool) {
+	v, err := b.World.Server().Spend(ctx)
+	if err == nil {
+		return v, true
+	}
+	if task, nb := IsNotBuilt(err); nb {
+		r.Unmeasured = append(r.Unmeasured, fmt.Sprintf("cost: the spend reader is not built yet (%s)", task))
+		return 0, false
+	}
+	r.Violations = append(r.Violations, Violation{CheckCost, "cannot read the spend: " + err.Error()})
+	return 0, false
 }
 
 // blocked fills r and returns true when a prerequisite is missing or the story is incomplete. The label is the first
@@ -232,6 +278,7 @@ func (b *Board) blocked(ctx context.Context, st Step, r *Result) bool {
 		return false
 	}
 	r.Status, r.BlockedOn, r.Task, r.Why = StatusBlocked, gaps[0].need, gaps[0].task, gaps[0].why
+
 	if len(gaps) > 1 {
 		var also []string
 		for _, g := range gaps[1:] {
@@ -259,14 +306,17 @@ func (b *Board) probe(ctx context.Context, n Need) Availability {
 	return av
 }
 
-// judge turns what a step returned, how long it took, what it cost and what a person saw into a status.
-func (b *Board) judge(r *Result, st Step, err error, seen []Violation) {
+// judge turns what a step returned, how long it took, what it cost and what a person saw into a status. Violations
+// already on the result (from the cost reader) and those the scenario saw are all kept, and any of them makes the
+// step red. bound is the step's deadline, used to say so when the step ran out of time.
+func (b *Board) judge(r *Result, st Step, err error, seen []Violation, bound time.Duration) {
 	if err != nil {
-		if task, ok := IsNotBuilt(err); ok {
+		r.Violations = append(r.Violations, seen...)
+		if task, ok := IsNotBuilt(err); ok && len(r.Violations) == 0 {
 			r.Status, r.BlockedOn, r.Task, r.Why = StatusBlocked, Need("driver"), task, err.Error()
 			return
 		}
-		r.Status, r.Why = StatusRed, failure(err)
+		r.Status, r.Why = StatusRed, failure(err, bound)
 		return
 	}
 	if st.Bar > 0 && r.Elapsed > st.Bar {
@@ -278,14 +328,20 @@ func (b *Board) judge(r *Result, st Step, err error, seen []Violation) {
 			seen = append(seen, Violation{CheckCost, p})
 		}
 	}
-	if len(seen) > 0 {
-		r.Status, r.Violations, r.Why = StatusRed, seen, "quality: "+seen[0].String()
+	r.Violations = append(r.Violations, seen...)
+	if len(r.Violations) > 0 {
+		r.Status, r.Why = StatusRed, "quality: "+r.Violations[0].String()
 		return
 	}
 	r.Status = StatusPass
 }
 
-func failure(err error) string {
+// failure is the reason a step returned an error. A step that ran out of its deadline says it was still running
+// against the bound, not that a context expired.
+func failure(err error, bound time.Duration) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return (&Red{Expected: "within " + bound.String(), Saw: "still running"}).Error()
+	}
 	var red *Red
 	if errors.As(err, &red) {
 		return red.Error()

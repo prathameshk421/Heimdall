@@ -36,13 +36,16 @@ type BeatResult struct {
 }
 
 // DemoCheck judges each beat from the board's results. A beat is green only when every one of its steps passed; a
-// step that is not on the board cannot be claimed, so it makes the beat red. The worst outcome among a beat's steps
-// is the beat's outcome.
+// step that is not on the board cannot be claimed, so it makes the beat red. A step whose scenario has a failed
+// quality check is red, and one whose scenario has an unmeasured check is blocked: its beat is not real until the
+// check runs. The worst outcome among a beat's steps is the beat's outcome.
 func DemoCheck(results []ScenarioResult) []BeatResult {
 	byStep := map[string]Result{}
+	scenarioOf := map[string]ScenarioResult{}
 	for _, sc := range results {
 		for _, r := range sc.Results {
 			byStep[r.Step] = r
+			scenarioOf[r.Step] = sc
 		}
 	}
 	var out []BeatResult
@@ -52,6 +55,8 @@ func DemoCheck(results []ScenarioResult) []BeatResult {
 			r, ok := byStep[id]
 			if !ok {
 				r = Result{Step: id, Status: StatusRed, Why: "it is not on the board"}
+			} else {
+				r = withScenarioChecks(r, scenarioOf[id])
 			}
 			if severity(r.Status) > severity(br.Status) {
 				br.Status, br.Why = r.Status, fmt.Sprintf("%s is %s: %s", id, r.Status, r.Why)
@@ -60,6 +65,20 @@ func DemoCheck(results []ScenarioResult) []BeatResult {
 		out = append(out, br)
 	}
 	return out
+}
+
+// withScenarioChecks lets a scenario's own quality and unmeasured checks decide a step that passed on its own.
+func withScenarioChecks(r Result, sc ScenarioResult) Result {
+	if r.Status != StatusPass {
+		return r
+	}
+	if len(sc.Quality) > 0 {
+		return Result{Step: r.Step, Status: StatusRed, Why: "quality: " + sc.Quality[0].String() + " (in " + sc.ID + ")"}
+	}
+	if len(sc.Unmeasured) > 0 {
+		return Result{Step: r.Step, Status: StatusBlocked, Why: "not measured: " + sc.Unmeasured[0]}
+	}
+	return r
 }
 
 // severity orders outcomes from best to worst: pass, then the ones that did not run, then blocked, then red.

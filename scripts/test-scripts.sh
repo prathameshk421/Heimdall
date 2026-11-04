@@ -56,6 +56,33 @@ printf 'package skips\n\nimport "testing"\n\nfunc TestBroken(t *testing.T) { t.F
 out=$(gotest ./skips/ -run 'TestBroken$'); code=$?
 [ "$code" -ne 0 ]; check "gotest.sh fails when a test fails" $?
 
+# --- the run guard: zero tests and silent packages are failures
+out=$(gotest ./skips/ -run 'NoSuchTest$'); code=$?
+[ "$code" -ne 0 ] && grep -qi 'no tests ran' <<<"$out"; check "gotest.sh fails when no test ran" $?
+mkdir -p "$work/silent"
+printf 'package silent\n\nimport "testing"\n\nfunc TestNever(t *testing.T) {}\n' > "$work/silent/n_test.go"
+printf 'package silent\n\nimport (\n\t"os"\n\t"testing"\n)\n\nfunc TestMain(m *testing.M) { os.Exit(0) }\n' > "$work/silent/main_test.go"
+out=$(gotest ./silent/ ./skips/ -run 'TestPasses$|TestNever$'); code=$?
+[ "$code" -eq 0 ]; check "a -run filter may leave a package without tests" $?
+out=$(gotest ./silent/); code=$?
+[ "$code" -ne 0 ] && grep -qi 'silent' <<<"$out"; check "gotest.sh fails a package whose TestMain exits 0 before any test" $?
+nojq=$(mktemp -d); for t in bash go dirname mktemp rm cat grep sed awk env; do ln -s "$(command -v $t)" "$nojq/$t" 2>/dev/null; done
+out=$(cd "$work" && PATH="$nojq" HOME="$HOME" ROOT="$root" "$(command -v bash)" "$root/scripts/gotest.sh" ./skips/ -run 'TestPasses$' 2>&1); code=$?
+[ "$code" -ne 0 ] && grep -q 'jq' <<<"$out"; check "gotest.sh fails and says so when jq is missing" $?
+rm -rf "$nojq"
+cat > "$work/e2e/c_test.go" <<'GO'
+//go:build e2e
+
+package e2e
+
+import "testing"
+
+func TestTask_T30(t *testing.T) { t.Skip("no token") }
+GO
+out=$(run e2e '^TestTask_T30$' "e2e T30"); code=$?
+[ "$code" -ne 0 ] && grep -qi 'skipped tests are failures' <<<"$out"; check "run-tagged.sh fails a skipped real-system test" $?
+rm "$work/e2e/c_test.go"
+
 # --- hooks-install.sh: the pre-commit hook runs make fast and blocks a red commit
 repo="$work/repo"; mkdir -p "$repo/scripts"
 git -C "$repo" init -q && git -C "$repo" config user.email t@t && git -C "$repo" config user.name t

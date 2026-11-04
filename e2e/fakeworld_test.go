@@ -16,6 +16,7 @@ type fakeWorld struct {
 	replayed int
 	probes   map[e2e.Need]int // how many times each prerequisite was probed
 	spend    []float64        // successive Spend() answers; empty means "not built"
+	spendErr error            // when set, every Spend() call fails with it
 	now      time.Time
 }
 
@@ -54,6 +55,9 @@ func (o fakeObserver) Findings(context.Context, e2e.PR) ([]e2e.Finding, error) {
 func (o fakeObserver) Dashboard(context.Context, string) (string, error) { return "", nil }
 func (o fakeObserver) Health(context.Context) error                      { return nil }
 func (o fakeObserver) Spend(context.Context) (float64, error) {
+	if o.f.spendErr != nil {
+		return 0, o.f.spendErr
+	}
 	if len(o.f.spend) == 0 {
 		return 0, &e2e.NotBuiltError{Task: "T19", What: "the spend reader"}
 	}

@@ -94,7 +94,9 @@ func TestFindingRefIsWhatPeopleSee(t *testing.T) {
 		_, err := id.ParseFindingRef(bad)
 		require.Error(t, err, "should reject %q", bad)
 	}
-	require.Equal(t, "F3", id.NewFindingRef(3).String())
+	r3, err := id.NewFindingRef(3)
+	require.NoError(t, err)
+	require.Equal(t, "F3", r3.String())
 }
 
 func TestIDsRefuseBadValuesWhenDecodedFromJSON(t *testing.T) {

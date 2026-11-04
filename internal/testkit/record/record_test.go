@@ -87,6 +87,12 @@ func FuzzScrubNeverLeaksAPlantedSecret(f *testing.F) {
 				t.Fatalf("secret survived inside %q", before+secret+after)
 			}
 		}
+		for name, sh := range shapes {
+			out := string(record.Scrub([]byte(before + sh.text + after)))
+			if strings.Contains(out, sh.value) {
+				t.Fatalf("%s value survived inside %q", name, before+sh.text+after)
+			}
+		}
 	})
 }
 
@@ -100,7 +106,9 @@ func TestTransportWritesAScrubbedExchangeAndNeverTheAuthHeader(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	dir := t.TempDir()
-	client := &http.Client{Transport: record.New(dir, "github", http.DefaultTransport)}
+	tr, err := record.New(dir, "github", http.DefaultTransport, record.Options{})
+	require.NoError(t, err)
+	client := &http.Client{Transport: tr}
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/repos/o/r/pulls/7", nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+secrets["github classic token"])

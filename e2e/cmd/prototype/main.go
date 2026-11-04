@@ -44,7 +44,7 @@ func parseFlags() options {
 	flag.StringVar(&o.agents, "agents", envOr("AGENTS", "scripted"), "scripted or live")
 	flag.StringVar(&o.only, "only", os.Getenv("ONLY"), "run one scenario, for example P3")
 	flag.BoolVar(&o.json, "json", os.Getenv("JSON") == "1", "print the board as JSON")
-	flag.BoolVar(&o.strict, "strict", false, "exit 1 unless every step is green")
+	flag.BoolVar(&o.strict, "strict", false, "exit 1 unless every step is green, every quality check ran and passed, and every cost was measured")
 	flag.BoolVar(&o.demo, "demo", false, "run the demo script as a test (make demo-check)")
 	flag.StringVar(&o.progress, "progress", "docs/PROGRESS.md", "progress file whose board history gets a row")
 	flag.StringVar(&o.task, "task", os.Getenv("TASK"), "task id to write in the board history row")
@@ -61,7 +61,7 @@ func envOr(key, def string) string {
 	return def
 }
 
-// run returns the exit code: 0, or 1 when -strict is set and a step is not green.
+// run returns the exit code: 0, or 1 when -strict is set and the board is not fully green and measured.
 func run() (int, error) {
 	o := parseFlags()
 	if o.agents != "scripted" && o.agents != "live" {
@@ -97,7 +97,7 @@ func run() (int, error) {
 	if err := recordHistory(o, meta, results); err != nil {
 		return 0, err
 	}
-	if t := e2e.Summarize(results); o.strict && t.Green != t.Steps {
+	if t := e2e.Summarize(results); o.strict && t.StrictFailure() {
 		return 1, nil
 	}
 	return 0, nil

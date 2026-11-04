@@ -23,10 +23,12 @@ var (
 	reJSONArray  = regexp.MustCompile(`\[\s*"[^"\n]*"\s*[,\]]`)
 	reNull       = regexp.MustCompile(`(?i)\bnull\b`)
 	reHole       = regexp.MustCompile(`\{\{|\}\}|<no value>|<nil>|%!\w|%!\(`)
+	// reGoError is the text of a Go or infrastructure failure, which a person must never be shown.
+	reGoError = regexp.MustCompile(`connection refused|context deadline exceeded|\bsql: |\bpq: |\bpanic: |goroutine |runtime error|nil pointer`)
 )
 
 func rawPatterns() []*regexp.Regexp {
-	return []*regexp.Regexp{reID, reULID, reEvent, reState, reReason, reStack, reJSONObject, reJSONArray, reNull, reHole}
+	return []*regexp.Regexp{reID, reULID, reEvent, reState, reReason, reStack, reJSONObject, reJSONArray, reNull, reHole, reGoError}
 }
 
 // RawInternals returns the fragments of text a person must never see: ids, event types, state names, reason

@@ -19,4 +19,9 @@ if [ "$(grep -cE '^(Test|Fuzz)' <<<"$listed" || true)" -eq 0 ]; then
   exit 1
 fi
 gotestsum=$(cd "$root" && go tool -modfile=tools.mod -n gotestsum)
-exec "$gotestsum" --format testname -- -tags "$tag" -run "$regex" -count=1 ./...
+source "$(dirname "${BASH_SOURCE[0]}")/testguard.sh"
+testguard_require_jq || exit 2
+json=$(mktemp); trap 'rm -f "$json"' EXIT
+rc=0
+"$gotestsum" --format testname --jsonfile "$json" -- -tags "$tag" -run "$regex" -count=1 ./... || rc=$?
+testguard_check "$json" "$rc" 0
