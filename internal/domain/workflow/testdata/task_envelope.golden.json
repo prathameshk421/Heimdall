@@ -1,0 +1,27 @@
+{
+  "task_id": "tsk_01J8Z3K9QW7M2P5R8T0V4YB6CD",
+  "role": "reviewer",
+  "skill": "reviewer@1.0.0",
+  "change": {
+    "id": "PAY-142",
+    "repo": "acme/pay-demo",
+    "base_sha": "a01b2c3d4e5f60718293a4b5c6d7e8f901234567",
+    "head_sha": "9f1c2ab0c3d4e5f60718293a4b5c6d7e8f901234"
+  },
+  "goal": "Review this change from your owner's perspective. File only findings you can back with evidence.",
+  "inputs": {
+    "diff": "blob:sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+    "files_changed": ["internal/refunds/refunds.go", "api/openapi.yaml"],
+    "acceptance_criteria": [
+      {"id": "AC2", "ref": "blob:sha256:1111111111111111111111111111111111111111111111111111111111111111"}
+    ],
+    "ci": [{"name": "heimdall/acceptance", "conclusion": "success"}],
+    "untrusted": [
+      {"source": "pr_body", "ref": "blob:sha256:2222222222222222222222222222222222222222222222222222222222222222"},
+      {"source": "jira_description", "ref": "blob:sha256:3333333333333333333333333333333333333333333333333333333333333333"}
+    ]
+  },
+  "context_budget_tokens": 150000,
+  "output_schema": "Review@1",
+  "deadline": "2026-11-05T14:00:00Z"
+}

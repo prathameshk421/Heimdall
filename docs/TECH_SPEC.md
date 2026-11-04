@@ -360,7 +360,7 @@ Projections can be rebuilt with `heimdall admin rebuild`: `change`, `task`, `que
 
 ### 4.2 Hash chain
 
-`hash = sha256(prev_hash || canonical_json(event_without_hash))`, chained globally by `seq` and canonicalized with RFC 8785. A nightly job verifies the chain and publishes the head hash, signed, to an admin repo file and the room log.
+`hash = sha256(prev_hash || canonical_json(event_without_hash))`, chained per change (versions 1 to n, the first event has no `prev_hash`) and canonicalized with a documented subset of RFC 8785 (`internal/domain/change/hash.go`: sorted keys, no whitespace, UTC times, integers only, duplicate keys refused). A global chain by `seq` would force every append to wait for the previous one, which the per-change optimistic version (2.4) avoids; deletion of an event is already blocked by the triggers in 4.1. A chain alone cannot show that the tail of a change was cut off, so the nightly job verifies every change's chain and publishes the signed head hash of each to an admin repo file and the room log (decided Nov 4, T11).
 
 ### 4.3 Blobs
 

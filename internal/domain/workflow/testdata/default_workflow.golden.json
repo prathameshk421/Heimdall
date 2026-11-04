@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "id": "open_room",
+      "on": "jira.transitioned{to:'In Progress',assignee:human}",
+      "do": "switch.open_room",
+      "with": {
+        "invite": [
+          "role:test-author",
+          "person:$assignee"
+        ]
+      }
+    },
+    {
+      "id": "branch",
+      "after": [
+        "open_room"
+      ],
+      "do": "github.ensure_branch",
+      "with": {
+        "name": "{ticket}-{slug}"
+      }
+    },
+    {
+      "id": "write_tests",
+      "after": [
+        "branch"
+      ],
+      "do": "agent.task",
+      "role": "test-author",
+      "output": "TestSubmission@1",
+      "timeout_ns": 7200000000000
+    },
+    {
+      "id": "test_qa",
+      "after": [
+        "write_tests"
+      ],
+      "do": "sandbox.test_quality",
+      "with": {
+        "checks": [
+          "red_first",
+          "ac_coverage",
+          "flake",
+          "contracts"
+        ]
+      },
+      "on_fail": {
+        "retry": "write_tests",
+        "until": "task_budget",
+        "then": "escalate"
+      }
+    },
+    {
+      "id": "commit",
+      "after": [
+        "test_qa",
+        "signoff"
+      ],
+      "do": "github.commit_tests",
+      "with": {
+        "dir": "tests/heimdall/{ticket}"
+      }
+    },
+    {
+      "id": "wait_pr",
+      "after": [
+        "commit"
+      ],
+      "do": "wait",
+      "with": {
+        "event": "pr.opened"
+      }
+    },
+    {
+      "id": "slop",
+      "after": [
+        "wait_pr"
+      ],
+      "do": "rule.slop",
+      "on_fail": {
+        "then": "reject"
+      }
+    },
+    {
+      "id": "pick",
+      "after": [
+        "slop"
+      ],
+      "do": "human.pick_reviewers",
+      "timeout_ns": 900000000000,
+      "with": {
+        "default": "suggest"
+      }
+    },
+    {
+      "id": "review",
+      "after": [
+        "pick"
+      ],
+      "do": "agent.fanout",
+      "role": "reviewer",
+      "output": "Review@1",
+      "timeout_ns": 1800000000000,
+      "with": {
+        "from": "review_requests"
+      }
+    },
+    {
+      "id": "verify",
+      "after": [
+        "review"
+      ],
+      "do": "sandbox.verify_evidence"
+    },
+    {
+      "id": "signoff",
+      "after": [
+        "test_qa"
+      ],
+      "do": "human.approve_tests",
+      "when": "sensitive_domain"
+    },
+    {
+      "id": "mutation",
+      "after": [
+        "review"
+      ],
+      "do": "sandbox.mutation",
+      "with": {
+        "scope": "changed_lines"
+      }
+    },
+    {
+      "id": "deliberate",
+      "after": [
+        "verify"
+      ],
+      "do": "deliberation.run",
+      "role": "resolver",
+      "with": {
+        "max_rounds": 2
+      }
+    },
+    {
+      "id": "gate",
+      "on": "any",
+      "do": "rule.merge_allowed"
+    }
+  ]
+}

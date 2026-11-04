@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "files": {
+      "items": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "description": "Path of the test file relative to the repository root; under the tests directory"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 65536,
+            "minLength": 1,
+            "description": "The whole test file"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "content"
+        ]
+      },
+      "type": "array",
+      "maxItems": 32,
+      "minItems": 1,
+      "description": "The test files; all under the tests directory"
+    },
+    "acceptance_criteria": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "type": "object",
+      "description": "For each acceptance criterion id such as AC2; the names of the tests that cover it"
+    },
+    "expected_paths": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "maxItems": 32,
+      "description": "Paths outside the tests directory the change is expected to touch"
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "Assumptions made where the ticket was silent; written into the test header"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "files",
+    "acceptance_criteria",
+    "expected_paths",
+    "notes"
+  ],
+  "title": "TestSubmission@1"
+}

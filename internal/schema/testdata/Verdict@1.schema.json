@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "pattern": "^case_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "The case this verdict settles"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "uphold",
+        "dismiss",
+        "amend",
+        "spec_change",
+        "needs_human"
+      ]
+    },
+    "rationale": {
+      "type": "string",
+      "maxLength": 1000,
+      "minLength": 10,
+      "description": "The reasons in a few sentences; each claim is proven by a citation"
+    },
+    "citations": {
+      "items": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "run",
+              "memory",
+              "decision",
+              "finding"
+            ]
+          },
+          "ref": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "description": "The cited run id; memory ref; decision ref; or finding name such as F3"
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "description": "The span of the cited item the verdict relies on"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "ref",
+          "quote"
+        ]
+      },
+      "type": "array",
+      "maxItems": 16,
+      "minItems": 1,
+      "description": "Every claim the rationale makes is cited"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "case_id",
+    "decision",
+    "rationale",
+    "citations",
+    "confidence"
+  ],
+  "title": "Verdict@1"
+}

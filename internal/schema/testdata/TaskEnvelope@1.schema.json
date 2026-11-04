@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "task_id": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "skill": {
+      "type": "string"
+    },
+    "change": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "base_sha": {
+          "type": "string"
+        },
+        "head_sha": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "repo",
+        "base_sha",
+        "head_sha"
+      ]
+    },
+    "goal": {
+      "type": "string"
+    },
+    "inputs": {
+      "properties": {
+        "diff": {
+          "type": "string"
+        },
+        "files_changed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "acceptance_criteria": {
+          "items": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "ref"
+            ]
+          },
+          "type": "array"
+        },
+        "ci": {
+          "items": {
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "conclusion": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "name",
+              "conclusion"
+            ]
+          },
+          "type": "array"
+        },
+        "untrusted": {
+          "items": {
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "source",
+              "ref"
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "diff",
+        "files_changed",
+        "acceptance_criteria",
+        "ci",
+        "untrusted"
+      ]
+    },
+    "context_budget_tokens": {
+      "type": "integer"
+    },
+    "output_schema": {
+      "type": "string"
+    },
+    "deadline": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "task_id",
+    "role",
+    "skill",
+    "change",
+    "goal",
+    "inputs",
+    "context_budget_tokens",
+    "output_schema",
+    "deadline"
+  ],
+  "title": "TaskEnvelope@1"
+}

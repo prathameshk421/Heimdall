@@ -1,0 +1,16 @@
+{
+  "head_sha": "9f1c2ab0c3d4e5f60718293a4b5c6d7e8f901234",
+  "files_reviewed": ["internal/refunds/refunds.go", "api/openapi.yaml"],
+  "clean": false,
+  "findings": [
+    {
+      "claim": "Removing refund_ref breaks the ledger consumer, which still reads it.",
+      "category": "compat",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {"file": "api/openapi.yaml", "lines": [40, 52]},
+      "evidence": [{"type": "reasoning", "reasoning": "The ledger service deserializes the response with a required refund_ref field."}],
+      "context_refs": []
+    }
+  ]
+}

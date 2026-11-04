@@ -1,0 +1,8 @@
+{
+  "people": [
+    "bob",
+    "carol"
+  ],
+  "by": "alice",
+  "method": "dashboard"
+}
