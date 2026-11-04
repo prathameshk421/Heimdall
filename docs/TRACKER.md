@@ -52,6 +52,8 @@ Live status for `IMPLEMENTATION_PLAN.md` (the plan holds the details, refs and g
 | todo | T92 | Spike S19: capability probe on Mattermost and Teams (threads, cards, mentions); text-command approval works on both | Dev 1 |  | T01 | Table of capabilities filled; `!heimdall approve` works | D94 |
 | todo | T93 | Spike S20: a KAN ticket moved to In Progress is seen within one poll, a late-indexed move is seen through the overlap window, and nothing triggers twice | Dev 2 |  | T07 | Three KAN scenarios pass | D97, V55 |
 | todo | T94 | Spike S21: `heimdall doctor --host` on the real AWS VM reports sudo, systemd, Docker, nftables, IMDS and memory correctly | Dev 3 |  | T07 | Report matches reality; fallback chosen if no sudo | D90 |
+| todo | T95 | Mattermost public access: named Cloudflare Tunnel, Site URL, Switch connection Public Url, invite-only, MFA, rate limit (`docs/MATTERMOST_ACCESS.md`) | Friend + Dev 1 |  | T07 | Teammates log in with the Mattermost app from their own network | D107 |
+| todo | T96 | Spike S22: phone on mobile data and a desktop on another network log in through the tunnel, see a room and get a live agent reply (WebSocket) | Dev 1 |  | T95 | Both clients pass; result recorded | D107 |
 
 ## G1: skeleton and frozen interfaces (Wed 00:01 to 10:00)
 

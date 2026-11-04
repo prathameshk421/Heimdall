@@ -155,6 +155,12 @@ Heimdall is a merge-safety layer for pull requests that runs on Switch. A Jira t
 **Decision.** `docs/CODING_STANDARDS.md`, a short design note per package written before the code, strict linting, and a review pass at the end of each stage.
 **Why.** "Clean, readable code without slop" only happens if the rules are written down and checked.
 
+### People reach Mattermost through a tunnel (Nov 4)
+**Decision.** Teammates use their own Mattermost desktop and phone apps. We publish Mattermost through a named Cloudflare Tunnel on a hostname, keep the VM's only inbound rule as SSH, and set the Site URL and Switch's Public Url to that hostname.
+**Why.** Slack, Discord, Telegram and Teams are hosted by their vendors, so every teammate already has an app that reaches them. Mattermost is the one chat server we host ourselves, and its apps need an address to connect to. A tunnel gives one without opening a port. This is the standard way to expose a self-hosted service, and teams that already use Slack or Teams can skip it entirely because Heimdall only names a Switch connection.
+**Gave up.** Cloudflare Access in front of it: the Mattermost apps cannot complete its browser login, so we rely on invite-only sign-up, MFA and rate limits.
+**Needs from the team.** A domain on Cloudflare and a person with VM access to run the tunnel.
+
 ---
 
 ## Open questions

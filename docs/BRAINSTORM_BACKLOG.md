@@ -831,3 +831,15 @@ Inputs: a review of the spec's three risk areas (the VM, chat platforms, GitHub 
 1. The AWS instance size and whether the limited login has sudo (decides D90).
 2. Which teammates fill the author, test-author, reviewer 1, reviewer 2 and approver roles, with their GitHub, Mattermost and Jira accounts.
 3. Whether Teams lands before the freeze (D103 says it is cut first).
+
+## Addendum (Nov 4, later): how people reach the chat
+
+**Fact (Switch docs).** Switch opens outbound connections to Slack, Discord, Telegram and Mattermost, so nothing of Switch needs to be public. Microsoft pushes to Switch for Teams, which does need a public HTTPS address. Slack, Discord, Telegram and Teams are hosted by their vendors, so people already reach them with their own apps. Mattermost is the one chat server we host ourselves, and its desktop and phone apps need a server address they can reach. Our VM has no inbound ports, so that address must come from a tunnel.
+
+**D107. Mattermost is the demo chat, published through a named Cloudflare Tunnel.** Teammates use their own Mattermost desktop and phone apps and enter the tunnel hostname (for example `https://chat.<domain>`); they get accounts by invite. The tunnel runs on the VM as a service and only makes outbound connections, so the security group keeps SSH as the only inbound rule (amends D64, D86). Settings: Mattermost **Site URL** and the Switch connection's **Public Url** (the address people use, per Switch's connect form) are both the tunnel hostname; open sign-up is off, MFA is on, a Cloudflare rate-limit rule covers the login path. **Cloudflare Access is not used in front of Mattermost**, because the Mattermost mobile and desktop apps cannot complete its browser login. Mattermost needs WebSockets, which the tunnel carries. Fallbacks, in order: a Cloudflare quick tunnel (free random address that changes on restart, so Site URL and every app must be updated each time; acceptable only for a rehearsal), then Tailscale (each person installs it; use its HTTPS name because phones require HTTPS). Mobile push notifications on the free Mattermost build are unverified and not required: the apps work while open.
+
+**D108. Chat stays pluggable.** Because Heimdall only names a Switch connection (`chat.bridge`), a team can instead connect Slack, Discord or Telegram with no tunnel. D107 is the default for our demo because the Mattermost server comes with Switch and gives each agent a real bot account.
+
+**Spike S22 (new).** From a phone on mobile data and from a desktop on another network: open the Mattermost app, enter the tunnel hostname, log in with an invite, see a room where an agent answers, and receive a reply live (WebSocket).
+
+**Still needs the team.** A domain on Cloudflare (or the friend's domain) and a tunnel token, set up by your friend following `docs/MATTERMOST_ACCESS.md`.
