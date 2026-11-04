@@ -8,7 +8,7 @@ Docs are final and committed on branch `heimdall-build` (not pushed). No product
 
 ## Next
 
-1. `STAGE_1_FIXES.md`: T02, then T03. T01 is done.
+1. `STAGE_1_FIXES.md`: T03. T01 and T02 are done.
 2. `MVP_SCENARIOS.md` section 7: slice 0 (T00, T10, T16, T18, T98).
 
 ## Code layout
