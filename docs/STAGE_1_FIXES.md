@@ -1,6 +1,6 @@
 # Heimdall: Stage 1 fixes (do this first)
 
-Status: Nov 4, 2026. Decisions are D138 to D160 in `BRAINSTORM_BACKLOG.md` Part 16. **A new session starts here.** No product code (T00, T10 and onward) starts until every step below is `done` in `TRACKER.md` with its evidence, or a failed check has changed the design in writing (D134).
+Status: Nov 4, 2026. Decisions are D138 to D162 in `BRAINSTORM_BACKLOG.md` Part 16. **A new session starts here.** No product code (T00, T10 and onward) starts until every step below is `done` in `TRACKER.md` with its evidence, or a failed check has changed the design in writing (D134).
 
 The docs were corrected before this stage. They describe the design below as decided, but nothing in this file has been applied to the harness or run on the VM yet. Facts marked "from source" were read in the Switch source and are proven only by T01 to T03.
 
@@ -8,7 +8,6 @@ The docs were corrected before this stage. They describe the design below as dec
 
 | Step | What | Who |
 |---|---|---|
-| H1 to H6 | Account and access actions | Human, except where marked |
 | T100 | Commit the corrected docs | **Done** on branch `heimdall-build` |
 | T101 | Replace the Bash guard hook | Builder |
 | T102 | Fix the lint template | Builder |
@@ -22,16 +21,7 @@ T101 to T104 change only `docs/harness/`, and hooks are not live until T16 insta
 
 ## Human actions
 
-| Id | Action | Needed by | Check |
-|---|---|---|---|
-| H1 | **Done Nov 4.** `gh auth switch --user aarush323` | | |
-| H2 | GitHub App settings: rename to **Heimdall**. Permissions exactly: Checks, Contents, Pull requests, Issues and Workflows write, Metadata read. Remove the other seven (D151). Limit the installation to selected repositories: `PBL_TOS_RISK_ANALYZER` and the new fixture repo. Accept the changed permissions on the installation (V54) | T04, T24 | Installation API lists exactly those six and only those repos |
-| H3 | **Done Nov 4.** `aarush323/heimdall-fixture-pay` exists, `rekdfr` has write, the App can reach it | | |
-| H4 | OpenRouter dashboard: create `test` ($1.20), `eval` ($1.00) and `rehearse` ($0.60) keys | T19, before any live run past T03 | Each key endpoint shows its limit |
-| H5 | A domain on Cloudflare, for T95 and T96 only (`MATTERMOST_ACCESS.md`). The test accounts are made by the builder in T02 (D158), and teammates can replace them later | T95, in slice 6 | Domain resolves |
-| H6 | Nothing unless T10's first CI run fails. Our login has no admin on `prathameshk421/flip_the_switch_hackathon`, so then ask its owner to turn Actions on | T10 | A workflow run appears |
-
-**Only H2 is needed soon** (slice 1), then H4 (slice 3). Neither blocks T101 to T104 or T01 to T03. T03 uses the current OpenRouter key.
+**Nothing is waiting on the human (D161).** H1 and H3 are done. The GitHub App stays as it is, the key in `.env` is the only OpenRouter key, and a domain is not needed. If T10's first CI run does not appear, ask the owner of `prathameshk421/flip_the_switch_hackathon` to turn Actions on, because our login has no admin there.
 
 ## T100: commit the docs
 

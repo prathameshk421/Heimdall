@@ -34,6 +34,7 @@ You are building Heimdall one task at a time. You lose memory between sessions, 
 - **R9 Real or "not verified".** If something could not run on the real system, write `not verified` with the reason. Never write "should work".
 - **R10 Scope.** One task, one concern. Do not refactor unrelated code. Anything else you notice goes into `docs/PROGRESS.md` under "Noticed".
 - **R11 Git.** Never `--no-verify`, never force-push, never push unless the human asks, never rewrite history, never commit a failing test without saying so.
+- **R13 No cuts, no hacks (D162).** Do not drop or reduce any task, step or check unless the owner explicitly says so. No temporary shortcuts or workarounds; implement it cleanly and correctly. If blocked, stop and ask.
 - **R12 Stuck.** After two failed attempts at the same error, stop and write what you tried and what you think is wrong into `PROGRESS.md`. Do not try a third variant of the same idea.
 
 ## Things you cannot infer from the code (add new ones as you find them)

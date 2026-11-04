@@ -220,16 +220,16 @@ The order is vertical: thin end to end first, then widen. A task ID appears next
 | Slice | Goal | Board steps turning green | Tasks (in order) | Needs |
 |---|---|---|---|---|
 | 0. Red board | The simulator and board exist, every step red or blocked, honest | all steps exist | T00, T10, T16, T18, T98 | Stage 1 |
-| 1. The door | A real PR on the fixture repo gets a real `heimdall/gate` failure in seconds | P2.1, P9.1 | T31 (`fixture-pay`), T04, T11, T12, T13, T17, T20, T21, T22 (minimal), T24, T35, T46, T14 | H2 |
+| 1. The door | A real PR on the fixture repo gets a real `heimdall/gate` failure in seconds | P2.1, P9.1 | T31 (`fixture-pay`), T04, T11, T12, T13, T17, T20, T21, T22 (minimal), T24, T35, T46, T14 | fixture repo (done) |
 | 2. Ticket to room | A KAN ticket opens a real room and branch; commands from mapped people work | P1.1, P1.2, P9.2 | T93, T25, T36, T22 (full), T23, T26, T32, T37 | port-forward |
-| 3. Room to red tests | The test-author gets its task through the room and pinned red tests land; first live smoke | P1.3, P1.4, P1.5, P1.6, P2.2, P2.3, P2.4 | T105, T94, T05, T91, T15, T29, T34 (Go profile), T39, T28, T19, T38, T27, T30, T61, T16b | H4 |
+| 3. Room to red tests | The test-author gets its task through the room and pinned red tests land; first live smoke | P1.3, P1.4, P1.5, P1.6, P2.2, P2.3, P2.4 | T105, T94, T05, T91, T15, T29, T34 (Go profile), T39, T28, T19, T38, T27, T30, T61, T16b | the key in `.env` |
 | 4. Review and merge | Scripted reviewers, evidence, blocking set, the merge rule, green on approved head, then merged | P3.1, P3.2, P3.3, P3.5, P3.6, P4.1 to P4.4, P5.1 to P5.7 | T40, T41, T42, T43, T44, T45, T47, T60 | approver `rekdfr` (done) |
 | 5. Memory and packs | The cross-team finding is backed by confirmed memory; ablation passes | P3.4, section 5 ablation | T06, T48, T49, T65 | Graphiti |
-| 6. Live quality | Real OpenCode agents pass P1 and P3 on Jurist AI; people reach chat from their apps | P1.3 live, P3.3 live, P4.1 live, P6.2 | T66, T75, T34b, T62, T73, T95, T96 | key budget; a domain for T95 and T96 |
-| 7. Bad days and strangers | Chaos, local mode, setup, soak, demo-check | P6.1, P7.*, P8.*, P9.3, P9.4, section 6 | T63, T64, T71, T99 (core integrations), T72, T68, T74, T69 | everything |
+| 6. Live quality | Real OpenCode agents pass P1 and P3 on Jurist AI | P1.3 live, P3.3 live, P4.1 live, P6.2 | T66, T75, T34b, T62, T73 | key budget |
+| 7. Bad days and strangers | Chaos, local mode, setup, soak, demo-check | P6.1, P7.*, P8.*, P9.3, P9.4, section 6 | T09, T67, T63, T64, T71, T99, T72, T68, T74, T69 | everything |
 | 8. Ship | Release, recording, submission | all green | T80, T84, T81, T82, T83 | G4 |
 
-Gate tasks T33, T50 and T70 are checkpoints, not build work. Teams (T09, T67) and T99's Telegram, Slack and Discord flows are optional, first in the cut order, and do not hold the freeze (D156).
+Gate tasks T33, T50 and T70 are checkpoints, not build work. Public Mattermost access (T95, T96) is optional by the owner's call (D161). Nothing else is optional or cut unless the owner says so (D162).
 
 Everything through slice 2 runs from the laptop against real systems, with Switch through the port-forward. Slice 3 starts deploying to the VM.
 

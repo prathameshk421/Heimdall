@@ -17,9 +17,7 @@ Stay on `heimdall-build` in this checkout (`.env` is gitignored, so a new worktr
 
 ## Waiting on the human
 
-- H2: GitHub App rename, six permissions, selected repos (needed by slice 1).
-- H4: OpenRouter `test`, `eval` and `rehearse` keys (needed by slice 3).
-- H5: a domain (needed by T95 in slice 6).
+Nothing. The GitHub App stays as it is, the key in `.env` is the only OpenRouter key, and a domain is optional (D161).
 
 ## Not verified yet
 

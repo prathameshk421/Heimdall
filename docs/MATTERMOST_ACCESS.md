@@ -1,6 +1,6 @@
 # Mattermost access for the team (D107)
 
-Status: v1, Nov 4, 2026. Done once by whoever has the Cloudflare domain and a login to the VM. Takes about 20 minutes.
+Status: v1, Nov 4, 2026. **Optional (D161).** The team uses Mattermost through the port-forward in `RUNBOOK.md` and has not tested this guide. It is for whoever deploys Heimdall and wants people on their own apps. Done once by whoever has a domain and a login to the VM. Takes about 20 minutes.
 
 **Why this exists.** Switch runs on the AWS VM and starts Mattermost there. People use the Mattermost desktop and phone apps, which need a server address they can reach. The VM has no inbound ports (SSH runs over SSM), so the address comes from a Cloudflare Tunnel: a small program on the VM connects outward to Cloudflare, and Cloudflare forwards `https://chat.<domain>` to Mattermost. Nothing is opened in the security group.
 

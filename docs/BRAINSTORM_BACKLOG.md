@@ -1126,3 +1126,11 @@ Every task was walked in build order against what it needs and what the product 
 - **Policy loading:** T46 reads policy from the merge base, because slop needs it first.
 - **Spec 21** is history. `MVP_SCENARIOS.md` section 7 is the order.
 - **Enrolment code:** the builder issues it on the VM with the gateway's route, using the admin login from the VM's own `.env` without printing it. It asks the human only if that fails.
+
+**D161. The owner's call on setup (amends D113, D151, D107).**
+- **GitHub App stays as it is:** name, permissions and all repos. Narrowed tokens (D96) and the `[[projects]]` map limit what Heimdall touches, and `doctor` reports extra permissions as a note, never a failure. The App's name shows on checks and can be changed at any time before recording.
+- **The App never writes workflow files.** It has no `workflows` permission, so Heimdall's PR carries the profile and policy and puts the exact workflow file in its body, and a person commits it with their own login. On our repos the builder does that as `aarush323`. Amends D99. The product's App needs the original five permissions.
+- **One OpenRouter key.** The key in `.env` has a $4 limit. The budget table in `TEST_STRATEGY.md` is enforced by the guard and the ledger: `make e2e`, `eval` and `rehearse` refuse once usage reaches the $3 testing cap or a purpose's budget. The key's limit stays the hard stop.
+- **A domain is optional and not tested by us.** People use Mattermost through the port-forward. Public access (`MATTERMOST_ACCESS.md`, T95, T96) stays as a guide for whoever deploys it and shows as `untested`.
+
+**D162. Nothing is cut unless the owner says so.** The owner has said there is ample time. No task, scenario step or check is dropped, reduced or marked optional by a builder, and the cut order is not used without the owner's explicit word. If something is blocked, stop and ask. No hacks, temporary shortcuts or workarounds: implement it cleanly and correctly, or say why it cannot be done. Only the domain and public Mattermost access are optional, by the owner's own call (D161). Reverses the "optional" and freeze parts of D156: T99 covers every integration, and Teams (T09, T67) stays in the plan and in G4, with `untested` shown for any integration with no real run.

@@ -6,7 +6,7 @@ Built from `TECH_SPEC.md` v3.6 and `BRAINSTORM_BACKLOG.md` (D36 build profile, D
 
 ## Start here: Stage 1
 
-**Before any product code, do `docs/STAGE_1_FIXES.md` in order.** It holds the human actions H1 to H6, the exact harness fixes (T100 to T104) with the checks already run on them, and the validations T01, T02 and T03. The docs already describe the corrected design, but the harness files are unchanged and no live agent has run. Live state is in `docs/PROGRESS.md`. A result that contradicts a decision changes the decision and the spec in the same commit (D134).
+**Before any product code, do `docs/STAGE_1_FIXES.md` in order.** It holds the exact harness fixes (T100 to T104) with the checks already run on them, and the validations T01, T02 and T03. The docs already describe the corrected design, but the harness files are unchanged and no live agent has run. Live state is in `docs/PROGRESS.md`. A result that contradicts a decision changes the decision and the spec in the same commit (D134).
 
 | Id | Task | Owner | Depends | Done when | Refs |
 |---|---|---|---|---|---|
@@ -47,7 +47,7 @@ After Stage 1, yes, on two conditions:
 | G4 Feature freeze | Three reviewers, memory (Graphiti), dispute card, injection PR, local mode on a clean machine, planted-issue check (2 of 3) |
 | G5 Submit | A release is tagged and rehearsed; the demo recording and the submission are complete, before the hackathon's official deadline |
 
-A missed gate triggers the cut order (spec section 21), never a skipped test.
+A failing gate means more work, never a skipped test. Scope changes only when the owner explicitly says so (D162).
 
 **Gates are quality gates, not deadlines (D119).** Order matters and the clock does not: a gate passes when its evidence is green, however long that takes. The one fixed external date is the hackathon's official submission deadline. The VM exists, so the order is `MVP_SCENARIOS.md` section 7, and gates are checkpoints on it (D156).
 
@@ -80,16 +80,16 @@ Status lives in the tracker. Columns: id, task, owner, gate, depends on, done wh
 | T01 | Spike S1/S11: install Node, OpenCode 1.x and the controller; coordinator registers, creates a room, invites an `owner-agents` agent, posts an addressed message, agent replies; chat command path; per-room sessions | Dev 1 | T97 | Checks a to g in `STAGE_1_FIXES.md` seen and recorded | V34, D61 |
 | T02 | Spike S12: human identity by Switch sender id; agent posts map to no person | Dev 1 | T01 | The T02 checks in `STAGE_1_FIXES.md` pass | D47 |
 | T03 | Spike S14: OpenCode harness from T104; per-agent token; `auto_mode`; nftables on the agents' group; real tool names recorded; attack check | Dev 1 | T01, T104 | The T03 checks in `STAGE_1_FIXES.md` pass; every attempt the attack check in CODING_STANDARDS section 15 requires to fail does fail | D44, D80 |
-| T04 | Spike S4: GitHub App posts a check that branch protection requires | Dev 3 | H2, T31 | On `heimdall-fixture-pay`: PR merge button blocked by the check; what `doctor` can read about protection is recorded (D151) | 13 |
+| T04 | Spike S4: GitHub App posts a check that branch protection requires | Dev 3 | T31 | On `heimdall-fixture-pay`: PR merge button blocked by the check; what `doctor` can read about protection is recorded (D151) | 13 |
 | T05 | Spike S6: seam test against a missing route fails as JUnit `<failure>` (not `<error>`) under both `go test` (gotestsum) and pytest | Dev 2 |  | XML shows `<failure>`, not `<error>` | D39 |
 | T06 | Spike S13: Graphiti MCP + FalkorDB + hosted embeddings (`voyage-4-lite`, dims 1024, V50) + DeepSeek via OpenRouter with `response_format`; search filtered by `group_ids` | Dev 4 | T07 | Seeded fact returned for its group only | D66, D73 |
-| T07 | Accounts: AWS VM, OpenRouter key, Jira KAN token, GitHub App, second GitHub identity `rekdfr` and SSH over SSM, all verified Nov 4 (D135). What is left is tracked as H2, H4 and H5 | All |  | Every account works; keys stored outside repos | D74, Part 8 open items |
-| T09 | Spike S15 (optional, first in the cut order): Teams connection round trip (room on Teams bridge, untagged message reaches an agent, `heimdall …` parsed) | Teams friend | T07 | All three seen | D79, D81 |
+| T07 | Accounts: AWS VM, OpenRouter key, Jira KAN token, GitHub App, second GitHub identity `rekdfr` and SSH over SSM, all verified Nov 4 (D135, D161) | All |  | Every account works; keys stored outside repos | D74, Part 8 open items |
+| T09 | Spike S15: Teams connection round trip (room on Teams bridge, untagged message reaches an agent, `heimdall …` parsed) | Teams friend | T07 | All three seen | D79, D81 |
 | T91 | Spike S18: a container under `heimdall-runner` cannot reach the Docker socket, the metadata address, other containers or the internet; confirm the rootless runner isolates them | Dev 1 | T07, T105 | Escape tests all fail as intended | D91, V56 |
 | T93 | Spike S20: a KAN ticket moved to In Progress is seen within one poll, a late-indexed move is seen through the overlap window, and nothing triggers twice | Dev 2 | T07 | Three KAN scenarios pass | D97, V55 |
 | T94 | Spike S21: `heimdall doctor --host` on the real AWS VM reports sudo, systemd, Docker, nftables, IMDS and memory correctly | Dev 3 | T07, T105 | Report matches reality; no sudo is reported to the team as a blocker | D90 |
-| T95 | Mattermost public access: named Cloudflare Tunnel, Site URL, Switch connection Public Url, invite-only, strong passwords, rate limit (`docs/MATTERMOST_ACCESS.md`) | Friend + Dev 1 | T07 | Teammates log in with the Mattermost app from their own network | D107 |
-| T96 | Spike S22: phone on mobile data and a desktop on another network log in through the tunnel, see a room and get a live agent reply (WebSocket) | Dev 1 | T95 | Both clients pass; result recorded | D107 |
+| T95 | Optional, not tested by us (D161): Mattermost public access guide for whoever deploys it (`docs/MATTERMOST_ACCESS.md`) | Friend + Dev 1 | T07 | Teammates log in with the Mattermost app from their own network | D107 |
+| T96 | Optional, not tested by us (D161): Spike S22, apps through a tunnel | Dev 1 | T95 | Both clients pass; result recorded | D107 |
 | T97 | Deploy Switch from its pinned standalone compose (`collab` and `gateway` profiles, `agent_management` flag, `AGENT_REGISTRATION_TOKEN`, restart policies, override for the Mattermost Site URL and `MESSAGING_PUBLIC_URL`); Console connects as a client through a port-forward; record the pinned version in the runbook | Dev 1 | T07 | The stack survives `sudo reboot` with rooms intact and Console shows the server | D124, D136 |
 
 ### G1: skeleton and frozen interfaces
@@ -108,7 +108,7 @@ Status lives in the tracker. Columns: id, task, owner, gate, depends on, done wh
 | T16b | `make sandbox`: builder in a container, repo-only mount, egress allowlist, private Docker daemon. Required before the builder runs unattended with live credentials | Dev 3 | T16 | A sandboxed builder cannot read `~/.ssh` or `.env` | D104, D160 |
 | T17 | Config and secrets loader (`secrets_dir`, `--config`, `[[projects]]`, `make secrets-local`), `/healthz` | Dev 3 | T10 | Server refuses to start on bad config; an unmapped project is logged once; a laptop run reads `secrets/` (D147, D148) | D89, D93, D102 |
 | T18 | Test harness: `make fast`, `verify`, `drift`, `e2e` (a missing `TestTask_T##` fails), `eval`, `rehearse`, `soak`, `cost`, `harness-test`, `fixtures-push`; testcontainers; real-payload recorder (`make record`) and scrubber; pre-commit hook; `docs/PROGRESS.md` template; repo `CLAUDE.md` with the builder rules; `internal/testkit/` and the CI check that no production binary depends on it (D121) | Dev 3 | T10, T16 | `make fast` under 60 s and `make verify` runs in CI; a deliberately failing test blocks the commit | D111, D114 |
-| T19 | LLM budget guard and cost ledger: per-purpose OpenRouter keys (test, eval, rehearse) with limits, balance check before any live run, committed ledger, stop rule at 2x estimate | Dev 3 | T07, T18 | `make e2e` refuses to start with too little balance; every live run adds a ledger line | D113 |
+| T19 | LLM budget guard and cost ledger on the one key in `.env`: balance check before any live run, budget per purpose from the ledger, refusal at the $3 testing cap, committed ledger, stop rule at 2x estimate (D161) | Dev 3 | T18 | `make e2e` refuses to start with too little balance; every live run adds a ledger line | D113 |
 
 ### G2: walking skeleton
 
@@ -128,7 +128,7 @@ Status lives in the tracker. Columns: id, task, owner, gate, depends on, done wh
 | T30 | test-author flow: bundle, task, submission, quality checks, errors back to the agent within its budget, commit to `tests/heimdall/<KEY>`, pin that directory's tree hash (D150) | Dev 2 | T23, T28, T29 | Tests for every AC land on the branch and are pinned | 7, D45 |
 | T31 | Hermetic fixtures `pay-demo` and `ledger-demo` (service, seam, OpenAPI, branches) in `testdata/repos/`, published as real repos by `make fixtures-push` (D149); the live target is Jurist AI (T75) | Dev 4 | H3 | `aarush323/heimdall-fixture-pay` is live; `good-pr`, `bad-pr`, `injection-pr` exist | 20, D57 |
 | T32 | Room commands parser: `heimdall …` in chat and `/heimdall …` in GitHub comments, from mapped humans (D139), including `challenge` and `remember` | Dev 1 | T26 | `heimdall start <KEY>` works from Mattermost; a `!heimdall` post is documented as not reaching us; an agent's command post is refused | 11.5, D47, D81 |
-| T34 | Repo profile, Go first: schema (with `acceptance`, `seam`, `ac_tag`, `fetch_hosts`, D153), detectors, validator (allowlisted image, limits, trial run emitting JUnit), profiler skill, PR proposal for profile and CI; replaces the fixed Go, Node and Python images in T29 | Dev 2 | T29, T15 | A Go fixture gets a valid profile through a PR | D98, D99, 12.2b |
+| T34 | Repo profile, Go first: schema (with `acceptance`, `seam`, `ac_tag`, `fetch_hosts`, D153), detectors, validator (allowlisted image, limits, trial run emitting JUnit), profiler skill, PR with the profile and policy and the workflow file in its body (D161); replaces the fixed Go, Node and Python images in T29 | Dev 2 | T29, T15 | A Go fixture gets a valid profile through a PR | D98, D99, 12.2b |
 | T35 | GitHub token source: `reader` and `writer(op, repo)` narrowed tokens, 50-minute cache; `doctor` reads the installation's real permissions | Dev 3 | T24 | A narrowed token cannot do anything outside its operation | D96, V51, V54 |
 | T36 | Jira poll with overlap window and dedupe by (key, changelog id); ADF walker with golden tests on KAN tickets | Dev 2 | T25, T93 | KAN-1 to KAN-3 parse to the right AC; no double trigger | D97, V52 |
 | T37 | `people:` mapping by Switch sender id (D140), filled by `heimdall connect people`; `github` optional except for authors and approvers (D158); text-command decisions bound to a mapped human and role | Dev 1 | T26, T32 | Wrong-person, agent-sender and stale-SHA attempts are refused in tests | D94, D95 |
@@ -165,15 +165,15 @@ Status lives in the tracker. Columns: id, task, owner, gate, depends on, done wh
 | T64 | Boot reconciliation | Dev 3 | T24, T25 | Stopped-VM events recovered after start | D56 |
 | T65 | Chat memory: change-room digest at close; listed channels with keywords or `heimdall remember` | Dev 4 | T49 | Digest episode appears after merge | D65 |
 | T66 | Baselines: CodeRabbit and plain DeepSeek reviewer on `good-pr`, saved verbatim | Dev 4 | T31 | Files in `seed/baseline/` | D58, D75 |
-| T67 | Teams (optional, first in the cut order): `chat.bridge: teams`, thread replies for asks, `heimdall …` tested | Teams friend + Dev 1 | T09, T32 | A change room runs in Teams | D79, D81 |
+| T67 | Teams: `chat.bridge: teams`, thread replies for asks, `heimdall …` tested | Teams friend + Dev 1 | T09, T32 | A change room runs in Teams | D79, D81 |
 | T68 | Local mode on a clean machine (D157): `admin init` deploys Switch and Heimdall, file tracker, polling, real agents under the controller, one OpenRouter key | Dev 3 | T63, T27, T99 | Red-then-green in under 20 min in a clean container with its own Docker daemon, no Jira, no public URL | D38 |
 | T69 | Planted-issue check: real agents find each planted issue with verified evidence in at least 2 of 3 runs | All | T60 to T66 | 3 runs logged with the planted issues found per run | D60 |
 | T71 | Reliability kit: `docs/RUNBOOK.md`, tagged-release deploys and `make recover`, backups, memory and cost guards, a demo recording, soak test with a PR every 5 minutes for 2 hours | Dev 3 | T63 | Soak passes; recover works from a stopped VM | D93, D102 |
-| T99 | Guided setup: registry-declared steps and live checks in `heimdall connect` for Switch and Console, GitHub, Jira, OpenRouter, Mattermost and the agent controller; `admin init` deploys Switch. Telegram, Slack, Discord and Teams flows are optional and first in the cut order (D156) | Dev 3 | T14, T35 | Each integration can be completed from CLI prompts and resumed after stopping; a failed check names the fix; integrations without a real run show `untested` | D137, 17 |
+| T99 | Guided setup for every integration: registry-declared steps and live checks in `heimdall connect` for Switch and Console, GitHub, Jira, OpenRouter, Mattermost, Telegram, Slack, Discord, Teams and the agent controller; `admin init` deploys Switch (D162) | Dev 3 | T14, T35 | Each integration can be completed from CLI prompts and resumed after stopping; a failed check names the fix; integrations without a real run show `untested` | D137, 17 |
 | T72 | Product experience: `heimdall setup` and `heimdall connect` polish: platform picker, credential prompts that name the secret file, clear errors, `doctor` summary | Dev 3 | T14, T35 | A new user connects Mattermost, GitHub and Jira in under 15 minutes without reading the docs | D105, 17 |
 | T73 | Agent quality: eval corpus run on Jurist AI, prompt and skill tuning for test-author, reviewer and profiler; compare against the plain DeepSeek reviewer | Dev 4 | T66 | Each planted issue found in at least 2 of 3 runs; baseline comparison saved | D60, D105 |
 | T74 | Chaos-lite: kill server mid-step, kill runner, stop Postgres 30 s, pause Switch, flood sandbox queue, with the scripted agent | Dev 3 | T38, T71 | No lost events and no false green after each; recovery without manual steps | D117 |
-| T70 | G4 freeze | All | T60 to T66, T68, T69, T71 to T74, T99 (core integrations) | Gate G4 passes | |
+| T70 | G4 freeze | All | T60 to T69, T71 to T74, T99 | Gate G4 passes | |
 
 ### G5: ship
 

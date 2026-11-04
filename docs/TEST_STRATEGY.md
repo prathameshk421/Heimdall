@@ -71,8 +71,8 @@ The key's limit is $4 and the testing cap is **$3**; the rest is held for the de
 | Reserve | | $0.20 |
 
 **Controls** (T19 builds them):
-1. **Separate keys with their own limits** (set in the OpenRouter dashboard by the account owner): `test` ($1.20, spikes and smokes), `eval` ($1.00), `rehearse` ($0.60), and the current key held back for the demo. OpenRouter enforces the cap, so a bug in our code cannot overspend. We currently have one key; creating these is a pending action for the owner.
-2. **`make e2e`, `make eval` and `make rehearse` read the key's remaining balance and refuse to start** if it is below the estimated cost of the run.
+1. **One key, two limits (D161).** The key in `.env` has a $4 limit, which OpenRouter enforces, so a bug in our code cannot overspend it. The $3 testing cap and the per-purpose budgets above are enforced by the guard and the ledger, which keeps the last $1 for the demo.
+2. **`make e2e`, `make eval` and `make rehearse` read the key's usage and the ledger, and refuse to start** if the run would pass the $3 cap or its purpose's budget.
 3. **A cost ledger** (`testdata/cost-ledger.jsonl`, committed) records the purpose, task id, tokens and dollars of every live run, measured from the key's usage before and after.
 4. **Outcome assertions, not sameness.** The model runs with its normal settings. Live tests assert outcomes (a planted issue found, with evidence the code verified; a valid submission) over a few runs, and never exact wording or an identical result every time (D122).
 5. **Stop rule.** If a live run costs more than twice its estimate, stop, record it, and recalibrate before running anything else.
@@ -120,8 +120,7 @@ For every task in the plan:
 | T05 S6 missing route is `<failure>` | run under pytest and `go test`; XML has `<failure>` not `<error>` | real runners in the sandbox | $0 |
 | T06 S13 Graphiti, hosted embeddings, group filter | seeded fact for group A absent for group B | real Graphiti, FalkorDB, OpenRouter | about $0.02 |
 | T09 S15 Teams round trip | message arrives and `heimdall …` parses | real Teams | $0 |
-| T95 tunnel | teammates log in from another network | real tunnel | $0 |
-| T91 S18, T93 S20, T94 S21, T96 S22 | each spike's pass condition written as a failing check first | real AWS VM, Mattermost, Teams, KAN | $0 |
+| T91 S18, T93 S20, T94 S21 | each spike's pass condition written as a failing check first | real AWS VM, Mattermost, Teams, KAN | $0 |
 
 ### G1: skeleton
 
@@ -159,7 +158,7 @@ For every task in the plan:
 | T35 token source | each operation gets only its permission | real App | $0 |
 | T38 scripted agent, T39 fixture repo matrix | n/a (they are test tools) | self-tested on real Switch | $0 |
 | T105 `make deploy`, T16b `make sandbox` | run twice changes nothing and the service stays up; a sandboxed builder cannot read `~/.ssh` or `.env` | real VM; real container | $0 |
-| T19 budget guard, T98 board | `make e2e` refuses on low balance; each quality check catches a deliberately wrong behaviour | real key; real board | $0 |
+| T19 budget guard, T98 board | `make e2e` refuses at the cap or over a purpose's budget; each quality check catches a deliberately wrong behaviour | real key; real board | $0 |
 
 ### G3: review loop
 

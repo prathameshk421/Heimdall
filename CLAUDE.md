@@ -11,6 +11,8 @@ Bootstrap note for coding agents. T16 replaces this file with a symlink to the f
 **When docs disagree (D138):** the highest-numbered backlog part from Part 8 on wins, then `docs/TECH_SPEC.md`. `docs/TEST_STRATEGY.md` and `docs/MVP_SCENARIOS.md` govern testing, and `docs/CODING_STANDARDS.md` governs code.
 
 **Always:**
+- Do not cut, reduce or mark anything optional unless the owner explicitly says so (D162). There is ample time. If blocked, stop and ask.
+- No hacks, shortcuts or workarounds. Implement it cleanly and correctly, or say why it cannot be done.
 - One task at a time, red test first, real check before done, evidence in `docs/TRACKER.md` and `docs/PROGRESS.md`. Anything not run is written "not verified".
 - Never read, print or commit `.env`, `secrets/`, tokens or private keys. Never paste VM logins into a chat.
 - Commit on `heimdall-build` as `T##: what`. Do not push unless the human asks.
