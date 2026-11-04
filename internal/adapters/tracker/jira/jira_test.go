@@ -78,10 +78,42 @@ func (f *fake) requests() []recorded {
 	return append([]recorded(nil), f.reqs...)
 }
 
+// waits records every pause the client asks for and never really sleeps. stop makes the next pause fail with the
+// context's error, as a cancelled call would.
+type waits struct {
+	mu   sync.Mutex
+	d    []time.Duration
+	stop bool
+}
+
+func (w *waits) Wait(ctx context.Context, d time.Duration) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stop {
+		return context.Canceled
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	w.d = append(w.d, d)
+	return nil
+}
+
+func (w *waits) pauses() []time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]time.Duration(nil), w.d...)
+}
+
 func newClient(t *testing.T, f *fake, c *clock) *Client {
 	t.Helper()
+	return newClientWait(t, f, c, &waits{})
+}
+
+func newClientWait(t *testing.T, f *fake, c *clock, w *waits) *Client {
+	t.Helper()
 	cl, err := New(Config{BaseURL: f.srv.URL, Project: "KAN", EmailSecret: "jira_email", TokenSecret: "jira_api_token"},
-		fakeSecrets{"jira_email": emailValue, "jira_api_token": tokenValue}, c, f.srv.Client())
+		fakeSecrets{"jira_email": emailValue, "jira_api_token": tokenValue}, c, w.Wait, f.srv.Client())
 	require.NoError(t, err)
 	return cl
 }
@@ -393,11 +425,13 @@ func TestNewRefusesBadConfigAndMissingSecretsWithoutPrintingThem(t *testing.T) {
 	for _, tc := range cases {
 		c := good
 		tc.mutate(&c)
-		_, err := New(c, tc.secrets, &clock{at: now}, nil)
+		_, err := New(c, tc.secrets, &clock{at: now}, (&waits{}).Wait, nil)
 		require.Error(t, err, tc.name)
 		require.NotContains(t, err.Error(), tokenValue, tc.name)
 		require.NotContains(t, err.Error(), emailValue, tc.name)
 	}
+	_, err := New(good, secrets, &clock{at: now}, nil, nil)
+	require.Error(t, err, "a waiter is required")
 }
 
 func TestATransportFailureIsUnavailable(t *testing.T) {
@@ -405,10 +439,57 @@ func TestATransportFailureIsUnavailable(t *testing.T) {
 	base := srv.URL
 	srv.Close()
 	cl, err := New(Config{BaseURL: base, Project: "KAN", EmailSecret: "jira_email", TokenSecret: "jira_api_token"},
-		fakeSecrets{"jira_email": emailValue, "jira_api_token": tokenValue}, &clock{at: now}, nil)
+		fakeSecrets{"jira_email": emailValue, "jira_api_token": tokenValue}, &clock{at: now}, (&waits{}).Wait, nil)
 	require.NoError(t, err)
 
 	_, _, err = cl.Changes(context.Background(), "")
 
 	require.ErrorIs(t, err, ports.ErrUnavailable)
+}
+
+func TestAFailedPollDoesNotAdvanceTheCursor(t *testing.T) {
+	f := newFake(t, script(cat(
+		rep(unavailable, 3),
+		[]scripted{{status: http.StatusOK, body: search(true, "",
+			issue("KAN-1", ana, history("10042", "2026-11-04T09:55:00.000+0000", "status")))}},
+	)...))
+	cl := newClient(t, f, &clock{at: now})
+	since := poll.Format(now.Add(-time.Hour))
+
+	changes, next, err := cl.Changes(context.Background(), since)
+
+	require.ErrorIs(t, err, ports.ErrUnavailable)
+	require.Empty(t, changes)
+	require.Empty(t, next, "a failed poll advances nothing; the caller keeps its last good cursor")
+
+	changes, next, err = cl.Changes(context.Background(), since)
+
+	require.NoError(t, err)
+	require.Len(t, changes, 1, "the change is still reported after the failed poll")
+	require.Equal(t, poll.Format(now), next)
+	reqs := f.requests()
+	require.Len(t, reqs, 4, "three attempts of the failed poll, then one good poll")
+	require.Equal(t, reqs[0].Query.Get("jql"), reqs[3].Query.Get("jql"), "the retry reads the same window")
+	require.Contains(t, reqs[3].Query.Get("jql"), `AFTER "2026-11-04 08:50"`)
+}
+
+func TestAFailedPollRecordsNothingSoTheNextPollReportsEveryChange(t *testing.T) {
+	f := newFake(t, script(
+		scripted{status: http.StatusOK, body: search(true, "",
+			issue("KAN-1", ana, history("10042", "2026-11-04T09:55:00.000+0000", "status")),
+			issue("KAN-2", ana, history("10043", "not a time", "status")))},
+		scripted{status: http.StatusOK, body: search(true, "",
+			issue("KAN-1", ana, history("10042", "2026-11-04T09:55:00.000+0000", "status")))},
+	))
+	cl := newClient(t, f, &clock{at: now})
+	since := poll.Format(now.Add(-time.Hour))
+
+	_, _, err := cl.Changes(context.Background(), since)
+	require.Error(t, err, "KAN-2 has an unreadable time, so the whole poll fails")
+
+	changes, _, err := cl.Changes(context.Background(), since)
+
+	require.NoError(t, err)
+	require.Len(t, changes, 1, "KAN-1 was in the failed poll; it must still be reported, not dropped as seen")
+	require.Equal(t, id.ChangeID("KAN-1"), changes[0].Key)
 }

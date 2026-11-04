@@ -1,0 +1,31 @@
+{
+  "key": "KAN-2",
+  "fields": {
+    "summary": "Ledger write",
+    "status": {"name": "In Progress"},
+    "assignee": {"accountId": "557058:ana", "accountType": "atlassian"},
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance criteria:"}]},
+        {"type": "bulletList", "content": [
+          {"type": "listItem", "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "Ledger entries are written in one transaction."}]},
+            {"type": "bulletList", "content": [
+              {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "including the refund row"}]}]}
+            ]}
+          ]},
+          {"type": "listItem", "content": [{"type": "paragraph", "content": [
+            {"type": "text", "text": "Currency stays"},
+            {"type": "hardBreak"},
+            {"type": "text", "text": "the same as the payment."}
+          ]}]}
+        ]},
+        {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "Design"}]},
+        {"type": "paragraph", "content": [{"type": "text", "text": "Not criteria."}]}
+      ]
+    }
+  },
+  "changelog": {"histories": []}
+}

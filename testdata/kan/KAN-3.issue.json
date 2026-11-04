@@ -1,0 +1,29 @@
+{
+  "key": "KAN-3",
+  "fields": {
+    "summary": "Refund lookup",
+    "status": {"name": "In Progress"},
+    "assignee": {"accountId": "557058:ana", "accountType": "atlassian"},
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "Merchants and support read refunds by id."}]},
+        {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "Acceptance criteria"}]},
+        {"type": "orderedList", "content": [
+          {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "GET /refunds/{id} returns the refund."}]}]},
+          {"type": "listItem", "content": [{"type": "paragraph", "content": [
+            {"type": "text", "text": "Each refund links to its payment at "},
+            {"type": "inlineCard", "attrs": {"url": "https://example.atlassian.net/browse/PAY-142"}},
+            {"type": "text", "text": "."}
+          ]}]},
+          {"type": "listItem", "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "Failed refunds are retried"}]},
+            {"type": "paragraph", "content": [{"type": "text", "text": "by the outbox."}]}
+          ]}
+        ]}
+      ]
+    }
+  },
+  "changelog": {"histories": []}
+}

@@ -1,0 +1,30 @@
+{
+  "key": "KAN-1",
+  "fields": {
+    "summary": "Add refunds",
+    "status": {"name": "In Progress"},
+    "assignee": {"accountId": "557058:ana", "accountType": "atlassian"},
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "Merchants can refund a completed payment."}]},
+        {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "Acceptance criteria"}]},
+        {"type": "orderedList", "content": [
+          {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "A refund cannot exceed the original payment."}]}]},
+          {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Refunding twice with the same Idempotency-Key returns the first refund."}]}]},
+          {"type": "listItem", "content": [{"type": "paragraph", "content": [
+            {"type": "text", "text": "Only the merchant can refund, as set by "},
+            {"type": "mention", "attrs": {"id": "557058:ana", "text": "@ana"}},
+            {"type": "text", "text": "."}
+          ]}]}
+        ]},
+        {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "Notes"}]},
+        {"type": "bulletList", "content": [
+          {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Refund emails are out of scope."}]}]}
+        ]}
+      ]
+    }
+  },
+  "changelog": {"histories": []}
+}

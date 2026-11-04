@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,15 @@ const (
 	maxBody        = 8 << 20
 	maxPages       = 100
 	pageSize       = "50"
+	// maxAttempts is the tries of one call that fails with an unavailable outcome (a half-open probe gets one).
+	maxAttempts = 3
+	// retryBase is the first pause; each later pause doubles it when the reply carries no usable Retry-After.
+	retryBase = time.Second
+	// maxRetryAfter is the longest pause the adapter holds a call for. A longer one returns at once, unavailable.
+	maxRetryAfter = 2 * time.Minute
+	// breakerLimit and breakerCooldown are the circuit breaker of TECH_SPEC 2.5.
+	breakerLimit    = 5
+	breakerCooldown = 30 * time.Second
 	// jqlTime is the minute resolution JQL compares dates at (V55).
 	jqlTime = "2006-01-02 15:04"
 	// createdTime is how Jira writes a changelog timestamp, for example 2026-11-04T09:55:00.000+0000.
@@ -55,27 +65,37 @@ type Secrets interface {
 	Secret(name string) (string, error)
 }
 
+// Waiter pauses for d or until ctx is done. The platform supplies the real one; tests supply a recorder. The adapter
+// never sleeps on its own (R7).
+type Waiter func(ctx context.Context, d time.Duration) error
+
 // Client polls Jira and reads tickets. It is safe for concurrent use.
 type Client struct {
 	base    string
 	project string
 	auth    string
 	clock   ports.Clock
+	wait    Waiter
 	hc      *http.Client
 	seen    poll.Seen
+	breaker breaker
 }
 
 var _ ports.TicketReader = (*Client)(nil)
 
 // New validates the config and reads the two secrets. The base URL must be https, or http to a loopback address
-// for a local test server, so the token never travels in clear to another host.
-func New(cfg Config, secrets Secrets, clock ports.Clock, hc *http.Client) (*Client, error) {
+// for a local test server, so the token never travels in clear to another host. wait is required: retries pause
+// through it.
+func New(cfg Config, secrets Secrets, clock ports.Clock, wait Waiter, hc *http.Client) (*Client, error) {
 	base, err := checkBaseURL(cfg.BaseURL)
 	if err != nil {
 		return nil, err
 	}
 	if !reProject.MatchString(cfg.Project) {
 		return nil, fmt.Errorf("jira: project %q must be an upper-case Jira project key", cfg.Project)
+	}
+	if wait == nil {
+		return nil, errors.New("jira: a waiter is required for retries")
 	}
 	email, err := readSecret(secrets, cfg.EmailSecret)
 	if err != nil {
@@ -93,6 +113,7 @@ func New(cfg Config, secrets Secrets, clock ports.Clock, hc *http.Client) (*Clie
 		project: cfg.Project,
 		auth:    "Basic " + base64.StdEncoding.EncodeToString([]byte(email+":"+token)),
 		clock:   clock,
+		wait:    wait,
 		hc:      hc,
 	}, nil
 }
@@ -154,20 +175,28 @@ func (c *Client) Changes(ctx context.Context, since ports.Cursor) ([]ports.Ticke
 	if err != nil {
 		return nil, "", err
 	}
-	var out []ports.TicketChange
+	// Every issue is read before any (key, changelog id) is recorded as seen. A poll that fails part-way therefore
+	// records nothing, and the next poll reports all of its changes again instead of dropping them as repeats.
+	var found []ports.TicketChange
 	for _, is := range issues {
 		changes, err := c.issueChanges(is, start)
 		if err != nil {
 			return nil, "", err
 		}
-		out = append(out, changes...)
+		found = append(found, changes...)
+	}
+	var out []ports.TicketChange
+	for _, ch := range found {
+		if c.seen.Observe(ch.Key, ch.ChangelogID, ch.At) {
+			out = append(out, ch)
+		}
 	}
 	c.seen.Forget(start)
 	return out, poll.Format(now), nil
 }
 
-// issueChanges returns the new changelog entries of one issue inside the window. Apps and unassigned issues are
-// skipped (the JQL already asks for an assignee, and an app is not a person).
+// issueChanges returns the changelog entries of one issue inside the window, repeats included; Changes drops the
+// repeats. Apps and unassigned issues are skipped (the JQL already asks for an assignee, and an app is not a person).
 func (c *Client) issueChanges(is searchIssue, start time.Time) ([]ports.TicketChange, error) {
 	if is.Fields.Assignee == nil || is.Fields.Assignee.AccountType == "app" {
 		return nil, nil
@@ -186,7 +215,7 @@ func (c *Client) issueChanges(is searchIssue, start time.Time) ([]ports.TicketCh
 			continue
 		}
 		fields := fieldNames(h.Items)
-		if len(fields) == 0 || !c.seen.Observe(key, h.ID, at) {
+		if len(fields) == 0 {
 			continue
 		}
 		out = append(out, ports.TicketChange{Key: key, ChangelogID: h.ID, Fields: fields, At: at.UTC()})
@@ -265,7 +294,8 @@ func (c *Client) Ticket(ctx context.Context, key id.ChangeID) (ports.Ticket, err
 	return tk, nil
 }
 
-// getJSON sends one authenticated GET with a deadline and decodes the reply. The token is only ever in the header.
+// getJSON sends one authenticated GET with a deadline and decodes the reply. The circuit breaker guards the whole
+// call, and retries stay inside it, so one call is one outcome for the breaker. The token is only ever in the header.
 func (c *Client) getJSON(ctx context.Context, path string, query url.Values, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
@@ -273,31 +303,88 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, out
 	if len(query) > 0 {
 		target += "?" + query.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	probe, err := c.breaker.allow(c.clock.Now())
 	if err != nil {
-		return fmt.Errorf("build request %s: %w", path, err)
+		return fmt.Errorf("%s: %w", path, err)
 	}
-	req.Header.Set("Authorization", c.auth)
-	req.Header.Set("Accept", "application/json")
-	resp, err := c.hc.Do(req)
+	raw, err := c.fetch(ctx, target, path, probe)
+	c.breaker.record(c.clock.Now(), err)
 	if err != nil {
-		return fmt.Errorf("%s: %w: %w", path, ports.ErrUnavailable, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if err := statusError(resp.StatusCode, path); err != nil {
 		return err
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-	if err != nil {
-		return fmt.Errorf("%s: read body: %w: %w", path, ports.ErrUnavailable, err)
-	}
-	if len(raw) > maxBody {
-		return fmt.Errorf("%s: response larger than %d bytes", path, maxBody)
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("%s: decode reply: %w", path, err)
 	}
 	return nil
+}
+
+// fetch makes the request and retries unavailable outcomes with the injected waiter: the Retry-After of the reply
+// when it has one, otherwise 1 s and then 2 s. A pause longer than two minutes returns at once. A probe gets one
+// attempt. A cancelled pause ends the call with the context's error.
+func (c *Client) fetch(ctx context.Context, target, path string, probe bool) ([]byte, error) {
+	attempts := maxAttempts
+	if probe {
+		attempts = 1
+	}
+	for attempt := 1; ; attempt++ {
+		raw, after, err := c.once(ctx, target, path)
+		if err == nil {
+			return raw, nil
+		}
+		if !errors.Is(err, ports.ErrUnavailable) || attempt >= attempts {
+			return nil, err
+		}
+		pause := after
+		if pause <= 0 {
+			pause = retryBase << (attempt - 1)
+		}
+		if pause > maxRetryAfter {
+			return nil, err
+		}
+		if werr := c.wait(ctx, pause); werr != nil {
+			return nil, fmt.Errorf("%s: wait before retry: %w", path, werr)
+		}
+	}
+}
+
+// once makes one request and returns the body of an accepted reply. The second result is the Retry-After of a 429 in
+// seconds as a duration, or zero. Errors never carry the body or the token.
+func (c *Client) once(ctx context.Context, target, path string) ([]byte, time.Duration, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("build request %s: %w", path, err)
+	}
+	req.Header.Set("Authorization", c.auth)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%s: %w: %w", path, ports.ErrUnavailable, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if err := statusError(resp.StatusCode, path); err != nil {
+		return nil, retryAfter(resp), err
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	if err != nil {
+		return nil, 0, fmt.Errorf("%s: read body: %w: %w", path, ports.ErrUnavailable, err)
+	}
+	if len(raw) > maxBody {
+		return nil, 0, fmt.Errorf("%s: response larger than %d bytes", path, maxBody)
+	}
+	return raw, 0, nil
+}
+
+// retryAfter reads a 429's Retry-After given in seconds. An HTTP date or any other reply gives zero, so the caller
+// uses its own backoff.
+func retryAfter(resp *http.Response) time.Duration {
+	if resp.StatusCode != http.StatusTooManyRequests {
+		return 0
+	}
+	secs, err := strconv.Atoi(resp.Header.Get("Retry-After"))
+	if err != nil || secs < 0 {
+		return 0
+	}
+	return time.Duration(secs) * time.Second
 }
 
 // statusError maps an HTTP status to a port error. The body is never included, since it may echo user text.

@@ -18,7 +18,14 @@ Branch `heimdall-build`, nothing pushed. **Done and committed:** Stage 1, slice 
 - `go mod tidy` was run (go-toml/v2, goose/v3 added; network works). River is not added yet.
 - **T14, T24, T46, T32, T25** built (Haiku and Sonnet helpers, finished and checked by the lead), committed together. Evidence: `make fast` exit 0 (2246 tests, lint 0 issues). `connect` CLI with `file` tracker entry and `lineWriter` error handling; GitHub adapter (`internal/adapters/github`: PR reads, ETag list, rate limit and breaker, narrowed token source, branch/commit/check/comment writes, `ReadFile`/`TreeHash`/`Tarball`); intake (`internal/app/intake`) with the YAML decoder injected from `internal/adapters/policyyaml` (depguard bars YAML from `app`); `internal/app/commands` parser; `internal/adapters/tracker/{file,jira}`. Port changes: `CodeReader.ReadFile`, `ports.ErrUnauthorized`; the reducer now allows `slop.evaluated` before BUILDING. Mutation checks: 4 to 5 per task, all caught (one equivalent mutant simplified in the GitHub branch code). Fixture repo `aarush323/heimdall-fixture-pay` published (5 branches).
 - **Not verified:** no live GitHub, Jira or Switch call (credentials go only through the e2e simulator, R8); T35 `doctor` reading real installation permissions; T04 spike (required check blocks merge); Jira `search/jql` and changelog behaviour from docs only; `make verify` not run. **T12 done:** `deploy/verify-compose.sh` ran to completion (Nov 4): `compose config -q`, `up -d --build --wait` exit 0 with postgres, falkordb, graphiti and heimdall-server all Healthy, `/healthz` on 127.0.0.1:8080 exit 0, `down -v` clean. Still not verified: Graphiti answering a real search with the OpenRouter embedder config.
+- **T04 done (live, Nov 4):** on `aarush323/heimdall-fixture-pay` PR #1 (`pay-demo/refunds` into `main`), branch protection on `main` requires the check `heimdall/gate` (set with the owner's `gh` login). The GitHub App (through `internal/adapters/github`, live tests in `live_test.go`, build tag `live`) posted `heimdall/gate` as `in_progress`: `mergeStateStatus` was `BLOCKED`. Posting it `completed/success` made it `CLEAN`. The gate was set back to pending, so PR #1 stays blocked. Also live: `OpenPRs`, `Files` (11 files), `ReadFile heimdall.yaml` at the merge base (2507 bytes), `TreeHash`. Not verified live: `EnsureBranch`, `CommitFiles`, `Comment`, a `failure` conclusion, the 50-minute token refresh, what `doctor` can read about protection.
 - **Left for T36:** KAN golden ADF tests, Jira breaker and retries, the trigger decision that turns a changed ticket into `change.triggered`.
+
+- **Plan (Nov 4):** `docs/DEEPSEEK_PLAN.md` rewritten as a strict W0-first execution plan: W0 finishes the
+  half-done T36/T26/T28/T23 before any new feature, then W1–W10 in dependency order. Each item has a write
+  fence, the red tests to write first, acceptance commands, mutation targets, a real check (or `not verified`),
+  and its commit message. Section 1 makes `AGENTS.md` R1–R13 checkable and lists the refused shortcuts
+  (stubs, canned fixture answers, test-mode branches, fallbacks, weakened checks). No product code changed.
 
 ## Next (in order)
 
@@ -81,3 +88,4 @@ OpenRouter: $0.149 of the $3 testing cap, read Nov 4 after T03. No live model ru
 | Date | Task | Story / agents | Green / blocked / red |
 |---|---|---|---|
 | 2026-11-04 | T98 | fixture-pay / scripted | 0 / 38 / 2 |
+| 2026-11-04 |  | fixture-pay / scripted | 0 / 38 / 2 |
