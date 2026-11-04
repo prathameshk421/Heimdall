@@ -187,6 +187,8 @@ func addEverywhere(t table) {
 			continue
 		}
 		t.set(s, EventChangeRejected, to(StateRejected))
+		t.set(s, EventStepRetried, to(s))
+		t.set(s, EventStepEscalated, to(s))
 		if s == StateEscalated {
 			t.set(s, EventDecisionRecorded, when(rejectDecision, to(StateRejected),
 				when(resolvesEscalation, to(StateInReview), to(s))))

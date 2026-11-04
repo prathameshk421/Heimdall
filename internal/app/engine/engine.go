@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -31,6 +32,21 @@ type Config struct {
 	Roles      []workflow.Role
 	Schemas    []string
 	Conditions map[string]Condition
+	// MaxAttempts is the task budget of a retry: how many times a retry target may run in all, its first run included.
+	// It must be 1 or more when any step retries (TECH_SPEC 5.1, on_fail).
+	MaxAttempts int
+}
+
+// StepFailedError is what a step returns when its check failed, as opposed to an error in the step itself. The step
+// stores its own record of the failure (its Result), and the engine then applies the step's on_fail. Reasons are the
+// structured reasons of the failure. Find it with errors.As.
+type StepFailedError struct {
+	Reasons []string
+}
+
+// Error returns the reasons joined on one line.
+func (e StepFailedError) Error() string {
+	return "step check failed: " + strings.Join(e.Reasons, "; ")
 }
 
 // Engine runs one workflow. It holds no per-change state, so one Engine serves every change; callers serialize the
@@ -40,9 +56,13 @@ type Engine struct {
 	steps map[string]Step          // by step type, the do field
 	byID  map[string]workflow.Step // by step id
 	conds map[string]Condition
-	store ports.EventStore
-	clock ports.Clock
-	ids   ports.IDs
+	// scope maps each step id to its own id and the ids of every step it waits for, directly or not. A retry of any of
+	// them reopens the step (plan.go).
+	scope       map[string]map[string]bool
+	maxAttempts int
+	store       ports.EventStore
+	clock       ports.Clock
+	ids         ports.IDs
 }
 
 // Outcome says what one run did. Events and Effects count what the run stored, incoming events included. Timers are
@@ -77,6 +97,7 @@ func New(cfg Config) (*Engine, error) {
 		problems = append(problems, err)
 	}
 	problems = append(problems, checkConditions(cfg.Workflow, cfg.Conditions)...)
+	problems = append(problems, checkRetries(cfg.Workflow, cfg.MaxAttempts)...)
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("engine: %w", errors.Join(problems...))
 	}
@@ -85,13 +106,15 @@ func New(cfg Config) (*Engine, error) {
 		byID[s.ID] = s
 	}
 	return &Engine{
-		wf:    cfg.Workflow,
-		steps: steps,
-		byID:  byID,
-		conds: maps.Clone(cfg.Conditions),
-		store: cfg.Store,
-		clock: cfg.Clock,
-		ids:   cfg.IDs,
+		wf:          cfg.Workflow,
+		steps:       steps,
+		byID:        byID,
+		conds:       maps.Clone(cfg.Conditions),
+		scope:       scopes(cfg.Workflow),
+		maxAttempts: cfg.MaxAttempts,
+		store:       cfg.Store,
+		clock:       cfg.Clock,
+		ids:         cfg.IDs,
 	}, nil
 }
 
@@ -243,19 +266,28 @@ func (r *run) step(ctx context.Context, ws workflow.Step, call func(ChangeView) 
 	return stored, nil
 }
 
-// stepDecision is one call of a step on a view. The call runs only when the step is open there. A failed call becomes
-// a task.failed event for the step's task (see failure).
+// stepDecision is one call of a step on the change. The call runs only when the step is open, and it gets the step's
+// own view of the change (plan.go). A failed check (StepFailedError) keeps the step's record and applies on_fail
+// (onfail.go). Any other failure becomes a task.failed event for the step's task (see failure).
 func (r *run) stepDecision(ctx context.Context, ws workflow.Step, call func(ChangeView) (Result, error)) func(ChangeView) (attempt, error) {
 	return func(v ChangeView) (attempt, error) {
-		if !r.e.open(v, ws) {
+		p, err := r.e.newPlan(v)
+		if err != nil {
+			return attempt{}, err
+		}
+		if !p.open(ws) {
 			return attempt{}, nil
 		}
-		res, err := call(v)
+		res, err := call(p.windows[ws.ID])
 		if err == nil {
 			return attempt{res: res}, nil
 		}
 		if ctx.Err() != nil {
 			return attempt{}, fmt.Errorf("step %s of %s: %w", ws.ID, r.cid, err)
+		}
+		var sf StepFailedError
+		if errors.As(err, &sf) {
+			return r.e.checkFailed(v, ws, res, sf)
 		}
 		ev, err := r.e.failure(v, ws, err)
 		if err != nil {
@@ -356,40 +388,13 @@ func (r *run) finish(ctx context.Context) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
+	p, err := r.e.newPlan(v)
+	if err != nil {
+		return Outcome{}, err
+	}
 	r.out.Version = int64(len(v.Events))
-	r.out.Complete = r.e.complete(v)
+	r.out.Complete = p.complete()
 	return r.out, nil
-}
-
-// complete reports whether every step is finished or skipped on the view.
-func (e *Engine) complete(v ChangeView) bool {
-	for _, ws := range e.wf.Steps {
-		if !e.finished(v, ws) {
-			return false
-		}
-	}
-	return true
-}
-
-// open reports whether a step is ready and not finished on the view. Only open steps are called.
-func (e *Engine) open(v ChangeView, ws workflow.Step) bool {
-	return e.ready(v, ws) && !e.finished(v, ws)
-}
-
-// ready reports whether every step the given step waits for is finished on the view.
-func (e *Engine) ready(v ChangeView, ws workflow.Step) bool {
-	for _, dep := range ws.After {
-		if !e.finished(v, e.byID[dep]) {
-			return false
-		}
-	}
-	return true
-}
-
-// finished reports whether a step is skipped or done on the view. A skipped step counts as finished for the steps
-// after it (step.go).
-func (e *Engine) finished(v ChangeView, ws workflow.Step) bool {
-	return e.skipped(v, ws) || e.steps[ws.Do].Done(v)
 }
 
 // skipped reports whether the step's when condition is false on the view.

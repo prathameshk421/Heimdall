@@ -40,10 +40,26 @@
 //   - The engine holds no per-change state, so one Engine serves every change. Callers serialize the runs of one change
 //     (TECH_SPEC 2.4).
 //
-// What is not built here. The on_fail retry and then of a workflow step (TECH_SPEC 5.1) are read from the workflow but
-// not acted on: a step that fails its check stays open until a later run changes what the view holds. The YAML loader
-// is Later (D54). The On field of a step is informational: the trigger of a change is the change.triggered event that
-// the caller passes in, not a match on the on string.
+// on_fail (TECH_SPEC 5.1, onfail.go and plan.go). A step returns a StepFailedError when its check failed. Its own record
+// (the Result) is stored, then its on_fail applies.
+//   - reject with no retry: the record is all that is stored. The step is not finished, so the steps after it wait, and
+//     the run does not fail. Nothing is written again until the step has something new to judge.
+//   - retry R until task_budget: attempts(R) is 1 plus the step.retried events that name R. While attempts(R) is less
+//     than Config.MaxAttempts, step.retried{Step: R, Attempt: attempts+1, Reasons} is stored after the record. Reasons
+//     carry at most 8 items, each trimmed and cut to the text limit.
+//   - Budget used up, or no retry: step.escalated{Step, Attempts, Reason} is stored, unless on_fail says reject. An
+//     escalated step is held: the engine does not call it, and Outcome.Complete is false, until a later step.retried
+//     names it or a step it waits for. A step with no on_fail that fails escalates too, so nothing stops silently.
+//   - Windows. A step sees the events from the latest step.retried that names the step or a step it waits for, and that
+//     retry is kept in the window. A retry therefore reopens its target and everything after it: their Done, Start and
+//     OnEvent see the change as if the earlier work had not happened. The events before the retry stay in the store.
+//   - Replay. The decision depends only on the stored events and the config, so an engine started on the same events
+//     makes the same decisions, and it writes nothing for work already recorded.
+//   - Cost is not enforced: no event carries spend, so the cost part of the task budget is not verified (T19). The budget
+//     here is the number of attempts in the config.
+//
+// The YAML loader is Later (D54). The On field of a step is informational: the trigger of a change is the change.triggered
+// event that the caller passes in, not a match on the on string.
 //
 // Failure modes of the engine itself. A store that is down returns its error from the run, and the caller retries the
 // run later; the events of earlier decisions in the run are already stored, and a re-run carries on from them. A step
@@ -52,6 +68,7 @@
 // Tests. fakes_test.go holds the fakes: an in-memory store that checks what postgres checks, fake steps, fake clock and
 // fake ids. engine_test.go covers the run: order, expected versions, version conflicts, failures and task.failed,
 // timeouts with the injected clock, idempotent re-runs, incoming events, cancellation and the validation of New.
-// default_test.go runs the default workflow of TECH_SPEC 5.1 from the ticket to the gate on the fakes, and the
-// sensitive-domain signoff.
+// onfail_test.go covers on_fail: a retry inside the budget, budget used up, reject, replay, a conflict mid-retry, the
+// windows of downstream steps, the bounds on reasons, and the config checks. default_test.go runs the default workflow of
+// TECH_SPEC 5.1 from the ticket to the gate on the fakes, and the sensitive-domain signoff.
 package engine

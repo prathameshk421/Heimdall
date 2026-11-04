@@ -197,7 +197,14 @@ type harness struct {
 	n     int
 	// sensitive is the sensitive_domain condition, and the needs_signoff the sandbox reports (D33). False by default.
 	sensitive bool
+	// qaRejections is how many submissions the sandbox rejects, counted over the whole store, before it passes one.
+	qaRejections int
+	// seenRetries holds every step.retried the test-author's step was offered in its view.
+	seenRetries []change.StepRetried
 }
+
+// rejectionReason is the one structured reason the sandbox gives for a rejected submission.
+const rejectionReason = "TestRefundReturnsMoney does not compile"
 
 func newHarness(t *testing.T) *harness {
 	return &harness{t: t, store: &fakeStore{}, clock: fixedClock{now: dayStart}}
@@ -266,8 +273,15 @@ func (h *harness) defaultSteps() []engine.Step {
 		}),
 		h.agentTaskStep(),
 		fake("sandbox.test_quality", hasOf(change.EventTestsVerified), func(_ context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
-			if c.Has(change.EventTestsVerified) || !c.Has(change.EventTestsSubmitted) {
+			// A submission is judged once: a rejection in the view (or a pass) means it already has its verdict.
+			if c.Has(change.EventTestsVerified) || c.Has(change.EventTestsRejected) || !c.Has(change.EventTestsSubmitted) {
 				return engine.Result{}, nil
+			}
+			if h.rejectedSoFar() < h.qaRejections {
+				rec := h.emit(change.EventTestsRejected, sysActor, change.TestsRejected{
+					Reasons: []string{rejectionReason}, RunIDs: []id.RunID{runID}, SHA: sha,
+				})
+				return rec, engine.StepFailedError{Reasons: []string{rejectionReason}}
 			}
 			return h.emit(change.EventTestsVerified, sysActor, change.TestsVerified{
 				RunIDs: []id.RunID{runID}, SHA: sha, TreeHash: sha, NeedsSignoff: h.sensitive,
@@ -314,12 +328,26 @@ func (h *harness) defaultSteps() []engine.Step {
 	}
 }
 
+// rejectedSoFar counts the tests.rejected events the store holds.
+func (h *harness) rejectedSoFar() int {
+	return count(h.types(), change.EventTestsRejected)
+}
+
 // agentTaskStep is the test-author's step. The first call assigns the task and sets its deadline timer; the task is
 // done when the agent submits its tests. Its timeout records task.timed_out, as the real step would at the deadline.
 func (h *harness) agentTaskStep() *fakeStep {
 	deadline := dayStart.Add(2 * time.Hour)
 	s := fake("agent.task", hasOf(change.EventTestsSubmitted), func(_ context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
-		if c.Has(change.EventTaskAssigned) {
+		// A retry hands the reasons to the test-author, which the view carries. The fake only records them: the
+		// reopened step waits for the next submission, so a retry assigns no new task here.
+		for _, ev := range c.Events {
+			if ev.Type == change.EventStepRetried {
+				p, err := change.Decode(ev)
+				require.NoError(h.t, err)
+				h.seenRetries = append(h.seenRetries, p.(change.StepRetried))
+			}
+		}
+		if c.Has(change.EventTaskAssigned) || c.Has(change.EventStepRetried) {
 			return engine.Result{Timers: []engine.Timer{{Step: "write_tests", Due: deadline}}}, nil
 		}
 		res := h.emit(change.EventTaskAssigned, sysActor, change.TaskAssigned{
@@ -375,8 +403,10 @@ func (h *harness) defaultConfig(steps []engine.Step) engine.Config {
 		Store:    h.store,
 		Clock:    h.clock,
 		IDs:      &fakeIDs{},
-		Roles:    registryRoles,
-		Schemas:  registrySchemas,
+		// The default workflow's test_qa retries write_tests, so the config must give a budget (TECH_SPEC 5.1).
+		MaxAttempts: 3,
+		Roles:       registryRoles,
+		Schemas:     registrySchemas,
 		Conditions: map[string]engine.Condition{"sensitive_domain": func(engine.ChangeView) bool {
 			return h.sensitive
 		}},

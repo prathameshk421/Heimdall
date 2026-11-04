@@ -36,6 +36,8 @@ func registry() map[EventType]payloadEntry {
 		EventTaskAcked:           entry[TaskAcked](),
 		EventTaskTimedOut:        entry[TaskTimedOut](),
 		EventTaskFailed:          entry[TaskFailed](),
+		EventStepRetried:         entry[StepRetried](),
+		EventStepEscalated:       entry[StepEscalated](),
 		EventQuestionAsked:       entry[QuestionAsked](),
 		EventQuestionAnswered:    entry[QuestionAnswered](),
 		EventTestsSubmitted:      entry[TestsSubmitted](),

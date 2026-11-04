@@ -36,7 +36,8 @@
 //     ticket cannot start a stream. An empty stream reaches the empty state, which is not an error.
 //   - Terminal. MERGED and REJECTED have no cells, so they refuse every event type (TECH_SPEC 3.3).
 //   - Everywhere. Every non-terminal state takes change.rejected to REJECTED, and a decision.recorded of kind reject
-//     to REJECTED.
+//     to REJECTED. step.retried and step.escalated leave every non-terminal state where it is (TECH_SPEC 5.1, on_fail); the
+//     empty stream and the terminal states refuse them.
 //   - Before BUILDING. A pr.opened that names a ticket attaches while the state keeps its place, from TRIGGERED to
 //     TESTS_READY (D146). The first pr.pushed or pr.opened in BUILDING moves to PR_OPEN. A pr.closed that did not
 //     merge changes nothing before a PR state, and a merged one is refused.

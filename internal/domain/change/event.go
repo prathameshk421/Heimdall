@@ -21,6 +21,8 @@ const (
 	EventTaskAcked           EventType = "task.acked"
 	EventTaskTimedOut        EventType = "task.timed_out"
 	EventTaskFailed          EventType = "task.failed"
+	EventStepRetried         EventType = "step.retried"
+	EventStepEscalated       EventType = "step.escalated"
 	EventQuestionAsked       EventType = "question.asked"
 	EventQuestionAnswered    EventType = "question.answered"
 	EventTestsSubmitted      EventType = "tests.submitted"
@@ -61,6 +63,7 @@ func All() []EventType {
 	return []EventType{
 		EventChangeTriggered, EventRoomOpened, EventBranchEnsured,
 		EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed,
+		EventStepRetried, EventStepEscalated,
 		EventQuestionAsked, EventQuestionAnswered,
 		EventTestsSubmitted, EventTestsVerified, EventTestsRejected, EventTestsCommitted, EventTestsApproved,
 		EventTicketChanged,

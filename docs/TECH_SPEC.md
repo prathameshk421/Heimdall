@@ -277,6 +277,7 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 | `change.triggered` | ticket, repo, assignee, trigger source | Jira webhook or fallback |
 | `room.opened`, `branch.ensured` | room id; branch, base sha | Adapters |
 | `task.assigned` / `task.acked` / `task.timed_out` / `task.failed` | task id, agent, role, deadline, bundle hash, reason | Engine |
+| `step.retried` / `step.escalated` | step id, attempt, reasons / attempts, reason | Engine (on_fail, 5.1) |
 | `question.asked` / `question.answered` | ids, refs, sender, message id | test-author, room sync |
 | `tests.submitted` / `tests.verified` / `tests.rejected` / `tests.committed` | refs, AC map, run ids, reasons, sha, tree hash; `tests.verified` also carries `needs_signoff`, set by the engine from policy (sensitive paths and labels, D131, D33): true sends the change to AWAITING_TEST_SIGNOFF, false to TESTS_READY | Agent, sandbox, GitHub, engine |
 | `tests.approved` | approver, tree hash (sensitive domains, D33) | Room or GitHub command |
