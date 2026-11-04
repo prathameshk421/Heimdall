@@ -66,5 +66,77 @@ BLOCK|gh repo delete x
 BLOCK|gh api repos/x/y -X DELETE
 CASES
 
+edit_hook="$here/claude/hooks/pre-edit-guard.sh"
+post_hook="$here/claude/hooks/post-edit.sh"
+stop_hook="$here/claude/hooks/stop-gate.sh"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+proj="$work/proj"
+mkdir -p "$proj"
+
+check() { # check <name> <condition-exit-status>
+  total=$((total + 1))
+  if [ "$2" -ne 0 ]; then echo "FAIL: $1"; fail=$((fail + 1)); fi
+}
+
+# --- pre-edit-guard: deny (exit 2), ask (JSON on stdout), allow (silent exit 0)
+edit() { # edit <path> [content] -> sets code and out
+  out=$(jq -n --arg p "$proj/$1" --arg c "${2:-}" '{tool_input: {file_path: $p, content: $c}}' | CLAUDE_PROJECT_DIR="$proj" "$edit_hook" 2>/dev/null)
+  code=$?
+}
+for f in .claude/settings.json .claude/hooks/pre-bash-guard.sh docs/harness/AGENTS.md .git/config secrets/github-app.pem .env .env.local; do
+  edit "$f"; [ "$code" -eq 2 ]; check "edit-guard denies $f" $?
+done
+for f in .golangci.yml AGENTS.md CLAUDE.md e2e/scenarios/p1.go e2e/stories/fixture-pay.yaml testdata/real/github/pr.json .github/workflows/ci.yml Makefile; do
+  edit "$f"; [ "$code" -eq 0 ] && jq -e '.hookSpecificOutput.permissionDecision == "ask"' <<<"$out" >/dev/null; check "edit-guard asks for $f" $?
+done
+for f in internal/app/review/review.go docs/PROGRESS.md docs/TRACKER.md internal/testkit/fake.go cmd/heimdall-testagent/main.go; do
+  edit "$f"; [ "$code" -eq 0 ] && [ -z "$out" ]; check "edit-guard allows $f" $?
+done
+leak='package app
+import _ "example.com/m/internal/testkit"'
+edit internal/app/review/review.go "$leak"; [ "$code" -eq 2 ]; check "edit-guard blocks production code importing the test kit" $?
+edit internal/app/review/review_test.go "$leak"; [ "$code" -eq 0 ]; check "edit-guard allows a _test.go importing the test kit" $?
+edit cmd/heimdall-testagent/main.go "$leak"; [ "$code" -eq 0 ]; check "edit-guard allows the test agent importing the test kit" $?
+
+# --- post-edit: format and vet the package just edited
+go_proj="$work/goproj"
+mkdir -p "$go_proj/pkg"
+printf 'module example.com/m\n\ngo 1.22\n' > "$go_proj/go.mod"
+post() { # post <file> -> sets code and out
+  out=$(jq -n --arg p "$1" '{tool_input: {file_path: $p}}' | CLAUDE_PROJECT_DIR="$go_proj" "$post_hook" 2>&1)
+  code=$?
+}
+printf 'package pkg\n\nfunc   Add(a,b int) int {return a+b}\n' > "$go_proj/pkg/a.go"
+post "$go_proj/pkg/a.go"
+[ "$code" -eq 0 ] && grep -q 'func Add(a, b int) int {' "$go_proj/pkg/a.go"; check "post-edit formats the edited Go file" $?
+printf 'package pkg\n\nimport "fmt"\n\nfunc Show() { _ = fmt.Sprintf("%%d", "x") }\n' > "$go_proj/pkg/b.go"
+post "$go_proj/pkg/b.go"
+[ "$code" -eq 2 ] && grep -q 'go vet failed' <<<"$out"; check "post-edit reports a vet failure with exit 2" $?
+printf 'text' > "$go_proj/notes.md"
+post "$go_proj/notes.md"; [ "$code" -eq 0 ] && [ -z "$out" ]; check "post-edit ignores a non-Go file" $?
+mkdir -p "$work/nogo" && ln -s "$(command -v jq)" "$work/nogo/jq"
+out=$(jq -n --arg p "$go_proj/pkg/a.go" '{tool_input: {file_path: $p}}' | HOME=/nonexistent PATH="$work/nogo:/usr/bin:/bin" CLAUDE_PROJECT_DIR="$go_proj" "$post_hook" 2>&1); code=$?
+[ "$code" -eq 2 ] && grep -q 'go toolchain missing' <<<"$out"; check "post-edit says so when the Go toolchain is missing" $?
+
+# --- stop-gate: red checks and unrecorded work stop the turn once, then let it through
+stop_proj="$work/stopproj"
+mkdir -p "$stop_proj" && git -C "$stop_proj" init -q && git -C "$stop_proj" config user.email t@t && git -C "$stop_proj" config user.name t
+printf 'fast:\n\t@true\n' > "$stop_proj/Makefile"
+git -C "$stop_proj" add -A && git -C "$stop_proj" commit -q -m base
+stop() { # stop [json] -> sets code and out
+  out=$(printf '%s' "${1:-{\}}" | CLAUDE_PROJECT_DIR="$stop_proj" "$stop_hook" 2>&1)
+  code=$?
+}
+stop; [ "$code" -eq 0 ]; check "stop-gate lets a turn with no changes end" $?
+printf 'x' > "$stop_proj/notes.txt"; stop; [ "$code" -eq 0 ]; check "stop-gate ignores changes that are not Go" $?
+printf 'package x\n' > "$stop_proj/x.go"
+stop; [ "$code" -eq 2 ] && grep -q 'docs/PROGRESS.md' <<<"$out"; check "stop-gate demands PROGRESS.md when Go changed and fast is green" $?
+mkdir -p "$stop_proj/docs" && printf 'p' > "$stop_proj/docs/PROGRESS.md"
+stop; [ "$code" -eq 0 ]; check "stop-gate allows the turn once Go and PROGRESS.md both changed" $?
+printf 'fast:\n\t@echo broken >&2; exit 1\n' > "$stop_proj/Makefile"
+stop; [ "$code" -eq 2 ] && grep -q 'make fast is red' <<<"$out"; check "stop-gate blocks when make fast is red" $?
+stop '{"stop_hook_active": true}'; [ "$code" -eq 0 ]; check "stop-gate lets the second stop through (no loop)" $?
+
 echo "$total cases, $fail failed"
 [ "$fail" -eq 0 ]

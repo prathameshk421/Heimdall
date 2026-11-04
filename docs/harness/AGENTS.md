@@ -1,6 +1,6 @@
 # Heimdall: rules for coding agents
 
-You are building Heimdall one task at a time. You lose memory between sessions, so everything you need is in files. Read in this order, then stop reading and start: `docs/PROGRESS.md`, the task row in `docs/IMPLEMENTATION_PLAN.md`, the spec sections it cites. Precedence when docs disagree (D138): the highest-numbered backlog part from Part 8 on > `TECH_SPEC.md` > earlier backlog parts; `MVP_SCENARIOS.md` and `TEST_STRATEGY.md` govern testing, `CODING_STANDARDS.md` governs code.
+You are building Heimdall one task at a time. You lose memory between sessions, so everything you need is in files. Read in this order, then stop reading and start: `docs/PROGRESS.md` (where the build is and what is next), this file, `docs/MVP_SCENARIOS.md` section 7 (the one build order), the task's row in `docs/IMPLEMENTATION_PLAN.md`, and the spec sections it cites. Precedence when docs disagree (D138): the highest-numbered backlog part from Part 8 on > `TECH_SPEC.md` > earlier backlog parts; `MVP_SCENARIOS.md` and `TEST_STRATEGY.md` govern testing, `CODING_STANDARDS.md` governs code. Product code lives in top-level folders (`cmd/`, `internal/`, `e2e/`), never under `docs/`.
 
 ## Commands (never invent others)
 
@@ -10,7 +10,8 @@ You are building Heimdall one task at a time. You lose memory between sessions, 
 | `make verify` | adds component and contract tests. Before every commit that ends a task |
 | `make prototype ONLY=P2` | the product board for one scenario. Run before and after your task |
 | `make e2e T=T24` | the real-system check for a task. Run `make cost` first if an LLM is involved |
-| `make lint-selftest` | proves each lint rule still fires |
+| `make lint-selftest` | proves each lint rule still fires (fixtures in `testdata/lint`) |
+| `make harness-test` | every hook case; `make harness-install` copies `docs/harness/` into place and `make harness-install CHECK=1` fails on drift |
 
 ## The loop (one task per session, one commit per task)
 
@@ -49,6 +50,13 @@ You are building Heimdall one task at a time. You lose memory between sessions, 
 - The Jira poll re-queries from `cursor - 10 min` and dedupes by (key, changelog id).
 - Each VM agent's `opencode.json` holds its token. Never read, print or copy it. The OpenCode model id is `openrouter/deepseek/deepseek-v4-flash`.
 
+## Access and branch
+
+- The VM is `ssh heimdall-vm`; forward ports as in `docs/RUNBOOK.md`. Never paste VM logins into a chat. Switch's source, for checking facts, is `~/.t3/projects/switchthon/switch`.
+- Commit on `heimdall-build` as `T##: what`. Do not push to this repo unless the human asks. For GitHub checks use `aarush323/PBL_TOS_RISK_ANALYZER` (base `heimdall-demo`, never `main`; branches `heimdall-test/<run-id>`) and `aarush323/heimdall-fixture-pay`.
+- Before any live model run, state the expected cost; the testing cap is $3. Anything not run is written "not verified".
+- If a real result contradicts a decision, change the decision and the spec in the same commit. Do not add a fallback.
+
 ## Where to look
 
-`docs/CODING_STANDARDS.md` (code rules), `docs/TEST_STRATEGY.md` (layers and budget), `docs/MVP_SCENARIOS.md` (the board), a package's `doc.go` (its design note and traps).
+`docs/CODING_STANDARDS.md` (code rules), `docs/TEST_STRATEGY.md` (layers and budget), `docs/MVP_SCENARIOS.md` (the board), a package's `doc.go` (its design note and traps; start from `docs/harness/doc.go.template`).

@@ -29,6 +29,6 @@ func run(ctx context.Context) error {
 	if len(violations) > 0 {
 		return fmt.Errorf("%d dependency-rule violation(s)", len(violations))
 	}
-	fmt.Fprintf(os.Stdout, "archcheck: %d packages, dependency rule holds\n", len(pkgs))
-	return nil
+	_, err = fmt.Fprintf(os.Stdout, "archcheck: %d packages, dependency rule holds\n", len(pkgs))
+	return err
 }

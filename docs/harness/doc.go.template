@@ -1,0 +1,22 @@
+// Package NAME VERB-PHRASE: one sentence that says what the package is for.
+//
+// # Purpose
+//
+// What problem it solves and what it deliberately does not do.
+//
+// # API
+//
+// The exported names, and for each the contract: inputs, outputs, errors a caller can branch on.
+//
+// # Invariants
+//
+// What is always true of its values and state; what the constructors validate.
+//
+// # Failure modes
+//
+// What goes wrong (a dependency down, a replay, two writers) and what the package does about it.
+//
+// # Tests
+//
+// The table tests, the real-system check and the board step that prove it, by name.
+package NAME

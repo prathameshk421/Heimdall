@@ -6,7 +6,7 @@ in=$(cat)
 [ "$(jq -r '.stop_hook_active // false' <<<"$in")" = "true" ] && exit 0
 cd "$CLAUDE_PROJECT_DIR" || exit 0
 
-changed=$(git status --porcelain 2>/dev/null | awk '{print $2}')
+changed=$(git status --porcelain -uall 2>/dev/null | awk '{print $2}')
 grep -q '\.go$' <<<"$changed" || exit 0          # nothing in Go changed: nothing to gate
 
 if [ -f Makefile ] && grep -q '^fast:' Makefile; then

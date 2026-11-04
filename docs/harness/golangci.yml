@@ -101,5 +101,11 @@ linters:
         linters: [forbidigo]
         text: "os\\.(Getenv|LookupEnv)"
 
+issues:
+  # A second finding on the same line must not hide the first: a developer would only meet it after fixing the first.
+  uniq-by-line: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
 formatters:
   enable: [gofmt, goimports]

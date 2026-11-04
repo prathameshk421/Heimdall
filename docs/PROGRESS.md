@@ -11,6 +11,10 @@ Docs are final and committed on branch `heimdall-build` (not pushed). No product
 1. Stage 1 is done.
 2. `MVP_SCENARIOS.md` section 7: slice 0 (T00, T10, T16, T18, T98). Product code goes in top-level folders, not `docs/`.
 
+## Harness install is deferred to the end of slice 0
+
+`make harness-install` is built and tested (T16) but not run in this checkout yet. Once installed, the edit guard asks the human before every change to `Makefile`, `e2e/scenarios` and `e2e/stories`, which T18 and T98 create. No check is loosened by waiting. Run `make harness-install` after T98, then `make harness-install CHECK=1`.
+
 ## Code layout
 
 Product code lives in top-level folders (`cmd/`, `internal/`, `e2e/`, per T00), never under `docs/`. `docs/harness/` holds only templates that T16 installs at the repo root.

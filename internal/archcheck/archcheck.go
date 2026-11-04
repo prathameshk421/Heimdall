@@ -42,21 +42,23 @@ type layer struct {
 	rule            string
 }
 
-var layers = []layer{
-	{dir: "internal/domain", allowedInternal: []string{"internal/domain"}, stdlibOnly: true,
-		rule: "domain imports only the standard library and internal/domain"},
-	{dir: "internal/app", allowedInternal: []string{"internal/domain", "internal/ports"}, stdlibOnly: true,
-		rule: "app imports only the standard library, internal/domain and internal/ports"},
-	{dir: "internal/ports", allowedInternal: []string{"internal/domain"}, stdlibOnly: true,
-		rule: "ports imports only the standard library and internal/domain"},
-	{dir: "internal/adapters", denied: []string{"internal/app", "internal/transport"},
-		rule: "adapters implement ports and do not import app or transport"},
-	{dir: "internal/transport", denied: []string{"internal/adapters"},
-		rule: "transport calls app and does not import adapters"},
+func layers() []layer {
+	return []layer{
+		{dir: "internal/domain", allowedInternal: []string{"internal/domain"}, stdlibOnly: true,
+			rule: "domain imports only the standard library and internal/domain"},
+		{dir: "internal/app", allowedInternal: []string{"internal/domain", "internal/ports"}, stdlibOnly: true,
+			rule: "app imports only the standard library, internal/domain and internal/ports"},
+		{dir: "internal/ports", allowedInternal: []string{"internal/domain"}, stdlibOnly: true,
+			rule: "ports imports only the standard library and internal/domain"},
+		{dir: "internal/adapters", denied: []string{"internal/app", "internal/transport"},
+			rule: "adapters implement ports and do not import app or transport"},
+		{dir: "internal/transport", denied: []string{"internal/adapters"},
+			rule: "transport calls app and does not import adapters"},
+	}
 }
 
 // testAllowed are the places that may import the test kit.
-var testAllowed = []string{testkitDir, "cmd/heimdall-testagent", "e2e"}
+func testAllowed() []string { return []string{testkitDir, "cmd/heimdall-testagent", "e2e"} }
 
 // Check applies the rules to the non-test imports of the packages of module.
 func Check(module string, pkgs []Package) []Violation {
@@ -76,7 +78,7 @@ func Check(module string, pkgs []Package) []Violation {
 			if l := layerOf(rel); l != nil && !l.permits(impRel, imp, internal) {
 				out = append(out, Violation{Package: rel, Import: shown, Rule: l.rule})
 			}
-			if internal && within(impRel, testkitDir) && !withinAny(rel, testAllowed) {
+			if internal && within(impRel, testkitDir) && !withinAny(rel, testAllowed()) {
 				out = append(out, Violation{Package: rel, Import: shown, Rule: testkitRule})
 			}
 		}
@@ -110,9 +112,9 @@ func (l *layer) permits(impRel, imp string, internal bool) bool {
 }
 
 func layerOf(rel string) *layer {
-	for i := range layers {
-		if within(rel, layers[i].dir) {
-			return &layers[i]
+	for _, l := range layers() {
+		if within(rel, l.dir) {
+			return &l
 		}
 	}
 	return nil

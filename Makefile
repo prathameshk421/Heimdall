@@ -18,7 +18,7 @@ tools: ## prove the toolchain: Go, each pinned tool built and run, and Docker
 	$(TOOL) gitleaks version >/dev/null
 	docker run --rm hello-world | grep -m1 'Hello from Docker'
 
-.PHONY: arch vet test vuln ci
+.PHONY: arch vet test vuln lint lint-selftest harness-test harness-install secrets ci
 arch: ## the dependency rule and the test-code rule on the real import graph
 	go run ./cmd/archcheck
 
@@ -31,4 +31,21 @@ test: ## all tests with the race detector
 vuln: ## known vulnerabilities in the product module
 	$(TOOL) govulncheck ./...
 
-ci: arch vet test vuln ## what the CI workflow runs at T10; grows with T16 and T18
+lint: ## golangci-lint with the pinned version and the repo's rules
+	$(TOOL) golangci-lint config verify
+	$(TOOL) golangci-lint run ./...
+
+lint-selftest: ## prove every lint rule still fires: bad fixtures must be flagged, good ones must stay clean
+	go test -tags lintselftest -count=1 ./internal/lintselftest/
+
+harness-test: ## every hook case, and the installer
+	bash docs/harness/test-hooks.sh
+	bash docs/harness/test-install.sh
+
+harness-install: ## copy docs/harness/ into place; CHECK=1 changes nothing and fails on drift
+	bash scripts/harness-install.sh
+
+secrets: ## gitleaks over the git history (never reads the working tree, so never .env)
+	$(TOOL) gitleaks git --no-banner --redact .
+
+ci: arch vet lint test vuln secrets lint-selftest harness-test ## what the CI workflow runs; grows with T18

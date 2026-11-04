@@ -1,0 +1,10 @@
+# Keep gitleaks' default rules. The only exception: go.sum and tools.sum hold module checksums, which the
+# generic-api-key rule mistakes for secrets. Nothing else is allowlisted; do not add paths here to silence a finding.
+title = "heimdall gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "module checksum files"
+paths = ['''(^|/)go\.sum$''', '''(^|/)tools\.sum$''']

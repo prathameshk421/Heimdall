@@ -2,6 +2,8 @@
 # PostToolUse(Edit|Write|MultiEdit): format and vet the package right after an edit, so the
 # agent sees its own mistake while the context is fresh. Fast checks only; the full set runs in the Stop hook.
 set -u
+# A hook does not run in a login shell, so the toolchain that make tools installs is not on PATH yet.
+export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"
 f=$(jq -r '.tool_input.file_path // empty')
 case "$f" in *.go) ;; *) exit 0 ;; esac
 cd "$CLAUDE_PROJECT_DIR" || exit 0
