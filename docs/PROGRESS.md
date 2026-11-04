@@ -21,7 +21,7 @@ Stay on `heimdall-build` in this checkout (`.env` is gitignored, so a new worktr
 
 ## Waiting on the human
 
-T01 step 3: a one-time enrolment code from the Machines page (http://localhost:3000 over the tunnel; valid 10 minutes). The tool permission check refused my reading the admin logins from the VM's `.env`. `/etc/switch/agents.env` is done (key piped blind, mode 0600, Nov 4).
+T01 steps 4 and 5 need the VM's `AGENT_REGISTRATION_TOKEN` (coordinator registration) and a gateway admin session (create the managed agent). The permission check refused my reading admin logins from the VM `.env` before, so the human either allows a VM-side script to use them without printing, or does it in the Console. Steps 1 to 3 are done (Nov 4): `agents.env` (owned by `ubuntu`, 0600, because the controller runs as `ubuntu`), controller `c230ee62` enrolled and `switch-agent-controller-1000.service` active with 0 agents.
 
 ## Not verified yet
 
