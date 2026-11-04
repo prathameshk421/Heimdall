@@ -2,6 +2,7 @@ package jira
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"testing"
@@ -76,7 +77,7 @@ func TestA429WaitsForRetryAfterThenSucceeds(t *testing.T) {
 	require.Equal(t, []time.Duration{7 * time.Second}, w.pauses(), "the pause is the Retry-After of the reply")
 }
 
-func TestA5xxIsRetriedThreeTimesWithDoublingPauses(t *testing.T) {
+func TestA5xxIsRetriedEightTimesWithCappedExponentialBackoff(t *testing.T) {
 	f := newFake(t, script(unavailable))
 	w := &waits{}
 	cl := newClientWait(t, f, &clock{at: now}, w)
@@ -84,8 +85,19 @@ func TestA5xxIsRetriedThreeTimesWithDoublingPauses(t *testing.T) {
 	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 
 	require.ErrorIs(t, err, ports.ErrUnavailable)
-	require.Len(t, f.requests(), 3, "three attempts in all")
-	require.Equal(t, []time.Duration{time.Second, 2 * time.Second}, w.pauses())
+	require.Len(t, f.requests(), 8, "the resilience policy permits eight attempts in all")
+	require.Len(t, w.pauses(), 7)
+}
+
+func TestRetryDelayUsesCappedDoublingAndInjectedFullJitter(t *testing.T) {
+	for attempt, upper := range []time.Duration{
+		time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second,
+		16 * time.Second, 32 * time.Second, 64 * time.Second, 128 * time.Second,
+		256 * time.Second, 512 * time.Second, 10 * time.Minute,
+	} {
+		got := retryDelay(attempt+1, halfRandom{})
+		require.Equal(t, (upper.Nanoseconds()+1)/2, got.Nanoseconds(), "attempt %d", attempt+1)
+	}
 }
 
 func TestAuthAndNotFoundAreNotRetried(t *testing.T) {
@@ -109,9 +121,9 @@ func TestAuthAndNotFoundAreNotRetried(t *testing.T) {
 	}
 }
 
-func TestARetryAfterLongerThanTwoMinutesReturnsAtOnce(t *testing.T) {
+func TestARetryAfterLongerThanTenMinutesReturnsAtOnce(t *testing.T) {
 	f := newFake(t, script(scripted{status: http.StatusTooManyRequests, body: `{}`,
-		headers: map[string]string{"Retry-After": "300"}}))
+		headers: map[string]string{"Retry-After": "601"}}))
 	w := &waits{}
 	cl := newClientWait(t, f, &clock{at: now}, w)
 
@@ -121,6 +133,79 @@ func TestARetryAfterLongerThanTwoMinutesReturnsAtOnce(t *testing.T) {
 	require.Len(t, f.requests(), 1)
 	require.Empty(t, w.pauses())
 }
+
+func TestRetryAfterHTTPDateUsesTheInjectedClock(t *testing.T) {
+	c := &clock{at: now}
+	f := newFake(t, script(
+		scripted{status: http.StatusTooManyRequests, body: `{}`,
+			headers: map[string]string{"Retry-After": now.Add(7 * time.Second).Format(http.TimeFormat)}},
+		okTicket,
+	))
+	w := &waits{}
+	cl := newClientWait(t, f, c, w)
+
+	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
+
+	require.NoError(t, err)
+	require.Equal(t, []time.Duration{7 * time.Second}, w.pauses())
+}
+
+func TestRetryAfterHTTPDateInThePastRetriesAtOnce(t *testing.T) {
+	f := newFake(t, script(
+		scripted{status: http.StatusTooManyRequests, body: `{}`,
+			headers: map[string]string{"Retry-After": now.Add(-time.Second).Format(http.TimeFormat)}},
+		okTicket,
+	))
+	w := &waits{}
+	cl := newClientWait(t, f, &clock{at: now}, w)
+
+	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
+
+	require.NoError(t, err)
+	require.Equal(t, []time.Duration{0}, w.pauses())
+}
+
+func TestBadRetryAfterUsesTheJitteredBackoff(t *testing.T) {
+	f := newFake(t, script(
+		scripted{status: http.StatusTooManyRequests, body: `{}`, headers: map[string]string{"Retry-After": "later"}},
+		okTicket,
+	))
+	w := &waits{}
+	cl := newClientWait(t, f, &clock{at: now}, w)
+
+	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
+
+	require.NoError(t, err)
+	require.Equal(t, []time.Duration{(time.Second + 1) / 2}, w.pauses())
+}
+
+func TestRetryAfterHTTPDateAboveTheMaximumReturnsAtOnce(t *testing.T) {
+	f := newFake(t, script(scripted{status: http.StatusTooManyRequests, body: `{}`,
+		headers: map[string]string{"Retry-After": now.Add(maxRetryAfter + time.Second).Format(http.TimeFormat)}}))
+	w := &waits{}
+	cl := newClientWait(t, f, &clock{at: now}, w)
+
+	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
+
+	require.ErrorIs(t, err, ports.ErrUnavailable)
+	require.Len(t, f.requests(), 1)
+	require.Empty(t, w.pauses())
+}
+
+func TestReadSecretNeverWrapsOrEchoesAProviderError(t *testing.T) {
+	const canary = "credential-canary"
+	_, err := readSecret(errorSecrets{err: errors.New(canary)}, "jira_api_token")
+
+	require.Error(t, err)
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		require.NotContains(t, current.Error(), canary)
+	}
+	require.EqualError(t, err, "jira: could not read secret jira_api_token")
+}
+
+type errorSecrets struct{ err error }
+
+func (s errorSecrets) Secret(string) (string, error) { return "", s.err }
 
 func TestAPauseCancelledByTheContextStopsTheRetries(t *testing.T) {
 	f := newFake(t, script(unavailable))
@@ -140,38 +225,38 @@ func TestTheBreakerOpensAfterFiveUnavailableCallsAndSendsNothingWhileOpen(t *tes
 		_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 		require.ErrorIs(t, err, ports.ErrUnavailable)
 	}
-	require.Len(t, f.requests(), 15, "five calls of three attempts each")
+	require.Len(t, f.requests(), 40, "five calls of eight attempts each")
 
 	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 
 	require.ErrorIs(t, err, ports.ErrUnavailable)
 	require.Contains(t, err.Error(), "circuit open")
-	require.Len(t, f.requests(), 15, "an open breaker sends no request")
+	require.Len(t, f.requests(), 40, "an open breaker sends no request")
 }
 
 func TestAfterTheCooldownOneProbeIsSentAndASuccessCloses(t *testing.T) {
-	f := newFake(t, script(cat(rep(unavailable, 15), []scripted{okTicket})...))
+	f := newFake(t, script(cat(rep(unavailable, 40), []scripted{okTicket})...))
 	c := &clock{at: now}
 	cl := newClientWait(t, f, c, &waits{})
 	for range 5 {
 		_, _ = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 	}
-	require.Len(t, f.requests(), 15)
+	require.Len(t, f.requests(), 40)
 
 	c.at = now.Add(29 * time.Second)
 	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 	require.ErrorIs(t, err, ports.ErrUnavailable, "still open 29 s in")
-	require.Len(t, f.requests(), 15)
+	require.Len(t, f.requests(), 40)
 
 	c.at = now.Add(30 * time.Second)
 	got, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 	require.NoError(t, err, "the probe succeeds")
 	require.Equal(t, id.ChangeID("KAN-7"), got.Key)
-	require.Len(t, f.requests(), 16, "the probe is one request, not three attempts")
+	require.Len(t, f.requests(), 41, "the probe is one request, not eight attempts")
 
 	_, err = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 	require.NoError(t, err, "a successful probe closes the breaker")
-	require.Len(t, f.requests(), 17)
+	require.Len(t, f.requests(), 42)
 }
 
 func TestAFailedProbeIsOneRequestAndOpensTheBreakerAgain(t *testing.T) {
@@ -181,16 +266,16 @@ func TestAFailedProbeIsOneRequestAndOpensTheBreakerAgain(t *testing.T) {
 	for range 5 {
 		_, _ = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 	}
-	require.Len(t, f.requests(), 15)
+	require.Len(t, f.requests(), 40)
 
 	c.at = now.Add(30 * time.Second)
 	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 	require.ErrorIs(t, err, ports.ErrUnavailable)
-	require.Len(t, f.requests(), 16, "one probe request, no retries inside it")
+	require.Len(t, f.requests(), 41, "one probe request, no retries inside it")
 
 	_, err = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 	require.ErrorIs(t, err, ports.ErrUnavailable)
-	require.Len(t, f.requests(), 16, "the failed probe opened the breaker for another cooldown")
+	require.Len(t, f.requests(), 41, "the failed probe opened the breaker for another cooldown")
 }
 
 func TestClientErrorsDoNotCountTowardsTheBreaker(t *testing.T) {
@@ -208,12 +293,12 @@ func TestClientErrorsDoNotCountTowardsTheBreaker(t *testing.T) {
 }
 
 func TestASuccessResetsTheUnavailableStreak(t *testing.T) {
-	// Call 1 fails (three attempts), call 2 succeeds, calls 3 to 6 fail (four calls). Only four in a row, so call 7
+	// Call 1 fails (eight attempts), call 2 succeeds, calls 3 to 6 fail (four calls). Only four in a row, so call 7
 	// is still sent.
 	f := newFake(t, script(cat(
-		rep(unavailable, 3),
+		rep(unavailable, 8),
 		[]scripted{okTicket},
-		rep(unavailable, 12),
+		rep(unavailable, 32),
 		[]scripted{okTicket},
 	)...))
 	cl := newClientWait(t, f, &clock{at: now}, &waits{})
@@ -223,10 +308,10 @@ func TestASuccessResetsTheUnavailableStreak(t *testing.T) {
 	for range 4 {
 		_, _ = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 	}
-	require.Len(t, f.requests(), 3+1+12)
+	require.Len(t, f.requests(), 8+1+32)
 
 	_, err = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 
 	require.NoError(t, err, "four unavailable calls in a row do not open the breaker")
-	require.Len(t, f.requests(), 3+1+12+1)
+	require.Len(t, f.requests(), 8+1+32+1)
 }

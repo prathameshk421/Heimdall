@@ -35,6 +35,10 @@ type clock struct{ at time.Time }
 
 func (c *clock) Now() time.Time { return c.at }
 
+type halfRandom struct{}
+
+func (halfRandom) Int63n(n int64) int64 { return n / 2 }
+
 type fakeSecrets map[string]string
 
 func (f fakeSecrets) Secret(name string) (string, error) {
@@ -113,7 +117,7 @@ func newClient(t *testing.T, f *fake, c *clock) *Client {
 func newClientWait(t *testing.T, f *fake, c *clock, w *waits) *Client {
 	t.Helper()
 	cl, err := New(Config{BaseURL: f.srv.URL, Project: "KAN", EmailSecret: "jira_email", TokenSecret: "jira_api_token"},
-		fakeSecrets{"jira_email": emailValue, "jira_api_token": tokenValue}, c, w.Wait, f.srv.Client())
+		fakeSecrets{"jira_email": emailValue, "jira_api_token": tokenValue}, c, w.Wait, halfRandom{}, f.srv.Client())
 	require.NoError(t, err)
 	return cl
 }
@@ -425,12 +429,12 @@ func TestNewRefusesBadConfigAndMissingSecretsWithoutPrintingThem(t *testing.T) {
 	for _, tc := range cases {
 		c := good
 		tc.mutate(&c)
-		_, err := New(c, tc.secrets, &clock{at: now}, (&waits{}).Wait, nil)
+		_, err := New(c, tc.secrets, &clock{at: now}, (&waits{}).Wait, halfRandom{}, nil)
 		require.Error(t, err, tc.name)
 		require.NotContains(t, err.Error(), tokenValue, tc.name)
 		require.NotContains(t, err.Error(), emailValue, tc.name)
 	}
-	_, err := New(good, secrets, &clock{at: now}, nil, nil)
+	_, err := New(good, secrets, &clock{at: now}, nil, halfRandom{}, nil)
 	require.Error(t, err, "a waiter is required")
 }
 
@@ -439,7 +443,7 @@ func TestATransportFailureIsUnavailable(t *testing.T) {
 	base := srv.URL
 	srv.Close()
 	cl, err := New(Config{BaseURL: base, Project: "KAN", EmailSecret: "jira_email", TokenSecret: "jira_api_token"},
-		fakeSecrets{"jira_email": emailValue, "jira_api_token": tokenValue}, &clock{at: now}, (&waits{}).Wait, nil)
+		fakeSecrets{"jira_email": emailValue, "jira_api_token": tokenValue}, &clock{at: now}, (&waits{}).Wait, halfRandom{}, nil)
 	require.NoError(t, err)
 
 	_, _, err = cl.Changes(context.Background(), "")
@@ -449,7 +453,7 @@ func TestATransportFailureIsUnavailable(t *testing.T) {
 
 func TestAFailedPollDoesNotAdvanceTheCursor(t *testing.T) {
 	f := newFake(t, script(cat(
-		rep(unavailable, 3),
+		rep(unavailable, 8),
 		[]scripted{{status: http.StatusOK, body: search(true, "",
 			issue("KAN-1", ana, history("10042", "2026-11-04T09:55:00.000+0000", "status")))}},
 	)...))
@@ -468,7 +472,7 @@ func TestAFailedPollDoesNotAdvanceTheCursor(t *testing.T) {
 	require.Len(t, changes, 1, "the change is still reported after the failed poll")
 	require.Equal(t, poll.Format(now), next)
 	reqs := f.requests()
-	require.Len(t, reqs, 4, "three attempts of the failed poll, then one good poll")
+	require.Len(t, reqs, 9, "eight attempts of the failed poll, then one good poll")
 	require.Equal(t, reqs[0].Query.Get("jql"), reqs[3].Query.Get("jql"), "the retry reads the same window")
 	require.Contains(t, reqs[3].Query.Get("jql"), `AFTER "2026-11-04 08:50"`)
 }

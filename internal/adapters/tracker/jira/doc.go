@@ -8,8 +8,9 @@
 //
 // # API
 //
-//   - New(Config, Secrets, ports.Clock, *http.Client) (*Client, error): validates the config and reads the email
-//     and API token by name through Secrets (config.Config satisfies it). Nothing is printed or stored in Config.
+//   - New(Config, Secrets, ports.Clock, Waiter, Random, *http.Client) (*Client, error): validates the config and
+//     reads the email and API token by name through Secrets (config.Config satisfies it). Nothing is printed or
+//     stored in Config. Waiter and Random make retry delays deterministic in tests.
 //   - Client.Changes(ctx, since): one JQL search from since minus poll.Overlap (10 minutes). Each changelog entry
 //     in the window is a TicketChange keyed by (ticket key, changelog id). The returned cursor is this poll's
 //     clock time.
@@ -23,6 +24,8 @@
 //   - An app account or an unassigned issue never becomes a change.
 //   - Every (key, changelog id) pair is reported at most once while it is inside the window (poll.Seen).
 //   - No time.Now: every instant comes from the injected clock (R5).
+//   - Unavailable calls make at most eight attempts with capped exponential backoff (one-second base, factor two,
+//     ten-minute ceiling) and injected full jitter. A 429 honours Retry-After seconds or HTTP dates.
 //
 // # Failure modes
 //
@@ -35,11 +38,13 @@
 //
 // No call was made to a live Jira. The search endpoint (/rest/api/3/search/jql), its expand=changelog parameter,
 // the JQL minute resolution and the account time zone all follow the documentation and must be confirmed on
-// recorded payloads in T36 (V52, V55, S20). The ADF golden tests on KAN-1 to KAN-3 are also T36.
+// recorded payloads in T36 (V52, V55, S20). Scrubbed live KAN recordings, including KAN-1 to KAN-3 ADF payloads,
+// have not been captured.
 //
 // # Tests
 //
 // jira_test.go runs every path against an httptest server: the JQL window, the overlap dedupe with a late-indexed
 // change, pagination, app and unassigned skips, the key guard (no request made), the status-to-error mapping, the
-// token never appearing in an error, config refusals and a transport failure. adf_test.go covers the ADF walker.
+// token never appearing in an error, config refusals and a transport failure. resilience_test.go covers retries,
+// Retry-After forms and the breaker. adf_test.go covers the ADF walker.
 package jira

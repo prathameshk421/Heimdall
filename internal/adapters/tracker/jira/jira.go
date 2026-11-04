@@ -30,11 +30,11 @@ const (
 	maxPages       = 100
 	pageSize       = "50"
 	// maxAttempts is the tries of one call that fails with an unavailable outcome (a half-open probe gets one).
-	maxAttempts = 3
+	maxAttempts = 8
 	// retryBase is the first pause; each later pause doubles it when the reply carries no usable Retry-After.
 	retryBase = time.Second
 	// maxRetryAfter is the longest pause the adapter holds a call for. A longer one returns at once, unavailable.
-	maxRetryAfter = 2 * time.Minute
+	maxRetryAfter = 10 * time.Minute
 	// breakerLimit and breakerCooldown are the circuit breaker of TECH_SPEC 2.5.
 	breakerLimit    = 5
 	breakerCooldown = 30 * time.Second
@@ -69,6 +69,11 @@ type Secrets interface {
 // never sleeps on its own (R7).
 type Waiter func(ctx context.Context, d time.Duration) error
 
+// Random supplies the jitter for retry delays. It is injected so retries are deterministic in tests.
+type Random interface {
+	Int63n(n int64) int64
+}
+
 // Client polls Jira and reads tickets. It is safe for concurrent use.
 type Client struct {
 	base    string
@@ -76,6 +81,7 @@ type Client struct {
 	auth    string
 	clock   ports.Clock
 	wait    Waiter
+	random  Random
 	hc      *http.Client
 	seen    poll.Seen
 	breaker breaker
@@ -86,7 +92,7 @@ var _ ports.TicketReader = (*Client)(nil)
 // New validates the config and reads the two secrets. The base URL must be https, or http to a loopback address
 // for a local test server, so the token never travels in clear to another host. wait is required: retries pause
 // through it.
-func New(cfg Config, secrets Secrets, clock ports.Clock, wait Waiter, hc *http.Client) (*Client, error) {
+func New(cfg Config, secrets Secrets, clock ports.Clock, wait Waiter, random Random, hc *http.Client) (*Client, error) {
 	base, err := checkBaseURL(cfg.BaseURL)
 	if err != nil {
 		return nil, err
@@ -96,6 +102,9 @@ func New(cfg Config, secrets Secrets, clock ports.Clock, wait Waiter, hc *http.C
 	}
 	if wait == nil {
 		return nil, errors.New("jira: a waiter is required for retries")
+	}
+	if random == nil {
+		return nil, errors.New("jira: a random source is required for retry jitter")
 	}
 	email, err := readSecret(secrets, cfg.EmailSecret)
 	if err != nil {
@@ -114,6 +123,7 @@ func New(cfg Config, secrets Secrets, clock ports.Clock, wait Waiter, hc *http.C
 		auth:    "Basic " + base64.StdEncoding.EncodeToString([]byte(email+":"+token)),
 		clock:   clock,
 		wait:    wait,
+		random:  random,
 		hc:      hc,
 	}, nil
 }
@@ -152,7 +162,7 @@ func readSecret(secrets Secrets, name string) (string, error) {
 	}
 	v, err := secrets.Secret(name)
 	if err != nil {
-		return "", fmt.Errorf("jira: read secret %s: %w", name, err)
+		return "", fmt.Errorf("jira: could not read secret %s", name)
 	}
 	if v == "" {
 		return "", fmt.Errorf("jira: secret %s is empty", name)
@@ -327,7 +337,7 @@ func (c *Client) fetch(ctx context.Context, target, path string, probe bool) ([]
 		attempts = 1
 	}
 	for attempt := 1; ; attempt++ {
-		raw, after, err := c.once(ctx, target, path)
+		raw, after, hasRetryAfter, err := c.once(ctx, target, path)
 		if err == nil {
 			return raw, nil
 		}
@@ -335,8 +345,8 @@ func (c *Client) fetch(ctx context.Context, target, path string, probe bool) ([]
 			return nil, err
 		}
 		pause := after
-		if pause <= 0 {
-			pause = retryBase << (attempt - 1)
+		if !hasRetryAfter {
+			pause = retryDelay(attempt, c.random)
 		}
 		if pause > maxRetryAfter {
 			return nil, err
@@ -349,42 +359,68 @@ func (c *Client) fetch(ctx context.Context, target, path string, probe bool) ([]
 
 // once makes one request and returns the body of an accepted reply. The second result is the Retry-After of a 429 in
 // seconds as a duration, or zero. Errors never carry the body or the token.
-func (c *Client) once(ctx context.Context, target, path string) ([]byte, time.Duration, error) {
+func (c *Client) once(ctx context.Context, target, path string) ([]byte, time.Duration, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return nil, 0, fmt.Errorf("build request %s: %w", path, err)
+		return nil, 0, false, fmt.Errorf("build request %s: %w", path, err)
 	}
 	req.Header.Set("Authorization", c.auth)
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%s: %w: %w", path, ports.ErrUnavailable, err)
+		return nil, 0, false, fmt.Errorf("%s: %w: %w", path, ports.ErrUnavailable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if err := statusError(resp.StatusCode, path); err != nil {
-		return nil, retryAfter(resp), err
+		after, hasRetryAfter := retryAfter(resp, c.clock.Now())
+		return nil, after, hasRetryAfter, err
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
-		return nil, 0, fmt.Errorf("%s: read body: %w: %w", path, ports.ErrUnavailable, err)
+		return nil, 0, false, fmt.Errorf("%s: read body: %w: %w", path, ports.ErrUnavailable, err)
 	}
 	if len(raw) > maxBody {
-		return nil, 0, fmt.Errorf("%s: response larger than %d bytes", path, maxBody)
+		return nil, 0, false, fmt.Errorf("%s: response larger than %d bytes", path, maxBody)
 	}
-	return raw, 0, nil
+	return raw, 0, false, nil
 }
 
-// retryAfter reads a 429's Retry-After given in seconds. An HTTP date or any other reply gives zero, so the caller
-// uses its own backoff.
-func retryAfter(resp *http.Response) time.Duration {
+// retryAfter reads a 429's Retry-After in seconds or as an HTTP date, using now for a date. Other replies give zero,
+// so the caller uses its own backoff. A date in the past retries at once.
+func retryAfter(resp *http.Response, now time.Time) (time.Duration, bool) {
 	if resp.StatusCode != http.StatusTooManyRequests {
-		return 0
+		return 0, false
 	}
-	secs, err := strconv.Atoi(resp.Header.Get("Retry-After"))
-	if err != nil || secs < 0 {
-		return 0
+	value := resp.Header.Get("Retry-After")
+	secs, err := strconv.Atoi(value)
+	if err == nil && secs >= 0 {
+		return time.Duration(secs) * time.Second, true
 	}
-	return time.Duration(secs) * time.Second
+	at, err := http.ParseTime(value)
+	if err != nil {
+		return 0, false
+	}
+	if at.Before(now) {
+		return 0, true
+	}
+	return at.Sub(now), true
+}
+
+// retryDelay is a capped exponential backoff with full jitter. Attempt one pauses for a random duration in
+// [0, retryBase]; each later retry doubles the upper bound, and no upper bound exceeds maxRetryAfter.
+func retryDelay(attempt int, random Random) time.Duration {
+	delay := retryBase
+	for range attempt - 1 {
+		if delay >= maxRetryAfter/2 {
+			delay = maxRetryAfter
+			break
+		}
+		delay *= 2
+	}
+	if delay > maxRetryAfter {
+		delay = maxRetryAfter
+	}
+	return time.Duration(random.Int63n(delay.Nanoseconds() + 1))
 }
 
 // statusError maps an HTTP status to a port error. The body is never included, since it may echo user text.
