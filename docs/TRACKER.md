@@ -44,10 +44,10 @@ The build order is `MVP_SCENARIOS.md` section 7. Gates are checkpoints on it.
 | done | H1 | `gh auth switch --user aarush323` | Human | Claude | – | `aarush323` active | Done Nov 4 |
 | done | H3 | Create `aarush323/heimdall-fixture-pay`; `rekdfr` gets write | Human | aarush323 | – | `rekdfr` can push | Done Nov 4; repo is empty until T31; the App can reach it |
 | done | T100 | Commit the corrected docs | Builder | Claude | H1 | One commit, `.env` still ignored | Branch `heimdall-build`, not pushed |
-| todo | T101 | Replace `pre-bash-guard.sh`; add `test-hooks.sh` | Builder |  | T100 | Every case passes |  |
-| todo | T102 | Fix `golangci.yml` | Builder |  | T100 | Sample run matches the file |  |
-| todo | T103 | Add the permission allow list | Builder |  | T100 | The file parses |  |
-| todo | T104 | Replace the OpenCode harness template | Builder |  | T100 | `opencode debug config` lists it; T03 passes |  |
+| done | T101 | Replace `pre-bash-guard.sh`; add `test-hooks.sh` | Builder | Claude | T100 | Every case passes | Nov 4: `docs/harness/test-hooks.sh` 44 cases, 0 failed, exit 0. Not wired to `make harness-test` yet (T16) |
+| done | T102 | Fix `golangci.yml` | Builder | Claude | T100 | Sample run matches the file | Nov 4: `golangci/golangci-lint:v2.5.0`, `config verify` exit 0. Scratch module: depguard (domain, app, production-has-no-testkit), forbidigo (Sleep, Println, Getenv, panic), gochecknoglobals, gochecknoinits, revive all fire; 70-statement test not flagged by funlen; `fmt.Println` and `os.Getenv` in `e2e/` allowed; `e2e` build tag is compiled. `make lint-selftest` is T16 |
+| done | T103 | Add the permission allow list | Builder | Claude | T100 | The file parses | Nov 4: `jq .` exit 0 |
+| in progress | T104 | Replace the OpenCode harness template | Builder | Claude | T100 | `opencode debug config` lists it; T03 passes | Nov 4: template written. Laptop OpenCode 2.2.5 `debug config` lists all rules and the `heimdall` server. **Not verified:** on OpenCode 1.x and the T03 pass (VM) |
 
 T01, T02 and T03 in the next table finish Stage 1.
 

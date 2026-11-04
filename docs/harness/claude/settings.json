@@ -1,5 +1,13 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(go:*)", "Bash(gofmt:*)", "Bash(jq:*)",
+      "Bash(make fast)", "Bash(make verify)", "Bash(make prototype:*)", "Bash(make lint-selftest)",
+      "Bash(make harness-test)", "Bash(make cost)", "Bash(make drift)", "Bash(make e2e:*)",
+      "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
+      "Bash(git branch:*)", "Bash(git switch:*)",
+      "Bash(docker ps:*)", "Bash(docker compose:*)", "Bash(docker run:*)"
+    ],
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",

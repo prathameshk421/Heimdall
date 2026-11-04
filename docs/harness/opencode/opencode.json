@@ -4,30 +4,19 @@
   "share": "disabled",
   "permission": {
     "*": "deny",
-    "read": {
-      "*": "deny",
-      "AGENTS.md": "allow",
-      "scratch/**": "allow",
-      "pack/**": "allow",
-      ".opencode/skills/**": "allow"
-    },
-    "glob": { "*": "deny", "scratch/**": "allow", "pack/**": "allow" },
-    "grep": { "*": "deny", "scratch/**": "allow", "pack/**": "allow" },
-    "edit": { "*": "deny", "scratch/**": "allow" },
     "bash": "deny",
     "webfetch": "deny",
     "websearch": "deny",
-    "task": "deny",
+    "doom_loop": "deny",
     "external_directory": { "*": "deny" },
-    "skill": "allow",
-    "heimdall_*": "allow",
-    "switch_*": "allow"
+    "edit": { "*": "deny", "scratch/**": "allow" },
+    "heimdall_*": "allow"
   },
   "mcp": {
     "heimdall": {
       "type": "remote",
       "url": "http://127.0.0.1:8080/mcp",
-      "headers": { "Authorization": "Bearer {env:HEIMDALL_AGENT_TOKEN}" }
+      "headers": { "Authorization": "Bearer __HEIMDALL_AGENT_TOKEN__" }
     }
   }
 }

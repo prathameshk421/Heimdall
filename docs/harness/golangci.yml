@@ -4,6 +4,7 @@ version: "2"
 run:
   timeout: 5m
   tests: true
+  build-tags: [e2e]
 
 linters:
   default: none
@@ -86,8 +87,13 @@ linters:
   exclusions:
     rules:
       - path: _test\.go
-        linters: [funlen, gochecknoglobals, gosec, forbidigo]
+        linters: [funlen, gochecknoglobals, gosec]
+      - path: _test\.go
+        linters: [forbidigo]
         text: "(fmt\\.Print|panic|os\\.Getenv)"
+      - path: ^(e2e|internal/testkit)/
+        linters: [forbidigo]
+        text: "(fmt\\.Print|panic|os\\.(Getenv|LookupEnv))"
       - path: ^cmd/
         linters: [forbidigo]
         text: "(fmt\\.Print|panic|os\\.Getenv|os\\.LookupEnv)"
