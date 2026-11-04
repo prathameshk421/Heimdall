@@ -67,7 +67,7 @@ The setup person owns the AWS account and receives budget alerts at $10 and $25.
 - **`t97-reboot-check`** is a test room left from the reboot check. It is safe to archive.
 
 - **`!` posts are Switch commands.** A post starting with `!` that Switch does not know gets "Unknown command" and is not passed on. Heimdall commands start with the plain word `heimdall` (D139).
-- **Not installed yet:** Node, OpenCode and the agent controller. T01 installs them and records the versions here.
+- **Agent runtime installed Nov 4 (T01 steps 1 and 2 in progress):** Node `22.23.4` from the nodejs.org tarball (SHA-256 checked against its `SHASUMS256.txt`) in `/usr/local`; OpenCode `1.19.5` (`npm install --global opencode-ai@1`, `/usr/local/bin/opencode`); `switch-agent-controller` `0.31.0`, installed with `npm install --global --ignore-scripts` from the GitHub release. That release predates signing (it has no `.sig`, so `install.sh` refuses it), so its SHA-256 `ee62d433...6e47` was checked against the release notes and GitHub's asset digest. Not enrolled and no service yet.
 
 ## Chat connections
 
