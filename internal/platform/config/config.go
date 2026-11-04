@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -21,6 +22,8 @@ const (
 	defaultListen = ":8080"
 	// maxSecretBytes bounds a secret read. A token is a line; a large file is a mistake, not a secret.
 	maxSecretBytes = 64 << 10
+	// maxMultilineSecretBytes bounds a multi-line secret such as a PEM key. A 4096-bit RSA key is under 4 KiB.
+	maxMultilineSecretBytes = 16 << 10
 )
 
 // repoPattern is the GitHub owner/name shape. It is deliberately strict: a repo string is used to build
@@ -224,32 +227,9 @@ func (c Config) ProjectFor(trackerProject string) (Project, bool) {
 // The name must be one path element. The file must be a regular file whose real location stays inside
 // SecretsDir (os.Root enforces that). Errors name the secret but never carry its value.
 func (c Config) Secret(name string) (string, error) {
-	if err := checkSecretName(name); err != nil {
-		return "", fmt.Errorf("secret %q: %w", name, err)
-	}
-	root, err := os.OpenRoot(c.SecretsDir)
+	data, err := c.readSecretFile(name, maxSecretBytes, false)
 	if err != nil {
-		return "", fmt.Errorf("secret %q: open secrets_dir: %w", name, err)
-	}
-	defer func() { _ = root.Close() }() // read-only handle: a close error changes nothing here
-	f, err := root.Open(name)
-	if err != nil {
-		return "", fmt.Errorf("secret %q: %w", name, err)
-	}
-	defer func() { _ = f.Close() }() // read-only handle: a close error changes nothing here
-	info, err := f.Stat()
-	if err != nil {
-		return "", fmt.Errorf("secret %q: stat: %w", name, err)
-	}
-	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("secret %q: not a regular file", name)
-	}
-	data, err := io.ReadAll(io.LimitReader(f, maxSecretBytes+1))
-	if err != nil {
-		return "", fmt.Errorf("secret %q: read: %w", name, err)
-	}
-	if len(data) > maxSecretBytes {
-		return "", fmt.Errorf("secret %q: larger than %d bytes", name, maxSecretBytes)
+		return "", err
 	}
 	value := strings.TrimRight(string(data), "\r\n")
 	if value == "" {
@@ -259,6 +239,61 @@ func (c Config) Secret(name string) (string, error) {
 		return "", fmt.Errorf("secret %q: must be a single line", name)
 	}
 	return value, nil
+}
+
+// SecretMultiline reads a secret that spans lines, such as a PEM private key, and returns its bytes without the
+// trailing newlines. It keeps every rule Secret has (one path element, a regular file, confined to SecretsDir,
+// not empty) except the single-line rule. It adds two rules: the file is at most 16 KiB, and its mode has no
+// group or other permission bits (mode & 0o077 must be 0). Errors name the secret but never carry its content.
+func (c Config) SecretMultiline(name string) ([]byte, error) {
+	data, err := c.readSecretFile(name, maxMultilineSecretBytes, true)
+	if err != nil {
+		return nil, err
+	}
+	value := bytes.TrimRight(data, "\r\n")
+	if len(value) == 0 {
+		return nil, fmt.Errorf("secret %q: empty", name)
+	}
+	return value, nil
+}
+
+// readSecretFile opens name under SecretsDir through os.Root and returns at most limit bytes. It refuses a name that
+// is not one path element, a file that is not regular, and, when privateMode is set, a file with any group or other
+// permission bit. Errors name the secret and never carry its content.
+func (c Config) readSecretFile(name string, limit int64, privateMode bool) ([]byte, error) {
+	if err := checkSecretName(name); err != nil {
+		return nil, fmt.Errorf("secret %q: %w", name, err)
+	}
+	root, err := os.OpenRoot(c.SecretsDir)
+	if err != nil {
+		return nil, fmt.Errorf("secret %q: open secrets_dir: %w", name, err)
+	}
+	defer func() { _ = root.Close() }() // read-only handle: a close error changes nothing here
+	// O_NONBLOCK stops an open of a named pipe from waiting for a writer. Stat then refuses it as not regular.
+	f, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, fmt.Errorf("secret %q: %w", name, err)
+	}
+	defer func() { _ = f.Close() }() // read-only handle: a close error changes nothing here
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("secret %q: stat: %w", name, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("secret %q: not a regular file", name)
+	}
+	if privateMode && info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("secret %q: mode %04o gives group or others access; use 0600 or stricter",
+			name, uint32(info.Mode().Perm()))
+	}
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("secret %q: read: %w", name, err)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("secret %q: larger than %d bytes", name, limit)
+	}
+	return data, nil
 }
 
 func checkSecretName(name string) error {
