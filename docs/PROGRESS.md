@@ -11,13 +11,17 @@ Docs are final and committed on branch `heimdall-build` (not pushed). No product
 1. `STAGE_1_FIXES.md`: T01 from step 2 (write `/etc/switch/agents.env`), then T02, T03.
 2. `MVP_SCENARIOS.md` section 7: slice 0 (T00, T10, T16, T18, T98).
 
+## Code layout
+
+Product code lives in top-level folders (`cmd/`, `internal/`, `e2e/`, per T00), never under `docs/`. `docs/harness/` holds only templates that T16 installs at the repo root.
+
 ## How to resume
 
 Stay on `heimdall-build` in this checkout (`.env` is gitignored, so a new worktree would not have it). Forward ports with the command in `RUNBOOK.md` when a task needs Switch or Mattermost.
 
 ## Waiting on the human
 
-T01 step 2: the OpenRouter key has to reach `/etc/switch/agents.env` on the VM. The tool permission check refused my copy from `.env` (even listing variable names), so the human copies it (a one-line blind pipe over ssh) or says how to proceed.
+T01 step 3: a one-time enrolment code from the Machines page (http://localhost:3000 over the tunnel; valid 10 minutes). The tool permission check refused my reading the admin logins from the VM's `.env`. `/etc/switch/agents.env` is done (key piped blind, mode 0600, Nov 4).
 
 ## Not verified yet
 
