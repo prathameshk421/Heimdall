@@ -88,6 +88,18 @@ allow|git branch -d merged-branch
 allow|sed -n 1,5p Makefile
 allow|python3 -c "print(1)"
 allow|go test ./internal/s...
+allow|go test ./... 2>&1 | tail -3; cat .gitleaksignore
+allow|make lint 2>&1 | head; cat Makefile
+allow|go vet ./... 2>/dev/null; sed -n 1,5p scripts/gotest.sh
+allow|python3 -c "s=[1]; print(s[0])"; ls docs/harness/claude
+allow|git log --oneline | head -3 && cat tools.mod
+allow|make secrets 2>&1 | tail -2
+allow|make secrets-staged
+BLOCK|echo x >> .gitleaksignore
+BLOCK|echo x>scripts/gotest.sh
+BLOCK|ls && rm scripts/gotest.sh
+BLOCK|python3 -c "open('Makefile','w').write('')"
+BLOCK|cat x | tee docs/harness/AGENTS.md
 CASES
 
 edit_hook="$here/claude/hooks/pre-edit-guard.sh"

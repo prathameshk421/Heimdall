@@ -8,8 +8,8 @@ people:
   approver: { github: rekdfr,    chat: dev-approver, teams: [payments] }
   bob:      { chat: rev-backend,  agent: bob-reviewer, teams: [payments] }
   eli:      { chat: rev-frontend, agent: eli-reviewer, teams: [consumer] }
-  # ana signs off tests in the room, so the policy needs a GitHub login for her as an approver; this placeholder is not a real account (D158)
-  ana:      { github: ana-fixture, chat: rev-infra,    agent: ana-reviewer, teams: [security] }
+  # ana signs off tests in the room, so the policy needs a GitHub login for her as an approver; owner chose a real test account on Nov 5 (D158)
+  ana:      { github: temporaryhameshakagroup-alt, chat: rev-infra,    agent: ana-reviewer, teams: [security] }
 domains: { "internal/payments/**": money_movement, "internal/refunds/**": money_movement, "internal/export/**": tenant_data }
 reviewers: { count: 3, pick_timeout: 15m, required: { "internal/refunds/**": [bob], "api/openapi.yaml": [eli] } }
 slop: { max_changed_lines: 400, require_ticket: true, ignore: ["go.sum"] }
