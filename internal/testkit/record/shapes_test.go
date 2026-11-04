@@ -19,13 +19,17 @@ import (
 // (a JSON key, a URL host) are not secret and are allowed to stay.
 type shape struct{ text, value string }
 
+// awsDocValue is the secret key from the AWS documentation, kept apart from the name that precedes it in the
+// literals below so no single line looks like a leaked key.
+const awsDocValue = "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY"
+
 // shapes are built from two halves so the test file itself does not look like a leaked key to gitleaks. The values
 // are made up but have the real prefixes and lengths.
 var shapes = map[string]shape{
 	"stripe live secret":      {"sk_li" + "ve_" + "51Hx9aBcDeFgHiJkLmNoPq", "sk_li" + "ve_" + "51Hx9aBcDeFgHiJkLmNoPq"},
 	"stripe test secret":      {"sk_te" + "st_" + "51Hx9aBcDeFgHiJkLmNoPq", "sk_te" + "st_" + "51Hx9aBcDeFgHiJkLmNoPq"},
 	"stripe restricted live":  {"rk_li" + "ve_" + "51Hx9aBcDeFgHiJkLmNoPq", "rk_li" + "ve_" + "51Hx9aBcDeFgHiJkLmNoPq"},
-	"aws secret access key":   {"aws_secret_" + "access_key = " + "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY", "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY"},
+	"aws secret access key":   {"aws_secret_" + "access_key = " + awsDocValue, awsDocValue},
 	"aws secret in json":      {`{"aws_secret_access_key":"` + "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY" + `"}`, "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY"},
 	"aws session access key":  {"ASIA" + "IOSFODNN7EXAMPLE", "ASIA" + "IOSFODNN7EXAMPLE"},
 	"google api key":          {"AIza" + "SyD9Lm3Qz7Rt5Vx1Bn8Kp2Wc4Hj6Yf0GdEa", "AIza" + "SyD9Lm3Qz7Rt5Vx1Bn8Kp2Wc4Hj6Yf0GdEa"},

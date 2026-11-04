@@ -4,3 +4,9 @@
 352d5abcd978e0043c0c4d7788add995cbd204c5:internal/testkit/record/record_test.go:jwt:27
 352d5abcd978e0043c0c4d7788add995cbd204c5:internal/testkit/record/record_test.go:github-pat:19
 352d5abcd978e0043c0c4d7788add995cbd204c5:internal/testkit/record/record_test.go:slack-bot-token:26
+# Found by the stricter scan of Nov 4 (owner approved): made-up values in test files, already in history.
+32a04722822451628972a161533f9327a639c1e3:internal/testkit/record/record_test.go:generic-api-key:19
+32a04722822451628972a161533f9327a639c1e3:internal/testkit/record/record_test.go:slack-bot-token:26
+c232ccdeca15e09593be77b1584802af3a8ac8f6:internal/testkit/record/shapes_test.go:generic-api-key:28
+05995ffde14a78d28216fa223c4ccb56d7c6d592:testdata/repos/pay-demo/branches/big-no-ticket/internal/api/webhooks_test.go:generic-api-key:41
+6bd3c83535022eddf51e19b457b8c14fc4bd88e4:internal/testkit/record/shapes_test.go:generic-api-key:28
