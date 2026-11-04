@@ -93,7 +93,7 @@ func TestOutbox(t *testing.T) {
 		fx := appendWithEffect(t, s, 1, "g")
 
 		// Each message is the guard's own, so a removed guard cannot pass the check through another error.
-		const guard = "UPDATE on outbox may change only done_at, attempts and last_error"
+		const guard = "UPDATE on outbox may change only done_at, attempts, last_error and claimed_until"
 		for sql, want := range map[string]string{
 			"UPDATE outbox SET payload = '{}'":                        guard,
 			"UPDATE outbox SET kind = 'github_check'":                 guard,

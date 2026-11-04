@@ -4,7 +4,7 @@
 //
 // Public API
 //   - Migrate(ctx, pool): applies the embedded migrations (forward only). Safe to run on every boot.
-//   - NewStore(pool) *Store: implements ports.EventStore (Append, Load) and ports.Outbox (Pending, Done, Fail).
+//   - NewStore(pool) *Store: implements ports.EventStore (Append, Load) and ports.Outbox (Pending, Claim, Done, Fail).
 //   - Store.GetCursor, SetCursor: the cursor table (pollers, D64; the Switch stream, D46). A missing cursor is
 //     ports.ErrNotFound.
 //   - Store.SeenDelivery(provider, id): webhook dedupe. It returns true when the delivery was already recorded.
@@ -23,15 +23,19 @@
 // whole append is refused when they differ, because a deterministic key must always name the same action (TECH_SPEC
 // 2.4). The effect key is UNIQUE in the table, so the check cannot be skipped by a racing writer.
 //
-// Outbox lifecycle. Pending returns effects with done_at NULL and attempts below 8, oldest first, as a plain select.
-// Done sets done_at once and is idempotent. Fail adds one attempt and records the reason; after eight attempts the row
-// is in the outbox_dead view and out of Pending. A Fail after Done is refused, because it would contradict a
-// performed effect. The triggers allow UPDATE only of done_at, attempts and last_error; DELETE and TRUNCATE are
-// refused on outbox as on event.
+// Outbox lifecycle. Pending returns effects with done_at NULL and attempts below 8, oldest first, as a plain select
+// that takes no lease; it is for inspection. Claim (T22) takes a lease: in one UPDATE it selects the oldest rows whose
+// lease is free or expired with FOR UPDATE SKIP LOCKED, and sets claimed_until = now() + lease, so the lease starts on
+// the database clock. Two live leases never cover one row, and a row locked by another transaction is skipped rather
+// than waited for. Done sets done_at once, is idempotent, and clears the lease. Fail adds one attempt, records the
+// reason and clears the lease, so a failed row is claimable at once; after eight attempts the row is in the outbox_dead
+// view and out of Pending and Claim. A Fail after Done is refused, because it would contradict a performed effect. The
+// triggers allow UPDATE only of done_at, attempts, last_error and claimed_until; DELETE and TRUNCATE are refused on
+// outbox as on event.
 //
 // Invariants.
 //   - Triggers on event refuse UPDATE, DELETE and TRUNCATE (4.1). Triggers on outbox refuse DELETE and TRUNCATE and any
-//     UPDATE that changes a column other than done_at, attempts or last_error.
+//     UPDATE that changes a column other than done_at, attempts, last_error or claimed_until.
 //   - UNIQUE (change_id, version) on event: at most one event per version of a change.
 //   - A unique violation on that constraint is reported as ports.ErrVersionConflict (translateAppendErr), and the
 //     database error stays in the chain.
@@ -40,6 +44,8 @@
 // Schema additions to TECH_SPEC 4.1, both made here and to be copied back into the spec:
 //   - outbox.target TEXT NOT NULL: Effect.Target must round-trip, and the spec's table had no column for it.
 //   - the outbox_dead view (done_at NULL and attempts >= 8): the dead-letter view that TECH_SPEC 2.1 names.
+//   - outbox.claimed_until TIMESTAMPTZ (migration 0002, T22): the end of the drainer's lease. The guard function is
+//     replaced to allow this one column; the rest of the guard is unchanged.
 //   - the migrations also create goose's own version table, which is bookkeeping and not part of the spec.
 //
 // Failure modes. A database that is down makes every call return a wrapped error; nothing is partially written
@@ -60,7 +66,11 @@
 // key order; triggers on event and outbox, each checked by its own message; outbox Pending order, limit, done twice,
 // eight failures to the dead letter; cursor upsert; webhook dedupe; migrations create the tables and the constraint
 // name that translateAppendErr matches; VerifyAll on an empty database, on intact changes, on a payload edited under
-// disabled triggers, and on a deleted tail (which must pass, and does). Unit tests (no tag): the error translation.
+// disabled triggers, and on a deleted tail (which must pass, and does). T22 adds Claim (outbox_claim_test.go): oldest
+// first with a limit, a live lease hiding a row, the same row content as Pending, eight claimers with no overlap, an
+// expired lease handing the row out again, a row locked elsewhere skipped rather than waited for, Done and Fail
+// clearing the lease, eight failed claims dead-lettering, and refusal of a non-positive limit or lease. Migration 0002
+// applies over rows written under 0001 (migrate_upgrade_test.go). Unit tests (no tag): the error translation.
 //
 // Kill test: an append whose backend is terminated while it waits for the change lock leaves no rows, and the change
 // accepts the next append at version 0. This is the process-level kill the database can observe; a kill between

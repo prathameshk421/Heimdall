@@ -41,6 +41,14 @@ func startServer(t *testing.T) *server {
 // database creates a new database, migrates it and returns a pool for it. The pool closes when t ends.
 func (s *server) database(ctx context.Context, t *testing.T) database {
 	t.Helper()
+	db := s.emptyDatabase(ctx, t)
+	require.NoError(t, Migrate(ctx, db.pool))
+	return db
+}
+
+// emptyDatabase creates a new database that has no tables yet, with a pool for it that closes when t ends.
+func (s *server) emptyDatabase(ctx context.Context, t *testing.T) database {
+	t.Helper()
 	s.created++
 	name := fmt.Sprintf("heimdall_%d", s.created)
 
@@ -57,7 +65,6 @@ func (s *server) database(ctx context.Context, t *testing.T) database {
 	pool, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	require.NoError(t, Migrate(ctx, pool))
 	return database{dsn: dsn, pool: pool}
 }
 
