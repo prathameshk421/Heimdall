@@ -151,8 +151,8 @@ post "$go_proj/pkg/b.go"
 [ "$code" -eq 2 ] && grep -q 'go vet failed' <<<"$out"; check "post-edit reports a vet failure with exit 2" $?
 printf 'text' > "$go_proj/notes.md"
 post "$go_proj/notes.md"; [ "$code" -eq 0 ] && [ -z "$out" ]; check "post-edit ignores a non-Go file" $?
-mkdir -p "$work/nogo" && ln -s "$(command -v jq)" "$work/nogo/jq"
-out=$(jq -n --arg p "$go_proj/pkg/a.go" '{tool_input: {file_path: $p}}' | HOME=/nonexistent PATH="$work/nogo:/usr/bin:/bin" CLAUDE_PROJECT_DIR="$go_proj" "$post_hook" 2>&1); code=$?
+mkdir -p "$work/nogo" && ln -s "$(command -v jq)" "$work/nogo/jq" && ln -s "$(command -v bash)" "$work/nogo/bash"
+out=$(jq -n --arg p "$go_proj/pkg/a.go" '{tool_input: {file_path: $p}}' | env -i HOME=/nonexistent PATH="$work/nogo" CLAUDE_PROJECT_DIR="$go_proj" "$post_hook" 2>&1); code=$?
 [ "$code" -eq 2 ] && grep -q 'go toolchain missing' <<<"$out"; check "post-edit says so when the Go toolchain is missing" $?
 
 # --- stop-gate: red checks and unrecorded work stop the turn once, then let it through
