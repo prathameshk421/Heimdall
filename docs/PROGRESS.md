@@ -8,7 +8,7 @@ Docs are final and committed on branch `heimdall-build` (not pushed). No product
 
 ## Next
 
-1. `STAGE_1_FIXES.md`: T01 from step 2 (write `/etc/switch/agents.env`), then T02, T03.
+1. `STAGE_1_FIXES.md`: T02, then T03. T01 is done.
 2. `MVP_SCENARIOS.md` section 7: slice 0 (T00, T10, T16, T18, T98).
 
 ## Code layout
@@ -21,7 +21,7 @@ Stay on `heimdall-build` in this checkout (`.env` is gitignored, so a new worktr
 
 ## Waiting on the human
 
-T01 steps 4 and 5 need the VM's `AGENT_REGISTRATION_TOKEN` (coordinator registration) and a gateway admin session (create the managed agent). The permission check refused my reading admin logins from the VM `.env` before, so the human either allows a VM-side script to use them without printing, or does it in the Console. Steps 1 to 3 are done (Nov 4): `agents.env` (owned by `ubuntu`, 0600, because the controller runs as `ubuntu`), controller `c230ee62` enrolled and `switch-agent-controller-1000.service` active with 0 agents.
+Nothing. T01 is done (Nov 4); spike results are in `TRACKER.md`. The test agents `heimdall-probe` and `heimdall-probe2`, rooms `t01-room-a` and `t01-room-b`, and the coordinator watcher in `~ubuntu/t01` on the VM are throwaway.
 
 ## Not verified yet
 
@@ -33,7 +33,7 @@ None yet; there is no code.
 
 ## Spend
 
-OpenRouter: about $0 of the $3 testing cap (key limit $4). Read on Nov 4.
+OpenRouter: $0.075 of the $3 testing cap (key limit $4), read on the VM after T01, Nov 4.
 
 ## Noticed
 
