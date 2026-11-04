@@ -13,6 +13,9 @@
 //   - Config.Secret(name) (string, error): reads one file under SecretsDir. The value is trimmed of its
 //     trailing newline. Errors never contain the value.
 //   - Config.ProjectFor(trackerProject) (Project, bool): the repo mapped to a tracker project.
+//   - Config.Selection(kind) (string, bool): the adapter name chosen in [vcs] provider, [tracker] provider,
+//     [chat] bridge, [agent_runtime] provider or [memory] provider. Absent means unset; an empty value is
+//     refused at Load. The registry package checks the name exists (registry.ValidateSelections).
 //   - OnceSet.First(key) bool: true only the first time a key is offered. The caller uses it to log an
 //     unmapped project once. The zero value is ready to use and it is safe for concurrent use.
 //   - FilePath(args, getenv) (string, error): the --config value, else HEIMDALL_CONFIG. This package is
@@ -22,6 +25,7 @@
 // # Invariants
 //
 //   - A loaded Config has a non-empty SecretsDir and Listen that parses as host:port.
+//   - A selection, when present, is a non-empty string. Its kind is one of the five section names above.
 //   - Every Project has a tracker_project, a repo shaped owner/name and a base_branch; tracker_project
 //     values are unique.
 //   - Secret names are single path elements: no separators, no "..". A secret is a regular file whose
@@ -41,6 +45,6 @@
 // # Tests
 //
 // config_test.go holds table tests for every Load refusal, the secret traversal, symlink-escape and
-// empty-file refusals, a check that secret values never appear in errors, the OnceSet behaviour and
-// FilePath. Board: the server start in cmd/heimdall-server (run_test.go).
+// empty-file refusals, a check that secret values never appear in errors, the OnceSet behaviour,
+// FilePath, and the provider selections (read, absent, empty and unknown keys refused). Board: the server start in cmd/heimdall-server (run_test.go).
 package config

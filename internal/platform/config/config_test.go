@@ -214,3 +214,65 @@ func TestFilePath(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadReadsProviderSelections(t *testing.T) {
+	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+
+		"[vcs]\nprovider = \"github\"\n"+
+		"[tracker]\nprovider = \"jira\"\n"+
+		"[chat]\nbridge = \"mattermost\"\n"+
+		"[agent_runtime]\nprovider = \"opencode\"\n"+
+		"[memory]\nprovider = \"graphiti\"\n"))
+	require.NoError(t, err)
+	want := map[string]string{"vcs": "github", "tracker": "jira", "chat": "mattermost", "agent_runtime": "opencode", "memory": "graphiti"}
+	for kind, name := range want {
+		got, ok := cfg.Selection(kind)
+		require.True(t, ok, kind)
+		require.Equal(t, name, got, kind)
+	}
+}
+
+func TestSelectionAbsentIsUnset(t *testing.T) {
+	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n[vcs]\n"))
+	require.NoError(t, err)
+	for _, kind := range []string{"vcs", "tracker", "chat", "agent_runtime", "memory", "unknown"} {
+		got, ok := cfg.Selection(kind)
+		require.False(t, ok, "%s must be unset", kind)
+		require.Empty(t, got)
+	}
+}
+
+func TestLoadRefusesEmptySelections(t *testing.T) {
+	cases := []struct {
+		name    string
+		section string
+	}{
+		{"vcs.provider", "[vcs]\nprovider = \"\"\n"},
+		{"tracker.provider", "[tracker]\nprovider = \"\"\n"},
+		{"chat.bridge", "[chat]\nbridge = \"\"\n"},
+		{"agent_runtime.provider", "[agent_runtime]\nprovider = \"\"\n"},
+		{"memory.provider", "[memory]\nprovider = \"\"\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+tc.section))
+			require.ErrorContains(t, err, tc.name+" must not be empty")
+		})
+	}
+}
+
+func TestLoadRefusesUnknownSelectionKeys(t *testing.T) {
+	cases := []struct {
+		name    string
+		section string
+	}{
+		{"typo in key name", "[vcs]\nprovidr = \"github\"\n"},
+		{"chat takes bridge, not provider", "[chat]\nprovider = \"mattermost\"\n"},
+		{"unknown section", "[forge]\nprovider = \"github\"\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+tc.section))
+			require.ErrorContains(t, err, "unknown key")
+		})
+	}
+}

@@ -40,13 +40,29 @@ type Config struct {
 	Listen     string
 	Projects   []Project
 	byTracker  map[string]Project
+	selections map[string]string
 }
 
 // fileConfig mirrors heimdall.toml. Pointers tell an absent key (use the default) from an empty one (refuse).
 type fileConfig struct {
-	SecretsDir *string       `toml:"secrets_dir"`
-	Listen     *string       `toml:"listen"`
-	Projects   []fileProject `toml:"projects"`
+	SecretsDir   *string       `toml:"secrets_dir"`
+	Listen       *string       `toml:"listen"`
+	Projects     []fileProject `toml:"projects"`
+	VCS          *fileProvider `toml:"vcs"`
+	Tracker      *fileProvider `toml:"tracker"`
+	Chat         *fileChat     `toml:"chat"`
+	AgentRuntime *fileProvider `toml:"agent_runtime"`
+	Memory       *fileProvider `toml:"memory"`
+}
+
+// fileProvider is a [section] whose only key is provider: the adapter name the registry must know.
+type fileProvider struct {
+	Provider *string `toml:"provider"`
+}
+
+// fileChat is [chat]. Its key is bridge, the Switch connection that carries chat (D79).
+type fileChat struct {
+	Bridge *string `toml:"bridge"`
 }
 
 type fileProject struct {
@@ -94,8 +110,9 @@ func describeDecodeError(err error) error {
 }
 
 func build(raw fileConfig) (Config, error) {
-	cfg := Config{SecretsDir: defaultDir, Listen: defaultListen, byTracker: map[string]Project{}}
+	cfg := Config{SecretsDir: defaultDir, Listen: defaultListen, byTracker: map[string]Project{}, selections: map[string]string{}}
 	var errs []error
+	errs = append(errs, addSelections(&cfg, raw)...)
 	if raw.SecretsDir != nil {
 		if *raw.SecretsDir == "" {
 			errs = append(errs, errors.New("secrets_dir must not be empty"))
@@ -132,6 +149,47 @@ func build(raw fileConfig) (Config, error) {
 	return cfg, nil
 }
 
+// addSelections records each provider selection that is present. An absent section or key means unset;
+// an empty value is refused, because an empty name can never match a registered adapter.
+func addSelections(cfg *Config, raw fileConfig) []error {
+	selected := []struct {
+		kind, field string
+		value       *string
+	}{
+		{"vcs", "vcs.provider", providerOf(raw.VCS)},
+		{"tracker", "tracker.provider", providerOf(raw.Tracker)},
+		{"chat", "chat.bridge", bridgeOf(raw.Chat)},
+		{"agent_runtime", "agent_runtime.provider", providerOf(raw.AgentRuntime)},
+		{"memory", "memory.provider", providerOf(raw.Memory)},
+	}
+	var errs []error
+	for _, s := range selected {
+		switch {
+		case s.value == nil:
+			continue
+		case *s.value == "":
+			errs = append(errs, fmt.Errorf("%s must not be empty", s.field))
+		default:
+			cfg.selections[s.kind] = *s.value
+		}
+	}
+	return errs
+}
+
+func providerOf(p *fileProvider) *string {
+	if p == nil {
+		return nil
+	}
+	return p.Provider
+}
+
+func bridgeOf(c *fileChat) *string {
+	if c == nil {
+		return nil
+	}
+	return c.Bridge
+}
+
 func checkProject(where string, p fileProject) []error {
 	var errs []error
 	if p.TrackerProject == "" {
@@ -147,6 +205,13 @@ func checkProject(where string, p fileProject) []error {
 		errs = append(errs, fmt.Errorf("%s: base_branch is required", where))
 	}
 	return errs
+}
+
+// Selection returns the adapter name selected for kind ("vcs", "tracker", "chat", "agent_runtime" or
+// "memory"; chat's name comes from chat.bridge). ok is false when the section or key is absent.
+func (c Config) Selection(kind string) (string, bool) {
+	name, ok := c.selections[kind]
+	return name, ok
 }
 
 // ProjectFor returns the repo mapped to a tracker project. ok is false for an unmapped project.
