@@ -1,0 +1,205 @@
+openapi: 3.0.3
+info:
+  title: Pay
+  version: 1.0.0
+paths:
+  /payments:
+    post:
+      summary: Create a payment for the calling merchant
+      operationId: createPayment
+      parameters:
+        - $ref: '#/components/parameters/MerchantID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePayment'
+      responses:
+        '201':
+          description: The payment was created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+  /webhooks/subscriptions:
+    post:
+      summary: Subscribe a URL to payment and refund events
+      operationId: createSubscription
+      parameters:
+        - $ref: '#/components/parameters/MerchantID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubscription'
+      responses:
+        '201':
+          description: The subscription is active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List the calling merchant's subscriptions
+      operationId: listSubscriptions
+      parameters:
+        - $ref: '#/components/parameters/MerchantID'
+      responses:
+        '200':
+          description: The subscriptions, active or not
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Error'
+  /webhooks/subscriptions/{id}:
+    delete:
+      summary: Deactivate a subscription of the calling merchant
+      operationId: deleteSubscription
+      parameters:
+        - $ref: '#/components/parameters/MerchantID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: The subscription is deactivated
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /webhooks/deliveries:
+    get:
+      summary: List delivery outcomes for the calling merchant
+      operationId: listDeliveries
+      parameters:
+        - $ref: '#/components/parameters/MerchantID'
+      responses:
+        '200':
+          description: The delivery outcomes, in the order they were recorded
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Delivery'
+        '401':
+          $ref: '#/components/responses/Error'
+components:
+  parameters:
+    MerchantID:
+      name: X-Merchant-ID
+      in: header
+      required: true
+      schema:
+        type: string
+  responses:
+    Error:
+      description: The request was rejected
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    CreatePayment:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Amount in cents
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+    Payment:
+      type: object
+      required: [id, merchant_id, amount, currency, created_at]
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    CreateSubscription:
+      type: object
+      required: [url, types, secret]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: https, or http to localhost
+        types:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [payment.created, refund.created]
+        secret:
+          type: string
+          minLength: 16
+          writeOnly: true
+          description: Signs every delivery. Never returned.
+    Subscription:
+      type: object
+      required: [id, url, types, active, created_at]
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+        types:
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    Delivery:
+      type: object
+      required: [event_id, subscription_id, status, attempts, last_status_code]
+      properties:
+        event_id:
+          type: string
+        subscription_id:
+          type: string
+        status:
+          type: string
+          enum: [delivered, failed]
+        attempts:
+          type: integer
+        last_status_code:
+          type: integer
+        last_error:
+          type: string

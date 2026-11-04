@@ -1,0 +1,8 @@
+parent: pay-demo/refunds
+commit_message: |
+  Cap refunds at what is left of the payment; scope refund reads to the merchant
+
+  Refunds of a payment are summed, not checked one by one. GET /refunds/{id}
+  answers only the merchant that made the refund. The refund reference is
+  refund_ref again, as the ledger reads it.
+delete: []
