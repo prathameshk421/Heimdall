@@ -9,7 +9,7 @@ Docs are final and committed on branch `heimdall-build` (not pushed). No product
 ## Next
 
 1. `STAGE_1_FIXES.md`: T03. T01 and T02 are done.
-2. `MVP_SCENARIOS.md` section 7: slice 0 (T00, T10, T16, T18, T98).
+2. `MVP_SCENARIOS.md` section 7: slice 0 (T00, T10, T16, T18, T98). Product code goes in top-level folders, not `docs/`.
 
 ## Code layout
 
@@ -33,7 +33,7 @@ None yet; there is no code.
 
 ## Spend
 
-OpenRouter: $0.075 of the $3 testing cap (key limit $4), read on the VM after T01, Nov 4.
+OpenRouter: $0.149 of the $3 testing cap (key limit $4), read on the VM after T03, Nov 4.
 
 ## Noticed
 

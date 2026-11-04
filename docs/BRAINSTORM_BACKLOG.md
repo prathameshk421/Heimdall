@@ -1134,3 +1134,12 @@ Every task was walked in build order against what it needs and what the product 
 - **A domain is optional and not tested by us.** People use Mattermost through the port-forward. Public access (`MATTERMOST_ACCESS.md`, T95, T96) stays as a guide for whoever deploys it and shows as `untested`.
 
 **D162. Nothing is cut unless the owner says so.** The owner has said there is ample time. No task, scenario step or check is dropped, reduced or marked optional by a builder, and the cut order is not used without the owner's explicit word. If something is blocked, stop and ask. No hacks, temporary shortcuts or workarounds: implement it cleanly and correctly, or say why it cannot be done. Only the domain and public Mattermost access are optional, by the owner's own call (D161). Reverses the "optional" and freeze parts of D156: T99 covers every integration, and Teams (T09, T67) stays in the plan and in G4, with `untested` shown for any integration with no real run.
+
+**D163. Stage 1 results (Nov 4, T01 to T03; amends D141 and D145).** Details are in `TRACKER.md` under "Spike results".
+- **D145 holds:** one session per room. But agents hold Switch's room tools (`switch_list_rooms`, `switch_read_context`), so a fresh session can read another room when asked. The skills must tell agents to stay in their room, and the session token must not be the only barrier.
+- **Replies reach the room only through `switch_post_message`.** Agent-to-agent mentions wake the other agent, and an agent not addressed may still answer a post in a shared room; both cost tokens.
+- **Commands:** the plain word `heimdall ...` reaches the coordinator as a `message` with `filter=all`; `!heimdall` never does, and Switch's "Unknown command" reply from `@switch-admin` does, so the parser accepts only `sender` ids in `people:`.
+- **The OpenCode template's `edit` pattern is `**/scratch/**`** (the folder is not a git repo, so OpenCode matches against the path from `/`).
+- **A `question` call hangs the session**; Heimdall's task deadline must stop and reset it. `auto_mode: true` is required.
+- **Egress:** nftables on the agents' group works, but loopback must stay open except for Switch's ports because each agent's `opencode serve` uses a random loopback port; the openrouter.ai address set needs refreshing (T27).
+

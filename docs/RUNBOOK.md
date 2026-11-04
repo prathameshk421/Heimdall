@@ -80,3 +80,11 @@ The setup person owns the AWS account and receives budget alerts at $10 and $25.
 ## Upgrade Switch
 
 Read the release notes, back up with `pg_dump`, download the new compose artifact and check its digest, change `SWITCH_VERSION` in `.env`, run `docker compose pull` and `docker compose up -d`, then update this page.
+
+## Agent runtime on the VM (Stage 1, Nov 4)
+
+- **Versions:** Node 22.23.4, OpenCode 1.19.5 (the pin; no other version is installed), `switch-agent-controller` 0.31.0 (hash-checked, see above).
+- **Services:** `switch-agent-controller-1000.service` (runs as `ubuntu`), agents `switch-agent-1000@NN.service` as users `sa1000-NN`, `heimdall-agent-firewall.service` (loads `/etc/heimdall/agents.nft`, nftables table `inet heimdall_agents`, matches group `switch-agents-1000`). All return after `sudo reboot` with no step.
+- **Files:** `/etc/switch/agents.env` (owner `ubuntu`, 0600: OpenRouter key and `SWITCH_CONTROLLER_SELF_UPDATE=off`), `/opt/heimdall/switch/test-users.env` (five test passwords, 0600). Each agent's harness file is `<agents-dir>/<NN>/<agent name>/opencode.json` on the host (the agent sees it at `/var/lib/switch-agents/1000/agent/<agent name>/`), 0600, owned by the agent's user.
+- **Throwaway spike objects:** agents `heimdall-probe`, `heimdall-probe2`, `heimdall-coordinator`; rooms `t01-room-a`, `t01-room-b`, `t02-people`, `t03-lock`; the five test accounts (D158) stay; scripts in `~ubuntu/t01` (including a stub MCP on 127.0.0.1:8080 that is not a service).
+- **Traps:** a pending OpenCode `question` blocks that session for good; `auto_mode` must be `true`; the `edit` pattern must be `**/scratch/**`; an agent refuses people who are not its owner until addressing is opened or an identity is claimed; a new agent is added to every default channel; `glob` fails ("ripgrep execution failed").

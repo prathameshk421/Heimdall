@@ -187,7 +187,7 @@ Switch runs each session with its own permission rules, which come after this fi
     "websearch": "deny",
     "doom_loop": "deny",
     "external_directory": { "*": "deny" },
-    "edit": { "*": "deny", "scratch/**": "allow" },
+    "edit": { "*": "deny", "**/scratch/**": "allow" },
     "heimdall_*": "allow"
   },
   "mcp": {

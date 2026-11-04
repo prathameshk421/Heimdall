@@ -549,7 +549,7 @@ How the VM agents actually run. Switch ships a **headless agent controller** for
     "websearch": "deny",
     "doom_loop": "deny",
     "external_directory": { "*": "deny" },
-    "edit": { "*": "deny", "scratch/**": "allow" },
+    "edit": { "*": "deny", "**/scratch/**": "allow" },
     "heimdall_*": "allow"
   },
   "mcp": {
