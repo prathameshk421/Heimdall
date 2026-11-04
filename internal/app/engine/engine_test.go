@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -467,4 +468,287 @@ func TestAdvanceRefusesACancelledContextAndWritesNothing(t *testing.T) {
 	_, err := e.Advance(ctx, ticket, h.triggered())
 	require.ErrorIs(t, err, context.Canceled)
 	require.Empty(t, h.store.expected)
+}
+
+// roomOpenEffect is the room_open effect the room step decides on change.triggered (design point 5).
+func roomOpenEffect(t *testing.T) change.Effect {
+	t.Helper()
+	key, err := change.IdempotencyKey(ticket, 1, change.EffectRoomOpen, "room-PAY-142")
+	require.NoError(t, err)
+	return change.Effect{Key: key, Kind: change.EffectRoomOpen, Target: "switch", Payload: json.RawMessage(`{"room":"room-PAY-142"}`)}
+}
+
+// roomOnTrigger is a room step that opens its room on the incoming change.triggered. It decides room.opened, and the
+// effect when withEffect is set. It checks that the view it gets ends with the incoming event, numbered.
+func roomOnTrigger(t *testing.T, h *harness, withEffect bool) *fakeStep {
+	room := fake("switch.open_room", hasOf(change.EventRoomOpened), nil)
+	room.onEvent = func(_ context.Context, c engine.ChangeView, e change.Event) (engine.Result, error) {
+		require.NotEmpty(t, c.Events, "the view holds the incoming event")
+		require.Equal(t, e.ID, c.Events[len(c.Events)-1].ID, "the view ends with the incoming event")
+		require.Equal(t, int64(1), e.Version, "the incoming event is numbered before the step sees it")
+		res := h.emit(change.EventRoomOpened, sysActor, change.RoomOpened{RoomID: "room-PAY-142"})
+		if withEffect {
+			res.Effects = []change.Effect{roomOpenEffect(t)}
+		}
+		return res, nil
+	}
+	return room
+}
+
+func TestAnEffectDecidedOnAnIncomingEventIsStoredInTheSameAppend(t *testing.T) {
+	h := newHarness(t)
+	room := roomOnTrigger(t, h, true)
+	e := h.build(h.config(chain(workflow.Step{ID: "room", Do: "switch.open_room"}), room))
+
+	out, err := e.Advance(context.Background(), ticket, h.triggered())
+	require.NoError(t, err)
+	require.Equal(t, []int64{0}, h.store.expected, "the incoming event and the room event are one append")
+	require.Equal(t, 1, h.store.appends)
+	require.Equal(t, []change.EventType{change.EventChangeTriggered, change.EventRoomOpened}, h.types())
+	require.Len(t, h.store.attached, 1)
+	require.Equal(t, change.EffectRoomOpen, h.store.attached[0].Effect.Kind)
+	require.Equal(t, int64(2), h.store.attached[0].Version, "the effect is committed with the last event of the append")
+	require.Equal(t, 2, out.Events)
+	require.Equal(t, 1, out.Effects)
+}
+
+func TestAnEffectWithNoStepEventIsCommittedWithTheIncomingEvent(t *testing.T) {
+	h := newHarness(t)
+	room := fake("switch.open_room", hasOf(change.EventRoomOpened), nil)
+	room.onEvent = func(context.Context, engine.ChangeView, change.Event) (engine.Result, error) {
+		return engine.Result{Effects: []change.Effect{roomOpenEffect(t)}}, nil
+	}
+	e := h.build(h.config(chain(workflow.Step{ID: "room", Do: "switch.open_room"}), room))
+
+	_, err := e.Advance(context.Background(), ticket, h.triggered())
+	require.NoError(t, err)
+	require.Equal(t, []change.EventType{change.EventChangeTriggered}, h.types())
+	require.Len(t, h.store.attached, 1)
+	require.Equal(t, int64(1), h.store.attached[0].Version, "with no step event, the effect attaches to the incoming event")
+}
+
+func TestStartStoresTheFirstEventAndTheStepEventsInOneAppend(t *testing.T) {
+	h := newHarness(t)
+	room := roomOnTrigger(t, h, false)
+	e := h.build(h.config(chain(workflow.Step{ID: "room", Do: "switch.open_room"}), room))
+	first := h.triggered()[0]
+	first.Version = 1
+
+	out, err := e.Start(context.Background(), first)
+	require.NoError(t, err)
+	require.Equal(t, []int64{0}, h.store.expected, "Start appends at version 0")
+	require.Equal(t, 1, h.store.appends)
+	require.Equal(t, []change.EventType{change.EventChangeTriggered, change.EventRoomOpened}, h.types())
+	require.Equal(t, 2, out.Events)
+	require.Equal(t, int64(2), out.Version)
+	require.True(t, out.Complete)
+	require.Zero(t, room.starts, "the room is done by its own event, so the drive loop does not call it")
+}
+
+func TestStartRefusesAFirstEventThatIsNotATriggerAtVersionOne(t *testing.T) {
+	cases := map[string]func(h *harness) change.Event{
+		"not change.triggered": func(h *harness) change.Event {
+			ev := h.incoming(change.EventTicketChanged, humanActor, change.TicketChanged{ChangedFields: []string{"title"}})[0]
+			ev.Version = 1
+			return ev
+		},
+		"version 2": func(h *harness) change.Event {
+			ev := h.triggered()[0]
+			ev.Version = 2
+			return ev
+		},
+		"version 0": func(h *harness) change.Event {
+			return h.triggered()[0]
+		},
+	}
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			room := fake("switch.open_room", hasOf(change.EventRoomOpened), nil)
+			e := h.build(h.config(chain(workflow.Step{ID: "room", Do: "switch.open_room"}), room))
+
+			_, err := e.Start(context.Background(), build(h))
+			require.Error(t, err)
+			require.Empty(t, room.offered, "a refused start calls no step")
+			require.Equal(t, 0, room.starts)
+			require.Empty(t, h.store.expected, "and appends nothing")
+		})
+	}
+}
+
+func TestStartOfAChangeThatExistsIsAVersionConflictWithNoRetry(t *testing.T) {
+	h := newHarness(t)
+	e := h.build(h.config(chain(workflow.Step{ID: "room", Do: "switch.open_room"}), fake("switch.open_room", hasOf(change.EventRoomOpened), nil)))
+	first := h.triggered()[0]
+	first.Version = 1
+	_, err := e.Start(context.Background(), first)
+	require.NoError(t, err)
+
+	_, err = e.Start(context.Background(), first)
+	require.ErrorIs(t, err, ports.ErrVersionConflict, "the caller detects an existing change with errors.Is")
+	require.Equal(t, []int64{0, 0}, h.store.expected, "the second start is not retried")
+	require.Len(t, h.store.events, 1)
+}
+
+func TestTwoConcurrentStartsOfOneChangeStoreOneChange(t *testing.T) {
+	h := newHarness(t)
+	e := h.build(h.config(chain(workflow.Step{ID: "room", Do: "switch.open_room"}), inertStep{typ: "switch.open_room"}))
+	first := h.triggered()[0]
+	first.Version = 1
+
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = e.Start(context.Background(), first)
+		}()
+	}
+	wg.Wait()
+
+	var won, lost int
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			won++
+		case errors.Is(err, ports.ErrVersionConflict):
+			lost++
+		default:
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+	require.Equal(t, 1, won)
+	require.Equal(t, 1, lost)
+	require.Len(t, h.store.events, 1, "one change.triggered is stored")
+}
+
+func TestAdvanceWithTwoIncomingEventsAppendsEachOnItsOwn(t *testing.T) {
+	h := newHarness(t)
+	room := fake("switch.open_room", hasOf(change.EventRoomOpened), nil)
+	e := h.build(h.config(chain(workflow.Step{ID: "room", Do: "switch.open_room"}), room))
+	incoming := append(h.triggered(), h.incoming(change.EventTicketChanged, humanActor, change.TicketChanged{ChangedFields: []string{"title"}})...)
+
+	out, err := e.Advance(context.Background(), ticket, incoming)
+	require.NoError(t, err)
+	require.Equal(t, []int64{0, 1}, h.store.expected, "each incoming event is one append")
+	require.Equal(t, 2, h.store.appends)
+	require.Equal(t, []change.EventType{change.EventChangeTriggered, change.EventTicketChanged}, h.types())
+	require.Equal(t, 2, out.Events)
+}
+
+func TestAnIncomingEventIsDecidedAgainAfterAVersionConflict(t *testing.T) {
+	h := newHarness(t)
+	room := fake("switch.open_room", hasOf(change.EventRoomOpened), nil)
+	e := h.build(h.config(chain(workflow.Step{ID: "room", Do: "switch.open_room"}), room))
+	h.store.conflicts = 2
+
+	_, err := e.Advance(context.Background(), ticket, h.triggered())
+	require.NoError(t, err, "two refused appends of the incoming event are retried")
+	require.Equal(t, []int64{0, 0, 0}, h.store.expected)
+	require.Len(t, room.offered, 3, "each try offers the incoming event again on the view it reads")
+	require.Equal(t, []change.EventType{change.EventChangeTriggered}, h.types())
+}
+
+func TestAStepEffectWithNoEventFromStartIsStillRefused(t *testing.T) {
+	h := newHarness(t)
+	room := fake("switch.open_room", hasOf(change.EventRoomOpened), func(context.Context, engine.ChangeView, json.RawMessage) (engine.Result, error) {
+		return engine.Result{Effects: []change.Effect{roomOpenEffect(t)}}, nil
+	})
+	e := h.build(h.config(chain(workflow.Step{ID: "room", Do: "switch.open_room"}), room))
+
+	_, err := e.Advance(context.Background(), ticket, h.triggered())
+	require.ErrorContains(t, err, "effects without an event", "Start and Timeout keep the rule: an effect needs its event")
+	require.Empty(t, h.store.effects)
+}
+
+// writeTests is the test-author's step. It assigns its task on the first run, and it fails on the submission.
+func writeTests(h *harness) *fakeStep {
+	s := fake("agent.task", hasOf(change.EventTestsVerified), func(_ context.Context, c engine.ChangeView, _ json.RawMessage) (engine.Result, error) {
+		if c.Has(change.EventTaskAssigned) {
+			return engine.Result{}, nil
+		}
+		return h.emit(change.EventTaskAssigned, sysActor, change.TaskAssigned{
+			TaskID: taskID, Agent: "test-author", Role: workflow.RoleTestAuthor,
+			Deadline: dayStart.Add(2 * time.Hour), BundleRef: blob,
+		}), nil
+	})
+	s.onEvent = func(_ context.Context, _ engine.ChangeView, e change.Event) (engine.Result, error) {
+		if e.Type == change.EventTestsSubmitted {
+			return engine.Result{}, errBoom
+		}
+		return engine.Result{}, nil
+	}
+	return s
+}
+
+// submittedRoom is a room step that opens its room on the submission, with a room_open effect.
+func submittedRoom(t *testing.T, h *harness) *fakeStep {
+	room := fake("switch.open_room", hasOf(change.EventRoomOpened), nil)
+	room.onEvent = func(_ context.Context, _ engine.ChangeView, e change.Event) (engine.Result, error) {
+		if e.Type != change.EventTestsSubmitted {
+			return engine.Result{}, nil
+		}
+		res := h.emit(change.EventRoomOpened, sysActor, change.RoomOpened{RoomID: "room-PAY-142"})
+		res.Effects = []change.Effect{roomOpenEffect(t)}
+		return res, nil
+	}
+	return room
+}
+
+func TestAFailedStepOnAnIncomingEventKeepsTheEventAndTheOtherStepsEffect(t *testing.T) {
+	h := newHarness(t)
+	w := chain(
+		workflow.Step{ID: "write_tests", Do: "agent.task", Role: workflow.RoleTestAuthor, Timeout: 2 * time.Hour},
+		workflow.Step{ID: "room", Do: "switch.open_room"},
+	)
+	e := h.build(h.config(w, writeTests(h), submittedRoom(t, h)))
+	ctx := context.Background()
+	_, err := e.Advance(ctx, ticket, h.triggered())
+	require.NoError(t, err)
+	before := h.store.appends
+
+	sub := submission(h)
+	out, err := e.Advance(ctx, ticket, sub)
+	require.NoError(t, err, "a failed step with a task is recorded as task.failed, not returned")
+	require.Equal(t, []string{"write_tests"}, out.Failed)
+	require.Equal(t, before+1, h.store.appends, "the event, task.failed and the room event are one append")
+	require.Equal(t, []change.EventType{
+		change.EventChangeTriggered, change.EventTaskAssigned, change.EventTestsSubmitted, change.EventTaskFailed, change.EventRoomOpened,
+	}, h.types())
+	require.Len(t, h.store.attached, 1)
+	require.Equal(t, change.EffectRoomOpen, h.store.attached[0].Effect.Kind, "the other step's effect is committed in that append")
+	require.Equal(t, int64(5), h.store.attached[0].Version)
+
+	out, err = e.Advance(ctx, ticket, sub)
+	require.NoError(t, err)
+	require.Equal(t, before+1, h.store.appends, "the same stored event is not stored twice")
+	require.Len(t, h.store.events, 5)
+	require.Empty(t, out.Failed)
+}
+
+func TestAFailedStepWithNoTaskStoresTheEventThenReturnsItsError(t *testing.T) {
+	h := newHarness(t)
+	branch := fake("github.ensure_branch", hasOf(change.EventBranchEnsured), nil)
+	branch.onEvent = func(_ context.Context, _ engine.ChangeView, e change.Event) (engine.Result, error) {
+		if e.Type == change.EventTestsSubmitted {
+			return engine.Result{}, errBoom
+		}
+		return engine.Result{}, nil
+	}
+	w := chain(workflow.Step{ID: "branch", Do: "github.ensure_branch"}, workflow.Step{ID: "room", Do: "switch.open_room"})
+	e := h.build(h.config(w, branch, submittedRoom(t, h)))
+	ctx := context.Background()
+	_, err := e.Advance(ctx, ticket, h.triggered())
+	require.NoError(t, err)
+
+	sub := submission(h)
+	_, err = e.Advance(ctx, ticket, sub)
+	require.ErrorIs(t, err, errBoom, "without a task the step's error is returned, after the event is stored")
+	require.Equal(t, []change.EventType{change.EventChangeTriggered, change.EventTestsSubmitted, change.EventRoomOpened}, h.types())
+	require.Len(t, h.store.attached, 1, "the other step's effect is committed with the event")
+
+	_, err = e.Advance(ctx, ticket, sub)
+	require.NoError(t, err, "a second Advance with the stored event does not call the step again")
+	require.Len(t, h.store.events, 3, "and does not store the event twice")
 }

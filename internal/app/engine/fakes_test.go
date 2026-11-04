@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -65,23 +66,37 @@ func (f *fakeIDs) NewTask() id.TaskID       { return taskID }
 // the event versions, that every event and effect validates, and that the hash chain links. A test that passes here
 // would have passed the real store's checks too.
 type fakeStore struct {
+	mu       sync.Mutex
 	events   []change.Event
 	effects  []change.Effect
 	appends  int
 	expected []int64 // the expected version of every Append call, in call order, refused ones included
+	// attached is every stored effect with the version of the event it is committed with. The store attaches an
+	// effect to the last event of its append (ports.EventStore).
+	attached []attachedEffect
 	// conflicts makes the next this many Append calls return ErrVersionConflict, as a second writer would.
 	conflicts int
 	// race, when set, runs once before the next Append checks the version: it is another writer's turn.
 	race func()
 }
 
+// attachedEffect is one stored effect and the version of the event it is committed with.
+type attachedEffect struct {
+	Effect  change.Effect
+	Version int64
+}
+
 var _ ports.EventStore = (*fakeStore)(nil)
 
 func (s *fakeStore) Load(_ context.Context, _ id.ChangeID) ([]change.Event, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return slices.Clone(s.events), nil
 }
 
 func (s *fakeStore) Append(_ context.Context, cid id.ChangeID, expected int64, evs []change.Event, fx []change.Effect) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.expected = append(s.expected, expected)
 	if s.race != nil {
 		race := s.race
@@ -103,6 +118,10 @@ func (s *fakeStore) Append(_ context.Context, cid id.ChangeID, expected int64, e
 	}
 	if err := s.link(cid, expected, evs); err != nil {
 		return 0, err
+	}
+	last := expected + int64(len(evs))
+	for _, f := range fx {
+		s.attached = append(s.attached, attachedEffect{Effect: f, Version: last})
 	}
 	s.effects = append(s.effects, fx...)
 	s.appends++
@@ -160,6 +179,7 @@ type fakeStep struct {
 	typ     string
 	done    func(c engine.ChangeView) bool
 	start   func(ctx context.Context, c engine.ChangeView, with json.RawMessage) (engine.Result, error)
+	onEvent func(ctx context.Context, c engine.ChangeView, e change.Event) (engine.Result, error)
 	timeout func(c engine.ChangeView) (engine.Result, error)
 	starts  int
 	offered []change.EventType
@@ -169,8 +189,29 @@ var _ engine.Step = (*fakeStep)(nil)
 
 func (f *fakeStep) Type() string                  { return f.typ }
 func (f *fakeStep) Done(c engine.ChangeView) bool { return f.done != nil && f.done(c) }
-func (f *fakeStep) OnEvent(_ context.Context, _ engine.ChangeView, e change.Event) (engine.Result, error) {
+func (f *fakeStep) OnEvent(ctx context.Context, c engine.ChangeView, e change.Event) (engine.Result, error) {
 	f.offered = append(f.offered, e.Type)
+	if f.onEvent == nil {
+		return engine.Result{}, nil
+	}
+	return f.onEvent(ctx, c, e)
+}
+
+// inertStep is a step with no state: it decides nothing and is never done. Tests that run engines concurrently use it,
+// so no fake is written from two goroutines.
+type inertStep struct{ typ string }
+
+var _ engine.Step = inertStep{}
+
+func (s inertStep) Type() string                { return s.typ }
+func (s inertStep) Done(engine.ChangeView) bool { return false }
+func (s inertStep) Start(context.Context, engine.ChangeView, json.RawMessage) (engine.Result, error) {
+	return engine.Result{}, nil
+}
+func (s inertStep) OnEvent(context.Context, engine.ChangeView, change.Event) (engine.Result, error) {
+	return engine.Result{}, nil
+}
+func (s inertStep) OnTimeout(context.Context, engine.ChangeView) (engine.Result, error) {
 	return engine.Result{}, nil
 }
 

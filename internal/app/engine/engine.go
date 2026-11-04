@@ -156,14 +156,42 @@ func checkConditions(w workflow.Workflow, conds map[string]Condition) []error {
 	return problems
 }
 
-// Advance runs the workflow for one change. incoming holds events that arrived from outside and are not stored yet.
-// The engine stores them first, offers each one to the steps that are ready, and then calls every open step until a
-// pass writes nothing.
-func (e *Engine) Advance(ctx context.Context, changeID id.ChangeID, incoming []change.Event) (Outcome, error) {
-	r := &run{e: e, cid: changeID}
-	if err := r.persist(ctx, incoming); err != nil {
+// Start opens a change. The first event must be change.triggered at version 1. The engine offers it to the steps on a
+// view that holds only that event, then stores it with the events the steps decide on it, in one append at version 0
+// (design point 3). Start then runs the rest of the workflow. A change that already exists refuses the append with
+// ports.ErrVersionConflict. Start returns that error wrapped and does not retry it.
+func (e *Engine) Start(ctx context.Context, first change.Event) (Outcome, error) {
+	if first.Type != change.EventChangeTriggered {
+		return Outcome{}, fmt.Errorf("start of %s: first event is %s, not %s", first.ChangeID, first.Type, change.EventChangeTriggered)
+	}
+	if first.Version != 1 {
+		return Outcome{}, fmt.Errorf("start of %s: first event has version %d, want 1", first.ChangeID, first.Version)
+	}
+	r := &run{e: e, cid: first.ChangeID}
+	if err := ctx.Err(); err != nil {
+		return Outcome{}, fmt.Errorf("start of %s: %w", r.cid, err)
+	}
+	b, err := r.decide(ctx, nil, first)
+	if err != nil {
 		return Outcome{}, err
 	}
+	if err := r.appendBatch(ctx, 0, b); err != nil {
+		return Outcome{}, err
+	}
+	if b.stepErr != nil {
+		return Outcome{}, b.stepErr
+	}
+	if err := r.drive(ctx); err != nil {
+		return Outcome{}, err
+	}
+	return r.finish(ctx)
+}
+
+// Advance runs the workflow for one change. Each incoming event is stored in one append together with the events the
+// steps decide on it, and with every effect they return (design points 1 and 2). Then the engine calls every open step
+// until a pass writes nothing.
+func (e *Engine) Advance(ctx context.Context, changeID id.ChangeID, incoming []change.Event) (Outcome, error) {
+	r := &run{e: e, cid: changeID}
 	for _, ev := range incoming {
 		if err := r.offer(ctx, ev); err != nil {
 			return Outcome{}, err
@@ -206,28 +234,102 @@ type attempt struct {
 	failed bool
 }
 
-// persist stores the events that arrived from outside, as they are.
-func (r *run) persist(ctx context.Context, evs []change.Event) error {
-	if len(evs) == 0 {
-		return nil
+// batch is what one incoming event stores: the event, the events the steps decide on it, and every effect they return.
+// It is one append, so each effect is committed with the last event of the append (ports.EventStore). view is the
+// change once the batch is stored: the stored events, then the batch's, each numbered as it will be stored. The steps
+// that come later in the offer read it, so each one sees the decisions before it.
+type batch struct {
+	view  ChangeView
+	evs   []change.Event
+	fx    []change.Effect
+	notes []noted
+	// stepErr is the first step error the engine could not record as task.failed (a step with no task). The step adds
+	// nothing to the batch. The batch is still stored, and the caller gets stepErr after the append.
+	stepErr error
+}
+
+// noted is one step's attempt inside a batch. Its timers and its failure are recorded once the batch is stored.
+type noted struct {
+	stepID string
+	a      attempt
+}
+
+// add numbers the events of one attempt, adds them to the batch and to its view, and keeps the effects and the attempt.
+func (b *batch) add(stepID string, a attempt) {
+	for _, ev := range a.res.Events {
+		ev.Version = int64(len(b.view.Events)) + 1
+		b.view.Events = append(b.view.Events, ev)
+		b.evs = append(b.evs, ev)
 	}
-	a, err := r.commit(ctx, func(ChangeView) (attempt, error) { return attempt{res: Result{Events: evs}}, nil })
-	if err != nil {
-		return err
+	b.fx = append(b.fx, a.res.Effects...)
+	b.notes = append(b.notes, noted{stepID: stepID, a: a})
+}
+
+// decide builds the batch of one incoming event on the stored events of the change. The event is numbered first, so
+// each step's OnEvent reads a view that ends with it. Every step that is open on the view is offered the event, in
+// workflow order. A step error becomes task.failed when the step has a task (stepDecision). A step error with no task
+// is kept in stepErr, and that step adds nothing: the event and the other steps still go into the batch. A cancelled
+// context returns its error and an empty batch.
+func (r *run) decide(ctx context.Context, stored []change.Event, ev change.Event) (batch, error) {
+	ev.Version = int64(len(stored)) + 1
+	b := batch{view: ChangeView{ID: r.cid, Events: append(slices.Clone(stored), ev)}, evs: []change.Event{ev}}
+	for _, ws := range r.e.wf.Steps {
+		step := r.e.steps[ws.Do]
+		a, err := r.stepDecision(ctx, ws, func(v ChangeView) (Result, error) { return step.OnEvent(ctx, v, ev) })(b.view)
+		if err != nil {
+			if ctx.Err() != nil {
+				return batch{}, err
+			}
+			if b.stepErr == nil {
+				b.stepErr = err
+			}
+			continue
+		}
+		b.add(ws.ID, a)
 	}
-	r.note(a)
+	return b, nil
+}
+
+// appendBatch stores a batch at the expected version in one append, then adds its counts and its notes to the outcome.
+func (r *run) appendBatch(ctx context.Context, expected int64, b batch) error {
+	if _, err := r.e.store.Append(ctx, r.cid, expected, b.evs, b.fx); err != nil {
+		return fmt.Errorf("append to %s at version %d: %w", r.cid, expected, err)
+	}
+	r.out.Events += len(b.evs)
+	r.out.Effects += len(b.fx)
+	for _, n := range b.notes {
+		r.noteAttempt(n.stepID, n.a)
+	}
 	return nil
 }
 
-// offer hands one incoming event to every step that is open on the view, in workflow order.
+// offer stores one incoming event with the events the steps decide on it, in one append. A version conflict loads the
+// change again and decides again, up to maxRetries times (TECH_SPEC 2.4). An event that is already stored is not
+// stored again. After the append, it returns the step error the batch holds, if any (decide).
 func (r *run) offer(ctx context.Context, ev change.Event) error {
-	for _, ws := range r.e.wf.Steps {
-		step := r.e.steps[ws.Do]
-		if _, err := r.step(ctx, ws, func(v ChangeView) (Result, error) { return step.OnEvent(ctx, v, ev) }); err != nil {
+	for retries := 0; ; retries++ {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("change %s: %w", r.cid, err)
+		}
+		v, err := r.load(ctx)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(v.Events, func(s change.Event) bool { return s.ID == ev.ID }) {
+			return nil
+		}
+		b, err := r.decide(ctx, v.Events, ev)
+		if err != nil {
+			return err
+		}
+		err = r.appendBatch(ctx, int64(len(v.Events)), b)
+		if err == nil {
+			return b.stepErr
+		}
+		if !errors.Is(err, ports.ErrVersionConflict) || retries == maxRetries {
 			return err
 		}
 	}
-	return nil
 }
 
 // drive calls every open step in workflow order, pass after pass, until a pass stores nothing. A step can open only
@@ -355,15 +457,15 @@ func (r *run) load(ctx context.Context) (ChangeView, error) {
 	return ChangeView{ID: r.cid, Events: evs}, nil
 }
 
-// note adds what a stored attempt holds to the outcome of the run, for the calls that are not steps.
-func (r *run) note(a attempt) {
-	r.noteStep("", a)
-}
-
 // noteStep adds what a stored attempt holds to the outcome of the run, and names the step if the attempt failed.
 func (r *run) noteStep(stepID string, a attempt) {
 	r.out.Events += len(a.res.Events)
 	r.out.Effects += len(a.res.Effects)
+	r.noteAttempt(stepID, a)
+}
+
+// noteAttempt records the timers and the failure of a stored attempt. The counts are added by the caller.
+func (r *run) noteAttempt(stepID string, a attempt) {
 	for _, t := range a.res.Timers {
 		r.addTimer(t)
 	}

@@ -71,55 +71,47 @@ func (f *fakeTickets) Ticket(_ context.Context, key id.ChangeID) (ports.Ticket, 
 	return tk, nil
 }
 
-// fakeEvents is an in-memory EventStore with the store's version rule: Append refuses unless expected is the last
-// version of the stream. failNext makes the next Append calls return failErr.
-type fakeEvents struct {
+// fakeStarter is a Starter over one stream per change. Start refuses a change that already has a stream with
+// ports.ErrVersionConflict, as the engine does when the first append finds events. failNext makes the next Start calls
+// return failErr.
+type fakeStarter struct {
 	mu       sync.Mutex
 	streams  map[id.ChangeID][]change.Event
-	expected []int64
+	calls    int
 	failNext int
 	failErr  error
 }
 
-func newFakeEvents() *fakeEvents {
-	return &fakeEvents{streams: map[id.ChangeID][]change.Event{}}
+func newFakeStarter() *fakeStarter {
+	return &fakeStarter{streams: map[id.ChangeID][]change.Event{}}
 }
 
-func (f *fakeEvents) Load(_ context.Context, c id.ChangeID) ([]change.Event, error) {
+func (f *fakeStarter) Start(_ context.Context, ev change.Event) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]change.Event(nil), f.streams[c]...), nil
-}
-
-func (f *fakeEvents) Append(_ context.Context, c id.ChangeID, expected int64, evs []change.Event, _ []change.Effect) (int64, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.expected = append(f.expected, expected)
+	f.calls++
 	if f.failNext > 0 {
 		f.failNext--
-		return 0, f.failErr
+		return f.failErr
 	}
-	var head int64
-	if n := len(f.streams[c]); n > 0 {
-		head = f.streams[c][n-1].Version
+	if _, ok := f.streams[ev.ChangeID]; ok {
+		return fmt.Errorf("start %s: change exists: %w", ev.ChangeID, ports.ErrVersionConflict)
 	}
-	if head != expected {
-		return 0, ports.ErrVersionConflict
-	}
-	f.streams[c] = append(f.streams[c], evs...)
-	return head + int64(len(evs)), nil
+	f.streams[ev.ChangeID] = []change.Event{ev}
+	return nil
 }
 
-func (f *fakeEvents) stream(c id.ChangeID) []change.Event {
+func (f *fakeStarter) stream(c id.ChangeID) []change.Event {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]change.Event(nil), f.streams[c]...)
 }
 
-func (f *fakeEvents) expectedVersions() []int64 {
+// startCalls counts the Start calls, refused ones included.
+func (f *fakeStarter) startCalls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]int64(nil), f.expected...)
+	return f.calls
 }
 
 // fakeCursors is a CursorStore. It records every saved cursor.
@@ -196,7 +188,7 @@ func (s *seqIDs) NewTask() id.TaskID       { return "" }
 // rig is one set of fakes and a Poller built on them.
 type rig struct {
 	tickets *fakeTickets
-	events  *fakeEvents
+	starter *fakeStarter
 	cursors *fakeCursors
 	ids     *seqIDs
 	poller  *trigger.Poller
@@ -204,7 +196,7 @@ type rig struct {
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	r := &rig{tickets: newFakeTickets(), events: newFakeEvents(), cursors: &fakeCursors{}, ids: &seqIDs{}}
+	r := &rig{tickets: newFakeTickets(), starter: newFakeStarter(), cursors: &fakeCursors{}, ids: &seqIDs{}}
 	r.poller = r.build(t, r.cursors)
 	return r
 }
@@ -214,7 +206,7 @@ func (r *rig) build(t *testing.T, cursors trigger.CursorStore) *trigger.Poller {
 	t.Helper()
 	p, err := trigger.New(trigger.Config{
 		Tickets:  r.tickets,
-		Events:   r.events,
+		Starter:  r.starter,
 		Cursors:  cursors,
 		Projects: fakeProjects{"KAN": repoPay},
 		Clock:    fakeClock{at: now},
@@ -246,7 +238,7 @@ func assertIgnored(t *testing.T, r *rig, res trigger.PollResult, reason trigger.
 	require.Equal(t, 0, res.Triggered)
 	require.Equal(t, 0, res.AlreadyTriggered)
 	require.Equal(t, map[trigger.Reason]int{reason: 1}, res.Ignored)
-	require.Empty(t, r.events.stream(key))
+	require.Empty(t, r.starter.stream(key))
 	require.Equal(t, []ports.Cursor{"c1"}, r.cursors.savedCursors())
 }
 
@@ -262,14 +254,14 @@ func TestTriggersOnceForAValidChange(t *testing.T) {
 	require.Equal(t, 1, res.Triggered)
 	require.Equal(t, 0, res.AlreadyTriggered)
 	require.Empty(t, res.Ignored)
-	evs := r.events.stream("KAN-1")
+	evs := r.starter.stream("KAN-1")
 	require.Len(t, evs, 1)
 	ev := evs[0]
 	require.Equal(t, change.EventChangeTriggered, ev.Type)
 	require.Equal(t, int64(1), ev.Version)
 	require.Equal(t, change.Actor{Kind: change.ActorJira, ID: "jira"}, ev.Actor)
 	require.True(t, ev.OccurredAt.Equal(now), "occurred at %s", ev.OccurredAt)
-	require.Equal(t, []int64{0}, r.events.expectedVersions())
+	require.Equal(t, 1, r.starter.startCalls())
 	p, err := change.Decode(ev)
 	require.NoError(t, err)
 	require.Equal(t, change.Triggered{Ticket: "KAN-1", Repo: repoPay, Assignee: ana, Source: change.TriggerJira}, p)
@@ -338,8 +330,8 @@ func TestARepeatInTheNextPollAppendsNothing(t *testing.T) {
 
 	require.Equal(t, 0, res.Triggered)
 	require.Equal(t, 1, res.AlreadyTriggered)
-	require.Len(t, r.events.stream("KAN-1"), 1)
-	require.Equal(t, []int64{0, 0}, r.events.expectedVersions())
+	require.Len(t, r.starter.stream("KAN-1"), 1)
+	require.Equal(t, 2, r.starter.startCalls(), "the repeat is started and refused, not retried")
 }
 
 func TestAChangeMovingToInProgressAgainAppendsNothing(t *testing.T) {
@@ -354,7 +346,7 @@ func TestAChangeMovingToInProgressAgainAppendsNothing(t *testing.T) {
 
 	require.Equal(t, 0, res.Triggered)
 	require.Equal(t, 1, res.AlreadyTriggered)
-	require.Len(t, r.events.stream("KAN-1"), 1)
+	require.Len(t, r.starter.stream("KAN-1"), 1)
 }
 
 func TestARestartAppendsNothing(t *testing.T) {
@@ -371,7 +363,7 @@ func TestARestartAppendsNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, res.Triggered)
 	require.Equal(t, 1, res.AlreadyTriggered)
-	require.Len(t, r.events.stream("KAN-1"), 1)
+	require.Len(t, r.starter.stream("KAN-1"), 1)
 }
 
 func TestTwoPollersRacingEndWithOneEvent(t *testing.T) {
@@ -398,7 +390,7 @@ func TestTwoPollersRacingEndWithOneEvent(t *testing.T) {
 	}
 	require.Equal(t, 1, results[0].Triggered+results[1].Triggered)
 	require.Equal(t, 1, results[0].AlreadyTriggered+results[1].AlreadyTriggered)
-	require.Len(t, r.events.stream("KAN-1"), 1)
+	require.Len(t, r.starter.stream("KAN-1"), 1)
 }
 
 func TestCursorIsNotSavedWhenTheReaderIsUnavailable(t *testing.T) {
@@ -419,8 +411,8 @@ func TestCursorIsNotSavedWhenAnAppendIsUnavailable(t *testing.T) {
 	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
 	r.tickets.next = "c1"
 	r.tickets.tickets["KAN-1"] = ticket("KAN-1", statusInPrg, ana)
-	r.events.failNext = 1
-	r.events.failErr = fmt.Errorf("append: %w", ports.ErrUnavailable)
+	r.starter.failNext = 1
+	r.starter.failErr = fmt.Errorf("append: %w", ports.ErrUnavailable)
 
 	_, err := r.poller.PollOnce(context.Background())
 
@@ -435,8 +427,8 @@ func TestAChangeThatFailedOnAnOutageIsTriggeredOnTheNextPoll(t *testing.T) {
 	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
 	r.tickets.next = "c1"
 	r.tickets.tickets["KAN-1"] = ticket("KAN-1", statusInPrg, ana)
-	r.events.failNext = 1
-	r.events.failErr = fmt.Errorf("append: %w", ports.ErrUnavailable)
+	r.starter.failNext = 1
+	r.starter.failErr = fmt.Errorf("append: %w", ports.ErrUnavailable)
 
 	_, err := r.poller.PollOnce(context.Background())
 	require.ErrorIs(t, err, ports.ErrUnavailable)
@@ -445,7 +437,7 @@ func TestAChangeThatFailedOnAnOutageIsTriggeredOnTheNextPoll(t *testing.T) {
 	res := r.poll(t)
 
 	require.Equal(t, 1, res.Triggered)
-	require.Len(t, r.events.stream("KAN-1"), 1)
+	require.Len(t, r.starter.stream("KAN-1"), 1)
 	require.Equal(t, []ports.Cursor{"c1"}, r.cursors.savedCursors())
 }
 
@@ -461,8 +453,8 @@ func TestCursorIsNotSavedAfterAPermanentError(t *testing.T) {
 			r.tickets.changes[0].ChangelogID = ""
 		}},
 		{"event store refuses", func(r *rig) {
-			r.events.failNext = 1
-			r.events.failErr = errors.New("payload rejected")
+			r.starter.failNext = 1
+			r.starter.failErr = errors.New("payload rejected")
 		}},
 	}
 	for _, tc := range cases {
@@ -532,7 +524,7 @@ func TestNewRefusesANilPort(t *testing.T) {
 	full := func(r *rig) trigger.Config {
 		return trigger.Config{
 			Tickets:  r.tickets,
-			Events:   r.events,
+			Starter:  r.starter,
 			Cursors:  r.cursors,
 			Projects: fakeProjects{"KAN": repoPay},
 			Clock:    fakeClock{at: now},
@@ -544,7 +536,7 @@ func TestNewRefusesANilPort(t *testing.T) {
 		drop func(*trigger.Config)
 	}{
 		{"Tickets", func(c *trigger.Config) { c.Tickets = nil }},
-		{"Events", func(c *trigger.Config) { c.Events = nil }},
+		{"Starter", func(c *trigger.Config) { c.Starter = nil }},
 		{"Cursors", func(c *trigger.Config) { c.Cursors = nil }},
 		{"Projects", func(c *trigger.Config) { c.Projects = nil }},
 		{"Clock", func(c *trigger.Config) { c.Clock = nil }},

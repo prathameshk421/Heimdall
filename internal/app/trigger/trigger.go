@@ -34,8 +34,15 @@ const statusInProgress = "In Progress"
 // triggerActor is the id of the Jira actor that the trigger event names.
 const triggerActor change.ActorID = "jira"
 
-// triggerVersion is the version of the first event of a stream. Append is called at version 0, so this is 1.
+// triggerVersion is the version of the first event of a change. Starter takes the event at version 1.
 const triggerVersion = 1
+
+// Starter opens a change with its first event. Consumer: this package. The engine's Start stores the event and the
+// steps' events in one append, and returns an error that wraps ports.ErrVersionConflict when the change already
+// exists. The wiring adapts engine.Engine.Start to this signature, since Start also returns an engine.Outcome.
+type Starter interface {
+	Start(ctx context.Context, first change.Event) error
+}
 
 // CursorStore keeps the poll cursor of one tracker source. A store with no cursor yet returns the empty cursor and no
 // error, so the first poll starts one overlap window back (ports.TicketReader, TECH_SPEC 13).
@@ -52,17 +59,18 @@ type Projects interface {
 // Config holds the ports and stores one Poller needs. Every field is required.
 type Config struct {
 	Tickets  ports.TicketReader
-	Events   ports.EventStore
+	Starter  Starter
 	Cursors  CursorStore
 	Projects Projects
 	Clock    ports.Clock
 	IDs      ports.IDs
 }
 
-// Poller reads ticket changes and appends change.triggered. Build it with New. One goroutine calls PollOnce at a time.
+// Poller reads ticket changes and starts each triggered change. Build it with New. One goroutine calls PollOnce at a
+// time.
 type Poller struct {
 	tickets  ports.TicketReader
-	events   ports.EventStore
+	starter  Starter
 	cursors  CursorStore
 	projects Projects
 	clock    ports.Clock
@@ -84,8 +92,8 @@ func New(cfg Config) (*Poller, error) {
 	if cfg.Tickets == nil {
 		missing = append(missing, "Tickets")
 	}
-	if cfg.Events == nil {
-		missing = append(missing, "Events")
+	if cfg.Starter == nil {
+		missing = append(missing, "Starter")
 	}
 	if cfg.Cursors == nil {
 		missing = append(missing, "Cursors")
@@ -104,7 +112,7 @@ func New(cfg Config) (*Poller, error) {
 	}
 	return &Poller{
 		tickets:  cfg.Tickets,
-		events:   cfg.Events,
+		starter:  cfg.Starter,
 		cursors:  cfg.Cursors,
 		projects: cfg.Projects,
 		clock:    cfg.Clock,
@@ -182,11 +190,11 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 		res.Ignored[ReasonUnassigned]++
 		return nil
 	}
-	appended, err := p.appendTriggered(ctx, ch.Key, repo, tk.Assignee)
+	started, err := p.startTriggered(ctx, ch.Key, repo, tk.Assignee)
 	if err != nil {
 		return err
 	}
-	if appended {
+	if started {
 		res.Triggered++
 	} else {
 		res.AlreadyTriggered++
@@ -194,19 +202,20 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 	return nil
 }
 
-// appendTriggered appends change.triggered at expected version 0. A stream that already has events refuses it with
-// ports.ErrVersionConflict, which is the durable dedupe (TECH_SPEC 2.4). It reports false in that case.
-func (p *Poller) appendTriggered(ctx context.Context, key id.ChangeID, repo change.Repo, assignee change.ActorID) (bool, error) {
+// startTriggered starts the change with change.triggered. A change that already exists refuses the start with
+// ports.ErrVersionConflict, which is the durable dedupe (TECH_SPEC 2.4). It reports false in that case, and it does
+// not retry.
+func (p *Poller) startTriggered(ctx context.Context, key id.ChangeID, repo change.Repo, assignee change.ActorID) (bool, error) {
 	ev, err := p.triggeredEvent(key, repo, assignee)
 	if err != nil {
 		return false, err
 	}
-	_, err = p.events.Append(ctx, key, 0, []change.Event{ev}, nil)
+	err = p.starter.Start(ctx, ev)
 	switch {
 	case errors.Is(err, ports.ErrVersionConflict):
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("append change.triggered: %w", err)
+		return false, fmt.Errorf("start change.triggered: %w", err)
 	}
 	return true, nil
 }

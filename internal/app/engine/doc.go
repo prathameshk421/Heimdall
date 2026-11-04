@@ -9,8 +9,11 @@
 //   - Config and New(Config) (*Engine, error): builds an engine, or refuses to. New validates the workflow with
 //     workflow.Validate against the step types, roles and schemas given, and checks that every when name has a
 //     condition.
-//   - Engine.Advance(ctx, id, incoming) (Outcome, error): stores the incoming events, offers each one to the open steps,
-//     then calls the open steps until a pass stores nothing.
+//   - Engine.Start(ctx, first) (Outcome, error): opens a change. The first event must be change.triggered at version 1.
+//     It is offered to the open steps on a view that holds only it, and stored with their events and effects in one
+//     append at version 0. A change that already exists returns ports.ErrVersionConflict, wrapped and not retried.
+//   - Engine.Advance(ctx, id, incoming) (Outcome, error): stores each incoming event with the events and effects the
+//     open steps decide on it, in one append per event, then calls the open steps until a pass stores nothing.
 //   - Engine.Timeout(ctx, id, step) (Outcome, error): calls OnTimeout of one step, then runs the rest.
 //   - Outcome: the version, the counts of events and effects stored, the timers asked for, the failed steps, and whether
 //     every step is finished.
@@ -24,19 +27,27 @@
 // the view had (ports.EventStore.Append). A version conflict loads the change again and decides again, up to five
 // retries (TECH_SPEC 2.4). A decision that stores nothing appends nothing.
 //
+// One incoming event is one decision (Start and Advance). The event is numbered, then each open step's OnEvent reads a
+// view that ends with it and with the events of the steps before it. The event, the events the steps return and all
+// their effects go in one Append. Start and Advance keep this rule; Start does not load the change, it expects version
+// 0. Steps in the drive loop and in Timeout decide one call at a time, and an effect there needs an event in the same
+// Result.
+//
 // Failures. A step call that returns an error becomes task.failed when the step has a role and the role has an
 // assigned task: the event names the task, the agent and the reason, and it is caused by the task.assigned event. A
 // failure is recorded once per task. The run keeps going, and the step is listed in Outcome.Failed; the step is called
 // again on the next run. A failure with no task to fail (a step with no role, or no task yet) returns the error from
-// Advance or Timeout, and nothing is stored for that call. A cancelled context returns its error and stores nothing for
-// the call in progress.
+// Advance or Timeout. For an incoming event, the event and the other steps' results are stored in the same append, and
+// the error is returned after it; a repeat of the stored event stores nothing. For Start and Timeout nothing is stored
+// for that call. A cancelled context returns its error and stores nothing for the call in progress.
 //
 // Invariants.
 //   - Steps do no I/O. Every write goes through the store, with the expected version the decision read.
 //   - A step is never called once it is finished, so a re-run of a finished workflow stores nothing.
 //   - The events the engine writes itself take their id and time from the injected ports (IDs, Clock). The engine reads
 //     no other clock.
-//   - An effect is stored only with an event. The outbox drainer (internal/app/outbox) performs it later.
+//   - An effect is stored only with an event, and it is committed with the last event of its append. The outbox
+//     drainer (internal/app/outbox) performs it later.
 //   - The engine holds no per-change state, so one Engine serves every change. Callers serialize the runs of one change
 //     (TECH_SPEC 2.4).
 //
@@ -65,9 +76,15 @@
 // run later; the events of earlier decisions in the run are already stored, and a re-run carries on from them. A step
 // that never settles (it stores events on every pass) fails the run after one pass per step plus one.
 //
-// Tests. fakes_test.go holds the fakes: an in-memory store that checks what postgres checks, fake steps, fake clock and
-// fake ids. engine_test.go covers the run: order, expected versions, version conflicts, failures and task.failed,
-// timeouts with the injected clock, idempotent re-runs, incoming events, cancellation and the validation of New.
+// Not verified here: the postgres adapter (T20) must attach an effect to the last event of an append, as the fake store
+// does, and the race detector was not run (cgo is off on this machine). The concurrent Start test uses a mutex in the
+// fake store and stateless steps.
+//
+// Tests. fakes_test.go holds the fakes: an in-memory store that checks what postgres checks and records the event each
+// effect attaches to, fake steps with an OnEvent hook, fake clock and fake ids. engine_test.go covers the run: order,
+// expected versions, version conflicts, failures and task.failed, timeouts with the injected clock, idempotent re-runs,
+// incoming events, cancellation, the validation of New, Start (the first event, one append, no retry, two concurrent
+// starts), and the effects of OnEvent in the same append as their event.
 // onfail_test.go covers on_fail: a retry inside the budget, budget used up, reject, replay, a conflict mid-retry, the
 // windows of downstream steps, the bounds on reasons, and the config checks. default_test.go runs the default workflow of
 // TECH_SPEC 5.1 from the ticket to the gate on the fakes, and the sensitive-domain signoff.
