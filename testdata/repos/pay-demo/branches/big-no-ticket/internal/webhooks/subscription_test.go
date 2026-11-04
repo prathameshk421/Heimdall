@@ -59,14 +59,14 @@ func TestNewSubscriptionRefusesURLsThatCannotBeSafelyPosted(t *testing.T) {
 
 func TestNewSubscriptionCopiesItsInputs(t *testing.T) {
 	types := []EventType{PaymentCreated}
-	key := []byte("whsec_test_0123456789abcdef")
+	key := []byte("signing-key-for-tests")
 	sub, err := NewSubscription("sub_1", "m-1", "https://merchant.example/hooks", types, key, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	types[0] = RefundCreated
 	key[0] = 'X'
-	if sub.Types[0] != PaymentCreated || sub.Secret[0] != 'w' {
+	if sub.Types[0] != PaymentCreated || sub.Secret[0] != 's' {
 		t.Errorf("subscription shares its inputs with the caller: types %v secret %q", sub.Types, sub.Secret)
 	}
 }

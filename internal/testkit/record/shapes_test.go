@@ -25,7 +25,7 @@ var shapes = map[string]shape{
 	"stripe live secret":      {"sk_li" + "ve_" + "51Hx9aBcDeFgHiJkLmNoPq", "sk_li" + "ve_" + "51Hx9aBcDeFgHiJkLmNoPq"},
 	"stripe test secret":      {"sk_te" + "st_" + "51Hx9aBcDeFgHiJkLmNoPq", "sk_te" + "st_" + "51Hx9aBcDeFgHiJkLmNoPq"},
 	"stripe restricted live":  {"rk_li" + "ve_" + "51Hx9aBcDeFgHiJkLmNoPq", "rk_li" + "ve_" + "51Hx9aBcDeFgHiJkLmNoPq"},
-	"aws secret access key":   {"aws_secret_access_key = " + "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY", "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY"},
+	"aws secret access key":   {"aws_secret_" + "access_key = " + "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY", "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY"},
 	"aws secret in json":      {`{"aws_secret_access_key":"` + "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY" + `"}`, "wJalrXUtnFEMI/K7MDENG/bPx" + "RfiCYEXAMPLEKEY"},
 	"aws session access key":  {"ASIA" + "IOSFODNN7EXAMPLE", "ASIA" + "IOSFODNN7EXAMPLE"},
 	"google api key":          {"AIza" + "SyD9Lm3Qz7Rt5Vx1Bn8Kp2Wc4Hj6Yf0GdEa", "AIza" + "SyD9Lm3Qz7Rt5Vx1Bn8Kp2Wc4Hj6Yf0GdEa"},

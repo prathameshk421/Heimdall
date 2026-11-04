@@ -5,13 +5,15 @@ set -u
 in=$(cat)
 f=$(jq -r '.tool_input.file_path // empty' <<<"$in")
 [ -z "$f" ] && exit 0
-rel=${f#"$CLAUDE_PROJECT_DIR"/}
+# Normalise first: ./ and ../ segments must not step around the patterns below.
+f=$(realpath -m -- "$f")
+rel=${f#"$(realpath -m -- "$CLAUDE_PROJECT_DIR")"/}
 
 case "$rel" in
   .claude/*|docs/harness/*|.git/*|secrets/*|.env|.env.*|/etc/*|"$HOME"/.ssh/*)
     echo "blocked by AGENTS.md R2/R8: $rel is a guardrail or secret; only the human edits it" >&2
     exit 2 ;;
-  .golangci.yml|AGENTS.md|CLAUDE.md|e2e/scenarios/*|e2e/stories/*|testdata/real/*|.github/workflows/*|Makefile)
+  .golangci.yml|AGENTS.md|CLAUDE.md|e2e/scenarios/*|e2e/stories/*|testdata/real/*|.github/workflows/*|Makefile|tools.mod|tools.sum|.gitleaks.toml|.gitleaksignore|scripts/gotest.sh|scripts/run-tagged.sh|scripts/testguard.sh|scripts/pre-commit|scripts/test-scripts.sh|internal/archcheck/*|internal/lintselftest/*|testdata/lint/*)
     jq -n --arg r "AGENTS.md R2: $rel defines what 'passing' means. Weakening it needs a human yes. Say why in the commit." \
       '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"ask",permissionDecisionReason:$r}}'
     exit 0 ;;

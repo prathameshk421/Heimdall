@@ -5,6 +5,8 @@ SHELL := /usr/bin/env bash
 export PATH := $(HOME)/.local/go/bin:$(HOME)/go/bin:$(PATH)
 
 TOOL := go tool -modfile=tools.mod
+# Every build tag the repo uses; vet and lint see files behind them (keep in step with run.build-tags in .golangci.yml).
+TAGS := e2e,component,drift,eval,soak,rehearse
 GOFILES = find . -name '*.go' -not -path './testdata/*' -not -path './.git/*'
 
 .DEFAULT_GOAL := help
@@ -16,14 +18,14 @@ help: ## list the targets
 
 .PHONY: fast verify
 fast: fmt-check vet arch lint unit ## L0 and L1: format, vet, dependency rule, lint, unit tests. Under 60 s; runs in the pre-commit hook
-verify: fast race lint-selftest harness-test scripts-test vuln secrets ## adds L2 and L3: race and component tests, rule self-tests, vulnerabilities, secrets. Before a task's commit; CI runs this
+verify: fast race lint-selftest harness-test harness-check scripts-test vuln secrets ## adds L2 and L3: race and component tests, rule self-tests, vulnerabilities, secrets. Before a task's commit; CI runs this
 
 .PHONY: fmt-check vet arch lint unit race
 fmt-check:
 	@bad=$$($(GOFILES) | xargs gofmt -l); if [ -n "$$bad" ]; then echo "gofmt needed:" >&2; echo "$$bad" >&2; exit 1; fi
 
 vet:
-	go vet ./...
+	go vet -tags $(TAGS) ./...
 
 arch: ## the dependency rule and the test-code rule on the real import graph
 	go run ./cmd/archcheck
@@ -40,7 +42,7 @@ race: ## the same tests with the race detector, plus component tests that need D
 
 # ---- rule and tooling self-tests ----
 
-.PHONY: lint-selftest harness-test harness-install scripts-test hooks-install
+.PHONY: lint-selftest harness-test harness-install harness-check scripts-test hooks-install
 lint-selftest: ## every lint rule still fires: bad fixtures flagged, good ones clean
 	go test -tags lintselftest -count=1 ./internal/lintselftest/
 
@@ -51,6 +53,9 @@ harness-test: ## every hook case, and the harness installer
 harness-install: ## copy docs/harness/ into place; CHECK=1 changes nothing and fails on drift
 	bash scripts/harness-install.sh
 
+harness-check: ## the installed hooks, settings, AGENTS.md and lint config match docs/harness (drift fails)
+	CHECK=1 bash scripts/harness-install.sh
+
 scripts-test: ## tests of the make helper scripts
 	bash scripts/test-scripts.sh
 
@@ -59,12 +64,15 @@ hooks-install: ## install the git pre-commit hook (make fast)
 
 # ---- supply chain ----
 
-.PHONY: vuln secrets
+.PHONY: vuln secrets secrets-staged
 vuln: ## known vulnerabilities in the product module
 	$(TOOL) govulncheck ./...
 
 secrets: ## gitleaks over the git history (never reads the working tree, so never .env)
 	$(TOOL) gitleaks git --no-banner --redact .
+
+secrets-staged: ## gitleaks over the staged diff, so a secret is stopped before it becomes history (pre-commit)
+	$(TOOL) gitleaks git --staged --no-banner --redact .
 
 # ---- real-system layers: each fails when no test matches, so a missing check cannot pass ----
 

@@ -38,7 +38,7 @@ func call(t *testing.T, h http.Handler, method, path, merchant, body string) *ht
 	return rec
 }
 
-const subscribeBody = `{"url": "https://merchant.example/hooks", "types": ["payment.created"], "secret": "whsec_test_0123456789abcdef"}`
+const subscribeBody = `{"url": "https://merchant.example/hooks", "types": ["payment.created"], "secret": "signing-key-for-tests"}`
 
 func TestCreateSubscriptionNeverReturnsTheSecret(t *testing.T) {
 	rec := call(t, newWebhookRoutes(), http.MethodPost, "/webhooks/subscriptions", "m-1", subscribeBody)

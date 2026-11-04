@@ -29,7 +29,15 @@
       "Edit(./e2e/scenarios/**)",
       "Edit(./e2e/stories/**)",
       "Edit(./testdata/real/**)",
-      "Edit(./.github/workflows/**)"
+      "Edit(./.github/workflows/**)",
+      "Edit(./Makefile)",
+      "Edit(./tools.mod)",
+      "Edit(./.gitleaks.toml)",
+      "Edit(./.gitleaksignore)",
+      "Edit(./scripts/**)",
+      "Edit(./internal/archcheck/**)",
+      "Edit(./internal/lintselftest/**)",
+      "Edit(./testdata/lint/**)"
     ]
   },
   "hooks": {

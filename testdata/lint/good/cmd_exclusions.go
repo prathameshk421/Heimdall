@@ -1,13 +1,10 @@
 // lintselftest: path=cmd/fxgood/main.go
 
-// Command fxgood checks that main may print and read the environment.
+// Command fxgood checks that main may print.
 package main
 
-import (
-	"fmt"
-	"os"
-)
+import "fmt"
 
 func main() {
-	fmt.Println(os.Getenv("HOME"))
+	fmt.Println("hello")
 }

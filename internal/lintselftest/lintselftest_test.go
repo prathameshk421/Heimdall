@@ -224,21 +224,25 @@ func TestNoRuleIsWithoutAFixture(t *testing.T) {
 		require.True(t, hasText("depguard", "'"+name+"'"), "no bad fixture for depguard rule %s", name)
 	}
 	for _, f := range cfg.Linters.Settings.Forbidigo.Forbid {
-		ident := identifier(f.Pattern)
-		require.True(t, hasText("forbidigo", "`"+ident), "no bad fixture for forbidigo pattern %s (looked for %s)", f.Pattern, ident)
+		for _, ident := range identifiers(f.Pattern) {
+			require.True(t, hasText("forbidigo", "`"+ident+"`"), "no bad fixture for forbidigo pattern %s (looked for %s)", f.Pattern, ident)
+		}
 	}
 }
 
-// identifier turns a simple forbidigo pattern such as ^fmt\.(Print|Printf)$ into the name it forbids
-// ("fmt.Print") so a fixture can be matched to it.
-func identifier(pattern string) string {
+// identifiers turns a simple forbidigo pattern such as ^fmt\.(Print|Printf)$ into every name it forbids
+// ("fmt.Print", "fmt.Printf") so each alternative has its own fixture: a typo in one alternative must not hide.
+func identifiers(pattern string) []string {
 	p := strings.NewReplacer("^", "", "$", "", `\.`, ".").Replace(pattern)
 	head, alts, grouped := strings.Cut(p, "(")
 	if !grouped {
-		return p
+		return []string{p}
 	}
-	first, _, _ := strings.Cut(alts, "|")
-	return head + strings.TrimSuffix(first, ")")
+	var out []string
+	for _, a := range strings.Split(strings.TrimSuffix(alts, ")"), "|") {
+		out = append(out, head+a)
+	}
+	return out
 }
 
 func describe(is []issue) string {

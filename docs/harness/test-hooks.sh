@@ -64,6 +64,30 @@ BLOCK|env | grep KEY
 BLOCK|gh auth token
 BLOCK|gh repo delete x
 BLOCK|gh api repos/x/y -X DELETE
+BLOCK|git commit --no-ver -m x
+BLOCK|git commit --no-v -m x
+BLOCK|git -c "core.hooksPath=/dev/null" commit -m x
+BLOCK|git push origin +HEAD:main
+BLOCK|git push origin heimdall-build:main
+BLOCK|git push --delete origin x
+BLOCK|git push origin :x
+BLOCK|git branch -D heimdall-build
+BLOCK|git update-ref -d refs/heads/x
+BLOCK|git reset --soft HEAD~1
+BLOCK|sed -i s/a/b/ Makefile
+BLOCK|perl -pi -e s/a/b/ Makefile
+BLOCK|python3 -c "open('.golangci.yml','w').write('')"
+BLOCK|echo x > scripts/gotest.sh
+BLOCK|rm testdata/lint/bad/forbidsleep.go
+BLOCK|mv x internal/lintselftest/y.go
+BLOCK|grep -r X secrets
+BLOCK|cat ./sec*/x
+BLOCK|ls s*/
+allow|git push origin heimdall-build
+allow|git branch -d merged-branch
+allow|sed -n 1,5p Makefile
+allow|python3 -c "print(1)"
+allow|go test ./internal/s...
 CASES
 
 edit_hook="$here/claude/hooks/pre-edit-guard.sh"
@@ -84,10 +108,10 @@ edit() { # edit <path> [content] -> sets code and out
   out=$(jq -n --arg p "$proj/$1" --arg c "${2:-}" '{tool_input: {file_path: $p, content: $c}}' | CLAUDE_PROJECT_DIR="$proj" "$edit_hook" 2>/dev/null)
   code=$?
 }
-for f in .claude/settings.json .claude/hooks/pre-bash-guard.sh docs/harness/AGENTS.md .git/config secrets/github-app.pem .env .env.local; do
+for f in docs/./harness/AGENTS.md internal/../.claude/settings.json .claude/settings.json .claude/hooks/pre-bash-guard.sh docs/harness/AGENTS.md .git/config secrets/github-app.pem .env .env.local; do
   edit "$f"; [ "$code" -eq 2 ]; check "edit-guard denies $f" $?
 done
-for f in .golangci.yml AGENTS.md CLAUDE.md e2e/scenarios/p1.go e2e/stories/fixture-pay.yaml testdata/real/github/pr.json .github/workflows/ci.yml Makefile; do
+for f in .golangci.yml AGENTS.md CLAUDE.md e2e/scenarios/p1.go e2e/stories/fixture-pay.yaml testdata/real/github/pr.json .github/workflows/ci.yml Makefile scripts/gotest.sh scripts/run-tagged.sh scripts/testguard.sh scripts/pre-commit scripts/test-scripts.sh .gitleaks.toml .gitleaksignore tools.mod internal/archcheck/archcheck.go internal/lintselftest/lintselftest_test.go testdata/lint/bad/forbidsleep.go ./.golangci.yml internal/../.golangci.yml e2e/./scenarios/p1.go; do
   edit "$f"; [ "$code" -eq 0 ] && jq -e '.hookSpecificOutput.permissionDecision == "ask"' <<<"$out" >/dev/null; check "edit-guard asks for $f" $?
 done
 for f in internal/app/review/review.go docs/PROGRESS.md docs/TRACKER.md internal/testkit/fake.go cmd/heimdall-testagent/main.go; do

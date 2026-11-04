@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	secret = []byte("whsec_test_0123456789abcdef")
+	secret = []byte("signing-key-for-tests")
 	t0     = time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
 	body   = []byte(`{"id":"evt_1"}`)
 )
@@ -29,7 +29,7 @@ func TestVerifyRefusesAChangedBody(t *testing.T) {
 
 func TestVerifyRefusesAnotherSecret(t *testing.T) {
 	header := Sign(secret, t0, body)
-	err := Verify([]byte("whsec_other_0123456789abcdef"), header, body, t0, 5*time.Minute)
+	err := Verify([]byte("other-signing-key"), header, body, t0, 5*time.Minute)
 	if !errors.Is(err, ErrBadSignature) {
 		t.Fatalf("Verify(other secret) = %v, want ErrBadSignature", err)
 	}

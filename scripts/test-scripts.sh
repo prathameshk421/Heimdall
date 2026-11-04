@@ -87,15 +87,21 @@ rm "$work/e2e/c_test.go"
 repo="$work/repo"; mkdir -p "$repo/scripts"
 git -C "$repo" init -q && git -C "$repo" config user.email t@t && git -C "$repo" config user.name t
 cp "$root/scripts/pre-commit" "$root/scripts/hooks-install.sh" "$repo/scripts/"
-printf 'fast:\n\t@echo fast-ran >> ran.log; exit 1\n' > "$repo/Makefile"
+printf 'secrets-staged:\n\t@true\nfast:\n\t@echo fast-ran >> ran.log; exit 1\n' > "$repo/Makefile"
 (cd "$repo" && bash scripts/hooks-install.sh >/dev/null 2>&1); check "hooks-install succeeds" $?
 [ -x "$repo/.git/hooks/pre-commit" ]; check "the pre-commit hook is installed and executable" $?
 printf 'x' > "$repo/a.txt"; git -C "$repo" add -A
 out=$(git -C "$repo" commit -q -m red 2>&1); code=$?
 [ "$code" -ne 0 ] && [ "$(git -C "$repo" rev-list --count HEAD 2>/dev/null || echo 0)" = "0" ] && grep -q fast-ran "$repo/ran.log"; check "a red make fast blocks the commit" $?
-printf 'fast:\n\t@true\n' > "$repo/Makefile"; git -C "$repo" add -A
+printf 'secrets-staged:\n\t@true\nfast:\n\t@true\n' > "$repo/Makefile"; git -C "$repo" add -A
 git -C "$repo" commit -q -m green >/dev/null 2>&1; check "a green make fast lets the commit through" $?
 (cd "$repo" && bash scripts/hooks-install.sh >/dev/null 2>&1); check "hooks-install is repeatable" $?
+
+# the pre-commit hook stops a commit whose staged diff holds a secret, before make fast even runs
+printf 'secrets-staged:\n\t@echo secret-found >> ran.log; exit 1\nfast:\n\t@echo fast-ran-2 >> ran.log\n' > "$repo/Makefile"
+printf 'y' > "$repo/b.txt"; git -C "$repo" add -A
+git -C "$repo" commit -q -m leak >/dev/null 2>&1; code=$?
+[ "$code" -ne 0 ] && grep -q secret-found "$repo/ran.log" && ! grep -q fast-ran-2 "$repo/ran.log"; check "a secret in the staged diff blocks the commit before make fast" $?
 
 echo "$total script cases, $fail failed"
 [ "$fail" -eq 0 ]

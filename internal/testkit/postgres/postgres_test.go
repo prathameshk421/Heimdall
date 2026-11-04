@@ -36,5 +36,5 @@ func TestEachStartIsAnIsolatedDatabase(t *testing.T) {
 	_, err = conn.Exec(context.Background(), "create table only_in_a (id int)")
 	require.NoError(t, err)
 	require.NoError(t, conn.Close(context.Background()))
-	require.Equal(t, "", query(t, b, "select coalesce(to_regclass('only_in_a')::text, '')"))
+	require.Empty(t, query(t, b, "select coalesce(to_regclass('only_in_a')::text, '')"))
 }

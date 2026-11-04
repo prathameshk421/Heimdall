@@ -4,7 +4,8 @@ version: "2"
 run:
   timeout: 5m
   tests: true
-  build-tags: [e2e]
+  # Every tag the repo uses, so a file behind a tag is linted like any other (the lintselftest tag is the self-test's own).
+  build-tags: [e2e, component, drift, eval, soak, rehearse]
 
 linters:
   default: none
@@ -46,14 +47,23 @@ linters:
       no-global: all
       context: all
     forbidigo:
+      analyze-types: true   # matches through import aliases and dot imports, not only the literal selector text
       forbid:
         - pattern: ^time\.Sleep$
           msg: "R7: no sleeping. Use the Clock port or a fake clock."
+        - pattern: ^time\.(Now|After|Tick|NewTimer|NewTicker|AfterFunc|Since|Until)$
+          msg: "R5: read time through the Clock port; only platform, cmd, e2e, testkit and tests may use the real clock."
+        - pattern: ^(print|println)$
+          msg: "R7: use log/slog."
+        - pattern: ^os\.(Stdout|Stderr)$
+          msg: "R7: write output through log/slog or a writer passed in."
         - pattern: ^fmt\.(Print|Printf|Println)$
           msg: "R7: use log/slog."
-        - pattern: ^log\.(Print|Printf|Println|Fatal|Fatalf|Panic|Panicf)$
+        - pattern: ^log\.(Print|Printf|Println|Fatal|Fatalf|Fatalln|Panic|Panicf|Panicln)$
           msg: "R7: use log/slog."
-        - pattern: ^os\.(Getenv|LookupEnv|Environ)$
+        - pattern: ^os\.(Getenv|LookupEnv|Environ|ExpandEnv|Clearenv|Setenv|Unsetenv)$
+          msg: "R7: configuration is read only in internal/platform/config."
+        - pattern: ^syscall\.Getenv$
           msg: "R7: configuration is read only in internal/platform/config."
         - pattern: ^panic$
           msg: "R6: return an error."
@@ -62,7 +72,13 @@ linters:
         domain:
           files: ["**/internal/domain/**", "!**/*_test.go"]   # tests may use testify and cmp (CODING_STANDARDS 8)
           list-mode: strict
-          allow: [$gostd, MODULE/internal/domain]
+          # R5: pure domain. An explicit list, not $gostd, so os, net, os/exec, log and the random packages cannot be imported.
+          allow: [errors, fmt, strings, slices, maps, regexp, unicode, unicode/utf8, time, path, strconv, encoding/json, encoding/hex, encoding/binary, crypto/sha256, bytes, io, reflect, sort, cmp, MODULE/internal/domain]
+          # depguard matches by prefix, so the allowed io and path would also let io/fs, io/ioutil and path/filepath in.
+          deny:
+            - { pkg: io/fs, desc: "R5: pure domain, no file system" }
+            - { pkg: io/ioutil, desc: "R5: pure domain, no file system" }
+            - { pkg: path/filepath, desc: "R5: pure domain, use path" }
         app:
           files: ["**/internal/app/**", "!**/*_test.go"]   # tests may use testify and cmp (CODING_STANDARDS 8)
           list-mode: strict
@@ -90,13 +106,16 @@ linters:
         linters: [funlen, gochecknoglobals, gosec]
       - path: _test\.go
         linters: [forbidigo]
-        text: "(fmt\\.Print|panic|os\\.Getenv)"
+        text: "(fmt\\.Print|panic|os\\.Getenv|os\\.Std|time\\.(Now|After|Tick|NewTimer|NewTicker|AfterFunc|Since|Until))"
       - path: ^(e2e|internal/testkit)/
         linters: [forbidigo]
-        text: "(fmt\\.Print|panic|os\\.(Getenv|LookupEnv))"
+        text: "(fmt\\.Print|panic|os\\.(Getenv|LookupEnv)|os\\.Std|time\\.(Now|After|Tick|NewTimer|NewTicker|AfterFunc|Since|Until))"
       - path: ^cmd/
         linters: [forbidigo]
-        text: "(fmt\\.Print|panic|os\\.Getenv|os\\.LookupEnv)"
+        text: "(fmt\\.Print|panic|os\\.Std|time\\.(Now|After|Tick|NewTimer|NewTicker|AfterFunc|Since|Until))"
+      - path: ^internal/platform/
+        linters: [forbidigo]
+        text: "time\\.(Now|After|Tick|NewTimer|NewTicker|AfterFunc|Since|Until)"
       - path: ^internal/platform/config/
         linters: [forbidigo]
         text: "os\\.(Getenv|LookupEnv)"
