@@ -1,0 +1,25 @@
+{
+  "head_sha": "9f1c2ab0c3d4e5f60718293a4b5c6d7e8f901234",
+  "files_reviewed": ["internal/refunds/service.go", "internal/api/refunds.go"],
+  "clean": false,
+  "findings": [
+    {
+      "claim": "Two partial refunds of 60 on a payment of 100 both succeed, so the merchant refunds 120: the cap compares this request with the payment and never with the refunds already made.",
+      "category": "correctness",
+      "severity": "high",
+      "confidence": "high",
+      "location": {"file": "internal/refunds/service.go", "lines": [56, 58]},
+      "evidence": [
+        {
+          "type": "repro_test",
+          "repro_test": {
+            "path": "tests/heimdall/PAY-142/partial_refunds_test.go",
+            "name": "TestPartialRefundsCannotExceedPayment",
+            "content": "package heimdall_test\n\nimport (\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"strings\"\n\t\"testing\"\n\n\t\"github.com/aarush323/heimdall-fixture-pay/internal/app\"\n)\n\n// TestPartialRefundsCannotExceedPayment sends two refunds of 60 on a payment of 100 and wants 422 on the second.\nfunc TestPartialRefundsCannotExceedPayment(t *testing.T) {\n\tsrv := httptest.NewServer(app.New(app.Config{}))\n\tdefer srv.Close()\n\n\tpost := func(key, body string) int {\n\t\tt.Helper()\n\t\treq, err := http.NewRequest(http.MethodPost, srv.URL+\"/refunds\", strings.NewReader(body))\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\treq.Header.Set(\"X-Merchant-ID\", \"m-1\")\n\t\treq.Header.Set(\"Idempotency-Key\", key)\n\t\tresp, err := srv.Client().Do(req)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tdefer resp.Body.Close()\n\t\treturn resp.StatusCode\n\t}\n\n\tif got := post(\"k1\", `{\"payment_id\": \"pay_1\", \"amount\": 60}`); got != http.StatusCreated {\n\t\tt.Fatalf(\"first refund of 60 = %d, want 201\", got)\n\t}\n\tif got := post(\"k2\", `{\"payment_id\": \"pay_1\", \"amount\": 60}`); got != http.StatusUnprocessableEntity {\n\t\tt.Fatalf(\"second refund of 60 on a payment of 100 = %d, want 422: the refunds now total 120\", got)\n\t}\n}\n"
+          }
+        }
+      ],
+      "context_refs": ["mem_refund_cap_invariant"]
+    }
+  ]
+}

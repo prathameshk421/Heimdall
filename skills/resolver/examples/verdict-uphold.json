@@ -1,0 +1,11 @@
+{
+  "case_id": "case_01HQZX3K8V0M5N7P2R4S6T8W9Y",
+  "decision": "uphold",
+  "rationale": "The second refund of 60 is accepted on head, so the refunds total 120 against a payment of 100, and the confirmed invariant says the sum may not exceed the payment. The author's claim that the ledger caps refunds has no citation, so it does not defeat the run. A passing run of the same test on head would change this.",
+  "citations": [
+    {"kind": "run", "ref": "run_01HQZX3K8V0M5N7P2R4S6T8WA0", "quote": "--- FAIL: TestPartialRefundsCannotExceedPayment"},
+    {"kind": "memory", "ref": "mem_refund_cap_invariant", "quote": "the sum of the refunds of a payment never exceeds the payment"},
+    {"kind": "finding", "ref": "F1", "quote": "two partial refunds of 60 on a payment of 100 both succeed, so the merchant refunds 120"}
+  ],
+  "confidence": "high"
+}

@@ -1,0 +1,11 @@
+{
+  "case_id": "case_01HQZX3K8V0M5N7P2R4S6T8X1A",
+  "decision": "dismiss",
+  "rationale": "The ledger reads reference since v2, as the confirmed decision records, and the schema still serves refund_ref as a deprecated alias, so a consumer that reads either field keeps working. The compatibility claim does not hold at head, and the superseded memory that required refund_ref no longer applies. A consumer that breaks on the alias removal would change this.",
+  "citations": [
+    {"kind": "decision", "ref": "dec_2026_11_03_ledger_v2", "quote": "since ledger v2 the client reads reference"},
+    {"kind": "memory", "ref": "mem_ledger_v2_rollout", "quote": "ledger v2 was deployed on 2026-11-03, before this pull request"},
+    {"kind": "finding", "ref": "F2", "quote": "a consumer that deserializes refund_ref as a required field breaks"}
+  ],
+  "confidence": "high"
+}
