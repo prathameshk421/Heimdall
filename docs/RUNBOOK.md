@@ -88,3 +88,63 @@ Read the release notes, back up with `pg_dump`, download the new compose artifac
 - **Files:** `/etc/switch/agents.env` (owner `ubuntu`, 0600: OpenRouter key and `SWITCH_CONTROLLER_SELF_UPDATE=off`), `/opt/heimdall/switch/test-users.env` (five test passwords, 0600). Each agent's harness file is `<agents-dir>/<NN>/<agent name>/opencode.json` on the host (the agent sees it at `/var/lib/switch-agents/1000/agent/<agent name>/`), 0600, owned by the agent's user.
 - **Throwaway spike objects:** agents `heimdall-probe`, `heimdall-probe2`, `heimdall-coordinator`; rooms `t01-room-a`, `t01-room-b`, `t02-people`, `t03-lock`; the five test accounts (D158) stay; scripts in `~ubuntu/t01` (including a stub MCP on 127.0.0.1:8080 that is not a service).
 - **Traps:** a pending OpenCode `question` blocks that session for good; `auto_mode` must be `true`; the `edit` pattern must be `**/scratch/**`; an agent refuses people who are not its owner until addressing is opened or an identity is claimed; a new agent is added to every default channel; `glob` fails ("ripgrep execution failed").
+
+## Live run of heimdall-server
+
+A live run selects the real Jira, GitHub and Switch adapters, so the server needs a database URL and every credential file before it will start. It refuses to start on the first missing key and names the key in `heimdall.toml`.
+
+**1. Make the secrets directory.** Names only; never paste a value into a chat or a commit. One file per name, each mode `0600` (the config refuses a private key that group or others can read):
+
+| File | Holds |
+|---|---|
+| `database_url` | the Postgres URL, using the same password as `postgres_password` and host `postgres` inside compose |
+| `postgres_password` | the Postgres container's password |
+| `openrouter_api_key` | the OpenRouter API key used by Graphiti memory |
+| `jira_email` | the Jira account email |
+| `jira_api_token` | the Jira API token |
+| `github_app_id` | the GitHub App id |
+| `github_app_installation_id` | the GitHub App installation id |
+| `github_app_private_key` | the GitHub App private key in PEM form |
+| `switch_api_key` | the Switch API key |
+| `switch_registration_token` | the Switch registration token |
+
+Write them under a directory you own, for example `~/heimdall/secrets/`. Check the modes with `ls -l`; every file must show `-rw-------`. Never print the contents.
+
+
+**2. Make the config.** Copy `deploy/heimdall.example.toml` outside the repository (for example `~/heimdall/heimdall.toml`) and set `base_url`, the Switch ids, `project_keys` and the `[[projects]]` entry for the install. Keep `secrets_dir = "/run/secrets"`: inside the container the files above are mounted there. The example already selects `vcs.github`, `tracker.jira` and `chat.switch`.
+
+**3. Start it.**
+
+```bash
+export HEIMDALL_CONFIG=~/heimdall/heimdall.toml
+export HEIMDALL_SECRETS_DIR=~/heimdall/secrets
+docker compose -f deploy/compose.yaml up -d --build --wait
+docker compose -f deploy/compose.yaml ps heimdall-server
+```
+
+Only `127.0.0.1:8080` is published. The server has no ingress by design.
+
+**4. Confirm health.**
+
+```bash
+curl -sS http://127.0.0.1:8080/healthz
+```
+
+The answer is `{"status":"ok"}`. `docker compose ps heimdall-server` shows `healthy` once the healthcheck has passed.
+
+**5. Read the logs.** `docker compose -f deploy/compose.yaml logs -f heimdall-server` shows:
+
+- `changes triggered` — a Jira poll found a status move to In Progress on a human-assigned ticket and started changes. A healthy poll with nothing to do logs nothing, so this line appears only when a ticket moves.
+- `ticket poll failed; the next poll retries` — the Jira poll failed; the server keeps the cursor and retries. A healthy poll is the absence of this line.
+- `outbox effect failed` — one effect (room open or branch create) failed and will retry; the `kind` and `key` fields name it.
+- `outbox drain failed; retrying on the next wake or tick` — a batch could not be claimed or recorded; the loop carries on.
+- `outbox drainer stopped` — the drain loop ended; the server is shutting down or the loop hit a fatal error.
+- `heimdall-server did not run` — startup failed; the `error` field names the bad key or secret file, never its value.
+
+**6. Stop it.**
+
+```bash
+docker compose -f deploy/compose.yaml down
+```
+
+`down -v` also removes the Postgres volume; use it only when the event log can be discarded.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,6 +31,10 @@ const (
 // URLs and branch names, so anything outside these characters is refused at boot.
 var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
+// projectKeyPattern is the Jira project key shape. A key ends up in a JQL query and a cursor source, so a
+// value outside these characters is refused at boot.
+var projectKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+
 // Project maps one tracker project to the repository it is built in (D147).
 type Project struct {
 	TrackerProject string
@@ -42,8 +47,45 @@ type Config struct {
 	SecretsDir string
 	Listen     string
 	Projects   []Project
+	Database   Database
+	Jira       Jira
+	Switch     Switch
+	GitHub     GitHub
 	byTracker  map[string]Project
 	selections map[string]string
+}
+
+// Database is [database]. URLSecret names the file under SecretsDir that holds the Postgres URL. The URL
+// itself never appears in heimdall.toml, so it cannot be committed with the file.
+type Database struct {
+	URLSecret string
+}
+
+// Jira is [jira]. ProjectKeys lists the tracker projects this install polls. The email and API token are read
+// from the named secret files, never stored here.
+type Jira struct {
+	BaseURL        string
+	ProjectKeys    []string
+	EmailSecret    string
+	APITokenSecret string
+}
+
+// Switch is [switch]. AgentID, AgentName and BridgeID identify the coordinator agent and its connection. The
+// API key and registration token are read from the named secret files.
+type Switch struct {
+	BaseURL                 string
+	AgentID                 string
+	AgentName               string
+	BridgeID                string
+	APIKeySecret            string
+	RegistrationTokenSecret string
+}
+
+// GitHub is [github]. The App id, installation id and private key are read from the named secret files.
+type GitHub struct {
+	AppIDSecret          string
+	InstallationIDSecret string
+	PrivateKeySecret     string
 }
 
 // fileConfig mirrors heimdall.toml. Pointers tell an absent key (use the default) from an empty one (refuse).
@@ -51,11 +93,45 @@ type fileConfig struct {
 	SecretsDir   *string       `toml:"secrets_dir"`
 	Listen       *string       `toml:"listen"`
 	Projects     []fileProject `toml:"projects"`
+	Database     *fileDatabase `toml:"database"`
+	Jira         *fileJira     `toml:"jira"`
+	Switch       *fileSwitch   `toml:"switch"`
+	GitHub       *fileGitHub   `toml:"github"`
 	VCS          *fileProvider `toml:"vcs"`
 	Tracker      *fileProvider `toml:"tracker"`
 	Chat         *fileChat     `toml:"chat"`
 	AgentRuntime *fileProvider `toml:"agent_runtime"`
 	Memory       *fileProvider `toml:"memory"`
+}
+
+// fileDatabase is [database]. url_secret is a secret file name, not the URL.
+type fileDatabase struct {
+	URLSecret *string `toml:"url_secret"`
+}
+
+// fileJira is [jira]. Each key is validated by build.
+type fileJira struct {
+	BaseURL        *string   `toml:"base_url"`
+	ProjectKeys    *[]string `toml:"project_keys"`
+	EmailSecret    *string   `toml:"email_secret"`
+	APITokenSecret *string   `toml:"api_token_secret"`
+}
+
+// fileSwitch is [switch]. Each key is validated by build.
+type fileSwitch struct {
+	BaseURL                 *string `toml:"base_url"`
+	AgentID                 *string `toml:"agent_id"`
+	AgentName               *string `toml:"agent_name"`
+	BridgeID                *string `toml:"bridge_id"`
+	APIKeySecret            *string `toml:"api_key_secret"`
+	RegistrationTokenSecret *string `toml:"registration_token_secret"`
+}
+
+// fileGitHub is [github]. Each secret key names a file under SecretsDir.
+type fileGitHub struct {
+	AppIDSecret          *string `toml:"app_id_secret"`
+	InstallationIDSecret *string `toml:"installation_id_secret"`
+	PrivateKeySecret     *string `toml:"private_key_secret"`
 }
 
 // fileProvider is a [section] whose only key is provider: the adapter name the registry must know.
@@ -116,6 +192,7 @@ func build(raw fileConfig) (Config, error) {
 	cfg := Config{SecretsDir: defaultDir, Listen: defaultListen, byTracker: map[string]Project{}, selections: map[string]string{}}
 	var errs []error
 	errs = append(errs, addSelections(&cfg, raw)...)
+	errs = append(errs, addLiveSections(&cfg, raw)...)
 	if raw.SecretsDir != nil {
 		if *raw.SecretsDir == "" {
 			errs = append(errs, errors.New("secrets_dir must not be empty"))
@@ -177,6 +254,186 @@ func addSelections(cfg *Config, raw fileConfig) []error {
 		}
 	}
 	return errs
+}
+
+// addLiveSections validates and records the sections a live run needs: [database], [jira], [switch] and
+// [github]. An absent section is left to the binary's own missing-key check; a present one must be complete,
+// because a half-filled section is a mistake, not an unset feature. Every error names its key.
+func addLiveSections(cfg *Config, raw fileConfig) []error {
+	var errs []error
+	if raw.Database != nil {
+		if err := checkSecretKey("database.url_secret", raw.Database.URLSecret); err != nil {
+			errs = append(errs, err)
+		} else {
+			cfg.Database.URLSecret = *raw.Database.URLSecret
+		}
+	}
+	if raw.Jira != nil {
+		errs = append(errs, checkJira(&cfg.Jira, raw.Jira)...)
+	}
+	if raw.Switch != nil {
+		errs = append(errs, checkSwitch(&cfg.Switch, raw.Switch)...)
+	}
+	if raw.GitHub != nil {
+		var gerrs []error
+		if err := checkSecretKey("github.app_id_secret", raw.GitHub.AppIDSecret); err != nil {
+			gerrs = append(gerrs, err)
+		}
+		if err := checkSecretKey("github.installation_id_secret", raw.GitHub.InstallationIDSecret); err != nil {
+			gerrs = append(gerrs, err)
+		}
+		if err := checkSecretKey("github.private_key_secret", raw.GitHub.PrivateKeySecret); err != nil {
+			gerrs = append(gerrs, err)
+		}
+		errs = append(errs, gerrs...)
+		if len(gerrs) == 0 {
+			cfg.GitHub = GitHub{
+				AppIDSecret:          *raw.GitHub.AppIDSecret,
+				InstallationIDSecret: *raw.GitHub.InstallationIDSecret,
+				PrivateKeySecret:     *raw.GitHub.PrivateKeySecret,
+			}
+		}
+	}
+	return errs
+}
+
+// checkJira validates [jira] and records it when every key is good.
+func checkJira(out *Jira, raw *fileJira) []error {
+	var errs []error
+	if err := checkBaseURL("jira.base_url", raw.BaseURL); err != nil {
+		errs = append(errs, err)
+	}
+	keys, err := checkProjectKeys("jira.project_keys", raw.ProjectKeys)
+	errs = append(errs, err...)
+	if err := checkSecretKey("jira.email_secret", raw.EmailSecret); err != nil {
+		errs = append(errs, err)
+	}
+	if err := checkSecretKey("jira.api_token_secret", raw.APITokenSecret); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) == 0 {
+		*out = Jira{
+			BaseURL:        *raw.BaseURL,
+			ProjectKeys:    keys,
+			EmailSecret:    *raw.EmailSecret,
+			APITokenSecret: *raw.APITokenSecret,
+		}
+	}
+	return errs
+}
+
+// checkSwitch validates [switch] and records it when every key is good.
+func checkSwitch(out *Switch, raw *fileSwitch) []error {
+	var errs []error
+	if err := checkBaseURL("switch.base_url", raw.BaseURL); err != nil {
+		errs = append(errs, err)
+	}
+	if err := checkRequiredText("switch.agent_id", raw.AgentID); err != nil {
+		errs = append(errs, err)
+	}
+	if err := checkRequiredText("switch.agent_name", raw.AgentName); err != nil {
+		errs = append(errs, err)
+	}
+	if err := checkRequiredText("switch.bridge_id", raw.BridgeID); err != nil {
+		errs = append(errs, err)
+	}
+	if err := checkSecretKey("switch.api_key_secret", raw.APIKeySecret); err != nil {
+		errs = append(errs, err)
+	}
+	if err := checkSecretKey("switch.registration_token_secret", raw.RegistrationTokenSecret); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) == 0 {
+		*out = Switch{
+			BaseURL:                 *raw.BaseURL,
+			AgentID:                 *raw.AgentID,
+			AgentName:               *raw.AgentName,
+			BridgeID:                *raw.BridgeID,
+			APIKeySecret:            *raw.APIKeySecret,
+			RegistrationTokenSecret: *raw.RegistrationTokenSecret,
+		}
+	}
+	return errs
+}
+
+// checkBaseURL requires an absolute https URL, or http only for a loopback host. A plain-http remote site is
+// refused because it would carry tokens and bodies in clear text.
+func checkBaseURL(field string, raw *string) error {
+	if raw == nil || *raw == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	u, err := url.Parse(*raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("%s %q must be an absolute http(s) URL", field, *raw)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return nil
+	case "http":
+		if isLoopbackHost(u.Hostname()) {
+			return nil
+		}
+		return fmt.Errorf("%s %q: http is allowed only for a loopback host; use https", field, *raw)
+	default:
+		return fmt.Errorf("%s %q must use https (or http on a loopback host)", field, *raw)
+	}
+}
+
+// isLoopbackHost reports whether host names this machine. "localhost" is accepted because it is the name a
+// developer uses for a local fake; the IP forms are checked rather than trusted.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// checkProjectKeys requires a non-empty list of well-formed, distinct Jira project keys.
+func checkProjectKeys(field string, raw *[]string) ([]string, []error) {
+	if raw == nil || len(*raw) == 0 {
+		return nil, []error{fmt.Errorf("%s is required and must list at least one project", field)}
+	}
+	keys := *raw
+	seen := map[string]bool{}
+	var errs []error
+	for _, key := range keys {
+		switch {
+		case !projectKeyPattern.MatchString(key):
+			errs = append(errs, fmt.Errorf("%s: %q must match %s", field, key, projectKeyPattern))
+		case seen[key]:
+			errs = append(errs, fmt.Errorf("%s: %q is listed twice", field, key))
+		}
+		seen[key] = true
+	}
+	if len(errs) > 0 {
+		return nil, errs
+	}
+	return keys, nil
+}
+
+// checkRequiredText refuses an absent or empty text key and names it.
+func checkRequiredText(field string, raw *string) error {
+	if raw == nil || *raw == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	return nil
+}
+
+// checkSecretKey validates a key whose value is a secret file name. The name is checkable; the secret value
+// never enters the config, so it can never be printed here.
+func checkSecretKey(field string, raw *string) error {
+	if raw == nil || *raw == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if strings.Contains(*raw, "://") {
+		// Do not echo the value: a URL written here by mistake may hold a password.
+		return fmt.Errorf("%s must be a secret file name, not a URL", field)
+	}
+	if err := checkSecretName(*raw); err != nil {
+		return fmt.Errorf("%s %q: %w", field, *raw, err)
+	}
+	return nil
 }
 
 func providerOf(p *fileProvider) *string {

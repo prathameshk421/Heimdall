@@ -161,15 +161,15 @@ func notChecked(context.Context, config.Config) registry.CheckResult {
 }
 
 func (f adapterFactory) github(cfg config.Config) (any, error) {
-	appID, err := secretInt(cfg, githubAppIDFile)
+	appID, err := secretInt(cfg, cfg.GitHub.AppIDSecret)
 	if err != nil {
 		return nil, err
 	}
-	installation, err := secretInt(cfg, githubInstallationFile)
+	installation, err := secretInt(cfg, cfg.GitHub.InstallationIDSecret)
 	if err != nil {
 		return nil, err
 	}
-	key, err := cfg.SecretMultiline(githubKeyFile)
+	key, err := cfg.SecretMultiline(cfg.GitHub.PrivateKeySecret)
 	if err != nil {
 		return nil, fmt.Errorf("github app key: %w", err)
 	}
@@ -190,8 +190,8 @@ func (f adapterFactory) jira(cfg config.Config) (any, error) {
 	c, err := jira.New(jira.Config{
 		BaseURL:     f.d.endpoints.jiraBaseURL,
 		Project:     f.project,
-		EmailSecret: jiraEmailFile,
-		TokenSecret: jiraAPIFile,
+		EmailSecret: cfg.Jira.EmailSecret,
+		TokenSecret: cfg.Jira.APITokenSecret,
 	}, cfg, f.clk, f.wait, f.random, f.d.httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("jira adapter: %w", err)
@@ -206,8 +206,8 @@ func (f adapterFactory) switchChat(cfg config.Config) (any, error) {
 		AgentName:          f.d.endpoints.switchAgentName,
 		BridgeID:           f.d.endpoints.switchBridgeID,
 		Secrets:            cfg,
-		APIKeySecret:       switchAPIKeyFile,
-		RegistrationSecret: switchRegistrationFile,
+		APIKeySecret:       cfg.Switch.APIKeySecret,
+		RegistrationSecret: cfg.Switch.RegistrationTokenSecret,
 		HTTPClient:         f.d.httpClient,
 		Clock:              f.clk,
 		Wait:               f.wait,

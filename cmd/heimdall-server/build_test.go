@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 )
 
@@ -45,6 +47,8 @@ func testDeps() deps {
 		logger:      discardLogger(),
 		pollEvery:   time.Second,
 		drainTick:   time.Second,
+		openPool:    pgxpool.New,
+		migrate:     postgres.Migrate,
 	}
 }
 
@@ -120,9 +124,10 @@ func TestBuildRefusesDepsThatCannotRun(t *testing.T) {
 }
 
 func TestProductionDepsNamesTheConfigKeysItLacks(t *testing.T) {
-	_, err := productionDeps(discardLogger())
-	require.ErrorContains(t, err, "database url")
-	require.ErrorContains(t, err, "jira base url")
-	require.ErrorContains(t, err, "switch agent id")
+	cfg := loadTestConfig(t, trackerProjectBody)
+	_, err := productionDeps(cfg, discardLogger())
+	require.ErrorContains(t, err, "database.url_secret")
+	require.ErrorContains(t, err, "jira.base_url")
+	require.ErrorContains(t, err, "switch.agent_id")
 	require.ErrorContains(t, err, "heimdall.toml")
 }

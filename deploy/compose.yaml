@@ -29,10 +29,27 @@ services:
         source: ${HEIMDALL_CONFIG:?set HEIMDALL_CONFIG to a heimdall.toml (see deploy/heimdall.example.toml)}
         target: /etc/heimdall/heimdall.toml
         read_only: true
+    # Docker mounts each one read-only at /run/secrets/<name>, the path heimdall.toml names. The database URL
+    # is a secret file too, so the DSN (and its password) is never written in this file or in the TOML.
+    secrets:
+      - database_url
+      - jira_email
+      - jira_api_token
+      - github_app_id
+      - github_app_installation_id
+      - github_app_private_key
+      - switch_api_key
+      - switch_registration_token
     networks: [core, memory]
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "printf 'GET /healthz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' | nc -w 3 127.0.0.1 8080 | grep -q '\"status\":\"ok\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
 
   postgres:
@@ -125,3 +142,19 @@ secrets:
     file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds postgres_password}/postgres_password
   openrouter_api_key:
     file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds openrouter_api_key}/openrouter_api_key
+  database_url:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds database_url}/database_url
+  jira_email:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds jira_email}/jira_email
+  jira_api_token:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds jira_api_token}/jira_api_token
+  github_app_id:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds github_app_id}/github_app_id
+  github_app_installation_id:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds github_app_installation_id}/github_app_installation_id
+  github_app_private_key:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds github_app_private_key}/github_app_private_key
+  switch_api_key:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds switch_api_key}/switch_api_key
+  switch_registration_token:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds switch_registration_token}/switch_registration_token

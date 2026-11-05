@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -45,7 +46,8 @@ const (
 )
 
 // deps is what build needs that differs between production and a test: the database, the adapter endpoints, the HTTP
-// client and the timing. Every field is required.
+// client and the timing. Every field is required. openPool and migrate are injected so a test can prove the wiring
+// without a live Postgres; productionDeps fills them with the real pgxpool and migration functions.
 type deps struct {
 	databaseURL string
 	endpoints   endpoints
@@ -53,6 +55,73 @@ type deps struct {
 	logger      *slog.Logger
 	pollEvery   time.Duration
 	drainTick   time.Duration
+	openPool    func(ctx context.Context, url string) (*pgxpool.Pool, error)
+	migrate     func(ctx context.Context, pool *pgxpool.Pool) error
+}
+
+// String implements fmt.Stringer, redacting the database URL.
+func (d deps) String() string {
+	return d.redactedFormat(false, false)
+}
+
+// GoString implements fmt.GoStringer, redacting the database URL.
+func (d deps) GoString() string {
+	return d.redactedFormat(false, true)
+}
+
+// Format implements fmt.Formatter, redacting the database URL across %v, %+v, %#v, and %s.
+func (d deps) Format(f fmt.State, verb rune) {
+	switch verb {
+	case 'v':
+		plus := f.Flag('+')
+		sharp := f.Flag('#')
+		_, _ = io.WriteString(f, d.redactedFormat(plus, sharp))
+	case 's':
+		_, _ = io.WriteString(f, d.String())
+	case 'q':
+		_, _ = fmt.Fprintf(f, "%q", d.String())
+	default:
+		_, _ = fmt.Fprintf(f, "%%!%c(main.deps=%s)", verb, d.String())
+	}
+}
+
+// LogValue implements slog.LogValuer, redacting the database URL.
+func (d deps) LogValue() slog.Value {
+	dbVal := ""
+	if d.databaseURL != "" {
+		dbVal = "[redacted]"
+	}
+	return slog.GroupValue(
+		slog.String("databaseURL", dbVal),
+		slog.Any("endpoints", d.endpoints),
+		slog.Duration("pollEvery", d.pollEvery),
+		slog.Duration("drainTick", d.drainTick),
+	)
+}
+
+func (d deps) redactedFormat(plus, sharp bool) string {
+	redactedURL := ""
+	if d.databaseURL != "" {
+		redactedURL = "[redacted]"
+	}
+	openPoolStr := "<nil>"
+	if d.openPool != nil {
+		openPoolStr = "<func>"
+	}
+	migrateStr := "<nil>"
+	if d.migrate != nil {
+		migrateStr = "<func>"
+	}
+	if sharp {
+		return fmt.Sprintf("main.deps{databaseURL:%q, endpoints:%#v, httpClient:%#v, logger:%#v, pollEvery:%#v, drainTick:%#v, openPool:%s, migrate:%s}",
+			redactedURL, d.endpoints, d.httpClient, d.logger, d.pollEvery, d.drainTick, openPoolStr, migrateStr)
+	}
+	if plus {
+		return fmt.Sprintf("{databaseURL:%s endpoints:%+v httpClient:%+v logger:%+v pollEvery:%+v drainTick:%+v openPool:%s migrate:%s}",
+			redactedURL, d.endpoints, d.httpClient, d.logger, d.pollEvery, d.drainTick, openPoolStr, migrateStr)
+	}
+	return fmt.Sprintf("{%s %v %v %v %v %v %s %s}",
+		redactedURL, d.endpoints, d.httpClient, d.logger, d.pollEvery, d.drainTick, openPoolStr, migrateStr)
 }
 
 // endpoints are the base URLs and the Switch identities of the adapters. A test points them at httptest servers.
@@ -97,7 +166,7 @@ func openApp(ctx context.Context, cfg config.Config, logger *slog.Logger) (*app,
 	if !selectsSlice(cfg) {
 		return nil, nil
 	}
-	d, err := productionDeps(logger)
+	d, err := productionDeps(cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -114,21 +183,119 @@ func selectsSlice(cfg config.Config) bool {
 	return false
 }
 
-// productionDeps reads what the slice needs from the config. The config has no key for the database URL, the Jira and
-// Switch endpoints or the Switch identities yet. A config that selects a slice provider is therefore refused, and the
-// error names every missing key. When those keys are added, delete the list and read them here.
-func productionDeps(logger *slog.Logger) (deps, error) {
-	missing := []string{"database url", "jira base url", "switch base url", "switch agent id", "switch agent name", "switch bridge id"}
-	if len(missing) > 0 {
+// productionDeps reads what the slice needs from the config. It names every missing key at once, then reads the
+// database URL through its secret file name and checks that every credential file the adapters read is present and
+// usable. The secret values never enter an error: each message names the key and the file only.
+func productionDeps(cfg config.Config, logger *slog.Logger) (deps, error) {
+	if missing := missingConfigKeys(cfg); len(missing) > 0 {
 		return deps{}, fmt.Errorf("heimdall.toml selects a slice provider but has no key for: %s", strings.Join(missing, ", "))
 	}
+	if err := checkProjectSelection(cfg); err != nil {
+		return deps{}, err
+	}
+	databaseURL, err := cfg.Secret(cfg.Database.URLSecret)
+	if err != nil {
+		return deps{}, fmt.Errorf("database.url_secret: %w", err)
+	}
+	// The URL is a secret. Parse it here so a typo fails at boot, but never include it (or pgx's message, which
+	// may quote it) in the error.
+	if _, err := pgxpool.ParseConfig(databaseURL); err != nil {
+		return deps{}, fmt.Errorf("database.url_secret: secret %q is not a Postgres URL", cfg.Database.URLSecret)
+	}
+	if err := checkAdapterSecrets(cfg); err != nil {
+		return deps{}, err
+	}
 	return deps{
-		httpClient: &http.Client{},
-		logger:     logger,
-		endpoints:  endpoints{githubAPI: githubAPIRoot},
-		pollEvery:  pollInterval,
-		drainTick:  drainTick,
+		databaseURL: databaseURL,
+		httpClient:  &http.Client{},
+		logger:      logger,
+		endpoints: endpoints{
+			jiraBaseURL:     cfg.Jira.BaseURL,
+			githubAPI:       githubAPIRoot,
+			switchBaseURL:   cfg.Switch.BaseURL,
+			switchAgentID:   cfg.Switch.AgentID,
+			switchAgentName: cfg.Switch.AgentName,
+			switchBridgeID:  cfg.Switch.BridgeID,
+		},
+		pollEvery: pollInterval,
+		drainTick: drainTick,
+		openPool:  pgxpool.New,
+		migrate:   postgres.Migrate,
 	}, nil
+}
+
+// missingConfigKeys lists every key the slice needs that the config does not set, in a stable order. A key is
+// missing when the section is absent or its value is empty; Load already refuses an empty value in a present
+// section, so this mainly reports absent sections.
+func missingConfigKeys(cfg config.Config) []string {
+	var missing []string
+	add := func(key, value string) {
+		if value == "" {
+			missing = append(missing, key)
+		}
+	}
+	add("database.url_secret", cfg.Database.URLSecret)
+	add("jira.base_url", cfg.Jira.BaseURL)
+	if len(cfg.Jira.ProjectKeys) == 0 {
+		missing = append(missing, "jira.project_keys")
+	}
+	add("jira.email_secret", cfg.Jira.EmailSecret)
+	add("jira.api_token_secret", cfg.Jira.APITokenSecret)
+	add("switch.base_url", cfg.Switch.BaseURL)
+	add("switch.agent_id", cfg.Switch.AgentID)
+	add("switch.agent_name", cfg.Switch.AgentName)
+	add("switch.bridge_id", cfg.Switch.BridgeID)
+	add("switch.api_key_secret", cfg.Switch.APIKeySecret)
+	add("switch.registration_token_secret", cfg.Switch.RegistrationTokenSecret)
+	add("github.app_id_secret", cfg.GitHub.AppIDSecret)
+	add("github.installation_id_secret", cfg.GitHub.InstallationIDSecret)
+	add("github.private_key_secret", cfg.GitHub.PrivateKeySecret)
+	return missing
+}
+
+// checkProjectSelection requires one Jira project key and requires it to be the one project the slice maps. The
+// poller uses one cursor source and one repository mapping, so a mismatch or a second key would poll a project it
+// cannot start.
+func checkProjectSelection(cfg config.Config) error {
+	if len(cfg.Jira.ProjectKeys) != 1 {
+		return fmt.Errorf("jira.project_keys: the slice polls one tracker project, but heimdall.toml lists %d", len(cfg.Jira.ProjectKeys))
+	}
+	if len(cfg.Projects) != 1 {
+		return fmt.Errorf("projects: the slice polls one tracker project, but heimdall.toml maps %d", len(cfg.Projects))
+	}
+	if cfg.Jira.ProjectKeys[0] != cfg.Projects[0].TrackerProject {
+		return fmt.Errorf("jira.project_keys: %q is not the project mapped by projects, which maps %q", cfg.Jira.ProjectKeys[0], cfg.Projects[0].TrackerProject)
+	}
+	return nil
+}
+
+// checkAdapterSecrets reads every credential file the adapters read once, at boot. A missing file, a multi-line
+// token, a world-readable private key or a non-integer App id is refused here, with the key and file named and no
+// value in the message. The adapters read the same files again when they are built.
+func checkAdapterSecrets(cfg config.Config) error {
+	single := []struct{ field, name string }{
+		{"jira.email_secret", cfg.Jira.EmailSecret},
+		{"jira.api_token_secret", cfg.Jira.APITokenSecret},
+		{"switch.api_key_secret", cfg.Switch.APIKeySecret},
+		{"switch.registration_token_secret", cfg.Switch.RegistrationTokenSecret},
+	}
+	for _, s := range single {
+		if _, err := cfg.Secret(s.name); err != nil {
+			return fmt.Errorf("%s: %w", s.field, err)
+		}
+	}
+	if _, err := cfg.SecretMultiline(cfg.GitHub.PrivateKeySecret); err != nil {
+		return fmt.Errorf("github.private_key_secret: %w", err)
+	}
+	for _, s := range []struct{ field, name string }{
+		{"github.app_id_secret", cfg.GitHub.AppIDSecret},
+		{"github.installation_id_secret", cfg.GitHub.InstallationIDSecret},
+	} {
+		if _, err := secretInt(cfg, s.name); err != nil {
+			return fmt.Errorf("%s: %w", s.field, err)
+		}
+	}
+	return nil
 }
 
 // validate refuses a deps value that cannot run. It names each field.
@@ -149,6 +316,12 @@ func (d deps) validate() error {
 	if d.drainTick <= 0 {
 		problems = append(problems, "drain tick must be positive")
 	}
+	if d.openPool == nil {
+		problems = append(problems, "database opener is nil")
+	}
+	if d.migrate == nil {
+		problems = append(problems, "migration function is nil")
+	}
 	if len(problems) > 0 {
 		return fmt.Errorf("server deps: %s", strings.Join(problems, "; "))
 	}
@@ -166,9 +339,13 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	pool, err := pgxpool.New(ctx, d.databaseURL)
+	pool, err := d.openPool(ctx, d.databaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+		msg := err.Error()
+		if d.databaseURL != "" && strings.Contains(msg, d.databaseURL) {
+			msg = strings.ReplaceAll(msg, d.databaseURL, "[redacted]")
+		}
+		return nil, fmt.Errorf("open database: %s", msg)
 	}
 	a, err := assemble(ctx, d, ad, pool, clk)
 	if err != nil {
@@ -180,7 +357,7 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 
 // assemble migrates the database and wires the engine, the executors, the poller and the drainer on it.
 func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk ports.Clock) (*app, error) {
-	if err := postgres.Migrate(ctx, pool); err != nil {
+	if err := d.migrate(ctx, pool); err != nil {
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
 	store := postgres.NewStore(pool)

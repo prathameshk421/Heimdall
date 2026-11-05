@@ -53,6 +53,8 @@ func (s *scenario) startSlice() func() {
 		logger:      slog.New(slog.DiscardHandler),
 		pollEvery:   20 * time.Millisecond,
 		drainTick:   20 * time.Millisecond,
+		openPool:    pgxpool.New,
+		migrate:     postgres.Migrate,
 	}
 	a, err := build(ctx, cfg, d)
 	require.NoError(s.t, err)

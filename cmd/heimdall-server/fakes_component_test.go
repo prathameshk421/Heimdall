@@ -258,6 +258,7 @@ func writeAcceptanceSecrets(t *testing.T) string {
 	require.NoError(t, err)
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
 	files := map[string]string{
+		"database_url":               "postgres://placeholder:placeholder@127.0.0.1:1/heimdall?sslmode=disable",
 		"jira_email":                 acceptanceJiraEmail,
 		"jira_api_token":             acceptanceJiraToken,
 		"github_app_id":              acceptanceAppID,
@@ -278,6 +279,28 @@ func writeAcceptanceConfig(t *testing.T, secretsDir string) string {
 	body := fmt.Sprintf(`listen = "127.0.0.1:0"
 secrets_dir = %q
 
+[database]
+url_secret = "database_url"
+
+[jira]
+base_url = "https://jira.example.test"
+project_keys = ["KAN"]
+email_secret = "jira_email"
+api_token_secret = "jira_api_token"
+
+[switch]
+base_url = "https://switch.example.test"
+agent_id = %q
+agent_name = %q
+bridge_id = %q
+api_key_secret = "switch_api_key"
+registration_token_secret = "switch_registration_token"
+
+[github]
+app_id_secret = "github_app_id"
+installation_id_secret = "github_app_installation_id"
+private_key_secret = "github_app_private_key"
+
 [vcs]
 provider = "github"
 
@@ -291,7 +314,7 @@ bridge = "switch"
 tracker_project = "KAN"
 repo = %q
 base_branch = %q
-`, secretsDir, acceptanceRepo, acceptanceBaseRef)
+`, secretsDir, acceptanceAgentID, acceptanceAgentName, acceptanceBridgeID, acceptanceRepo, acceptanceBaseRef)
 	path := filepath.Join(t.TempDir(), "heimdall.toml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	return path
