@@ -103,6 +103,34 @@ func (f *fakeChecks) SetCheck(_ context.Context, _ change.Repo, _ id.SHA, c port
 	return nil
 }
 
+type fakeReviews struct{}
+
+var _ ports.ReviewReader = fakeReviews{}
+
+func (fakeReviews) PRReviews(_ context.Context, _ change.Repo, _ int) ([]ports.PRReview, error) {
+	return []ports.PRReview{{
+		ID:          "rev-1",
+		Login:       "alice",
+		State:       ports.ReviewStateApproved,
+		CommitSHA:   shaA,
+		SubmittedAt: instant,
+	}}, nil
+}
+
+type fakeCheckRuns struct{}
+
+var _ ports.CheckReader = fakeCheckRuns{}
+
+func (fakeCheckRuns) CheckRuns(_ context.Context, _ change.Repo, _ id.SHA) ([]ports.CheckRun, error) {
+	return []ports.CheckRun{{
+		ID:         "chk-1",
+		Name:       "ci/test",
+		Status:     ports.CheckCompleted,
+		Conclusion: change.CISuccess,
+		SHA:        shaA,
+	}}, nil
+}
+
 type fakeCode struct{}
 
 var _ ports.CodeReader = fakeCode{}
@@ -254,6 +282,18 @@ func TestVCSContractsAreSplitByConsumer(t *testing.T) {
 	var checks ports.CheckWriter = &fakeChecks{}
 	require.NoError(t, checks.SetCheck(ctx, repo, shaA, ports.Check{Name: "heimdall/gate", Status: ports.CheckQueued}))
 
+	var reviews ports.ReviewReader = fakeReviews{}
+	revs, err := reviews.PRReviews(ctx, repo, 7)
+	require.NoError(t, err)
+	require.Len(t, revs, 1)
+	require.NoError(t, revs[0].Validate())
+
+	var checkRuns ports.CheckReader = fakeCheckRuns{}
+	runs, err := checkRuns.CheckRuns(ctx, repo, shaA)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	require.NoError(t, runs[0].Validate())
+
 	var code ports.CodeReader = fakeCode{}
 	tree, err := code.TreeHash(ctx, repo, shaA, "tests/heimdall/PAY-142")
 	require.NoError(t, err)
@@ -321,4 +361,105 @@ func TestChatTrackerBlobsClockAndIDsContracts(t *testing.T) {
 	var ids ports.IDs = fakeIDs{}
 	require.Equal(t, id.TaskID("tsk_01HZX3K9QW7M2P5R8T0V4YB6CD"), ids.NewTask())
 	require.NotEmpty(t, ids.NewEvent().String())
+}
+
+func TestPRReviewValidate(t *testing.T) {
+	good := ports.PRReview{
+		ID:          "rev_123",
+		Login:       "alice",
+		State:       ports.ReviewStateApproved,
+		CommitSHA:   shaA,
+		SubmittedAt: instant,
+	}
+	require.NoError(t, good.Validate())
+
+	for _, state := range []ports.ReviewState{
+		ports.ReviewStateApproved,
+		ports.ReviewStateChangesRequested,
+		ports.ReviewStateCommented,
+		ports.ReviewStateDismissed,
+	} {
+		r := good
+		r.State = state
+		require.NoError(t, r.Validate())
+	}
+
+	badID := good
+	badID.ID = ""
+	require.Error(t, badID.Validate())
+
+	badLogin := good
+	badLogin.Login = ""
+	require.Error(t, badLogin.Validate())
+
+	badState := good
+	badState.State = "invalid_state"
+	require.Error(t, badState.Validate())
+
+	badSHA := good
+	badSHA.CommitSHA = "not-a-sha"
+	require.Error(t, badSHA.Validate())
+
+	zeroTime := good
+	zeroTime.SubmittedAt = time.Time{}
+	require.Error(t, zeroTime.Validate())
+}
+
+func TestCheckRunValidate(t *testing.T) {
+	good := ports.CheckRun{
+		ID:         "chk_123",
+		Name:       "ci/test",
+		Status:     ports.CheckCompleted,
+		Conclusion: change.CISuccess,
+		SHA:        shaA,
+	}
+	require.NoError(t, good.Validate())
+
+	inProg := ports.CheckRun{
+		ID:     "chk_123",
+		Name:   "ci/test",
+		Status: ports.CheckInProgress,
+		SHA:    shaA,
+	}
+	require.NoError(t, inProg.Validate())
+
+	queued := ports.CheckRun{
+		ID:     "chk_123",
+		Name:   "ci/test",
+		Status: ports.CheckQueued,
+		SHA:    shaA,
+	}
+	require.NoError(t, queued.Validate())
+
+	inProgWithConclusion := inProg
+	inProgWithConclusion.Conclusion = change.CISuccess
+	require.Error(t, inProgWithConclusion.Validate())
+
+	queuedWithConclusion := queued
+	queuedWithConclusion.Conclusion = change.CISuccess
+	require.Error(t, queuedWithConclusion.Validate())
+
+	completedNoConclusion := good
+	completedNoConclusion.Conclusion = ""
+	require.Error(t, completedNoConclusion.Validate())
+
+	completedBadConclusion := good
+	completedBadConclusion.Conclusion = "exploded"
+	require.Error(t, completedBadConclusion.Validate())
+
+	badStatus := good
+	badStatus.Status = "waiting"
+	require.Error(t, badStatus.Validate())
+
+	badID := good
+	badID.ID = ""
+	require.Error(t, badID.Validate())
+
+	badName := good
+	badName.Name = ""
+	require.Error(t, badName.Validate())
+
+	badSHA := good
+	badSHA.SHA = "bad-sha"
+	require.Error(t, badSHA.Validate())
 }

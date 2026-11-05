@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -102,10 +103,11 @@ func fileStatus(s string) (ports.FileStatus, error) {
 
 // reviewJSON is one review as GitHub returns it.
 type reviewJSON struct {
-	ID       int64  `json:"id"`
-	State    string `json:"state"`
-	CommitID string `json:"commit_id"`
-	User     struct {
+	ID          int64     `json:"id"`
+	State       string    `json:"state"`
+	CommitID    string    `json:"commit_id"`
+	SubmittedAt time.Time `json:"submitted_at"`
+	User        struct {
 		Login string `json:"login"`
 	} `json:"user"`
 }
@@ -161,12 +163,20 @@ type treeEntry struct {
 	SHA  string `json:"sha"`
 }
 
-// checkRunsJSON is the check-run listing of one commit, filtered by name.
+// checkRunItemJSON is one check run in GitHub's check-runs list.
+type checkRunItemJSON struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	HeadSHA    string `json:"head_sha"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	ExternalID string `json:"external_id"`
+}
+
+// checkRunsJSON is the check-run listing of one commit.
 type checkRunsJSON struct {
-	CheckRuns []struct {
-		ID         int64  `json:"id"`
-		ExternalID string `json:"external_id"`
-	} `json:"check_runs"`
+	TotalCount int                `json:"total_count"`
+	CheckRuns  []checkRunItemJSON `json:"check_runs"`
 }
 
 // checkBody is the body of a check run create or update. Empty fields are left out, so an update does not reset them.

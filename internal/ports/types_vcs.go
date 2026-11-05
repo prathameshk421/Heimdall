@@ -1,6 +1,8 @@
 package ports
 
 import (
+	"time"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
@@ -123,5 +125,66 @@ func (c Check) Validate() error {
 	default:
 		v.require("status", false, "must be queued, in_progress or completed")
 	}
+	return v.join()
+}
+
+// ReviewState is the state of a pull request review.
+type ReviewState string
+
+// The pull request review states.
+const (
+	ReviewStateApproved         ReviewState = "approved"
+	ReviewStateChangesRequested ReviewState = "changes_requested"
+	ReviewStateCommented        ReviewState = "commented"
+	ReviewStateDismissed        ReviewState = "dismissed"
+)
+
+// PRReview is one submitted review on a pull request.
+type PRReview struct {
+	ID          string         `json:"id"`
+	Login       change.ActorID `json:"login"`
+	State       ReviewState    `json:"state"`
+	CommitSHA   id.SHA         `json:"commit_sha"`
+	SubmittedAt time.Time      `json:"submitted_at"`
+}
+
+// Validate returns every problem with the review.
+func (r PRReview) Validate() error {
+	var v problems
+	v.add("id", checkText(r.ID, 255))
+	v.add("login", checkActor(r.Login))
+	switch r.State {
+	case ReviewStateApproved, ReviewStateChangesRequested, ReviewStateCommented, ReviewStateDismissed:
+	default:
+		v.require("state", false, "must be approved, changes_requested, commented or dismissed")
+	}
+	v.add("commit_sha", checkSHA(r.CommitSHA))
+	v.require("submitted_at", !r.SubmittedAt.IsZero(), "must be non-zero")
+	return v.join()
+}
+
+// CheckRun is one check run on a commit.
+type CheckRun struct {
+	ID         string              `json:"id"`
+	Name       string              `json:"name"`
+	Status     CheckStatus         `json:"status"`
+	Conclusion change.CIConclusion `json:"conclusion,omitempty"`
+	SHA        id.SHA              `json:"sha"`
+}
+
+// Validate returns every problem with the check run. Conclusion must be empty until completed.
+func (c CheckRun) Validate() error {
+	var v problems
+	v.add("id", checkText(c.ID, 255))
+	v.add("name", checkText(c.Name, 255))
+	switch c.Status {
+	case CheckQueued, CheckInProgress:
+		v.require("conclusion", c.Conclusion == "", "must be empty until completed")
+	case CheckCompleted:
+		v.require("conclusion", c.Conclusion.Valid(), "must be set when completed")
+	default:
+		v.require("status", false, "must be queued, in_progress or completed")
+	}
+	v.add("sha", checkSHA(c.SHA))
 	return v.join()
 }

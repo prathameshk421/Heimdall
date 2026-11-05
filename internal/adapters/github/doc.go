@@ -4,8 +4,8 @@
 // # Purpose
 //
 // The adapter reads pull requests, comments, reviews and check runs, and writes comments, branches, commits and check
-// runs. It implements ports.PRReader, ports.PRComments, ports.BranchWriter, ports.CheckWriter, ports.CodeReader and
-// ports.RepoReader. Nothing outside this package sees a GitHub type.
+// runs. It implements ports.PRReader, ports.PRComments, ports.BranchWriter, ports.CheckWriter, ports.CodeReader,
+// ports.RepoReader, ports.ReviewReader and ports.CheckReader. Nothing outside this package sees a GitHub type.
 //
 // # API
 //
@@ -18,6 +18,10 @@
 //     the two.
 //   - DefaultHead (ports.RepoReader) reads the default branch name, then that branch's commit, with the reader token.
 //     An empty repository, or a repository with no default branch, is ports.ErrNotFound.
+//   - PRReviews (ports.ReviewReader) reads every submitted review on a pull request with the reader token, skipping
+//     pending reviews and mapping GitHub states to ports.ReviewState.
+//   - CheckRuns (ports.CheckReader) reads check runs on a commit with the reader token across all pages, mapping
+//     status and conclusions to change.CIConclusion, and omitting heimdall/gate.
 //   - RateLimitError is returned when GitHub asks for a wait longer than two minutes, or keeps refusing after
 //     three attempts. It wraps ports.ErrUnavailable, so the outbox retries it later.
 //

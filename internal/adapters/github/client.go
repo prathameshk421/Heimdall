@@ -371,3 +371,28 @@ func decode[T any](resp *response, path string) (T, error) {
 	}
 	return v, nil
 }
+
+// listAllCheckRuns collects every check run across all pages of a commit's check runs.
+func listAllCheckRuns(ctx context.Context, c *client, auth, path string, query url.Values) ([]checkRunItemJSON, error) {
+	var all []checkRunItemJSON
+	req := request{method: http.MethodGet, path: path, query: query, auth: auth}
+	for {
+		resp, err := c.call(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		pg, err := decode[checkRunsJSON](resp, path)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, pg.CheckRuns...)
+		next, err := c.nextLink(resp.header.Get("Link"))
+		if err != nil {
+			return nil, err
+		}
+		if next == "" {
+			return all, nil
+		}
+		req = request{method: http.MethodGet, path: path, auth: auth, target: next}
+	}
+}

@@ -59,3 +59,15 @@ type RepoReader interface {
 	// DefaultHead returns the head commit SHA of the repository's default branch.
 	DefaultHead(ctx context.Context, repo change.Repo) (id.SHA, error)
 }
+
+// ReviewReader reads reviews of pull requests. Consumer: the gate (TECH_SPEC 12.4).
+type ReviewReader interface {
+	// PRReviews returns every submitted review of pull request n.
+	PRReviews(ctx context.Context, repo change.Repo, n int) ([]PRReview, error)
+}
+
+// CheckReader reads check runs on commits. Consumer: the gate (TECH_SPEC 12.4).
+type CheckReader interface {
+	// CheckRuns returns the check runs on sha, excluding heimdall/gate.
+	CheckRuns(ctx context.Context, repo change.Repo, sha id.SHA) ([]CheckRun, error)
+}
