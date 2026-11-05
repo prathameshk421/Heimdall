@@ -6,3 +6,4 @@ opencode.json
 *.pem
 *.key
 .switch/
+.heimdall/
