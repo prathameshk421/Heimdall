@@ -69,6 +69,16 @@ func checkTestSource(src string) error {
 		}
 		return fmt.Errorf("invalid base64 character at %d: %q", i, c)
 	}
+	decodedBytes := len(trimmed) / 4 * 3
+	if strings.HasSuffix(trimmed, "=") {
+		decodedBytes--
+	}
+	if strings.HasSuffix(trimmed, "==") {
+		decodedBytes--
+	}
+	if decodedBytes > MaxTestSourceBytes {
+		return fmt.Errorf("decoded length %d exceeds maximum of %d bytes", decodedBytes, MaxTestSourceBytes)
+	}
 	return nil
 }
 
