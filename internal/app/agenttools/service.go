@@ -1,0 +1,236 @@
+package agenttools
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+)
+
+// Constants governing agent tool operations.
+const (
+	AckWindow  = 60 * time.Second
+	MaxRetries = 5
+)
+
+// Standard typed errors.
+var (
+	ErrNoTask           = errors.New("no active task")
+	ErrWrongAgent       = errors.New("wrong agent for task")
+	ErrWrongRole        = errors.New("wrong role for task")
+	ErrAckWindowExpired = errors.New("acknowledgement window expired")
+	ErrLateSubmission   = errors.New("submission is late")
+	ErrReducerRefusal   = errors.New("reducer refused event")
+	ErrVersionConflict  = errors.New("version conflict after max retries")
+	ErrValidation       = errors.New("validation failed")
+)
+
+// Assignment is the active assignment of an agent, reconstructed from domain events.
+type Assignment struct {
+	ChangeID   id.ChangeID
+	TaskID     id.TaskID
+	Agent      id.AgentName
+	Role       workflow.Role
+	Deadline   time.Time
+	BundleRef  workflow.BlobRef
+	AssignedAt time.Time
+	Acked      bool
+	Task       workflow.TaskEnvelope
+}
+
+// FindingError reports a validation failure for one finding in a review.
+type FindingError struct {
+	Index   int    `json:"index"`
+	Message string `json:"message"`
+}
+
+// Receipt is the outcome of a review submission.
+type Receipt struct {
+	Accepted      bool           `json:"accepted"`
+	FindingErrors []FindingError `json:"finding_errors,omitempty"`
+}
+
+// Asker posts human-facing questions to the room and returns identifiers.
+type Asker interface {
+	Ask(ctx context.Context, changeID id.ChangeID, question string) (change.QuestionID, change.SenderID, change.MessageID, error)
+}
+
+// Config configures the agent tools Service. Every field is required.
+type Config struct {
+	Events ports.EventStore
+	Index  ports.TaskIndex
+	Blobs  ports.BlobStore
+	Clock  ports.Clock
+	IDs    ports.IDs
+	Asker  Asker
+}
+
+// Service implements application logic for agent tools.
+type Service struct {
+	events ports.EventStore
+	index  ports.TaskIndex
+	blobs  ports.BlobStore
+	clock  ports.Clock
+	ids    ports.IDs
+	asker  Asker
+}
+
+// New validates dependencies and constructs a Service.
+func New(cfg Config) (*Service, error) {
+	var missing []string
+	if cfg.Events == nil {
+		missing = append(missing, "Events")
+	}
+	if cfg.Index == nil {
+		missing = append(missing, "Index")
+	}
+	if cfg.Blobs == nil {
+		missing = append(missing, "Blobs")
+	}
+	if cfg.Clock == nil {
+		missing = append(missing, "Clock")
+	}
+	if cfg.IDs == nil {
+		missing = append(missing, "IDs")
+	}
+	if cfg.Asker == nil {
+		missing = append(missing, "Asker")
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("agenttools: nil dependency: %s", strings.Join(missing, ", "))
+	}
+	return &Service{
+		events: cfg.Events,
+		index:  cfg.Index,
+		blobs:  cfg.Blobs,
+		clock:  cfg.Clock,
+		ids:    cfg.IDs,
+		asker:  cfg.Asker,
+	}, nil
+}
+
+// appendEvents executes the retry loop on ports.ErrVersionConflict (up to MaxRetries attempts).
+func (s *Service) appendEvents(ctx context.Context, cid id.ChangeID, fn func(existing []change.Event, state change.State) ([]change.Event, error)) error {
+	for attempt := 0; attempt < MaxRetries; attempt++ {
+		existing, err := s.events.Load(ctx, cid)
+		if err != nil {
+			return fmt.Errorf("load %s: %w", cid, err)
+		}
+		state, err := change.Replay(existing)
+		if err != nil {
+			return fmt.Errorf("stream %s does not replay: %w", cid, err)
+		}
+
+		evs, err := fn(existing, state)
+		if err != nil {
+			return err
+		}
+		if len(evs) == 0 {
+			return nil
+		}
+
+		currState := state
+		for _, ev := range evs {
+			nextState, err := change.Reduce(currState, ev)
+			if err != nil {
+				return fmt.Errorf("%w: %s refused by reducer in state %s: %w", ErrReducerRefusal, ev.Type, currState, err)
+			}
+			currState = nextState
+		}
+
+		expected := int64(len(existing))
+		_, err = s.events.Append(ctx, cid, expected, evs, nil)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, ports.ErrVersionConflict) {
+			continue
+		}
+		return fmt.Errorf("append to %s: %w", cid, err)
+	}
+	return fmt.Errorf("%w: after %d attempts: %w", ErrVersionConflict, MaxRetries, ports.ErrVersionConflict)
+}
+
+func (s *Service) buildEventWithID(
+	eid change.EventID,
+	cid id.ChangeID,
+	version int64,
+	et change.EventType,
+	agent id.AgentName,
+	corr change.CorrelationID,
+	causation *change.EventID,
+	payload change.Payload,
+	blobRefs []workflow.BlobRef,
+) (change.Event, error) {
+	if err := payload.Validate(); err != nil {
+		return change.Event{}, fmt.Errorf("payload of %s: %w", et, err)
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return change.Event{}, fmt.Errorf("encode payload of %s: %w", et, err)
+	}
+	ev := change.Event{
+		ID:            eid,
+		ChangeID:      cid,
+		Version:       version,
+		Type:          et,
+		Actor:         change.Actor{Kind: change.ActorAgent, ID: change.ActorID(agent)},
+		OccurredAt:    s.clock.Now().UTC(),
+		CorrelationID: corr,
+		CausationID:   causation,
+		BlobRefs:      blobRefs,
+		Payload:       raw,
+	}
+	if err := ev.Validate(); err != nil {
+		return change.Event{}, fmt.Errorf("event %s: %w", et, err)
+	}
+	return ev, nil
+}
+
+func lastCausation(existing []change.Event) *change.EventID {
+	if len(existing) == 0 {
+		return nil
+	}
+	return &existing[len(existing)-1].ID
+}
+
+func correlationIDOf(existing []change.Event, fallback change.EventID) change.CorrelationID {
+	if len(existing) > 0 && existing[len(existing)-1].CorrelationID != "" {
+		return existing[len(existing)-1].CorrelationID
+	}
+	return change.CorrelationID(fallback.String())
+}
+
+func findTaskAssigned(events []change.Event, taskID id.TaskID) (change.TaskAssigned, bool) {
+	for i := len(events) - 1; i >= 0; i-- {
+		ev := events[i]
+		if ev.Type == change.EventTaskAssigned {
+			if p, err := change.Decode(ev); err == nil {
+				if ta, ok := p.(change.TaskAssigned); ok && ta.TaskID == taskID {
+					return ta, true
+				}
+			}
+		}
+	}
+	return change.TaskAssigned{}, false
+}
+
+func hasTaskAcked(events []change.Event, taskID id.TaskID) bool {
+	for _, ev := range events {
+		if ev.Type == change.EventTaskAcked {
+			if p, err := change.Decode(ev); err == nil {
+				if ta, ok := p.(change.TaskAcked); ok && ta.TaskID == taskID {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
