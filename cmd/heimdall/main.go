@@ -23,6 +23,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "connect" {
 		os.Exit(runConnect(os.Args[2:], os.Stdin, os.Stdout, os.Stderr, realConnectDeps()))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "cost" {
+		os.Exit(runCost(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	fmt.Fprintln(os.Stderr, "heimdall: not built yet")
 	os.Exit(exitNotBuilt)
 }
