@@ -408,7 +408,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	if err != nil {
 		return nil, fmt.Errorf("open blob store: %w", err)
 	}
-	a, err := assembleWithBlobs(d, ad, store, pool, blobStore, eng, gen, clk)
+	a, err := assembleWithBlobs(ctx, d, ad, store, pool, blobStore, eng, gen, clk)
 	if err != nil {
 		_ = blobStore.Close()
 		return nil, err
@@ -417,10 +417,10 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 }
 
 func assembleWithBlobs(
-	d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
+	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
 	eng *engine.Engine, gen ports.IDs, clk ports.Clock,
 ) (*app, error) {
-	execs, err := executors(ad, store, blobs, ingestor{eng: eng}, gen, clk)
+	execs, err := executors(ctx, ad, store, blobs, ingestor{eng: eng}, gen, clk)
 	if err != nil {
 		return nil, err
 	}
@@ -576,7 +576,7 @@ func baseExecutors(
 
 // executors maps each effect kind to its executor. Each executor checks the kind of the effect it receives, so a
 // swapped entry fails every effect it is given.
-func executors(ad adapters, store ports.EventStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
+func executors(ctx context.Context, ad adapters, store ports.EventStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
 	room, branch, check, err := baseExecutors(ad, store, in, gen, clk)
 	if err != nil {
 		return nil, err
@@ -597,6 +597,7 @@ func executors(ad adapters, store ports.EventStore, blobs ports.BlobStore, in ef
 	sandbox := &localRunnerSandbox{runner: runner}
 	testQuality, err := effects.NewTestQuality(effects.TestQualityDeps{
 		Blobs: blobs, Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Store: store, Ingest: in, IDs: gen, Clock: clk, Code: ad.vcs,
+		ForbiddenImports: testQualityForbiddenImports(), NeedsSignoff: testQualityNeedsSignoff(ctx, blobs, ad.vcs),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build test_quality executor: %w", err)

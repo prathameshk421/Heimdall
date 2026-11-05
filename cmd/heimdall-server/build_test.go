@@ -18,6 +18,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
@@ -216,9 +217,20 @@ func TestExecutorsRegistersGitHubCheck(t *testing.T) {
 		chat:    dummyChat{},
 	}
 	blobs := newMemBlobStore()
-	execs, err := executors(ad, store, blobs, ingestor{eng: eng}, gen, clk)
+	execs, err := executors(context.Background(), ad, store, blobs, ingestor{eng: eng}, gen, clk)
 	require.NoError(t, err)
 	ch, ok := execs[change.EffectGitHubCheck]
 	require.True(t, ok, "github_check executor must be registered")
 	require.IsType(t, effects.GitHubCheck{}, ch)
+}
+
+func TestTestQualityWiringUsesTargetModuleSeam(t *testing.T) {
+	require.Equal(t, []string{"github.com/prathameshk421/flip_the_switch_hackathon/internal"}, testQualityForbiddenImports())
+}
+
+func TestNeedsTestSignoffMatchesExpectedPathsAgainstBasePolicy(t *testing.T) {
+	pol := policy.Policy{Tests: policy.Tests{Sensitive: []string{"backend/**/auth*", "*delete*"}}}
+	require.False(t, needsTestSignoff(pol, []string{"internal/refunds/refunds.go"}))
+	require.True(t, needsTestSignoff(pol, []string{"backend/api/authz.go"}))
+	require.True(t, needsTestSignoff(pol, []string{"db/delete_user.go"}))
 }
