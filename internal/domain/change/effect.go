@@ -16,20 +16,23 @@ type EffectKind string
 // The effect kinds the spec names: a GitHub check, comment and branch, the room (open and post), a tracker write
 // (rejection tickets, comments), and a memory episode.
 const (
-	EffectGitHubCheck   EffectKind = "github_check"
-	EffectGitHubComment EffectKind = "github_comment"
-	EffectGitHubBranch  EffectKind = "github_branch"
-	EffectRoomOpen      EffectKind = "room_open"
-	EffectRoomPost      EffectKind = "room_post"
-	EffectTrackerWrite  EffectKind = "tracker_write"
-	EffectMemoryEpisode EffectKind = "memory_episode"
-	EffectTaskAssign    EffectKind = "task_assign"
+	EffectGitHubCheck       EffectKind = "github_check"
+	EffectGitHubComment     EffectKind = "github_comment"
+	EffectGitHubBranch      EffectKind = "github_branch"
+	EffectRoomOpen          EffectKind = "room_open"
+	EffectRoomPost          EffectKind = "room_post"
+	EffectTrackerWrite      EffectKind = "tracker_write"
+	EffectMemoryEpisode     EffectKind = "memory_episode"
+	EffectTaskAssign        EffectKind = "task_assign"
+	EffectGitHubCommitTests EffectKind = "github_commit_tests"
+	EffectTestQuality       EffectKind = "test_quality"
 )
 
 // Valid reports whether k is an effect kind.
 func (k EffectKind) Valid() bool {
 	return slices.Contains([]EffectKind{EffectGitHubCheck, EffectGitHubComment, EffectGitHubBranch,
-		EffectRoomOpen, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign}, k)
+		EffectRoomOpen, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign,
+		EffectGitHubCommitTests, EffectTestQuality}, k)
 }
 
 // EffectKey is the deterministic idempotency key of an outbox row (TECH_SPEC 2.4). An external system that sees the
