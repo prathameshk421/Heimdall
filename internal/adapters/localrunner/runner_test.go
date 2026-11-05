@@ -97,6 +97,33 @@ func tarDir(t *testing.T, srcDir string) []byte {
 	return buf.Bytes()
 }
 
+func tarDirWithOverlay(t *testing.T, srcDir string, overlays map[string][]byte) []byte {
+	t.Helper()
+	copyDir := t.TempDir()
+	require.NoError(t, filepath.Walk(srcDir, func(source string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(srcDir, source)
+		if err != nil || rel == "." {
+			return err
+		}
+		target := filepath.Join(copyDir, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+		data, err := os.ReadFile(source)
+		if err != nil {
+			return err
+		}
+		if replacement, ok := overlays[rel]; ok {
+			data = replacement
+		}
+		return os.WriteFile(target, data, info.Mode())
+	}))
+	return tarDir(t, copyDir)
+}
+
 func makeJob(sha id.SHA, timeout time.Duration) ports.SandboxJob {
 	return ports.SandboxJob{
 		Kind:    ports.SandboxRedFirst,
@@ -207,20 +234,54 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 		tempDirUsed = dir
 	}))
 
-	pidFile := "/tmp/heimdall_timeout_child.pid"
-	_ = os.Remove(pidFile)
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	timeoutTest, err := os.ReadFile("testdata/timeout/sleep_test.go")
+	require.NoError(t, err)
+	timeoutTest = []byte(strings.ReplaceAll(string(timeoutTest), "__PID_FILE__", filepath.ToSlash(pidFile)))
+	srcTar = tarDirWithOverlay(t, "testdata/timeout", map[string][]byte{"sleep_test.go": timeoutTest})
+	src.tarballs[string(sha)] = srcTar
 
 	job := localrunner.Job{
-		SandboxJob: makeJob(sha, 5*time.Second),
+		SandboxJob: makeJob(sha, 20*time.Second),
 	}
 
 	start := time.Now()
-	res, err := runner.RunJob(context.Background(), job)
+	type runResult struct {
+		result ports.SandboxResult
+		err    error
+	}
+	finished := make(chan runResult, 1)
+	go func() {
+		res, err := runner.RunJob(context.Background(), job)
+		finished <- runResult{result: res, err: err}
+	}()
+
+	// The PID file is the child's ready signal. Observe it while the runner is active,
+	// so the test cannot mistake a startup timeout for successful process-group cleanup.
+	readyDeadline := time.NewTimer(15 * time.Second)
+	readyPoll := time.NewTicker(10 * time.Millisecond)
+	defer readyDeadline.Stop()
+	defer readyPoll.Stop()
+	var pidBytes []byte
+	for pidBytes == nil {
+		select {
+		case <-readyDeadline.C:
+			t.Fatal("child did not signal readiness before timeout")
+		case <-readyPoll.C:
+			if b, readErr := os.ReadFile(pidFile); readErr == nil {
+				pidBytes = b
+			}
+		case <-finished:
+			t.Fatal("runner finished before child signaled readiness")
+		}
+	}
+	run := <-finished
 	elapsed := time.Since(start)
 
-	// Must finish quickly around the timeout (under 10s), not wait 30s
-	require.Less(t, elapsed, 10*time.Second)
-	require.NoError(t, err)
+	// The child readiness file is written before its long sleep; allow race builds to finish first.
+	require.Less(t, elapsed, 25*time.Second)
+	require.NoError(t, run.err)
+	res := run.result
 	require.NoError(t, res.Validate())
 	require.Equal(t, 1, res.Errored)
 	require.Len(t, res.Tests, 1)
@@ -232,9 +293,7 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 	require.True(t, os.IsNotExist(statErr), "temp dir must be removed")
 
 	// Verify the spawned child process sleep 30 was terminated with the process group
-	b, readErr := os.ReadFile(pidFile)
-	require.NoError(t, readErr, "child pid file must have been created by child process")
-	_ = os.Remove(pidFile)
+	b := pidBytes
 	pid, parseErr := strconv.Atoi(strings.TrimSpace(string(b)))
 	require.NoError(t, parseErr)
 	require.Positive(t, pid)

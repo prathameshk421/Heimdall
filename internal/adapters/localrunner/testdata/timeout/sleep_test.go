@@ -11,7 +11,7 @@ import (
 func TestSleep(t *testing.T) {
 	cmd := exec.Command("sleep", "30")
 	if err := cmd.Start(); err == nil && cmd.Process != nil {
-		pidFile := "/tmp/heimdall_timeout_child.pid"
+		pidFile := "__PID_FILE__"
 		_ = os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o644)
 	}
 	time.Sleep(30 * time.Second)
