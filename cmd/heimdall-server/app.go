@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/blobfs"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/localrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
@@ -49,6 +50,8 @@ const (
 	effectTimeout = 20 * time.Second
 	// outboxLease is how long a claimed effect stays leased to one drainer.
 	outboxLease = 3 * time.Minute
+	// blobStoreRoot is the on-disk blob store until heimdall.toml gains a blobs path key.
+	blobStoreRoot = ".heimdall/blobs"
 	// githubAPIRoot is the production GitHub API, which is not site-specific and so needs no config key.
 	githubAPIRoot = "https://api.github.com"
 	// cursorSourcePrefix names the Jira poll cursor: one source per tracker project.
@@ -153,6 +156,7 @@ type app struct {
 	drainer    drainer
 	syncer     syncer
 	mcpHandler http.Handler
+	blobs      io.Closer
 	logger     *slog.Logger
 	clock      ports.Clock
 	pollEvery  time.Duration
@@ -175,8 +179,11 @@ type syncer interface {
 	SyncOnce(ctx context.Context) (prsync.Result, error)
 }
 
-// close releases the database pool. Call it after the loops have stopped.
+// close releases the blob store and the database pool. Call it after the loops have stopped.
 func (a *app) close() {
+	if a.blobs != nil {
+		_ = a.blobs.Close()
+	}
 	a.pool.Close()
 }
 
@@ -397,7 +404,22 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	if err != nil {
 		return nil, fmt.Errorf("build engine: %w", err)
 	}
-	blobs := newMemBlobStore()
+	blobStore, err := blobfs.New(blobStoreRoot)
+	if err != nil {
+		return nil, fmt.Errorf("open blob store: %w", err)
+	}
+	a, err := assembleWithBlobs(d, ad, store, pool, blobStore, eng, gen, clk)
+	if err != nil {
+		_ = blobStore.Close()
+		return nil, err
+	}
+	return a, nil
+}
+
+func assembleWithBlobs(
+	d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
+	eng *engine.Engine, gen ports.IDs, clk ports.Clock,
+) (*app, error) {
 	execs, err := executors(ad, store, blobs, ingestor{eng: eng}, gen, clk)
 	if err != nil {
 		return nil, err
@@ -424,14 +446,17 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	if err != nil {
 		return nil, err
 	}
-
 	mcpH, err := assembleMCP(d, ad, store, pool, blobs, gen, clk)
 	if err != nil {
 		return nil, err
 	}
-
+	var closer io.Closer
+	if c, ok := blobs.(io.Closer); ok {
+		closer = c
+	}
 	return &app{
-		pool: pool, poller: p, drainer: box, syncer: sync, mcpHandler: mcpH, logger: d.logger, clock: clk,
+		pool: pool, poller: p, drainer: box, syncer: sync, mcpHandler: mcpH, blobs: closer,
+		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
 }

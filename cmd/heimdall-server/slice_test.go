@@ -10,7 +10,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 )
 
-// The demo slice workflow has 9 implemented steps from workflow.Default.
+// The demo slice workflow has 10 implemented steps from workflow.Default.
 func TestSliceWorkflowHasImplementedSteps(t *testing.T) {
 	agents := config.Agents{
 		TestAuthor: "test-author",
@@ -21,8 +21,11 @@ func TestSliceWorkflowHasImplementedSteps(t *testing.T) {
 	clk := clock.System{}
 	wf, steps, err := sliceSteps(agents, gen, clk)
 	require.NoError(t, err)
-	require.Len(t, wf.Steps, 9)
-	require.Len(t, steps, 9)
+	require.Len(t, wf.Steps, 10)
+	require.Len(t, steps, 10)
+	require.Equal(t, "review", wf.Steps[8].ID)
+	require.Equal(t, "verify", wf.Steps[9].ID)
+	require.Equal(t, []string{"review"}, wf.Steps[9].After)
 }
 
 // Every step of the slice has an engine implementation, and every implementation is used by a step of the slice.

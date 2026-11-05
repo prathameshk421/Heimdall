@@ -11,7 +11,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
-// Step ids of the demo workflow: the nine steps from workflow.Default that have implementations.
+// Step ids of the demo workflow: the ten steps from workflow.Default that have implementations.
 const (
 	stepOpenRoom   = "open_room"
 	stepBranch     = "branch"
@@ -22,10 +22,11 @@ const (
 	stepSlop       = "slop"
 	stepPick       = "pick"
 	stepReview     = "review"
+	stepVerify     = "verify"
 )
 
 // sliceSteps returns the demo workflow and the engine steps that run it. The workflow is built from
-// workflow.Default(), keeping the 9 implemented steps and trimming dependency edges of removed steps.
+// workflow.Default(), keeping the 10 implemented steps and trimming dependency edges of removed steps.
 func sliceSteps(agents config.Agents, gen ports.IDs, clk ports.Clock) (workflow.Workflow, []engine.Step, error) {
 	wf, m, err := demoWorkflow()
 	if err != nil {
@@ -46,7 +47,7 @@ func demoWorkflow() (workflow.Workflow, map[string]workflow.Step, error) {
 	full := workflow.Default()
 	stepNames := []string{
 		stepOpenRoom, stepBranch, stepWriteTests, stepTestQA, stepCommit,
-		stepWaitPR, stepSlop, stepPick, stepReview,
+		stepWaitPR, stepSlop, stepPick, stepReview, stepVerify,
 	}
 	m := make(map[string]workflow.Step, len(stepNames))
 	steps := make([]workflow.Step, 0, len(stepNames))
@@ -153,7 +154,11 @@ func buildLateEngineSteps(m map[string]workflow.Step, agents config.Agents, gen 
 	if err != nil {
 		return nil, fmt.Errorf("step %s: %w", stepReview, err)
 	}
-	return []engine.Step{wait, sl, pk, rev}, nil
+	verify, err := engine.NewVerifyEvidence(m[stepVerify].With)
+	if err != nil {
+		return nil, fmt.Errorf("step %s: %w", stepVerify, err)
+	}
+	return []engine.Step{wait, sl, pk, rev, verify}, nil
 }
 
 // stepByID returns the step of w with the id, copied. A missing id is an error, so a change to the default workflow
