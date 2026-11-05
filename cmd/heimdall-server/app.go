@@ -23,6 +23,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
@@ -147,15 +148,16 @@ type endpoints struct {
 
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
 type app struct {
-	pool      *pgxpool.Pool
-	poller    poller
-	drainer   drainer
-	syncer    syncer
-	logger    *slog.Logger
-	clock     ports.Clock
-	pollEvery time.Duration
-	syncEvery time.Duration
-	drainTick time.Duration
+	pool       *pgxpool.Pool
+	poller     poller
+	drainer    drainer
+	syncer     syncer
+	mcpHandler http.Handler
+	logger     *slog.Logger
+	clock      ports.Clock
+	pollEvery  time.Duration
+	syncEvery  time.Duration
+	drainTick  time.Duration
 }
 
 // poller is the part of trigger.Poller the loop uses. A test supplies a fake one.
@@ -384,17 +386,19 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	}
 	store := postgres.NewStore(pool)
 	gen := ids.New()
-	wf, steps, err := sliceSteps()
+	wf, steps, err := sliceSteps(ad.agents, gen, clk)
 	if err != nil {
 		return nil, err
 	}
 	eng, err := engine.New(engine.Config{
 		Workflow: wf, Steps: steps, Store: store, Clock: clk, IDs: gen, MaxAttempts: maxAttempts,
+		Roles: sliceRoles(), Schemas: sliceSchemas(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build engine: %w", err)
 	}
-	execs, err := executors(ad, store, ingestor{eng: eng}, gen, clk)
+	blobs := newMemBlobStore()
+	execs, err := executors(ad, store, blobs, ingestor{eng: eng}, gen, clk)
 	if err != nil {
 		return nil, err
 	}
@@ -420,10 +424,57 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	if err != nil {
 		return nil, err
 	}
+
+	mcpH, err := assembleMCP(d, ad, store, pool, blobs, gen, clk)
+	if err != nil {
+		return nil, err
+	}
+
 	return &app{
-		pool: pool, poller: p, drainer: box, syncer: sync, logger: d.logger, clock: clk,
+		pool: pool, poller: p, drainer: box, syncer: sync, mcpHandler: mcpH, logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
+}
+
+// assembleMCP wires the task index, agent tools service, adapters, and MCP server.
+func assembleMCP(
+	d deps, ad adapters, store ports.EventStore, pool *pgxpool.Pool, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock,
+) (http.Handler, error) {
+	taskIndex := postgres.NewTaskIndex(pool)
+	asker := &chatAsker{chat: ad.chat, store: store, ids: gen}
+	toolsSvc, err := agenttools.New(agenttools.Config{
+		Events: store,
+		Index:  taskIndex,
+		Blobs:  blobs,
+		Clock:  clk,
+		IDs:    gen,
+		Asker:  asker,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build agenttools: %w", err)
+	}
+
+	tokStore := ad.tokens
+	if tokStore == nil {
+		tokStore = &tokenStore{principals: make(map[string]mcp.Principal)}
+	}
+	tracker := &assignmentAgentTracker{agents: make(map[id.TaskID]id.AgentName)}
+	tasksAdp := &tasksAdapter{svc: toolsSvc, tracker: tracker}
+	reviewsAdp := &mcpReviewsAdapter{svc: toolsSvc, tracker: tracker}
+
+	mcpSrv, err := mcp.NewServer(mcp.Deps{
+		Logger:  d.logger,
+		Clock:   clk,
+		Tokens:  tokStore,
+		Tasks:   tasksAdp,
+		Reviews: reviewsAdp,
+		Code:    ad.vcs,
+		Blobs:   blobs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build mcp server: %w", err)
+	}
+	return mcpSrv.Handler(), nil
 }
 
 // assembleSyncer wires the policy decoder, gate source, evaluator, intake and PR syncer.
@@ -473,30 +524,71 @@ func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk port
 	return sync, nil
 }
 
-// executors maps each effect kind to its executor. Each executor checks the kind of the effect it receives, so a
-// swapped entry fails every effect it is given.
-func executors(ad adapters, store ports.EventStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
-	room, err := effects.NewRoomOpen(effects.RoomOpenDeps{
+// baseExecutors builds the room_open, github_branch, and github_check executors.
+func baseExecutors(
+	ad adapters, store ports.EventStore, in effects.Ingest, gen ports.IDs, clk ports.Clock,
+) (room effects.RoomOpen, branch effects.GitHubBranch, check effects.GitHubCheck, err error) {
+	room, err = effects.NewRoomOpen(effects.RoomOpenDeps{
 		Tickets: ad.tickets, Chat: ad.chat, Store: store, Ingest: in, IDs: gen, Clock: clk,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build room_open executor: %w", err)
+		return room, branch, check, fmt.Errorf("build room_open executor: %w", err)
 	}
-	branch, err := effects.NewGitHubBranch(effects.GitHubBranchDeps{
+	branch, err = effects.NewGitHubBranch(effects.GitHubBranchDeps{
 		Tickets: ad.tickets, Base: ad.vcs, Branches: ad.vcs, Store: store, Ingest: in, IDs: gen, Clock: clk,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build github_branch executor: %w", err)
+		return room, branch, check, fmt.Errorf("build github_branch executor: %w", err)
 	}
-	check, err := effects.NewGitHubCheck(effects.GitHubCheckDeps{
+	check, err = effects.NewGitHubCheck(effects.GitHubCheckDeps{
 		Checks: ad.vcs,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build github_check executor: %w", err)
+		return room, branch, check, fmt.Errorf("build github_check executor: %w", err)
+	}
+	return room, branch, check, nil
+}
+
+// executors maps each effect kind to its executor. Each executor checks the kind of the effect it receives, so a
+// swapped entry fails every effect it is given.
+func executors(ad adapters, store ports.EventStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
+	room, branch, check, err := baseExecutors(ad, store, in, gen, clk)
+	if err != nil {
+		return nil, err
+	}
+	taskAssign, err := effects.NewTaskAssign(effects.TaskAssignDeps{
+		Blobs: blobs, Chat: ad.chat,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build task_assign executor: %w", err)
+	}
+	commitTests, err := effects.NewCommitTests(effects.CommitTestsDeps{
+		Blobs: blobs, Branches: ad.vcs, Store: store, Ingest: in, IDs: gen, Clock: clk, Code: ad.vcs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build github_commit_tests executor: %w", err)
+	}
+	runner := localrunner.New(ad.vcs, localrunner.WithBlobs(blobs), localrunner.WithClock(clk))
+	sandbox := &localRunnerSandbox{runner: runner}
+	testQuality, err := effects.NewTestQuality(effects.TestQualityDeps{
+		Blobs: blobs, Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Store: store, Ingest: in, IDs: gen, Clock: clk, Code: ad.vcs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build test_quality executor: %w", err)
+	}
+	verifyEvidence, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
+		Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Store: store, Ingest: in, IDs: gen, Clock: clk,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build verify_evidence executor: %w", err)
 	}
 	return map[change.EffectKind]outbox.Executor{
-		change.EffectRoomOpen:     room,
-		change.EffectGitHubBranch: branch,
-		change.EffectGitHubCheck:  check,
+		change.EffectRoomOpen:          room,
+		change.EffectGitHubBranch:      branch,
+		change.EffectGitHubCheck:       check,
+		change.EffectTaskAssign:        taskAssign,
+		change.EffectGitHubCommitTests: commitTests,
+		change.EffectTestQuality:       testQuality,
+		change.EffectVerifyEvidence:    verifyEvidence,
 	}, nil
 }

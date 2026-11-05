@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -20,9 +22,41 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
+
+type sourceVCS struct {
+	vcsPort
+	called bool
+	err    error
+}
+
+func (v *sourceVCS) Tarball(context.Context, change.Repo, id.SHA) (io.ReadCloser, error) {
+	v.called = true
+	if v.err != nil {
+		return nil, v.err
+	}
+	return io.NopCloser(bytes.NewReader(nil)), nil
+}
+
+func TestVCSSourceFetchProbesTarballAndPropagatesErrors(t *testing.T) {
+	repo := change.Repo("owner/repo")
+	sha := id.SHA("abc")
+	t.Run("opens tarball", func(t *testing.T) {
+		v := &sourceVCS{}
+		require.NoError(t, (vcsSource{vcs: v}).Fetch(context.Background(), repo, sha))
+		require.True(t, v.called, "Fetch must call Tarball")
+	})
+	t.Run("does not swallow tarball error", func(t *testing.T) {
+		want := errors.New("tarball unavailable")
+		v := &sourceVCS{err: want}
+		err := (vcsSource{vcs: v}).Fetch(context.Background(), repo, sha)
+		require.True(t, v.called, "Fetch must call Tarball")
+		require.ErrorIs(t, err, want)
+	})
+}
 
 // fakeCursorTable is an in-memory cursor table. A source that was never set is ports.ErrNotFound, as in postgres.
 type fakeCursorTable struct {
@@ -112,10 +146,18 @@ func (m *memStore) Load(_ context.Context, cid id.ChangeID) ([]change.Event, err
 // newSliceEngine builds the engine of the slice on store, as assemble does.
 func newSliceEngine(t *testing.T, store ports.EventStore) *engine.Engine {
 	t.Helper()
-	wf, steps, err := sliceSteps()
+	agents := config.Agents{
+		TestAuthor: "test-author",
+		Reviewers:  []string{"reviewer-1", "reviewer-2"},
+		Resolver:   "resolver",
+	}
+	gen := ids.New()
+	clk := clock.System{}
+	wf, steps, err := sliceSteps(agents, gen, clk)
 	require.NoError(t, err)
 	eng, err := engine.New(engine.Config{
-		Workflow: wf, Steps: steps, Store: store, Clock: clock.System{}, IDs: ids.New(), MaxAttempts: maxAttempts,
+		Workflow: wf, Steps: steps, Store: store, Clock: clk, IDs: gen, MaxAttempts: maxAttempts,
+		Roles: sliceRoles(), Schemas: sliceSchemas(),
 	})
 	require.NoError(t, err)
 	return eng

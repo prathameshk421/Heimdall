@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/localrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
@@ -389,16 +390,41 @@ func toMCPReceipt(r agenttools.Receipt) mcp.SubmitReceipt {
 	}
 }
 
-func toAgenttoolsReceipt(r mcp.SubmitReceipt) agenttools.Receipt {
-	var fes []agenttools.FindingError
-	for _, fe := range r.FindingErrors {
-		fes = append(fes, agenttools.FindingError{
-			Index:   fe.Index,
-			Message: fe.Message,
-		})
+// vcsSource adapts vcsPort to effects.Source.
+// Fetch proves the commit is readable; the sandbox still pulls the tarball when it runs.
+type vcsSource struct {
+	vcs vcsPort
+}
+
+func (s vcsSource) Fetch(ctx context.Context, repo change.Repo, sha id.SHA) error {
+	if s.vcs == nil {
+		return fmt.Errorf("fetch %s@%s: code reader is nil", repo, sha)
 	}
-	return agenttools.Receipt{
-		Accepted:      r.Accepted,
-		FindingErrors: fes,
+	rc, err := s.vcs.Tarball(ctx, repo, sha)
+	if err != nil {
+		return fmt.Errorf("fetch %s@%s: %w", repo, sha, err)
 	}
+	if rc == nil {
+		return fmt.Errorf("fetch %s@%s: tarball reader is nil", repo, sha)
+	}
+	if err := rc.Close(); err != nil {
+		return fmt.Errorf("fetch %s@%s: close tarball: %w", repo, sha, err)
+	}
+	return nil
+}
+
+// localRunnerSandbox adapts *localrunner.Runner to ports.Sandbox and effects.OverlaySandbox.
+type localRunnerSandbox struct {
+	runner *localrunner.Runner
+}
+
+func (s *localRunnerSandbox) Run(ctx context.Context, j ports.SandboxJob) (ports.SandboxResult, error) {
+	return s.runner.Run(ctx, j)
+}
+
+func (s *localRunnerSandbox) RunOverlay(ctx context.Context, j ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error) {
+	return s.runner.RunJob(ctx, localrunner.Job{
+		SandboxJob: j,
+		Overlay:    overlays,
+	})
 }

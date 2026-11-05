@@ -66,7 +66,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 		ChangeID:   cid,
 		Version:    1,
 		Type:       change.EventChangeTriggered,
-		Actor:      change.Actor{Kind: change.ActorTracker, ID: "jira"},
+		Actor:      change.Actor{Kind: change.ActorJira, ID: "jira"},
 		OccurredAt: now.Add(-time.Minute),
 		Payload:    trigPayload,
 	}

@@ -56,6 +56,12 @@ func run(
 	}
 	if a != nil {
 		defer a.close()
+		if a.mcpHandler != nil {
+			mux := http.NewServeMux()
+			mux.Handle("/", handler)
+			mux.Handle("/mcp", a.mcpHandler)
+			handler = mux
+		}
 	}
 	ln, err := listen(ctx, "tcp", cfg.Listen)
 	if err != nil {

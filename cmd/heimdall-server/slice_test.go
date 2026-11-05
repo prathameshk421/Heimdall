@@ -5,25 +5,36 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 )
 
-// The slice workflow is the first two steps of the default workflow, with the same with objects.
-func TestSliceWorkflowIsTheFirstTwoStepsOfTheDefault(t *testing.T) {
-	wf, _, err := sliceSteps()
-	require.NoError(t, err)
-	full := workflow.Default()
-	require.Len(t, wf.Steps, 2)
-	for i, s := range wf.Steps {
-		require.Equal(t, full.Steps[i].ID, s.ID)
-		require.Equal(t, full.Steps[i].Do, s.Do)
-		require.JSONEq(t, string(full.Steps[i].With), string(s.With), "step %s keeps its with object", s.ID)
+// The demo slice workflow has 9 implemented steps from workflow.Default.
+func TestSliceWorkflowHasImplementedSteps(t *testing.T) {
+	agents := config.Agents{
+		TestAuthor: "test-author",
+		Reviewers:  []string{"reviewer-1", "reviewer-2"},
+		Resolver:   "resolver",
 	}
+	gen := ids.New()
+	clk := clock.System{}
+	wf, steps, err := sliceSteps(agents, gen, clk)
+	require.NoError(t, err)
+	require.Len(t, wf.Steps, 9)
+	require.Len(t, steps, 9)
 }
 
 // Every step of the slice has an engine implementation, and every implementation is used by a step of the slice.
 func TestSliceWorkflowRunsExactlyTheRegisteredStepTypes(t *testing.T) {
-	wf, steps, err := sliceSteps()
+	agents := config.Agents{
+		TestAuthor: "test-author",
+		Reviewers:  []string{"reviewer-1", "reviewer-2"},
+		Resolver:   "resolver",
+	}
+	gen := ids.New()
+	clk := clock.System{}
+	wf, steps, err := sliceSteps(agents, gen, clk)
 	require.NoError(t, err)
 	registered := map[string]bool{}
 	for _, s := range steps {
@@ -34,5 +45,4 @@ func TestSliceWorkflowRunsExactlyTheRegisteredStepTypes(t *testing.T) {
 		used[s.Do] = true
 	}
 	require.Equal(t, used, registered)
-	require.Equal(t, map[string]bool{"switch.open_room": true, "github.ensure_branch": true}, used)
 }

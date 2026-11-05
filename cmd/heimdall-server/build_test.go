@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -191,7 +192,7 @@ func (dummyVCS) TreeHash(context.Context, change.Repo, id.SHA, string) (id.SHA, 
 	return "", nil
 }
 func (dummyVCS) Tarball(context.Context, change.Repo, id.SHA) (io.ReadCloser, error) {
-	return nil, nil
+	return io.NopCloser(bytes.NewReader(nil)), nil
 }
 func (dummyVCS) PRReviews(context.Context, change.Repo, int) ([]ports.PRReview, error) {
 	return nil, nil
@@ -214,7 +215,8 @@ func TestExecutorsRegistersGitHubCheck(t *testing.T) {
 		vcs:     dummyVCS{},
 		chat:    dummyChat{},
 	}
-	execs, err := executors(ad, store, ingestor{eng: eng}, gen, clk)
+	blobs := newMemBlobStore()
+	execs, err := executors(ad, store, blobs, ingestor{eng: eng}, gen, clk)
 	require.NoError(t, err)
 	ch, ok := execs[change.EffectGitHubCheck]
 	require.True(t, ok, "github_check executor must be registered")

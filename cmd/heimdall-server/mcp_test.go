@@ -3,26 +3,26 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testset"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
@@ -114,6 +114,8 @@ func TestWorkflowBuildsAndEngineAcceptsIt(t *testing.T) {
 		Clock:       clk,
 		IDs:         gen,
 		MaxAttempts: maxAttempts,
+		Roles:       sliceRoles(),
+		Schemas:     sliceSchemas(),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, eng)
@@ -146,7 +148,7 @@ func TestEveryEffectKindEmittedByWorkflowHasAnExecutor(t *testing.T) {
 	gen := ids.New()
 	clk := clock.System{}
 
-	wf, _, err := sliceSteps(agents, gen, clk)
+	_, _, err := sliceSteps(agents, gen, clk)
 	require.NoError(t, err)
 
 	// Effects that steps in the workflow emit:
@@ -163,6 +165,7 @@ func TestEveryEffectKindEmittedByWorkflowHasAnExecutor(t *testing.T) {
 		change.EffectTestQuality:       true,
 		change.EffectGitHubCommitTests: true,
 		change.EffectGitHubCheck:       true, // emitted by gate evaluator / PR syncer
+		change.EffectVerifyEvidence:    true,
 	}
 
 	store := newMemStore()

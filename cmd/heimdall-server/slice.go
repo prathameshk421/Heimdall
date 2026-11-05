@@ -27,60 +27,59 @@ const (
 // sliceSteps returns the demo workflow and the engine steps that run it. The workflow is built from
 // workflow.Default(), keeping the 9 implemented steps and trimming dependency edges of removed steps.
 func sliceSteps(agents config.Agents, gen ports.IDs, clk ports.Clock) (workflow.Workflow, []engine.Step, error) {
+	wf, m, err := demoWorkflow()
+	if err != nil {
+		return workflow.Workflow{}, nil, err
+	}
+	early, err := buildEarlyEngineSteps(m, agents, gen, clk)
+	if err != nil {
+		return workflow.Workflow{}, nil, err
+	}
+	late, err := buildLateEngineSteps(m, agents, gen, clk)
+	if err != nil {
+		return workflow.Workflow{}, nil, err
+	}
+	return wf, append(early, late...), nil
+}
+
+func demoWorkflow() (workflow.Workflow, map[string]workflow.Step, error) {
 	full := workflow.Default()
+	stepNames := []string{
+		stepOpenRoom, stepBranch, stepWriteTests, stepTestQA, stepCommit,
+		stepWaitPR, stepSlop, stepPick, stepReview,
+	}
+	m := make(map[string]workflow.Step, len(stepNames))
+	steps := make([]workflow.Step, 0, len(stepNames))
+	for _, name := range stepNames {
+		s, err := stepByID(full, name)
+		if err != nil {
+			return workflow.Workflow{}, nil, err
+		}
+		if name == stepCommit {
+			s.After = []string{stepTestQA}
+		}
+		m[name] = s
+		steps = append(steps, s)
+	}
+	return workflow.Workflow{
+		Version: full.Version,
+		Steps:   steps,
+	}, m, nil
+}
 
-	openRoom, err := stepByID(full, stepOpenRoom)
+func buildEarlyEngineSteps(m map[string]workflow.Step, agents config.Agents, gen ports.IDs, clk ports.Clock) ([]engine.Step, error) {
+	room, err := engine.NewOpenRoom(m[stepOpenRoom].With)
 	if err != nil {
-		return workflow.Workflow{}, nil, err
+		return nil, fmt.Errorf("step %s: %w", stepOpenRoom, err)
 	}
-	branch, err := stepByID(full, stepBranch)
+	ensure, err := engine.NewEnsureBranch(m[stepBranch].With)
 	if err != nil {
-		return workflow.Workflow{}, nil, err
-	}
-	writeTests, err := stepByID(full, stepWriteTests)
-	if err != nil {
-		return workflow.Workflow{}, nil, err
-	}
-	testQA, err := stepByID(full, stepTestQA)
-	if err != nil {
-		return workflow.Workflow{}, nil, err
-	}
-	commit, err := stepByID(full, stepCommit)
-	if err != nil {
-		return workflow.Workflow{}, nil, err
-	}
-	// Trim after chain: signoff is not implemented, so commit only depends on test_qa
-	commit.After = []string{stepTestQA}
-
-	waitPR, err := stepByID(full, stepWaitPR)
-	if err != nil {
-		return workflow.Workflow{}, nil, err
-	}
-	slop, err := stepByID(full, stepSlop)
-	if err != nil {
-		return workflow.Workflow{}, nil, err
-	}
-	pick, err := stepByID(full, stepPick)
-	if err != nil {
-		return workflow.Workflow{}, nil, err
-	}
-	review, err := stepByID(full, stepReview)
-	if err != nil {
-		return workflow.Workflow{}, nil, err
-	}
-
-	room, err := engine.NewOpenRoom(openRoom.With)
-	if err != nil {
-		return workflow.Workflow{}, nil, fmt.Errorf("step %s: %w", stepOpenRoom, err)
-	}
-	ensure, err := engine.NewEnsureBranch(branch.With)
-	if err != nil {
-		return workflow.Workflow{}, nil, fmt.Errorf("step %s: %w", stepBranch, err)
+		return nil, fmt.Errorf("step %s: %w", stepBranch, err)
 	}
 	agentTask, err := engine.NewAgentTask(engine.AgentTaskSpec{
-		ID:      writeTests.ID,
-		Role:    writeTests.Role,
-		Timeout: writeTests.Timeout,
+		ID:      m[stepWriteTests].ID,
+		Role:    m[stepWriteTests].Role,
+		Timeout: m[stepWriteTests].Timeout,
 		Output:  change.EventTestsSubmitted,
 		AgentFor: func(role workflow.Role) (id.AgentName, bool) {
 			switch role {
@@ -88,6 +87,8 @@ func sliceSteps(agents config.Agents, gen ports.IDs, clk ports.Clock) (workflow.
 				return id.AgentName(agents.TestAuthor), true
 			case workflow.RoleResolver:
 				return id.AgentName(agents.Resolver), true
+			case workflow.RoleReviewer, workflow.RoleProfiler:
+				return "", false
 			default:
 				return "", false
 			}
@@ -96,24 +97,28 @@ func sliceSteps(agents config.Agents, gen ports.IDs, clk ports.Clock) (workflow.
 		IDs:   gen,
 	})
 	if err != nil {
-		return workflow.Workflow{}, nil, fmt.Errorf("step %s: %w", stepWriteTests, err)
+		return nil, fmt.Errorf("step %s: %w", stepWriteTests, err)
 	}
-	tqa, err := engine.NewTestQA(testQA.With)
+	tqa, err := engine.NewTestQA(m[stepTestQA].With)
 	if err != nil {
-		return workflow.Workflow{}, nil, fmt.Errorf("step %s: %w", stepTestQA, err)
+		return nil, fmt.Errorf("step %s: %w", stepTestQA, err)
 	}
-	comm, err := engine.NewCommitTests(commit.With)
+	comm, err := engine.NewCommitTests(m[stepCommit].With)
 	if err != nil {
-		return workflow.Workflow{}, nil, fmt.Errorf("step %s: %w", stepCommit, err)
+		return nil, fmt.Errorf("step %s: %w", stepCommit, err)
 	}
-	wait, err := engine.NewWait(waitPR.With)
+	return []engine.Step{room, ensure, agentTask, tqa, comm}, nil
+}
+
+func buildLateEngineSteps(m map[string]workflow.Step, agents config.Agents, gen ports.IDs, clk ports.Clock) ([]engine.Step, error) {
+	wait, err := engine.NewWait(m[stepWaitPR].With)
 	if err != nil {
-		return workflow.Workflow{}, nil, fmt.Errorf("step %s: %w", stepWaitPR, err)
+		return nil, fmt.Errorf("step %s: %w", stepWaitPR, err)
 	}
 	sl := engine.NewSlop()
 	pk, err := engine.NewPickReviewers(engine.PickReviewersSpec{
-		ID:      pick.ID,
-		Timeout: pick.Timeout,
+		ID:      m[stepPick].ID,
+		Timeout: m[stepPick].Timeout,
 		Clock:   clk,
 		IDs:     gen,
 		DefaultReviewers: func(_ engine.ChangeView) []change.ActorID {
@@ -125,11 +130,11 @@ func sliceSteps(agents config.Agents, gen ports.IDs, clk ports.Clock) (workflow.
 		},
 	})
 	if err != nil {
-		return workflow.Workflow{}, nil, fmt.Errorf("step %s: %w", stepPick, err)
+		return nil, fmt.Errorf("step %s: %w", stepPick, err)
 	}
 	rev, err := engine.NewAgentFanout(engine.AgentFanoutSpec{
-		ID:      review.ID,
-		Timeout: review.Timeout,
+		ID:      m[stepReview].ID,
+		Timeout: m[stepReview].Timeout,
 		Clock:   clk,
 		IDs:     gen,
 		AgentFor: func(person change.ActorID) (id.AgentName, bool) {
@@ -138,23 +143,17 @@ func sliceSteps(agents config.Agents, gen ports.IDs, clk ports.Clock) (workflow.
 					return id.AgentName(r), true
 				}
 			}
-			return id.ParseAgentName(string(person))
+			name, err := id.ParseAgentName(string(person))
+			if err != nil {
+				return "", false
+			}
+			return name, true
 		},
 	})
 	if err != nil {
-		return workflow.Workflow{}, nil, fmt.Errorf("step %s: %w", stepReview, err)
+		return nil, fmt.Errorf("step %s: %w", stepReview, err)
 	}
-
-	wf := workflow.Workflow{
-		Version: full.Version,
-		Steps: []workflow.Step{
-			openRoom, branch, writeTests, testQA, commit, waitPR, slop, pick, review,
-		},
-	}
-	steps := []engine.Step{
-		room, ensure, agentTask, tqa, comm, wait, sl, pk, rev,
-	}
-	return wf, steps, nil
+	return []engine.Step{wait, sl, pk, rev}, nil
 }
 
 // stepByID returns the step of w with the id, copied. A missing id is an error, so a change to the default workflow
@@ -166,4 +165,14 @@ func stepByID(w workflow.Workflow, id string) (workflow.Step, error) {
 		}
 	}
 	return workflow.Step{}, fmt.Errorf("workflow.Default has no step %q", id)
+}
+
+// sliceRoles lists the agent roles known to the demo workflow.
+func sliceRoles() []workflow.Role {
+	return []workflow.Role{workflow.RoleTestAuthor, workflow.RoleReviewer, workflow.RoleResolver}
+}
+
+// sliceSchemas lists the output schemas registered for the demo workflow.
+func sliceSchemas() []string {
+	return []string{"TestSubmission@1", "Review@1"}
 }

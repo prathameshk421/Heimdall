@@ -15,6 +15,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
 // Secret names the adapters read. They are the files under secrets_dir (D89), named as in the design notes.
@@ -45,6 +46,7 @@ type adapters struct {
 	vcs      vcsPort
 	chat     ports.Chat
 	agents   config.Agents
+	tokens   mcp.Tokens
 	projects projectRepos
 	project  string
 	repos    []change.Repo
@@ -108,6 +110,11 @@ func selectAdapters(cfg config.Config, d deps, clk ports.Clock) (adapters, error
 	if out.chat, err = selected[ports.Chat](cfg, reg, registry.KindChat); err != nil {
 		return adapters{}, err
 	}
+	tokStore, err := newTokenStore(cfg)
+	if err != nil {
+		return adapters{}, err
+	}
+	out.tokens = tokStore
 	return out, nil
 }
 
