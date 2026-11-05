@@ -26,6 +26,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "cost" {
 		os.Exit(runCost(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "secrets-sync" {
+		os.Exit(runSecretsSync(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	fmt.Fprintln(os.Stderr, "heimdall: not built yet")
 	os.Exit(exitNotBuilt)
 }
