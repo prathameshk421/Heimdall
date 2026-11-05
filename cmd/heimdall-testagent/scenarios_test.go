@@ -25,9 +25,14 @@ func expect() testset.Expect {
 	return testset.Expect{TestsDir: testsDir, ACIDs: []string{"AC1", "AC2"}}
 }
 
-// TestTheScenarioTableHoldsTheSevenCannedBehaviours pins the names a scripted run and the e2e stories call.
-func TestTheScenarioTableHoldsTheSevenCannedBehaviours(t *testing.T) {
-	want := []string{"valid", "missing-ac", "import-error", "outside-dir", "schema-bad", "slow", "silent"}
+// TestTheScenarioTableHoldsTheCannedBehaviours pins the names a scripted run and the e2e stories call. The test-author
+// names come first, then the reviewer names, then the resolver names.
+func TestTheScenarioTableHoldsTheCannedBehaviours(t *testing.T) {
+	want := []string{
+		"valid", "missing-ac", "import-error", "outside-dir", "schema-bad", "slow", "silent",
+		"review-clean", "review-finding", "review-bad-path", "review-silent",
+		"verdict-uphold", "verdict-dismiss", "verdict-needs-human",
+	}
 	var got []string
 	for _, s := range allScenarios() {
 		got = append(got, s.name)
