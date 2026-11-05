@@ -1,0 +1,24 @@
+{
+  "agents": {
+    "test-author": {
+      "template": "test-author.opencode.json",
+      "skill": "test-quality"
+    },
+    "reviewer-1": {
+      "template": "reviewer-1.opencode.json",
+      "skill": "reviewer"
+    },
+    "reviewer-2": {
+      "template": "reviewer-2.opencode.json",
+      "skill": "reviewer"
+    },
+    "reviewer-3": {
+      "template": "reviewer-3.opencode.json",
+      "skill": "reviewer"
+    },
+    "resolver": {
+      "template": "resolver.opencode.json",
+      "skill": "resolver"
+    }
+  }
+}
