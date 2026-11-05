@@ -141,6 +141,25 @@ func (d *Drainer) RunOnce(ctx context.Context) (DrainResult, error) {
 	return res, nil
 }
 
+// RunEffect executes only the effect identified by key. A live lease is returned to River as an error for retry.
+func (d *Drainer) RunEffect(ctx context.Context, key change.EffectKey) error {
+	fx, err := d.box.ClaimEffect(ctx, key, d.lease)
+	if err != nil {
+		return fmt.Errorf("drain effect %s: claim: %w", key, err)
+	}
+	if fx == nil {
+		return nil
+	}
+	done, err := d.drainOne(ctx, *fx)
+	if err != nil {
+		return err
+	}
+	if !done {
+		return fmt.Errorf("drain effect %s: executor failed", key)
+	}
+	return nil
+}
+
 // drainOne performs one claimed effect and records the outcome. It reports whether the effect is done.
 func (d *Drainer) drainOne(ctx context.Context, fx change.Effect) (bool, error) {
 	ex, ok := d.execs[fx.Kind]

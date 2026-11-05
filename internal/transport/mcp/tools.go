@@ -79,7 +79,7 @@ func (s *Server) buildTools() ([]tool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("schema of heimdall_submit_verdict: %w", err)
 	}
-	return []tool{
+	tools := []tool{
 		{name: "heimdall_get_task", description: "Return your one active task: role, change, inputs and deadline.",
 			schema: noArgsSchema(), roles: llmRoles(), handle: s.getTask},
 		{name: "heimdall_ack", description: "Acknowledge your task within 60 seconds of its assignment.",
@@ -90,6 +90,8 @@ func (s *Server) buildTools() ([]tool, error) {
 			schema: readUntrustedSchema(), roles: llmRoles(), handle: s.readUntrusted},
 		{name: "heimdall_read_code", description: "Read a file at the base or head commit of your change. Lines are numbered. A range is optional.",
 			schema: readCodeSchema(), roles: llmRoles(), handle: s.readCode},
+		{name: "heimdall_ask_knowledge", description: "Search team memory visible to your person and teams. Results include trust labels and source references.",
+			schema: askKnowledgeSchema(), roles: llmRoles(), handle: s.askKnowledge},
 		{name: "heimdall_submit_tests", description: "Submit the test files that cover your acceptance criteria.",
 			schema: json.RawMessage(submitSchema), roles: []workflow.Role{workflow.RoleTestAuthor}, handle: s.submitTests},
 		{name: "heimdall_submit_review", description: "Submit your code review findings for the change.",
@@ -100,7 +102,36 @@ func (s *Server) buildTools() ([]tool, error) {
 			schema: askHumansSchema(), roles: []workflow.Role{workflow.RoleTestAuthor, workflow.RoleResolver}, handle: s.askHumans},
 		{name: "heimdall_report_progress", description: "Report progress in one short text. One report every 2 minutes.",
 			schema: reportProgressSchema(), roles: llmRoles(), handle: s.reportProgress},
-	}, nil
+	}
+	if s.deps.Packs != nil {
+		tools = append(tools, tool{name: "heimdall_read_pack", description: "Read your own fresh, verified reviewer context pack. Private canaries are filtered before it is returned.", schema: readPackSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.readPack})
+	}
+	if s.deps.Files != nil {
+		tools = append(tools,
+			tool{name: "heimdall_stage_knowledge", description: "Stage a markdown document from the active change for redaction and human review; staging never ingests it into memory.", schema: stageKnowledgeSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.stageKnowledge},
+			tool{name: "heimdall_approve_knowledge", description: "Approve a staged knowledge source as the mapped policy owner or group approver.", schema: knowledgeRefSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.approveKnowledge},
+			tool{name: "heimdall_forget_knowledge", description: "Forget an approved knowledge source and tombstone its memory episode.", schema: knowledgeRefSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.forgetKnowledge},
+		)
+	}
+	return tools, nil
+}
+
+func readPackSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"section":{"type":"string","maxLength":128}},"additionalProperties":false}`)
+}
+
+func stageKnowledgeSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":512},"group":{"type":"string","minLength":1,"maxLength":128},"kind":{"type":"string","enum":["adr","document"]},"source_url":{"type":"string","maxLength":2048},"retention_days":{"type":"integer","minimum":1,"maximum":3650}},"required":["path","group","kind","retention_days"],"additionalProperties":false}`)
+}
+
+func knowledgeRefSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"ref":{"type":"string","minLength":1,"maxLength":256}},"required":["ref"],"additionalProperties":false}`)
+}
+
+func askKnowledgeSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"question":{"type":"string","minLength":1,"maxLength":1024},` +
+		`"entities":{"type":"array","maxItems":20,"items":{"type":"string","minLength":1,"maxLength":128}},` +
+		`"as_of":{"type":"string","format":"date-time"}},"required":["question"],"additionalProperties":false}`)
 }
 
 func noArgsSchema() json.RawMessage {
@@ -388,6 +419,111 @@ func (s *Server) readCode(ctx context.Context, p Principal, args json.RawMessage
 		return "", err
 	}
 	return wrapUntrusted(label, []byte(numbered))
+}
+
+func (s *Server) askKnowledge(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		Question string   `json:"question"`
+		Entities []string `json:"entities,omitempty"`
+		AsOf     string   `json:"as_of,omitempty"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	a, err := s.currentTask(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	query := ports.MemoryQuery{Question: input.Question, Entities: input.Entities, Groups: []string{}, Limit: 20}
+	if input.AsOf != "" {
+		query.AsOf, err = time.Parse(time.RFC3339Nano, input.AsOf)
+		if err != nil {
+			return "", refusalf("The as_of value must be an RFC3339 date and time.")
+		}
+	}
+	items, err := s.deps.Knowledge.Ask(ctx, p.Agent, a.Task.TaskID, change.Repo(a.Task.Change.Repo), a.Task.Change.BaseSHA, query)
+	if err != nil {
+		return "", fmt.Errorf("search knowledge: %w", err)
+	}
+	return marshalText(items)
+}
+
+func (s *Server) readPack(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		Section string `json:"section,omitempty"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	assignment, err := s.currentTask(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	if assignment.Task.Role != workflow.RoleReviewer || p.Role != workflow.RoleReviewer {
+		return "", refusal("Only the assigned reviewer can read a context pack.")
+	}
+	content, err := s.deps.Packs.Read(ctx, p, input.Section)
+	if err != nil {
+		return "", fmt.Errorf("read reviewer context pack: %w", err)
+	}
+	return wrapUntrusted("private reviewer context pack", []byte(content))
+}
+
+func (s *Server) stageKnowledge(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		Path          string `json:"path"`
+		Group         string `json:"group"`
+		Kind          string `json:"kind"`
+		SourceURL     string `json:"source_url,omitempty"`
+		RetentionDays int    `json:"retention_days"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	a, err := s.currentTask(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	if a.Task.Role != workflow.RoleReviewer || p.Role != workflow.RoleReviewer {
+		return "", refusal("Only the active reviewer can stage knowledge for this change.")
+	}
+	info, err := s.deps.Files.Stage(ctx, p, a, input.Path, input.Group, input.Kind, input.SourceURL, input.RetentionDays)
+	if err != nil {
+		return "", fmt.Errorf("stage knowledge file: %w", err)
+	}
+	return marshalText(info)
+}
+
+func (s *Server) approveKnowledge(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		Ref string `json:"ref"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	if p.Person == "" {
+		return "", refusal("Knowledge approval requires a mapped human principal.")
+	}
+	if err := s.deps.Files.Approve(ctx, p, input.Ref); err != nil {
+		return "", fmt.Errorf("approve knowledge file: %w", err)
+	}
+	return "The knowledge source is approved and queued for memory ingestion.", nil
+}
+
+func (s *Server) forgetKnowledge(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		Ref string `json:"ref"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	if p.Person == "" {
+		return "", refusal("Knowledge deletion requires a mapped human principal.")
+	}
+	if err := s.deps.Files.Forget(ctx, p, input.Ref); err != nil {
+		return "", fmt.Errorf("forget knowledge file: %w", err)
+	}
+	return "The knowledge source and its memory episode have been deleted.", nil
 }
 
 // submitTests checks a test submission against the task and records it. A submission after the deadline is recorded

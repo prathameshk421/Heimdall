@@ -10,6 +10,18 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
+func TestCheckUsesAuthenticatedReadOnlyRoomList(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	if err := c.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	reqs := f.requests()
+	if len(reqs) != 1 || reqs[0].Method != http.MethodPost || reqs[0].Path != "/agents/"+testAgentID+"/ops/list_rooms" || reqs[0].Auth != testAPIKey || len(reqs[0].Body) != 0 {
+		t.Fatalf("unexpected check request: %#v", reqs)
+	}
+}
+
 func TestRegisterCoordinatorUsesTheRegistrationTokenAndReturnsTheKeyOnce(t *testing.T) {
 	f := newFakeSwitch(t)
 	c, _ := newTestClient(t, f)

@@ -222,18 +222,25 @@ func buildWorld(t *testing.T, tokenRole workflow.Role, task workflow.TaskEnvelop
 		blobs:   blobs,
 	}
 	srv, err := mcp.NewServer(mcp.Deps{
-		Logger:  slog.New(slog.DiscardHandler),
-		Clock:   testClock{now: testNow},
-		Tokens:  w.tokens,
-		Tasks:   w.tasks,
-		Reviews: w.reviews,
-		Code:    w.code,
-		Blobs:   w.blobs,
+		Logger:    slog.New(slog.DiscardHandler),
+		Clock:     testClock{now: testNow},
+		Tokens:    w.tokens,
+		Tasks:     w.tasks,
+		Reviews:   w.reviews,
+		Code:      w.code,
+		Blobs:     w.blobs,
+		Knowledge: knowledgeStub{},
 	})
 	require.NoError(t, err)
 	w.hs = httptest.NewServer(srv.Handler())
 	t.Cleanup(w.hs.Close)
 	return w
+}
+
+type knowledgeStub struct{}
+
+func (knowledgeStub) Ask(context.Context, id.AgentName, id.TaskID, change.Repo, id.SHA, ports.MemoryQuery) ([]ports.MemoryItem, error) {
+	return nil, nil
 }
 
 // newWorld wires the real MCP server to the fakes for a test-author and serves it over HTTP. It returns the fakes a

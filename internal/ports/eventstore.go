@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -26,8 +27,14 @@ type Outbox interface {
 	// Claim takes a lease of lease length on up to limit undone effects whose lease is free or expired, oldest first,
 	// and returns them. Two live leases never cover the same effect. Done and Fail release the lease (T22).
 	Claim(ctx context.Context, limit int, lease time.Duration) ([]change.Effect, error)
+	// ClaimEffect claims exactly the keyed effect. It returns (nil, nil) when that key is done or exhausted.
+	// ErrEffectLeased means another worker owns a live lease and the caller should retry this job.
+	ClaimEffect(ctx context.Context, key change.EffectKey, lease time.Duration) (*change.Effect, error)
 	// Done marks an effect as performed. Calling it twice is not an error.
 	Done(ctx context.Context, key change.EffectKey) error
 	// Fail records one failed attempt and its reason. After eight attempts the effect goes to the dead-letter view.
 	Fail(ctx context.Context, key change.EffectKey, reason string) error
 }
+
+// ErrEffectLeased is returned when a keyed effect is held by another worker's live lease.
+var ErrEffectLeased = errors.New("effect has a live lease")

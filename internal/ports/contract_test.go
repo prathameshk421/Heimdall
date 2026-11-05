@@ -52,6 +52,9 @@ func (f *fakeOutbox) Done(_ context.Context, k change.EffectKey) error {
 func (*fakeOutbox) Claim(_ context.Context, limit int, _ time.Duration) ([]change.Effect, error) {
 	return make([]change.Effect, limit), nil
 }
+func (*fakeOutbox) ClaimEffect(_ context.Context, _ change.EffectKey, _ time.Duration) (*change.Effect, error) {
+	return nil, nil
+}
 func (*fakeOutbox) Fail(_ context.Context, _ change.EffectKey, _ string) error { return nil }
 
 type fakePRs struct{}

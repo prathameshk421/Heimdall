@@ -23,6 +23,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
@@ -44,13 +45,14 @@ func TestMCPHandlerMountedAnswersInitializeAndRefusesBadTokenWithoutLeak(t *test
 	reviews := &fakeMCPReviews{}
 
 	mcpSrv, err := mcp.NewServer(mcp.Deps{
-		Logger:  discardLogger(),
-		Clock:   clk,
-		Tokens:  tokStore,
-		Tasks:   tasks,
-		Reviews: reviews,
-		Code:    vcs,
-		Blobs:   blobs,
+		Logger:    discardLogger(),
+		Clock:     clk,
+		Tokens:    tokStore,
+		Tasks:     tasks,
+		Reviews:   reviews,
+		Code:      vcs,
+		Blobs:     blobs,
+		Knowledge: testMCPKnowledge{},
 	})
 	require.NoError(t, err)
 
@@ -92,6 +94,12 @@ func TestMCPHandlerMountedAnswersInitializeAndRefusesBadTokenWithoutLeak(t *test
 	badBody, err := io.ReadAll(respBad.Body)
 	require.NoError(t, err)
 	require.NotContains(t, string(badBody), badToken)
+}
+
+type testMCPKnowledge struct{}
+
+func (testMCPKnowledge) Ask(context.Context, id.AgentName, id.TaskID, change.Repo, id.SHA, ports.MemoryQuery) ([]ports.MemoryItem, error) {
+	return nil, nil
 }
 
 func TestWorkflowBuildsAndEngineAcceptsIt(t *testing.T) {

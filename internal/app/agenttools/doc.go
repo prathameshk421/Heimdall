@@ -12,7 +12,7 @@
 //   - SubmitReview: validate review findings (path and line ranges), filing valid findings and the review submission.
 //   - SubmitVerdict: record resolver verdicts for disputed cases.
 //   - AskHumans: post human-facing questions via an injected Asker and record question.asked events.
-//   - Progress: receive progress reports (in-memory rate limiting handled at transport; returns nil here).
+//   - Progress: durably append bounded progress reports and enforce the two-minute interval from the event stream.
 //
 // # Concurrency and Consistency
 //

@@ -19,10 +19,11 @@ const testingCapUSD = 3.0
 const openRouterFile = "openrouter_api_key"
 
 type costReport struct {
-	TotalSpent float64            `json:"total_spent_usd"`
-	Remaining  float64            `json:"remaining_usd"`
-	ByPurpose  map[string]float64 `json:"per_purpose_usd"`
-	Balance    float64            `json:"live_balance_usd"`
+	TotalSpent       float64            `json:"total_spent_usd"`
+	Remaining        float64            `json:"remaining_usd"`
+	ByPurpose        map[string]float64 `json:"per_purpose_usd"`
+	Balance          float64            `json:"live_balance_usd"`
+	PurposeRemaining map[string]float64 `json:"per_purpose_remaining_usd"`
 }
 
 type costSecrets struct{ cfg config.Config }
@@ -109,7 +110,12 @@ func loadCostReport(options costOptions, deps costDeps) (costReport, error) {
 	if err != nil {
 		return costReport{}, fmt.Errorf("live balance: %w", err)
 	}
-	return costReport{TotalSpent: total, Remaining: testingCapUSD - total, ByPurpose: byPurpose, Balance: balance}, nil
+	limits := defaultPurposeBudgets()
+	remaining := make(map[string]float64, len(limits))
+	for purpose, limit := range limits {
+		remaining[purpose] = limit - byPurpose[purpose]
+	}
+	return costReport{TotalSpent: total, Remaining: testingCapUSD - total, ByPurpose: byPurpose, Balance: balance, PurposeRemaining: remaining}, nil
 }
 
 func writeCostReport(stdout io.Writer, report costReport, asJSON bool) error {
@@ -132,6 +138,16 @@ func writeCostReport(stdout io.Writer, report costReport, asJSON bool) error {
 	sort.Strings(purposes)
 	for _, purpose := range purposes {
 		if _, err := fmt.Fprintf(w, "%s\t$%.4f\n", purpose, report.ByPurpose[purpose]); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
+	}
+	remainingPurposes := make([]string, 0, len(report.PurposeRemaining))
+	for purpose := range report.PurposeRemaining {
+		remainingPurposes = append(remainingPurposes, purpose)
+	}
+	sort.Strings(remainingPurposes)
+	for _, purpose := range remainingPurposes {
+		if _, err := fmt.Fprintf(w, "%s remaining\t$%.4f\n", purpose, report.PurposeRemaining[purpose]); err != nil {
 			return fmt.Errorf("write output: %w", err)
 		}
 	}

@@ -206,6 +206,10 @@ func (dummyVCS) Comment(context.Context, change.Repo, int, change.EffectKey, str
 	return nil
 }
 
+func (dummyVCS) IssueCommentsSince(context.Context, change.Repo, int, time.Time) ([]ports.IssueComment, error) {
+	return nil, nil
+}
+
 func TestExecutorsRegistersGitHubCheck(t *testing.T) {
 	store := newMemStore()
 	clk := clock.System{}

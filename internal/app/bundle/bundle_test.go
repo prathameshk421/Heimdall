@@ -5,10 +5,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/stretchr/testify/require"
@@ -99,6 +103,37 @@ func TestStoreRoundTripAndMissingBlob(t *testing.T) {
 
 	_, err = store.Get(context.Background(), workflow.BlobRef("blob:sha256:"+strings.Repeat("0", 64)))
 	require.ErrorIs(t, err, ports.ErrNotFound)
+}
+
+func TestBuildFromEventsProjectsContextDeterministically(t *testing.T) {
+	events := []change.Event{
+		bundleEvent(t, change.EventChangeTriggered, change.Triggered{Ticket: "PAY-999", Repo: "acme/pay-demo", Assignee: "agent", Source: change.TriggerJira}),
+		bundleEvent(t, change.EventBranchEnsured, change.BranchEnsured{Repo: "acme/pay-demo", Branch: "PAY-999-tests", BaseSHA: "abcdef1"}),
+		bundleEvent(t, change.EventPROpened, change.PROpened{Repo: "acme/pay-demo", Number: 1, HeadSHA: "abcdef2", Author: "author"}),
+		bundleEvent(t, change.EventPRPushed, change.PRPushed{Repo: "acme/pay-demo", Number: 1, HeadSHA: "abcdef3"}),
+		bundleEvent(t, change.EventPRClosed, change.PRClosed{Repo: "acme/pay-demo", Number: 1, HeadSHA: "abcdef4"}),
+		bundleEvent(t, change.EventTestsSubmitted, change.TestsSubmitted{
+			Refs: []string{"tests/heimdall/PAY-999/a_test.go"}, ACMap: map[string][]string{"AC2": {"TestTwo"}, "AC1": {"TestOne"}}, SHA: "abcdef4", TreeHash: "abcdef5",
+		}),
+	}
+
+	built, err := BuildFromEvents(workflow.RoleReviewer, "PAY-142", events)
+	require.NoError(t, err)
+	require.Contains(t, string(built.Bytes), `"id":"PAY-999"`)
+	require.Contains(t, string(built.Bytes), `"base_sha":"abcdef1"`)
+	require.Contains(t, string(built.Bytes), `"head_sha":"abcdef4"`)
+	require.Contains(t, string(built.Bytes), `"criteria":["AC1","AC2"]`)
+}
+
+func bundleEvent(t *testing.T, typ change.EventType, payload change.Payload) change.Event {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	require.NoError(t, err)
+	return change.Event{
+		ID: "3f1c9a52-8d2b-4e7a-9c11-0b6f5d4e3a21", ChangeID: id.ChangeID("PAY-142"), Version: 1,
+		Type: typ, Actor: change.Actor{Kind: change.ActorSystem, ID: "engine"},
+		OccurredAt: time.Date(2026, 11, 5, 14, 0, 0, 0, time.UTC), CorrelationID: "trace-1", Payload: raw,
+	}
 }
 
 func testRequest() Request {

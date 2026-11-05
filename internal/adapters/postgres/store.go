@@ -1,20 +1,34 @@
 package postgres
 
 import (
+	"context"
+
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 // Store is the Postgres adapter of ports.EventStore and ports.Outbox, and of the cursor and webhook tables.
 type Store struct {
-	pool *pgxpool.Pool
+	pool     *pgxpool.Pool
+	enqueuer EffectEnqueuer
 }
+
+// EffectEnqueuer inserts an effect job through the event append transaction.
+type EffectEnqueuer interface {
+	EnqueueEffectTx(context.Context, pgx.Tx, change.Effect) error
+}
+
+// SetEffectEnqueuer enables transactional River delivery for newly appended effects.
+func (s *Store) SetEffectEnqueuer(enqueuer EffectEnqueuer) { s.enqueuer = enqueuer }
 
 var (
 	_ ports.EventStore = (*Store)(nil)
 	_ ports.Outbox     = (*Store)(nil)
+	_ ports.RoomIndex  = (*Store)(nil)
 )
 
 // NewStore wraps a pool whose database has been migrated with Migrate.

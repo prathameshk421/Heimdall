@@ -1,0 +1,154 @@
+// Package roomstream reconciles persisted room bindings and cursors before consuming Switch deliveries.
+package roomstream
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+)
+
+const cursorPrefix = "switch:room:"
+
+// Handler processes a message for the change whose room received it. It must be idempotent by Message.ID because a
+// process can stop after applying a message but before its cursor write becomes durable.
+type Handler interface {
+	HandleRoomMessage(ctx context.Context, room ports.RoomBinding, message ports.Message) error
+}
+
+// Config supplies the durable room/cursor stores and the Switch stream.
+type Config struct {
+	Rooms        ports.RoomIndex
+	Cursors      ports.CursorTable
+	Stream       ports.ChatStream
+	Handler      Handler
+	RefreshEvery time.Duration
+	Wait         func(context.Context, time.Duration) error
+}
+
+// Service runs the coordinator stream. Call Run once; the Switch adapter reconnects dropped streams, while this
+// service periodically refreshes the room set and reloads cursors so new rooms and restarts are reconciled.
+type Service struct {
+	rooms        ports.RoomIndex
+	cursors      ports.CursorTable
+	stream       ports.ChatStream
+	handler      Handler
+	refreshEvery time.Duration
+	wait         func(context.Context, time.Duration) error
+}
+
+// New validates dependencies and builds the stream service.
+func New(cfg Config) (*Service, error) {
+	var missing []string
+	if cfg.Rooms == nil {
+		missing = append(missing, "Rooms")
+	}
+	if cfg.Cursors == nil {
+		missing = append(missing, "Cursors")
+	}
+	if cfg.Stream == nil {
+		missing = append(missing, "Stream")
+	}
+	if cfg.Handler == nil {
+		missing = append(missing, "Handler")
+	}
+	if cfg.RefreshEvery <= 0 {
+		missing = append(missing, "RefreshEvery")
+	}
+	if cfg.Wait == nil {
+		missing = append(missing, "Wait")
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("room stream: missing or invalid: %s", strings.Join(missing, ", "))
+	}
+	return &Service{
+		rooms: cfg.Rooms, cursors: cfg.Cursors, stream: cfg.Stream, handler: cfg.Handler,
+		refreshEvery: cfg.RefreshEvery, wait: cfg.Wait,
+	}, nil
+}
+
+// Run refreshes the room list at a bounded interval. Stream errors are returned to the server loop, which logs them
+// and restarts with the durable cursors.
+func (s *Service) Run(ctx context.Context) error {
+	for {
+		cycleCtx, cancel := context.WithTimeout(ctx, s.refreshEvery)
+		err := s.Cycle(cycleCtx)
+		cancel()
+		if ctx.Err() != nil {
+			return fmt.Errorf("room stream: %w", ctx.Err())
+		}
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		if err := s.wait(ctx, time.Second); err != nil {
+			return fmt.Errorf("room stream wait: %w", err)
+		}
+	}
+}
+
+// Cycle loads the active rooms and their saved cursors, then consumes one stream interval. A handler error stops the
+// cycle before saving that delivery's cursor, allowing read_context to replay it on the next cycle.
+func (s *Service) Cycle(ctx context.Context) error {
+	rooms, err := s.rooms.OpenRooms(ctx)
+	if err != nil {
+		return fmt.Errorf("load active rooms: %w", err)
+	}
+	byRoom, cursors, err := s.restoreRoomCursors(ctx, rooms)
+	if err != nil {
+		return err
+	}
+	err = s.stream.StreamRooms(ctx, rooms, cursors, func(ctx context.Context, d ports.ChatDelivery) error {
+		return s.deliver(ctx, byRoom, d)
+	})
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("consume Switch stream: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) restoreRoomCursors(ctx context.Context, rooms []ports.RoomBinding) (map[change.RoomID]ports.RoomBinding, map[change.RoomID]ports.Cursor, error) {
+	byRoom := make(map[change.RoomID]ports.RoomBinding, len(rooms))
+	cursors := make(map[change.RoomID]ports.Cursor, len(rooms))
+	for _, room := range rooms {
+		if _, err := idForRoom(room); err != nil {
+			return nil, nil, err
+		}
+		byRoom[room.RoomID] = room
+		value, err := s.cursors.GetCursor(ctx, cursorPrefix+string(room.RoomID))
+		if err != nil && !errors.Is(err, ports.ErrNotFound) {
+			return nil, nil, fmt.Errorf("load cursor for room %s: %w", room.RoomID, err)
+		}
+		if err == nil {
+			cursors[room.RoomID] = ports.Cursor(value)
+		}
+	}
+	return byRoom, cursors, nil
+}
+
+func (s *Service) deliver(ctx context.Context, rooms map[change.RoomID]ports.RoomBinding, d ports.ChatDelivery) error {
+	room, ok := rooms[d.Message.Room]
+	if !ok {
+		return fmt.Errorf("message %s arrived for unindexed room %s", d.Message.ID, d.Message.Room)
+	}
+	if err := s.handler.HandleRoomMessage(ctx, room, d.Message); err != nil {
+		return fmt.Errorf("handle room %s message %s: %w", room.RoomID, d.Message.ID, err)
+	}
+	if d.Cursor == "" {
+		return errors.New("switch delivery has an empty cursor")
+	}
+	if err := s.cursors.SetCursor(ctx, cursorPrefix+string(room.RoomID), string(d.Cursor)); err != nil {
+		return fmt.Errorf("save cursor for room %s: %w", room.RoomID, err)
+	}
+	return nil
+}
+
+func idForRoom(room ports.RoomBinding) (change.RoomID, error) {
+	if _, err := change.ParseRoomID(string(room.RoomID)); err != nil {
+		return "", fmt.Errorf("room index returned invalid room id: %w", err)
+	}
+	return room.RoomID, nil
+}

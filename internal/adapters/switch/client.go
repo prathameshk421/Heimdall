@@ -70,6 +70,7 @@ type Client struct {
 }
 
 var _ ports.Chat = (*Client)(nil)
+var _ ports.ChatStream = (*Client)(nil)
 
 // StatusOf returns the HTTP status of a non-2xx Switch reply that err carries.
 func StatusOf(err error) (int, bool) {

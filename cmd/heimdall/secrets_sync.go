@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -32,6 +34,7 @@ func runSecretsSync(args []string, stdout, stderr io.Writer) int {
 	envPath := fs.String("env", "", "dotenv file path (required)")
 	outDir := fs.String("out", "", "secrets directory (required)")
 	requireAll := fs.Bool("require", false, "fail if a mapped key is missing")
+	bootstrap := fs.Bool("bootstrap-generated", false, "create fresh database and agent credentials")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -48,6 +51,12 @@ func runSecretsSync(args []string, stdout, stderr io.Writer) int {
 		writeDiagnostic(stderr, "heimdall secrets-sync: cannot prepare output directory\n")
 		return 1
 	}
+	if *bootstrap {
+		if err := bootstrapGeneratedSecrets(*outDir); err != nil {
+			writeDiagnostic(stderr, "heimdall secrets-sync: cannot create generated credentials\n")
+			return 1
+		}
+	}
 	missing, err := copyMappedSecrets(values, *outDir)
 	if err != nil {
 		writeDiagnostic(stderr, err.Error()+"\n")
@@ -60,6 +69,30 @@ func runSecretsSync(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	return 0
+}
+
+func bootstrapGeneratedSecrets(outDir string) error {
+	passwordBytes := make([]byte, 32)
+	if _, err := rand.Read(passwordBytes); err != nil {
+		return err
+	}
+	password := base64.RawURLEncoding.EncodeToString(passwordBytes)
+	if err := writeSecret(outDir, "postgres_password", []byte(password)); err != nil {
+		return err
+	}
+	if err := writeSecret(outDir, "database_url", []byte("postgres://heimdall:"+password+"@postgres:5432/heimdall?sslmode=disable")); err != nil {
+		return err
+	}
+	for _, name := range []string{"agent_token_test-author", "agent_token_reviewer-1", "agent_token_reviewer-2", "agent_token_reviewer-3", "agent_token_resolver"} {
+		buf := make([]byte, 32)
+		if _, err := rand.Read(buf); err != nil {
+			return err
+		}
+		if err := writeSecret(outDir, name, []byte(base64.RawURLEncoding.EncodeToString(buf))); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func copyMappedSecrets(values map[string]string, outDir string) ([]string, error) {

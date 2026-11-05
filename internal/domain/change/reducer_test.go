@@ -49,6 +49,9 @@ func defaultPayload(t *testing.T, et change.EventType) json.RawMessage {
 	if et == change.EventTaskAssigned {
 		return json.RawMessage(testAuthorTask)
 	}
+	if et == change.EventTaskProgress {
+		return json.RawMessage(`{"task_id":"tsk_01HZX3K9QW7M2P5R8T0V4YB6CD","agent":"bob-reviewer","role":"test-author","text":"working"}`)
+	}
 	if et == change.EventFindingStateChanged {
 		return findingPayload("fix_claimed")
 	}
@@ -112,6 +115,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventTaskAcked:        change.StateWritingTests,
 		change.EventTaskTimedOut:     change.StateWritingTests,
 		change.EventTaskFailed:       change.StateWritingTests,
+		change.EventTaskProgress:     change.StateWritingTests,
 		change.EventQuestionAsked:    change.StateWritingTests,
 		change.EventQuestionAnswered: change.StateWritingTests,
 		change.EventTestsSubmitted:   change.StateVerifyingTests,
@@ -232,6 +236,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventTaskAcked:           change.StateInReview,
 		change.EventTaskTimedOut:        change.StateInReview,
 		change.EventTaskFailed:          change.StateInReview,
+		change.EventTaskProgress:        change.StateInReview,
 		change.EventPRPushed:            change.StatePROpen,
 		change.EventPRClosed:            change.StateRejected,
 		change.EventCIReported:          change.StateInReview,
@@ -256,6 +261,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventTaskAcked:           change.StateDeliberating,
 		change.EventTaskTimedOut:        change.StateDeliberating,
 		change.EventTaskFailed:          change.StateDeliberating,
+		change.EventTaskProgress:        change.StateDeliberating,
 		change.EventPRPushed:            change.StatePROpen,
 		change.EventPRClosed:            change.StateRejected,
 		change.EventCIReported:          change.StateDeliberating,

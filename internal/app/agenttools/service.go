@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -57,6 +58,43 @@ type Receipt struct {
 	FindingErrors []FindingError `json:"finding_errors,omitempty"`
 }
 
+// ReviewRefs provides the caller-scoped references used by semantic review validation.
+type ReviewRefs interface {
+	FileExists(context.Context, workflow.ChangeRef, string) (bool, error)
+	LineCount(context.Context, workflow.ChangeRef, string) (int, error)
+	RunExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
+	MemoryExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
+	PackExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
+}
+
+// ReviewSubmission is the trusted scope supplied to semantic review validation.
+type ReviewSubmission struct {
+	Change       workflow.ChangeRef
+	Caller       id.AgentName
+	FilesChanged []string
+	Review       finding.Review
+}
+
+// ReviewFinding is a semantically accepted finding with its calculated evidence tier.
+type ReviewFinding struct {
+	Input finding.Input
+	Tier  finding.Tier
+}
+
+// ReviewProblem is one correctable semantic review error.
+type ReviewProblem struct{ Message string }
+
+// ReviewResult is returned by the semantic review validator.
+type ReviewResult struct {
+	Findings []ReviewFinding
+	Problems []ReviewProblem
+}
+
+// ReviewValidator validates and merges one review submission at the application boundary.
+type ReviewValidator interface {
+	Submit(context.Context, ReviewSubmission) (ReviewResult, error)
+}
+
 // Asker posts human-facing questions to the room and returns identifiers.
 type Asker interface {
 	Ask(ctx context.Context, changeID id.ChangeID, question string) (change.QuestionID, change.SenderID, change.MessageID, error)
@@ -64,12 +102,14 @@ type Asker interface {
 
 // Config configures the agent tools Service. Every field is required.
 type Config struct {
-	Events ports.EventStore
-	Index  ports.TaskIndex
-	Blobs  ports.BlobStore
-	Clock  ports.Clock
-	IDs    ports.IDs
-	Asker  Asker
+	Events          ports.EventStore
+	Index           ports.TaskIndex
+	Blobs           ports.BlobStore
+	Clock           ports.Clock
+	IDs             ports.IDs
+	Asker           Asker
+	ReviewRefs      ReviewRefs
+	ReviewValidator ReviewValidator
 }
 
 // Service implements application logic for agent tools.
@@ -80,6 +120,7 @@ type Service struct {
 	clock  ports.Clock
 	ids    ports.IDs
 	asker  Asker
+	review ReviewValidator
 }
 
 // New validates dependencies and constructs a Service.
@@ -103,6 +144,12 @@ func New(cfg Config) (*Service, error) {
 	if cfg.Asker == nil {
 		missing = append(missing, "Asker")
 	}
+	if cfg.ReviewRefs == nil {
+		missing = append(missing, "ReviewRefs")
+	}
+	if cfg.ReviewValidator == nil {
+		missing = append(missing, "ReviewValidator")
+	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("agenttools: nil dependency: %s", strings.Join(missing, ", "))
 	}
@@ -113,6 +160,7 @@ func New(cfg Config) (*Service, error) {
 		clock:  cfg.Clock,
 		ids:    cfg.IDs,
 		asker:  cfg.Asker,
+		review: cfg.ReviewValidator,
 	}, nil
 }
 

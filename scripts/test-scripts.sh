@@ -7,6 +7,191 @@ fail=0; total=0
 check() { total=$((total + 1)); if [ "$2" -ne 0 ]; then echo "FAIL: $1"; fail=$((fail + 1)); fi; }
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+
+
+# --- deploy guard and dry-run plan: repeatable and never contacts a host
+out=$(cd "$root" && DEPLOY_DRY_RUN=1 bash scripts/deploy.sh 2>&1); code=$?
+[ "$code" -eq 0 ] && grep -q 'linux/amd64' <<<"$out" && grep -q 'authenticated /mcp' <<<"$out"; check "deploy dry-run reports the release and authenticated MCP checks" $?
+out2=$(cd "$root" && DEPLOY_DRY_RUN=1 bash scripts/deploy.sh 2>&1); code=$?
+[ "$code" -eq 0 ] && [ "$out" = "$out2" ]; check "deploy dry-run is idempotent" $?
+out=$(cd "$root" && DEPLOY_DRY_RUN=0 bash scripts/deploy.sh 2>&1); code=$?
+[ "$code" -eq 2 ] && grep -q 'exact release tag' <<<"$out"; check "deploy refuses an untagged live release" $?
+out=$(cd "$root" && DEPLOY_DRY_RUN=1 DEPLOY_ARCH=386 bash scripts/deploy.sh 2>&1); code=$?
+[ "$code" -eq 2 ] && grep -q 'DEPLOY_ARCH' <<<"$out"; check "deploy refuses an unsupported target architecture" $?
+
+# setup creates private operator files once, then preserves the operator's config.
+setup_dir="$work/operator"
+out=$(bash "$root/scripts/setup.sh" --dir "$setup_dir" 2>&1); code=$?
+[ "$code" -eq 0 ] && [ "$(stat -c '%a' "$setup_dir")" = 700 ] && [ "$(stat -c '%a' "$setup_dir/secrets")" = 700 ] && [ "$(stat -c '%a' "$setup_dir/heimdall.toml")" = 600 ]; check "setup creates private config and secret paths" $?
+printf '\n# operator edit\n' >> "$setup_dir/heimdall.toml"
+out=$(bash "$root/scripts/setup.sh" --dir "$setup_dir" 2>&1); code=$?
+[ "$code" -eq 0 ] && grep -q 'operator edit' "$setup_dir/heimdall.toml"; check "setup is idempotent and preserves the operator config" $?
+
+# restart/recover send only fixed operations and perform health plus authenticated MCP checks remotely.
+mkdir -p "$work/bin"
+cat > "$work/bin/git" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+	describe) printf 'v1.0.0\n' ;;
+	status) : ;;
+	*) exit 2 ;;
+esac
+SH
+cat > "$work/bin/go" <<'SH'
+#!/usr/bin/env bash
+while (($#)); do
+	if [[ "$1" == -o ]]; then
+		shift
+		printf 'fake linux binary\n' > "$1"
+		exit 0
+	fi
+	shift
+done
+exit 2
+SH
+for command_name in scp rsync; do
+	cat > "$work/bin/$command_name" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+done
+cat > "$work/bin/cosign" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$COSIGN_CAPTURE"
+while (($#)); do
+	if [[ "$1" == --output-signature ]]; then
+		printf 'stub signature\n' > "$2"
+		break
+	fi
+	shift
+done
+if [[ "${COSIGN_FAIL:-0}" == 1 ]]; then exit 1; fi
+exit 0
+SH
+cat > "$work/bin/ssh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$SSH_CAPTURE"
+cat >> "$SSH_CAPTURE"
+SH
+chmod +x "$work/bin/git" "$work/bin/go" "$work/bin/scp" "$work/bin/rsync" "$work/bin/cosign" "$work/bin/ssh"
+release_output="$work/release-output"
+PATH="$work/bin:$PATH" DEPLOY_BUILD_ONLY=1 DEPLOY_TAG=v1.0.0 DEPLOY_OUTPUT_DIR="$release_output" bash "$root/scripts/deploy.sh" > "$work/build-one" 2>&1; code=$?
+[ "$code" -eq 0 ] && [ -s "$release_output/v1.0.0.tgz" ] && [ -s "$release_output/v1.0.0.tgz.sha256" ]; check "local build materializes a tag-named release archive and checksum" $?
+first_hash=$(shasum -a 256 "$release_output/v1.0.0.tgz" | awk '{print $1}')
+PATH="$work/bin:$PATH" DEPLOY_BUILD_ONLY=1 DEPLOY_TAG=v1.0.0 DEPLOY_OUTPUT_DIR="$release_output" bash "$root/scripts/deploy.sh" > "$work/build-two" 2>&1; code=$?
+second_hash=$(shasum -a 256 "$release_output/v1.0.0.tgz" | awk '{print $1}')
+[ "$code" -eq 0 ] && [ "$first_hash" = "$second_hash" ]; check "tagged release archive bytes are reproducible across builds" $?
+out=$(PATH="$work/bin:$PATH" RELEASE_ARCHIVE="$release_output/v1.0.0.tgz" RELEASE_SIGNATURE="$release_output/v1.0.0.tgz.sig" bash "$root/scripts/sign-release.sh" 2>&1); code=$?
+[ "$code" -eq 2 ] && grep -q 'RELEASE_SIGNING_KEY' <<<"$out"; check "release signing refuses to run without a signing key reference" $?
+printf '%s\n' 'operator key reference' > "$work/signing-key"
+COSIGN_CAPTURE="$work/sign-args" PATH="$work/bin:$PATH" RELEASE_ARCHIVE="$release_output/v1.0.0.tgz" RELEASE_SIGNATURE="$release_output/v1.0.0.tgz.sig" RELEASE_SIGNING_KEY="$work/signing-key" bash "$root/scripts/sign-release.sh" > "$work/sign-output" 2>&1; code=$?
+[ "$code" -eq 0 ] && grep -q 'sign-blob.*--key' "$work/sign-args" && [ -s "$release_output/v1.0.0.tgz.sig" ]; check "release signer invokes cosign on the built artifact using the key reference" $?
+deploy_secrets="$work/deploy-secrets"
+mkdir -p "$deploy_secrets"
+for name in database_url postgres_password openrouter_api_key jira_email jira_api_token github_app_id github_app_installation_id github_app_private_key switch_api_key switch_registration_token agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver; do
+	: > "$deploy_secrets/$name"
+	chmod 0600 "$deploy_secrets/$name"
+done
+printf '%s\n' 'test public key' > "$work/release.pub"
+signature_file="$release_output/v1.0.0.tgz.sig"
+SSH_CAPTURE="$work/ssh-input" COSIGN_CAPTURE="$work/cosign-args" PATH="$work/bin:$PATH" DEPLOY_HOST=stub-host DEPLOY_TAG=v1.0.0 DEPLOY_OUTPUT_DIR="$release_output" DEPLOY_SECRETS_DIR="$deploy_secrets" DEPLOY_CONFIG="$root/deploy/heimdall.example.toml" DEPLOY_VERIFY_KEY="$work/release.pub" DEPLOY_SIGNATURE_FILE="$signature_file" bash "$root/scripts/deploy.sh" > "$work/deploy-output" 2>&1; code=$?
+if [ "$code" -ne 0 ]; then cat "$work/deploy-output"; fi
+[ "$code" -eq 0 ] && grep -q 'stub-host' "$work/ssh-input" && grep -q 'docker compose.*up -d --wait --timeout 30' "$work/ssh-input" && grep -q 'Authorization: Bearer' "$work/ssh-input" && grep -q 'release v1.0.0 is healthy' "$work/deploy-output" && grep -q 'verify-blob.*--key' "$work/cosign-args"; check "tagged deploy verifies the configured signature, then stages and probes through SSH" $?
+[ -f "$work/ssh-input" ] && grep -q 'previous_hash.*archive_hash' "$work/ssh-input" && grep -q 'build heimdall-server' "$work/ssh-input"; check "deploy skips release extraction and image build when artifact hash is unchanged" $?
+COSIGN_CAPTURE="$work/cosign-fail-args" SSH_CAPTURE="$work/ssh-fail-input" COSIGN_FAIL=1 PATH="$work/bin:$PATH" DEPLOY_HOST=stub-host DEPLOY_TAG=v1.0.0 DEPLOY_OUTPUT_DIR="$release_output" DEPLOY_SECRETS_DIR="$deploy_secrets" DEPLOY_CONFIG="$root/deploy/heimdall.example.toml" DEPLOY_VERIFY_KEY="$work/release.pub" DEPLOY_SIGNATURE_FILE="$signature_file" bash "$root/scripts/deploy.sh" > "$work/deploy-fail-output" 2>&1; code=$?
+[ "$code" -eq 1 ] && grep -q 'signature verification failed' "$work/deploy-fail-output" && [ ! -f "$work/ssh-fail-input" ]; check "deploy refuses a failed signature before contacting the host" $?
+
+SSH_CAPTURE="$work/ssh-input" PATH="$work/bin:$PATH" DEPLOY_HOST=stub-host bash "$root/scripts/operate.sh" recover >/dev/null 2>&1; code=$?
+[ "$code" -eq 0 ] && grep -q 'stub-host' "$work/ssh-input" && grep -q '/healthz' "$work/ssh-input" && grep -q 'Authorization: Bearer' "$work/ssh-input"; check "recover uses SSH and verifies health plus authenticated MCP" $?
+[ -f "$work/ssh-input" ] && grep -q 'docker inspect --format.*State.Health.Status' "$work/ssh-input" && grep -q 'Graphiti is not healthy' "$work/ssh-input"; check "recovery fails closed unless Graphiti Compose health is healthy" $?
+out=$(PATH="$work/bin:$PATH" DEPLOY_HOST=stub-host bash "$root/scripts/operate.sh" unknown 2>&1); code=$?
+[ "$code" -eq 2 ] && grep -q 'usage:' <<<"$out"; check "operation command refuses unknown actions" $?
+
+# Controller setup can be planned locally without enrollment, secret contents, or system changes.
+cat > "$work/bin/node" <<'SH'
+#!/usr/bin/env bash
+echo v22.13.0
+SH
+for command_name in opencode switch-agent-controller systemctl; do
+	cat > "$work/bin/$command_name" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+done
+cat > "$work/bin/switch-agent-controller" <<'SH'
+#!/usr/bin/env bash
+if [[ "${1:-}" == --version ]]; then echo 0.31.0; fi
+SH
+cat > "$work/bin/opencode" <<'SH'
+#!/usr/bin/env bash
+echo 1.19.5
+SH
+chmod +x "$work/bin/node" "$work/bin/opencode" "$work/bin/switch-agent-controller" "$work/bin/systemctl"
+controller_secrets="$work/controller-secrets"
+mkdir -m 0700 "$controller_secrets"
+: > "$controller_secrets/openrouter_api_key"
+chmod 0600 "$controller_secrets/openrouter_api_key"
+out=$(PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --dry-run --controller-user "$(id -un)" --secrets-dir "$controller_secrets" --agents-dir "$work/agents" --env-file "$work/agents.env" 2>&1); code=$?
+[ "$code" -eq 0 ] && grep -q "service=switch-agent-controller-$(id -u "$(id -un)").service" <<<"$out" && grep -q 'dry-run: no files or services changed' <<<"$out" && [ ! -e "$work/agents.env" ]; check "controller dry-run reports service configuration without writing or enrolling" $?
+cat > "$work/bin/node" <<'SH'
+#!/usr/bin/env bash
+echo v22.12.0
+SH
+out=$(PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --dry-run --controller-user "$(id -un)" --secrets-dir "$controller_secrets" --agents-dir "$work/agents" --env-file "$work/agents.env" 2>&1); code=$?
+[ "$code" -eq 1 ] && grep -q 'Node.js 22.13 or newer' <<<"$out"; check "controller installer refuses an unsupported Node.js version" $?
+cat > "$work/bin/node" <<'SH'
+#!/usr/bin/env bash
+echo v22.13.0
+SH
+cat > "$work/bin/opencode" <<'SH'
+#!/usr/bin/env bash
+echo 1.19.4
+SH
+out=$(PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --dry-run --controller-user "$(id -un)" --secrets-dir "$controller_secrets" --agents-dir "$work/agents" --env-file "$work/agents.env" 2>&1); code=$?
+[ "$code" -eq 1 ] && grep -q 'OpenCode 1.19.5 is required' <<<"$out"; check "controller installer refuses an unsupported OpenCode version" $?
+cat > "$work/bin/opencode" <<'SH'
+#!/usr/bin/env bash
+echo 1.19.5
+SH
+cat > "$work/bin/switch-agent-controller" <<'SH'
+#!/usr/bin/env bash
+if [[ "${1:-}" == --version ]]; then echo 0.30.0; fi
+SH
+out=$(PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --dry-run --controller-user "$(id -un)" --secrets-dir "$controller_secrets" --agents-dir "$work/agents" --env-file "$work/agents.env" 2>&1); code=$?
+[ "$code" -eq 1 ] && grep -q 'switch-agent-controller 0.31.0 is required' <<<"$out"; check "controller installer refuses an unsupported Switch controller version" $?
+cat > "$work/bin/switch-agent-controller" <<'SH'
+#!/usr/bin/env bash
+if [[ "${1:-}" == --version ]]; then echo 0.31.0; fi
+SH
+out=$(PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --dry-run --controller-user "$(id -un)" --secrets-dir "$work" --agents-dir "$work/agents" --env-file "$work/agents.env" 2>&1); code=$?
+[ "$code" -eq 1 ] && grep -q 'private regular secret file is required' <<<"$out"; check "controller installer fails closed when OpenRouter secret file is absent" $?
+
+# Full local controller flow with disposable credentials and fake Switch/systemd commands.
+for name in openrouter_api_key agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver; do
+	printf 'stub-%s\n' "$name" > "$controller_secrets/$name"
+	chmod 0600 "$controller_secrets/$name"
+done
+cat > "$work/bin/switch-agent-controller" <<'SH'
+#!/usr/bin/env bash
+if [[ "${1:-}" == --version ]]; then echo 0.31.0; exit 0; fi
+printf '%s\n' "$*" >> "$CONTROLLER_CAPTURE"
+if [[ "${1:-}" == doctor && "${SWITCH_DOCTOR_FAIL:-0}" == 1 ]]; then exit 1; fi
+exit 0
+SH
+cat > "$work/bin/systemctl" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SYSTEMCTL_CAPTURE"
+exit 0
+SH
+chmod +x "$work/bin/switch-agent-controller" "$work/bin/systemctl"
+controller_agents="$work/installed-agents"
+controller_env="$work/controller.env"
+CONTROLLER_CAPTURE="$work/controller-calls" SYSTEMCTL_CAPTURE="$work/systemctl-calls" PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --controller-user "$(id -un)" --secrets-dir "$controller_secrets" --agents-dir "$controller_agents" --env-file "$controller_env" > "$work/controller-output" 2>&1; code=$?
+if [ "$code" -ne 0 ]; then cat "$work/controller-output"; fi
+[ "$code" -eq 0 ] && grep -q 'install-service --separate-users' "$work/controller-calls" && grep -q -- '--agents-dir' "$work/controller-calls" && grep -q -- '--agent-users 16' "$work/controller-calls" && grep -q 'switch-agent-controller-' "$work/systemctl-calls" && [ "$(stat -c '%a' "$controller_env")" = 600 ] && [ "$(stat -c '%a' "$controller_agents/agent/test-author/opencode.json")" = 600 ] && grep -q 'installed test-author' "$work/controller-output"; check "controller installation configures private env, service, and five role agent runtimes" $?
+CONTROLLER_CAPTURE="$work/controller-calls" SYSTEMCTL_CAPTURE="$work/systemctl-calls" PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --controller-user "$(id -un)" --secrets-dir "$controller_secrets" --agents-dir "$controller_agents" --env-file "$controller_env" > "$work/controller-retry-output" 2>&1; code=$?
+[ "$code" -eq 0 ] && grep -q 'service active; agent runtime is ready' "$work/controller-retry-output" && [ "$(grep -c '^install-service --separate-users' "$work/controller-calls")" -eq 2 ] && [ "$(stat -c '%a' "$controller_env")" = 600 ]; check "controller setup and role config installation are repeatable" $?
+
 mkdir -p "$work/e2e"
 printf 'package m\n' > "$work/m.go"
 printf 'module example.com/m\n\ngo 1.22\n' > "$work/go.mod"
@@ -27,12 +212,12 @@ out=$(run e2e '^TestTask_T24$' "e2e T24"); code=$?
 out=$(run e2e '^TestTask_T99$' "e2e T99"); code=$?
 [ "$code" -ne 0 ] && grep -q 'no test matches' <<<"$out"; check "a task with no test fails and says why" $?
 out=$(run e2e '^TestTask_T25$' "e2e T25"); code=$?
-[ "$code" -ne 0 ]; check "a matching failing test fails" $?
+[ "$code" -ne 0 ] && grep -q 'a real failure' <<<"$out"; check "a matching failing test fails and reports its assertion" $?
 out=$(run drift 'Drift' "drift"); code=$?
 [ "$code" -ne 0 ] && grep -q 'no test matches' <<<"$out"; check "a tag with no tests at all fails" $?
 printf '//go:build e2e\n\npackage e2e\n\nfunc broken( {\n' > "$work/e2e/b_test.go"
 out=$(run e2e '^TestTask_T24$' "e2e T24"); code=$?
-[ "$code" -ne 0 ]; check "a package that does not compile fails" $?
+[ "$code" -ne 0 ] && grep -q "expected ')', found '{'" <<<"$out"; check "a package that does not compile fails and reports the build error" $?
 rm "$work/e2e/b_test.go"
 out=$(cd "$work" && ROOT="$root" bash "$root/scripts/run-tagged.sh" 2>&1); code=$?
 [ "$code" -ne 0 ]; check "missing arguments fail" $?
@@ -102,6 +287,9 @@ printf 'secrets-staged:\n\t@echo secret-found >> ran.log; exit 1\nfast:\n\t@echo
 printf 'y' > "$repo/b.txt"; git -C "$repo" add -A
 git -C "$repo" commit -q -m leak >/dev/null 2>&1; code=$?
 [ "$code" -ne 0 ] && grep -q secret-found "$repo/ran.log" && ! grep -q fast-ran-2 "$repo/ran.log"; check "a secret in the staged diff blocks the commit before make fast" $?
+
+out=$(bash "$root/deploy/tests/deploy-contract.sh" 2>&1); code=$?
+[ "$code" -eq 0 ] && grep -q 'deploy contract passed' <<<"$out"; check "deploy runner contract passes" $?
 
 echo "$total script cases, $fail failed"
 [ "$fail" -eq 0 ]

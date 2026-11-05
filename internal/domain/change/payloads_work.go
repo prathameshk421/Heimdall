@@ -72,6 +72,24 @@ type TaskFailed struct {
 	Reason string        `json:"reason"`
 }
 
+// TaskProgress is a durable progress report for an assignment.
+type TaskProgress struct {
+	TaskID id.TaskID     `json:"task_id"`
+	Agent  id.AgentName  `json:"agent"`
+	Role   workflow.Role `json:"role"`
+	Text   string        `json:"text"`
+}
+
+// Validate checks the task identity and report text.
+func (p TaskProgress) Validate() error {
+	var v problems
+	v.add("task_id", checkTask(p.TaskID))
+	v.add("agent", checkAgent(p.Agent))
+	v.add("role", checkRole(p.Role))
+	v.add("text", checkText(p.Text))
+	return v.join()
+}
+
 // Validate returns every problem with the payload.
 func (p TaskFailed) Validate() error {
 	var v problems

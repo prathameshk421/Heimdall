@@ -66,6 +66,40 @@ func TestLoadReadsLiveSections(t *testing.T) {
 	}, cfg.Agents)
 }
 
+func TestLoadReadsSwitchAgentRuntimeContract(t *testing.T) {
+	body := "secrets_dir = \"" + t.TempDir() + "\"\n" + liveSections + `
+[agent_runtime]
+provider = "switchroom"
+machine = "heimdall-vm"
+mcp_endpoint = "http://127.0.0.1:8080/mcp"
+model = "openrouter/deepseek/deepseek-v4-flash"
+`
+	cfg, err := Load(writeTOML(t, body))
+	require.NoError(t, err)
+	provider, found := cfg.Selection("agent_runtime")
+	require.True(t, found)
+	require.Equal(t, "switchroom", provider)
+	require.Equal(t, AgentRuntimeConfig{
+		Machine: "heimdall-vm", MCPEndpoint: "http://127.0.0.1:8080/mcp", Model: "openrouter/deepseek/deepseek-v4-flash",
+	}, cfg.AgentRuntime)
+}
+
+func TestAgentRuntimeRequiresSafeHostReachableMCPEndpoint(t *testing.T) {
+	head := "secrets_dir = \"" + t.TempDir() + "\"\n"
+	cases := []struct{ endpoint, want string }{
+		{"http://heimdall.example.test/mcp", "loopback"},
+		{"https://heimdall.example.test/", "/mcp URL"},
+		{"https://user@heimdall.example.test/mcp", "/mcp URL"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.endpoint, func(t *testing.T) {
+			body := head + liveSections + "\n[agent_runtime]\nprovider=\"switchroom\"\nmachine=\"heimdall-vm\"\nmcp_endpoint=\"" + tc.endpoint + "\"\n"
+			_, err := Load(writeTOML(t, body))
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
 func TestLoadAcceptsLoopbackHTTPURLs(t *testing.T) {
 	cases := map[string]string{
 		"ipv4":       "http://127.0.0.1:8081",

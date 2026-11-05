@@ -220,10 +220,10 @@ func TestLoadReadsProviderSelections(t *testing.T) {
 		"[vcs]\nprovider = \"github\"\n"+
 		"[tracker]\nprovider = \"jira\"\n"+
 		"[chat]\nbridge = \"mattermost\"\n"+
-		"[agent_runtime]\nprovider = \"opencode\"\n"+
+		"[agent_runtime]\nprovider = \"switchroom\"\nmachine = \"heimdall-vm\"\nmcp_endpoint = \"http://127.0.0.1:8080/mcp\"\n"+
 		"[memory]\nprovider = \"graphiti\"\n"))
 	require.NoError(t, err)
-	want := map[string]string{"vcs": "github", "tracker": "jira", "chat": "mattermost", "agent_runtime": "opencode", "memory": "graphiti"}
+	want := map[string]string{"vcs": "github", "tracker": "jira", "chat": "mattermost", "agent_runtime": "switchroom", "memory": "graphiti"}
 	for kind, name := range want {
 		got, ok := cfg.Selection(kind)
 		require.True(t, ok, kind)

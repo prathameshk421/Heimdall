@@ -36,6 +36,28 @@ type Delivery struct {
 	Cursor   ports.Cursor
 }
 
+// StreamRooms adapts Switch deliveries to the shared ports.ChatStream contract.
+func (c *Client) StreamRooms(
+	ctx context.Context,
+	rooms []ports.RoomBinding,
+	cursors map[change.RoomID]ports.Cursor,
+	deliver func(context.Context, ports.ChatDelivery) error,
+) error {
+	if deliver == nil {
+		return errors.New("switch stream: delivery handler is required")
+	}
+	roomIDs := make([]change.RoomID, 0, len(rooms))
+	for _, room := range rooms {
+		if _, err := change.ParseRoomID(string(room.RoomID)); err != nil {
+			return fmt.Errorf("switch stream: invalid room binding: %w", err)
+		}
+		roomIDs = append(roomIDs, room.RoomID)
+	}
+	return c.Stream(ctx, roomIDs, cursors, func(ctx context.Context, d Delivery) error {
+		return deliver(ctx, ports.ChatDelivery{Message: d.Message, Cursor: d.Cursor, Replayed: d.Replayed})
+	})
+}
+
 // DeliverFunc receives each delivery. A returned error stops the stream.
 type DeliverFunc func(ctx context.Context, d Delivery) error
 

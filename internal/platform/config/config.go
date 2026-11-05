@@ -48,17 +48,27 @@ type Project struct {
 
 // Config is the validated infrastructure configuration. Load is the only way to get a non-zero one.
 type Config struct {
-	SecretsDir string
-	Listen     string
-	Projects   []Project
-	Database   Database
-	Jira       Jira
-	Switch     Switch
-	GitHub     GitHub
-	Agents     Agents
-	byTracker  map[string]Project
-	selections map[string]string
+	SecretsDir   string
+	Listen       string
+	Projects     []Project
+	Database     Database
+	Jira         Jira
+	Switch       Switch
+	GitHub       GitHub
+	Agents       Agents
+	AgentRuntime AgentRuntimeConfig
+	byTracker    map[string]Project
+	selections   map[string]string
 }
+
+// AgentRuntimeConfig holds the Switch controller placement and per-agent MCP endpoint.
+type AgentRuntimeConfig struct {
+	Machine     string
+	MCPEndpoint string
+	Model       string
+}
+
+const defaultAgentModel = "openrouter/deepseek/deepseek-v4-flash"
 
 // Agents is [agents]. TestAuthor, Reviewers and Resolver name the agents participating in the workflow.
 type Agents struct {
@@ -102,19 +112,19 @@ type GitHub struct {
 
 // fileConfig mirrors heimdall.toml. Pointers tell an absent key (use the default) from an empty one (refuse).
 type fileConfig struct {
-	SecretsDir   *string       `toml:"secrets_dir"`
-	Listen       *string       `toml:"listen"`
-	Projects     []fileProject `toml:"projects"`
-	Database     *fileDatabase `toml:"database"`
-	Jira         *fileJira     `toml:"jira"`
-	Switch       *fileSwitch   `toml:"switch"`
-	GitHub       *fileGitHub   `toml:"github"`
-	Agents       *fileAgents   `toml:"agents"`
-	VCS          *fileProvider `toml:"vcs"`
-	Tracker      *fileProvider `toml:"tracker"`
-	Chat         *fileChat     `toml:"chat"`
-	AgentRuntime *fileProvider `toml:"agent_runtime"`
-	Memory       *fileProvider `toml:"memory"`
+	SecretsDir   *string           `toml:"secrets_dir"`
+	Listen       *string           `toml:"listen"`
+	Projects     []fileProject     `toml:"projects"`
+	Database     *fileDatabase     `toml:"database"`
+	Jira         *fileJira         `toml:"jira"`
+	Switch       *fileSwitch       `toml:"switch"`
+	GitHub       *fileGitHub       `toml:"github"`
+	Agents       *fileAgents       `toml:"agents"`
+	VCS          *fileProvider     `toml:"vcs"`
+	Tracker      *fileProvider     `toml:"tracker"`
+	Chat         *fileChat         `toml:"chat"`
+	AgentRuntime *fileAgentRuntime `toml:"agent_runtime"`
+	Memory       *fileProvider     `toml:"memory"`
 }
 
 // fileAgents is [agents]. Each key is validated by build.
@@ -157,6 +167,13 @@ type fileGitHub struct {
 // fileProvider is a [section] whose only key is provider: the adapter name the registry must know.
 type fileProvider struct {
 	Provider *string `toml:"provider"`
+}
+
+type fileAgentRuntime struct {
+	Provider    *string `toml:"provider"`
+	Machine     *string `toml:"machine"`
+	MCPEndpoint *string `toml:"mcp_endpoint"`
+	Model       *string `toml:"model"`
 }
 
 // fileChat is [chat]. Its key is bridge, the Switch connection that carries chat (D79).
@@ -259,7 +276,7 @@ func addSelections(cfg *Config, raw fileConfig) []error {
 		{"vcs", "vcs.provider", providerOf(raw.VCS)},
 		{"tracker", "tracker.provider", providerOf(raw.Tracker)},
 		{"chat", "chat.bridge", bridgeOf(raw.Chat)},
-		{"agent_runtime", "agent_runtime.provider", providerOf(raw.AgentRuntime)},
+		{"agent_runtime", "agent_runtime.provider", agentRuntimeProviderOf(raw.AgentRuntime)},
 		{"memory", "memory.provider", providerOf(raw.Memory)},
 	}
 	var errs []error
@@ -317,7 +334,69 @@ func addLiveSections(cfg *Config, raw fileConfig) []error {
 	if raw.Agents != nil {
 		errs = append(errs, checkAgents(&cfg.Agents, raw.Agents)...)
 	}
+	if raw.AgentRuntime != nil {
+		errs = append(errs, checkAgentRuntime(&cfg.AgentRuntime, raw.AgentRuntime)...)
+	}
 	return errs
+}
+
+func checkAgentRuntime(out *AgentRuntimeConfig, raw *fileAgentRuntime) []error {
+	var errs []error
+	errs = append(errs, validateRuntimeProvider(raw.Provider)...)
+	errs = append(errs, validateRuntimeMachine(raw.Machine)...)
+	errs = append(errs, validateMCPEndpoint(raw.MCPEndpoint)...)
+	model, modelErr := runtimeModel(raw.Model)
+	if modelErr != nil {
+		errs = append(errs, modelErr)
+	}
+	if len(errs) == 0 {
+		out.Machine = *raw.Machine
+		out.MCPEndpoint = *raw.MCPEndpoint
+		out.Model = model
+	}
+	return errs
+}
+
+func validateRuntimeProvider(provider *string) []error {
+	switch {
+	case provider == nil || *provider == "":
+		return []error{errors.New("agent_runtime.provider is required")}
+	case *provider != "switchroom":
+		return []error{errors.New("agent_runtime.provider must be switchroom")}
+	default:
+		return nil
+	}
+}
+
+func validateRuntimeMachine(machine *string) []error {
+	if machine == nil || strings.TrimSpace(*machine) == "" || len(*machine) > 128 {
+		return []error{errors.New("agent_runtime.machine is required and must be 1 to 128 bytes")}
+	}
+	return nil
+}
+
+func validateMCPEndpoint(endpoint *string) []error {
+	if endpoint == nil || *endpoint == "" {
+		return []error{errors.New("agent_runtime.mcp_endpoint is required")}
+	}
+	if err := checkBaseURL("agent_runtime.mcp_endpoint", endpoint); err != nil {
+		return []error{err}
+	}
+	u, err := url.Parse(*endpoint)
+	if err != nil || u.Path != "/mcp" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return []error{errors.New("agent_runtime.mcp_endpoint must be an /mcp URL without credentials, query or fragment")}
+	}
+	return nil
+}
+
+func runtimeModel(model *string) (string, error) {
+	if model == nil {
+		return defaultAgentModel, nil
+	}
+	if strings.TrimSpace(*model) == "" || len(*model) > 256 {
+		return "", errors.New("agent_runtime.model must be 1 to 256 bytes")
+	}
+	return *model, nil
 }
 
 // checkAgentName requires a valid Switch agent name.
@@ -517,6 +596,13 @@ func checkSecretKey(field string, raw *string) error {
 }
 
 func providerOf(p *fileProvider) *string {
+	if p == nil {
+		return nil
+	}
+	return p.Provider
+}
+
+func agentRuntimeProviderOf(p *fileAgentRuntime) *string {
 	if p == nil {
 		return nil
 	}

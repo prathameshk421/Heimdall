@@ -115,6 +115,7 @@ func newFakeSwitch(t *testing.T) *fakeSwitch {
 }
 
 func (f *fakeSwitch) installDefaults() {
+	f.ops["list_managed_agents"] = func(map[string]any) (int, any) { return http.StatusOK, []any{} }
 	f.ops["list_rooms"] = func(map[string]any) (int, any) {
 		f.mu.Lock()
 		defer f.mu.Unlock()

@@ -82,8 +82,13 @@ drift: ## L3b: live systems against the recorded fixtures (read-only)
 
 e2e: ## L4/L5 for one task: make e2e T=T24 (a task without TestTask_T24 fails)
 	@test -n "$(T)" || { echo "usage: make e2e T=T24" >&2; exit 2; }
-	@# TODO(T19): refuse to start when the run would pass the budget; until then run `make cost` yourself before an LLM task
-	bash scripts/run-tagged.sh e2e '^TestTask_$(T)$$' "e2e $(T)"
+	@if [ "$(AGENTS)" = live ]; then \
+		test -n "$(PURPOSE)" || { echo "make e2e: PURPOSE is required for live runs" >&2; exit 2; }; \
+		test -n "$(ESTIMATE)" || { echo "make e2e: ESTIMATE is required for live runs" >&2; exit 2; }; \
+		go run ./cmd/heimdall budget-check --purpose "$(PURPOSE)" --estimate "$(ESTIMATE)" $(if $(CONFIG),--config "$(CONFIG)",) $(if $(LEDGER),--ledger "$(LEDGER)",); \
+		go run ./cmd/heimdall budget-run --purpose "$(PURPOSE)" --estimate "$(ESTIMATE)" --task "$(T)" --model "$(if $(MODEL),$(MODEL),openrouter/deepseek/deepseek-v4-flash)" $(if $(CONFIG),--config "$(CONFIG)",) $(if $(LEDGER),--ledger "$(LEDGER)",) -- bash scripts/run-tagged.sh e2e '^TestTask_$(T)$$' "e2e $(T)"; \
+	fi
+	@if [ "$(AGENTS)" != live ]; then bash scripts/run-tagged.sh e2e '^TestTask_$(T)$$' "e2e $(T)"; fi
 
 eval: ## L6: make eval SUITE=injection
 	@test -n "$(SUITE)" || { echo "usage: make eval SUITE=injection" >&2; exit 2; }
@@ -99,9 +104,33 @@ record: ## re-record real payloads for a task into testdata/real: make record T=
 	@test -n "$(T)" || { echo "usage: make record T=T24" >&2; exit 2; }
 	HEIMDALL_RECORD=$(CURDIR)/testdata/real bash scripts/run-tagged.sh e2e '^TestTask_$(T)$$' "record $(T)"
 
-.PHONY: cost fixtures-push prototype demo-check heimdall-bin
+.PHONY: cost deploy deploy-build release-sign upgrade setup restart recover fixtures-push prototype demo-check heimdall-bin
 cost: ## remaining LLM budget per purpose (T19)
-	@echo "make cost: the budget guard is not built yet (T19). No live model run is allowed until it is." >&2; exit 1
+	go run ./cmd/heimdall cost $(if $(CONFIG),--config "$(CONFIG)",) $(if $(LEDGER),--ledger "$(LEDGER)",)
+
+deploy: CONFIG ?= deploy/heimdall.example.toml
+deploy: SECRETS_DIR ?= secrets
+deploy: ## build and install the Heimdall stack on the SSM-connected VM (T105)
+	bash deploy/deploy.sh --config "$(CONFIG)" --secrets-dir "$(SECRETS_DIR)"
+
+deploy-build: ## cross-build deterministic Linux release artifacts without a host connection
+	DEPLOY_BUILD_ONLY=1 bash scripts/deploy.sh
+
+release-sign: ## sign a tag-named release archive with cosign
+	@test -n "$(TAG)" || { echo "usage: make release-sign TAG=vX RELEASE_SIGNING_KEY=<key-path-or-KMS-ref>" >&2; exit 2; }
+	RELEASE_TAG='$(TAG)' RELEASE_SIGNING_KEY='$(RELEASE_SIGNING_KEY)' bash scripts/sign-release.sh
+
+upgrade: ## install an exact tagged release through the SSM-backed deploy workflow
+	bash scripts/deploy.sh
+
+setup: ## create a private local operator workspace
+	bash scripts/setup.sh
+
+restart: ## restart the deployed service and verify health and authenticated MCP
+	bash scripts/operate.sh restart
+
+recover: ## reconcile the deployed stack and verify health and authenticated MCP
+	bash scripts/operate.sh recover
 
 fixtures-push: ## publish testdata/repos/pay-demo to the fixture repo (T31)
 	@echo "make fixtures-push: testdata/repos/pay-demo does not exist yet (T31)." >&2; exit 1

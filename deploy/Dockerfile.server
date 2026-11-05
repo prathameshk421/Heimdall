@@ -1,30 +1,11 @@
 # syntax=docker/dockerfile:1
-#
-# heimdall-server image: a static Go binary on a small non-root Alpine base.
-# Built by deploy/compose.yaml with the repository root as the build context:
-#   docker compose -f deploy/compose.yaml build heimdall-server
-#
-# Tags are pinned now. Digest pinning (D98) is applied at release, not during development.
-# Build-context exclusions live in Dockerfile.server.dockerignore, beside this file.
-
-ARG GO_IMAGE=golang:1.27.3-alpine3.24
+# The deploy runner builds and transfers a static Linux binary before Compose runs.
 ARG RUNTIME_IMAGE=alpine:3.24.3
-
-FROM ${GO_IMAGE} AS build
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-# CGO off makes a static binary, so the runtime image needs no C libraries.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/heimdall-server ./cmd/heimdall-server
-
 FROM ${RUNTIME_IMAGE}
-# A fixed non-root uid. The binary is owned by root and only read by this user.
 RUN addgroup -S -g 65532 heimdall && adduser -S -D -H -u 65532 -G heimdall heimdall
-COPY --from=build /out/heimdall-server /usr/local/bin/heimdall-server
+COPY heimdall-server /usr/local/bin/heimdall-server
 USER 65532:65532
 EXPOSE 8080
-# busybox nc, not wget: send one HTTP/1.0 request to /healthz and require the ok body.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
   CMD printf 'GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n' | nc -w 3 127.0.0.1 8080 | grep -q '"status":"ok"' || exit 1
 ENTRYPOINT ["/usr/local/bin/heimdall-server"]

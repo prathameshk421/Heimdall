@@ -213,6 +213,22 @@ type MemoryItem struct {
 	InvalidAt *time.Time  `json:"invalid_at,omitempty"`
 }
 
+// KnowledgeFile records one safe, human-reviewed repository document and its retention metadata.
+type KnowledgeFile struct {
+	Ref        string
+	Repository change.Repo
+	Path       string
+	SHA        id.SHA
+	Group      string
+	SourceURL  string
+	Blob       workflow.BlobRef
+	Kind       string
+	State      string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	ApprovedBy string
+}
+
 // Validate returns every problem with the item.
 func (m MemoryItem) Validate() error {
 	var v problems

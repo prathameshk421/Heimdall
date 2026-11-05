@@ -9,13 +9,8 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
-// IssueComment is one comment on a pull request's conversation. UserType is GitHub's account type ("User", "Bot").
-type IssueComment struct {
-	ID       int64
-	Login    string
-	UserType string
-	Body     string
-}
+// IssueComment is one comment on a pull request's conversation.
+type IssueComment = ports.IssueComment
 
 // Review is one submitted pull request review. CommitID is the commit it was submitted on. Approvals count only on
 // the head commit (TECH_SPEC 12.4), so the gate compares it with the head.
@@ -114,9 +109,11 @@ type reviewJSON struct {
 
 // commentJSON is one issue comment as GitHub returns it.
 type commentJSON struct {
-	ID   int64  `json:"id"`
-	Body string `json:"body"`
-	User struct {
+	ID        int64     `json:"id"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	User      struct {
 		Login string `json:"login"`
 		Type  string `json:"type"`
 	} `json:"user"`

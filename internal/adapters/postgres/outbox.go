@@ -146,3 +146,36 @@ func (s *Store) Claim(ctx context.Context, limit int, lease time.Duration) ([]ch
 	}
 	return out, nil
 }
+
+// ClaimEffect claims only key, preserving River's stable job identity across retries.
+func (s *Store) ClaimEffect(ctx context.Context, key change.EffectKey, lease time.Duration) (*change.Effect, error) {
+	micros := lease.Microseconds()
+	if micros < 1 {
+		return nil, fmt.Errorf("claim effect %s: lease must be at least one microsecond", key)
+	}
+	var fx change.Effect
+	var kind, target string
+	var payload []byte
+	err := s.pool.QueryRow(ctx, `UPDATE outbox SET claimed_until = now() + $2::bigint * interval '1 microsecond'
+		WHERE effect_key = $1 AND done_at IS NULL AND attempts < $3 AND (claimed_until IS NULL OR claimed_until <= now())
+		RETURNING effect_key, kind, target, payload`, string(key), micros, maxAttempts).Scan(&fx.Key, &kind, &target, &payload)
+	if err == nil {
+		fx.Kind, fx.Target, fx.Payload = change.EffectKind(kind), target, payload
+		return &fx, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("claim effect %s: %w", key, err)
+	}
+	var leased bool
+	err = s.pool.QueryRow(ctx, "SELECT claimed_until > now() FROM outbox WHERE effect_key = $1 AND done_at IS NULL AND attempts < $2", string(key), maxAttempts).Scan(&leased)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("inspect effect %s lease: %w", key, err)
+	}
+	if leased {
+		return nil, fmt.Errorf("claim effect %s: %w", key, ports.ErrEffectLeased)
+	}
+	return nil, nil
+}

@@ -37,6 +37,9 @@ func (s *Service) Current(ctx context.Context, agent id.AgentName, role workflow
 	if latestTask == nil {
 		return Assignment{}, fmt.Errorf("%w: task %s not found in change %s", ErrNoTask, ref.TaskID, ref.ChangeID)
 	}
+	if taskFinished(events, *latestTask) {
+		return Assignment{}, ErrNoTask
+	}
 	if err := validateCurrentTask(latestTask, agent, role); err != nil {
 		return Assignment{}, err
 	}
@@ -62,7 +65,7 @@ func findActiveTaskInEvents(events []change.Event, taskID id.TaskID) (*change.Ta
 				assignedAt = ev.OccurredAt
 			}
 		case change.TaskAcked:
-			if v.TaskID == taskID {
+			if latestTask != nil && v.TaskID == taskID && v.Agent == latestTask.Agent && v.Role == latestTask.Role {
 				acked = true
 			}
 		}
@@ -107,7 +110,40 @@ func checkTaskAgent(existing []change.Event, a Assignment) error {
 	if assigned.Agent != a.Agent {
 		return ErrWrongAgent
 	}
+	if assigned.Role != a.Role {
+		return ErrWrongRole
+	}
+	if taskFinished(existing, assigned) {
+		return ErrNoTask
+	}
 	return nil
+}
+
+func taskFinished(events []change.Event, assigned change.TaskAssigned) bool {
+	for _, ev := range events {
+		if ev.Type != change.EventTaskTimedOut && ev.Type != change.EventTaskFailed {
+			continue
+		}
+		p, err := change.Decode(ev)
+		if err != nil {
+			continue
+		}
+		if taskOutcomeMatches(p, assigned) {
+			return true
+		}
+	}
+	return false
+}
+
+func taskOutcomeMatches(p change.Payload, assigned change.TaskAssigned) bool {
+	switch outcome := p.(type) {
+	case change.TaskTimedOut:
+		return outcome.TaskID == assigned.TaskID && outcome.Agent == assigned.Agent && outcome.Role == assigned.Role
+	case change.TaskFailed:
+		return outcome.TaskID == assigned.TaskID && outcome.Agent == assigned.Agent && outcome.Role == assigned.Role
+	default:
+		return false
+	}
 }
 
 // Ack records acknowledgement of the task within the 60s window.
@@ -347,13 +383,60 @@ func (s *Service) AskHumans(ctx context.Context, a Assignment, questions []strin
 	})
 }
 
-// Progress receives a progress report (not durably stored).
-func (s *Service) Progress(_ context.Context, _ Assignment, text string, _ time.Time) error {
+// Progress appends a durable progress report and enforces its interval from the event stream.
+func (s *Service) Progress(ctx context.Context, a Assignment, text string, at time.Time) error {
 	if strings.TrimSpace(text) == "" {
 		return fmt.Errorf("%w: progress text must not be blank", ErrValidation)
 	}
 	if utf8.RuneCountInString(text) > 400 {
 		return fmt.Errorf("%w: progress text must be at most 400 characters", ErrValidation)
 	}
-	return nil
+	if at.IsZero() {
+		at = s.clock.Now()
+	}
+	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
+		if err := checkTaskAgent(existing, a); err != nil {
+			return nil, err
+		}
+		lastAt, found, err := lastTaskProgress(existing, a)
+		if err != nil {
+			return nil, err
+		}
+		if found && at.Sub(lastAt) < 2*time.Minute {
+			return nil, fmt.Errorf("%w: progress interval has not elapsed", ErrValidation)
+		}
+		ev, err := s.buildProgressEvent(a, text, at, existing)
+		if err != nil {
+			return nil, err
+		}
+		return []change.Event{ev}, nil
+	})
+}
+
+func lastTaskProgress(events []change.Event, a Assignment) (time.Time, bool, error) {
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type != change.EventTaskProgress {
+			continue
+		}
+		p, err := change.Decode(events[i])
+		if err != nil {
+			return time.Time{}, false, fmt.Errorf("decode prior progress: %w", err)
+		}
+		progress, ok := p.(change.TaskProgress)
+		if ok && progress.TaskID == a.TaskID && progress.Agent == a.Agent && progress.Role == a.Role {
+			return events[i].OccurredAt, true, nil
+		}
+	}
+	return time.Time{}, false, nil
+}
+
+func (s *Service) buildProgressEvent(a Assignment, text string, at time.Time, existing []change.Event) (change.Event, error) {
+	payload := change.TaskProgress{TaskID: a.TaskID, Agent: a.Agent, Role: a.Role, Text: text}
+	eid := s.ids.NewEvent()
+	ev, err := s.buildEventWithID(eid, a.ChangeID, int64(len(existing)+1), change.EventTaskProgress, a.Agent, correlationIDOf(existing, eid), lastCausation(existing), payload, nil)
+	if err != nil {
+		return change.Event{}, err
+	}
+	ev.OccurredAt = at.UTC()
+	return ev, nil
 }

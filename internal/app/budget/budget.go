@@ -30,6 +30,9 @@ type Guard struct {
 	Balance    Balance
 }
 
+// StopAfterTwiceEstimate reports whether measured spend has reached the stop-rule threshold.
+func StopAfterTwiceEstimate(measured, estimate float64) bool { return measured >= 2*estimate }
+
 // Check reserves twice the estimate to enforce the D161 stop rule before a run starts.
 func (g Guard) Check(ctx context.Context, purpose string, estimate float64) error {
 	if estimate < 0 {

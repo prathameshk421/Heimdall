@@ -105,6 +105,27 @@ func (m *memOutbox) Claim(_ context.Context, limit int, lease time.Duration) ([]
 	return out, nil
 }
 
+func (m *memOutbox) ClaimEffect(_ context.Context, key change.EffectKey, lease time.Duration) (*change.Effect, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.leases = append(m.leases, lease)
+	for _, r := range m.rows {
+		if r.fx.Key != key {
+			continue
+		}
+		if r.done || r.attempts >= 8 {
+			return nil, nil
+		}
+		if r.leased {
+			return nil, ports.ErrEffectLeased
+		}
+		r.leased = true
+		fx := r.fx
+		return &fx, nil
+	}
+	return nil, nil
+}
+
 func (m *memOutbox) Done(ctx context.Context, key change.EffectKey) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

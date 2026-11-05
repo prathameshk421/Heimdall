@@ -32,3 +32,24 @@ func TestAppendTotalAndCorruptLine(t *testing.T) {
 		t.Fatalf("corrupt line error = %v", err)
 	}
 }
+
+func TestAppendOnceDoesNotDuplicateOrMisattributeRun(t *testing.T) {
+	path := t.TempDir() + "/cost.jsonl"
+	l := Ledger{Path: path}
+	entry := ports.LedgerEntry{RunID: "run-1", Purpose: "live", Model: "model-a", CostUSD: .2, At: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	if err := l.AppendOnce(context.Background(), entry); err != nil {
+		t.Fatal(err)
+	}
+	replayed := entry
+	replayed.At = replayed.At.Add(time.Hour)
+	if err := l.AppendOnce(context.Background(), replayed); err != nil {
+		t.Fatalf("replaying the same run: %v", err)
+	}
+	if err := l.AppendOnce(context.Background(), ports.LedgerEntry{RunID: entry.RunID, Purpose: "eval", Model: entry.Model, CostUSD: entry.CostUSD, At: entry.At}); err == nil {
+		t.Fatal("AppendOnce accepted a different attribution for an existing run")
+	}
+	total, byPurpose, err := l.Total(context.Background())
+	if err != nil || total != .2 || byPurpose["live"] != .2 || byPurpose["eval"] != 0 {
+		t.Fatalf("Total() after replay = %v %v %v", total, byPurpose, err)
+	}
+}

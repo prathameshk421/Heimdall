@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
+	appreview "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/review"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -307,6 +309,9 @@ func (tr *assignmentAgentTracker) toAgenttools(a mcp.Assignment) agenttools.Assi
 type tasksAdapter struct {
 	svc     *agenttools.Service
 	tracker *assignmentAgentTracker
+	filter  interface {
+		Filter(context.Context, string) (string, error)
+	}
 }
 
 func (t *tasksAdapter) Current(ctx context.Context, p mcp.Principal) (mcp.Assignment, error) {
@@ -334,8 +339,23 @@ func (t *tasksAdapter) AskHumans(ctx context.Context, a mcp.Assignment, question
 }
 
 func (t *tasksAdapter) Progress(ctx context.Context, a mcp.Assignment, text string, at time.Time) error {
+	if t.filter != nil {
+		filtered, err := t.filter.Filter(ctx, text)
+		if err != nil {
+			return err
+		}
+		text = filtered
+	}
 	return t.svc.Progress(ctx, t.tracker.toAgenttools(a), text, at)
 }
+
+type outputAudit struct{ logger *slog.Logger }
+
+func (a outputAudit) RejectedOutput(ctx context.Context, cause string) {
+	a.logger.WarnContext(ctx, "agent output rejected", "reason", cause)
+}
+
+var _ appreview.OutputAudit = outputAudit{}
 
 // mcpReviewsAdapter adapts agenttools.Service to mcp.Reviews.
 type mcpReviewsAdapter struct {

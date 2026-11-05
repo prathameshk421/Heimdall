@@ -5,6 +5,7 @@
 // Public API
 //   - Migrate(ctx, pool): applies the embedded migrations (forward only). Safe to run on every boot.
 //   - NewStore(pool) *Store: implements ports.EventStore (Append, Load) and ports.Outbox (Pending, Claim, Done, Fail).
+//   - Store.OpenRooms: discovers persisted nonterminal changes with rooms by validating and replaying event history.
 //   - Store.GetCursor, SetCursor: the cursor table (pollers, D64; the Switch stream, D46). A missing cursor is
 //     ports.ErrNotFound.
 //   - Store.SeenDelivery(provider, id): webhook dedupe. It returns true when the delivery was already recorded.

@@ -44,6 +44,18 @@ func (a *app) loops(ctx context.Context) {
 			a.syncLoop(ctx, wake)
 		}()
 	}
+	if a.roomStream != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); a.roomStreamLoop(ctx) }()
+	}
+	if a.comments != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); a.commentLoop(ctx, wake) }()
+	}
+	if a.episodeWorker != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); a.episodeLoop(ctx) }()
+	}
 	go func() {
 		defer wg.Done()
 		a.tickLoop(ctx, ticks)
@@ -53,6 +65,50 @@ func (a *app) loops(ctx context.Context) {
 		a.drainLoop(ctx, wake, ticks)
 	}()
 	wg.Wait()
+}
+
+func (a *app) episodeLoop(ctx context.Context) {
+	for ctx.Err() == nil {
+		if _, err := a.episodeWorker.RunOnce(ctx, 32); err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "Graphiti knowledge delivery failed; queued episodes remain retryable", "error", err)
+		}
+		if err := clock.Wait(ctx, a.syncEvery); err != nil {
+			return
+		}
+	}
+}
+
+func (a *app) roomStreamLoop(ctx context.Context) {
+	for ctx.Err() == nil {
+		if err := a.roomStream.Run(ctx); err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "Switch room stream stopped; durable cursors will resume it", "error", err)
+			if waitErr := clock.Wait(ctx, time.Second); waitErr != nil {
+				return
+			}
+		}
+	}
+}
+
+func (a *app) commentLoop(ctx context.Context, wake chan<- struct{}) {
+	for {
+		result, err := a.comments.PollOnce(ctx)
+		if err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "GitHub issue comment poll failed; the next poll retries", "error", err)
+		}
+		for _, failure := range result.Failed {
+			a.logger.ErrorContext(ctx, "GitHub issue comment PR failed", "repo", failure.Repo, "pr", failure.Number, "error", failure.Err)
+		}
+		if err == nil && result.Comments > 0 {
+			a.logger.InfoContext(ctx, "GitHub issue comments processed", "comments", result.Comments)
+			select {
+			case wake <- struct{}{}:
+			default:
+			}
+		}
+		if err := clock.Wait(ctx, a.syncEvery); err != nil {
+			return
+		}
+	}
 }
 
 // syncLoop syncs open pull requests, reviews and check runs, then waits for the sync interval, until ctx is done.

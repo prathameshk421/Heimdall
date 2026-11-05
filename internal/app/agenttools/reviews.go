@@ -2,9 +2,7 @@ package agenttools
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
@@ -16,25 +14,6 @@ import (
 type validFinding struct {
 	input finding.Input
 	tier  finding.Tier
-}
-
-func validateReviewFindings(findings []finding.Input) ([]FindingError, []validFinding) {
-	var findingErrors []FindingError
-	var valids []validFinding
-	for i, f := range findings {
-		if err := validateFindingShape(f); err != nil {
-			findingErrors = append(findingErrors, FindingError{
-				Index:   i,
-				Message: err.Error(),
-			})
-			continue
-		}
-		valids = append(valids, validFinding{
-			input: f,
-			tier:  tierForFinding(f),
-		})
-	}
-	return findingErrors, valids
 }
 
 func (s *Service) buildFindingFiledEvent(
@@ -114,24 +93,24 @@ func (s *Service) buildReviewEvents(
 
 // SubmitReview validates findings and records review.submitted and finding.filed events.
 func (s *Service) SubmitReview(ctx context.Context, a Assignment, r finding.Review, _ bool) (Receipt, error) {
-	if a.Role != workflow.RoleReviewer {
-		return Receipt{}, fmt.Errorf("%w: role %s cannot submit review", ErrWrongRole, a.Role)
-	}
-	if a.Agent == "" {
-		return Receipt{}, ErrWrongAgent
-	}
-	if a.Task.Change.HeadSHA != "" && r.HeadSHA != "" && a.Task.Change.HeadSHA != r.HeadSHA {
-		return Receipt{}, fmt.Errorf("%w: head_sha does not match task head", ErrValidation)
+	if err := validateReviewAssignment(a, r); err != nil {
+		return Receipt{}, err
 	}
 
-	findingErrors, valids := validateReviewFindings(r.Findings)
-	if len(r.Findings) > 0 && len(valids) == 0 {
+	findingErrors, valids, err := s.validateReview(ctx, a, r)
+	if err != nil {
+		return Receipt{}, err
+	}
+	if len(r.Findings) > 0 && len(valids) == 0 && len(findingErrors) > 0 {
 		return Receipt{Accepted: false, FindingErrors: findingErrors}, nil
 	}
 
-	err := s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
+	err = s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
 		if err := checkTaskAgent(existing, a); err != nil {
 			return nil, err
+		}
+		if reviewAlreadySubmittedForTask(existing, a.TaskID, a.Agent) {
+			return nil, nil
 		}
 		return s.buildReviewEvents(a, existing, valids)
 	})
@@ -141,6 +120,98 @@ func (s *Service) SubmitReview(ctx context.Context, a Assignment, r finding.Revi
 
 	accepted := len(findingErrors) == 0
 	return Receipt{Accepted: accepted, FindingErrors: findingErrors}, nil
+}
+
+func validateReviewAssignment(a Assignment, r finding.Review) error {
+	if a.Role != workflow.RoleReviewer {
+		return fmt.Errorf("%w: role %s cannot submit review", ErrWrongRole, a.Role)
+	}
+	if a.Agent == "" {
+		return ErrWrongAgent
+	}
+	if a.Task.Change.HeadSHA != "" && r.HeadSHA != "" && a.Task.Change.HeadSHA != r.HeadSHA {
+		return fmt.Errorf("%w: head_sha does not match task head", ErrValidation)
+	}
+	return nil
+}
+
+func reviewAlreadySubmittedForTask(events []change.Event, taskID id.TaskID, agent id.AgentName) bool {
+	assignedAt := assignedTaskEventIndex(events, taskID, agent)
+	return assignedAt >= 0 && hasReviewSubmissionAfter(events, assignedAt, agent)
+}
+
+func assignedTaskEventIndex(events []change.Event, taskID id.TaskID, agent id.AgentName) int {
+	assignedAt := -1
+	for i, ev := range events {
+		if ev.Type != change.EventTaskAssigned {
+			continue
+		}
+		payload, err := change.Decode(ev)
+		assigned, ok := payload.(change.TaskAssigned)
+		if err == nil && ok && assigned.TaskID == taskID && assigned.Agent == agent && assigned.Role == workflow.RoleReviewer {
+			assignedAt = i
+		}
+	}
+	return assignedAt
+}
+
+func hasReviewSubmissionAfter(events []change.Event, assignedAt int, agent id.AgentName) bool {
+	for _, ev := range events[assignedAt+1:] {
+		if ev.Type != change.EventReviewSubmitted {
+			continue
+		}
+		payload, err := change.Decode(ev)
+		submitted, ok := payload.(change.ReviewSubmitted)
+		if err == nil && ok && submitted.Reviewer == agent {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) validateReview(ctx context.Context, a Assignment, r finding.Review) ([]FindingError, []validFinding, error) {
+	var findingErrors []FindingError
+	var valids []validFinding
+	for i, input := range r.Findings {
+		accepted, problems, err := s.validateReviewFinding(ctx, a, r, i, input)
+		if err != nil {
+			return nil, nil, err
+		}
+		findingErrors = append(findingErrors, problems...)
+		valids = append(valids, accepted...)
+	}
+	if len(r.Findings) == 0 {
+		result, err := s.review.Submit(ctx, ReviewSubmission{Change: a.Task.Change, Caller: a.Agent, FilesChanged: a.Task.Inputs.FilesChanged, Review: r})
+		if err != nil {
+			return nil, nil, fmt.Errorf("validate review: %w", err)
+		}
+		for _, problem := range result.Problems {
+			findingErrors = append(findingErrors, FindingError{Index: -1, Message: problem.Message})
+		}
+	}
+	return findingErrors, valids, nil
+}
+
+func (s *Service) validateReviewFinding(ctx context.Context, a Assignment, r finding.Review, index int, input finding.Input) ([]validFinding, []FindingError, error) {
+	submission := ReviewSubmission{Change: a.Task.Change, Caller: a.Agent, FilesChanged: a.Task.Inputs.FilesChanged, Review: r}
+	submission.Review.Clean = false
+	submission.Review.Findings = []finding.Input{input}
+	result, err := s.review.Submit(ctx, submission)
+	if err != nil {
+		return nil, nil, fmt.Errorf("validate review finding %d: %w", index, err)
+	}
+	problems := make([]FindingError, 0, len(result.Problems))
+	for _, problem := range result.Problems {
+		problems = append(problems, FindingError{Index: index, Message: problem.Message})
+	}
+	if len(problems) > 0 {
+		return nil, problems, nil
+	}
+	valids := make([]validFinding, 0, len(result.Findings))
+	for _, accepted := range result.Findings {
+		valids = append(valids, validFinding{input: accepted.Input, tier: accepted.Tier})
+	}
+	return valids, nil, nil
 }
 
 // SubmitVerdict records resolver verdict for a case.
@@ -179,47 +250,4 @@ func (s *Service) SubmitVerdict(ctx context.Context, a Assignment, v deliberatio
 		}
 		return []change.Event{ev}, nil
 	})
-}
-
-func validateFindingShape(f finding.Input) error {
-	if err := finding.CheckRepoPath(f.Location.File); err != nil {
-		return fmt.Errorf("location.file: %w", err)
-	}
-	first, last := f.Location.Lines[0], f.Location.Lines[1]
-	if first < 1 || last < first {
-		return fmt.Errorf("location.lines must be 1-based with first <= last, got [%d, %d]", first, last)
-	}
-	if len(f.Evidence) == 0 {
-		return errors.New("evidence needs at least 1 entry")
-	}
-	if strings.TrimSpace(f.Claim) == "" {
-		return errors.New("claim must not be blank")
-	}
-	return nil
-}
-
-func tierForEvidence(et finding.EvidenceType) finding.Tier {
-	switch et {
-	case finding.EvidenceReproTest:
-		return finding.TierE1
-	case finding.EvidenceToolResult:
-		return finding.TierE2
-	case finding.EvidenceMemory:
-		return finding.TierE3
-	case finding.EvidencePackRef, finding.EvidenceReasoning:
-		return finding.TierE4
-	default:
-		return finding.TierE4
-	}
-}
-
-func tierForFinding(f finding.Input) finding.Tier {
-	best := finding.TierE4
-	for _, ev := range f.Evidence {
-		t := tierForEvidence(ev.Type)
-		if t.AtLeast(best) {
-			best = t
-		}
-	}
-	return best
 }

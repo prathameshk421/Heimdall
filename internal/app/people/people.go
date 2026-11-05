@@ -195,6 +195,13 @@ func (d *Directory) HumanName(ch Channel, sender string) (string, bool) {
 	return ident.Name, true
 }
 
+// HumanForAgent returns the person mapped to an agent name. It is used to attribute a reviewer's finding to its human
+// owner when a later dismiss command is authorized.
+func (d *Directory) HumanForAgent(agent string) (string, bool) {
+	name, ok := d.agents[agent]
+	return name, ok
+}
+
 // human builds the identity of a mapped person. Roles are derived from the policy, so they cannot be set by a command.
 func (d *Directory) human(name string) Identity {
 	pr := d.persons[name]

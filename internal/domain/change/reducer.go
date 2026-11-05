@@ -99,7 +99,7 @@ func addBeforeBuilding(t table) {
 	t.set(StateTriggered, EventRoomOpened, to(StateRoomOpen))
 	t.set(StateRoomOpen, EventBranchEnsured, to(StateRoomOpen))
 	t.set(StateRoomOpen, EventTaskAssigned, when(testAuthorTask, to(StateWritingTests), refuse("only the test-author opens WRITING_TESTS")))
-	stays(t, StateWritingTests, EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed)
+	stays(t, StateWritingTests, EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed, EventTaskProgress)
 	t.set(StateWritingTests, EventTestsSubmitted, to(StateVerifyingTests))
 	t.set(StateVerifyingTests, EventTestsVerified, when(needsSignoff, to(StateAwaitingTestSignoff), to(StateTestsReady)))
 	t.set(StateVerifyingTests, EventTestsRejected, to(StateWritingTests))
@@ -134,13 +134,13 @@ func addReview(t table) {
 	t.set(StatePickingReviewers, EventReviewersPicked, to(StateInReview))
 
 	stays(t, StateInReview, EventReviewSubmitted, EventReviewUnavailable, EventReviewWaived, EventFindingFiled,
-		EventFindingVerified, EventChallengeFiled, EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed)
+		EventFindingVerified, EventChallengeFiled, EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed, EventTaskProgress)
 	t.set(StateInReview, EventFindingStateChanged, when(fixClaimed, to(StateFixing), to(StateInReview)))
 	t.set(StateInReview, EventCaseOpened, to(StateDeliberating))
 	t.set(StateInReview, EventGateEvaluated, when(gatePassed, to(StateReadyForApproval), to(StateInReview)))
 
 	stays(t, StateDeliberating, EventCaseOpened, EventVerdictSubmitted, EventChallengeFiled, EventFindingFiled,
-		EventFindingVerified, EventFindingStateChanged, EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed)
+		EventFindingVerified, EventFindingStateChanged, EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed, EventTaskProgress)
 	t.set(StateDeliberating, EventVerdictApplied, to(StateInReview))
 	t.set(StateDeliberating, EventVerdictEscalated, to(StateEscalated))
 

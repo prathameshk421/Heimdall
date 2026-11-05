@@ -56,10 +56,15 @@ func run(
 	}
 	if a != nil {
 		defer a.close()
-		if a.mcpHandler != nil {
+		if a.mcpHandler != nil || a.agentSetupHandler != nil {
 			mux := http.NewServeMux()
 			mux.Handle("/", handler)
-			mux.Handle("/mcp", a.mcpHandler)
+			if a.mcpHandler != nil {
+				mux.Handle("/mcp", a.mcpHandler)
+			}
+			if a.agentSetupHandler != nil {
+				mux.Handle("/admin/agents/", a.agentSetupHandler)
+			}
 			handler = mux
 		}
 	}

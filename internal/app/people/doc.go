@@ -5,7 +5,7 @@
 //
 // A human decides in the change room with `heimdall uphold F3`, or on a PR with a GitHub review. This package
 // answers two questions about that decision: who sent it, and whether that person may make it now. It does not
-// read the chat, post replies or write events. The caller does those, through the parser in app/commands and
+// read the chat, post replies or write events. The caller does those, through the parser in domain/commands and
 // the event store.
 //
 // # API

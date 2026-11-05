@@ -32,12 +32,48 @@ func TestRunCostJSONShape(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatalf("JSON output: %v; output %q", err, out.String())
 	}
-	if len(got) != 4 || got["total_spent_usd"] != 1.25 || got["remaining_usd"] != 1.75 || got["live_balance_usd"] != 2.4 {
+	assertCostJSONTotals(t, got)
+	assertCostJSONPurpose(t, got)
+	assertCostJSONRemaining(t, got)
+}
+
+func assertCostJSONTotals(t *testing.T, got map[string]any) {
+	t.Helper()
+	if len(got) != 5 || got["total_spent_usd"] != 1.25 || got["remaining_usd"] != 1.75 || got["live_balance_usd"] != 2.4 {
 		t.Fatalf("JSON shape or values = %#v", got)
 	}
+}
+
+func assertCostJSONPurpose(t *testing.T, got map[string]any) {
+	t.Helper()
 	byPurpose, ok := got["per_purpose_usd"].(map[string]any)
 	if !ok || len(byPurpose) != 2 || byPurpose["eval"] != .75 || byPurpose["rehearse"] != .5 {
 		t.Fatalf("per_purpose_usd = %#v", got["per_purpose_usd"])
+	}
+}
+
+func assertCostJSONRemaining(t *testing.T, got map[string]any) {
+	t.Helper()
+	remaining, ok := got["per_purpose_remaining_usd"].(map[string]any)
+	rehearseRemaining, rehearseOK := remaining["rehearse"].(float64)
+	if !ok || remaining["eval"] != .25 || !rehearseOK || rehearseRemaining < .099 || rehearseRemaining > .101 {
+		t.Fatalf("per_purpose_remaining_usd = %#v", got["per_purpose_remaining_usd"])
+	}
+}
+
+func TestRunBudgetCheckWithDepsRefusesOverCapWithoutPrintingBalance(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps := budgetDeps{
+		getenv:     func(string) string { return "" },
+		loadConfig: func(string) (config.Config, error) { return config.Config{}, nil },
+		total:      func(string) (float64, map[string]float64, error) { return 2.9, nil, nil },
+		balance:    func(config.Config) (float64, error) { return 10, nil },
+	}
+	if code := runBudgetCheckWithDeps([]string{"--purpose", "live", "--estimate", ".1", "--config", "test.toml"}, &out, &errOut, deps); code == 0 {
+		t.Fatalf("runBudgetCheck() = 0, want refusal")
+	}
+	if strings.Contains(out.String()+errOut.String(), "$10.0000") {
+		t.Fatalf("balance leaked: %q %q", out.String(), errOut.String())
 	}
 }
 

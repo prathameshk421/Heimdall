@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,16 +13,21 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/blobfs"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/graphiti"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/localrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
+	appreview "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/review"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/roomstream"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -151,17 +157,23 @@ type endpoints struct {
 
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
 type app struct {
-	pool       *pgxpool.Pool
-	poller     poller
-	drainer    drainer
-	syncer     syncer
-	mcpHandler http.Handler
-	blobs      io.Closer
-	logger     *slog.Logger
-	clock      ports.Clock
-	pollEvery  time.Duration
-	syncEvery  time.Duration
-	drainTick  time.Duration
+	pool              *pgxpool.Pool
+	poller            poller
+	drainer           drainer
+	syncer            syncer
+	roomStream        roomStreamRunner
+	comments          commentPoller
+	mcpHandler        http.Handler
+	agentSetupHandler http.Handler
+	episodeWorker     interface {
+		RunOnce(context.Context, int) (int, error)
+	}
+	blobs     io.Closer
+	logger    *slog.Logger
+	clock     ports.Clock
+	pollEvery time.Duration
+	syncEvery time.Duration
+	drainTick time.Duration
 }
 
 // poller is the part of trigger.Poller the loop uses. A test supplies a fake one.
@@ -177,6 +189,11 @@ type drainer interface {
 // syncer is the part of prsync.Syncer the loop uses. A test supplies a fake one.
 type syncer interface {
 	SyncOnce(ctx context.Context) (prsync.Result, error)
+}
+
+type roomStreamRunner interface{ Run(context.Context) error }
+type commentPoller interface {
+	PollOnce(context.Context) (collaboration.CommentPollResult, error)
 }
 
 // close releases the blob store and the database pool. Call it after the loops have stopped.
@@ -442,11 +459,19 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, fmt.Errorf("build ticket poller: %w", err)
 	}
-	sync, err := assembleSyncer(ad, store, gen, clk)
+	sync, intakeCase, err := assembleSyncer(ad, store, gen, clk)
 	if err != nil {
 		return nil, err
 	}
-	mcpH, err := assembleMCP(d, ad, store, pool, blobs, gen, clk)
+	roomConsumer, commentConsumer, err := assembleCollaboration(store, ad, eng, gen, clk, d.syncEvery, intakeCase)
+	if err != nil {
+		return nil, err
+	}
+	files, episodeWorker, err := assembleKnowledgeRetention(d, ad, store, blobs, clk)
+	if err != nil {
+		return nil, err
+	}
+	mcpH, err := assembleMCP(d, ad, store, pool, blobs, gen, clk, files)
 	if err != nil {
 		return nil, err
 	}
@@ -455,25 +480,47 @@ func assembleWithBlobs(
 		closer = c
 	}
 	return &app{
-		pool: pool, poller: p, drainer: box, syncer: sync, mcpHandler: mcpH, blobs: closer,
+		pool: pool, poller: p, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: ad.agentSetupHandler, episodeWorker: episodeWorker, blobs: closer,
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
 }
 
+func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, refreshEvery time.Duration, intakeCase *intake.Intake) (roomStreamRunner, commentPoller, error) {
+	runtime, err := newCommandRuntime(store, ad, eng, gen, clk, prIntake{in: intakeCase})
+	if err != nil {
+		return nil, nil, err
+	}
+	stream, ok := ad.chat.(ports.ChatStream)
+	if !ok {
+		return nil, nil, errors.New("selected chat adapter does not implement the Switch room stream")
+	}
+	roomConsumer, err := roomstream.New(roomstream.Config{Rooms: store, Cursors: store, Stream: stream, Handler: runtime.processor, RefreshEvery: refreshEvery, Wait: clock.Wait})
+	if err != nil {
+		return nil, nil, fmt.Errorf("build Switch room consumer: %w", err)
+	}
+	commentConsumer, err := collaboration.NewGitHubCommentPoller(collaboration.CommentPollConfig{Repos: ad.repos, PRs: ad.vcs, Comments: ad.vcs, Cursors: store, Handler: runtime, Clock: clk})
+	if err != nil {
+		return nil, nil, fmt.Errorf("build GitHub comment consumer: %w", err)
+	}
+	return roomConsumer, commentConsumer, nil
+}
+
 // assembleMCP wires the task index, agent tools service, adapters, and MCP server.
 func assembleMCP(
-	d deps, ad adapters, store ports.EventStore, pool *pgxpool.Pool, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock,
+	d deps, ad adapters, store ports.EventStore, pool *pgxpool.Pool, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock, files *knowledge.FileService,
 ) (http.Handler, error) {
 	taskIndex := postgres.NewTaskIndex(pool)
 	asker := &chatAsker{chat: ad.chat, store: store, ids: gen}
 	toolsSvc, err := agenttools.New(agenttools.Config{
-		Events: store,
-		Index:  taskIndex,
-		Blobs:  blobs,
-		Clock:  clk,
-		IDs:    gen,
-		Asker:  asker,
+		Events:          store,
+		Index:           taskIndex,
+		Blobs:           blobs,
+		Clock:           clk,
+		IDs:             gen,
+		Asker:           asker,
+		ReviewRefs:      reviewRefs{code: ad.vcs},
+		ReviewValidator: semanticReviewValidator{refs: reviewRefs{code: ad.vcs}},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build agenttools: %w", err)
@@ -485,16 +532,29 @@ func assembleMCP(
 	}
 	tracker := &assignmentAgentTracker{agents: make(map[id.TaskID]id.AgentName)}
 	tasksAdp := &tasksAdapter{svc: toolsSvc, tracker: tracker}
+	outputFilter, err := appreview.NewOutputFilter(nil, outputAudit{logger: d.logger})
+	if err != nil {
+		return nil, fmt.Errorf("build agent output filter: %w", err)
+	}
+	tasksAdp.filter = outputFilter
 	reviewsAdp := &mcpReviewsAdapter{svc: toolsSvc, tracker: tracker}
+	graphitiCaller, err := graphiti.NewHTTPCaller("http://graphiti:8000/mcp", d.httpClient)
+	if err != nil {
+		return nil, fmt.Errorf("build Graphiti caller: %w", err)
+	}
+	memory, err := graphiti.New(graphitiCaller)
+	if err != nil {
+		return nil, fmt.Errorf("build Graphiti adapter: %w", err)
+	}
+	knowledgeSvc, err := knowledge.NewSearchService(memory, knowledge.PolicyScopes{Code: ad.vcs, Decode: policyyaml.Decode}, knowledgeQueryAudit{logger: d.logger}, clk)
+	if err != nil {
+		return nil, fmt.Errorf("build knowledge search service: %w", err)
+	}
 
 	mcpSrv, err := mcp.NewServer(mcp.Deps{
-		Logger:  d.logger,
-		Clock:   clk,
-		Tokens:  tokStore,
-		Tasks:   tasksAdp,
-		Reviews: reviewsAdp,
-		Code:    ad.vcs,
-		Blobs:   blobs,
+		Logger: d.logger, Clock: clk, Tokens: tokStore, Tasks: tasksAdp,
+		Reviews: reviewsAdp, Code: ad.vcs, Blobs: blobs, Knowledge: knowledgeSvc,
+		Files: newKnowledgeFileManager(files, ad.vcs),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build mcp server: %w", err)
@@ -503,14 +563,14 @@ func assembleMCP(
 }
 
 // assembleSyncer wires the policy decoder, gate source, evaluator, intake and PR syncer.
-func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, error) {
+func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, error) {
 	gateSrc, err := gateuse.NewSource(gateuse.SourceConfig{
 		PRs:    ad.vcs,
 		Code:   ad.vcs,
 		Decode: policyyaml.Decode,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build gate source: %w", err)
+		return nil, nil, fmt.Errorf("build gate source: %w", err)
 	}
 	gateEval, err := gateuse.New(gateuse.Config{
 		Events: store,
@@ -519,7 +579,7 @@ func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk port
 		IDs:    gen,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build gate evaluator: %w", err)
+		return nil, nil, fmt.Errorf("build gate evaluator: %w", err)
 	}
 	intakeCase, err := intake.New(intake.Config{
 		Events: store,
@@ -530,7 +590,7 @@ func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk port
 		Policy: policyyaml.Decode,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build intake: %w", err)
+		return nil, nil, fmt.Errorf("build intake: %w", err)
 	}
 	sync, err := prsync.New(prsync.Config{
 		Repos:   ad.repos,
@@ -544,9 +604,9 @@ func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk port
 		IDs:     gen,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build pr syncer: %w", err)
+		return nil, nil, fmt.Errorf("build pr syncer: %w", err)
 	}
-	return sync, nil
+	return sync, intakeCase, nil
 }
 
 // baseExecutors builds the room_open, github_branch, and github_check executors.

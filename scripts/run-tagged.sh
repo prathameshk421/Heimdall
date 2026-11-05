@@ -24,4 +24,24 @@ testguard_require_jq || exit 2
 json=$(mktemp); trap 'rm -f "$json"' EXIT
 rc=0
 "$gotestsum" --format testname --jsonfile "$json" -- -tags "$tag" -run "$regex" -count=1 ./... || rc=$?
+if [ "$rc" -ne 0 ]; then
+  echo "$label: failing test output" >&2
+  jq -r '
+    [.[] | select(.Action == "fail") | {package: .Package, test: .Test}] as $failed
+    | .[] as $event
+    | select(
+        $event.Action == "fail"
+        or (
+          $event.Action == "output"
+          and any($failed[];
+            .package == $event.Package
+            and ((.test == null and $event.Test == null) or (.test != null and .test == $event.Test))
+          )
+        )
+      )
+    | if $event.Output != null then $event.Output
+      else "\($event.Package // "<package>") \($event.Test // "<package>"): failed"
+      end
+  ' "$json" >&2
+fi
 testguard_check "$json" "$rc" 0

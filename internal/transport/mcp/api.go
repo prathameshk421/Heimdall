@@ -23,8 +23,9 @@ import (
 
 // Principal is who a token belongs to: one agent in one role (TECH_SPEC 15.4).
 type Principal struct {
-	Agent id.AgentName
-	Role  workflow.Role
+	Agent  id.AgentName
+	Role   workflow.Role
+	Person string
 }
 
 // Assignment is the one active task of an agent. AssignedAt starts the 60 s ack window (TECH_SPEC 6.2).
@@ -88,15 +89,48 @@ type Blobs interface {
 	Get(ctx context.Context, ref workflow.BlobRef) (io.ReadCloser, error)
 }
 
+// Knowledge is the app boundary for team-scoped Graphiti searches. Groups are resolved by the app, never by the tool.
+type Knowledge interface {
+	Ask(ctx context.Context, agent id.AgentName, task id.TaskID, repo change.Repo, base id.SHA, query ports.MemoryQuery) ([]ports.MemoryItem, error)
+}
+
+// PackReader loads only the pack owned by the authenticated principal. It must resolve the person's identity and
+// verification/decryption keys server-side; tool arguments never name an owner.
+type PackReader interface {
+	Read(context.Context, Principal, string) (string, error)
+}
+
+// KnowledgeFileInfo is the non-content metadata returned by safe knowledge-file operations.
+type KnowledgeFileInfo struct {
+	Ref       string    `json:"ref"`
+	Path      string    `json:"path"`
+	SHA       string    `json:"sha"`
+	Group     string    `json:"group"`
+	SourceURL string    `json:"source_url,omitempty"`
+	State     string    `json:"state"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Removed   []string  `json:"removed,omitempty"`
+}
+
+// KnowledgeFiles is the application boundary for policy-scoped staging and person-authorized approval/deletion.
+type KnowledgeFiles interface {
+	Stage(context.Context, Principal, Assignment, string, string, string, string, int) (KnowledgeFileInfo, error)
+	Approve(context.Context, Principal, string) error
+	Forget(context.Context, Principal, string) error
+}
+
 // Deps are the collaborators of a Server. Every field is required.
 type Deps struct {
-	Logger  *slog.Logger
-	Clock   ports.Clock
-	Tokens  Tokens
-	Tasks   Tasks
-	Reviews Reviews
-	Code    Code
-	Blobs   Blobs
+	Logger    *slog.Logger
+	Clock     ports.Clock
+	Tokens    Tokens
+	Tasks     Tasks
+	Reviews   Reviews
+	Code      Code
+	Blobs     Blobs
+	Knowledge Knowledge
+	Packs     PackReader
+	Files     KnowledgeFiles
 }
 
 // Server answers MCP requests for the agents' tools.
@@ -127,6 +161,8 @@ func NewServer(d Deps) (*Server, error) {
 		return nil, errors.New("mcp server code reader must not be nil")
 	case d.Blobs == nil:
 		return nil, errors.New("mcp server blob store must not be nil")
+	case d.Knowledge == nil:
+		return nil, errors.New("mcp server knowledge service must not be nil")
 	}
 	s := &Server{deps: d, progressLast: map[id.TaskID]time.Time{}}
 	tools, err := s.buildTools()

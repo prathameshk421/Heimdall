@@ -21,6 +21,7 @@ func TestAgentFanoutNotReadyUntilReviewersPicked(t *testing.T) {
 		Timeout: 30 * time.Minute,
 		Clock:   clock,
 		IDs:     ids,
+		Bundle:  testBundle,
 	}
 	step, err := engine.NewAgentFanout(spec)
 	require.NoError(t, err)
@@ -45,6 +46,7 @@ func TestAgentFanoutAssignsEachReviewerExactlyOnceAcrossTwoRuns(t *testing.T) {
 		Timeout: 30 * time.Minute,
 		Clock:   clock,
 		IDs:     ids,
+		Bundle:  testBundle,
 	}
 	step, err := engine.NewAgentFanout(spec)
 	require.NoError(t, err)
@@ -74,6 +76,14 @@ func TestAgentFanoutAssignsEachReviewerExactlyOnceAcrossTwoRuns(t *testing.T) {
 	require.Equal(t, id.AgentName("bob-reviewer"), ta2.Agent)
 	require.Equal(t, workflow.RoleReviewer, ta1.Role)
 	require.Equal(t, workflow.RoleReviewer, ta2.Role)
+
+	firstPayload, err := change.DecodeTaskAssignPayload(res1.Effects[0].Payload)
+	require.NoError(t, err)
+	require.Contains(t, string(firstPayload.Bundle), `"skill":"reviewer@1.0.0"`)
+	replayBytes, replayRef, err := testBundle(workflow.RoleReviewer, ticket, view.Events)
+	require.NoError(t, err)
+	require.Equal(t, firstPayload.Bundle, replayBytes)
+	require.Equal(t, ta1.BundleRef, replayRef)
 
 	// Append run 1 events to view
 	view.Events = append(view.Events, res1.Events...)
@@ -112,6 +122,7 @@ func TestAgentFanoutDoneCondition(t *testing.T) {
 		Timeout: 30 * time.Minute,
 		Clock:   clock,
 		IDs:     ids,
+		Bundle:  testBundle,
 	}
 	step, err := engine.NewAgentFanout(spec)
 	require.NoError(t, err)
@@ -167,6 +178,7 @@ func TestAgentFanoutOnTimeoutWithoutAck(t *testing.T) {
 		Timeout: 30 * time.Minute,
 		Clock:   clock,
 		IDs:     ids,
+		Bundle:  testBundle,
 	}
 	step, err := engine.NewAgentFanout(spec)
 	require.NoError(t, err)

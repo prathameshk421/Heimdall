@@ -5,5 +5,6 @@
 // documented chars/4 estimate exceeds either budget. Untrusted inputs are
 // represented only by validated blob references. Store writes the exact bytes
 // through ports.BlobStore; the SHA-256 reference is derived from those bytes.
-// The package is tested with a port fake and has no adapter dependencies.
+// Production task steps receive this package through engine.BundleBuilder; the engine does not project or hash
+// bundles itself. The package is tested with a port fake and has no adapter dependencies.
 package bundle

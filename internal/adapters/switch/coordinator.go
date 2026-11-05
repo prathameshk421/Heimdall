@@ -12,6 +12,14 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
+// Check authenticates to Switch and performs a read-only coordinator room listing.
+func (c *Client) Check(ctx context.Context) error {
+	return c.guarded(ctx, "check", func(callCtx context.Context) error {
+		var rooms []json.RawMessage
+		return c.operation(callCtx, "list_rooms", map[string]any{}, &rooms)
+	})
+}
+
 // Registration is what Switch returns once for a new agent. APIKey is shown once; the caller writes it to a file.
 type Registration struct {
 	AgentID string

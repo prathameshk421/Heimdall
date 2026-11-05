@@ -20,6 +20,7 @@ type AgentFanoutSpec struct {
 	Clock    ports.Clock
 	IDs      AgentTaskIDs
 	AgentFor func(person change.ActorID) (id.AgentName, bool)
+	Bundle   BundleBuilder
 }
 
 // AgentFanout is the step agent.fanout.
@@ -42,6 +43,9 @@ func NewAgentFanout(spec AgentFanoutSpec) (AgentFanout, error) {
 	}
 	if spec.IDs == nil {
 		return AgentFanout{}, errors.New("agent.fanout: ids is required")
+	}
+	if spec.Bundle == nil {
+		return AgentFanout{}, errors.New("agent.fanout: bundle builder is required")
 	}
 	return AgentFanout{spec: spec}, nil
 }
@@ -113,7 +117,7 @@ func (s AgentFanout) Start(_ context.Context, c ChangeView, _ json.RawMessage) (
 		return Result{}, err
 	}
 
-	bundleBytes, bundleRef, err := BuildBundle(c)
+	bundleBytes, bundleRef, err := s.spec.Bundle(workflow.RoleReviewer, c.ID, c.Events)
 	if err != nil {
 		return Result{}, fmt.Errorf("agent.fanout %s: build bundle: %w", s.spec.ID, err)
 	}

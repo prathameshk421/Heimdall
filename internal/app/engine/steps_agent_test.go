@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/bundle"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -15,6 +16,29 @@ import (
 )
 
 const zeros64 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+func makeTestEvent(t *testing.T, typ change.EventType, payload change.Payload) change.Event {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	require.NoError(t, err)
+	return change.Event{
+		ID:         change.EventID("evt_01HZX3K9QW7M2P5R8T0V4YB6CD"),
+		ChangeID:   id.ChangeID("PAY-142"),
+		Version:    1,
+		Type:       typ,
+		Actor:      change.Actor{Kind: change.ActorSystem, ID: "heimdall"},
+		OccurredAt: time.Date(2026, 11, 5, 14, 0, 0, 0, time.UTC),
+		Payload:    raw,
+	}
+}
+
+func testBundle(role workflow.Role, changeID id.ChangeID, events []change.Event) ([]byte, workflow.BlobRef, error) {
+	built, err := bundle.BuildFromEvents(role, changeID, events)
+	if err != nil {
+		return nil, "", err
+	}
+	return built.Bytes, bundle.Hash(built), nil
+}
 
 type stepFakeIDs struct {
 	nextTask  int
@@ -45,6 +69,7 @@ func TestNewAgentTaskUnknownRoleRefused(t *testing.T) {
 		Output:   change.EventTestsSubmitted,
 		Clock:    stepFakeClock{now: time.Date(2026, 11, 5, 14, 0, 0, 0, time.UTC)},
 		IDs:      &stepFakeIDs{},
+		Bundle:   testBundle,
 		AgentFor: func(_ workflow.Role) (id.AgentName, bool) { return "", false },
 	}
 	_, err := engine.NewAgentTask(spec)
@@ -68,6 +93,7 @@ func TestAgentTaskDone(t *testing.T) {
 		Output:   change.EventTestsSubmitted,
 		Clock:    clock,
 		IDs:      ids,
+		Bundle:   testBundle,
 		AgentFor: agentFor,
 	}
 	step, err := engine.NewAgentTask(spec)
@@ -122,6 +148,7 @@ func TestAgentTaskStartAndDeadline(t *testing.T) {
 		Output:   change.EventTestsSubmitted,
 		Clock:    clock,
 		IDs:      ids,
+		Bundle:   testBundle,
 		AgentFor: agentFor,
 	}
 	step, err := engine.NewAgentTask(spec)
@@ -200,6 +227,7 @@ func TestAgentTaskRetryGetsNewTaskID(t *testing.T) {
 		Output:   change.EventTestsSubmitted,
 		Clock:    clock,
 		IDs:      ids,
+		Bundle:   testBundle,
 		AgentFor: agentFor,
 	}
 	step, err := engine.NewAgentTask(spec)
@@ -258,6 +286,7 @@ func TestAgentTaskOnTimeout(t *testing.T) {
 		Output:   change.EventTestsSubmitted,
 		Clock:    clock,
 		IDs:      ids,
+		Bundle:   testBundle,
 		AgentFor: agentFor,
 	}
 	step, err := engine.NewAgentTask(spec)

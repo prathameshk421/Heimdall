@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/bundle"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -96,6 +97,13 @@ func buildEarlyEngineSteps(m map[string]workflow.Step, agents config.Agents, gen
 		},
 		Clock: clk,
 		IDs:   gen,
+		Bundle: func(role workflow.Role, changeID id.ChangeID, events []change.Event) ([]byte, workflow.BlobRef, error) {
+			built, err := bundle.BuildFromEvents(role, changeID, events)
+			if err != nil {
+				return nil, "", err
+			}
+			return built.Bytes, bundle.Hash(built), nil
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("step %s: %w", stepWriteTests, err)
@@ -138,6 +146,13 @@ func buildLateEngineSteps(m map[string]workflow.Step, agents config.Agents, gen 
 		Timeout: m[stepReview].Timeout,
 		Clock:   clk,
 		IDs:     gen,
+		Bundle: func(role workflow.Role, changeID id.ChangeID, events []change.Event) ([]byte, workflow.BlobRef, error) {
+			built, err := bundle.BuildFromEvents(role, changeID, events)
+			if err != nil {
+				return nil, "", err
+			}
+			return built.Bytes, bundle.Hash(built), nil
+		},
 		AgentFor: func(person change.ActorID) (id.AgentName, bool) {
 			for _, r := range agents.Reviewers {
 				if string(person) == r {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -11,10 +12,14 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/registry"
 	switchchat "github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/switch"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/tracker/jira"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agentprovision"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/agentsetup"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
@@ -34,22 +39,26 @@ type vcsPort interface {
 	ports.BranchWriter
 	ports.RepoReader
 	ports.PRReader
+	ports.PRCommentReader
 	ports.CodeReader
 	ports.ReviewReader
 	ports.CheckReader
 	ports.CheckWriter
+	ports.PRComments
 }
 
 // adapters are the adapters the slice uses, selected by name through the registry.
 type adapters struct {
-	tickets  ports.TicketReader
-	vcs      vcsPort
-	chat     ports.Chat
-	agents   config.Agents
-	tokens   mcp.Tokens
-	projects projectRepos
-	project  string
-	repos    []change.Repo
+	tickets           ports.TicketReader
+	vcs               vcsPort
+	chat              ports.Chat
+	agents            config.Agents
+	tokens            mcp.Tokens
+	projects          projectRepos
+	project           string
+	repos             []change.Repo
+	provisioner       ports.AgentProvisioner
+	agentSetupHandler http.Handler
 }
 
 // projectRepos maps a tracker project key to its repository (trigger.Projects).
@@ -110,12 +119,51 @@ func selectAdapters(cfg config.Config, d deps, clk ports.Clock) (adapters, error
 	if out.chat, err = selected[ports.Chat](cfg, reg, registry.KindChat); err != nil {
 		return adapters{}, err
 	}
+	if err := selectAgentSetup(cfg, reg, &out); err != nil {
+		return adapters{}, err
+	}
 	tokStore, err := newTokenStore(cfg)
 	if err != nil {
 		return adapters{}, err
 	}
 	out.tokens = tokStore
 	return out, nil
+}
+
+func selectAgentSetup(cfg config.Config, reg *registry.Registry, out *adapters) error {
+	if _, configured := cfg.Selection(string(registry.KindAgentRuntime)); !configured {
+		return nil
+	}
+	provisioner, err := selected[ports.AgentProvisioner](cfg, reg, registry.KindAgentRuntime)
+	if err != nil {
+		return err
+	}
+	service, err := agentprovision.New(agentprovision.Config{
+		Provisioner: provisioner, Secrets: cfg, Machine: cfg.AgentRuntime.Machine,
+		MCPEndpoint: cfg.AgentRuntime.MCPEndpoint, Model: cfg.AgentRuntime.Model,
+		SecretsDir: cfg.SecretsDir, Agents: provisionAgents(cfg.Agents),
+	})
+	if err != nil {
+		return fmt.Errorf("agent_runtime config: %w", err)
+	}
+	setup, err := agentsetup.New(service, cfg, cfg.Switch.APIKeySecret)
+	if err != nil {
+		return fmt.Errorf("agent_runtime handoff: %w", err)
+	}
+	out.provisioner = provisioner
+	out.agentSetupHandler = setup
+	return nil
+}
+
+func provisionAgents(agents config.Agents) []agentprovision.Agent {
+	out := []agentprovision.Agent{
+		{Name: id.AgentName(agents.TestAuthor), Role: workflow.RoleTestAuthor, Description: "Heimdall test author", Instructions: "Follow the installed test-author skill. Get tasks and submit results through Heimdall MCP tools."},
+		{Name: id.AgentName(agents.Resolver), Role: workflow.RoleResolver, Description: "Heimdall resolver", Instructions: "Follow the installed resolver skill. Get tasks and submit results through Heimdall MCP tools."},
+	}
+	for _, name := range agents.Reviewers {
+		out = append(out, agentprovision.Agent{Name: id.AgentName(name), Role: workflow.RoleReviewer, Description: "Heimdall reviewer", Instructions: "Follow the installed reviewer skill. Get tasks and submit results through Heimdall MCP tools."})
+	}
+	return out
 }
 
 // selected builds the adapter the config selects for kind and asserts it to the port the slice needs.
@@ -168,8 +216,12 @@ func (f adapterFactory) entries() []registry.Entry {
 		{Name: "switch", Kind: registry.KindChat,
 			RequiredConfig: []string{switchAPIKeyFile, switchRegistrationFile},
 			Factory:        f.switchChat, Check: notChecked},
+		{Name: "switchroom", Kind: registry.KindAgentRuntime,
+			RequiredConfig: []string{switchAPIKeyFile, switchRegistrationFile}, Factory: f.switchRuntime, Check: notChecked},
 	}
 }
+
+func (f adapterFactory) switchRuntime(cfg config.Config) (any, error) { return f.switchChat(cfg) }
 
 // notChecked is the Check of every entry. The server does not run the connect checks; heimdall doctor does.
 func notChecked(context.Context, config.Config) registry.CheckResult {

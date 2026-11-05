@@ -24,7 +24,7 @@ type wireTool struct {
 func expectedTools(role workflow.Role) []string {
 	all := []string{
 		"heimdall_get_task", "heimdall_ack", "heimdall_get_change",
-		"heimdall_read_untrusted", "heimdall_read_code", "heimdall_report_progress",
+		"heimdall_read_untrusted", "heimdall_read_code", "heimdall_ask_knowledge", "heimdall_report_progress",
 	}
 	switch role {
 	case workflow.RoleTestAuthor:
@@ -32,7 +32,7 @@ func expectedTools(role workflow.Role) []string {
 	case workflow.RoleResolver:
 		return append(all, "heimdall_ask_humans", "heimdall_submit_verdict")
 	case workflow.RoleReviewer:
-		return append(all, "heimdall_submit_review")
+		return append(all, "heimdall_submit_review", "heimdall_read_pack", "heimdall_stage_knowledge", "heimdall_approve_knowledge", "heimdall_forget_knowledge")
 	case workflow.RoleProfiler:
 		return all
 	}

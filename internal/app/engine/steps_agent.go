@@ -28,7 +28,12 @@ type AgentTaskSpec struct {
 	AgentFor func(role workflow.Role) (id.AgentName, bool)
 	Clock    ports.Clock
 	IDs      AgentTaskIDs
+	Bundle   BundleBuilder
 }
+
+// BundleBuilder is the canonical context-bundle seam. The engine decides and
+// the configured app bundle package owns projection, canonicalization and hashing.
+type BundleBuilder func(workflow.Role, id.ChangeID, []change.Event) ([]byte, workflow.BlobRef, error)
 
 // AgentTask is the step agent.task.
 type AgentTask struct {
@@ -67,6 +72,9 @@ func NewAgentTask(spec AgentTaskSpec) (AgentTask, error) {
 	if _, ok := spec.AgentFor(spec.Role); !ok {
 		return AgentTask{}, fmt.Errorf("unknown agent role %q", spec.Role)
 	}
+	if spec.Bundle == nil {
+		return AgentTask{}, errors.New("agent.task: bundle builder is required")
+	}
 	return AgentTask{spec: spec}, nil
 }
 
@@ -98,7 +106,7 @@ func (s AgentTask) buildTaskResult(c ChangeView, agent id.AgentName) (Result, er
 	now := s.spec.Clock.Now()
 	deadline := now.Add(s.spec.Timeout)
 
-	bundleBytes, bundleRef, err := BuildBundle(c)
+	bundleBytes, bundleRef, err := s.spec.Bundle(s.spec.Role, c.ID, c.Events)
 	if err != nil {
 		return Result{}, fmt.Errorf("agent.task %s: build bundle: %w", s.spec.ID, err)
 	}

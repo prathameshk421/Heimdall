@@ -61,3 +61,9 @@ func TestSecretsSyncRequiresExplicitEnvAndNamesMissingKeys(t *testing.T) {
 	require.Contains(t, stderr.String(), "OPENROUTER_API_KEY")
 	require.Contains(t, stderr.String(), "GITHUB_APP_PRIVATE_KEY_PATH")
 }
+
+func TestExampleConfigUsesRegisteredSwitchChatBridge(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "deploy", "heimdall.example.toml"))
+	require.NoError(t, err)
+	require.Contains(t, string(data), "bridge = \"mattermost\"")
+}

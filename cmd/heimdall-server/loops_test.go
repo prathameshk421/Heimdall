@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
@@ -48,6 +49,58 @@ func (d *recordingDrainer) Run(ctx context.Context, _ <-chan struct{}, _ <-chan 
 type blockingDrainer struct {
 	release  chan struct{}
 	finished atomic.Bool
+}
+
+type blockingRoomStream struct {
+	started chan struct{}
+	stopped atomic.Bool
+}
+
+func (s *blockingRoomStream) Run(ctx context.Context) error {
+	select {
+	case s.started <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	s.stopped.Store(true)
+	return ctx.Err()
+}
+
+type recordingCommentPoller struct{ started chan struct{} }
+
+func (p *recordingCommentPoller) PollOnce(context.Context) (collaboration.CommentPollResult, error) {
+	select {
+	case p.started <- struct{}{}:
+	default:
+	}
+	return collaboration.CommentPollResult{}, nil
+}
+
+func TestLoopsStartAndJoinRoomStreamAndGitHubCommentConsumers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	room := &blockingRoomStream{started: make(chan struct{}, 1)}
+	comments := &recordingCommentPoller{started: make(chan struct{}, 1)}
+	a := &app{poller: &fakePoller{}, drainer: &recordingDrainer{}, roomStream: room, comments: comments, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour}
+	done := make(chan struct{})
+	go func() { a.loops(ctx); close(done) }()
+	select {
+	case <-room.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("room stream was not started")
+	}
+	select {
+	case <-comments.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("GitHub comment poller was not started")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("loops did not join collaboration consumers")
+	}
+	require.True(t, room.stopped.Load(), "server shutdown must wait for the room stream")
 }
 
 func (d *blockingDrainer) Run(ctx context.Context, _ <-chan struct{}, _ <-chan time.Time) error {

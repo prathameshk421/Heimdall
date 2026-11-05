@@ -3,6 +3,7 @@ package ports
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -25,6 +26,21 @@ type PRReader interface {
 // the effect key, so a retry edits the comment instead of adding one (TECH_SPEC 2.4).
 type PRComments interface {
 	Comment(ctx context.Context, repo change.Repo, n int, key change.EffectKey, body string) error
+}
+
+// IssueComment is one comment on a PR's conversation. CreatedAt and UpdatedAt let a consumer ignore edited commands.
+type IssueComment struct {
+	ID        int64
+	Login     string
+	UserType  string
+	Body      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// PRCommentReader reads human and bot issue comments on a pull request from a time cursor.
+type PRCommentReader interface {
+	IssueCommentsSince(ctx context.Context, repo change.Repo, n int, since time.Time) ([]IssueComment, error)
 }
 
 // BranchWriter makes test branches and commits. Consumer: the test-author flow (TECH_SPEC 7).

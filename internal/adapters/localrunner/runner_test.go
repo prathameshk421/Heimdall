@@ -289,7 +289,11 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 	// Verify the spawned child process sleep 30 was terminated with the process group
 	_ = pidFile
 	// ESRCH means process does not exist
-	killErr := syscall.Kill(pid, 0)
+	var killErr error
+	require.Eventually(t, func() bool {
+		killErr = syscall.Kill(pid, 0)
+		return killErr == syscall.ESRCH
+	}, 2*time.Second, 10*time.Millisecond, "spawned child process must be dead")
 	require.Equal(t, syscall.ESRCH, killErr, "spawned child process must be dead")
 }
 

@@ -60,3 +60,22 @@ func TestCheckRefusesExactlyAtLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestStopAfterTwiceEstimate(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		actual   float64
+		estimate float64
+		want     bool
+	}{
+		{name: "below", actual: .19, estimate: .1, want: false},
+		{name: "exact", actual: .2, estimate: .1, want: true},
+		{name: "above", actual: .21, estimate: .1, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := StopAfterTwiceEstimate(tc.actual, tc.estimate); got != tc.want {
+				t.Fatalf("StopAfterTwiceEstimate(%v, %v) = %v, want %v", tc.actual, tc.estimate, got, tc.want)
+			}
+		})
+	}
+}

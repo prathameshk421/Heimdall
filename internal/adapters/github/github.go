@@ -40,12 +40,13 @@ type Adapter struct {
 
 // The compile-time proof that the adapter satisfies every VCS port.
 var (
-	_ ports.PRReader     = (*Adapter)(nil)
-	_ ports.PRComments   = (*Adapter)(nil)
-	_ ports.BranchWriter = (*Adapter)(nil)
-	_ ports.CheckWriter  = (*Adapter)(nil)
-	_ ports.CodeReader   = (*Adapter)(nil)
-	_ ports.RepoReader   = (*Adapter)(nil)
+	_ ports.PRReader        = (*Adapter)(nil)
+	_ ports.PRComments      = (*Adapter)(nil)
+	_ ports.PRCommentReader = (*Adapter)(nil)
+	_ ports.BranchWriter    = (*Adapter)(nil)
+	_ ports.CheckWriter     = (*Adapter)(nil)
+	_ ports.CodeReader      = (*Adapter)(nil)
+	_ ports.RepoReader      = (*Adapter)(nil)
 )
 
 // New builds the adapter. It fails on a missing dependency, a base URL that is not absolute, or an App key that does
