@@ -40,6 +40,11 @@ services:
       - github_app_private_key
       - switch_api_key
       - switch_registration_token
+      - agent_token_test-author
+      - agent_token_reviewer-1
+      - agent_token_reviewer-2
+      - agent_token_reviewer-3
+      - agent_token_resolver
     networks: [core, memory]
     depends_on:
       postgres:
@@ -158,3 +163,13 @@ secrets:
     file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds switch_api_key}/switch_api_key
   switch_registration_token:
     file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds switch_registration_token}/switch_registration_token
+  agent_token_test-author:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds agent_token_test-author}/agent_token_test-author
+  agent_token_reviewer-1:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds agent_token_reviewer-1}/agent_token_reviewer-1
+  agent_token_reviewer-2:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds agent_token_reviewer-2}/agent_token_reviewer-2
+  agent_token_reviewer-3:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds agent_token_reviewer-3}/agent_token_reviewer-3
+  agent_token_resolver:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds agent_token_resolver}/agent_token_resolver

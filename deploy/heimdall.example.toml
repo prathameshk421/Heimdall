@@ -23,7 +23,8 @@ api_token_secret = "jira_api_token"
 
 [switch]
 # Switch gateway base URL: https, or http only for a loopback host.
-base_url = "https://switch.invalid"
+# Live laptop runs usually tunnel the VM Switch to http://127.0.0.1:8000.
+base_url = "http://127.0.0.1:8000"
 # The coordinator agent's Switch id, display name and bridge id.
 agent_id = "agent-placeholder-1"
 agent_name = "heimdall-placeholder"
@@ -47,6 +48,12 @@ provider = "jira"
 
 [chat]
 bridge = "switch"
+
+# MCP agent identities. Each name needs secrets_dir/agent_token_<name> (0600).
+[agents]
+test_author = "test-author"
+reviewers = ["reviewer-1", "reviewer-2", "reviewer-3"]
+resolver = "resolver"
 
 [[projects]]
 tracker_project = "KAN"
