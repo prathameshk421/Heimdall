@@ -72,6 +72,15 @@ func WithPath(p string) Option {
 	}
 }
 
+// WithGoCache sets the Go build cache directory used by every run. Without it the cache would live in the temporary
+// HOME and be empty each time, so every run would compile the standard library again. The cache is content-addressed,
+// so sharing it between runs is safe. The default is a directory under the user cache directory.
+func WithGoCache(dir string) Option {
+	return func(r *Runner) {
+		r.cacheDir = dir
+	}
+}
+
 // WithTempDirHook registers a hook called with the temporary directory path.
 func WithTempDirHook(fn func(string)) Option {
 	return func(r *Runner) {
@@ -94,6 +103,7 @@ type Runner struct {
 	blobs     ports.BlobStore
 	clock     ports.Clock
 	path      string
+	cacheDir  string
 	onTempDir func(string)
 }
 
@@ -106,6 +116,11 @@ func New(src Source, opts ...Option) *Runner {
 	}
 	for _, opt := range opts {
 		opt(r)
+	}
+	if r.cacheDir == "" {
+		if base, err := os.UserCacheDir(); err == nil {
+			r.cacheDir = filepath.Join(base, "heimdall-runner", "go-build")
+		}
 	}
 	return r
 }
@@ -260,6 +275,9 @@ func (r *Runner) buildEnv(destDir string, j Job) []string {
 		"PATH=" + pathStr,
 		"HOME=" + destDir,
 		"CGO_ENABLED=0",
+	}
+	if r.cacheDir != "" {
+		env = append(env, "GOCACHE="+r.cacheDir)
 	}
 	if j.GOFlags != "" {
 		env = append(env, "GOFLAGS="+j.GOFlags)
