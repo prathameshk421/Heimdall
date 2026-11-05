@@ -1,123 +1,24 @@
 package effects
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 // MaxCheckSummary is the most text a check run summary may carry.
-const MaxCheckSummary = 2000
+const MaxCheckSummary = change.MaxCheckSummary
 
-// CheckPayload is the payload of a github_check effect.
-type CheckPayload struct {
-	Repo       change.Repo         `json:"repo"`
-	SHA        id.SHA              `json:"sha"`
-	Name       string              `json:"name"`
-	Status     ports.CheckStatus   `json:"status"`
-	Conclusion change.CIConclusion `json:"conclusion,omitempty"`
-	Summary    string              `json:"summary"`
-}
-
-// Validate returns every problem with the payload.
-func (p CheckPayload) Validate() error {
-	var errs []string
-	if _, err := change.ParseRepo(string(p.Repo)); err != nil {
-		errs = append(errs, "repo: "+err.Error())
-	}
-	if _, err := id.ParseSHA(string(p.SHA)); err != nil {
-		errs = append(errs, "sha: "+err.Error())
-	}
-	if strings.TrimSpace(p.Name) == "" {
-		errs = append(errs, "name: must not be empty")
-	}
-	switch p.Status {
-	case ports.CheckCompleted:
-		if p.Conclusion == "" {
-			errs = append(errs, "conclusion: must be set when status is completed")
-		} else if !p.Conclusion.Valid() {
-			errs = append(errs, "conclusion: invalid conclusion")
-		}
-	case ports.CheckInProgress, ports.CheckQueued:
-		if p.Conclusion != "" {
-			errs = append(errs, "conclusion: must be empty when status is not completed")
-		}
-	default:
-		errs = append(errs, "status: must be queued, in_progress or completed")
-	}
-	if len(p.Summary) > MaxCheckSummary {
-		errs = append(errs, fmt.Sprintf("summary: length %d exceeds max %d", len(p.Summary), MaxCheckSummary))
-	}
-	if len(errs) > 0 {
-		return errors.New(strings.Join(errs, "; "))
-	}
-	return nil
-}
-
-func checkStrictObject(raw json.RawMessage) error {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	tok, err := dec.Token()
-	if err != nil {
-		return fmt.Errorf("payload is not JSON: %w", err)
-	}
-	d, ok := tok.(json.Delim)
-	if !ok || d != '{' {
-		return errors.New("payload must be a JSON object")
-	}
-	seen := make(map[string]bool)
-	for dec.More() {
-		t, err := dec.Token()
-		if err != nil {
-			return fmt.Errorf("payload JSON error: %w", err)
-		}
-		key, ok := t.(string)
-		if !ok {
-			return fmt.Errorf("expected string key, got %v", t)
-		}
-		if seen[key] {
-			return fmt.Errorf("duplicate key %q in payload", key)
-		}
-		seen[key] = true
-		var val json.RawMessage
-		if err := dec.Decode(&val); err != nil {
-			return fmt.Errorf("decode value for key %q: %w", key, err)
-		}
-	}
-	if _, err := dec.Token(); err != nil {
-		return fmt.Errorf("missing closing brace: %w", err)
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return errors.New("payload has data after the object")
-	}
-	return nil
-}
+// CheckPayload is the payload of a github_check effect. It is the domain type, shared with every producer (the intake
+// slop check and the gate), so a producer cannot write a shape the executor refuses.
+type CheckPayload = change.CheckPayload
 
 // DecodeCheckPayload strictly decodes and validates a github_check payload.
 func DecodeCheckPayload(raw json.RawMessage) (CheckPayload, error) {
-	if len(raw) == 0 {
-		return CheckPayload{}, errors.New("empty payload")
-	}
-	if err := checkStrictObject(raw); err != nil {
-		return CheckPayload{}, err
-	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var p CheckPayload
-	if err := dec.Decode(&p); err != nil {
-		return CheckPayload{}, fmt.Errorf("decode payload: %w", err)
-	}
-	if err := p.Validate(); err != nil {
-		return CheckPayload{}, fmt.Errorf("validate payload: %w", err)
-	}
-	return p, nil
+	return change.DecodeCheckPayload(raw)
 }
 
 // GitHubCheckDeps are the dependencies of GitHubCheck.
@@ -152,7 +53,7 @@ func (g GitHubCheck) Execute(ctx context.Context, fx change.Effect) error {
 	}
 	c := ports.Check{
 		Name:       p.Name,
-		Status:     p.Status,
+		Status:     ports.CheckStatus(p.Status),
 		Conclusion: p.Conclusion,
 		ExternalID: string(fx.Key),
 		Summary:    p.Summary,

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -363,17 +364,18 @@ func (in *Intake) gateEffect(j job, newVersion int64) (change.Effect, error) {
 	if err != nil {
 		return change.Effect{}, fmt.Errorf("gate effect key: %w", err)
 	}
-	c := ports.Check{
-		Name:       gateCheck,
-		ExternalID: "gate:" + string(j.repo) + ":" + j.pr.HeadSHA.String(),
+	// The shared github_check payload: the executor reads the same type, and the effect key is the check's external id.
+	c := change.CheckPayload{
+		Repo:    j.repo,
+		SHA:     j.pr.HeadSHA,
+		Name:    gateCheck,
+		Summary: clipSummary(j.v.summary, change.MaxCheckSummary),
 	}
 	if j.v.pass {
-		c.Status = ports.CheckInProgress
-		c.Summary = j.v.summary
+		c.Status = change.CheckStatusInProgress
 	} else {
-		c.Status = ports.CheckCompleted
+		c.Status = change.CheckStatusCompleted
 		c.Conclusion = change.CIFailure
-		c.Summary = j.v.summary
 	}
 	if err := c.Validate(); err != nil {
 		return change.Effect{}, fmt.Errorf("gate check: %w", err)
@@ -383,6 +385,18 @@ func (in *Intake) gateEffect(j job, newVersion int64) (change.Effect, error) {
 		return change.Effect{}, fmt.Errorf("encode gate check: %w", err)
 	}
 	return change.Effect{Key: key, Kind: change.EffectGitHubCheck, Target: string(j.repo), Payload: raw}, nil
+}
+
+// clipSummary cuts s to at most limit bytes on a rune boundary, with an ellipsis inside the limit.
+func clipSummary(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit - 3
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
 }
 
 // lastHead returns the head sha of the latest pr.opened or pr.pushed for pull request n of repo, and whether one exists.

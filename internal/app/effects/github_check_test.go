@@ -41,7 +41,7 @@ func validCheck() effects.CheckPayload {
 		Repo:       checkRepo,
 		SHA:        checkSHA,
 		Name:       "heimdall/gate",
-		Status:     ports.CheckCompleted,
+		Status:     change.CheckStatusCompleted,
 		Conclusion: change.CISuccess,
 		Summary:    "the merge rule passed",
 	}
@@ -147,15 +147,15 @@ func TestGitHubCheckRefusesASummaryOverTheBound(t *testing.T) {
 
 func TestGitHubCheckPayloadValidatesStatusAndConclusion(t *testing.T) {
 	cases := map[string]effects.CheckPayload{
-		"completed without a conclusion": {Repo: checkRepo, SHA: checkSHA, Name: "heimdall/gate", Status: ports.CheckCompleted, Summary: "ok"},
+		"completed without a conclusion": {Repo: checkRepo, SHA: checkSHA, Name: "heimdall/gate", Status: change.CheckStatusCompleted, Summary: "ok"},
 		"in progress with a conclusion": {
-			Repo: checkRepo, SHA: checkSHA, Name: "heimdall/gate", Status: ports.CheckInProgress,
+			Repo: checkRepo, SHA: checkSHA, Name: "heimdall/gate", Status: change.CheckStatusInProgress,
 			Conclusion: change.CISuccess, Summary: "ok",
 		},
 		"bad status": {Repo: checkRepo, SHA: checkSHA, Name: "heimdall/gate", Status: "done", Summary: "ok"},
-		"bad repo":   {Repo: "not-a-repo", SHA: checkSHA, Name: "heimdall/gate", Status: ports.CheckInProgress, Summary: "ok"},
-		"bad sha":    {Repo: checkRepo, SHA: "zzz", Name: "heimdall/gate", Status: ports.CheckInProgress, Summary: "ok"},
-		"empty name": {Repo: checkRepo, SHA: checkSHA, Name: " ", Status: ports.CheckInProgress, Summary: "ok"},
+		"bad repo":   {Repo: "not-a-repo", SHA: checkSHA, Name: "heimdall/gate", Status: change.CheckStatusInProgress, Summary: "ok"},
+		"bad sha":    {Repo: checkRepo, SHA: "zzz", Name: "heimdall/gate", Status: change.CheckStatusInProgress, Summary: "ok"},
+		"empty name": {Repo: checkRepo, SHA: checkSHA, Name: " ", Status: change.CheckStatusInProgress, Summary: "ok"},
 	}
 	for name, p := range cases {
 		t.Run(name, func(t *testing.T) {

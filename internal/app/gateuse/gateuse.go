@@ -14,16 +14,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
-// checkJSON is the JSON payload shape for a github_check effect.
-type checkJSON struct {
-	Repo       change.Repo         `json:"repo"`
-	SHA        id.SHA              `json:"sha"`
-	Name       string              `json:"name"`
-	Status     ports.CheckStatus   `json:"status"`
-	Conclusion change.CIConclusion `json:"conclusion,omitempty"`
-	Summary    string              `json:"summary"`
-}
-
 // Config holds the ports an Evaluator needs. Every field is required.
 type Config struct {
 	Events ports.EventStore
@@ -297,13 +287,16 @@ func buildCheckEffect(
 		return change.Effect{}, fmt.Errorf("idempotency key: %w", err)
 	}
 
-	checkPayload := checkJSON{
+	checkPayload := change.CheckPayload{
 		Repo:       repo,
 		SHA:        head,
 		Name:       "heimdall/gate",
-		Status:     status,
+		Status:     change.CheckStatus(status),
 		Conclusion: conclusion,
-		Summary:    clip(summary, 2000),
+		Summary:    clip(summary, change.MaxCheckSummary),
+	}
+	if err := checkPayload.Validate(); err != nil {
+		return change.Effect{}, fmt.Errorf("github_check payload invalid: %w", err)
 	}
 	rawFx, err := json.Marshal(checkPayload)
 	if err != nil {

@@ -43,6 +43,9 @@ func newEval(t *testing.T, store *fakeStore, out gateuse.Outside) *gateuse.Evalu
 func checkPayloadOf(t *testing.T, store *fakeStore) checkJSON {
 	t.Helper()
 	require.Len(t, store.lastEffects, 1)
+	// Every producer must write what the executor's strict decoder accepts.
+	_, err := change.DecodeCheckPayload(store.lastEffects[0].Payload)
+	require.NoError(t, err, "the gate check effect must be accepted by the shared github_check decoder")
 	var c checkJSON
 	require.NoError(t, json.Unmarshal(store.lastEffects[0].Payload, &c))
 	return c

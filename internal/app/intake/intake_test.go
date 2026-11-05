@@ -252,13 +252,14 @@ func types(evs []change.Event) []change.EventType {
 }
 
 // lastGate returns the gate check payload of the most recent effect.
-func (r *rig) lastGate(t *testing.T) ports.Check {
+func (r *rig) lastGate(t *testing.T) change.CheckPayload {
 	t.Helper()
 	require.NotEmpty(t, r.ev.effects)
 	fx := r.ev.effects[len(r.ev.effects)-1]
 	require.Equal(t, change.EffectGitHubCheck, fx.Kind)
-	var c ports.Check
-	require.NoError(t, json.Unmarshal(fx.Payload, &c))
+	// The executor reads this payload with the same strict decoder, so the shape is the contract.
+	c, err := change.DecodeCheckPayload(fx.Payload)
+	require.NoError(t, err, "the gate check effect must be accepted by the shared github_check decoder")
 	return c
 }
 
@@ -289,7 +290,7 @@ func TestBadPRFailsTheSlopRuleAndNamesTheRule(t *testing.T) {
 	require.Contains(t, rules, "scope")
 
 	c := r.lastGate(t)
-	require.Equal(t, ports.CheckCompleted, c.Status)
+	require.Equal(t, change.CheckStatusCompleted, c.Status)
 	require.Equal(t, change.CIFailure, c.Conclusion)
 	require.Contains(t, c.Summary, "ticket_linked")
 	require.Equal(t, gateCheck, c.Name)
@@ -312,7 +313,7 @@ func TestGoodPRPassesAndTheGateStaysPending(t *testing.T) {
 	require.True(t, slopOf(t, evs[1]).Pass)
 
 	c := r.lastGate(t)
-	require.Equal(t, ports.CheckInProgress, c.Status)
+	require.Equal(t, change.CheckStatusInProgress, c.Status)
 	require.Empty(t, c.Conclusion)
 	require.Contains(t, c.Summary, "stays pending")
 }
@@ -393,7 +394,7 @@ func TestInvalidPolicyFailsClosedAndNamesThePolicy(t *testing.T) {
 			require.Len(t, rules, 1)
 			require.True(t, strings.HasPrefix(rules[0], ruleInvalidPolicy+": "), "rule %q", rules[0])
 			c := r.lastGate(t)
-			require.Equal(t, ports.CheckCompleted, c.Status)
+			require.Equal(t, change.CheckStatusCompleted, c.Status)
 			require.Equal(t, change.CIFailure, c.Conclusion)
 		})
 	}
