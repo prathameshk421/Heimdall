@@ -10,6 +10,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 // The pin clause compares the test tree pinned by tests.committed with the test tree AT THE PR HEAD. The head tree
@@ -87,4 +88,22 @@ func TestLeadFoldDefaultBlockingIsStrict(t *testing.T) {
 	facts, err := gateuse.Fold(s.events())
 	require.NoError(t, err)
 	require.NotEmpty(t, facts.Blocking)
+}
+
+// A slop rejection is final for that head: the check must stay red (completed, failure), not fall back to pending
+// because the tests have not been verified yet. Found on the live run: the gate overwrote intake's failure with
+// in_progress.
+func TestLeadASlopFailureStaysRedAndNeverBecomesPending(t *testing.T) {
+	// No tests verified or committed yet, as on the live PR: that alone would make the check pending.
+	s := greenStream(t).
+		replace(change.EventSlopEvaluated, change.SlopEvaluated{Pass: false, FailingRules: []string{"size"}}).
+		drop(change.EventTestsVerified).
+		drop(change.EventTestsCommitted)
+	out := greenOutside()
+	res, store := evaluate(t, s, out)
+	require.False(t, res.OK)
+	require.Equal(t, ports.CheckCompleted, res.Status)
+	c := checkPayloadOf(t, store)
+	require.Equal(t, ports.CheckCompleted, c.Status)
+	require.Equal(t, change.CIFailure, c.Conclusion)
 }

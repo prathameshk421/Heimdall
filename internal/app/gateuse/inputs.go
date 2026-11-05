@@ -68,6 +68,9 @@ type folded struct {
 
 // pending reports whether the tests or the slop rule have not reported yet. Such a check is in_progress, not red.
 func (f folded) pending() bool {
+	if f.slopSeen && !f.facts.Slop.Pass {
+		return false // a slop rejection is final for this head: the check is red, not pending
+	}
 	return !f.slopSeen || !f.verifiedSeen || !f.committedSeen
 }
 
