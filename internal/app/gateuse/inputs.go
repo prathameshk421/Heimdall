@@ -41,11 +41,12 @@ type Outside struct {
 
 // Request names the change whose outside facts are read.
 type Request struct {
-	ChangeID id.ChangeID
-	Repo     change.Repo
-	Number   int
-	HeadSHA  id.SHA
-	Author   change.ActorID
+	ChangeID  id.ChangeID
+	Repo      change.Repo
+	Number    int
+	HeadSHA   id.SHA
+	Author    change.ActorID
+	Approvers []string
 }
 
 // Source supplies the facts that are not in the event log.

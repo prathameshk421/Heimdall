@@ -109,12 +109,19 @@ func (e *Evaluator) loadAndFold(ctx context.Context, changeID id.ChangeID) ([]ch
 }
 
 func (e *Evaluator) evaluateGate(ctx context.Context, changeID id.ChangeID, f folded) (Outside, gate.Facts, gate.Decision, error) {
+	approvers := make([]string, 0, len(f.facts.Approvals))
+	for _, a := range f.facts.Approvals {
+		if a.Approved && a.Commit == f.facts.HeadSHA {
+			approvers = append(approvers, a.Login)
+		}
+	}
 	outside, err := e.source.Outside(ctx, Request{
-		ChangeID: changeID,
-		Repo:     f.repo,
-		Number:   f.number,
-		HeadSHA:  f.facts.HeadSHA,
-		Author:   change.ActorID(f.facts.AuthorLogin),
+		ChangeID:  changeID,
+		Repo:      f.repo,
+		Number:    f.number,
+		HeadSHA:   f.facts.HeadSHA,
+		Author:    change.ActorID(f.facts.AuthorLogin),
+		Approvers: approvers,
 	})
 	if err != nil {
 		return Outside{}, gate.Facts{}, gate.Decision{}, err
