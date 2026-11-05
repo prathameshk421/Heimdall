@@ -44,6 +44,7 @@ type adapters struct {
 	tickets  ports.TicketReader
 	vcs      vcsPort
 	chat     ports.Chat
+	agents   config.Agents
 	projects projectRepos
 	project  string
 	repos    []change.Repo
@@ -97,7 +98,7 @@ func selectAdapters(cfg config.Config, d deps, clk ports.Clock) (adapters, error
 	if len(problems) > 0 {
 		return adapters{}, fmt.Errorf("heimdall.toml: %w", errors.Join(problems...))
 	}
-	out := adapters{projects: projects, project: project, repos: repos}
+	out := adapters{projects: projects, project: project, repos: repos, agents: cfg.Agents}
 	if out.tickets, err = selected[ports.TicketReader](cfg, reg, registry.KindTracker); err != nil {
 		return adapters{}, err
 	}

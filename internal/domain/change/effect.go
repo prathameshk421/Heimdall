@@ -26,13 +26,14 @@ const (
 	EffectTaskAssign        EffectKind = "task_assign"
 	EffectGitHubCommitTests EffectKind = "github_commit_tests"
 	EffectTestQuality       EffectKind = "test_quality"
+	EffectVerifyEvidence    EffectKind = "verify_evidence"
 )
 
 // Valid reports whether k is an effect kind.
 func (k EffectKind) Valid() bool {
 	return slices.Contains([]EffectKind{EffectGitHubCheck, EffectGitHubComment, EffectGitHubBranch,
 		EffectRoomOpen, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign,
-		EffectGitHubCommitTests, EffectTestQuality}, k)
+		EffectGitHubCommitTests, EffectTestQuality, EffectVerifyEvidence}, k)
 }
 
 // EffectKey is the deterministic idempotency key of an outbox row (TECH_SPEC 2.4). An external system that sees the

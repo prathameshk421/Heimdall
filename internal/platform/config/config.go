@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -35,6 +36,9 @@ var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 // value outside these characters is refused at boot.
 var projectKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
+// agentNamePattern is Switch's naming rule: lowercase alphanumeric, dots, dashes, underscores, max 64 chars.
+var agentNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
 // Project maps one tracker project to the repository it is built in (D147).
 type Project struct {
 	TrackerProject string
@@ -51,8 +55,16 @@ type Config struct {
 	Jira       Jira
 	Switch     Switch
 	GitHub     GitHub
+	Agents     Agents
 	byTracker  map[string]Project
 	selections map[string]string
+}
+
+// Agents is [agents]. TestAuthor, Reviewers and Resolver name the agents participating in the workflow.
+type Agents struct {
+	TestAuthor string
+	Reviewers  []string
+	Resolver   string
 }
 
 // Database is [database]. URLSecret names the file under SecretsDir that holds the Postgres URL. The URL
@@ -97,11 +109,19 @@ type fileConfig struct {
 	Jira         *fileJira     `toml:"jira"`
 	Switch       *fileSwitch   `toml:"switch"`
 	GitHub       *fileGitHub   `toml:"github"`
+	Agents       *fileAgents   `toml:"agents"`
 	VCS          *fileProvider `toml:"vcs"`
 	Tracker      *fileProvider `toml:"tracker"`
 	Chat         *fileChat     `toml:"chat"`
 	AgentRuntime *fileProvider `toml:"agent_runtime"`
 	Memory       *fileProvider `toml:"memory"`
+}
+
+// fileAgents is [agents]. Each key is validated by build.
+type fileAgents struct {
+	TestAuthor *string   `toml:"test_author"`
+	Reviewers  *[]string `toml:"reviewers"`
+	Resolver   *string   `toml:"resolver"`
 }
 
 // fileDatabase is [database]. url_secret is a secret file name, not the URL.
@@ -292,6 +312,66 @@ func addLiveSections(cfg *Config, raw fileConfig) []error {
 				InstallationIDSecret: *raw.GitHub.InstallationIDSecret,
 				PrivateKeySecret:     *raw.GitHub.PrivateKeySecret,
 			}
+		}
+	}
+	if raw.Agents != nil {
+		errs = append(errs, checkAgents(&cfg.Agents, raw.Agents)...)
+	}
+	return errs
+}
+
+// checkAgentName requires a valid Switch agent name.
+func checkAgentName(field, name string) error {
+	if name == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if !agentNamePattern.MatchString(name) {
+		return fmt.Errorf("%s: %q must match %s", field, name, agentNamePattern)
+	}
+	return nil
+}
+
+// checkReviewers validates the reviewers list.
+func checkReviewers(raw *[]string) ([]string, []error) {
+	if raw == nil || len(*raw) == 0 {
+		return nil, []error{errors.New("agents.reviewers is required and must list at least one reviewer")}
+	}
+	var errs []error
+	seen := map[string]bool{}
+	for _, r := range *raw {
+		if err := checkAgentName("agents.reviewers", r); err != nil {
+			errs = append(errs, err)
+		} else if seen[r] {
+			errs = append(errs, fmt.Errorf("agents.reviewers: %q is listed twice", r))
+		}
+		seen[r] = true
+	}
+	if len(errs) > 0 {
+		return nil, errs
+	}
+	return slices.Clone(*raw), nil
+}
+
+// checkAgents validates [agents] and records it when every key is good.
+func checkAgents(out *Agents, raw *fileAgents) []error {
+	var errs []error
+	if raw.TestAuthor == nil || *raw.TestAuthor == "" {
+		errs = append(errs, errors.New("agents.test_author is required"))
+	} else if err := checkAgentName("agents.test_author", *raw.TestAuthor); err != nil {
+		errs = append(errs, err)
+	}
+	revs, rerrs := checkReviewers(raw.Reviewers)
+	errs = append(errs, rerrs...)
+	if raw.Resolver == nil || *raw.Resolver == "" {
+		errs = append(errs, errors.New("agents.resolver is required"))
+	} else if err := checkAgentName("agents.resolver", *raw.Resolver); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) == 0 {
+		*out = Agents{
+			TestAuthor: *raw.TestAuthor,
+			Reviewers:  revs,
+			Resolver:   *raw.Resolver,
 		}
 	}
 	return errs
