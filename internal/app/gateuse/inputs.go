@@ -132,6 +132,7 @@ type foldState struct {
 	reviewsKnown bool
 	reviews      []gate.ReviewRequest
 	waived       map[string]bool
+	reviewed     map[string]bool // reviewers whose review followed the current head
 
 	findings     []id.FindingID
 	findingState map[id.FindingID]gate.FindingState
@@ -143,6 +144,7 @@ func newFoldState() *foldState {
 	return &foldState{
 		ci:           make(map[string]ciResult),
 		waived:       make(map[string]bool),
+		reviewed:     make(map[string]bool),
 		findingState: make(map[id.FindingID]gate.FindingState),
 		human:        make(map[id.CaseID]bool),
 	}
@@ -217,6 +219,8 @@ func (st *foldState) applyReview(p change.Payload) bool {
 		st.invalidate(v)
 	case change.ReviewersPicked:
 		st.pickReviewers(v)
+	case change.ReviewSubmitted:
+		st.reviewSubmitted(v)
 	case change.ReviewWaived:
 		st.waive(v)
 	default:
@@ -256,6 +260,7 @@ func (st *foldState) opened(p change.PROpened) error {
 		return err
 	}
 	st.head = p.HeadSHA
+	st.resetReviews()
 	st.author = p.Author
 	if p.Ticket != "" {
 		st.ticketLinked = true
@@ -271,6 +276,7 @@ func (st *foldState) pushed(p change.PRPushed) error {
 		return err
 	}
 	st.head = p.HeadSHA
+	st.resetReviews()
 	st.approvals = nil
 	st.ci = make(map[string]ciResult)
 	return nil
@@ -352,7 +358,27 @@ func (st *foldState) pickReviewers(p change.ReviewersPicked) {
 	st.reviews = make([]gate.ReviewRequest, 0, len(p.People))
 	for _, person := range p.People {
 		name := string(person)
-		st.reviews = append(st.reviews, gate.ReviewRequest{Reviewer: name, Waived: st.waived[name]})
+		st.reviews = append(st.reviews, gate.ReviewRequest{Reviewer: name, Covered: st.reviewed[name], Waived: st.waived[name]})
+	}
+}
+
+// reviewSubmitted covers a reviewer for the current head. The event carries no head sha, so a review counts for the head
+// it follows; a later push resets it (resetReviews). A review from someone who was not asked covers nobody.
+func (st *foldState) reviewSubmitted(p change.ReviewSubmitted) {
+	name := string(p.Reviewer)
+	st.reviewed[name] = true
+	for i := range st.reviews {
+		if strings.EqualFold(st.reviews[i].Reviewer, name) {
+			st.reviews[i].Covered = true
+		}
+	}
+}
+
+// resetReviews voids every review: the head changed, so each reviewer must look again.
+func (st *foldState) resetReviews() {
+	st.reviewed = make(map[string]bool)
+	for i := range st.reviews {
+		st.reviews[i].Covered = false
 	}
 }
 

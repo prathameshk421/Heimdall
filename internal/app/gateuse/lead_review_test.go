@@ -107,3 +107,37 @@ func TestLeadASlopFailureStaysRedAndNeverBecomesPending(t *testing.T) {
 	require.Equal(t, ports.CheckCompleted, c.Status)
 	require.Equal(t, change.CIFailure, c.Conclusion)
 }
+
+// A submitted review covers its reviewer for the head it followed (the event carries no head sha, so the rule is
+// order): a later push voids it and the reviewer must look again. Found on the live run: the fold never read
+// review.submitted, so no review could ever satisfy the gate.
+func TestLeadASubmittedReviewCoversTheReviewerUntilThePushThatFollowsIt(t *testing.T) {
+	s := greenStream(t).
+		drop(change.EventReviewWaived).
+		replace(change.EventReviewersPicked, change.ReviewersPicked{
+			People: []change.ActorID{"bob"}, By: "lead", Method: change.PickDefault,
+		})
+	f := fold(t, s)
+	require.Len(t, f.ReviewRequests, 1)
+	require.False(t, f.ReviewRequests[0].Covered, "nobody has reviewed yet")
+
+	s.add(change.EventReviewSubmitted, systemActor, change.ReviewSubmitted{Reviewer: "bob", PackDate: "2026-11-05"})
+	f = fold(t, s)
+	require.True(t, f.ReviewRequests[0].Covered, "a review after the head covers the reviewer")
+
+	s.add(change.EventPRPushed, githubActor, change.PRPushed{Repo: prRepo, Number: prNumber, HeadSHA: oldHead})
+	f = fold(t, s)
+	require.False(t, f.ReviewRequests[0].Covered, "a new head voids the review")
+}
+
+// A reviewer who was never asked cannot cover anything, and a review of an unavailable reviewer is not a review.
+func TestLeadAReviewFromSomeoneNotPickedCoversNobody(t *testing.T) {
+	s := greenStream(t).
+		drop(change.EventReviewWaived).
+		replace(change.EventReviewersPicked, change.ReviewersPicked{
+			People: []change.ActorID{"bob"}, By: "lead", Method: change.PickDefault,
+		}).
+		add(change.EventReviewSubmitted, systemActor, change.ReviewSubmitted{Reviewer: "carol", PackDate: "2026-11-05"})
+	f := fold(t, s)
+	require.False(t, f.ReviewRequests[0].Covered)
+}
