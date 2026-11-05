@@ -37,6 +37,13 @@ func (a *app) loops(ctx context.Context) {
 		defer wg.Done()
 		a.pollLoop(ctx, wake)
 	}()
+	if a.syncer != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a.syncLoop(ctx, wake)
+		}()
+	}
 	go func() {
 		defer wg.Done()
 		a.tickLoop(ctx, ticks)
@@ -46,6 +53,33 @@ func (a *app) loops(ctx context.Context) {
 		a.drainLoop(ctx, wake, ticks)
 	}()
 	wg.Wait()
+}
+
+// syncLoop syncs open pull requests, reviews and check runs, then waits for the sync interval, until ctx is done.
+// After each sync it wakes the drainer, so an effect the sync committed runs without waiting for the next tick.
+// A sync error is logged.
+func (a *app) syncLoop(ctx context.Context, wake chan<- struct{}) {
+	for {
+		res, err := a.syncer.SyncOnce(ctx)
+		switch {
+		case err != nil && ctx.Err() == nil:
+			a.logger.ErrorContext(ctx, "pull request sync failed; the next sync retries", "error", err)
+		case err == nil:
+			for _, f := range res.Failed {
+				a.logger.ErrorContext(ctx, "pull request sync PR failed", "repo", f.Repo, "pr", f.Number, "error", f.Err)
+			}
+			if res.Synced > 0 || res.Appended > 0 || res.Evaluated > 0 {
+				a.logger.InfoContext(ctx, "pull requests synced", "synced", res.Synced, "appended", res.Appended, "evaluated", res.Evaluated)
+			}
+		}
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+		if err := clock.Wait(ctx, a.syncEvery); err != nil {
+			return
+		}
+	}
 }
 
 // pollLoop polls the tickets, then waits for the poll interval, until ctx is done. After each poll it wakes the

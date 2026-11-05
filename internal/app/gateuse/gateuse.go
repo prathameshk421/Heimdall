@@ -264,15 +264,21 @@ func (e *Evaluator) buildGateEvent(
 		return change.Event{}, fmt.Errorf("marshal gate.evaluated: %w", err)
 	}
 
-	return change.Event{
-		ID:         e.ids.NewEvent(),
-		ChangeID:   changeID,
-		Version:    newVersion,
-		Type:       change.EventGateEvaluated,
-		Actor:      change.Actor{Kind: change.ActorSystem, ID: "engine"},
-		OccurredAt: e.clock.Now(),
-		Payload:    rawEvent,
-	}, nil
+	eid := e.ids.NewEvent()
+	ev := change.Event{
+		ID:            eid,
+		ChangeID:      changeID,
+		Version:       newVersion,
+		Type:          change.EventGateEvaluated,
+		Actor:         change.Actor{Kind: change.ActorSystem, ID: "engine"},
+		OccurredAt:    e.clock.Now().UTC(),
+		CorrelationID: change.CorrelationID(eid.String()),
+		Payload:       rawEvent,
+	}
+	if err := ev.Validate(); err != nil {
+		return change.Event{}, fmt.Errorf("gate.evaluated event invalid: %w", err)
+	}
+	return ev, nil
 }
 
 func buildCheckEffect(

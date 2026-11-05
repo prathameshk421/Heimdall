@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 )
@@ -137,4 +138,131 @@ func TestLoopsWaitForTheDrainerBeforeReturning(t *testing.T) {
 		}
 	}, 5*time.Second, time.Millisecond)
 	require.True(t, d.finished.Load())
+}
+
+// fakeSyncer fails its first failFirst syncs, and cancels the loop's context on sync number cancelAt.
+type fakeSyncer struct {
+	calls     int
+	failFirst int
+	cancelAt  int
+	cancel    context.CancelFunc
+	ran       atomic.Bool
+}
+
+func (f *fakeSyncer) SyncOnce(_ context.Context) (prsync.Result, error) {
+	f.ran.Store(true)
+	f.calls++
+	if f.cancel != nil && f.calls == f.cancelAt {
+		f.cancel()
+	}
+	if f.calls <= f.failFirst {
+		return prsync.Result{}, errors.New("github unavailable")
+	}
+	return prsync.Result{Synced: 1}, nil
+}
+
+// blockingSyncer waits for the context to end, then for release, and records that it finished.
+type blockingSyncer struct {
+	started  chan struct{}
+	release  chan struct{}
+	finished atomic.Bool
+}
+
+func (s *blockingSyncer) SyncOnce(ctx context.Context) (prsync.Result, error) {
+	if s.started != nil {
+		select {
+		case s.started <- struct{}{}:
+		default:
+		}
+	}
+	<-ctx.Done()
+	<-s.release
+	s.finished.Store(true)
+	return prsync.Result{}, ctx.Err()
+}
+
+// A sync error is logged and the next sync still runs. The loop ends only when its context is done.
+func TestSyncLoopKeepsSyncingAfterASyncError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fs := &fakeSyncer{failFirst: 3, cancelAt: 5, cancel: cancel}
+	a := &app{syncer: fs, logger: discardLogger(), clock: clock.System{}, syncEvery: time.Millisecond}
+
+	a.syncLoop(ctx, make(chan struct{}, 1))
+
+	require.Equal(t, 5, fs.calls, "three failed syncs must not stop the loop")
+}
+
+// The sync wakes the drainer after each sync, so a committed effect does not wait for the next tick.
+func TestSyncLoopWakesTheDrainerAfterEachSync(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fs := &fakeSyncer{cancelAt: 1, cancel: cancel}
+	a := &app{syncer: fs, logger: discardLogger(), clock: clock.System{}, syncEvery: time.Hour}
+	wake := make(chan struct{}, 1)
+
+	a.syncLoop(ctx, wake)
+
+	require.Len(t, wake, 1, "the last sync left a wake for the drainer")
+}
+
+// The loops run the syncer.
+func TestLoopsRunTheSyncer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fs := &fakeSyncer{}
+	d := &recordingDrainer{}
+	a := &app{
+		poller: &fakePoller{}, syncer: fs, drainer: d, logger: discardLogger(), clock: clock.System{},
+		pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour,
+	}
+	done := make(chan struct{})
+	go func() {
+		a.loops(ctx)
+		close(done)
+	}()
+
+	require.Eventually(t, fs.ran.Load, 5*time.Second, time.Millisecond, "the syncer must run")
+	cancel()
+	<-done
+}
+
+// Shutdown waits for the syncer.
+func TestLoopsWaitForTheSyncerBeforeReturning(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := &blockingSyncer{started: make(chan struct{}, 1), release: make(chan struct{})}
+	d := &recordingDrainer{}
+	a := &app{
+		poller: &fakePoller{}, syncer: s, drainer: d, logger: discardLogger(), clock: clock.System{},
+		pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour,
+	}
+	returned := make(chan struct{})
+	go func() {
+		a.loops(ctx)
+		close(returned)
+	}()
+
+	<-s.started
+
+	cancel()
+	require.Never(t, func() bool {
+		select {
+		case <-returned:
+			return true
+		default:
+			return false
+		}
+	}, 50*time.Millisecond, time.Millisecond, "loops returned while the syncer was still running")
+
+	close(s.release)
+	require.Eventually(t, func() bool {
+		select {
+		case <-returned:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, time.Millisecond)
+	require.True(t, s.finished.Load())
 }

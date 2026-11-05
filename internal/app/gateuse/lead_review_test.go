@@ -60,6 +60,16 @@ func TestLeadBlockingFollowsThePolicyThresholds(t *testing.T) {
 	require.True(t, res.OK, "E4 never blocks")
 }
 
+// The event the use case appends must be a valid event on its own: a real store validates the envelope, and a
+// wrapper in the composition root must never have to repair it.
+func TestLeadTheGateEventPassesEnvelopeValidation(t *testing.T) {
+	out := greenOutside()
+	_, store := evaluate(t, greenStream(t), out)
+	ev := producedEvent(t, store, change.EventGateEvaluated)
+	require.NoError(t, ev.Validate())
+	require.NotEmpty(t, ev.CorrelationID)
+}
+
 // A late CI report for an OLD commit must neither count nor wipe out the good result already held for the head.
 func TestLeadALateCIReportForAnOldCommitDoesNotReplaceTheHeadResult(t *testing.T) {
 	s := greenStream(t).add(change.EventCIReported, githubActor, change.CIReported{

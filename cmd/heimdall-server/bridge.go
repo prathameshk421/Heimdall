@@ -6,6 +6,9 @@ import (
 	"fmt"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -66,4 +69,87 @@ func (c cursorStore) Save(ctx context.Context, cur ports.Cursor) error {
 		return fmt.Errorf("save cursor %s: %w", c.source, err)
 	}
 	return nil
+}
+
+// intakeHandler is the part of intake.Intake that prIntake needs.
+type intakeHandler interface {
+	HandlePR(ctx context.Context, repo change.Repo, n int) (intake.Result, error)
+}
+
+// prIntake adapts intake.Intake to prsync.Intake.
+type prIntake struct {
+	in intakeHandler
+}
+
+// HandlePR runs intake for pull request n and returns the change ID it belongs to.
+func (p prIntake) HandlePR(ctx context.Context, repo change.Repo, n int) (id.ChangeID, error) {
+	res, err := p.in.HandlePR(ctx, repo, n)
+	if err != nil {
+		return "", err
+	}
+	return res.Stream, nil
+}
+
+// gateEvaluator is the part of gateuse.Evaluator that prGate needs.
+type gateEvaluator interface {
+	Evaluate(ctx context.Context, changeID id.ChangeID) (gateuse.Result, error)
+}
+
+// prGate adapts gateuse.Evaluator to prsync.Gate.
+type prGate struct {
+	eval gateEvaluator
+}
+
+// Evaluate evaluates the merge gate for changeID.
+func (g prGate) Evaluate(ctx context.Context, changeID id.ChangeID) error {
+	_, err := g.eval.Evaluate(ctx, changeID)
+	return err
+}
+
+// reviewsAdapter maps ports.ReviewReader to prsync.Reviews.
+type reviewsAdapter struct {
+	reader ports.ReviewReader
+}
+
+// PRReviews returns the submitted reviews of pull request n, mapping ports types to prsync mirror types.
+func (r reviewsAdapter) PRReviews(ctx context.Context, repo change.Repo, n int) ([]prsync.PRReview, error) {
+	reviews, err := r.reader.PRReviews(ctx, repo, n)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]prsync.PRReview, len(reviews))
+	for i, rev := range reviews {
+		out[i] = prsync.PRReview{
+			ID:          rev.ID,
+			Login:       rev.Login,
+			State:       prsync.ReviewState(rev.State),
+			CommitSHA:   rev.CommitSHA,
+			SubmittedAt: rev.SubmittedAt,
+		}
+	}
+	return out, nil
+}
+
+// checksAdapter maps ports.CheckReader to prsync.Checks.
+type checksAdapter struct {
+	reader ports.CheckReader
+}
+
+// CheckRuns returns the check runs on sha, mapping ports types to prsync mirror types.
+func (c checksAdapter) CheckRuns(ctx context.Context, repo change.Repo, sha id.SHA) ([]prsync.CheckRun, error) {
+	runs, err := c.reader.CheckRuns(ctx, repo, sha)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]prsync.CheckRun, len(runs))
+	for i, run := range runs {
+		out[i] = prsync.CheckRun{
+			ID:         run.ID,
+			Name:       run.Name,
+			Status:     prsync.CheckStatus(run.Status),
+			Conclusion: run.Conclusion,
+			SHA:        run.SHA,
+		}
+	}
+	return out, nil
 }

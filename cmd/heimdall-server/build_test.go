@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,7 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 const testDatabaseURL = "postgres://heimdall:heimdall@127.0.0.1:1/heimdall?sslmode=disable"
@@ -46,6 +53,7 @@ func testDeps() deps {
 		httpClient:  &http.Client{},
 		logger:      discardLogger(),
 		pollEvery:   time.Second,
+		syncEvery:   time.Second,
 		drainTick:   time.Second,
 		openPool:    pgxpool.New,
 		migrate:     postgres.Migrate,
@@ -123,6 +131,14 @@ func TestBuildRefusesDepsThatCannotRun(t *testing.T) {
 	require.ErrorContains(t, err, "poll interval must be positive")
 }
 
+func TestBuildRefusesNonPositiveSyncInterval(t *testing.T) {
+	cfg := loadTestConfig(t, trackerProjectBody)
+	d := testDeps()
+	d.syncEvery = 0
+	_, err := build(context.Background(), cfg, d)
+	require.ErrorContains(t, err, "sync interval must be positive")
+}
+
 func TestProductionDepsNamesTheConfigKeysItLacks(t *testing.T) {
 	cfg := loadTestConfig(t, trackerProjectBody)
 	_, err := productionDeps(cfg, discardLogger())
@@ -130,4 +146,77 @@ func TestProductionDepsNamesTheConfigKeysItLacks(t *testing.T) {
 	require.ErrorContains(t, err, "jira.base_url")
 	require.ErrorContains(t, err, "switch.agent_id")
 	require.ErrorContains(t, err, "heimdall.toml")
+}
+
+type dummyTickets struct{}
+
+func (dummyTickets) Changes(context.Context, ports.Cursor) ([]ports.TicketChange, ports.Cursor, error) {
+	return nil, "", nil
+}
+
+func (dummyTickets) Ticket(context.Context, id.ChangeID) (ports.Ticket, error) {
+	return ports.Ticket{}, nil
+}
+
+type dummyChat struct{}
+
+func (dummyChat) OpenRoom(context.Context, ports.RoomRequest) (change.RoomID, error) {
+	return "", nil
+}
+
+func (dummyChat) Post(context.Context, change.RoomID, change.EffectKey, string) error {
+	return nil
+}
+
+func (dummyChat) Read(context.Context, change.RoomID, ports.Cursor) ([]ports.Message, ports.Cursor, error) {
+	return nil, "", nil
+}
+
+type dummyVCS struct{}
+
+func (dummyVCS) EnsureBranch(context.Context, change.Repo, id.SHA, string) error { return nil }
+func (dummyVCS) CommitFiles(context.Context, change.Repo, string, string, []ports.File) (id.SHA, error) {
+	return "", nil
+}
+func (dummyVCS) DefaultHead(context.Context, change.Repo) (id.SHA, error) { return "", nil }
+func (dummyVCS) PR(context.Context, change.Repo, int) (ports.PR, error)   { return ports.PR{}, nil }
+func (dummyVCS) Files(context.Context, change.Repo, int) ([]ports.ChangedFile, error) {
+	return nil, nil
+}
+func (dummyVCS) OpenPRs(context.Context, change.Repo) ([]ports.PR, error) { return nil, nil }
+func (dummyVCS) ReadFile(context.Context, change.Repo, id.SHA, string) ([]byte, error) {
+	return nil, nil
+}
+func (dummyVCS) TreeHash(context.Context, change.Repo, id.SHA, string) (id.SHA, error) {
+	return "", nil
+}
+func (dummyVCS) Tarball(context.Context, change.Repo, id.SHA) (io.ReadCloser, error) {
+	return nil, nil
+}
+func (dummyVCS) PRReviews(context.Context, change.Repo, int) ([]ports.PRReview, error) {
+	return nil, nil
+}
+func (dummyVCS) CheckRuns(context.Context, change.Repo, id.SHA) ([]ports.CheckRun, error) {
+	return nil, nil
+}
+func (dummyVCS) SetCheck(context.Context, change.Repo, id.SHA, ports.Check) error { return nil }
+func (dummyVCS) Comment(context.Context, change.Repo, int, change.EffectKey, string) error {
+	return nil
+}
+
+func TestExecutorsRegistersGitHubCheck(t *testing.T) {
+	store := newMemStore()
+	clk := clock.System{}
+	gen := ids.New()
+	eng := newSliceEngine(t, store)
+	ad := adapters{
+		tickets: dummyTickets{},
+		vcs:     dummyVCS{},
+		chat:    dummyChat{},
+	}
+	execs, err := executors(ad, store, ingestor{eng: eng}, gen, clk)
+	require.NoError(t, err)
+	ch, ok := execs[change.EffectGitHubCheck]
+	require.True(t, ok, "github_check executor must be registered")
+	require.IsType(t, effects.GitHubCheck{}, ch)
 }

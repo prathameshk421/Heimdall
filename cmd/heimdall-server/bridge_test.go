@@ -7,11 +7,16 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
@@ -162,4 +167,149 @@ func TestStarterReturnsVersionConflictForAnExistingChange(t *testing.T) {
 
 	err := s.Start(context.Background(), triggeredEvent(t, "KAN-1"))
 	require.ErrorIs(t, err, ports.ErrVersionConflict, "the poller counts this as already triggered")
+}
+
+type fakeIntakeHandler struct {
+	res intake.Result
+	err error
+}
+
+func (f *fakeIntakeHandler) HandlePR(context.Context, change.Repo, int) (intake.Result, error) {
+	return f.res, f.err
+}
+
+func TestPRIntakeReturnsChangeIDFromIntakeResult(t *testing.T) {
+	h := &fakeIntakeHandler{res: intake.Result{Stream: id.ChangeID("PAY-1")}}
+	pi := prIntake{in: h}
+	cid, err := pi.HandlePR(context.Background(), change.Repo("acme/pay"), 1)
+	require.NoError(t, err)
+	require.Equal(t, id.ChangeID("PAY-1"), cid)
+}
+
+func TestPRIntakePropagatesError(t *testing.T) {
+	boom := errors.New("intake failed")
+	h := &fakeIntakeHandler{err: boom}
+	pi := prIntake{in: h}
+	_, err := pi.HandlePR(context.Background(), change.Repo("acme/pay"), 1)
+	require.ErrorIs(t, err, boom)
+}
+
+type fakeGateEvaluator struct {
+	called   atomic.Bool
+	passedID id.ChangeID
+	err      error
+}
+
+func (f *fakeGateEvaluator) Evaluate(_ context.Context, cid id.ChangeID) (gateuse.Result, error) {
+	f.called.Store(true)
+	f.passedID = cid
+	return gateuse.Result{}, f.err
+}
+
+func TestPRGateCallsEvaluator(t *testing.T) {
+	eval := &fakeGateEvaluator{}
+	pg := prGate{eval: eval}
+	err := pg.Evaluate(context.Background(), id.ChangeID("PAY-42"))
+	require.NoError(t, err)
+	require.True(t, eval.called.Load())
+	require.Equal(t, id.ChangeID("PAY-42"), eval.passedID)
+}
+
+func TestPRGatePropagatesError(t *testing.T) {
+	boom := errors.New("gate failed")
+	eval := &fakeGateEvaluator{err: boom}
+	pg := prGate{eval: eval}
+	err := pg.Evaluate(context.Background(), id.ChangeID("PAY-42"))
+	require.ErrorIs(t, err, boom)
+}
+
+type fakeReviewReader struct {
+	reviews []ports.PRReview
+	err     error
+}
+
+func (f *fakeReviewReader) PRReviews(context.Context, change.Repo, int) ([]ports.PRReview, error) {
+	return f.reviews, f.err
+}
+
+func TestReviewsAdapterMapsStateAndFields(t *testing.T) {
+	sha := id.SHA("0123456789abcdef0123456789abcdef01234567")
+	now := time.Now().UTC()
+	reader := &fakeReviewReader{
+		reviews: []ports.PRReview{
+			{
+				ID:          "rev-1",
+				Login:       change.ActorID("bob"),
+				State:       ports.ReviewStateApproved,
+				CommitSHA:   sha,
+				SubmittedAt: now,
+			},
+			{
+				ID:          "rev-2",
+				Login:       change.ActorID("alice"),
+				State:       ports.ReviewStateDismissed,
+				CommitSHA:   sha,
+				SubmittedAt: now,
+			},
+		},
+	}
+	ra := reviewsAdapter{reader: reader}
+	got, err := ra.PRReviews(context.Background(), change.Repo("acme/pay"), 1)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Equal(t, "rev-1", got[0].ID)
+	require.Equal(t, change.ActorID("bob"), got[0].Login)
+	require.Equal(t, prsync.ReviewApproved, got[0].State)
+	require.Equal(t, sha, got[0].CommitSHA)
+	require.Equal(t, now, got[0].SubmittedAt)
+	require.Equal(t, prsync.ReviewDismissed, got[1].State)
+}
+
+func TestReviewsAdapterPropagatesError(t *testing.T) {
+	boom := errors.New("review read failed")
+	reader := &fakeReviewReader{err: boom}
+	ra := reviewsAdapter{reader: reader}
+	_, err := ra.PRReviews(context.Background(), change.Repo("acme/pay"), 1)
+	require.ErrorIs(t, err, boom)
+}
+
+type fakeCheckReader struct {
+	runs []ports.CheckRun
+	err  error
+}
+
+func (f *fakeCheckReader) CheckRuns(context.Context, change.Repo, id.SHA) ([]ports.CheckRun, error) {
+	return f.runs, f.err
+}
+
+func TestChecksAdapterMapsSHAAndFields(t *testing.T) {
+	sha := id.SHA("0123456789abcdef0123456789abcdef01234567")
+	reader := &fakeCheckReader{
+		runs: []ports.CheckRun{
+			{
+				ID:         "run-1",
+				Name:       "build",
+				Status:     ports.CheckCompleted,
+				Conclusion: change.CISuccess,
+				SHA:        sha,
+			},
+		},
+	}
+	ca := checksAdapter{reader: reader}
+	got, err := ca.CheckRuns(context.Background(), change.Repo("acme/pay"), sha)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, "run-1", got[0].ID)
+	require.Equal(t, "build", got[0].Name)
+	require.Equal(t, prsync.CheckCompleted, got[0].Status)
+	require.Equal(t, change.CISuccess, got[0].Conclusion)
+	require.Equal(t, sha, got[0].SHA)
+}
+
+func TestChecksAdapterPropagatesError(t *testing.T) {
+	boom := errors.New("check runs read failed")
+	reader := &fakeCheckReader{err: boom}
+	ca := checksAdapter{reader: reader}
+	_, err := ca.CheckRuns(context.Background(), change.Repo("acme/pay"), id.SHA("0123456789abcdef0123456789abcdef01234567"))
+	require.ErrorIs(t, err, boom)
 }

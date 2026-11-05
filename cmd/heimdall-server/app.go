@@ -11,10 +11,14 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
@@ -29,6 +33,8 @@ import (
 const (
 	// pollInterval is the wait between two ticket polls.
 	pollInterval = 15 * time.Second
+	// syncInterval is the wait between two pull request syncs.
+	syncInterval = 10 * time.Second
 	// drainTick is the longest the outbox waits between two batches when no wake arrives.
 	drainTick = 2 * time.Second
 	// maxAttempts is the task budget of a retry (engine.Config.MaxAttempts). The slice has no retry, so it is a bound only.
@@ -54,6 +60,7 @@ type deps struct {
 	httpClient  *http.Client
 	logger      *slog.Logger
 	pollEvery   time.Duration
+	syncEvery   time.Duration
 	drainTick   time.Duration
 	openPool    func(ctx context.Context, url string) (*pgxpool.Pool, error)
 	migrate     func(ctx context.Context, pool *pgxpool.Pool) error
@@ -95,6 +102,7 @@ func (d deps) LogValue() slog.Value {
 		slog.String("databaseURL", dbVal),
 		slog.Any("endpoints", d.endpoints),
 		slog.Duration("pollEvery", d.pollEvery),
+		slog.Duration("syncEvery", d.syncEvery),
 		slog.Duration("drainTick", d.drainTick),
 	)
 }
@@ -113,15 +121,15 @@ func (d deps) redactedFormat(plus, sharp bool) string {
 		migrateStr = "<func>"
 	}
 	if sharp {
-		return fmt.Sprintf("main.deps{databaseURL:%q, endpoints:%#v, httpClient:%#v, logger:%#v, pollEvery:%#v, drainTick:%#v, openPool:%s, migrate:%s}",
-			redactedURL, d.endpoints, d.httpClient, d.logger, d.pollEvery, d.drainTick, openPoolStr, migrateStr)
+		return fmt.Sprintf("main.deps{databaseURL:%q, endpoints:%#v, httpClient:%#v, logger:%#v, pollEvery:%#v, syncEvery:%#v, drainTick:%#v, openPool:%s, migrate:%s}",
+			redactedURL, d.endpoints, d.httpClient, d.logger, d.pollEvery, d.syncEvery, d.drainTick, openPoolStr, migrateStr)
 	}
 	if plus {
-		return fmt.Sprintf("{databaseURL:%s endpoints:%+v httpClient:%+v logger:%+v pollEvery:%+v drainTick:%+v openPool:%s migrate:%s}",
-			redactedURL, d.endpoints, d.httpClient, d.logger, d.pollEvery, d.drainTick, openPoolStr, migrateStr)
+		return fmt.Sprintf("{databaseURL:%s endpoints:%+v httpClient:%+v logger:%+v pollEvery:%+v syncEvery:%+v drainTick:%+v openPool:%s migrate:%s}",
+			redactedURL, d.endpoints, d.httpClient, d.logger, d.pollEvery, d.syncEvery, d.drainTick, openPoolStr, migrateStr)
 	}
-	return fmt.Sprintf("{%s %v %v %v %v %v %s %s}",
-		redactedURL, d.endpoints, d.httpClient, d.logger, d.pollEvery, d.drainTick, openPoolStr, migrateStr)
+	return fmt.Sprintf("{%s %v %v %v %v %v %v %s %s}",
+		redactedURL, d.endpoints, d.httpClient, d.logger, d.pollEvery, d.syncEvery, d.drainTick, openPoolStr, migrateStr)
 }
 
 // endpoints are the base URLs and the Switch identities of the adapters. A test points them at httptest servers.
@@ -139,9 +147,11 @@ type app struct {
 	pool      *pgxpool.Pool
 	poller    poller
 	drainer   drainer
+	syncer    syncer
 	logger    *slog.Logger
 	clock     ports.Clock
 	pollEvery time.Duration
+	syncEvery time.Duration
 	drainTick time.Duration
 }
 
@@ -153,6 +163,11 @@ type poller interface {
 // drainer is the part of outbox.Drainer the loop uses. A test supplies a fake one.
 type drainer interface {
 	Run(ctx context.Context, wake <-chan struct{}, tick <-chan time.Time) error
+}
+
+// syncer is the part of prsync.Syncer the loop uses. A test supplies a fake one.
+type syncer interface {
+	SyncOnce(ctx context.Context) (prsync.Result, error)
 }
 
 // close releases the database pool. Call it after the loops have stopped.
@@ -218,6 +233,7 @@ func productionDeps(cfg config.Config, logger *slog.Logger) (deps, error) {
 			switchBridgeID:  cfg.Switch.BridgeID,
 		},
 		pollEvery: pollInterval,
+		syncEvery: syncInterval,
 		drainTick: drainTick,
 		openPool:  pgxpool.New,
 		migrate:   postgres.Migrate,
@@ -313,6 +329,9 @@ func (d deps) validate() error {
 	if d.pollEvery <= 0 {
 		problems = append(problems, "poll interval must be positive")
 	}
+	if d.syncEvery <= 0 {
+		problems = append(problems, "sync interval must be positive")
+	}
 	if d.drainTick <= 0 {
 		problems = append(problems, "drain tick must be positive")
 	}
@@ -394,10 +413,61 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	if err != nil {
 		return nil, fmt.Errorf("build ticket poller: %w", err)
 	}
+	sync, err := assembleSyncer(ad, store, gen, clk)
+	if err != nil {
+		return nil, err
+	}
 	return &app{
-		pool: pool, poller: p, drainer: box, logger: d.logger, clock: clk,
-		pollEvery: d.pollEvery, drainTick: d.drainTick,
+		pool: pool, poller: p, drainer: box, syncer: sync, logger: d.logger, clock: clk,
+		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
+}
+
+// assembleSyncer wires the policy decoder, gate source, evaluator, intake and PR syncer.
+func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, error) {
+	gateSrc, err := gateuse.NewSource(gateuse.SourceConfig{
+		PRs:    ad.vcs,
+		Code:   ad.vcs,
+		Decode: policyyaml.Decode,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build gate source: %w", err)
+	}
+	gateEval, err := gateuse.New(gateuse.Config{
+		Events: store,
+		Source: gateSrc,
+		Clock:  clk,
+		IDs:    gen,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build gate evaluator: %w", err)
+	}
+	intakeCase, err := intake.New(intake.Config{
+		Events: store,
+		PRs:    ad.vcs,
+		Code:   ad.vcs,
+		Clock:  clk,
+		IDs:    gen,
+		Policy: policyyaml.Decode,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build intake: %w", err)
+	}
+	sync, err := prsync.New(prsync.Config{
+		Repos:   ad.repos,
+		PRs:     ad.vcs,
+		Intake:  prIntake{in: intakeCase},
+		Reviews: reviewsAdapter{reader: ad.vcs},
+		Checks:  checksAdapter{reader: ad.vcs},
+		Gate:    prGate{eval: gateEval},
+		Events:  store,
+		Clock:   clk,
+		IDs:     gen,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build pr syncer: %w", err)
+	}
+	return sync, nil
 }
 
 // executors maps each effect kind to its executor. Each executor checks the kind of the effect it receives, so a
@@ -415,8 +485,15 @@ func executors(ad adapters, store ports.EventStore, in effects.Ingest, gen ports
 	if err != nil {
 		return nil, fmt.Errorf("build github_branch executor: %w", err)
 	}
+	check, err := effects.NewGitHubCheck(effects.GitHubCheckDeps{
+		Checks: ad.vcs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build github_check executor: %w", err)
+	}
 	return map[change.EffectKind]outbox.Executor{
 		change.EffectRoomOpen:     room,
 		change.EffectGitHubBranch: branch,
+		change.EffectGitHubCheck:  check,
 	}, nil
 }

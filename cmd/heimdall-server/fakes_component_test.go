@@ -198,15 +198,27 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 
 func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 	repoPath := "/repos/" + acceptanceRepo
-	switch {
-	case r.Method == http.MethodPost && r.URL.Path == fmt.Sprintf("/app/installations/%s/access_tokens", acceptanceInstall):
+	if r.Method == http.MethodPost && r.URL.Path == fmt.Sprintf("/app/installations/%s/access_tokens", acceptanceInstall) {
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"token": acceptanceTicketTok, "expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 		})
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, repoPath) {
+		f.serveRepo(w, r, repoPath)
+		return
+	}
+	writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
+}
+
+func (f *fakeGitHub) serveRepo(w http.ResponseWriter, r *http.Request, repoPath string) {
+	switch {
 	case r.Method == http.MethodGet && r.URL.Path == repoPath:
 		writeJSON(w, http.StatusOK, map[string]any{"default_branch": acceptanceBaseRef})
 	case r.Method == http.MethodGet && r.URL.Path == repoPath+"/commits/"+acceptanceBaseRef:
 		writeJSON(w, http.StatusOK, map[string]any{"sha": acceptanceBaseSHA})
+	case r.Method == http.MethodGet && r.URL.Path == repoPath+"/pulls":
+		writeJSON(w, http.StatusOK, []any{})
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, repoPath+"/git/ref/heads/"):
 		f.serveRead(w, strings.TrimPrefix(r.URL.Path, repoPath+"/git/ref/heads/"))
 	case r.Method == http.MethodPost && r.URL.Path == repoPath+"/git/refs":

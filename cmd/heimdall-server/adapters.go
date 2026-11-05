@@ -28,10 +28,15 @@ const (
 	switchRegistrationFile = "switch_registration_token"
 )
 
-// vcsPort is what the VCS adapter must do for the slice: write a branch and read a default head.
+// vcsPort is what the VCS adapter must do for the slice: write branches, read repos, PRs, code, reviews and checks.
 type vcsPort interface {
 	ports.BranchWriter
 	ports.RepoReader
+	ports.PRReader
+	ports.CodeReader
+	ports.ReviewReader
+	ports.CheckReader
+	ports.CheckWriter
 }
 
 // adapters are the adapters the slice uses, selected by name through the registry.
@@ -41,6 +46,7 @@ type adapters struct {
 	chat     ports.Chat
 	projects projectRepos
 	project  string
+	repos    []change.Repo
 }
 
 // projectRepos maps a tracker project key to its repository (trigger.Projects).
@@ -70,7 +76,7 @@ type adapterFactory struct {
 // selectAdapters checks every slice selection against the registry and builds the adapters it names. It refuses a
 // missing or unknown selection before any adapter is built, and it names the heimdall.toml key of each problem.
 func selectAdapters(cfg config.Config, d deps, clk ports.Clock) (adapters, error) {
-	projects, project, err := projectsOf(cfg)
+	projects, project, repos, err := projectsOf(cfg)
 	if err != nil {
 		return adapters{}, err
 	}
@@ -91,7 +97,7 @@ func selectAdapters(cfg config.Config, d deps, clk ports.Clock) (adapters, error
 	if len(problems) > 0 {
 		return adapters{}, fmt.Errorf("heimdall.toml: %w", errors.Join(problems...))
 	}
-	out := adapters{projects: projects, project: project}
+	out := adapters{projects: projects, project: project, repos: repos}
 	if out.tickets, err = selected[ports.TicketReader](cfg, reg, registry.KindTracker); err != nil {
 		return adapters{}, err
 	}
@@ -123,21 +129,23 @@ func selected[T any](cfg config.Config, reg *registry.Registry, kind registry.Ki
 	return port, nil
 }
 
-// projectsOf maps each tracker project to its repository. The slice polls one Jira project, because the Jira client
-// reads one project and the cursor has one source; a config with more projects is refused.
-func projectsOf(cfg config.Config) (projectRepos, string, error) {
+// projectsOf maps each tracker project to its repository and lists the watched repositories. The slice polls one Jira
+// project, because the Jira client reads one project and the cursor has one source; a config with more projects is refused.
+func projectsOf(cfg config.Config) (projectRepos, string, []change.Repo, error) {
 	if len(cfg.Projects) != 1 {
-		return nil, "", fmt.Errorf("the slice polls one tracker project, but heimdall.toml maps %d", len(cfg.Projects))
+		return nil, "", nil, fmt.Errorf("the slice polls one tracker project, but heimdall.toml maps %d", len(cfg.Projects))
 	}
 	out := projectRepos{}
+	var repos []change.Repo
 	for _, p := range cfg.Projects {
 		repo, err := change.ParseRepo(p.Repo)
 		if err != nil {
-			return nil, "", fmt.Errorf("projects %s: %w", p.TrackerProject, err)
+			return nil, "", nil, fmt.Errorf("projects %s: %w", p.TrackerProject, err)
 		}
 		out[p.TrackerProject] = repo
+		repos = append(repos, repo)
 	}
-	return out, cfg.Projects[0].TrackerProject, nil
+	return out, cfg.Projects[0].TrackerProject, repos, nil
 }
 
 // entries lists the adapters the server knows, by kind and name.

@@ -52,6 +52,7 @@ func (s *scenario) startSlice() func() {
 		httpClient:  &http.Client{},
 		logger:      slog.New(slog.DiscardHandler),
 		pollEvery:   20 * time.Millisecond,
+		syncEvery:   20 * time.Millisecond,
 		drainTick:   20 * time.Millisecond,
 		openPool:    pgxpool.New,
 		migrate:     postgres.Migrate,
