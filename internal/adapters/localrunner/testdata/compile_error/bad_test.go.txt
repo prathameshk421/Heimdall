@@ -1,0 +1,7 @@
+package bad
+
+import "testing"
+
+func TestCompile(t *testing.T) {
+	this is invalid syntax that will not compile
+}
