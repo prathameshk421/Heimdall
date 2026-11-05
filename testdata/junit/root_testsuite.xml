@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="github.com/aarush323/heimdall-fixture-pay/refunds" tests="2" failures="1" errors="0" skipped="0" time="0.019">
+	<testcase classname="github.com/aarush323/heimdall-fixture-pay/refunds" name="TestPartialRefund" time="0.019">
+		<failure message="Failed" type="">Error:      	Received unexpected error:
+	            	404 page not found
+	Test:       	TestPartialRefund</failure>
+	</testcase>
+	<testcase classname="github.com/aarush323/heimdall-fixture-pay/refunds" name="TestFullRefund" time="0.000"></testcase>
+</testsuite>
