@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -95,33 +96,6 @@ func tarDir(t *testing.T, srcDir string) []byte {
 	require.NoError(t, err)
 	require.NoError(t, tw.Close())
 	return buf.Bytes()
-}
-
-func tarDirWithOverlay(t *testing.T, srcDir string, overlays map[string][]byte) []byte {
-	t.Helper()
-	copyDir := t.TempDir()
-	require.NoError(t, filepath.Walk(srcDir, func(source string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(srcDir, source)
-		if err != nil || rel == "." {
-			return err
-		}
-		target := filepath.Join(copyDir, rel)
-		if info.IsDir() {
-			return os.MkdirAll(target, info.Mode())
-		}
-		data, err := os.ReadFile(source)
-		if err != nil {
-			return err
-		}
-		if replacement, ok := overlays[rel]; ok {
-			data = replacement
-		}
-		return os.WriteFile(target, data, info.Mode())
-	}))
-	return tarDir(t, copyDir)
 }
 
 func makeJob(sha id.SHA, timeout time.Duration) ports.SandboxJob {
@@ -230,58 +204,75 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}
 
 	var tempDirUsed string
+	var tempDirMu sync.Mutex
 	runner := localrunner.New(src, localrunner.WithTempDirHook(func(dir string) {
+		tempDirMu.Lock()
+		defer tempDirMu.Unlock()
 		tempDirUsed = dir
 	}))
 
-	pidFile := filepath.Join(t.TempDir(), "child.pid")
-	timeoutTest, err := os.ReadFile("testdata/timeout/sleep_test.go")
-	require.NoError(t, err)
-	timeoutTest = []byte(strings.ReplaceAll(string(timeoutTest), "__PID_FILE__", filepath.ToSlash(pidFile)))
-	srcTar = tarDirWithOverlay(t, "testdata/timeout", map[string][]byte{"sleep_test.go": timeoutTest})
-	src.tarballs[string(sha)] = srcTar
+	readyCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	job := localrunner.Job{
-		SandboxJob: makeJob(sha, 20*time.Second),
+		SandboxJob: makeJob(sha, 5*time.Second),
 	}
 
-	start := time.Now()
 	type runResult struct {
-		result ports.SandboxResult
-		err    error
+		res ports.SandboxResult
+		err error
 	}
-	finished := make(chan runResult, 1)
+	resultCh := make(chan runResult, 1)
+	start := time.Now()
 	go func() {
-		res, err := runner.RunJob(context.Background(), job)
-		finished <- runResult{result: res, err: err}
+		res, err := runner.RunJob(readyCtx, job)
+		resultCh <- runResult{res: res, err: err}
 	}()
 
-	// The PID file is the child's ready signal. Observe it while the runner is active,
-	// so the test cannot mistake a startup timeout for successful process-group cleanup.
-	readyDeadline := time.NewTimer(15 * time.Second)
-	readyPoll := time.NewTicker(10 * time.Millisecond)
-	defer readyDeadline.Stop()
-	defer readyPoll.Stop()
-	var pidBytes []byte
-	for pidBytes == nil {
-		select {
-		case <-readyDeadline.C:
-			t.Fatal("child did not signal readiness before timeout")
-		case <-readyPoll.C:
-			if b, readErr := os.ReadFile(pidFile); readErr == nil {
-				pidBytes = b
+	pidFile := ""
+	var pid int
+	readyTicker := time.NewTicker(10 * time.Millisecond)
+	defer readyTicker.Stop()
+	for pidFile == "" {
+		tempDirMu.Lock()
+		runDir := tempDirUsed
+		tempDirMu.Unlock()
+		if runDir != "" {
+			candidate := filepath.Join(runDir, "timeout-child.pid")
+			if _, statErr := os.Stat(candidate); statErr == nil {
+				pidFile = candidate
+				b, readErr := os.ReadFile(pidFile)
+				require.NoError(t, readErr)
+				pid, readErr = strconv.Atoi(strings.TrimSpace(string(b)))
+				require.NoError(t, readErr)
+				require.Positive(t, pid)
+				break
+			} else if !os.IsNotExist(statErr) {
+				require.NoError(t, statErr)
 			}
-		case <-finished:
-			t.Fatal("runner finished before child signaled readiness")
+		}
+		select {
+		case result := <-resultCh:
+			require.FailNow(t, "runner completed before timeout child signaled ready", "error: %v", result.err)
+		case <-readyCtx.Done():
+			require.FailNow(t, "timed out waiting for timeout child ready signal", readyCtx.Err())
+		case <-readyTicker.C:
 		}
 	}
-	run := <-finished
+
+	var res ports.SandboxResult
+	var err error
+	select {
+	case result := <-resultCh:
+		res, err = result.res, result.err
+	case <-readyCtx.Done():
+		require.FailNow(t, "runner did not finish before deadline", readyCtx.Err())
+	}
 	elapsed := time.Since(start)
 
-	// The child readiness file is written before its long sleep; allow race builds to finish first.
-	require.Less(t, elapsed, 25*time.Second)
-	require.NoError(t, run.err)
-	res := run.result
+	// Must finish quickly around the timeout (under 10s), not wait 30s
+	require.Less(t, elapsed, 10*time.Second)
+	require.NoError(t, err)
 	require.NoError(t, res.Validate())
 	require.Equal(t, 1, res.Errored)
 	require.Len(t, res.Tests, 1)
@@ -289,14 +280,14 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 	require.Equal(t, ports.OutcomeError, res.Tests[0].Outcome)
 
 	require.NotEmpty(t, tempDirUsed)
-	_, statErr := os.Stat(tempDirUsed)
+	tempDirMu.Lock()
+	runDir := tempDirUsed
+	tempDirMu.Unlock()
+	_, statErr := os.Stat(runDir)
 	require.True(t, os.IsNotExist(statErr), "temp dir must be removed")
 
 	// Verify the spawned child process sleep 30 was terminated with the process group
-	b := pidBytes
-	pid, parseErr := strconv.Atoi(strings.TrimSpace(string(b)))
-	require.NoError(t, parseErr)
-	require.Positive(t, pid)
+	_ = pidFile
 	// ESRCH means process does not exist
 	killErr := syscall.Kill(pid, 0)
 	require.Equal(t, syscall.ESRCH, killErr, "spawned child process must be dead")
