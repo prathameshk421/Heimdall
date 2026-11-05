@@ -1,0 +1,18 @@
+{
+  "files": [
+    {
+      "path": "tests/heimdall/PAY-142/refunds_keep_refund_ref_test.go",
+      "content": "package heimdall_test\n\nimport \"testing\"\n\n// heimdall:AC1\nfunc TestRefundResponseKeepsRefundRef(t *testing.T) {\n\tt.Fatal(\"refund_ref is missing from the refund response\")\n}\n"
+    },
+    {
+      "path": "tests/heimdall/PAY-142/refunds_optional_for_old_clients_test.go",
+      "content": "package heimdall_test\n\nimport \"testing\"\n\n// heimdall:AC2\nfunc TestOldClientsStillGetARefundWithoutRefundRef(t *testing.T) {\n\tt.Fatal(\"old clients get no refund response\")\n}\n"
+    }
+  ],
+  "acceptance_criteria": {
+    "AC1": ["TestRefundResponseKeepsRefundRef"],
+    "AC2": ["TestOldClientsStillGetARefundWithoutRefundRef"]
+  },
+  "expected_paths": ["api/openapi.yaml"],
+  "notes": "Assumed the ledger still needs refund_ref in the response."
+}

@@ -1,0 +1,12 @@
+{
+  "case_id": "case_01HQZX3K8V0M5N7P2R4S6T8W9Y",
+  "decision": "uphold",
+  "rationale": "The ledger consumer deserializes refund_ref as a required field, so removing it breaks the consumer, as the repro test shows.",
+  "citations": [
+    {"kind": "run", "ref": "run_01HQZX3K8V0M5N7P2R4S6T8WA0", "quote": "--- FAIL: TestLedgerStillReadsRefundRef"},
+    {"kind": "memory", "ref": "mem_ledger_reads_refund_ref", "quote": "the ledger deserializes refund_ref as required"},
+    {"kind": "decision", "ref": "dec_2026_11_02_ledger_contract", "quote": "consumers of the refunds response must keep refund_ref"},
+    {"kind": "finding", "ref": "F1", "quote": "Removing refund_ref breaks the ledger consumer, which still reads it."}
+  ],
+  "confidence": "high"
+}

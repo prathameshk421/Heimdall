@@ -1,0 +1,7 @@
+parent: main
+commit_message: |
+  Add request IDs to responses
+
+  Every response echoes X-Request-ID, or gets a generated one, so a client can match a
+  call to the server's log lines.
+delete: []

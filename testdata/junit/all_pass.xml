@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="3" failures="0" errors="0" time="0.034">
+	<testsuite name="github.com/aarush323/heimdall-fixture-pay/ledger" tests="3" failures="0" errors="0" skipped="0" time="0.034">
+		<testcase classname="github.com/aarush323/heimdall-fixture-pay/ledger" name="TestBalance" time="0.010"></testcase>
+		<testcase classname="github.com/aarush323/heimdall-fixture-pay/ledger" name="TestDeposit" time="0.012"></testcase>
+		<testcase classname="github.com/aarush323/heimdall-fixture-pay/ledger" name="TestWithdraw" time="0.012"></testcase>
+	</testsuite>
+</testsuites>

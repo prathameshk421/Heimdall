@@ -1,0 +1,29 @@
+# The planted findings of pay-demo (D57). The e2e story reads these ids, finders and tiers; the fixture tests check
+# every line range against the branch. Lines are 1-based and inclusive, counted in the branch named here.
+repo: pay-demo
+findings:
+  - id: partial-refunds
+    finder: bob
+    tier: E1
+    branch: pay-demo/refunds
+    file: internal/refunds/service.go
+    lines: [56, 56]
+    contains: "if req.Amount > pay.Amount {"
+    repro: testdata/repos/pay-demo/repro/partial-refunds_test.go
+    test: TestPartialRefundsCannotExceedPayment
+  - id: refund-ref-renamed
+    finder: eli
+    tier: E2
+    branch: pay-demo/refunds
+    file: internal/api/refunds.go
+    lines: [28, 28]
+    contains: 'json:"reference"'
+  - id: refund-read-authz
+    finder: ana
+    tier: E1
+    branch: pay-demo/refunds
+    file: internal/refunds/service.go
+    lines: [72, 79]
+    contains: "if !ok {"
+    repro: testdata/repos/pay-demo/repro/refund-read-authz_test.go
+    test: TestRefundReadIsScopedToItsMerchant

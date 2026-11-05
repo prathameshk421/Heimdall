@@ -836,7 +836,7 @@ Inputs: a review of the spec's three risk areas (the VM, chat platforms, GitHub 
 
 **Fact (Switch docs).** Switch opens outbound connections to Slack, Discord, Telegram and Mattermost, so nothing of Switch needs to be public. Microsoft pushes to Switch for Teams, which does need a public HTTPS address. Slack, Discord, Telegram and Teams are hosted by their vendors, so people already reach them with their own apps. Mattermost is the one chat server we host ourselves, and its desktop and phone apps need a server address they can reach. Our VM has no inbound ports, so that address must come from a tunnel.
 
-**D107. Mattermost is the demo chat, published through a named Cloudflare Tunnel.** Teammates use their own Mattermost desktop and phone apps and enter the tunnel hostname (for example `https://chat.<domain>`); they get accounts by invite. The tunnel runs on the VM as a service and only makes outbound connections, so the security group keeps SSH as the only inbound rule (amends D64, D86). Settings: Mattermost **Site URL** and the Switch connection's **Public Url** (the address people use, per Switch's connect form) are both the tunnel hostname; open sign-up is off, MFA is on, a Cloudflare rate-limit rule covers the login path. **Cloudflare Access is not used in front of Mattermost**, because the Mattermost mobile and desktop apps cannot complete its browser login. Mattermost needs WebSockets, which the tunnel carries. Fallbacks, in order: a Cloudflare quick tunnel (free random address that changes on restart, so Site URL and every app must be updated each time; acceptable only for a rehearsal), then Tailscale (each person installs it; use its HTTPS name because phones require HTTPS). Mobile push notifications on the free Mattermost build are unverified and not required: the apps work while open.
+**D107. Mattermost is the demo chat, published through a named Cloudflare Tunnel.** Teammates use their own Mattermost desktop and phone apps and enter the tunnel hostname (for example `https://chat.<domain>`); they get accounts by invite. The tunnel runs on the VM as a service and only makes outbound connections, so the security group keeps SSH as the only inbound rule (amends D64, D86). Settings: Mattermost **Site URL** and the Switch connection's **Public Url** (the address people use, per Switch's connect form) are both the tunnel hostname; open sign-up is off, passwords are long and generated (MFA is probably paid, so not relied on), a Cloudflare rate-limit rule covers the login path. **Cloudflare Access is not used in front of Mattermost**, because the Mattermost mobile and desktop apps cannot complete its browser login. Mattermost needs WebSockets, which the tunnel carries. Fallbacks, in order: a Cloudflare quick tunnel (free random address that changes on restart, so Site URL and every app must be updated each time; acceptable only for a rehearsal), then Tailscale (each person installs it; use its HTTPS name because phones require HTTPS). Mobile push notifications on the free Mattermost build are unverified and not required: the apps work while open.
 
 **D108. Chat stays pluggable.** Because Heimdall only names a Switch connection (`chat.bridge`), a team can instead connect Slack, Discord or Telegram with no tunnel. D107 is the default for our demo because the Mattermost server comes with Switch and gives each agent a real bot account.
 
@@ -845,3 +845,301 @@ Inputs: a review of the spec's three risk areas (the VM, chat platforms, GitHub 
 **Still needs the team.** A domain on Cloudflare (or the friend's domain) and a tunnel token, set up by your friend following `docs/MATTERMOST_ACCESS.md`.
 
 **D109. The domain is the deployer's, and `heimdall connect` checks it.** Heimdall never owns or buys a domain. Cloudflare Tunnel is free, but a domain is not (Cloudflare does not give free ones; a student offer and Tailscale are possible fallbacks that we have **not** verified: the current free-domain offer and Tailscale's free user limit). For the hackathon the team uses a domain on Cloudflare, or a quick tunnel for rehearsals only. In a customer deployment the address is on the customer's domain, exposed through whatever their IT uses (Cloudflare Tunnel, load balancer with TLS, VPN, SSO in front). A customer on Slack, Discord or Telegram needs no domain for chat; Teams needs a public HTTPS name the customer controls. `heimdall connect mattermost` asks for the public address (or "none, internal only"), checks it resolves over HTTPS and answers as Mattermost (ping endpoint; S22 confirms), and prints the settings to change. This also corrects an earlier suggestion in this part: Cloudflare Access is **not** used in front of Mattermost (D107).
+
+**D110. The AWS account is capped at $50, so the VM is `m6i.xlarge` and is stopped when idle.** Amends D86 (which preferred 32 GB and no stops). List prices read on Nov 4 from a public price table, region not stated, **to be confirmed in the account's region**: `m6i.xlarge` (4 vCPU, 16 GB) about $0.192 per hour, `m6i.2xlarge` about double, `t3.xlarge` about $0.166 per hour but burstable.
+
+| Plan | Estimate | Fits $50? |
+|---|---|---|
+| `m6i.xlarge`, 24/7 for 8 days, 80 GB gp3, one public IPv4 | about $37 to $40 | yes, small margin |
+| `m6i.xlarge`, running about 12 hours a day for the build days and 24/7 only Nov 6 to 8 | about $25 to $30 | yes, with room |
+| `m6i.2xlarge`, 24/7 | about $9.20 a day, so under 5 days | no |
+| `t3.xlarge` | cheaper per hour, but sustained load throttles or bills surplus credits | not recommended |
+
+Rules: 16 GB works because embeddings are hosted (D87), with an 8 GB swap file and one sandbox slot. **Avoid** NAT gateways (about $32 a month), load balancers, VPC interface endpoints, unattached public addresses, spare snapshots and more than 80 GB of disk; Session Manager works over the instance's own outbound access, so it needs none of them. Do builds, unit tests and Docker-Postgres integration tests on a laptop, and use the VM for the real Switch, Mattermost, agents and sandbox runs. **After submission, stop the instance** (the disk costs about $0.21 a day). Guards: AWS Budgets alerts at $20, $35 and $45 with a budget action that stops the instance at $45 (set by the account owner), plus an uptime-based cost estimate in `heimdall doctor` because billing data lags by hours. Spend inside the $50 is separate from the $3 OpenRouter test cap.
+
+---
+
+# PART 13. Round 10: test and validation strategy for an incremental build (Nov 4, 2026)
+
+Inputs: Claude Code will build Heimdall incrementally over many sessions, so validation must be strong, mostly cheap, real where it counts, and bounded by the **$3 testing budget** (key limit $4, the rest held for the demo). The full strategy is `docs/TEST_STRATEGY.md`. Decisions D111 to D120.
+
+## Discrepancies found while reviewing the plan, spec and decisions
+
+| # | Where | Problem | Resolution |
+|---|---|---|---|
+| R19 | 19 | Integration level used "fake GitHub, Switch and Graphiti" (`httptest`), against the team's "everything real" rule | Doubles only as test doubles with recorded-real fixtures and a drift check; no task is done without a real-system run (D112) |
+| R20 | 19, D60 | "CI runs the injection evals on every push" would spend model money on every push | Split: server-side injection invariants on every push (free); live-agent injection evals only on demand with a budget (D115) |
+| R21 | D60 | "Golden end-to-end test on fakes" | Real stack with a scripted agent (free), then live runs (D112, D118) |
+| R22 | 20, D57, D58, T31 | The whole demo story (PAY-142, `pay-demo`, `ledger-demo`, ADR-004, INC-031, planted bugs) is Go seed content, while D101 chose Jurist AI (Python and React) as the target | `pay-demo` becomes a hermetic fixture; the Jurist AI scenario (ticket, planted issues, the frontend client as the cross-team fact) is a new task, T75, written before G2 (D116) |
+| R23 | T05, S6 | The seam spike is Go-only (`gotestsum`) | Run it under pytest as well; JUnit `<failure>` vs `<error>` differs by runner |
+| R24 | T10 | Says to create a new repo `heimdall` and copy `docs/` | The repo already exists (`flip_the_switch_hackathon`); code lives there beside `docs/` (D120). The README must say the design docs predate the event (D61) |
+| R25 | Plan owners and gates | Staffed for four parallel developers with gate times that have passed (G0 Tue night, G1 Wed 10:00); the VM is not up | One builder works sequentially on vertical slices; gates are quality gates with no clock (D119) |
+| R26 | Plan header | Says "built from v3.4" and "six spikes unverified" | Updated: v3.5, spikes S1 to S22 |
+| R27 | D58 | Names a Claude Sonnet baseline, against the no-Anthropic rule | D75 already supersedes it (DeepSeek, same model); D58's CodeRabbit baseline stays |
+| R28 | 6.7 | "Full evals nightly" and a 57-case corpus are unaffordable at $3 | Reduced corpora and a priced budget (section 4 of the strategy, D113) |
+| R29 | 0.4 vs D102 | "Load and chaos tests not built" conflicts with the reliability rules that need chaos and a soak | k6 load test stays out; a chaos-lite set and the soak are in (D117) |
+| R30 | 19 | Integration used "the real Docker sandbox" | It is now `heimdall-runner` (D91) |
+| R31 | Spec and plan | No definition of done, so "done" could mean "compiles" | Definition of done and the per-task loop (D114) |
+
+## Decisions
+
+**D111. `docs/TEST_STRATEGY.md` is binding.** Layers L0 to L7, the per-task loop, the matrix of red test, real check and LLM cost for every task, and the builder rules that go into `CLAUDE.md`.
+
+**D112. Real first; doubles are checked against reality.** A task is done only after a real-system run with evidence recorded. In-process stubs are allowed only at the application layer; recorded real payloads serve contract tests, and `make drift` compares them with the live systems; the scripted agent (D118) uses the real Switch and MCP protocols. A mock LLM is never a pass criterion.
+
+**D113. The $3 testing budget is allocated and enforced by the key, not by trust.** Plan: spikes $0.20, live smokes $1.00, evals $1.00, rehearsals $0.60, reserve $0.20. Separate OpenRouter keys with their own limits for `test`, `eval` and `rehearse` (created by the account owner), with the current key held for the demo. `make e2e`, `make eval` and `make rehearse` check the remaining balance first and refuse to start if it is too low. A committed cost ledger records every live run. Estimates are calibrated after the first measured run of each role, and a run over twice its estimate stops the line. If the Hugging Face credits work (S16), evals move there.
+
+**D114. The per-task loop and the definition of done.** Red test seen failing, green, refactor to the standards, `make verify`, the real check, an adversarial pass (a fresh session or subagent at each gate), evidence recorded in the tracker, `docs/PROGRESS.md` updated, commit `T##: ...`. Anything not run is written "not verified".
+
+**D115. Injection testing is split.** Server-side defenses (output filter, untrusted wrapping, canaries, state-change invariants) are tested on every push at no cost. Whether a live agent obeys an injected instruction is an eval (about $0.42 per full run of the 12 payloads) run on demand, at G3 and at G4.
+
+**D116. Two kinds of seed repos.** Hermetic fixtures in `testdata/repos/` (a Go service, a Python service with Postgres, a Node app, a small JVM project) test the generic sandbox and the evals cheaply and repeatably. The live demo target is Jurist AI, with its scenario authored as T75 on a branch or fork, never on its default branch.
+
+**D117. Chaos-lite and a soak, no load test.** Kill the server mid-step, kill the runner, stop Postgres for 30 seconds, pause Switch, flood the sandbox queue; assert no lost events and no false green. The 2-hour soak runs scripted agents so it costs nothing.
+
+**D118. A scripted agent is the standard test brain.** A deterministic process registered on the real Switch through the real agent protocol, returning canned valid or deliberately invalid submissions. It lets L4 run the whole workflow on the real stack at zero model cost, and it is how failure paths (invalid output, timeouts, wrong role) are tested.
+
+**D119. Gates are quality gates, not deadlines.** Claude Code builds incrementally and does not work to a human schedule, so no gate has a time. Order matters and the clock does not: a gate passes when its evidence (the layers and the live-LLM allowance in the plan) is green. Supersedes the gate times in D36 and D62 and the older plan. The only fixed external date is the hackathon's official submission deadline. The cut order in D103 still applies if scope has to shrink.
+
+**D120. Code lives in `flip_the_switch_hackathon`.** The Go module sits at the repository root beside `docs/`; there is no separate `heimdall` repo (amends T10).
+
+## Added tasks
+
+T18 test harness (make targets, fixture recorder, drift check, testcontainers); T19 LLM budget guard and cost ledger, plus the per-purpose keys; T38 scripted agent; T39 hermetic fixture repo matrix; T74 chaos-lite; T75 the Jurist AI demo scenario. T05, T10, T31 and T62 are reworded.
+
+## Still needs the team
+
+Create the `test`, `eval` and `rehearse` OpenRouter keys with limits (account owner).
+
+---
+
+# PART 14. Round 11: tests stay out of the product; less fallback, less constraint (Nov 4, 2026)
+
+Team direction: scripted LLMs and test helpers are for testing only and must not be in the product; stop adding fallbacks where they are not needed; stop forcing determinism where it is not needed; harness the model instead of constraining it.
+
+**D121. Test scaffolding never ships.** Scripted agents, doubles, recorders and fixtures live only in `internal/testkit/`, `cmd/heimdall-testagent/`, `testdata/` and `_test.go`. No production package imports them; release builds and images exclude them; production code has no test-mode flag or branch. CI runs `go list -deps` on every production binary and fails if `testkit` appears. Amends D112 and D118.
+
+**D122. Constrain safety, not thought.** Deterministic where correctness or security needs it: the merge decision, evidence verification by running code, permissions, SHA-bound approvals, the sandbox, and a minimal valid shape for submissions. Free everywhere else: no forced temperature or seed, no fixed repair-attempt count (the limit is the task's time and cost budget), no exact-output expectations, no scripted reasoning. Quality is judged by outcomes over a few runs. And **no fallback unless an observed failure needs it**; a spike picks one option and the loser is deleted.
+
+## What this removes or changes
+
+| Earlier decision | Change |
+|---|---|
+| D85 temperature 0.2, one repair attempt | No forced temperature; errors go back to the agent and the budget is the limit |
+| D88 provider fallback chain (OpenRouter, Hugging Face, second model) | One configured provider; switching is a config change, not an automatic chain |
+| D87 Ollama profile and the free embedding fallback | One hosted embedding model (`voyage-4-lite`) |
+| D90 no-sudo second design (rootless container per agent) | Sudo is a requirement; `doctor --host` reports it as a blocker |
+| D91 gVisor if the spike passes, else rootless | Rootless runner with the default seccomp profile; gVisor is a later hardening |
+| D93 `gate.mode: advisory` and D102 kill switches (`memory`, `resolver`, `chat.cards`) | Removed. Fail closed stays; the break-glass in the runbook remains |
+| D60 and T69: the same blocking set 3 of 3 | Each planted issue found with evidence the code verified in at least 2 of 3 runs. An unplanted blocking finding is fine if its evidence was verified |
+| D45 bundles "so evals replay exactly" | The bundle hash stays for audit; no promise of exact replay |
+| Spike fallbacks (S13 `pgmem` and a Python sidecar, S14 "fallback written") | A spike decides and the loser is deleted; a failed spike is written down and the design changed |
+
+Kept on purpose, because they are real product requirements and not fallbacks: fail-closed gating, retries with backoff and circuit breakers on real calls, local mode (D38) as a product mode, polling versus webhooks as an operator choice, the file tracker as a supported tracker, and the break-glass procedure. A recorded demo video is demo insurance, not product code.
+
+---
+
+# PART 15. Round 12: decisions taken now instead of left to runtime (Nov 4, 2026)
+
+Direction: anything that was "decided by a spike", "confirm later" or "if X then Y" is analysed against the product and decided now, using Switch's own source and docs, Graphiti's source, OpenCode's docs and live checks. Spikes that remain are **validations** of a decided design, not forks. Decisions D123 to D134.
+
+## What was found
+
+| Open item | Evidence | Outcome |
+|---|---|---|
+| S17: who runs and restarts agents on the VM | Switch's Console-deployed host process runs under `tmux` and **stops on reboot until Console relaunches it** (`host-remotely.md`). Switch's changelog says the command `!run-cmd` printed did not bring an agent online, and the command was removed from replies. Switch ships a **headless agent controller** that runs on Linux as a systemd service and, with `install-service --separate-users`, runs **each agent as its own Linux user** from a pool, with systemd template units, a polkit rule and per-agent directories, and gives agents no Switch credential (`console/packages/agent-controller/README.md`) | D123, D124 |
+| How to deploy Switch on the VM | The standalone Docker Compose requires an explicit version, has restart policies and profiles (`collab` for Mattermost, `gateway`); Console "keeps it updated" and its remote-host path does not survive a reboot | D124 |
+| OpenCode's exact permission keys | `bash`, `webfetch`, `websearch`, `edit`, `read`, `task`, `skill`, `external_directory` take `allow`/`ask`/`deny` or path patterns (last match wins); MCP remote servers take `url`, `headers` and `{env:NAME}`; skills live in `.opencode/skills/<name>/SKILL.md` | D125 |
+| S13: can Graphiti filter by group | The Graphiti MCP server's `search_nodes` and `search_memory_facts` both accept `group_ids`, and the facts search takes `valid_at_after`, `valid_at_before`, `invalid_at_after` and `invalid_at_before` | D126 |
+| Mattermost settings for the tunnel | Switch pins Mattermost team edition 11.9.0, port 8065 bound to `127.0.0.1`, and hard-codes the Site URL to localhost through an environment variable (which locks the System Console setting); `MESSAGING_PUBLIC_URL` exists in the compose file | D132 |
+| MFA on Mattermost | Likely a paid feature (unverified); not needed | D132 |
+| Chat capabilities | Switch's docs already say what each platform does (agents are bots on Mattermost, names in text on Telegram, cards on Teams, none can show Heimdall-specific buttons) | D127 |
+
+## Decisions
+
+**D123. Agents run under Switch's headless agent controller with separate Linux users.** This replaces our own per-agent systemd units and the `!run-cmd` approach (D80 and D92 are amended; spike S17 and task T90 are removed). We enrol the controller with a one-time code from the gateway's Machines page and run `install-service --separate-users`. It needs the server flag `FEATURE_FLAGS_ENABLED=agent_management`, Node 22.13+ (Switch's own component, not our code), the `opencode` CLI and the OpenRouter key in the controller's env file, and sudo once. Our own work is the harness directories, the agent definitions and the nftables rules on the agents' group.
+
+**D124. Switch runs from its pinned standalone Docker Compose on the VM; Console is a client.** `collab` and `gateway` profiles, `agent_management` on, `AGENT_REGISTRATION_TOKEN` set before the first start, restart policies so a reboot recovers everything, Switch bound to `127.0.0.1`. Teammates' Console connects with "Connect to an existing server" through a port-forward to the gateway and API ports. We pin the newest published compose version when we deploy and record it in the runbook; upgrades are deliberate. **This changes what the friend sets up:** Docker and the compose stack, not Console's remote-host onboarding (the SSM access stays as the way in). New task T97.
+
+**D125. The harness `opencode.json` is fixed** as in spec 6.9: bash, webfetch, websearch, task and external directories denied; edits only in `scratch/`; reads only in the harness; the one `heimdall` remote MCP server with a bearer token from the environment; the role skill under `.opencode/skills/<role>/`. The OS-level separate users and nftables stay as the backstop.
+
+**D126. Memory uses the Graphiti MCP server's own search tools with `group_ids`.** No Python sidecar and no alternative path. Heimdall's `Memory` adapter is an MCP client and uses the temporal filters. The Graphiti image is pinned at a version whose tools have these parameters.
+
+**D127. The chat port is minimal.** Create or adopt a room, post, read. Every command and approval is a text command, the same on every platform. No capability negotiation, so D94 is amended and spike S19 and task T92 are removed. The only platform-specific code is the Teams quirk, keyed on `chat.bridge`.
+
+**D128. Cost control is one production key with a limit.** No per-role keys and no per-task dollar enforcement (amends D74). Tasks are bounded by a deadline per role (author 15 min, reviewer 30 min, resolver 15 min) and by the context bundle caps. Spend is read from the key's usage and shown on the dashboard. Separate keys exist only for testing (D113).
+
+**D129. One model for every role: `deepseek/deepseek-v4-flash`.** It is also Graphiti's extraction model. A role gets a different model only after an eval shows it needs one, by changing that role's configured model; nothing is chosen at run time.
+
+**D130. The demo roster is fixed.** Agents: test-author, resolver, profiler and three reviewers (backend, frontend, infra) for six OpenCode sessions, well inside the controller's pool of 16 users. Humans: the author, three reviewers who own those areas, and one approver. Which teammate plays which role is a team fact, recorded in `heimdall.yaml`'s `people:` map.
+
+**D131. Test sign-off is triggered by explicit rules.** A ticket needs `approve-tests` before implementation when it has the label `needs-test-signoff`, or when its acceptance criteria or changed paths match the policy's `sensitive` list. Default for Jurist AI: paths matching `backend/**/auth*`, `**/migrations/**` and anything containing `delete`, `privacy` or `consent`.
+
+**D132. Mattermost for people's apps (amends D107).** The Site URL is set through a `docker-compose.override.yml` environment variable on the `mattermost` service (not the System Console, because the variable locks it), and `MESSAGING_PUBLIC_URL` is set to the same address. Sign-up is invite-only with long generated passwords and a Cloudflare rate-limit rule on the login path; MFA is not relied on.
+
+**D133. Hugging Face credits are not used (drops spike S16 and task T08).** Everything runs on OpenRouter. If the testing budget ever runs out, the provider is changed in configuration, not by an automatic chain.
+
+**D134. Remaining spikes are validations.** S1/S12, S4, S6, S13, S14, S15, S18, S20, S21 and S22 test a decided design on the real stack. S14 includes confirming the OpenCode permission config in D125 and that agents come back after `sudo reboot`. A failed validation changes the design and is written down.
+
+**D135. The VM as provisioned (amends D86, D107 and D110).** The setup person built one `r6a.large` (2 vCPU, 16 GB) in `ap-south-1`, Ubuntu 24.04, with a 50 GB gp3 volume and a 4 GB swap file, in their own AWS account. It costs $0.0715 per hour (third-party price table, Nov 4), so about $16 for 8 days around the clock with disk and one public IPv4, which fits the $50 cap without stopping it when idle. The security group has no inbound rules, and all access is SSH over SSM through the `heimdall-vm` alias. The project owner has a limited IAM user that can open sessions to this instance and start, stop or reboot it; it cannot change the security group, terminate the instance or see billing, so the setup person forwards budget alerts. The handoff's Console-creates-the-server step is replaced by D124: Switch is deployed from compose and Console connects as a client. Verified from the owner's laptop on Nov 4: SSH over SSM, passwordless sudo, Docker and Compose, 15 GiB memory plus 4 GiB swap, a 48 GB root filesystem with 41 GB free, and IMDS refusing tokenless requests (401). Confirmed by the setup person on Nov 4: the security group has no inbound rules and is the only one attached (the owner's login deliberately cannot read it). The root volume is **not encrypted**, which differs from D86 and D89; we accept this for the hackathon VM because it holds test data and test credentials only, and a customer install should use an encrypted volume. There is one budget with a $50 monthly limit, alerts at $10 and $25, and an automatic action that stops the instance at **$50**. The owner chose to keep $50 instead of the $45 in D110, because expected spend is far below it. Account and instance IDs stay out of this repo.
+
+**D136. What deploying Switch found (amends D124 and D132; T97).** Switch `0.31.0`, the newest stable release, runs on the VM from its published compose artifact (`docs/RUNBOOK.md`). Three things differ from what we assumed. (a) The published compose has **no restart policies** except on the one-time `setup` job, so the claim behind D124 was wrong; our `docker-compose.override.yml` adds `unless-stopped`, and a real `sudo reboot` then brought back the stack, a bridged room and its Mattermost channel with no manual step. (b) The `agent_management` flag refuses to start without `CONTROLLER_TOKEN_SECRET` (32 or more characters), which is now generated in `.env`. (c) The compose file sets `MM_TEAMSETTINGS_ENABLEOPENSERVER` to `true` by environment variable, which locks that setting in System Console, so invite-only sign-up (D132) must also be set in the override before the tunnel is published. Also noted: the Mattermost bridge opens no socket until agents exist, so an inbound post does not reach a Switch room yet; T01 is the first test of that path.
+
+**D137. The product does the setup we did by hand (amends T14 and T72).** Deploying Switch and connecting Telegram on Nov 4 were manual, and a customer should not have to repeat that. `heimdall admin init` deploys Switch: the pinned compose, generated secrets, the restart override and the connection instructions. `heimdall connect <kind>` does this for **every** integration, not only chat: Switch and Console, GitHub, Jira, OpenRouter, Mattermost, Telegram, Slack, Discord, Teams and the agent controller (table in spec section 17, task T99). It walks the admin through the steps in the other app and the secret file, applies the settings by API, then proves the result with a live check. A person is still needed for what only they can do, such as creating a Telegram bot, approving a GitHub App, Azure admin work or signing in to Console. Slack, Discord and Teams are reported as untested until a real run has passed (D94). Whether Switch has a public API for linking a chat account is not confirmed, so the CLI falls back to naming the Console step. The Nov 4 run is the reference flow: Telegram connected with Group Privacy off, a room created by itself, and messages from two people arrived.
+
+## Still needs the team (unchanged facts only)
+
+The role-to-person map; the domain and tunnel for Mattermost; Teams if it lands. **New:** tell the friend that Switch will be deployed from Docker Compose (D124) and that the controller needs sudo once and Node 22.13+.
+
+---
+
+# PART 16. Round 13: final review before development (Nov 4, 2026)
+
+Inputs: a pass over the connections, the dev routine and the spec, reading Switch's source (checkout `bb659a0`; the `!` handling also read in the deployed `0.31.0` image) and running the hooks and lint config on samples. No live agent had run when this was written, so anything from source is proven by T01 to T03 in `docs/STAGE_1_FIXES.md`. Decisions D138 to D156.
+
+## New verified facts
+
+| # | Fact | How |
+|---|---|---|
+| V57 | A post starting with `!` goes to Switch's command path. A name Switch does not know gets "Unknown command" and is not forwarded to agents. Telegram and Teams treat `/` the same way | `collaboration/mattermost/adapter.py`, `bridges/agent/commands.py`, read in the deployed image |
+| V58 | `sender_kind` in a stream or `read_context` message is `platform` or absent, so it cannot separate a person from an agent. Participant ids are opaque by contract | `protocol/message_events.py`, `agent-protocol.md` |
+| V59 | OpenCode sessions get a Switch ruleset after the agent's config. In `auto` mode it allows `read`, `glob`, `grep`, `list`, `lsp`, `todowrite`, `question`, `skill`, `task` and the `switch` MCP tools. In `approval-required` mode it turns `*` and `bash` into asks. `auto_mode` is the agent definition's field | `agent-providers/src/opencode/config.ts`, `adapter.ts` |
+| V60 | Sessions inherit only known provider variables and basics, not arbitrary ones. The controller's `--env-file` is shared by all its agents, and a v1 definition has no per-agent environment or shell setup | `host/agent-env.ts`, `agent-controller/src/template.ts`, README |
+| V61 | Switch splits an OpenCode model id at the first slash into provider and model | `parseModelId` in `opencode/config.ts` |
+| V62 | Switch's OpenCode adapter depends on `@opencode-ai/sdk ^1.18.27`. The laptop has OpenCode 2.2.5, whose `serve` is described as a v2 API | `agent-providers/package.json`, `opencode --help` |
+| V63 | `agent.restart` is a gateway route behind a user session cookie, with no agent operation for it. `!reset` is built only from chat adapter input. Systemd and the agent host restart a crashed agent themselves | `management/gateway_routes.py`, `delivery/recipient.py`, controller README |
+| V64 | The agent host starts a new session for a room no message has reached yet, so sessions appear to be per room | `host/agent-host.ts` |
+| V65 | The controller updates itself when Switch names a release, unless `SWITCH_CONTROLLER_SELF_UPDATE=off` | controller README |
+| V66 | The real GitHub App has 13 permissions rather than five, is on all 26 of the account's repos including private ones, has no `workflows` or `administration`, and shows as "TOS Risk Analyser" | App and installation API |
+| V67 | Jurist AI has `backend/migrations/001_rag_embeddings.sql` with `CREATE EXTENSION`, its compose uses plain `postgres:16-alpine`, and `requirements.txt` fetches a spaCy model from github.com and uses `google-genai` | GitHub API |
+
+## Discrepancies found
+
+| # | Where | Problem | Resolution |
+|---|---|---|---|
+| R32 | Precedence | Stops at Part 12 (spec) or 13 (`AGENTS.md`), so D93's `gate.mode: advisory` formally outranks its own removal in D121 | D138 |
+| R33 | D81, D94, D127, spec 11.5 | `!heimdall` never reaches Heimdall (V57) | D139 |
+| R34 | T02, D47 | `sender_kind` cannot separate people from agents (V58) | D140 |
+| R35 | D125, spec 6.9 | The read allowlist and `task` deny are overridden; agents always hold `switch_*`, so the output filter and independence are not enforced there (V59) | D141 |
+| R36 | D125 | `{env:HEIMDALL_AGENT_TOKEN}` resolves empty (V60) | D142 |
+| R37 | D129, spec 6.1 | `deepseek/deepseek-v4-flash` selects the `deepseek` provider (V61) | D143 |
+| R38 | D102 | "Pin everything" names no OpenCode version, and the controller self-updates (V62, V65) | D144 |
+| R39 | D80, spec 6.2, 6.9 | Restart and reset have no path from the coordinator and are not needed (V63, V64) | D145 |
+| R40 | Spec 3.1, 3.3, P2.1 | A PR with no ticket has no change to belong to | D146 |
+| R41 | Spec 13 | Nothing says which repo a ticket belongs to | D147 |
+| R42 | D89, CODING_STANDARDS 7 | A server on a laptop has no defined way to get secrets | D148 |
+| R43 | D116, MVP_SCENARIOS | `testdata/repos/pay-demo` cannot receive a real PR, and `PAY-142` cannot exist in KAN | D149 |
+| R44 | Spec 12.4 | The pin covers all of `tests/heimdall`, so another ticket merging falsely trips `tests_changed` | D150 |
+| R45 | Spec 13, D99 | The CI file PR needs `workflows: write`, and branch protection cannot be set through a PR (V66) | D151 |
+| R46 | Spec 11, P4.1, P5.1 | A human author cannot challenge, no task builds it, and E3 findings have no way to clear after a plain push | D152 |
+| R47 | Spec 12.2, 12.2b, 16, skill | Go-only test rules on a Python demo; `--network none` conflicts with services; profile and policy both name the test command (V67) | D153 |
+| R48 | D116, MVP_SCENARIOS 2 | "Never the default branch" conflicts with base-branch policy and protection; the test-prefix rule conflicts with product branch names | D154 |
+| R49 | Spec 0.3, P2.1, T46 | A 10 s poll cannot meet a 10 s p95 | D155 |
+| R50 | Spec 6.2, 11.5, MVP_SCENARIOS 4 | No-ULID-in-chat conflicts with `tsk_…` in wake messages and `uphold <finding>` | D156 |
+| R51 | P3.3, MVP_SCENARIOS 5, T73, skill, spec 5.1 | "Exactly", "identical 3 of 3" and "two retries" contradict D122; P7.3 and ablation use the removed `memory: off` | D156 |
+| R52 | MVP_SCENARIOS 7, plan | Gates and slices give two orders; early tasks are in no slice; three inversions; P3.6 unowned; P2.2 to P2.4 cannot pass in slice 1; G4 needs Teams, which is cut first | D156 |
+| R53 | Spec 6.9, 10.3 | Decrypting a pack into an agent's tmpfs before start has no hook, because a v1 definition has no setup step (V60) | D156 |
+
+## Decisions
+
+**D138. Precedence.** Among backlog Parts 8 and later, the highest-numbered part wins. Then `TECH_SPEC.md`, then earlier backlog parts, `HEIMDALL_MVP.md`, `TECH_DESIGN.md`, `PRODUCT_PITCH.md`. `MVP_SCENARIOS.md` and `TEST_STRATEGY.md` govern testing, `CODING_STANDARDS.md` governs code, and `STAGE_1_FIXES.md` governs what happens first.
+
+**D139. Chat commands are a plain word: `heimdall <command>`.** Case-insensitive, at the start of a post, with no `!`, `/` or `@`. It works the same on every platform, since Switch passes ordinary text to a `filter=all` stream. GitHub comments keep `/heimdall <command>`. `!remember` becomes `heimdall remember`. Amends D81, D94 and D127. An unrecognised `heimdall …` post gets one short reply with the grammar. Any other text is ignored and never reaches a model.
+
+**D140. People are matched by Switch sender id.** `people.<p>.chat` holds the opaque `sender` id, filled by `heimdall connect people`, and is matched whole. A command counts only if its sender maps to a person with the right role, so agents are refused by default and no human-versus-agent check is needed. Amends D47 and D95. T02 proves it.
+
+**D141. What the OpenCode harness can and cannot enforce.** Agents run with `auto_mode: true` and `auto_approve: false`. The config enforces denials of `bash`, `webfetch`, `websearch`, `external_directory` and edits outside `scratch/`, and OS users and nftables hold the rest. It cannot deny reads inside the working directory, `task`, or Switch's tools. So **an agent can always post to or read its room**, and the output filter covers MCP submissions only. Room posts are harmless to state (agents map to no person, D140) but can leak. The coordinator scans every agent post on the stream for secrets and canaries and raises an alert, and skills tell agents to report only through `heimdall_*`. Reviewer independence (D41) is therefore an instruction plus a check, not a guarantee: `MVP_SCENARIOS` quality check 9 fails a run where a reviewer posts a finding before all are in. Amends D125.
+
+**D142. Each agent's MCP token is written into its own `opencode.json`,** mode 0600, owned by that agent's user. The token is scoped to the agent and role, so reading its own file gains nothing, and the output filter removes it from submissions. Amends D125.
+
+**D143. The OpenCode model id is `openrouter/deepseek/deepseek-v4-flash`.** Graphiti and direct OpenRouter calls keep `deepseek/deepseek-v4-flash`. Amends D129.
+
+**D144. Pin OpenCode 1.x and turn off controller self-update.** T01 installs the newest 1.x and records it. `SWITCH_CONTROLLER_SELF_UPDATE=off` goes in the controller's env file, and upgrades are deliberate.
+
+**D145. No restart or reset from Heimdall.** No ack within 60 s, or Switch's unavailable reply, means `unavailable` (gate red, waivable). Switch restarts crashed agents itself. Sessions are per room and each change has its own room, so changes cannot leak into each other; a re-review in the same room keeps its context, which is fine. Rooms are archived at close to free their sessions. Heimdall holds no gateway login. Amends D80. T01 check d proves it; if it fails, the design changes.
+
+**D146. PRs without a ticket.** A PR with no ticket key gets its own change stream, `pr-<repo>-<number>`, in state `UNLINKED_PR`, and fails slop with the rule named. If a push adds a key, `pr.linked` moves it to that ticket's change, creating one with trigger source `pr` if none exists, and the old stream closes. A PR whose ticket's change is earlier than `BUILDING` attaches to that change. Its gate stays `in_progress` with "tests are not ready yet" while tests are written.
+
+**D147. `heimdall.toml` maps projects to repos.** `[[projects]]` with `tracker_project`, `repo` and `base_branch`. One tracker project maps to one repo in the build. An unmapped project is ignored and logged once. `heimdall doctor` checks that each repo and branch exists.
+
+**D148. `secrets_dir` is a config key.** Default `/etc/heimdall/secrets`. On a laptop, `--config` points at a `heimdall.toml` whose `secrets_dir` is the gitignored `secrets/`, filled from `.env` by `make secrets-local`. This is configuration, not a test mode, so D121 holds. The e2e simulator keeps reading `.env` for its own credentials.
+
+**D149. The fixture is a real GitHub repo.** `testdata/repos/pay-demo` is the source and `make fixtures-push` publishes it to `aarush323/heimdall-fixture-pay`. Ticket keys come from Jira at run time (`KAN-n`), so Stories hold titles and AC, not keys. `PAY-142` stays only as the file-tracker example and in the pitch.
+
+**D150. Test pins are per ticket.** `tree_hash(head, tests.dir/<KEY>)` equals the pin, and `diff(merge_base, head, tests.dir)` touches only `tests.dir/<KEY>`, else `tests_changed`. `red_first` runs only `tests.dir/<KEY>`; `heimdall/acceptance` runs all of `tests.dir`, so earlier tickets' tests guard against regressions.
+
+**D151. The App holds six permissions.** Checks, Contents, Pull requests, Issues and Workflows write, Metadata read. `workflows` is minted only for the setup PR (D96). Branch protection is applied once by an admin with a command `admin init` prints (the App holds no `administration`), and `doctor` checks that the check is actually required. T04 confirms what it can read. The App is renamed Heimdall and limited to selected repos.
+
+**D152. Authors act without a laptop agent.** `heimdall challenge F3 <evidence>` (a test path at head, a run id, a memory ref or a decision ref) files a challenge from chat or GitHub. **Every push re-verifies automatically:** E1 and E2 evidence for open findings is re-run, and a pass resolves the finding. E3 and E4 findings on changed files go back to the filing reviewer. `claim_fix` remains for laptop agents and is not required. T45 and T60 build this.
+
+**D153. Tests are language-neutral.** `.heimdall/profile.yaml` holds `acceptance` (the command for Heimdall's tests, with `{dir}`), `seam`, `ac_tag` and `fetch_hosts`, and policy's `tests.runner` is removed. A job with services gets a private `--internal` network shared with them; a job without gets `--network none`. Hosts beyond the package registries are allowed for the fetch job only when named in `fetch_hosts`, which a human approves by merging the profile. Jurist AI (T34b, T75) needs github.com for its spaCy model, a pgvector Postgres image, and its `google-genai` calls unreachable in tests. T75 picks endpoints whose tests need no model call.
+
+**D154. Demo base branch and test objects.** Live runs target a long-lived `heimdall-demo` branch on Jurist AI, carrying the profile, policy, workflow and branch protection, and `main` is never touched. A PR's merge base gives policy as designed. The simulator owns objects by a run manifest: anything it created, labelled `heimdall-test`, plus branches named for tickets it created. Everything else it refuses.
+
+**D155. The slop bar is p95 under 15 s.** Polling every 10 s stays. The pitch's "in seconds" still holds.
+
+**D156. Smaller corrections.**
+- **Short ids in chat:** findings are `F1`, `F2` per change, mapped to ULIDs in the event, and wake messages carry no id (the agent's token finds its task).
+- **P3.3:** every planted issue is present, and any other blocking finding must have verified evidence. Clean diffs stay empty.
+- **Reproducibility:** each planted issue in at least 2 of 3 runs (D122).
+- **Retries:** the limit is the task budget, not a count.
+- **Memory off:** P7.3 and ablation stop or empty Graphiti rather than use a switch.
+- **Packs:** served by the server through `heimdall_read_pack`, scoped to the reviewer's own pack. No tmpfs. The server holds the `age` key for its recipient, and the ciphertext stays at rest.
+- **Build order:** `MVP_SCENARIOS` section 7 is the one order, gates are checkpoints on it, and Stage 1 comes before it.
+- **Freeze:** G4 needs Teams (T09, T67) and Slack, Discord and Telegram guided setup only if they landed; they are first in the cut order.
+
+## Added and changed tasks
+
+T100 to T104 (Stage 1). T38 now covers MCP only, and T38b adds Switch. T34 is the Go profile, and T34b is Jurist AI's profile. T41 and T40 move before their users. T43, T45, T48, T60 and the slices are reworded.
+
+## Still needs the team
+
+Actions H1 to H6 in `docs/STAGE_1_FIXES.md`: the `gh` account, App permissions and rename, the fixture repo, the OpenRouter test keys, Mattermost accounts with the role map and domain, and Actions on the code repo.
+
+## Addendum (Nov 4, later): audit of the whole plan
+
+Every task was walked in build order against what it needs and what the product must do at that point.
+
+| # | Problem | Resolution |
+|---|---|---|
+| R54 | The workflow opens a room first and wakes agents through it, but slice 2 had no rooms | D159: rooms come before tests |
+| R55 | The G2 gate needs a live test-author smoke, but T27 sat in slice 6 | D159: T27 moves to slice 3 |
+| R56 | P3.1, P4.3 and P5.7 were in the rooms slice but need reviewers and findings from the review slice | D159 |
+| R57 | Nothing deployed the server to the VM before T71 in slice 7, yet agents on the VM must reach it | D160: T105 |
+| R58 | `make sandbox` inside T16 blocked slice 0, though the standards allow the first slices without it | D160: T16b |
+| R59 | P8.2 gave a stranger a scripted agent, which never ships (D121). D38 still named Console, Ollama and an Anthropic key | D157 |
+| R60 | `get_change`, `run_check`, `report_progress` and `submit_verdict` had no task; webhooks and `claim_fix` were specified with no task | D160 |
+| R61 | Spec section 21 was a third build order; spec 7 still used the old sign-off rule (D131) | D160 |
+| R62 | The role map and domain blocked T02, though scenarios only need accounts | D158 |
+
+**D157. Local mode (amends D38).** One Linux machine with Docker: `admin init` deploys Switch's compose and Heimdall's, using the file tracker, polling and one OpenRouter key. Real OpenCode agents run under the controller without `--separate-users`, since the machine is the boundary, and Graphiti uses hosted embeddings. T68 proves it in a clean container with its own Docker daemon. Console and Ollama are not needed.
+
+**D158. Default test roster.** T02 creates five Mattermost accounts on the VM, `dev-author`, `dev-approver`, `rev-backend`, `rev-frontend` and `rev-infra`, with generated passwords that never enter a chat. `dev-author` maps to GitHub `aarush323` and `dev-approver` to `rekdfr`. Reviewers need no GitHub login, so `people.<p>.github` is optional and required only for authors and approvers. Teammates can replace these by editing `people:`. A domain is needed only for T95 and T96, which let people use their own apps.
+
+**D159. Order: rooms before tests.** Slices are now 0 red board, 1 the door, 2 ticket to room, 3 room to red tests, 4 review and merge, 5 memory and packs, 6 live quality, 7 bad days and strangers, 8 ship. The scripted agent and the server both run on the laptop through the SSH port-forward until T105 deploys the server, so the VM's Switch is real from slice 2 on. This replaces the T38 split in Part 16: T38 is one task on the real Switch and MCP protocols, as D118 says.
+
+**D160. Smaller plan fixes.**
+- **T105** adds `make deploy` in slice 3, and T71 keeps recovery, backups and the soak.
+- **T16b** moves `make sandbox` to before the builder runs unattended with live credentials.
+- **Tool owners:** T28 owns `get_change` and `report_progress`, T45 owns `run_check`, T60 owns `submit_verdict`.
+- **Later:** webhooks and `claim_fix`. The build is poll-only, and authors push by hand (D152).
+- **Policy loading:** T46 reads policy from the merge base, because slop needs it first.
+- **Spec 21** is history. `MVP_SCENARIOS.md` section 7 is the order.
+- **Enrolment code:** the builder issues it on the VM with the gateway's route, using the admin login from the VM's own `.env` without printing it. It asks the human only if that fails.
+
+**D161. The owner's call on setup (amends D113, D151, D107).**
+- **GitHub App stays as it is:** name, permissions and all repos. Narrowed tokens (D96) and the `[[projects]]` map limit what Heimdall touches, and `doctor` reports extra permissions as a note, never a failure. The App's name shows on checks and can be changed at any time before recording.
+- **The App never writes workflow files.** It has no `workflows` permission, so Heimdall's PR carries the profile and policy and puts the exact workflow file in its body, and a person commits it with their own login. On our repos the builder does that as `aarush323`. Amends D99. The product's App needs the original five permissions.
+- **One OpenRouter key.** The key in `.env` has a $4 limit. The budget table in `TEST_STRATEGY.md` is enforced by the guard and the ledger: `make e2e`, `eval` and `rehearse` refuse once usage reaches the $3 testing cap or a purpose's budget. The key's limit stays the hard stop.
+- **A domain is optional and not tested by us.** People use Mattermost through the port-forward. Public access (`MATTERMOST_ACCESS.md`, T95, T96) stays as a guide for whoever deploys it and shows as `untested`.
+
+**D162. Nothing is cut unless the owner says so.** The owner has said there is ample time. No task, scenario step or check is dropped, reduced or marked optional by a builder, and the cut order is not used without the owner's explicit word. If something is blocked, stop and ask. No hacks, temporary shortcuts or workarounds: implement it cleanly and correctly, or say why it cannot be done. Only the domain and public Mattermost access are optional, by the owner's own call (D161). Reverses the "optional" and freeze parts of D156: T99 covers every integration, and Teams (T09, T67) stays in the plan and in G4, with `untested` shown for any integration with no real run.
+
+**D163. Stage 1 results (Nov 4, T01 to T03; amends D141 and D145).** Details are in `TRACKER.md` under "Spike results".
+- **D145 holds:** one session per room. But agents hold Switch's room tools (`switch_list_rooms`, `switch_read_context`), so a fresh session can read another room when asked. The skills must tell agents to stay in their room, and the session token must not be the only barrier.
+- **Replies reach the room only through `switch_post_message`.** Agent-to-agent mentions wake the other agent, and an agent not addressed may still answer a post in a shared room; both cost tokens.
+- **Commands:** the plain word `heimdall ...` reaches the coordinator as a `message` with `filter=all`; `!heimdall` never does, and Switch's "Unknown command" reply from `@switch-admin` does, so the parser accepts only `sender` ids in `people:`.
+- **The OpenCode template's `edit` pattern is `**/scratch/**`** (the folder is not a git repo, so OpenCode matches against the path from `/`).
+- **A `question` call hangs the session**; Heimdall's task deadline must stop and reset it. `auto_mode: true` is required.
+- **Egress:** nftables on the agents' group works, but loopback must stay open except for Switch's ports because each agent's `opencode serve` uses a random loopback port; the openrouter.ai address set needs refreshing (T27).
+

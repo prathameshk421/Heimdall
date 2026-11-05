@@ -1,0 +1,54 @@
+# Example heimdall.toml for deploy/compose.yaml. Copy it somewhere outside the repository, then set
+# HEIMDALL_CONFIG to the copy. The server checks every key at boot and refuses to start on any error (spec 2.6).
+# A value ending in _secret is a file name under secrets_dir, never the credential itself.
+
+# The address inside the container. The compose file publishes it only on 127.0.0.1 of the host (spec 1.3, no ingress).
+listen = "0.0.0.0:8080"
+
+# Docker secrets are mounted here inside the container (D89).
+secrets_dir = "/run/secrets"
+
+[database]
+# Secret file name whose contents are the Postgres URL; the URL itself is never written here.
+url_secret = "database_url"
+
+[jira]
+# Jira site base URL: https, or http only for a loopback host.
+base_url = "https://jira.invalid"
+# Tracker project keys this install polls; the slice polls exactly one.
+project_keys = ["KAN"]
+# Secret file names for the Jira account email and API token.
+email_secret = "jira_email"
+api_token_secret = "jira_api_token"
+
+[switch]
+# Switch gateway base URL: https, or http only for a loopback host.
+base_url = "https://switch.invalid"
+# The coordinator agent's Switch id, display name and bridge id.
+agent_id = "agent-placeholder-1"
+agent_name = "heimdall-placeholder"
+bridge_id = "bridge-placeholder-1"
+# Secret file names for the Switch API key and registration token.
+api_key_secret = "switch_api_key"
+registration_token_secret = "switch_registration_token"
+
+[github]
+# Secret file names for the GitHub App id, installation id and private key (PEM, mode 0600).
+app_id_secret = "github_app_id"
+installation_id_secret = "github_app_installation_id"
+private_key_secret = "github_app_private_key"
+
+# The adapters the server builds. A live run selects all three.
+[vcs]
+provider = "github"
+
+[tracker]
+provider = "jira"
+
+[chat]
+bridge = "switch"
+
+[[projects]]
+tracker_project = "KAN"
+repo = "aarush323/PBL_TOS_RISK_ANALYZER"
+base_branch = "heimdall-demo"

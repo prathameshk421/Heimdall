@@ -1,0 +1,26 @@
+{
+  "head_sha": "9f1c2ab0c3d4e5f60718293a4b5c6d7e8f901234",
+  "files_reviewed": ["api/openapi.yaml", "internal/api/refunds.go"],
+  "clean": false,
+  "findings": [
+    {
+      "claim": "The Refund schema no longer requires refund_ref and renames it to reference, so a consumer that deserializes refund_ref as a required field breaks on the new response.",
+      "category": "compat",
+      "severity": "high",
+      "confidence": "high",
+      "location": {"file": "api/openapi.yaml", "lines": [147, 149]},
+      "evidence": [
+        {
+          "type": "tool_result",
+          "tool_result": {
+            "tool": "oasdiff",
+            "args": ["breaking", "base/api/openapi.yaml", "head/api/openapi.yaml"],
+            "location": {"file": "api/openapi.yaml", "lines": [147, 149]}
+          }
+        },
+        {"type": "memory", "memory_ref": "mem_ledger_reads_refund_ref"}
+      ],
+      "context_refs": ["pack:consumers/ledger", "mem_ledger_reads_refund_ref"]
+    }
+  ]
+}

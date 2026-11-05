@@ -1,13 +1,13 @@
 # Mattermost access for the team (D107)
 
-Status: v1, Nov 4, 2026. Done once by whoever has the Cloudflare domain and a login to the VM. Takes about 20 minutes.
+Status: v1, Nov 4, 2026. **Optional (D161).** The team uses Mattermost through the port-forward in `RUNBOOK.md` and has not tested this guide. It is for whoever deploys Heimdall and wants people on their own apps. Done once by whoever has a domain and a login to the VM. Takes about 20 minutes.
 
-**Why this exists.** Switch runs on the AWS VM and starts Mattermost there. People use the Mattermost desktop and phone apps, which need a server address they can reach. The VM has no inbound ports (only SSH), so the address comes from a Cloudflare Tunnel: a small program on the VM connects outward to Cloudflare, and Cloudflare forwards `https://chat.<domain>` to Mattermost. Nothing is opened in the security group.
+**Why this exists.** Switch runs on the AWS VM and starts Mattermost there. People use the Mattermost desktop and phone apps, which need a server address they can reach. The VM has no inbound ports (SSH runs over SSM), so the address comes from a Cloudflare Tunnel: a small program on the VM connects outward to Cloudflare, and Cloudflare forwards `https://chat.<domain>` to Mattermost. Nothing is opened in the security group.
 
 ## You need
 - A domain whose DNS is on Cloudflare (a free account works) and a hostname to use, for example `chat.<domain>`.
 - Access to the VM with sudo.
-- The Mattermost port on the VM. Switch Console shows it under the server's **Messaging apps** row (**Sign-in details**). It is usually `8065`; use whatever Console shows.
+- The Mattermost port on the VM: `8065`, set by `MATTERMOST_HOST_PORT` in `/opt/heimdall/switch/.env` (`RUNBOOK.md`).
 
 ## Where the domain comes from
 
@@ -19,10 +19,10 @@ Status: v1, Nov 4, 2026. Done once by whoever has the Cloudflare domain and a lo
 ## Steps
 1. **Create the tunnel.** In the Cloudflare dashboard open Zero Trust, then Networks, then Tunnels, and create a tunnel named `heimdall-chat`. Choose the Linux install option and copy the token. Do not paste the token in chat or commit it; save it to `/etc/heimdall/secrets/cloudflared-chat.token` on the VM (mode 0400).
 2. **Install and run `cloudflared` on the VM** as a service using that token (the dashboard shows the exact command). It only connects outward.
-3. **Add a public hostname** to the tunnel: `chat.<domain>` pointing to `http://localhost:8065` (or the port Console shows).
-4. **Set Mattermost's Site URL.** In Mattermost System Console, Environment, Web Server, set **Site URL** to `https://chat.<domain>`. Without it, links, invites and the apps break.
-5. **Tell Switch the public address.** In Switch Console edit the Mattermost connection and set **Public Url** to the same `https://chat.<domain>`, so links Switch posts open for people. Leave **Url** as the internal address Switch uses.
-6. **Lock it down.** In System Console: turn off open sign-up (users join by invite only), require MFA or at least strong passwords, keep **Enable Bot Account Creation** on (Switch needs it), and keep rate limiting on. In Cloudflare add one rate-limit rule on the login path, `/api/v4/users/login`.
+3. **Add a public hostname** to the tunnel: `chat.<domain>` pointing to `http://localhost:8065`.
+4. **Set Mattermost's Site URL through the compose file.** Switch's compose file hard-codes `MM_SERVICESETTINGS_SITEURL: http://localhost:8065`, and an environment variable overrides (and locks) the System Console setting. The override in `/opt/heimdall/switch` already reads this from `.env`, so set `MATTERMOST_SITE_URL=https://chat.<domain>` there, then run `docker compose up -d mattermost`. Without it, links, invites and the apps break. Mattermost is pinned by Switch (team edition 11.9.0) and listens on port 8065, bound to `127.0.0.1` by default, which is where the tunnel points.
+5. **Tell Switch the public address.** Set `MESSAGING_PUBLIC_URL` (an existing variable in Switch's compose file) to `https://chat.<domain>` in `.env`, run `docker compose up -d switch`, and if the connection form shows **Public Url**, use the same value. Leave **Url** as the internal address Switch uses.
+6. **Lock it down.** Before publishing the hostname, turn off open sign-up in the override by adding `MM_TEAMSETTINGS_ENABLEOPENSERVER: "false"` to the `mattermost` service, because Switch's compose file sets it by environment variable and that locks the System Console setting (D136). Then run `docker compose up -d mattermost`. In System Console: set a strong password policy and generate long passwords for the invites (MFA is probably a paid Mattermost feature, so we do not rely on it), keep **Enable Bot Account Creation** on (Switch needs it), and keep rate limiting on. In Cloudflare add one rate-limit rule on the login path, `/api/v4/users/login`.
 7. **Do not put Cloudflare Access in front.** The Mattermost phone and desktop apps cannot complete its browser login.
 8. **Teams is separate.** Its tunnel routes `/api/messages` and `/api/teams/notifications` to `http://localhost:3978` (see `TEAMS_SETUP.md`).
 

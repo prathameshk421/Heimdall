@@ -1,0 +1,8 @@
+parent: main
+commit_message: |
+  Add refunds
+
+  Merchants can refund a payment, in full or in part. POST /refunds creates a refund
+  and GET /refunds/{id} reads one. A repeated request with the same Idempotency-Key
+  returns the original refund.
+delete: []

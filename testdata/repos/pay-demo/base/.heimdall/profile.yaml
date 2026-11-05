@@ -1,0 +1,12 @@
+languages: [go]
+image: golang:1.22                    # to be pinned by digest and allowlisted before a live run
+setup: go mod download                # no third-party modules, so this fetches nothing
+test: go test ./...
+acceptance: go test {dir}/...         # {dir} is set per job (D153)
+seam: github.com/aarush323/heimdall-fixture-pay/internal/app
+ac_tag: "// heimdall:{ac}"
+fetch_hosts: []
+services: []
+evidence:
+  - { id: vet, run: go vet ./..., tier: E2 }
+paths: { tests: tests/heimdall }

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="3" failures="1" errors="0" time="0.048">
+	<testsuite name="github.com/aarush323/heimdall-fixture-pay/refunds" tests="2" failures="1" errors="0" skipped="0" time="0.031">
+		<testcase classname="github.com/aarush323/heimdall-fixture-pay/refunds" name="TestPartialRefund" time="0.020">
+			<failure message="Failed" type="">unexpected status: got 200, want 500</failure>
+		</testcase>
+		<testcase classname="github.com/aarush323/heimdall-fixture-pay/refunds" name="TestFullRefund" time="0.011"></testcase>
+	</testsuite>
+	<testsuite name="github.com/aarush323/heimdall-fixture-pay/ledger" tests="1" failures="0" errors="0" skipped="0" time="0.017">
+		<testcase classname="github.com/aarush323/heimdall-fixture-pay/ledger" name="TestBalance" time="0.017"></testcase>
+	</testsuite>
+</testsuites>

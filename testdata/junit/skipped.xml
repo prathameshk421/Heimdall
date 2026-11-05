@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="2" failures="0" errors="0" time="0.012">
+	<testsuite name="github.com/aarush323/heimdall-fixture-pay/refunds" tests="2" failures="0" errors="0" skipped="1" time="0.012">
+		<testcase classname="github.com/aarush323/heimdall-fixture-pay/refunds" name="TestRefundLedger" time="0.012">
+			<skipped message="skipping: needs the ledger service"></skipped>
+		</testcase>
+		<testcase classname="github.com/aarush323/heimdall-fixture-pay/refunds" name="TestRefundValidation" time="0.000"></testcase>
+	</testsuite>
+</testsuites>

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "share": "disabled",
+  "permission": {
+    "*": "deny",
+    "bash": "deny",
+    "webfetch": "deny",
+    "websearch": "deny",
+    "doom_loop": "deny",
+    "external_directory": { "*": "deny" },
+    "edit": { "*": "deny", "**/scratch/**": "allow" },
+    "heimdall_*": "allow"
+  },
+  "mcp": {
+    "heimdall": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8080/mcp",
+      "headers": { "Authorization": "Bearer __HEIMDALL_AGENT_TOKEN__" }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "head_sha": "9f1c2ab0c3d4e5f60718293a4b5c6d7e8f901234",
+  "files_reviewed": ["internal/refunds/service.go", "internal/api/refunds.go"],
+  "clean": false,
+  "findings": [
+    {
+      "claim": "Any merchant can read another merchant's refund: GET /refunds/{id} checks only that X-Merchant-ID is non-empty and Get returns the refund without comparing merchants, so m-2 reads a refund made by m-1.",
+      "category": "security",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {"file": "internal/refunds/service.go", "lines": [72, 79]},
+      "evidence": [
+        {
+          "type": "repro_test",
+          "repro_test": {
+            "path": "tests/heimdall/PAY-142/refund_read_authz_test.go",
+            "name": "TestRefundReadIsScopedToItsMerchant",
+            "content": "package heimdall_test\n\nimport (\n\t\"encoding/json\"\n\t\"io\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"strings\"\n\t\"testing\"\n\n\t\"github.com/aarush323/heimdall-fixture-pay/internal/app\"\n)\n\n// TestRefundReadIsScopedToItsMerchant has m-2 read a refund made by m-1 and wants 404.\nfunc TestRefundReadIsScopedToItsMerchant(t *testing.T) {\n\tsrv := httptest.NewServer(app.New(app.Config{}))\n\tdefer srv.Close()\n\n\tdo := func(method, path, merchant, key, body string) (int, []byte) {\n\t\tt.Helper()\n\t\treq, err := http.NewRequest(method, srv.URL+path, strings.NewReader(body))\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\treq.Header.Set(\"X-Merchant-ID\", merchant)\n\t\tif key != \"\" {\n\t\t\treq.Header.Set(\"Idempotency-Key\", key)\n\t\t}\n\t\tresp, err := srv.Client().Do(req)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tdefer resp.Body.Close()\n\t\traw, err := io.ReadAll(resp.Body)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\treturn resp.StatusCode, raw\n\t}\n\n\tstatus, body := do(http.MethodPost, \"/payments\", \"m-1\", \"\", `{\"amount\": 100, \"currency\": \"USD\"}`)\n\tif status != http.StatusCreated {\n\t\tt.Fatalf(\"create payment = %d: %s\", status, body)\n\t}\n\tvar pay map[string]any\n\tif err := json.Unmarshal(body, &pay); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tpaymentID, _ := pay[\"id\"].(string)\n\n\tstatus, body = do(http.MethodPost, \"/refunds\", \"m-1\", \"k1\", `{\"payment_id\": \"`+paymentID+`\", \"amount\": 10}`)\n\tif status != http.StatusCreated {\n\t\tt.Fatalf(\"create refund = %d: %s\", status, body)\n\t}\n\tvar refund map[string]any\n\tif err := json.Unmarshal(body, &refund); err != nil {\n\t\tt.Fatal(err)\n\t}\n\trefundID, _ := refund[\"id\"].(string)\n\n\tif status, body := do(http.MethodGet, \"/refunds/\"+refundID, \"m-2\", \"\", \"\"); status != http.StatusNotFound {\n\t\tt.Fatalf(\"m-2 read m-1's refund = %d, want 404: %s\", status, body)\n\t}\n}\n"
+          }
+        }
+      ],
+      "context_refs": ["mem_refund_cap_invariant"]
+    }
+  ]
+}

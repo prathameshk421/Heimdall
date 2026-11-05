@@ -1,0 +1,11 @@
+{
+  "case_id": "case_01HQZX3K8V0M5N7P2R4S6T8X2B",
+  "decision": "needs_human",
+  "rationale": "The reviewer's run failed on the previous head, and the handler changed after it; there is no run on the current head. The author cites an observed memory about the gateway scoping reads, which the case does not confirm and the code here cannot show. Two different facts, neither verifiable in this case: a fresh run on head, or a person, must decide.",
+  "citations": [
+    {"kind": "run", "ref": "run_01HQZX3K8V0M5N7P2R4S6T8WB1", "quote": "--- FAIL: TestRefundReadIsScopedToItsMerchant"},
+    {"kind": "memory", "ref": "mem_gateway_scopes_reads", "quote": "the gateway scopes refund reads by merchant since 2026-11-04"},
+    {"kind": "finding", "ref": "F3", "quote": "any merchant can read another merchant's refund"}
+  ],
+  "confidence": "medium"
+}

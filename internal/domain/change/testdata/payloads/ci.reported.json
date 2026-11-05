@@ -1,0 +1,5 @@
+{
+  "check": "heimdall/acceptance",
+  "sha": "9f1c2ab",
+  "conclusion": "success"
+}

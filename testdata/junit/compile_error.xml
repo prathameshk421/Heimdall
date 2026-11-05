@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="1" failures="0" errors="1" time="0.000">
+	<testsuite name="github.com/aarush323/heimdall-fixture-pay/refunds" tests="1" failures="0" errors="1" skipped="0" time="0.000">
+		<testcase classname="github.com/aarush323/heimdall-fixture-pay/refunds" name="[build failed]" time="0.000">
+			<error message="Failed to compile refunds_test: # github.com/aarush323/heimdall-fixture-pay/refunds [build failed]" type="build">refunds_test.go:9:2: undefined: NewRefund
+FAIL	github.com/aarush323/heimdall-fixture-pay/refunds [build failed]
+</error>
+		</testcase>
+	</testsuite>
+</testsuites>

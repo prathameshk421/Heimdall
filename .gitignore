@@ -1,3 +1,8 @@
 .env
 *.env
 /secrets/
+/.cache/
+opencode.json
+*.pem
+*.key
+.switch/

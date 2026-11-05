@@ -1,0 +1,36 @@
+version: 1
+workflow: default
+approvers: { default: [approver], tenant_data: [ana], money_movement: [approver] }
+policy_owners: [approver]
+people:
+  # chat ids are placeholders; `heimdall connect people` fills the real Switch ids (D140)
+  author:   { github: aarush323, chat: dev-author,   teams: [payments] }
+  approver: { github: rekdfr,    chat: dev-approver, teams: [payments] }
+  bob:      { chat: rev-backend,  agent: bob-reviewer, teams: [payments] }
+  eli:      { chat: rev-frontend, agent: eli-reviewer, teams: [consumer] }
+  # ana signs off tests in the room, so the policy needs a GitHub login for her as an approver; owner chose a real test account on Nov 5 (D158)
+  ana:      { github: temporaryhameshakagroup-alt, chat: rev-infra,    agent: ana-reviewer, teams: [security] }
+domains: { "internal/payments/**": money_movement, "internal/refunds/**": money_movement, "internal/export/**": tenant_data }
+reviewers: { count: 3, pick_timeout: 15m, required: { "internal/refunds/**": [bob], "api/openapi.yaml": [eli] } }
+slop: { max_changed_lines: 400, require_ticket: true, ignore: ["go.sum"] }
+tests:
+  dir: tests/heimdall
+  allowed_imports: [github.com/stretchr/testify]
+  sensitive: ["**/export/**", "*delete*", "*privacy*", "*consent*"]
+  min_mutation_score: 0.6
+  mutation_blocks: false
+blocking: { min_severity: medium, min_tier: E3 }
+consensus: { min_high_reporters: 2, block_score: 1.5, min_reporters: majority, confidence: { high: 1.0, medium: 0.5, low: 0.2 }, weight: { start: 0.7, min: 0.3, max: 1.0, min_decided: 5 } }
+deliberation: { max_rounds: 2, human_only_domains: [money_movement, data_deletion] }
+keys: { openrouter: production }
+models: { provider: openrouter, test_author: openrouter/deepseek/deepseek-v4-flash, reviewer: openrouter/deepseek/deepseek-v4-flash, resolver: openrouter/deepseek/deepseek-v4-flash, extraction: deepseek/deepseek-v4-flash, embedding: "openrouter:mongodb/voyage-4-lite" }
+budgets: { test_author: 400000, reviewer: 150000, resolver: 120000, per_change: 1200000 }
+skills: { test_author: "1.0.0", reviewer: "1.0.0", resolver: "1.0.0" }
+memory: { rooms: [payments-eng], chat_keywords: [decided, decision, "we will", incident, postmortem] }
+pack: { max_age_days: 14 }
+timeouts: { question: 4h, remind_after: 2h, escalate_after: 8h, reject_after: 24h }
+ci_required: [build, lint]
+chat: { bridge: mattermost, verbosity: milestones, decisions_in_room: true }
+github: { mode: poll, interval: 10s }
+tracker: { kind: jira, mode: poll, interval: 30s }
+agents: { runtime: opencode }

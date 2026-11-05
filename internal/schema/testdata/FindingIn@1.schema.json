@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "claim": {
+      "type": "string",
+      "maxLength": 600,
+      "minLength": 10,
+      "description": "What is wrong and why it matters in one or two sentences"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "correctness",
+        "security",
+        "compat",
+        "ops",
+        "spec_drift",
+        "tests",
+        "style"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "description": "Your confidence; it feeds consensus scoring"
+    },
+    "location": {
+      "properties": {
+        "file": {
+          "type": "string",
+          "maxLength": 512,
+          "minLength": 1,
+          "description": "Path of the file relative to the repository root with forward slashes"
+        },
+        "lines": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array",
+          "maxItems": 2,
+          "minItems": 2,
+          "description": "First and last line of the range; 1-based and inclusive; the first is at most the last"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "file",
+        "lines"
+      ]
+    },
+    "evidence": {
+      "items": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "repro_test",
+              "tool_result",
+              "memory",
+              "pack_ref",
+              "reasoning"
+            ]
+          },
+          "repro_test": {
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 512,
+                "minLength": 1,
+                "description": "Where the test file lives; under the test directory of the repository"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The test function name"
+              },
+              "content": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The whole test file"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "path",
+              "name",
+              "content"
+            ]
+          },
+          "tool_result": {
+            "properties": {
+              "tool": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The tool that produced the report; such as go vet or oasdiff"
+              },
+              "args": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "description": "The arguments the harness passes to the tool"
+              },
+              "location": {
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "description": "Path of the file relative to the repository root with forward slashes"
+                  },
+                  "lines": {
+                    "items": {
+                      "type": "integer"
+                    },
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "description": "First and last line of the range; 1-based and inclusive; the first is at most the last"
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "file",
+                  "lines"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "tool",
+              "args",
+              "location"
+            ]
+          },
+          "memory_ref": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "pack_ref": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "reasoning": {
+            "type": "string",
+            "maxLength": 600,
+            "minLength": 10
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type"
+        ]
+      },
+      "type": "array",
+      "maxItems": 8,
+      "minItems": 1,
+      "description": "At least one piece of evidence; stronger evidence can block a merge"
+    },
+    "context_refs": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "maxItems": 8,
+      "description": "Pack or memory references that informed the finding"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "claim",
+    "category",
+    "severity",
+    "confidence",
+    "location",
+    "evidence",
+    "context_refs"
+  ],
+  "title": "FindingIn@1"
+}

@@ -1,0 +1,131 @@
+package mcp
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testset"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+)
+
+// Principal is who a token belongs to: one agent in one role (TECH_SPEC 15.4).
+type Principal struct {
+	Agent id.AgentName
+	Role  workflow.Role
+}
+
+// Assignment is the one active task of an agent. AssignedAt starts the 60 s ack window (TECH_SPEC 6.2).
+type Assignment struct {
+	Task       workflow.TaskEnvelope
+	AssignedAt time.Time
+	Acked      bool
+}
+
+// ErrNoTask says the agent has no active task. The tool answers it as a refusal, not a protocol error.
+var ErrNoTask = errors.New("no active task")
+
+// HashToken returns the lowercase hex SHA-256 of a token. Stored tokens are hashes, so a lookup is by hash.
+func HashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// Tokens resolves a token hash to its principal. Unknown or revoked is ports.ErrUnauthorized.
+type Tokens interface {
+	Resolve(ctx context.Context, tokenHash string) (Principal, error)
+}
+
+// Tasks is the application side of an agent's task. The app package satisfies it (T23, T30); until then the tests
+// use a fake. Each method acts on the assignment it is given and never on another agent's.
+type Tasks interface {
+	Current(ctx context.Context, p Principal) (Assignment, error)
+	Ack(ctx context.Context, a Assignment, at time.Time) error
+	SubmitTests(ctx context.Context, a Assignment, sub testset.Submission, late bool) error
+	AskHumans(ctx context.Context, a Assignment, questions []string) error
+	Progress(ctx context.Context, a Assignment, text string, at time.Time) error
+}
+
+// Code reads one file at one commit. The adapter is the GitHub code reader (ports.CodeReader).
+type Code interface {
+	ReadFile(ctx context.Context, repo change.Repo, sha id.SHA, path string) ([]byte, error)
+}
+
+// Blobs reads stored content by its reference. The adapter is the blob store (ports.BlobStore).
+type Blobs interface {
+	Get(ctx context.Context, ref workflow.BlobRef) (io.ReadCloser, error)
+}
+
+// Deps are the collaborators of a Server. Every field is required.
+type Deps struct {
+	Logger *slog.Logger
+	Clock  ports.Clock
+	Tokens Tokens
+	Tasks  Tasks
+	Code   Code
+	Blobs  Blobs
+}
+
+// Server answers MCP requests for the agents' tools.
+type Server struct {
+	deps  Deps
+	tools []tool
+
+	// progressMu guards progressLast, the time of each task's last accepted progress report. It is held in memory
+	// per process (TECH_SPEC 6.5), so a restart opens the window again.
+	progressMu   sync.Mutex
+	progressLast map[id.TaskID]time.Time
+}
+
+// NewServer validates the dependencies and returns the server. A nil dependency is refused.
+func NewServer(d Deps) (*Server, error) {
+	switch {
+	case d.Logger == nil:
+		return nil, errors.New("mcp server logger must not be nil")
+	case d.Clock == nil:
+		return nil, errors.New("mcp server clock must not be nil")
+	case d.Tokens == nil:
+		return nil, errors.New("mcp server token store must not be nil")
+	case d.Tasks == nil:
+		return nil, errors.New("mcp server tasks must not be nil")
+	case d.Code == nil:
+		return nil, errors.New("mcp server code reader must not be nil")
+	case d.Blobs == nil:
+		return nil, errors.New("mcp server blob store must not be nil")
+	}
+	s := &Server{deps: d, progressLast: map[id.TaskID]time.Time{}}
+	tools, err := s.buildTools()
+	if err != nil {
+		return nil, fmt.Errorf("build mcp tools: %w", err)
+	}
+	s.tools = tools
+	return s, nil
+}
+
+// Handler returns the http.Handler for /mcp: POST only. The bearer token is checked inside the handler.
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /mcp", s.serveMCP)
+	return mux
+}
+
+// BridgeConfig configures the stdio bridge. URL is the server's /mcp endpoint; Token is the agent token and is
+// sent only as a header. In and Out are the client's stdio. Logs go to Logger, never to Out.
+type BridgeConfig struct {
+	URL    string
+	Token  string
+	In     io.Reader
+	Out    io.Writer
+	Logger *slog.Logger
+	HTTP   *http.Client
+}

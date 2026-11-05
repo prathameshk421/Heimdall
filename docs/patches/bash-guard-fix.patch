@@ -1,0 +1,63 @@
+diff --git a/docs/harness/claude/hooks/pre-bash-guard.sh b/docs/harness/claude/hooks/pre-bash-guard.sh
+index 28d29af..4528c3a 100755
+--- a/docs/harness/claude/hooks/pre-bash-guard.sh
++++ b/docs/harness/claude/hooks/pre-bash-guard.sh
+@@ -23,10 +23,10 @@ grep -Eq 'docker[[:space:]]+run.*(--privileged|docker\.sock|--pid=host|--net(wor
+ grep -Eq 'docker[[:space:]]+run.*(-v|--volume|--mount)[[:space:]=]+[^[:space:]]*(^|[=[:space:]])?(/:|~|\$HOME|/home/|/root|\.ssh)' <<<"$bare" && block R8 "no host home or root mounts"
+ 
+ # R8: any command that names a secret path, whichever program reads it. Quotes stay in here on purpose.
+-named=$(sed -E 's/\.env\.example//g' <<<"$cmd")
++named=$(sed -E 's/\.env\.example//g; s/make[[:space:]]+secrets(-staged)?//g' <<<"$cmd")
+ grep -Eq '(^|[[:space:]<>=:"'"'"'(\\])(\./)?\.env(\.[a-zA-Z0-9_-]+)?($|[[:space:]"'"'"'\;|&)])' <<<"$named" && block R8 "do not read .env; live tests get credentials through the e2e simulator"
+ grep -Eq '(^|[[:space:]<>=:"'"'"'(\\])(\./)?(secrets/|secrets($|[[:space:]]))|/etc/heimdall/secrets|\.switch/agents/' <<<"$named" && block R8 "do not read secrets or Switch credentials"
+-grep -Eq '(^|[[:space:]<>=:"'"'"'(\\])(\./)?s[a-z]*[*?[][^[:space:]]*/' <<<"$named" && block R8 "do not read secrets or Switch credentials"
++grep -Eq '(^|[[:space:]<>=:"'"'"'(\\])(\./)?s[a-z]*[*?][^[:space:]]*/' <<<"$named" && block R8 "do not read secrets or Switch credentials"
+ grep -Eq '(^|[;&|[:space:]])(printenv|export[[:space:]]+-p|declare[[:space:]]+-x)([[:space:]]|$)|(^|[;&|])[[:space:]]*env[[:space:]]*($|\|)' <<<"$bare" && block R8 "do not dump the environment"
+ grep -Eq 'gh[[:space:]]+auth[[:space:]]+(token|status[[:space:]]+(-t|--show-token))' <<<"$bare" && block R8 "tokens are used only by the e2e simulator"
+ grep -Eq 'gh[[:space:]]+repo[[:space:]]+(delete|archive|edit)'                <<<"$bare" && block R11 "no repo-level changes"
+@@ -35,10 +35,18 @@ if grep -Eq 'gh[[:space:]]+api.*(-X|--method)[[:space:]]+(DELETE|PUT|PATCH|POST)
+ fi
+ 
+ # R2: guardrails through the shell, the same files the edit hook protects.
+-guarded='(\.claude/|docs/harness/|\.golangci\.yml|\.git/hooks|(^|[[:space:]/])Makefile|tools\.(mod|sum)|\.gitleaks|scripts/|internal/archcheck|internal/lintselftest|testdata/lint|e2e/(scenarios|stories)|testdata/real|\.github/workflows)'
+-grep -Eq "(>|>>|tee[[:space:]]|sed[[:space:]]+-[a-zA-Z]*i|perl[[:space:]]+-[a-zA-Z]*i|cp[[:space:]]|mv[[:space:]]|rm[[:space:]]|chmod[[:space:]]|ln[[:space:]]).*$guarded" <<<"$bare" && block R2 "guardrail files change only by the human; say what should change"
+-# An inline interpreter can write any file, so naming a guarded path next to python -c, ruby -e and the like is refused.
+-grep -Eq '(python3?|ruby|node|perl)[[:space:]]+-[ce][[:space:]]' <<<"$bare" && grep -Eq "$guarded" <<<"$cmd" && block R2 "do not edit guardrail files through an inline interpreter"
++guarded='(\.claude/|docs/harness/|\.golangci\.yml|\.git/hooks|(^|[[:space:]/'"'"'"])Makefile|tools\.(mod|sum)|\.gitleaks|scripts/|internal/archcheck|internal/lintselftest|testdata/lint|e2e/(scenarios|stories)|testdata/real|\.github/workflows)'
++# File-descriptor redirects such as 2>&1 write nowhere, so they are removed first. A redirect must name the guarded path
++# itself, and a write verb must sit in the same command segment (split at ; | & and newlines) as the path.
++writes=$(sed -E 's/[0-9]*>&[0-9-]+//g; s/&>[[:space:]]*\/dev\/null//g' <<<"$bare")
++grep -Eq ">>?[[:space:]]*[^[:space:]<>]*$guarded" <<<"$writes" && block R2 "guardrail files change only by the human; say what should change"
++while IFS= read -r seg; do
++  grep -Eq "(^|[[:space:]])(tee|sed[[:space:]]+-[a-zA-Z]*i|perl[[:space:]]+-[a-zA-Z]*i|cp|mv|rm|chmod|ln)[[:space:]].*$guarded" <<<"$seg" && block R2 "guardrail files change only by the human; say what should change"
++done < <(tr ';|&' '\n\n\n' <<<"$writes")
++# An inline interpreter can write any file: refused when it names a guarded path and opens, writes, renames or deletes.
++grep -Eq '(python3?|ruby|node|perl)[[:space:]]+-[ce][[:space:]]' <<<"$bare" && grep -Eq "$guarded" <<<"$cmd" \
++  && grep -Eq "(open[[:space:]]*\(|write|replace|rename|unlink|remove|shutil|chmod|writeFile|sed[[:space:]]+-i)" <<<"$cmd" \
++  && block R2 "do not edit guardrail files through an inline interpreter"
+ 
+ grep -Eq 'rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*f?[[:space:]]+(/|~|\$HOME|\.\.|\*)' <<<"$bare" && block R11 "no recursive delete outside the working tree"
+ exit 0
+diff --git a/docs/harness/test-hooks.sh b/docs/harness/test-hooks.sh
+index 437b133..fe6d3bf 100755
+--- a/docs/harness/test-hooks.sh
++++ b/docs/harness/test-hooks.sh
+@@ -88,6 +88,18 @@ allow|git branch -d merged-branch
+ allow|sed -n 1,5p Makefile
+ allow|python3 -c "print(1)"
+ allow|go test ./internal/s...
++allow|go test ./... 2>&1 | tail -3; cat .gitleaksignore
++allow|make lint 2>&1 | head; cat Makefile
++allow|go vet ./... 2>/dev/null; sed -n 1,5p scripts/gotest.sh
++allow|python3 -c "s=[1]; print(s[0])"; ls docs/harness/claude
++allow|git log --oneline | head -3 && cat tools.mod
++allow|make secrets 2>&1 | tail -2
++allow|make secrets-staged
++BLOCK|echo x >> .gitleaksignore
++BLOCK|echo x>scripts/gotest.sh
++BLOCK|ls && rm scripts/gotest.sh
++BLOCK|python3 -c "open('Makefile','w').write('')"
++BLOCK|cat x | tee docs/harness/AGENTS.md
+ CASES
+ 
+ edit_hook="$here/claude/hooks/pre-edit-guard.sh"

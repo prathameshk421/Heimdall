@@ -1,0 +1,173 @@
+openapi: 3.0.3
+info:
+  title: Pay
+  version: 1.1.0
+paths:
+  /payments:
+    post:
+      summary: Create a payment for the calling merchant
+      operationId: createPayment
+      parameters:
+        - $ref: '#/components/parameters/MerchantID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePayment'
+      responses:
+        '201':
+          description: The payment was created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+  /refunds:
+    post:
+      summary: Refund all or part of a payment of the calling merchant
+      operationId: createRefund
+      parameters:
+        - $ref: '#/components/parameters/MerchantID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRefund'
+      responses:
+        '200':
+          description: The Idempotency-Key was seen before; the original refund is returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+        '201':
+          description: The refund was created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+  /refunds/{id}:
+    get:
+      summary: Read a refund
+      operationId: getRefund
+      parameters:
+        - $ref: '#/components/parameters/MerchantID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The refund
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+components:
+  parameters:
+    MerchantID:
+      name: X-Merchant-ID
+      in: header
+      required: true
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: A client-chosen key. A repeated request with the same key returns the original refund.
+      schema:
+        type: string
+  responses:
+    Error:
+      description: The request was rejected
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    CreatePayment:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Amount in cents
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+    Payment:
+      type: object
+      required: [id, merchant_id, amount, currency, created_at]
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreateRefund:
+      type: object
+      required: [payment_id, amount]
+      properties:
+        payment_id:
+          type: string
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Amount in cents, at most what is left of the payment
+    Refund:
+      type: object
+      required: [id, payment_id, merchant_id, amount, currency, refund_ref, created_at]
+      properties:
+        id:
+          type: string
+        payment_id:
+          type: string
+        merchant_id:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        refund_ref:
+          type: string
+          description: The refund's reference in the ledger.
+        created_at:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

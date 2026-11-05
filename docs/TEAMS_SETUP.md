@@ -13,8 +13,8 @@ Heimdall needs no code change for Teams. Teams is one more Switch chat connectio
 |---|---|
 | A Microsoft 365 tenant where you (or a teammate) are **Global Administrator** | Graph permissions need tenant-wide admin consent, and the Teams app must be installed into a team |
 | An Azure subscription (free account is fine) | To create the Azure Bot resource |
-| A domain whose DNS is on Cloudflare | Teams is push-based: Microsoft calls Switch, so Switch's Teams listener needs a **public HTTPS** name. A tailnet or IAP forward cannot work (V43) |
-| Admin on the Switch server | Console set that up for us already |
+| A domain whose DNS is on Cloudflare | Teams is push-based: Microsoft calls Switch, so Switch's Teams listener needs a **public HTTPS** name. A tailnet or SSH forward cannot work (V43) |
+| Admin on the Switch server | Created when Switch is deployed from compose (D124) |
 
 Pick the public hostname now and do not change it later, for example `teams.<yourdomain>`. It goes into Azure, the tunnel and Switch.
 
@@ -132,7 +132,7 @@ In `heimdall.yaml` set `chat.bridge: teams` (the connection name), so new change
 ## What is different in Teams
 
 - Agent messages appear as cards headed with the agent's name.
-- Only `!` commands work (no native slash commands). Use `!heimdall …` for Heimdall commands (for example `!heimdall uphold F-3`); Teams can intercept messages that start with `/`.
+- Only `!` commands work (no native slash commands). Heimdall commands use the plain word, not `!` (for example `heimdall uphold F3`, D139); Teams can intercept messages that start with `/`.
 - Agent @-mentions arrive as plain text and do not notify anyone. Heimdall therefore also posts questions and decision cards as replies in the thread you follow; turn on notifications for that channel.
 - Files are not relayed yet; text is.
 - No one-to-one chats with agents; rooms are channels.

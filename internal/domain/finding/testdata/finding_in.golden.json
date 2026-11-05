@@ -1,0 +1,29 @@
+{
+  "claim": "Removing refund_ref breaks the ledger consumer, which still reads it.",
+  "category": "compat",
+  "severity": "high",
+  "confidence": "high",
+  "location": {"file": "api/openapi.yaml", "lines": [40, 52]},
+  "evidence": [
+    {
+      "type": "repro_test",
+      "repro_test": {
+        "path": "tests/heimdall/PAY-142/ledger_reads_refund_ref_test.go",
+        "name": "TestLedgerStillReadsRefundRef",
+        "content": "package heimdall_test\n\nimport \"testing\"\n\nfunc TestLedgerStillReadsRefundRef(t *testing.T) {\n\tt.Fatal(\"refund_ref is missing from the response\")\n}\n"
+      }
+    },
+    {
+      "type": "tool_result",
+      "tool_result": {
+        "tool": "oasdiff",
+        "args": ["breaking", "base/api/openapi.yaml", "head/api/openapi.yaml"],
+        "location": {"file": "api/openapi.yaml", "lines": [40, 52]}
+      }
+    },
+    {"type": "memory", "memory_ref": "mem_ledger_reads_refund_ref"},
+    {"type": "pack_ref", "pack_ref": "pack:consumers/ledger"},
+    {"type": "reasoning", "reasoning": "The ledger service deserializes the response with a required refund_ref field."}
+  ],
+  "context_refs": ["pack:consumers/ledger", "mem_ledger_reads_refund_ref"]
+}

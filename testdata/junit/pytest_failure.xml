@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testsuite name="pytest" errors="0" failures="1" skipped="1" tests="3" time="0.512" timestamp="2026-11-05T09:12:31.204117" hostname="runner">
+		<testcase classname="tests.test_refunds" name="test_partial_refund" time="0.201">
+			<failure message="assert 200 == 500">def test_partial_refund():
+&gt;       assert response.status_code == 500
+E       assert 200 == 500
+</failure>
+		</testcase>
+		<testcase classname="tests.test_refunds" name="test_full_refund" time="0.104"></testcase>
+		<testcase classname="tests.test_refunds" name="test_idempotent" time="0.000">
+			<skipped type="pytest.skip" message="needs the ledger service"></skipped>
+		</testcase>
+	</testsuite>
+</testsuites>
