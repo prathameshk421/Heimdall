@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testset"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -125,6 +127,39 @@ func (f *fakeTasks) Progress(_ context.Context, _ Assignment, text string, _ tim
 	return f.progErr
 }
 
+type reviewSubmitCall struct {
+	assignment Assignment
+	review     finding.Review
+	late       bool
+}
+
+type verdictSubmitCall struct {
+	assignment Assignment
+	verdict    deliberation.Verdict
+	late       bool
+}
+
+type fakeReviews struct {
+	reviewErr      error
+	verdictErr     error
+	receipt        SubmitReceipt
+	reviewSubmits  []reviewSubmitCall
+	verdictSubmits []verdictSubmitCall
+}
+
+func (f *fakeReviews) SubmitReview(_ context.Context, a Assignment, r finding.Review, late bool) (SubmitReceipt, error) {
+	f.reviewSubmits = append(f.reviewSubmits, reviewSubmitCall{assignment: a, review: r, late: late})
+	if f.reviewErr != nil {
+		return SubmitReceipt{}, f.reviewErr
+	}
+	return f.receipt, nil
+}
+
+func (f *fakeReviews) SubmitVerdict(_ context.Context, a Assignment, v deliberation.Verdict, late bool) error {
+	f.verdictSubmits = append(f.verdictSubmits, verdictSubmitCall{assignment: a, verdict: v, late: late})
+	return f.verdictErr
+}
+
 // fakeCode serves files by "sha|path". A missing file is ports.ErrNotFound, as the real adapter answers.
 type fakeCode struct {
 	files map[string]string
@@ -160,6 +195,7 @@ type rig struct {
 	server  *Server
 	handler http.Handler
 	tasks   *fakeTasks
+	reviews *fakeReviews
 	code    *fakeCode
 	blobs   *fakeBlobs
 	clock   *fakeClock
@@ -172,6 +208,7 @@ func newRig(t *testing.T, role workflow.Role) *rig {
 	r := &rig{t: t, clock: &fakeClock{now: t0}, logs: &bytes.Buffer{}}
 	r.tokens = &fakeTokens{byHash: map[string]Principal{HashToken(testToken): {Agent: testAgent, Role: role}}}
 	r.tasks = &fakeTasks{current: Assignment{Task: testEnvelope(role), AssignedAt: t0}}
+	r.reviews = &fakeReviews{}
 	r.code = &fakeCode{files: map[string]string{
 		baseSHA + "|" + refundsGo: "l1\nl2\nl3\nl4\n",
 		headSHA + "|" + refundsGo: "h1\nh2 changed\nh3\n",
@@ -183,7 +220,15 @@ func newRig(t *testing.T, role workflow.Role) *rig {
 		blobOther: "not in this task",
 	}}
 	logger := slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	srv, err := NewServer(Deps{Logger: logger, Clock: r.clock, Tokens: r.tokens, Tasks: r.tasks, Code: r.code, Blobs: r.blobs})
+	srv, err := NewServer(Deps{
+		Logger:  logger,
+		Clock:   r.clock,
+		Tokens:  r.tokens,
+		Tasks:   r.tasks,
+		Reviews: r.reviews,
+		Code:    r.code,
+		Blobs:   r.blobs,
+	})
 	require.NoError(t, err)
 	r.server = srv
 	r.handler = srv.Handler()

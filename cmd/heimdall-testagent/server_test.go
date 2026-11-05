@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testset"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -162,12 +164,13 @@ func newWorld(t *testing.T) (*testTokens, *testTasks, *httptest.Server) {
 	tasks := &testTasks{task: testTask(), assigned: testNow}
 	logger := slog.New(slog.DiscardHandler)
 	srv, err := mcp.NewServer(mcp.Deps{
-		Logger: logger,
-		Clock:  testClock{now: testNow},
-		Tokens: tokens,
-		Tasks:  tasks,
-		Code:   testCode{},
-		Blobs:  testBlobs{},
+		Logger:  logger,
+		Clock:   testClock{now: testNow},
+		Tokens:  tokens,
+		Tasks:   tasks,
+		Reviews: testReviews{},
+		Code:    testCode{},
+		Blobs:   testBlobs{},
 	})
 	require.NoError(t, err)
 	hs := httptest.NewServer(srv.Handler())
@@ -185,3 +188,14 @@ func writeToken(t *testing.T) string {
 
 // hashOf is the lookup key the server holds for a token; it is the only form the server sees.
 func hashOf(token string) string { return mcp.HashToken(token) }
+
+// testReviews is the review side of the server. The scripted test-author never submits a review or a verdict.
+type testReviews struct{}
+
+func (testReviews) SubmitReview(context.Context, mcp.Assignment, finding.Review, bool) (mcp.SubmitReceipt, error) {
+	return mcp.SubmitReceipt{Accepted: true}, nil
+}
+
+func (testReviews) SubmitVerdict(context.Context, mcp.Assignment, deliberation.Verdict, bool) error {
+	return nil
+}

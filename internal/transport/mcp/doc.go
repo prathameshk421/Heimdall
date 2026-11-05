@@ -11,8 +11,9 @@
 // application. Tool table: TECH_SPEC 14.1. Tool names carry the heimdall_ prefix that the harness permits.
 //
 // Tools built here: heimdall_get_task, heimdall_ack, heimdall_get_change, heimdall_read_untrusted,
-// heimdall_read_code, heimdall_submit_tests, heimdall_ask_humans, heimdall_report_progress. The rest of the table
-// (read_pack, ask_knowledge, run_check, submit_review, challenge, submit_verdict) belongs to later tasks.
+// heimdall_read_code, heimdall_submit_tests, heimdall_submit_review, heimdall_submit_verdict,
+// heimdall_ask_humans, heimdall_report_progress. The rest of the table (read_pack, ask_knowledge, run_check,
+// challenge) belongs to later tasks.
 //
 // # API
 //
@@ -23,6 +24,8 @@
 //   - Tasks: the application side of the agent's task. Current returns the agent's one active Assignment, or
 //     ErrNoTask. Ack, SubmitTests, AskHumans and Progress carry out the effects. The app package does not exist
 //     yet, so this interface is the contract it will satisfy (T23, T30).
+//   - Reviews: the application side of reviews and verdicts. SubmitReview and SubmitVerdict record the outputs.
+//     SubmitReceipt carries per-finding errors for invalid findings so the reviewer can correct them.
 //   - Code and Blobs: narrow read-side ports (ReadFile, Get) the edge needs, declared here as consumer interfaces.
 //   - Deps and NewServer(Deps): validates that every dependency is set. Server.Handler() returns the http.Handler
 //     for /mcp.
@@ -46,6 +49,10 @@
 //     is accepted and changes nothing.
 //   - submit_tests validates with testset.Submission.Validate against the envelope's acceptance criteria and the
 //     tests directory tests/heimdall/<change id> (D150). A submission after the deadline is passed on as late.
+//   - submit_review validates with finding.Review.Validate, checks head_sha, and passes to Reviews.SubmitReview.
+//     Per-finding errors from SubmitReceipt are returned to the agent as a non-fatal refusal so it can fix them.
+//   - submit_verdict validates with deliberation.Verdict.Validate, checks that case_id matches the task, and passes
+//     to Reviews.SubmitVerdict. A submission after the deadline is passed on as late.
 //   - report_progress: at most 400 characters, at most one report per task every 2 minutes.
 //   - Every tool error the agent sees is either a refusal it can act on (validation, role, window) or the generic
 //     text "the server could not complete this call". The cause of a generic error is logged, not returned.

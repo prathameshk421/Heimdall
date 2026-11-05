@@ -455,3 +455,191 @@ func TestTheProgressWindowIsPerTask(t *testing.T) {
 	r.tasks.current.Task.TaskID = id.TaskID("tsk_01J8Z3K9QW7M2P5R8T0V4YB7XX")
 	require.False(t, r.call("heimdall_report_progress", `{"text":"other task"}`).IsError)
 }
+
+// --- heimdall_submit_review ---
+
+func validReview() string {
+	return `{"head_sha":"` + headSHA + `",` +
+		`"files_reviewed":["` + refundsGo + `"],` +
+		`"clean":true,"findings":[]}`
+}
+
+func validReviewWithFinding() string {
+	return `{"head_sha":"` + headSHA + `",` +
+		`"files_reviewed":["` + refundsGo + `"],` +
+		`"clean":false,"findings":[{` +
+		`"claim":"A second refund of 60 on a payment of 100 succeeds so the merchant refunds 120.",` +
+		`"category":"correctness","severity":"high","confidence":"high",` +
+		`"location":{"file":"` + refundsGo + `","lines":[1,4]},` +
+		`"evidence":[{"type":"reasoning","reasoning":"A refund compares request amount with payment and not previous refunds."}],` +
+		`"context_refs":[]` +
+		`}]}`
+}
+
+func TestSubmitReviewRecordsAValidSubmission(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	res := r.call("heimdall_submit_review", validReview())
+	require.False(t, res.IsError, res.text())
+	require.Equal(t, "The review is recorded.", res.text())
+	require.Len(t, r.reviews.reviewSubmits, 1)
+	require.False(t, r.reviews.reviewSubmits[0].late)
+	require.Equal(t, id.SHA(headSHA), r.reviews.reviewSubmits[0].review.HeadSHA)
+}
+
+func TestSubmitReviewRefusesUnknownField(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	res := r.call("heimdall_submit_review", `{"head_sha":"`+headSHA+`","files_reviewed":["`+refundsGo+`"],"clean":true,"findings":[],"extra":1}`)
+	require.True(t, res.IsError)
+	require.Contains(t, res.text(), "extra")
+	require.Empty(t, r.reviews.reviewSubmits)
+}
+
+func TestSubmitReviewRefusesValidationProblems(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	res := r.call("heimdall_submit_review", `{"head_sha":"`+headSHA+`","files_reviewed":["`+refundsGo+`"],"clean":false,"findings":[]}`)
+	require.True(t, res.IsError)
+	require.Contains(t, res.text(), "findings is empty and clean is false")
+	require.Empty(t, r.reviews.reviewSubmits)
+}
+
+func TestSubmitReviewRefusesMismatchedHeadSHA(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	res := r.call("heimdall_submit_review", `{"head_sha":"`+baseSHA+`","files_reviewed":["`+refundsGo+`"],"clean":true,"findings":[]}`)
+	require.True(t, res.IsError)
+	require.Contains(t, res.text(), "head_sha")
+	require.Empty(t, r.reviews.reviewSubmits)
+}
+
+func TestSubmitReviewReturnsInvalidFindingWithIndexAndMessage(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	r.reviews.receipt = SubmitReceipt{
+		FindingErrors: []FindingError{
+			{Index: 0, Message: "location.file does not exist in head tree"},
+		},
+	}
+	res := r.call("heimdall_submit_review", validReviewWithFinding())
+	require.True(t, res.IsError)
+	require.Contains(t, res.text(), "finding 0")
+	require.Contains(t, res.text(), "location.file does not exist in head tree")
+	require.Len(t, r.reviews.reviewSubmits, 1)
+}
+
+func TestSubmitReviewAtDeadlineBoundary(t *testing.T) {
+	deadline := testEnvelope(workflow.RoleReviewer).Deadline
+
+	onTime := newRig(t, workflow.RoleReviewer)
+	onTime.clock.now = deadline
+	res := onTime.call("heimdall_submit_review", validReview())
+	require.False(t, res.IsError, res.text())
+	require.Equal(t, "The review is recorded.", res.text())
+	require.Len(t, onTime.reviews.reviewSubmits, 1)
+	require.False(t, onTime.reviews.reviewSubmits[0].late)
+
+	late := newRig(t, workflow.RoleReviewer)
+	late.clock.now = deadline.Add(time.Second)
+	res = late.call("heimdall_submit_review", validReview())
+	require.False(t, res.IsError, res.text())
+	require.Equal(t, "The review is recorded as late.", res.text())
+	require.Len(t, late.reviews.reviewSubmits, 1)
+	require.True(t, late.reviews.reviewSubmits[0].late)
+}
+
+func TestSubmitReviewAppErrorBecomesGeneric(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	r.reviews.reviewErr = errors.New("database locked: secret-review-cause")
+	res := r.call("heimdall_submit_review", validReview())
+	require.True(t, res.IsError)
+	require.Equal(t, genericText, res.text())
+	require.NotContains(t, res.text(), "secret-review-cause")
+	require.Contains(t, r.logs.String(), "secret-review-cause")
+}
+
+func TestSubmitReviewOversizedBodyRefused(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	pad := strings.Repeat("x", 8<<20)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"heimdall_submit_review","arguments":{"head_sha":"` + headSHA + `","pad":"` + pad + `"}}}`
+	rep := r.post("Bearer "+testToken, body)
+	require.Equal(t, 413, rep.status)
+}
+
+// --- heimdall_submit_verdict ---
+
+func validVerdict() string {
+	return `{"case_id":"case_01J8Z3K9QW7M2P5R8T0V4YB6CD",` +
+		`"decision":"uphold",` +
+		`"rationale":"The second refund of 60 is accepted on head so the refunds total 120 against a payment of 100.",` +
+		`"citations":[{"kind":"finding","ref":"F1","quote":"two partial refunds of 60 on a payment of 100 both succeed"}],` +
+		`"confidence":"high"}`
+}
+
+func TestSubmitVerdictRecordsAValidVerdict(t *testing.T) {
+	r := newRig(t, workflow.RoleResolver)
+	res := r.call("heimdall_submit_verdict", validVerdict())
+	require.False(t, res.IsError, res.text())
+	require.Equal(t, "The verdict is recorded.", res.text())
+	require.Len(t, r.reviews.verdictSubmits, 1)
+	require.False(t, r.reviews.verdictSubmits[0].late)
+	require.Equal(t, id.CaseID("case_01J8Z3K9QW7M2P5R8T0V4YB6CD"), r.reviews.verdictSubmits[0].verdict.CaseID)
+}
+
+func TestSubmitVerdictRefusesUnknownField(t *testing.T) {
+	r := newRig(t, workflow.RoleResolver)
+	res := r.call("heimdall_submit_verdict", `{"case_id":"case_01J8Z3K9QW7M2P5R8T0V4YB6CD","decision":"uphold","rationale":"The second refund of 60 is accepted on head.","citations":[{"kind":"finding","ref":"F1","quote":"q"}],"confidence":"high","extra":1}`)
+	require.True(t, res.IsError)
+	require.Contains(t, res.text(), "extra")
+	require.Empty(t, r.reviews.verdictSubmits)
+}
+
+func TestSubmitVerdictRefusesValidationProblems(t *testing.T) {
+	r := newRig(t, workflow.RoleResolver)
+	res := r.call("heimdall_submit_verdict", `{"case_id":"case_01J8Z3K9QW7M2P5R8T0V4YB6CD","decision":"uphold","rationale":"The second refund of 60 is accepted on head.","citations":[],"confidence":"high"}`)
+	require.True(t, res.IsError)
+	require.Contains(t, res.text(), "citations needs at least 1 entry")
+	require.Empty(t, r.reviews.verdictSubmits)
+}
+
+func TestSubmitVerdictRefusesMismatchedTaskID(t *testing.T) {
+	r := newRig(t, workflow.RoleResolver)
+	res := r.call("heimdall_submit_verdict", `{"case_id":"case_01HQZX3K8V0M5N7P2R4S6T8W9Y","decision":"uphold","rationale":"The second refund of 60 is accepted on head.","citations":[{"kind":"finding","ref":"F1","quote":"two partial refunds"}],"confidence":"high"}`)
+	require.True(t, res.IsError)
+	require.Contains(t, res.text(), "case_id")
+	require.Empty(t, r.reviews.verdictSubmits)
+}
+
+func TestSubmitVerdictAtDeadlineBoundary(t *testing.T) {
+	deadline := testEnvelope(workflow.RoleResolver).Deadline
+
+	onTime := newRig(t, workflow.RoleResolver)
+	onTime.clock.now = deadline
+	res := onTime.call("heimdall_submit_verdict", validVerdict())
+	require.False(t, res.IsError, res.text())
+	require.Equal(t, "The verdict is recorded.", res.text())
+	require.Len(t, onTime.reviews.verdictSubmits, 1)
+	require.False(t, onTime.reviews.verdictSubmits[0].late)
+
+	late := newRig(t, workflow.RoleResolver)
+	late.clock.now = deadline.Add(time.Second)
+	res = late.call("heimdall_submit_verdict", validVerdict())
+	require.False(t, res.IsError, res.text())
+	require.Equal(t, "The verdict is recorded as late.", res.text())
+	require.Len(t, late.reviews.verdictSubmits, 1)
+	require.True(t, late.reviews.verdictSubmits[0].late)
+}
+
+func TestSubmitVerdictAppErrorBecomesGeneric(t *testing.T) {
+	r := newRig(t, workflow.RoleResolver)
+	r.reviews.verdictErr = errors.New("database locked: secret-verdict-cause")
+	res := r.call("heimdall_submit_verdict", validVerdict())
+	require.True(t, res.IsError)
+	require.Equal(t, genericText, res.text())
+	require.NotContains(t, res.text(), "secret-verdict-cause")
+	require.Contains(t, r.logs.String(), "secret-verdict-cause")
+}
+
+func TestSubmitVerdictOversizedBodyRefused(t *testing.T) {
+	r := newRig(t, workflow.RoleResolver)
+	pad := strings.Repeat("x", 8<<20)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"heimdall_submit_verdict","arguments":{"case_id":"case_01J8Z3K9QW7M2P5R8T0V4YB6CD","pad":"` + pad + `"}}}`
+	rep := r.post("Bearer "+testToken, body)
+	require.Equal(t, 413, rep.status)
+}

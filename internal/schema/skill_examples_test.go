@@ -247,13 +247,14 @@ func documentedLater(t *testing.T) map[string]bool {
 	t.Helper()
 	body := readText(t, filepath.Join("..", "..", "internal", "transport", "mcp", "doc.go"))
 	m := regexp.MustCompile(`\(([a-z_, ]+)\) belongs to later tasks`).FindStringSubmatch(body)
-	require.Len(t, m, 2, "internal/transport/mcp/doc.go no longer lists the tools that belong to later tasks")
 	set := map[string]bool{}
+	if m == nil {
+		return set // every tool of the spec table is built: nothing is left for a later task
+	}
 	for _, name := range strings.Split(m[1], ",") {
 		if name = strings.TrimSpace(name); name != "" {
 			set["heimdall_"+name] = true
 		}
 	}
-	require.NotEmpty(t, set)
 	return set
 }

@@ -30,8 +30,10 @@ func expectedTools(role workflow.Role) []string {
 	case workflow.RoleTestAuthor:
 		return append(all, "heimdall_submit_tests", "heimdall_ask_humans")
 	case workflow.RoleResolver:
-		return append(all, "heimdall_ask_humans")
-	case workflow.RoleReviewer, workflow.RoleProfiler:
+		return append(all, "heimdall_ask_humans", "heimdall_submit_verdict")
+	case workflow.RoleReviewer:
+		return append(all, "heimdall_submit_review")
+	case workflow.RoleProfiler:
 		return all
 	}
 	return nil
@@ -231,4 +233,27 @@ func TestAnUnexpectedServerFailureIsGenericAndItsCauseIsLogged(t *testing.T) {
 	require.Equal(t, "the server could not complete this call", res.text())
 	require.NotContains(t, res.text(), "hunter2")
 	require.Contains(t, r.logs.String(), "hunter2-cause", "the cause belongs in the log")
+}
+
+func TestReviewerCannotCallSubmitVerdictAndResolverCannotCallSubmitReview(t *testing.T) {
+	rev := newRig(t, workflow.RoleReviewer)
+	rep := rev.rpc("tools/call", `{"name":"heimdall_submit_verdict","arguments":{}}`)
+	require.NotNil(t, rep.Error)
+	require.Equal(t, codeInvalidParams, rep.Error.Code)
+
+	res := newRig(t, workflow.RoleResolver)
+	rep = res.rpc("tools/call", `{"name":"heimdall_submit_review","arguments":{}}`)
+	require.NotNil(t, rep.Error)
+	require.Equal(t, codeInvalidParams, rep.Error.Code)
+}
+
+func TestWrongRoleSeesNoSuchToolForSubmitReviewAndSubmitVerdict(t *testing.T) {
+	author := newRig(t, workflow.RoleTestAuthor)
+	rep := author.rpc("tools/call", `{"name":"heimdall_submit_review","arguments":{}}`)
+	require.NotNil(t, rep.Error)
+	require.Equal(t, codeInvalidParams, rep.Error.Code)
+
+	rep = author.rpc("tools/call", `{"name":"heimdall_submit_verdict","arguments":{}}`)
+	require.NotNil(t, rep.Error)
+	require.Equal(t, codeInvalidParams, rep.Error.Code)
 }

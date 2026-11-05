@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testset"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -56,6 +58,26 @@ type Tasks interface {
 	Progress(ctx context.Context, a Assignment, text string, at time.Time) error
 }
 
+// FindingError reports a validation problem with one finding in a review.
+type FindingError struct {
+	Index   int    `json:"index"`
+	Message string `json:"message"`
+}
+
+// SubmitReceipt tells the agent what was accepted and what was returned for fixing.
+// If all findings were accepted (or the review is clean), FindingErrors is empty.
+type SubmitReceipt struct {
+	Accepted      bool           `json:"accepted"`
+	FindingErrors []FindingError `json:"finding_errors,omitempty"`
+}
+
+// Reviews is the application side of reviews and verdicts. The app package satisfies it (T44, T60); until then the
+// tests use a fake.
+type Reviews interface {
+	SubmitReview(ctx context.Context, a Assignment, r finding.Review, late bool) (SubmitReceipt, error)
+	SubmitVerdict(ctx context.Context, a Assignment, v deliberation.Verdict, late bool) error
+}
+
 // Code reads one file at one commit. The adapter is the GitHub code reader (ports.CodeReader).
 type Code interface {
 	ReadFile(ctx context.Context, repo change.Repo, sha id.SHA, path string) ([]byte, error)
@@ -68,12 +90,13 @@ type Blobs interface {
 
 // Deps are the collaborators of a Server. Every field is required.
 type Deps struct {
-	Logger *slog.Logger
-	Clock  ports.Clock
-	Tokens Tokens
-	Tasks  Tasks
-	Code   Code
-	Blobs  Blobs
+	Logger  *slog.Logger
+	Clock   ports.Clock
+	Tokens  Tokens
+	Tasks   Tasks
+	Reviews Reviews
+	Code    Code
+	Blobs   Blobs
 }
 
 // Server answers MCP requests for the agents' tools.
@@ -98,6 +121,8 @@ func NewServer(d Deps) (*Server, error) {
 		return nil, errors.New("mcp server token store must not be nil")
 	case d.Tasks == nil:
 		return nil, errors.New("mcp server tasks must not be nil")
+	case d.Reviews == nil:
+		return nil, errors.New("mcp server reviews must not be nil")
 	case d.Code == nil:
 		return nil, errors.New("mcp server code reader must not be nil")
 	case d.Blobs == nil:
