@@ -29,7 +29,8 @@ const (
 
 // run loads the config named by args or HEIMDALL_CONFIG, listens with listen on cfg.Listen, and serves
 // until ctx is cancelled. Any config problem returns before a listener is opened. listen is a parameter
-// because the listen address comes from the config that run itself loads.
+// because the listen address comes from the config that run itself loads. When the config selects a
+// provider, the ticket poller and the outbox drainer run beside the HTTP server (see openApp).
 func run(
 	ctx context.Context,
 	args []string,
@@ -49,6 +50,13 @@ func run(
 	if err != nil {
 		return fmt.Errorf("build router: %w", err)
 	}
+	a, err := openApp(ctx, cfg, logger)
+	if err != nil {
+		return err
+	}
+	if a != nil {
+		defer a.close()
+	}
 	ln, err := listen(ctx, "tcp", cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", cfg.Listen, err)
@@ -57,6 +65,15 @@ func run(
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
 
+	stopLoops := startLoops(ctx, a)
+	err = serveUntilDone(ctx, srv, served)
+	stopLoops()
+	return err
+}
+
+// serveUntilDone waits until the server fails or ctx is cancelled. On cancellation it shuts the server down within
+// shutdownTimeout and returns once Serve has returned.
+func serveUntilDone(ctx context.Context, srv *http.Server, served <-chan error) error {
 	select {
 	case err := <-served:
 		return fmt.Errorf("serve: %w", err)
