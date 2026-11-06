@@ -1,6 +1,8 @@
 package rootlessrunner
 
 import (
+	"errors"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/profileyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
@@ -27,3 +29,6 @@ func LoadApprovedProfiles(dir string, allowlistedImages []string) (map[string]Re
 
 // ErrImageNotAllowed reports a profile absent from the pinned image policy.
 var ErrImageNotAllowed = profileyaml.ErrImageNotAllowed
+
+// ErrUnknownCheck is returned for a static check the runner does not know.
+var ErrUnknownCheck = errors.New("unknown static check")

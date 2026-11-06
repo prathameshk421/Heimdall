@@ -480,26 +480,9 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	return a, nil
 }
 
-func assembleWithBlobs(
-	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
-	eng *engine.Engine, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
-) (*app, error) {
-	profileManager, err := assembleProfileLifecycle(ad, store, blobs, clk)
-	if err != nil {
-		return nil, err
-	}
-	execs, err := executors(ctx, ad, store, store, blobs, ingestor{eng: eng}, gen, clk)
-	if err != nil {
-		return nil, err
-	}
-	box, err := outbox.New(outbox.Config{
-		Outbox: store, Executors: execs, Logger: d.logger,
-		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build outbox drainer: %w", err)
-	}
-	// One poller per project, each with its own cursor source provider:project (A10 item 10).
+// newTicketPollers builds one ticket poller per listed project, each with its own cursor source provider:project
+// (A10 item 10).
+func newTicketPollers(ad adapters, store *postgres.Store, eng *engine.Engine, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock) ([]poller, error) {
 	pollers := make([]poller, 0, len(ad.projectKeys))
 	for _, key := range ad.projectKeys {
 		tp, err := trigger.New(trigger.Config{
@@ -515,6 +498,37 @@ func assembleWithBlobs(
 			return nil, fmt.Errorf("build ticket poller for %s: %w", key, err)
 		}
 		pollers = append(pollers, tp)
+	}
+	return pollers, nil
+}
+
+func assembleWithBlobs(
+	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
+	eng *engine.Engine, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
+) (*app, error) {
+	profileManager, err := assembleProfileLifecycle(ad, store, blobs, clk)
+	if err != nil {
+		return nil, err
+	}
+	recheck, err := newKnowledgeSearch(d, ad, clk)
+	if err != nil {
+		return nil, err
+	}
+	execs, err := executors(ctx, ad, store, store, blobs, ingestor{eng: eng}, gen, clk, recheck)
+	if err != nil {
+		return nil, err
+	}
+	box, err := outbox.New(outbox.Config{
+		Outbox: store, Executors: execs, Logger: d.logger,
+		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build outbox drainer: %w", err)
+	}
+	// One poller per project, each with its own cursor source provider:project (A10 item 10).
+	pollers, err := newTicketPollers(ad, store, eng, blobs, gen, clk)
+	if err != nil {
+		return nil, err
 	}
 	sync, intakeCase, err := assembleSyncer(ad, store, gen, clk)
 	if err != nil {
@@ -569,6 +583,11 @@ func assembleMCP(
 ) (http.Handler, error) {
 	taskIndex := postgres.NewTaskIndex(pool)
 	asker := &chatAsker{chat: ad.chat, store: store, ids: gen}
+	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk)
+	if err != nil {
+		return nil, err
+	}
+	refs := reviewRefs{code: ad.vcs, memory: knowledgeSvc}
 	toolsSvc, err := agenttools.New(agenttools.Config{
 		Events:          store,
 		Index:           taskIndex,
@@ -576,8 +595,13 @@ func assembleMCP(
 		Clock:           clk,
 		IDs:             gen,
 		Asker:           asker,
-		ReviewRefs:      reviewRefs{code: ad.vcs},
-		ReviewValidator: semanticReviewValidator{refs: reviewRefs{code: ad.vcs}},
+		ReviewRefs:      refs,
+		ReviewValidator: semanticReviewValidator{refs: refs},
+		// Review events go through the engine, so the verify step sees each finding and requests its verification.
+		Advance: func(ctx context.Context, cid id.ChangeID, evs []change.Event) error {
+			_, err := eng.Advance(ctx, cid, evs)
+			return err
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build agenttools: %w", err)
@@ -598,6 +622,24 @@ func assembleMCP(
 	}
 	tasksAdp.filter = outputFilter
 	reviewsAdp := &mcpReviewsAdapter{svc: toolsSvc, tracker: tracker}
+
+	mcpSrv, err := mcp.NewServer(mcp.Deps{
+		Logger: d.logger, Clock: clk, Tokens: tokStore, Tasks: tasksAdp,
+		Reviews: reviewsAdp, Code: ad.vcs, Blobs: blobs, Knowledge: knowledgeSvc,
+		Files:    newKnowledgeFileManager(files, ad.vcs),
+		Profiles: profiles,
+		// heimdall_run_check runs its fixed static check through the runner, never in this process.
+		Sandbox: rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build mcp server: %w", err)
+	}
+	return mcpSrv.Handler(), nil
+}
+
+// newKnowledgeSearch builds the team-memory search service. The same service answers agent questions, checks the
+// memory references a review cites, and re-queries them when an E3 finding is verified.
+func newKnowledgeSearch(d deps, ad adapters, clk ports.Clock) (*knowledge.SearchService, error) {
 	graphitiCaller, err := graphiti.NewHTTPCaller("http://graphiti:8000/mcp", d.httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("build Graphiti caller: %w", err)
@@ -606,21 +648,11 @@ func assembleMCP(
 	if err != nil {
 		return nil, fmt.Errorf("build Graphiti adapter: %w", err)
 	}
-	knowledgeSvc, err := knowledge.NewSearchService(memory, knowledge.PolicyScopes{Code: ad.vcs, Decode: policyyaml.Decode}, knowledgeQueryAudit{logger: d.logger}, clk)
+	svc, err := knowledge.NewSearchService(memory, knowledge.PolicyScopes{Code: ad.vcs, Decode: policyyaml.Decode}, knowledgeQueryAudit{logger: d.logger}, clk)
 	if err != nil {
 		return nil, fmt.Errorf("build knowledge search service: %w", err)
 	}
-
-	mcpSrv, err := mcp.NewServer(mcp.Deps{
-		Logger: d.logger, Clock: clk, Tokens: tokStore, Tasks: tasksAdp,
-		Reviews: reviewsAdp, Code: ad.vcs, Blobs: blobs, Knowledge: knowledgeSvc,
-		Files:    newKnowledgeFileManager(files, ad.vcs),
-		Profiles: profiles,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build mcp server: %w", err)
-	}
-	return mcpSrv.Handler(), nil
+	return svc, nil
 }
 
 func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports.BlobStore, clk ports.Clock) (mcp.Profiles, error) {
@@ -709,7 +741,7 @@ func baseExecutors(
 
 // executors maps each effect kind to its executor. Each executor checks the kind of the effect it receives, so a
 // swapped entry fails every effect it is given.
-func executors(ctx context.Context, ad adapters, store ports.EventStore, profiles ports.ProfileStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
+func executors(ctx context.Context, ad adapters, store ports.EventStore, profiles ports.ProfileStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock, recheck effects.MemoryRecheck) (map[change.EffectKind]outbox.Executor, error) {
 	room, branch, check, err := baseExecutors(ad, store, in, gen, clk)
 	if err != nil {
 		return nil, err
@@ -738,7 +770,7 @@ func executors(ctx context.Context, ad adapters, store ports.EventStore, profile
 		return nil, fmt.Errorf("build test_quality executor: %w", err)
 	}
 	verifyEvidence, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Store: store, Ingest: in, IDs: gen, Clock: clk,
+		Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Memory: recheck, Store: store, Ingest: in, IDs: gen, Clock: clk,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build verify_evidence executor: %w", err)

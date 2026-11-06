@@ -232,11 +232,11 @@ func (st *foldState) applyReview(p change.Payload) bool {
 func (st *foldState) applyFindings(p change.Payload) {
 	switch v := p.(type) {
 	case change.FindingFiled:
-		st.finding(change.FindingRecord(v))
+		st.finding(change.FindingRecord(v), true)
 	case change.FindingVerified:
-		st.finding(change.FindingRecord(v))
+		st.finding(change.FindingRecord(v), false)
 	case change.FindingStateChanged:
-		st.finding(change.FindingRecord(v))
+		st.finding(change.FindingRecord(v), false)
 	case change.CaseOpened:
 		st.human[v.CaseID] = true
 	case change.VerdictEscalated:
@@ -393,8 +393,12 @@ func (st *foldState) waive(p change.ReviewWaived) {
 }
 
 // finding records the latest state of a finding with the severity its event carries (TECH_SPEC 11.1).
-func (st *foldState) finding(r change.FindingRecord) {
-	if _, ok := st.findingState[r.FindingID]; !ok {
+//
+// Only the filing event names the reporter. A verification or a state change is written by the server, so it must not
+// replace the reviewer: consensus counts distinct reviewers, and the server is not one (A2).
+func (st *foldState) finding(r change.FindingRecord, filed bool) {
+	prev, seen := st.findingState[r.FindingID]
+	if !seen {
 		st.findings = append(st.findings, r.FindingID)
 	}
 	st.findingState[r.FindingID] = gate.FindingState{
@@ -405,6 +409,12 @@ func (st *foldState) finding(r change.FindingRecord) {
 		Fingerprint: r.Fingerprint,
 		Reporter:    string(r.By),
 		Confidence:  r.Confidence,
+	}
+	if seen && !filed {
+		// The server's events carry no reviewer facts; keep the ones the filing event set.
+		next := st.findingState[r.FindingID]
+		next.Reporter, next.Fingerprint, next.Confidence = prev.Reporter, prev.Fingerprint, prev.Confidence
+		st.findingState[r.FindingID] = next
 	}
 }
 

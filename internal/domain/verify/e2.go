@@ -12,8 +12,18 @@ func TierForE2(head Status, located bool) finding.Tier {
 	return finding.TierE4
 }
 
-// ResolvedE2 reports whether a push resolves an E2 finding: the same check passes after the fix. A failure or an error
-// does not resolve it.
-func ResolvedE2(fixed Status) bool {
-	return fixed == StatusPass
+// ResolvedE2 reports whether a push resolves an E2 finding: the check no longer reports a diagnostic at the finding's
+// location. A pass resolves it, and so does a failure somewhere else. A diagnostic still at the location, or a check
+// that errored, does not.
+func ResolvedE2(fixed Status, located bool) bool {
+	switch fixed {
+	case StatusPass:
+		return true
+	case StatusFail:
+		return !located
+	case StatusError, StatusSkipped:
+		return false
+	default:
+		return false
+	}
 }

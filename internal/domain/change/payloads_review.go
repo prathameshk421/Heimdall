@@ -81,6 +81,12 @@ type FindingRecord struct {
 	By          ActorID            `json:"by"`
 	Fingerprint string             `json:"fingerprint,omitempty"`
 	Confidence  finding.Confidence `json:"confidence,omitempty"`
+	// ReproTest and ToolResult carry the evidence the sandbox repeats to verify the finding (E1 and E2). Only
+	// finding.filed sets them.
+	ReproTest  *finding.ReproTest  `json:"repro_test,omitempty"`
+	ToolResult *finding.ToolResult `json:"tool_result,omitempty"`
+	// MemoryRef is the memory reference of an E3 finding; the server re-queries it to verify the finding.
+	MemoryRef *string `json:"memory_ref,omitempty"`
 }
 
 // Validate returns every problem with the record.
@@ -102,6 +108,19 @@ func (p FindingRecord) Validate() error {
 	if p.Confidence != "" {
 		_, err := finding.ParseConfidence(string(p.Confidence))
 		v.add("confidence", err)
+	}
+	if p.ReproTest != nil {
+		v.add("repro_test.path", finding.CheckRepoPath(p.ReproTest.Path))
+		v.add("repro_test.name", checkText(p.ReproTest.Name))
+		v.add("repro_test.content", checkText(p.ReproTest.Content))
+	}
+	if p.MemoryRef != nil {
+		v.add("memory_ref", checkText(*p.MemoryRef))
+	}
+	if p.ToolResult != nil {
+		v.add("tool_result.tool", checkText(p.ToolResult.Tool))
+		v.add("tool_result.location.file", finding.CheckRepoPath(p.ToolResult.Location.File))
+		v.require("tool_result.location.lines", p.ToolResult.Location.Lines[0] >= 1 && p.ToolResult.Location.Lines[1] >= p.ToolResult.Location.Lines[0], "must be 1-based with the first at most the last")
 	}
 	return v.join()
 }

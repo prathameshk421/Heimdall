@@ -147,6 +147,8 @@ type Deps struct {
 	PackPublisher PackPublisher
 	Files         KnowledgeFiles
 	Profiles      Profiles
+	// Sandbox runs the fixed static checks of heimdall_run_check through the runner. The tool exists only when it is set.
+	Sandbox ports.Sandbox
 }
 
 // Server answers MCP requests for the agents' tools.
@@ -158,6 +160,11 @@ type Server struct {
 	// per process (TECH_SPEC 6.5), so a restart opens the window again.
 	progressMu   sync.Mutex
 	progressLast map[id.TaskID]time.Time
+
+	// checkMu guards checkRuns, the number of heimdall_run_check calls each task has made. Every call costs a sandbox
+	// job, so a task gets maxChecksPerTask of them (TECH_SPEC 14.1, "counts toward budget").
+	checkMu   sync.Mutex
+	checkRuns map[id.TaskID]int
 }
 
 // NewServer validates the dependencies and returns the server. A nil dependency is refused.
@@ -180,7 +187,7 @@ func NewServer(d Deps) (*Server, error) {
 	case d.Knowledge == nil:
 		return nil, errors.New("mcp server knowledge service must not be nil")
 	}
-	s := &Server{deps: d, progressLast: map[id.TaskID]time.Time{}}
+	s := &Server{deps: d, progressLast: map[id.TaskID]time.Time{}, checkRuns: map[id.TaskID]int{}}
 	tools, err := s.buildTools()
 	if err != nil {
 		return nil, fmt.Errorf("build mcp tools: %w", err)

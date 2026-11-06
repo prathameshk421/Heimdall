@@ -71,7 +71,15 @@ type SandboxJob struct {
 	Dir     string        `json:"dir"`
 	Timeout time.Duration `json:"timeout"`
 	Profile string        `json:"profile,omitempty"`
+	// Check names the fixed deterministic check a static job runs (CheckGoVet). It is empty for every other kind.
+	Check string `json:"check,omitempty"`
 }
+
+// CheckGoVet is the static check that runs go vet over the repository (TECH_SPEC 12.2, evidence tier E2).
+const CheckGoVet = "go_vet"
+
+// MaxCheckOutput bounds the text output a static check returns.
+const MaxCheckOutput = 64 << 10
 
 // Validate returns every problem with the job.
 func (j SandboxJob) Validate() error {
@@ -85,6 +93,11 @@ func (j SandboxJob) Validate() error {
 	v.add("sha", checkSHA(j.SHA))
 	v.add("dir", checkRelPath(j.Dir))
 	v.require("timeout", j.Timeout > 0 && j.Timeout <= maxSandboxTimeout, "must be more than 0 and at most 10 minutes")
+	if j.Kind == SandboxStatic {
+		v.require("check", j.Check == CheckGoVet, "a static job must name a known check")
+	} else {
+		v.require("check", j.Check == "", "only a static job names a check")
+	}
 	return v.join()
 }
 
@@ -113,6 +126,8 @@ type SandboxResult struct {
 	Errored int              `json:"errored"`
 	Tests   []TestResult     `json:"tests"`
 	LogRef  workflow.BlobRef `json:"log_ref"`
+	// Output is the bounded text a static check printed. It is empty for test jobs.
+	Output string `json:"output,omitempty"`
 }
 
 // Validate returns every problem with the result.
@@ -121,6 +136,7 @@ func (r SandboxResult) Validate() error {
 	v.require("passed", r.Passed >= 0, "must not be negative")
 	v.require("failed", r.Failed >= 0, "must not be negative")
 	v.require("errored", r.Errored >= 0, "must not be negative")
+	v.require("output", len(r.Output) <= MaxCheckOutput, "must be at most 64 KiB")
 	for i, t := range r.Tests {
 		v.add("tests["+strconv.Itoa(i)+"].name", checkText(t.Name, 512))
 		switch t.Outcome {

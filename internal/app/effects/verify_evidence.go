@@ -5,12 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path"
 	"path/filepath"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/verify"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -19,10 +21,17 @@ type OverlaySandbox interface {
 	RunOverlay(ctx context.Context, j ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error)
 }
 
-// VerifyEvidenceDeps are the dependencies of VerifyEvidence.
+// MemoryRecheck looks a cited memory reference up again with the scopes of the agent that cited it (E3 verification).
+type MemoryRecheck interface {
+	Recheck(ctx context.Context, agent id.AgentName, repo change.Repo, sha id.SHA, ref string) (verify.MemoryState, error)
+}
+
+// VerifyEvidenceDeps are the dependencies of VerifyEvidence. Memory is optional: without it an E3 verification fails
+// and the outbox retries it, so a missing memory service never confirms a finding.
 type VerifyEvidenceDeps struct {
 	Source  Source
 	Sandbox ports.Sandbox
+	Memory  MemoryRecheck
 	Store   ports.EventStore
 	Ingest  Ingest
 	IDs     ports.IDs
@@ -82,9 +91,20 @@ func (v VerifyEvidence) Execute(ctx context.Context, fx change.Effect) error {
 		return nil
 	}
 
+	if p.Memory != nil {
+		return v.executeMemory(ctx, l, p)
+	}
 	if err := v.deps.Source.Fetch(ctx, p.Repo, p.HeadSHA); err != nil {
 		return failf(err, "verify_evidence %s: fetch head source", p.Ticket)
 	}
+	if p.Check != nil {
+		return v.executeCheck(ctx, l, p)
+	}
+	return v.executeRepro(ctx, l, p)
+}
+
+// executeRepro verifies an E1 finding: the repro test must fail on the head with an assertion.
+func (v VerifyEvidence) executeRepro(ctx context.Context, l loadedChange, p change.VerifyEvidencePayload) error {
 
 	testBytes, err := base64.StdEncoding.DecodeString(p.TestSource)
 	if err != nil {
@@ -116,7 +136,7 @@ func (v VerifyEvidence) Execute(ctx context.Context, fx change.Effect) error {
 	}
 
 	if claimHolds {
-		return v.ingestVerified(ctx, p.Ticket, cause, p)
+		return v.ingestVerified(ctx, p.Ticket, cause, p, finding.TierE1)
 	}
 	return v.ingestUnverified(ctx, p.Ticket, cause, p)
 }
@@ -140,11 +160,11 @@ func judgesClaimHolds(res ports.SandboxResult, testName string) bool {
 	return res.Failed > 0 && res.Errored == 0
 }
 
-func (v VerifyEvidence) ingestVerified(ctx context.Context, ticket id.ChangeID, cause *change.Event, p change.VerifyEvidencePayload) error {
+func (v VerifyEvidence) ingestVerified(ctx context.Context, ticket id.ChangeID, cause *change.Event, p change.VerifyEvidencePayload, tier finding.Tier) error {
 	payload := change.FindingVerified{
 		FindingID: p.FindingID,
 		Ref:       p.FindingRef,
-		Tier:      finding.TierE1,
+		Tier:      tier,
 		Severity:  p.Severity,
 		State:     finding.StateOpen,
 		By:        change.ActorID("heimdall"),
@@ -228,4 +248,115 @@ func findCauseEvent(l loadedChange, fndID id.FindingID) *change.Event {
 		}
 	}
 	return l.first(change.EventChangeTriggered)
+}
+
+// executeCheck verifies an E2 finding: it re-runs the fixed static check on the head through the runner and applies the
+// E2 rule (domain/verify). A first run confirms the finding when the check fails at the named location and downgrades
+// it to E4 otherwise. A later run, after a push, resolves it when the diagnostic at the location is gone and keeps it
+// open when it is still there. A check that could not run is an error, so the outbox retries it: an infrastructure
+// failure is not evidence either way.
+func (v VerifyEvidence) executeCheck(ctx context.Context, l loadedChange, p change.VerifyEvidencePayload) error {
+	job := ports.SandboxJob{
+		Kind:    ports.SandboxStatic,
+		Check:   ports.CheckGoVet,
+		Repo:    p.Repo,
+		SHA:     p.HeadSHA,
+		Dir:     path.Dir(p.Check.File),
+		Timeout: 3 * time.Minute,
+	}
+	res, err := v.deps.Sandbox.Run(ctx, job)
+	if err != nil {
+		return failf(err, "verify_evidence %s: run %s", p.Ticket, p.Check.Name)
+	}
+	status := checkStatus(res)
+	if status == verify.StatusError {
+		return failf(nil, "verify_evidence %s: %s gave no result", p.Ticket, p.Check.Name)
+	}
+	located := verify.Located(verify.ParseVet([]byte(res.Output)), p.Check.File, p.Check.Lines[0], p.Check.Lines[1])
+
+	cause := findCauseEvent(l, p.FindingID)
+	if cause == nil {
+		return failf(nil, "verify_evidence %s: no cause event for finding %s", p.Ticket, p.FindingID)
+	}
+	if !wasVerified(l, p.FindingID) {
+		if verify.TierForE2(status, located) == finding.TierE2 {
+			return v.ingestVerified(ctx, p.Ticket, cause, p, finding.TierE2)
+		}
+		return v.ingestUnverified(ctx, p.Ticket, cause, p)
+	}
+	if verify.ResolvedE2(status, located) {
+		return v.ingestResolved(ctx, p.Ticket, cause, p, finding.TierE2)
+	}
+	return v.ingestVerified(ctx, p.Ticket, cause, p, finding.TierE2)
+}
+
+// checkStatus reads a static check result: exit 0 passes, a non-zero exit fails, anything else is no result.
+func checkStatus(res ports.SandboxResult) verify.Status {
+	switch {
+	case res.Failed > 0:
+		return verify.StatusFail
+	case res.Passed > 0 && res.Errored == 0:
+		return verify.StatusPass
+	default:
+		return verify.StatusError
+	}
+}
+
+// wasVerified reports whether any finding.verified event of the finding is already stored: this run is then a re-run
+// after a push and not the first verification.
+func wasVerified(l loadedChange, fndID id.FindingID) bool {
+	for _, e := range l.events {
+		if e.Type != change.EventFindingVerified {
+			continue
+		}
+		var rec change.FindingRecord
+		if err := json.Unmarshal(e.Payload, &rec); err == nil && rec.FindingID == fndID {
+			return true
+		}
+	}
+	return false
+}
+
+func (v VerifyEvidence) ingestResolved(ctx context.Context, ticket id.ChangeID, cause *change.Event, p change.VerifyEvidencePayload, tier finding.Tier) error {
+	payload := change.FindingStateChanged{
+		FindingID: p.FindingID,
+		Ref:       p.FindingRef,
+		Tier:      tier,
+		Severity:  p.Severity,
+		State:     finding.StateResolved,
+		By:        change.ActorID("heimdall"),
+	}
+	if err := payload.Validate(); err != nil {
+		return failf(err, "verify_evidence %s: finding.state_changed refused", ticket)
+	}
+	ev, err := newEvent(v.deps.IDs, v.deps.Clock, *cause, change.EventFindingStateChanged,
+		change.Actor{Kind: change.ActorSystem, ID: "heimdall"}, payload)
+	if err != nil {
+		return failf(err, "verify_evidence %s: build event", ticket)
+	}
+	if err := v.deps.Ingest.Ingest(ctx, ticket, []change.Event{ev}); err != nil {
+		return failf(err, "verify_evidence %s: ingest finding.state_changed", ticket)
+	}
+	return nil
+}
+
+// executeMemory verifies an E3 finding by looking its memory reference up again. The finding stays E3 only while the
+// reference is found, confirmed and not superseded; on the first run and on every re-run after a push, anything else
+// drops it to E4 so it stops blocking (TECH_SPEC 11.1, D152). A lookup that fails is an error, so the outbox retries it.
+func (v VerifyEvidence) executeMemory(ctx context.Context, l loadedChange, p change.VerifyEvidencePayload) error {
+	if v.deps.Memory == nil {
+		return failf(nil, "verify_evidence %s: the memory re-query is not configured", p.Ticket)
+	}
+	state, err := v.deps.Memory.Recheck(ctx, id.AgentName(p.Memory.Agent), p.Repo, p.HeadSHA, p.Memory.Ref)
+	if err != nil {
+		return failf(err, "verify_evidence %s: re-query memory", p.Ticket)
+	}
+	cause := findCauseEvent(l, p.FindingID)
+	if cause == nil {
+		return failf(nil, "verify_evidence %s: no cause event for finding %s", p.Ticket, p.FindingID)
+	}
+	if verify.TierForE3(state) == finding.TierE3 {
+		return v.ingestVerified(ctx, p.Ticket, cause, p, finding.TierE3)
+	}
+	return v.ingestUnverified(ctx, p.Ticket, cause, p)
 }

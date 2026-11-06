@@ -71,8 +71,8 @@ func TestVerifyEvidenceDoneWhenNoE1Waiting(t *testing.T) {
 	v := engine.ChangeView{ID: testTicket, Events: sampleBaseEvents()}
 	require.True(t, step.Done(v))
 
-	// 2. Non-E1 finding: done is still true
-	v.Events = append(v.Events, sampleFindingFiledEvent(testFnd1, "F1", finding.TierE2, 3))
+	// 2. A finding the server cannot repeat (E4): done is still true
+	v.Events = append(v.Events, sampleFindingFiledEvent(testFnd1, "F1", finding.TierE4, 3))
 	require.True(t, step.Done(v))
 
 	// 3. E1 finding filed: not done
@@ -141,11 +141,11 @@ func TestVerifyEvidenceOnFindingFiledE1ReturnsEffect(t *testing.T) {
 	require.Equal(t, "TestRepro", p.TestName)
 }
 
-func TestVerifyEvidenceOnFindingFiledE2ToE4NoEffect(t *testing.T) {
+func TestVerifyEvidenceOnFindingFiledE4NoEffect(t *testing.T) {
 	step, err := engine.NewVerifyEvidence(nil)
 	require.NoError(t, err)
 
-	for _, tier := range []finding.Tier{finding.TierE2, finding.TierE3, finding.TierE4} {
+	for _, tier := range []finding.Tier{finding.TierE4} {
 		evs := sampleBaseEvents()
 		filedEv := sampleFindingFiledEvent(testFnd1, "F1", tier, 3)
 		evs = append(evs, filedEv)
@@ -256,4 +256,165 @@ func TestVerifyEvidenceReplayDeterminism(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, res1, res2)
+}
+
+func sampleE2FindingFiledEvent() change.Event {
+	fndID, ref, version := testFnd1, "F1", int64(3)
+	payload := `{
+		"finding_id":"` + string(fndID) + `",
+		"ref":"` + ref + `",
+		"tier":"E2","severity":"high",
+		"state":"open",
+		"by":"reviewer-agent",
+		"tool_result":{"tool":"go vet","args":[],"location":{"file":"internal/pay/refund.go","lines":[10,12]}}
+	}`
+	return change.Event{
+		ID:       change.EventID("ev-finding-" + string(fndID)),
+		ChangeID: testTicket,
+		Version:  version,
+		Type:     change.EventFindingFiled,
+		Payload:  json.RawMessage(payload),
+	}
+}
+
+// An E2 finding is verified by re-running its tool on the head: the effect carries the check and the location, and no
+// repro test (A2).
+func TestVerifyEvidenceOnFindingFiledE2RequestsACheck(t *testing.T) {
+	step, err := engine.NewVerifyEvidence(nil)
+	require.NoError(t, err)
+	filedEv := sampleE2FindingFiledEvent()
+	view := engine.ChangeView{ID: testTicket, Events: append(sampleBaseEvents(), filedEv)}
+
+	res, err := step.OnEvent(context.Background(), view, filedEv)
+	require.NoError(t, err)
+	require.Len(t, res.Effects, 1)
+	p, err := change.DecodeVerifyEvidencePayload(res.Effects[0].Payload)
+	require.NoError(t, err)
+	require.NotNil(t, p.Check)
+	require.Equal(t, change.CheckGoVet, p.Check.Name)
+	require.Equal(t, "internal/pay/refund.go", p.Check.File)
+	require.Equal(t, [2]int{10, 12}, p.Check.Lines)
+	require.Empty(t, p.TestPath)
+	require.False(t, step.Done(view), "the E2 finding waits for its verification")
+}
+
+// An E2 finding with no tool result on its event cannot be verified, and the step says so instead of guessing.
+func TestVerifyEvidenceE2WithoutAToolResultFails(t *testing.T) {
+	step, err := engine.NewVerifyEvidence(nil)
+	require.NoError(t, err)
+	filedEv := sampleFindingFiledEvent(testFnd1, "F1", finding.TierE2, 3)
+	view := engine.ChangeView{ID: testTicket, Events: append(sampleBaseEvents(), filedEv)}
+
+	_, err = step.OnEvent(context.Background(), view, filedEv)
+	require.ErrorContains(t, err, "no tool result")
+}
+
+// Every push re-runs the open E2 findings as well as the E1 ones.
+func TestVerifyEvidenceOnPRPushedReRequestsOpenE2Findings(t *testing.T) {
+	step, err := engine.NewVerifyEvidence(nil)
+	require.NoError(t, err)
+	filedEv := sampleE2FindingFiledEvent()
+	verEv := change.Event{
+		ID: "ev-ver-e2", ChangeID: testTicket, Version: 4, Type: change.EventFindingVerified,
+		Payload: json.RawMessage(`{"finding_id":"` + string(testFnd1) + `","ref":"F1","tier":"E2","severity":"high","state":"open","by":"heimdall"}`),
+	}
+	pushEv := change.Event{
+		ID: "ev-push-e2", ChangeID: testTicket, Version: 5, Type: change.EventPRPushed,
+		Payload: json.RawMessage(`{"repo":"` + string(testRepo) + `","number":42,"head_sha":"fedcba9876543210fedcba9876543210fedcba98"}`),
+	}
+	view := engine.ChangeView{ID: testTicket, Events: append(sampleBaseEvents(), filedEv, verEv, pushEv)}
+
+	res, err := step.OnEvent(context.Background(), view, pushEv)
+	require.NoError(t, err)
+	require.Len(t, res.Effects, 1)
+	p, err := change.DecodeVerifyEvidencePayload(res.Effects[0].Payload)
+	require.NoError(t, err)
+	require.NotNil(t, p.Check)
+	require.Equal(t, id.SHA("fedcba9876543210fedcba9876543210fedcba98"), p.HeadSHA)
+}
+
+func sampleE3FindingFiledEvent(fndID id.FindingID, ref string, version int64, memoryRef string) change.Event {
+	mem := ""
+	if memoryRef != "" {
+		mem = `,"memory_ref":"` + memoryRef + `"`
+	}
+	return change.Event{
+		ID: change.EventID("ev-finding-" + string(fndID)), ChangeID: testTicket, Version: version, Type: change.EventFindingFiled,
+		Payload: json.RawMessage(`{"finding_id":"` + string(fndID) + `","ref":"` + ref + `","tier":"E3","severity":"high","state":"open","by":"bob-reviewer"` + mem + `}`),
+	}
+}
+
+// An E3 finding is verified by looking its memory reference up again with the scopes of the reviewer that cited it.
+func TestVerifyEvidenceOnFindingFiledE3RequestsAMemoryRecheck(t *testing.T) {
+	step, err := engine.NewVerifyEvidence(nil)
+	require.NoError(t, err)
+	filedEv := sampleE3FindingFiledEvent(testFnd1, "F1", 3, "decision:refund-limit")
+	view := engine.ChangeView{ID: testTicket, Events: append(sampleBaseEvents(), filedEv)}
+
+	res, err := step.OnEvent(context.Background(), view, filedEv)
+	require.NoError(t, err)
+	require.Len(t, res.Effects, 1)
+	p, err := change.DecodeVerifyEvidencePayload(res.Effects[0].Payload)
+	require.NoError(t, err)
+	require.NotNil(t, p.Memory)
+	require.Equal(t, "decision:refund-limit", p.Memory.Ref)
+	require.Equal(t, "bob-reviewer", p.Memory.Agent)
+	require.Nil(t, p.Check)
+	require.False(t, step.Done(view), "the E3 finding waits for its re-query")
+}
+
+func TestVerifyEvidenceE3WithoutAMemoryRefFails(t *testing.T) {
+	step, err := engine.NewVerifyEvidence(nil)
+	require.NoError(t, err)
+	filedEv := sampleE3FindingFiledEvent(testFnd1, "F1", 3, "")
+	view := engine.ChangeView{ID: testTicket, Events: append(sampleBaseEvents(), filedEv)}
+
+	_, err = step.OnEvent(context.Background(), view, filedEv)
+	require.ErrorContains(t, err, "no memory reference")
+}
+
+// The verify step opens only after the review step is done, so it never sees the findings as they are filed. The last
+// review.submitted opens it, and it then requests verification for every finding still waiting (A2).
+func TestVerifyEvidenceOnReviewSubmittedRequestsEveryWaitingFinding(t *testing.T) {
+	step, err := engine.NewVerifyEvidence(nil)
+	require.NoError(t, err)
+	e2 := sampleE2FindingFiledEvent()
+	e1 := sampleFindingFiledEvent(testFnd2, "F2", finding.TierE1, 4)
+	submitted := change.Event{
+		ID: "ev-review-done", ChangeID: testTicket, Version: 5, Type: change.EventReviewSubmitted,
+		Payload: json.RawMessage(`{"reviewer":"ana-reviewer","finding_refs":["F1","F2"],"pack_date":"2026-11-06"}`),
+	}
+	view := engine.ChangeView{ID: testTicket, Events: append(sampleBaseEvents(), e2, e1, submitted)}
+
+	res, err := step.OnEvent(context.Background(), view, submitted)
+	require.NoError(t, err)
+	require.Len(t, res.Effects, 2, "one verification for each waiting finding")
+	kinds := map[id.FindingID]bool{}
+	for _, fx := range res.Effects {
+		p, err := change.DecodeVerifyEvidencePayload(fx.Payload)
+		require.NoError(t, err)
+		kinds[p.FindingID] = p.Check != nil
+	}
+	require.True(t, kinds[testFnd1], "the E2 finding asks for a check")
+	require.False(t, kinds[testFnd2], "the E1 finding asks for its repro test")
+}
+
+// A finding that already has a verification since the last push is not requested again.
+func TestVerifyEvidenceOnReviewSubmittedSkipsVerifiedFindings(t *testing.T) {
+	step, err := engine.NewVerifyEvidence(nil)
+	require.NoError(t, err)
+	filed := sampleE2FindingFiledEvent()
+	verified := change.Event{
+		ID: "ev-ver", ChangeID: testTicket, Version: 4, Type: change.EventFindingVerified,
+		Payload: json.RawMessage(`{"finding_id":"` + string(testFnd1) + `","ref":"F1","tier":"E2","severity":"high","state":"open","by":"heimdall"}`),
+	}
+	submitted := change.Event{
+		ID: "ev-review-done", ChangeID: testTicket, Version: 5, Type: change.EventReviewSubmitted,
+		Payload: json.RawMessage(`{"reviewer":"ana-reviewer","finding_refs":["F1"],"pack_date":"2026-11-06"}`),
+	}
+	view := engine.ChangeView{ID: testTicket, Events: append(sampleBaseEvents(), filed, verified, submitted)}
+
+	res, err := step.OnEvent(context.Background(), view, submitted)
+	require.NoError(t, err)
+	require.Empty(t, res.Effects)
 }

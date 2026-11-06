@@ -29,7 +29,7 @@ func (VerifyEvidence) Type() string { return "sandbox.verify_evidence" }
 
 // Done reports whether no E1 finding in the window is waiting for verification.
 func (VerifyEvidence) Done(c ChangeView) bool {
-	waiting := waitingE1Findings(c)
+	waiting := waitingProvableFindings(c)
 	return len(waiting) == 0
 }
 
@@ -48,7 +48,46 @@ func (s VerifyEvidence) OnEvent(_ context.Context, c ChangeView, e change.Event)
 	if e.Type == change.EventPRPushed {
 		return s.onPRPushed(c, e)
 	}
+	if e.Type == change.EventReviewSubmitted {
+		return s.onReviewSubmitted(c, e)
+	}
 	return Result{}, nil
+}
+
+// onReviewSubmitted requests verification for every open finding that is not yet verified. The step opens after the
+// review step, so this is the point where the filed findings are first verified (A2).
+func (s VerifyEvidence) onReviewSubmitted(c ChangeView, e change.Event) (Result, error) {
+	trig, err := triggerOf(c)
+	if err != nil {
+		return Result{}, fmt.Errorf("sandbox.verify_evidence: %w", err)
+	}
+	headSHA := headSHAOf(c)
+	if headSHA == "" {
+		return Result{}, errors.New("sandbox.verify_evidence: no head SHA in the view")
+	}
+	var effects []change.Effect
+	for _, f := range findOpenProvableFindings(c) {
+		if isFindingVerifiedInWindow(c, f.id) {
+			continue
+		}
+		payload := change.VerifyEvidencePayload{
+			Repo:       trig.Repo,
+			Ticket:     c.ID,
+			FindingID:  f.id,
+			FindingRef: f.ref,
+			Severity:   f.severity,
+			HeadSHA:    headSHA,
+		}
+		if err := attachProof(&payload, f.filedEvent); err != nil {
+			return Result{}, fmt.Errorf("sandbox.verify_evidence: finding %s (%s): %w", f.id, f.ref, err)
+		}
+		fx, err := buildVerifyEffect(c.ID, e.Version, payload)
+		if err != nil {
+			return Result{}, err
+		}
+		effects = append(effects, fx)
+	}
+	return Result{Effects: effects}, nil
 }
 
 func (VerifyEvidence) onFindingFiled(c ChangeView, e change.Event) (Result, error) {
@@ -56,7 +95,7 @@ func (VerifyEvidence) onFindingFiled(c ChangeView, e change.Event) (Result, erro
 	if err != nil {
 		return Result{}, fmt.Errorf("sandbox.verify_evidence: read %s: %w", e.Type, err)
 	}
-	if record.Tier != finding.TierE1 || isFindingVerifiedInWindow(c, record.FindingID) {
+	if !provableTier(record.Tier) || isFindingVerifiedInWindow(c, record.FindingID) {
 		return Result{}, nil
 	}
 
@@ -69,11 +108,6 @@ func (VerifyEvidence) onFindingFiled(c ChangeView, e change.Event) (Result, erro
 		return Result{}, errors.New("sandbox.verify_evidence: no head SHA in the view")
 	}
 
-	testPath, testSource, testName, ok := extractReproTest(e)
-	if !ok {
-		return Result{}, fmt.Errorf("sandbox.verify_evidence: finding %s (%s) has tier E1 but event does not carry repro test source", record.FindingID, record.Ref)
-	}
-
 	payload := change.VerifyEvidencePayload{
 		Repo:       trig.Repo,
 		Ticket:     c.ID,
@@ -81,9 +115,9 @@ func (VerifyEvidence) onFindingFiled(c ChangeView, e change.Event) (Result, erro
 		FindingRef: record.Ref,
 		Severity:   record.Severity,
 		HeadSHA:    headSHA,
-		TestPath:   testPath,
-		TestSource: testSource,
-		TestName:   testName,
+	}
+	if err := attachProof(&payload, e); err != nil {
+		return Result{}, fmt.Errorf("sandbox.verify_evidence: finding %s (%s): %w", record.FindingID, record.Ref, err)
 	}
 	fx, err := buildVerifyEffect(c.ID, e.Version, payload)
 	if err != nil {
@@ -106,14 +140,9 @@ func (VerifyEvidence) onPRPushed(c ChangeView, e change.Event) (Result, error) {
 		return Result{}, fmt.Errorf("sandbox.verify_evidence: %w", err)
 	}
 
-	openE1s := findOpenE1Findings(c)
+	openE1s := findOpenProvableFindings(c)
 	effects := make([]change.Effect, 0, len(openE1s))
 	for _, f := range openE1s {
-		testPath, testSource, testName, ok := extractReproTest(f.filedEvent)
-		if !ok {
-			return Result{}, fmt.Errorf("sandbox.verify_evidence: finding %s (%s) missing repro test source", f.id, f.ref)
-		}
-
 		payload := change.VerifyEvidencePayload{
 			Repo:       trig.Repo,
 			Ticket:     c.ID,
@@ -121,9 +150,9 @@ func (VerifyEvidence) onPRPushed(c ChangeView, e change.Event) (Result, error) {
 			FindingRef: f.ref,
 			Severity:   f.severity,
 			HeadSHA:    pr.HeadSHA,
-			TestPath:   testPath,
-			TestSource: testSource,
-			TestName:   testName,
+		}
+		if err := attachProof(&payload, f.filedEvent); err != nil {
+			return Result{}, fmt.Errorf("sandbox.verify_evidence: finding %s (%s): %w", f.id, f.ref, err)
 		}
 		fx, err := buildVerifyEffect(c.ID, e.Version, payload)
 		if err != nil {
@@ -175,6 +204,53 @@ func parseFindingRecord(e change.Event) (change.FindingRecord, error) {
 		return change.FindingRecord{}, err
 	}
 	return rec, nil
+}
+
+// provableTier reports whether the server can repeat evidence of the tier: E1 (a repro test), E2 (a static check) and
+// E3 (a memory re-query).
+func provableTier(t finding.Tier) bool {
+	return t == finding.TierE1 || t == finding.TierE2 || t == finding.TierE3
+}
+
+// checkNames maps the tool a reviewer names in tool_result evidence to the fixed check the runner knows.
+func checkNameFor(tool string) (string, bool) {
+	if tool == "go vet" {
+		return change.CheckGoVet, true
+	}
+	return "", false
+}
+
+// attachProof sets the evidence the sandbox repeats on the payload, read from the finding.filed event: a check for a
+// tool result (E2) and a repro test for E1. Each tier needs its own proof; an event without it is refused.
+func attachProof(payload *change.VerifyEvidencePayload, filed change.Event) error {
+	rec, err := parseFindingRecord(filed)
+	if err != nil {
+		return err
+	}
+	if rec.Tier == finding.TierE3 {
+		if rec.MemoryRef == nil {
+			return errors.New("tier E3 but the event carries no memory reference")
+		}
+		payload.Memory = &change.VerifyMemory{Ref: *rec.MemoryRef, Agent: string(rec.By)}
+		return nil
+	}
+	if rec.Tier == finding.TierE2 {
+		if rec.ToolResult == nil {
+			return errors.New("tier E2 but the event carries no tool result")
+		}
+		name, ok := checkNameFor(rec.ToolResult.Tool)
+		if !ok {
+			return fmt.Errorf("tool %q is not one the sandbox can repeat", rec.ToolResult.Tool)
+		}
+		payload.Check = &change.VerifyCheck{Name: name, File: rec.ToolResult.Location.File, Lines: rec.ToolResult.Location.Lines}
+		return nil
+	}
+	testPath, testSource, testName, ok := extractReproTest(filed)
+	if !ok {
+		return errors.New("tier E1 but the event does not carry repro test source")
+	}
+	payload.TestPath, payload.TestSource, payload.TestName = testPath, testSource, testName
+	return nil
 }
 
 func extractReproTest(e change.Event) (testPath, testSource, testName string, ok bool) {
@@ -239,7 +315,7 @@ func updateFindingMap(findings map[id.FindingID]*findingStateInfo, e change.Even
 		return
 	}
 	if e.Type == change.EventFindingFiled {
-		if rec.Tier == finding.TierE1 {
+		if provableTier(rec.Tier) {
 			findings[rec.FindingID] = &findingStateInfo{
 				id:         rec.FindingID,
 				ref:        rec.Ref,
@@ -269,13 +345,13 @@ func updateFindingMap(findings map[id.FindingID]*findingStateInfo, e change.Even
 	}
 }
 
-func findOpenE1Findings(c ChangeView) []findingStateInfo {
+func findOpenProvableFindings(c ChangeView) []findingStateInfo {
 	findings := make(map[id.FindingID]*findingStateInfo)
 	var order []id.FindingID
 
 	for _, e := range c.Events {
 		if e.Type == change.EventFindingFiled {
-			if rec, err := parseFindingRecord(e); err == nil && rec.Tier == finding.TierE1 {
+			if rec, err := parseFindingRecord(e); err == nil && provableTier(rec.Tier) {
 				order = append(order, rec.FindingID)
 			}
 		}
@@ -285,15 +361,15 @@ func findOpenE1Findings(c ChangeView) []findingStateInfo {
 	var openE1s []findingStateInfo
 	for _, fID := range order {
 		f := findings[fID]
-		if f != nil && f.tier == finding.TierE1 && f.state == finding.StateOpen {
+		if f != nil && provableTier(f.tier) && f.state == finding.StateOpen {
 			openE1s = append(openE1s, *f)
 		}
 	}
 	return openE1s
 }
 
-func waitingE1Findings(c ChangeView) []id.FindingID {
-	openE1s := findOpenE1Findings(c)
+func waitingProvableFindings(c ChangeView) []id.FindingID {
+	openE1s := findOpenProvableFindings(c)
 	if len(openE1s) == 0 {
 		return nil
 	}

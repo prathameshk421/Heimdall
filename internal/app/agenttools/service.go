@@ -110,6 +110,10 @@ type Config struct {
 	Asker           Asker
 	ReviewRefs      ReviewRefs
 	ReviewValidator ReviewValidator
+	// Advance is optional. When set, a review submission hands its events to it instead of appending them to the
+	// store, so the workflow engine stores them and offers them to its steps. The verify step needs this to see the
+	// findings it must verify (A2).
+	Advance func(context.Context, id.ChangeID, []change.Event) error
 }
 
 // Service implements application logic for agent tools.
@@ -121,6 +125,8 @@ type Service struct {
 	ids    ports.IDs
 	asker  Asker
 	review ReviewValidator
+
+	advance func(context.Context, id.ChangeID, []change.Event) error
 }
 
 // New validates dependencies and constructs a Service.
@@ -161,11 +167,19 @@ func New(cfg Config) (*Service, error) {
 		ids:    cfg.IDs,
 		asker:  cfg.Asker,
 		review: cfg.ReviewValidator,
+
+		advance: cfg.Advance,
 	}, nil
 }
 
 // appendEvents executes the retry loop on ports.ErrVersionConflict (up to MaxRetries attempts).
 func (s *Service) appendEvents(ctx context.Context, cid id.ChangeID, fn func(existing []change.Event, state change.State) ([]change.Event, error)) error {
+	return s.appendEventsWith(ctx, cid, fn, nil)
+}
+
+// appendEventsWith is appendEvents with an optional hook that stores the events in place of the event store. A hook
+// error is returned as it is; a version conflict from it takes the retry loop again.
+func (s *Service) appendEventsWith(ctx context.Context, cid id.ChangeID, fn func(existing []change.Event, state change.State) ([]change.Event, error), hook func(context.Context, id.ChangeID, []change.Event) error) error {
 	for attempt := 0; attempt < MaxRetries; attempt++ {
 		existing, err := s.events.Load(ctx, cid)
 		if err != nil {
@@ -194,7 +208,11 @@ func (s *Service) appendEvents(ctx context.Context, cid id.ChangeID, fn func(exi
 		}
 
 		expected := int64(len(existing))
-		_, err = s.events.Append(ctx, cid, expected, evs, nil)
+		if hook != nil {
+			err = hook(ctx, cid, evs)
+		} else {
+			_, err = s.events.Append(ctx, cid, expected, evs, nil)
+		}
 		if err == nil {
 			return nil
 		}

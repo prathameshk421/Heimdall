@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -40,6 +41,8 @@ type reviewJourneyValidator struct{}
 func (reviewJourneyValidator) Submit(_ context.Context, submission agenttools.ReviewSubmission) (agenttools.ReviewResult, error) {
 	var result agenttools.ReviewResult
 	for _, input := range submission.Review.Findings {
+		// An E2 claim carries the tool result the server repeats to verify it (A2).
+		input.Evidence = []finding.Evidence{{Type: finding.EvidenceToolResult, ToolResult: &finding.ToolResult{Tool: "go vet", Location: input.Location}}}
 		result.Findings = append(result.Findings, agenttools.ReviewFinding{Input: input, Tier: finding.TierE2})
 	}
 	return result, nil
@@ -166,6 +169,10 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 		Events: store, Index: reviewJourneyIndex{}, Blobs: newMemBlobStore(), Clock: clock.System{}, IDs: gen,
 		Asker: &chatAsker{chat: runtime.chat, store: store, ids: gen}, ReviewRefs: reviewRefs{code: commandTestVCS{dummyVCS: dummyVCS{}}},
 		ReviewValidator: reviewJourneyValidator{},
+		Advance: func(ctx context.Context, cid id.ChangeID, evs []change.Event) error {
+			_, err := runtime.engine.Advance(ctx, cid, evs)
+			return err
+		},
 	})
 	require.NoError(t, err)
 	gateEvaluator, err := gateuse.New(gateuse.Config{Events: store, Source: reviewJourneyGateSource{}, Clock: clock.System{}, IDs: gen})
@@ -278,8 +285,41 @@ func submitJourneyReview(ctx context.Context, t *testing.T, runtime *commandRunt
 			Inputs: workflow.Inputs{FilesChanged: []string{"internal/refunds/refunds.go"}}}}
 	_, err := service.SubmitReview(ctx, assignment, review, false)
 	require.NoError(t, err)
+	runJourneyVerification(ctx, t, runtime, cid)
 	_, err = runtime.engine.Advance(ctx, cid, nil)
 	require.NoError(t, err)
+}
+
+type journeySource struct{}
+
+func (journeySource) Fetch(context.Context, change.Repo, id.SHA) error { return nil }
+
+type journeySandbox struct{}
+
+// Run reports the located vet failure the E2 findings of the journey cite (internal/refunds/refunds.go, lines 40 to 41).
+func (journeySandbox) Run(context.Context, ports.SandboxJob) (ports.SandboxResult, error) {
+	return ports.SandboxResult{Failed: 1, Output: "./internal/refunds/refunds.go:40:2: unchecked error\n"}, nil
+}
+
+// runJourneyVerification runs the verify_evidence effects the engine committed, through the real executor with a
+// sandbox that confirms the cited failure. The executor skips a finding it already evaluated for the current head, so
+// running every committed effect again is safe.
+func runJourneyVerification(ctx context.Context, t *testing.T, runtime *commandRuntime, cid id.ChangeID) {
+	t.Helper()
+	mem, ok := runtime.events.(*memStore)
+	require.True(t, ok)
+	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
+		Source: journeySource{}, Sandbox: journeySandbox{}, Store: mem, Ingest: ingestor{eng: runtime.engine}, IDs: ids.New(), Clock: clock.System{},
+	})
+	require.NoError(t, err)
+	mem.mu.Lock()
+	pending := append([]change.Effect(nil), mem.fx...)
+	mem.mu.Unlock()
+	for _, fx := range pending {
+		if fx.Kind == change.EffectVerifyEvidence && fx.Target == string(cid) {
+			require.NoError(t, exec.Execute(ctx, fx))
+		}
+	}
 }
 
 func resolverAssignmentForJourney(t *testing.T, events []change.Event) change.TaskAssigned {

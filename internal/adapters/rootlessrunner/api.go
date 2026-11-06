@@ -142,8 +142,14 @@ func (r *Runner) handleRun(req *http.Request) (response, int) {
 	}
 	out, runErr := r.Run(req.Context(), JobInput{
 		Profile: in.Profile, Spec: spec, Archive: bytes.NewReader(in.Archive),
-		Overlays: in.Overlays, Dir: in.Job.Dir, Timeout: in.Job.Timeout,
+		Overlays: in.Overlays, Dir: in.Job.Dir, Check: in.Job.Check, Timeout: in.Job.Timeout,
 	})
+	if in.Job.Check != "" {
+		if _, ok := parseCheckOutput(out); ok {
+			return response{Output: out}, http.StatusOK
+		}
+		return response{Error: "runner produced no check result"}, http.StatusUnprocessableEntity
+	}
 	if validTestOutput(out) {
 		return response{Output: out}, http.StatusOK
 	}
@@ -332,7 +338,7 @@ func (c Client) RunOverlay(ctx context.Context, job ports.SandboxJob, overlays [
 		return ports.SandboxResult{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	return c.result(ctx, resp)
+	return c.result(ctx, job, resp)
 }
 
 // runnerProfile names the profile a job runs under. Empty selects the built-in Go profile; a set
@@ -368,7 +374,7 @@ func (c Client) Trial(ctx context.Context, j ports.ProfileTrialJob) (ports.Sandb
 		return ports.SandboxResult{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	return c.result(ctx, resp)
+	return c.result(ctx, job, resp)
 }
 
 // Profiles lists the profile names the runner can currently run.
@@ -556,13 +562,16 @@ func (c Client) post(ctx context.Context, path string, timeout time.Duration, bo
 	return resp, nil
 }
 
-func (c Client) result(ctx context.Context, resp *http.Response) (ports.SandboxResult, error) {
+func (c Client) result(ctx context.Context, job ports.SandboxJob, resp *http.Response) (ports.SandboxResult, error) {
 	var out response
 	if err := json.NewDecoder(io.LimitReader(resp.Body, apiBodyLimit)).Decode(&out); err != nil {
 		return ports.SandboxResult{}, fmt.Errorf("decode runner response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return ports.SandboxResult{}, fmt.Errorf("runner rejected job: %s", out.Error)
+	}
+	if job.Check != "" {
+		return c.checkResult(ctx, out.Output)
 	}
 	report, _, err := testevents.ParseEvents(bytes.NewReader(out.Output))
 	if err != nil {

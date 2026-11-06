@@ -244,11 +244,11 @@ func (fakeReviewRefs) LineCount(_ context.Context, _ workflow.ChangeRef, path st
 	}
 	return 0, nil
 }
-func (fakeReviewRefs) RunExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error) {
-	return false, nil
+func (fakeReviewRefs) RunExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentName, tool string) (bool, error) {
+	return tool == "go vet", nil
 }
-func (fakeReviewRefs) MemoryExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error) {
-	return false, nil
+func (fakeReviewRefs) MemoryExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentName, ref string) (bool, error) {
+	return ref == "decision:refund-limit", nil
 }
 func (fakeReviewRefs) PackExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error) {
 	return false, nil
@@ -1193,4 +1193,110 @@ func TestNoSecretInErrors(t *testing.T) {
 	err := h.svc.Ack(context.Background(), assign, t0.Add(100*time.Second))
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), secretToken)
+}
+
+// A finding filed with tool evidence carries that evidence in finding.filed, so the sandbox can repeat the tool and
+// verify the claim (A2). Without it the verifier has nothing to run.
+func TestSubmitReviewCarriesToolEvidenceInTheFindingEvent(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	makeReviewStream(t, h)
+	assign := agenttools.Assignment{
+		ChangeID: testChangeID, TaskID: testTaskID, Agent: testAgent, Role: workflow.RoleReviewer,
+		Deadline: t0.Add(30 * time.Minute),
+		Task: workflow.TaskEnvelope{
+			Change: workflow.ChangeRef{ID: testChangeID, HeadSHA: testHeadSHA},
+			Inputs: workflow.Inputs{FilesChanged: []string{"internal/refunds/refunds.go"}},
+		},
+	}
+	review := validReview()
+	loc := finding.Location{File: "internal/refunds/refunds.go", Lines: [2]int{10, 20}}
+	review.Findings[0].Evidence = []finding.Evidence{{
+		Type:       finding.EvidenceToolResult,
+		ToolResult: &finding.ToolResult{Tool: "go vet", Location: loc},
+	}}
+
+	receipt, err := h.svc.SubmitReview(context.Background(), assign, review, false)
+	require.NoError(t, err)
+	require.True(t, receipt.Accepted, "%+v", receipt.FindingErrors)
+
+	evs, err := h.events.Load(context.Background(), testChangeID)
+	require.NoError(t, err)
+	filed := evs[10]
+	require.Equal(t, change.EventFindingFiled, filed.Type)
+	p, err := change.Decode(filed)
+	require.NoError(t, err)
+	rec := change.FindingRecord(p.(change.FindingFiled))
+	require.Equal(t, finding.TierE2, rec.Tier)
+	require.NotNil(t, rec.ToolResult, "the tool evidence must travel on the event")
+	require.Equal(t, loc, rec.ToolResult.Location)
+}
+
+// A finding that cites a confirmed memory item carries the reference on its event, so the server can look it up again.
+func TestSubmitReviewCarriesTheMemoryRefInTheFindingEvent(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	makeReviewStream(t, h)
+	assign := agenttools.Assignment{
+		ChangeID: testChangeID, TaskID: testTaskID, Agent: testAgent, Role: workflow.RoleReviewer,
+		Deadline: t0.Add(30 * time.Minute),
+		Task: workflow.TaskEnvelope{
+			Change: workflow.ChangeRef{ID: testChangeID, HeadSHA: testHeadSHA},
+			Inputs: workflow.Inputs{FilesChanged: []string{"internal/refunds/refunds.go"}},
+		},
+	}
+	review := validReview()
+	ref := "decision:refund-limit"
+	review.Findings[0].Evidence = []finding.Evidence{{Type: finding.EvidenceMemory, MemoryRef: &ref}}
+
+	receipt, err := h.svc.SubmitReview(context.Background(), assign, review, false)
+	require.NoError(t, err)
+	require.True(t, receipt.Accepted, "%+v", receipt.FindingErrors)
+
+	evs, err := h.events.Load(context.Background(), testChangeID)
+	require.NoError(t, err)
+	p, err := change.Decode(evs[10])
+	require.NoError(t, err)
+	rec := change.FindingRecord(p.(change.FindingFiled))
+	require.Equal(t, finding.TierE3, rec.Tier)
+	require.NotNil(t, rec.MemoryRef)
+	require.Equal(t, ref, *rec.MemoryRef)
+}
+
+// With an Advance hook, a review goes to the workflow engine instead of straight into the store, so the steps see the
+// findings and can start verifying them (A2). The service stores nothing itself then.
+func TestSubmitReviewHandsItsEventsToTheAdvanceHook(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	makeReviewStream(t, h)
+	var handed []change.Event
+	refs := fakeReviewRefs{}
+	svc, err := agenttools.New(agenttools.Config{
+		Events: h.events, Index: h.index, Blobs: h.blobs, Clock: h.clock, IDs: h.ids, Asker: h.asker,
+		ReviewRefs: refs, ReviewValidator: semanticReviewValidator{refs: refs},
+		Advance: func(_ context.Context, _ id.ChangeID, evs []change.Event) error {
+			handed = append(handed, evs...)
+			return nil
+		},
+	})
+	require.NoError(t, err)
+	assign := agenttools.Assignment{
+		ChangeID: testChangeID, TaskID: testTaskID, Agent: testAgent, Role: workflow.RoleReviewer,
+		Deadline: t0.Add(30 * time.Minute),
+		Task: workflow.TaskEnvelope{
+			Change: workflow.ChangeRef{ID: testChangeID, HeadSHA: testHeadSHA},
+			Inputs: workflow.Inputs{FilesChanged: []string{"internal/refunds/refunds.go"}},
+		},
+	}
+
+	receipt, err := svc.SubmitReview(context.Background(), assign, validReview(), false)
+	require.NoError(t, err)
+	require.True(t, receipt.Accepted)
+
+	require.Len(t, handed, 2)
+	require.Equal(t, change.EventFindingFiled, handed[0].Type)
+	require.Equal(t, change.EventReviewSubmitted, handed[1].Type)
+	stored, err := h.events.Load(context.Background(), testChangeID)
+	require.NoError(t, err)
+	require.Len(t, stored, 10, "the service wrote nothing itself; the hook stores the events")
 }

@@ -62,6 +62,7 @@ type JobInput struct {
 	Archive  io.Reader
 	Overlays []ports.File
 	Dir      string // repository-relative directory the acceptance command's {dir} names
+	Check    string // a fixed static check (ports.CheckGoVet); empty for a test job
 	Timeout  time.Duration
 }
 
@@ -313,7 +314,7 @@ func (r *Runner) runJob(ctx context.Context, in JobInput) ([]byte, error) {
 	if err := os.MkdirAll(moduleCache, 0o750); err != nil {
 		return nil, fmt.Errorf("prepare read-only module cache mount: %w", err)
 	}
-	args, err := policy.ContainerArgsWithOverlays(in.Profile, archivePath, overlayDir, moduleCache, in.Dir, int(in.Timeout.Seconds()))
+	args, err := containerArgsFor(policy, in, archivePath, overlayDir, moduleCache)
 	if err != nil {
 		return nil, err
 	}
@@ -453,4 +454,13 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 		return n, err
 	}
 	return written, nil
+}
+
+// containerArgsFor returns the Podman arguments of one job: the fixed static check when the job names one, the test
+// command otherwise.
+func containerArgsFor(policy Policy, in JobInput, archivePath, overlayDir, moduleCache string) ([]string, error) {
+	if in.Check != "" {
+		return policy.ContainerArgsCheck(in.Check, archivePath, moduleCache, int(in.Timeout.Seconds()))
+	}
+	return policy.ContainerArgsWithOverlays(in.Profile, archivePath, overlayDir, moduleCache, in.Dir, int(in.Timeout.Seconds()))
 }

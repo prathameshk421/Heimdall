@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/profileyaml"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 var digestImage = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$`)
@@ -59,7 +60,38 @@ func (p Policy) WithProfile(name string, spec RepoProfile) (Policy, error) {
 	return Policy{Images: p.Images, Profiles: profiles, ModuleCache: p.ModuleCache}, nil
 }
 
+// checkMarker ends the output of a static check; the exit status of the tool follows it.
+const checkMarker = "heimdall-check-exit="
+
+// ContainerArgsCheck returns the Podman arguments for one fixed static check on the built-in Go profile. The command
+// is chosen by the runner from the check name, never from the request.
+func (p Policy) ContainerArgsCheck(check, sourceArchive, moduleCache string, timeoutSeconds int) ([]string, error) {
+	command, ok := checkCommand(check)
+	if !ok {
+		return nil, ErrUnknownCheck
+	}
+	if moduleCache == "" {
+		moduleCache = p.moduleCache()
+	}
+	if err := absoluteCleanPath(moduleCache); err != nil {
+		return nil, fmt.Errorf("module cache path: %w", err)
+	}
+	return p.containerArgsWith("go", sourceArchive, "", moduleCache, "", timeoutSeconds, command)
+}
+
+// checkCommand maps a check name to its fixed shell command. It prints the tool's exit status after checkMarker.
+func checkCommand(check string) (string, bool) {
+	if check == ports.CheckGoVet {
+		return "go vet ./... 2>&1; echo " + checkMarker + "$?", true
+	}
+	return "", false
+}
+
 func (p Policy) containerArgs(profile, sourceArchive, overlayDir, moduleCache, dir string, timeoutSeconds int) ([]string, error) {
+	return p.containerArgsWith(profile, sourceArchive, overlayDir, moduleCache, dir, timeoutSeconds, "")
+}
+
+func (p Policy) containerArgsWith(profile, sourceArchive, overlayDir, moduleCache, dir string, timeoutSeconds int, commandOverride string) ([]string, error) {
 	image, ok := p.Images[profile]
 	testCommand := "go test -json -count=1 ./..."
 	if approved, exists := p.Profiles[profile]; exists {
@@ -73,6 +105,9 @@ func (p Policy) containerArgs(profile, sourceArchive, overlayDir, moduleCache, d
 			return nil, err
 		}
 		testCommand = strings.ReplaceAll(approved.Acceptance, "{dir}", "./"+rel)
+	}
+	if commandOverride != "" {
+		testCommand = commandOverride
 	}
 	if !ok || !digestImage.MatchString(image) {
 		return nil, ErrImageNotAllowed

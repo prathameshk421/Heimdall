@@ -18,9 +18,11 @@ func TestE2IsConfirmedOnlyByAFailureAtTheNamedLocation(t *testing.T) {
 	require.Equal(t, finding.TierE4, verify.TierForE2(verify.StatusError, true), "a check that errors is not a failure")
 }
 
-// A push resolves an E2 finding only when the same check passes after the fix.
-func TestE2IsResolvedOnlyByAPassAfterTheFix(t *testing.T) {
-	require.True(t, verify.ResolvedE2(verify.StatusPass))
-	require.False(t, verify.ResolvedE2(verify.StatusFail))
-	require.False(t, verify.ResolvedE2(verify.StatusError))
+// A push resolves an E2 finding when the diagnostic at its location is gone: the check passes, or it fails somewhere
+// else. A check that errors tells nothing, and a diagnostic still at the location keeps the finding open.
+func TestE2IsResolvedWhenTheDiagnosticAtItsLocationIsGone(t *testing.T) {
+	require.True(t, verify.ResolvedE2(verify.StatusPass, false))
+	require.True(t, verify.ResolvedE2(verify.StatusFail, false), "vet fails elsewhere, the located problem is fixed")
+	require.False(t, verify.ResolvedE2(verify.StatusFail, true), "the diagnostic is still there")
+	require.False(t, verify.ResolvedE2(verify.StatusError, false), "an errored check proves nothing")
 }

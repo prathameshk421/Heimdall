@@ -156,3 +156,73 @@ func TestEffectKindVerifyEvidence(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(string(key), "verify_evidence:PAY-142:1:"))
 }
+
+func checkPayload() change.VerifyEvidencePayload {
+	p := validVerifyEvidencePayload()
+	p.TestPath, p.TestSource, p.TestName = "", "", ""
+	p.Check = &change.VerifyCheck{Name: change.CheckGoVet, File: "internal/pay/refund.go", Lines: [2]int{10, 12}}
+	return p
+}
+
+// A check verification (E2) names a known check and a location, and carries no repro test.
+func TestVerifyEvidencePayloadCheckMode(t *testing.T) {
+	require.NoError(t, checkPayload().Validate())
+
+	cases := map[string]func(*change.VerifyEvidencePayload){
+		"an unknown check":       func(p *change.VerifyEvidencePayload) { p.Check.Name = "rm -rf" },
+		"a path that escapes":    func(p *change.VerifyEvidencePayload) { p.Check.File = "../x.go" },
+		"lines out of order":     func(p *change.VerifyEvidencePayload) { p.Check.Lines = [2]int{12, 10} },
+		"a zero first line":      func(p *change.VerifyEvidencePayload) { p.Check.Lines = [2]int{0, 3} },
+		"a repro test alongside": func(p *change.VerifyEvidencePayload) { p.TestName = "TestRepro" },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			p := checkPayload()
+			mutate(&p)
+			require.Error(t, p.Validate())
+		})
+	}
+}
+
+// A finding event carries the evidence the sandbox repeats; a malformed one is refused.
+func TestFindingRecordProofs(t *testing.T) {
+	rec := change.FindingRecord{
+		FindingID: id.FindingID("fnd_01HZX3K9QW7M2P5R8T0V4YB6CD"), Ref: id.FindingRef(1), Tier: finding.TierE2, Severity: finding.SeverityHigh,
+		State: finding.StateOpen, By: "bob-reviewer",
+		ToolResult: &finding.ToolResult{Tool: "go vet", Location: finding.Location{File: "internal/pay/refund.go", Lines: [2]int{10, 12}}},
+	}
+	require.NoError(t, rec.Validate())
+
+	bad := rec
+	bad.ToolResult = &finding.ToolResult{Tool: "go vet", Location: finding.Location{File: "/etc/passwd", Lines: [2]int{1, 1}}}
+	require.Error(t, bad.Validate())
+	bad.ToolResult = &finding.ToolResult{Tool: "go vet", Location: finding.Location{File: "a.go", Lines: [2]int{5, 2}}}
+	require.Error(t, bad.Validate())
+
+	rec.ToolResult = nil
+	rec.ReproTest = &finding.ReproTest{Path: "tests/heimdall/repro_test.go", Name: "TestRepro", Content: "package x"}
+	require.NoError(t, rec.Validate())
+	rec.ReproTest.Path = "../x_test.go"
+	require.Error(t, rec.Validate())
+}
+
+// A memory verification (E3) names a reference and the agent whose scopes the re-query uses, and carries no repro
+// test or check.
+func TestVerifyEvidencePayloadMemoryMode(t *testing.T) {
+	p := validVerifyEvidencePayload()
+	p.TestPath, p.TestSource, p.TestName = "", "", ""
+	p.Memory = &change.VerifyMemory{Ref: "decision:refund-limit", Agent: "bob-reviewer"}
+	require.NoError(t, p.Validate())
+
+	both := p
+	both.Check = &change.VerifyCheck{Name: change.CheckGoVet, File: "a.go", Lines: [2]int{1, 1}}
+	require.Error(t, both.Validate(), "a check and a memory re-query together are refused")
+
+	noRef := p
+	noRef.Memory = &change.VerifyMemory{Agent: "bob-reviewer"}
+	require.Error(t, noRef.Validate())
+
+	withTest := p
+	withTest.TestName = "TestX"
+	require.Error(t, withTest.Validate())
+}

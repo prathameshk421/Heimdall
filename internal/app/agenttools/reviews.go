@@ -42,7 +42,24 @@ func (s *Service) buildFindingFiledEvent(
 		Fingerprint: findingFingerprint(vf.input),
 		Confidence:  vf.input.Confidence,
 	}
+	payload.ReproTest, payload.ToolResult, payload.MemoryRef = proofsOf(vf)
 	return s.buildEventWithID(eid, a.ChangeID, version, change.EventFindingFiled, a.Agent, corr, causation, payload, nil)
+}
+
+// proofsOf returns the evidence the server repeats to verify the finding's claimed tier: the repro test of an E1
+// finding, the tool result of an E2 finding, the memory reference of an E3 finding. An E4 finding carries none.
+func proofsOf(vf validFinding) (*finding.ReproTest, *finding.ToolResult, *string) {
+	for _, e := range vf.input.Evidence {
+		switch {
+		case vf.tier == finding.TierE1 && e.Type == finding.EvidenceReproTest && e.ReproTest != nil:
+			return e.ReproTest, nil, nil
+		case vf.tier == finding.TierE2 && e.Type == finding.EvidenceToolResult && e.ToolResult != nil:
+			return nil, e.ToolResult, nil
+		case vf.tier == finding.TierE3 && e.Type == finding.EvidenceMemory && e.MemoryRef != nil:
+			return nil, nil, e.MemoryRef
+		}
+	}
+	return nil, nil, nil
 }
 
 func findingFingerprint(input finding.Input) string {
@@ -118,7 +135,7 @@ func (s *Service) SubmitReview(ctx context.Context, a Assignment, r finding.Revi
 		return Receipt{Accepted: false, FindingErrors: findingErrors}, nil
 	}
 
-	err = s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
+	err = s.appendEventsWith(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
 		if err := checkTaskAgent(existing, a); err != nil {
 			return nil, err
 		}
@@ -126,7 +143,7 @@ func (s *Service) SubmitReview(ctx context.Context, a Assignment, r finding.Revi
 			return nil, nil
 		}
 		return s.buildReviewEvents(a, existing, valids)
-	})
+	}, s.advance)
 	if err != nil {
 		return Receipt{}, err
 	}
