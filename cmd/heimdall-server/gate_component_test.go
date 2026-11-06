@@ -432,6 +432,11 @@ provider = "jira"
 [chat]
 bridge = "switch"
 
+[agents]
+test_author = "test-author"
+reviewers = ["reviewer-1", "reviewer-2"]
+resolver = "resolver"
+
 [[projects]]
 tracker_project = "PAY"
 repo = %q

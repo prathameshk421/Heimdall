@@ -120,12 +120,13 @@ func (f *fakeJira) searchCount() int {
 	return f.searches
 }
 
-// fakeSwitch serves the two Switch operations the room needs: list_rooms and create_room.
+// fakeSwitch serves the Switch operations the slice needs: list_rooms, create_room and message.
 type fakeSwitch struct {
 	srv         *httptest.Server
 	mu          sync.Mutex
 	rooms       []map[string]any
 	createCalls []string
+	postCalls   []string
 	badAuth     int
 }
 
@@ -150,6 +151,12 @@ func (f *fakeSwitch) serve(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&args)
 	}
 	switch r.URL.Path {
+	case "/agents/" + acceptanceAgentID + "/message":
+		body, _ := args["body"].(string)
+		f.mu.Lock()
+		f.postCalls = append(f.postCalls, body)
+		f.mu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	case "/agents/" + acceptanceAgentID + "/ops/list_rooms":
 		f.mu.Lock()
 		out := append([]map[string]any{}, f.rooms...)
@@ -171,6 +178,13 @@ func (f *fakeSwitch) createCallTitles() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string{}, f.createCalls...)
+}
+
+// postCounts returns the bodies of the messages posted to any room.
+func (f *fakeSwitch) postBodies() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string{}, f.postCalls...)
 }
 
 // refCall is one create-ref request the fake GitHub received.
@@ -277,6 +291,10 @@ func writeAcceptanceSecrets(t *testing.T) string {
 		"github_app_installation_id": acceptanceInstall,
 		"switch_api_key":             acceptanceAPIKey,
 		"switch_registration_token":  "reg-token-value",
+		"agent_token_test-author":    "agent-token-author-value",
+		"agent_token_reviewer-1":     "agent-token-reviewer-1-value",
+		"agent_token_reviewer-2":     "agent-token-reviewer-2-value",
+		"agent_token_resolver":       "agent-token-resolver-value",
 	}
 	for name, value := range files {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(value+"\n"), 0o600))
@@ -321,6 +339,11 @@ provider = "jira"
 
 [chat]
 bridge = "switch"
+
+[agents]
+test_author = "test-author"
+reviewers = ["reviewer-1", "reviewer-2"]
+resolver = "resolver"
 
 [[projects]]
 tracker_project = "KAN"

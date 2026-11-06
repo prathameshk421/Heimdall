@@ -132,11 +132,15 @@ func TestSliceOpensOneRoomAndOneBranchAcrossARestart(t *testing.T) {
 	stop := s.startSlice()
 	require.Eventually(t, func() bool {
 		return s.eventCount(acceptanceChange, change.EventRoomOpened) == 1 &&
-			s.eventCount(acceptanceChange, change.EventBranchEnsured) == 1
-	}, acceptanceWaitFor, acceptancePollTick, "the room and the branch must be recorded")
+			s.eventCount(acceptanceChange, change.EventBranchEnsured) == 1 &&
+			s.eventCount(acceptanceChange, change.EventTaskAssigned) == 1
+	}, acceptanceWaitFor, acceptancePollTick, "the room, the branch and the test-author task must be recorded")
 
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventChangeTriggered), "one change.triggered")
-	require.Equal(t, change.StateRoomOpen, s.stateOf(acceptanceChange))
+	require.Equal(t, change.StateWritingTests, s.stateOf(acceptanceChange))
+	posts := sw.postBodies()
+	require.Len(t, posts, 1, "one room message: the test-author assignment")
+	require.Contains(t, posts[0], "@test-author")
 	require.Equal(t, []string{acceptanceTitle}, sw.createCallTitles(), "Switch saw one open-room call for KAN-1")
 	require.Zero(t, sw.badAuth, "every Switch call carried the API key")
 	refs := gh.refCalls()
@@ -165,7 +169,9 @@ func TestSliceOpensOneRoomAndOneBranchAcrossARestart(t *testing.T) {
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventChangeTriggered), "a restart does not trigger again")
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventRoomOpened), "a restart does not open another room")
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventBranchEnsured), "a restart does not make another branch")
-	require.Equal(t, change.StateRoomOpen, s.stateOf(acceptanceChange))
+	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventTaskAssigned), "a restart does not assign the task again")
+	require.Equal(t, change.StateWritingTests, s.stateOf(acceptanceChange))
+	require.Len(t, sw.postBodies(), 1, "still one room message after the restart")
 	require.Equal(t, []string{acceptanceTitle}, sw.createCallTitles(), "still one open-room call after the restart")
 	require.Len(t, gh.refCalls(), 1, "still one create-ref call after the restart")
 }

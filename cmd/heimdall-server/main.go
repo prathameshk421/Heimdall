@@ -56,18 +56,8 @@ func run(
 	}
 	if a != nil {
 		defer a.close()
-		if a.mcpHandler != nil || a.agentSetupHandler != nil {
-			mux := http.NewServeMux()
-			mux.Handle("/", handler)
-			if a.mcpHandler != nil {
-				mux.Handle("/mcp", a.mcpHandler)
-			}
-			if a.agentSetupHandler != nil {
-				mux.Handle("/admin/agents/", a.agentSetupHandler)
-			}
-			handler = mux
-		}
 	}
+	handler = mountHTTP(handler, a)
 	ln, err := listen(ctx, "tcp", cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", cfg.Listen, err)
@@ -112,4 +102,19 @@ func main() {
 		logger.ErrorContext(context.Background(), "heimdall-server did not run", "error", err)
 		os.Exit(1)
 	}
+}
+
+// mountHTTP returns the root HTTP handler. Exact paths are routed: /mcp only when the app built an MCP handler,
+// /admin/agents/ only when agent setup is wired, and everything else goes to the router (/healthz among them).
+// An exact-path mux keeps /mcp a 404 (not a subtree match) when no slice is selected.
+func mountHTTP(router http.Handler, a *app) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", router)
+	if a != nil && a.mcpHandler != nil {
+		mux.Handle("/mcp", a.mcpHandler)
+	}
+	if a != nil && a.agentSetupHandler != nil {
+		mux.Handle("/admin/agents/", a.agentSetupHandler)
+	}
+	return mux
 }

@@ -303,6 +303,12 @@ func missingConfigKeys(cfg config.Config) []string {
 	add("github.app_id_secret", cfg.GitHub.AppIDSecret)
 	add("github.installation_id_secret", cfg.GitHub.InstallationIDSecret)
 	add("github.private_key_secret", cfg.GitHub.PrivateKeySecret)
+	// The MCP edge authenticates each agent; without [agents] it refuses every token, so the slice needs it.
+	add("agents.test_author", cfg.Agents.TestAuthor)
+	if len(cfg.Agents.Reviewers) == 0 {
+		missing = append(missing, "agents.reviewers")
+	}
+	add("agents.resolver", cfg.Agents.Resolver)
 	return missing
 }
 

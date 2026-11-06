@@ -32,10 +32,14 @@ var defaultSecretNames = map[string]string{
 }
 
 const (
-	jiraTokenCanary  = "jira-token-CANARY-9f3"
-	switchKeyCanary  = "switch-key-CANARY-4a1"
-	switchRegCanary  = "switch-registration-CANARY-2c7"
-	badDatabaseValue = "not-a-postgres-url-CANARY-5d2"
+	jiraTokenCanary     = "jira-token-CANARY-9f3"
+	switchKeyCanary     = "switch-key-CANARY-4a1"
+	switchRegCanary     = "switch-registration-CANARY-2c7"
+	badDatabaseValue    = "not-a-postgres-url-CANARY-5d2"
+	agentAuthorToken    = "agent-author-CANARY-7e1"
+	agentReviewer1Token = "agent-reviewer1-CANARY-8f2"
+	agentReviewer2Token = "agent-reviewer2-CANARY-9a3"
+	agentResolverToken  = "agent-resolver-CANARY-2b4"
 )
 
 // writeLiveSecrets writes one file per credential and returns their directory. The private key is a real
@@ -55,11 +59,19 @@ func writeLiveSecrets(t *testing.T, names map[string]string) string {
 		"github_app_private_key":     string(keyPEM),
 		"switch_api_key":             switchKeyCanary,
 		"switch_registration_token":  switchRegCanary,
+		"agent_token_test-author":    agentAuthorToken,
+		"agent_token_reviewer-1":     agentReviewer1Token,
+		"agent_token_reviewer-2":     agentReviewer2Token,
+		"agent_token_resolver":       agentResolverToken,
 	}
 	for role, name := range names {
 		value, ok := values[role]
 		require.True(t, ok, "unknown secret role %q", role)
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(value+"\n"), 0o600))
+	}
+	// Agent tokens are always needed by the MCP edge; their file names are fixed by the agents below.
+	for _, name := range []string{"agent_token_test-author", "agent_token_reviewer-1", "agent_token_reviewer-2", "agent_token_resolver"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(values[name]+"\n"), 0o600))
 	}
 	return dir
 }
@@ -100,6 +112,11 @@ provider = "jira"
 
 [chat]
 bridge = "switch"
+
+[agents]
+test_author = "test-author"
+reviewers = ["reviewer-1", "reviewer-2"]
+resolver = "resolver"
 
 [[projects]]
 tracker_project = "KAN"
@@ -146,6 +163,7 @@ func TestProductionDepsNamesEveryMissingKey(t *testing.T) {
 		"switch.base_url", "switch.agent_id", "switch.agent_name", "switch.bridge_id",
 		"switch.api_key_secret", "switch.registration_token_secret",
 		"github.app_id_secret", "github.installation_id_secret", "github.private_key_secret",
+		"agents.test_author", "agents.reviewers", "agents.resolver",
 	} {
 		require.ErrorContains(t, err, key)
 	}
