@@ -79,6 +79,17 @@ func TestResolveSaysAgentWhenSenderIsAnAgentName(t *testing.T) {
 	require.Empty(t, ident.Roles, "an agent holds no person role")
 }
 
+func TestHumanForAgentMapsReviewerAgentToItsPerson(t *testing.T) {
+	d := newDir(t)
+	owner, ok := any(d).(interface{ HumanForAgent(string) (string, bool) })
+	require.True(t, ok, "the directory must resolve the human responsible for a reviewer agent")
+	name, found := owner.HumanForAgent("ana-reviewer")
+	require.True(t, found)
+	require.Equal(t, "ana", name)
+	_, found = owner.HumanForAgent("not-mapped")
+	require.False(t, found)
+}
+
 func TestResolveRefusesUnknownChannelAndGitHubLogin(t *testing.T) {
 	d := newDir(t)
 	_, err := d.Resolve(Channel("sms"), "dana")
