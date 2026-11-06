@@ -101,7 +101,7 @@ Rules for keeping it effective:
 4. **The linter is tested.** `make lint-selftest` lints `testdata/lint/bad/<rule>.go` fixtures and fails unless every rule fires. A rule that silently stops working is worse than none.
 5. **Pinned tools.** Tools are `tool` directives in `go.mod` and run as `go tool <name>` (Go 1.24 and later), so every session and CI use the same versions with no install step. Anything that cannot be built that way is fetched by `make tools` at a pinned version and checksum.
 6. **Guardrails are not agent-editable.** Hooks, settings and the harness templates are denied to the agent. Files that define "passing" (`.golangci.yml`, `AGENTS.md`, scenarios, stories, recorded real payloads, CI workflows, the Makefile) ask the human first. A change that loosens a check says so in the commit.
-7. **One task per session and per commit.** The task row, the spec sections and `docs/PROGRESS.md` are the whole briefing. If the session needs more, the task is too big and gets split.
+7. **Focused changes, not session gates.** Keep each change focused on one concern and make commits reviewable. Work may span sessions, and an unavailable prototype or live prerequisite does not prevent independent local progress. Record outstanding acceptance checks accurately in `docs/PROGRESS.md`.
 
 Templates for all of this live in `docs/harness/` and are installed by T16 and T18 (`make harness-install`).
 

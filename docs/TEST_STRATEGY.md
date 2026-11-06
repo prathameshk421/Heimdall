@@ -2,16 +2,16 @@
 
 Status: v1.1, Nov 4, 2026 (decisions D111 to D120 in `BRAINSTORM_BACKLOG.md` Part 13, amended by Part 16). Applies to every task in `IMPLEMENTATION_PLAN.md`. `STAGE_1_FIXES.md` runs before the first task and has its own checks.
 
-**Who builds this.** Claude Code builds Heimdall incrementally over many sessions, one task at a time. A model that loses context between sessions and tends to believe its own work needs two things from the process: tests that remember what the code must do, and checks it cannot talk itself out of. This document makes both mandatory.
+**Who builds this.** Coding agents build Heimdall incrementally. Tests remember what the code must do, and checks protect those expectations. Work may span sessions; unavailable external prerequisites should be recorded and must not stop independent local progress.
 
-**The rule that matters most: a task is done only when it passes against the real systems, with the evidence written down.** Test doubles exist to make regression runs fast, free and repeatable. They never replace the real check, and every double is itself checked against reality.
+**The rule that matters most: report exactly what passed and what remains unverified.** Test doubles exist to make regression runs fast, free and repeatable. They do not replace a real check required by acceptance criteria, and every double is itself checked against reality. When required real evidence is unavailable, keep that acceptance item open and continue work that does not depend on it.
 
-**Product first.** The layers below prove each part works. `MVP_SCENARIOS.md` proves the parts add up to the prototype: nine scenarios (P1 to P9) driven from the outside, one progress board (`make prototype`), product-quality checks on every transcript, usefulness tests (context ablation, baselines, wrong-implementation kill) and the demo script as a test (`make demo-check`). Each task in the plan names the board step it turns green, and that step, not the task's own tests, is what makes it done.
+**Product first.** The layers below prove each part works. `MVP_SCENARIOS.md` proves the parts add up to the prototype: nine scenarios (P1 to P9) driven from the outside, one progress board (`make prototype`), product-quality checks on every transcript, usefulness tests (context ablation, baselines, wrong-implementation kill) and the demo script as a test (`make demo-check`). The board is an integration signal; it does not gate unrelated implementation or local tests.
 
 ## 1. Principles
 
 1. **Red first.** Every behaviour starts as a failing test that fails for the right reason (an assertion, not a compile error or a missing file). The failure output is read before any code is written.
-2. **Real first.** A feature is not done until it has run on the real stack it touches: real Postgres, real Docker runner, real GitHub App, real Jira (`KAN`), real Switch and Mattermost, real agents. Fakes are test doubles and are never product adapters (this keeps the team's "everything real" rule; see D112).
+2. **Real evidence.** Fakes are test doubles and are never product adapters (D112). Run the real stack check when its prerequisites are available and required by the task's acceptance criteria. If unavailable, record `not verified` and the reason; do not present fake results as live evidence or let the blocker stop independent work.
 3. **Cheap layers first, expensive layers last.** Most bugs die in layers that cost nothing. Language-model calls happen only in the layers that need them, with a hard budget.
 4. **Doubles are recorded from reality.** Fixtures come from real traffic (scrubbed), and a drift check compares them with the live systems. A double that nobody checks is a lie.
 5. **Evidence, not claims.** Done means a command, its exit status, and the key lines of its output are recorded in the tracker. "Should work" and "not run" are written as such.
@@ -81,19 +81,19 @@ The key's limit is $4 and the testing cap is **$3**; the rest is held for the de
 
 ## 5. The per-task loop
 
-For every task in the plan:
+For each task, choose checks that match its acceptance criteria and the available environment:
 
-0. **Board before and after.** Run `make prototype ONLY=<scenario>` for the step this task owns (`MVP_SCENARIOS.md` section 7) and keep the red line. The same line must turn green at step 7, or move to a later, named failure.
+0. **Board when useful.** Use `make prototype ONLY=<scenario>` to inspect the step this task affects (`MVP_SCENARIOS.md` section 7). Record blocked prerequisites; a blocked or unavailable board does not prevent independent local work.
 1. **Read** the task, its spec sections and the decisions it cites. Write or update the package's LLD note (`doc.go`): purpose, API, invariants, failure modes, test list.
 2. **Red.** Write the tests from the "Done when" column and the matrix below. Run them. Confirm each fails for the right reason. Keep the output.
-3. **Green.** Implement the smallest change that passes. Keep `make fast` green throughout.
+3. **Green.** Implement the smallest change that passes. Keep `make fast` green when the baseline allows; if unrelated failures block it, record them and run focused checks for the change.
 4. **Refactor** against `CODING_STANDARDS.md`.
-5. **Verify.** `make verify`, then the real check for the task (`make e2e T=<id>`, with L5 when LLM-facing).
+5. **Verify.** Run `make verify`, then the real check for the task (`make e2e T=<id>`, with L5 when LLM-facing) when its prerequisites are available. Record unrun checks as `not verified`; keep acceptance criteria requiring them open.
 6. **Adversarial pass.** Try to break it: invalid input, replay, two things at once, a dependency down, wrong person, stale SHA, oversized input. Each break that matters becomes a test. At gates, a separate reviewer (a fresh session or subagent) does this pass, because the author is the worst person to find their own gaps.
 7. **Record.** In the tracker note: the commands run, exit status, key output lines, live cost, and anything **not** verified. Update `docs/PROGRESS.md` (state, next task, how to resume, failing tests, spend, open questions).
 8. **Commit** as `T##: <what>`. The pre-commit hook runs `make fast`.
 
-**Definition of done (all must hold):** the owned board step turned green (or is `blocked` with a named prerequisite and written "not verified"), red test seen failing, green after, `make verify` passes, the real check passed with evidence recorded, nothing marked skipped, spend within budget, standards met, progress file updated.
+**Completion and status:** required local checks must pass before claiming local implementation is complete. Acceptance criteria that require real-system evidence remain open until that evidence is recorded. The scenario board is integration evidence, not a prerequisite for independent work. Never skip or weaken a check to claim completion; write unavailable evidence as `not verified`, explain why, update progress, and continue unblocked work.
 
 ## 6. Test data and environments
 
