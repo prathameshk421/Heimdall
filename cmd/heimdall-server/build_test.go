@@ -97,7 +97,7 @@ bridge = "switch"
 	_, err := build(context.Background(), cfg, testDeps())
 	require.ErrorContains(t, err, "tracker.provider")
 	require.ErrorContains(t, err, `"linear"`)
-	require.ErrorContains(t, err, "valid names are jira")
+	require.ErrorContains(t, err, "valid names are file, jira")
 }
 
 func TestBuildRefusesMoreThanOneTrackerProject(t *testing.T) {
@@ -145,7 +145,7 @@ func TestProductionDepsNamesTheConfigKeysItLacks(t *testing.T) {
 	cfg := loadTestConfig(t, trackerProjectBody)
 	_, err := productionDeps(cfg, discardLogger())
 	require.ErrorContains(t, err, "database.url_secret")
-	require.ErrorContains(t, err, "jira.base_url")
+	require.ErrorContains(t, err, "tracker.provider")
 	require.ErrorContains(t, err, "switch.agent_id")
 	require.ErrorContains(t, err, "heimdall.toml")
 }

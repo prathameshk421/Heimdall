@@ -62,8 +62,6 @@ const (
 	blobStoreRoot = ".heimdall/blobs"
 	// githubAPIRoot is the production GitHub API, which is not site-specific and so needs no config key.
 	githubAPIRoot = "https://api.github.com"
-	// cursorSourcePrefix names the Jira poll cursor: one source per tracker project.
-	cursorSourcePrefix = "jira:"
 )
 
 // deps is what build needs that differs between production and a test: the database, the adapter endpoints, the HTTP
@@ -282,12 +280,20 @@ func missingConfigKeys(cfg config.Config) []string {
 		}
 	}
 	add("database.url_secret", cfg.Database.URLSecret)
-	add("jira.base_url", cfg.Jira.BaseURL)
-	if len(cfg.Jira.ProjectKeys) == 0 {
-		missing = append(missing, "jira.project_keys")
+	tracker, _ := cfg.Selection("tracker")
+	switch tracker {
+	case "jira":
+		add("jira.base_url", cfg.Jira.BaseURL)
+		if len(cfg.Jira.ProjectKeys) == 0 {
+			missing = append(missing, "jira.project_keys")
+		}
+		add("jira.email_secret", cfg.Jira.EmailSecret)
+		add("jira.api_token_secret", cfg.Jira.APITokenSecret)
+	case "file":
+		add("tracker.path", cfg.TrackerPath)
+	default:
+		missing = append(missing, "tracker.provider")
 	}
-	add("jira.email_secret", cfg.Jira.EmailSecret)
-	add("jira.api_token_secret", cfg.Jira.APITokenSecret)
 	add("switch.base_url", cfg.Switch.BaseURL)
 	add("switch.agent_id", cfg.Switch.AgentID)
 	add("switch.agent_name", cfg.Switch.AgentName)
@@ -304,6 +310,13 @@ func missingConfigKeys(cfg config.Config) []string {
 // poller uses one cursor source and one repository mapping, so a mismatch or a second key would poll a project it
 // cannot start.
 func checkProjectSelection(cfg config.Config) error {
+	tracker, _ := cfg.Selection("tracker")
+	if tracker != "jira" {
+		if tracker == "file" && len(cfg.Projects) != 1 {
+			return fmt.Errorf("projects: the slice polls one tracker project, but heimdall.toml maps %d", len(cfg.Projects))
+		}
+		return nil
+	}
 	if len(cfg.Jira.ProjectKeys) != 1 {
 		return fmt.Errorf("jira.project_keys: the slice polls one tracker project, but heimdall.toml lists %d", len(cfg.Jira.ProjectKeys))
 	}
@@ -321,10 +334,11 @@ func checkProjectSelection(cfg config.Config) error {
 // value in the message. The adapters read the same files again when they are built.
 func checkAdapterSecrets(cfg config.Config) error {
 	single := []struct{ field, name string }{
-		{"jira.email_secret", cfg.Jira.EmailSecret},
-		{"jira.api_token_secret", cfg.Jira.APITokenSecret},
 		{"switch.api_key_secret", cfg.Switch.APIKeySecret},
 		{"switch.registration_token_secret", cfg.Switch.RegistrationTokenSecret},
+	}
+	if tracker, _ := cfg.Selection("tracker"); tracker == "jira" {
+		single = append(single, struct{ field, name string }{"jira.email_secret", cfg.Jira.EmailSecret}, struct{ field, name string }{"jira.api_token_secret", cfg.Jira.APITokenSecret})
 	}
 	for _, s := range single {
 		if _, err := cfg.Secret(s.name); err != nil {
@@ -385,7 +399,7 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 		return nil, err
 	}
 	clk := clock.System{}
-	ad, err := selectAdapters(cfg, d, clk)
+	ad, err := selectAdapters(cfg, d)
 	if err != nil {
 		return nil, err
 	}
@@ -457,7 +471,7 @@ func assembleWithBlobs(
 	p, err := trigger.New(trigger.Config{
 		Tickets:  ad.tickets,
 		Starter:  starter{eng: eng},
-		Cursors:  cursorStore{table: store, source: cursorSourcePrefix + ad.project},
+		Cursors:  cursorStore{table: store, source: ad.trackerProvider + ":" + ad.project},
 		Projects: ad.projects,
 		Blobs:    blobs,
 		Clock:    clk,

@@ -303,6 +303,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	committedEvents, err := store.Load(ctx, cid)
 	require.NoError(t, err)
 	require.Equal(t, 1, eventTypeCount(committedEvents, change.EventTestsCommitted))
+	assertTestsCommittedPin(t, committedEvents)
 
 	// Jira's test branch now has a commit. CI first reports the expected red test suite, then a passing run after the
 	// product fix. Replaying the same completed run appends no duplicate CI event.
@@ -331,6 +332,20 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	finalEvents, err := store.Load(ctx, cid)
 	require.NoError(t, err)
 	require.Equal(t, 2, eventTypeCount(finalEvents, change.EventCIReported), "failure and pass are each recorded once")
+}
+
+func assertTestsCommittedPin(t *testing.T, events []change.Event) {
+	t.Helper()
+	for _, event := range events {
+		if event.Type != change.EventTestsCommitted {
+			continue
+		}
+		payload, err := change.Decode(event)
+		require.NoError(t, err)
+		committed := payload.(change.TestsCommitted)
+		require.Equal(t, acceptanceCommitSHA, committed.SHA)
+		require.Equal(t, acceptanceTestTreeHash, committed.TreeHash, "the committed test suite is pinned to its tree hash")
+	}
 }
 
 type componentMCPResult struct {
@@ -372,6 +387,7 @@ func callComponentMCPTool(t *testing.T, server *httptest.Server, token string, r
 }
 
 const acceptanceCommitSHA = id.SHA("abcdef0123456789abcdef0123456789abcdef01")
+const acceptanceTestTreeHash = id.SHA("0123456789abcdef0123456789abcdef01234567")
 
 func eventTypeCount(events []change.Event, typ change.EventType) int {
 	count := 0
@@ -390,7 +406,7 @@ func (jiraJourneySource) Fetch(context.Context, change.Repo, id.SHA) error { ret
 type jiraJourneyCode struct{}
 
 func (jiraJourneyCode) TreeHash(context.Context, change.Repo, id.SHA, string) (id.SHA, error) {
-	return id.SHA("0123456789abcdef0123456789abcdef01234567"), nil
+	return acceptanceTestTreeHash, nil
 }
 func (jiraJourneyCode) ReadFile(context.Context, change.Repo, id.SHA, string) ([]byte, error) {
 	return nil, ports.ErrNotFound

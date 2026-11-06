@@ -299,6 +299,21 @@ func TestTriggersOnceForAValidChange(t *testing.T) {
 	require.Equal(t, []ports.Cursor{"c1"}, r.cursors.savedCursors())
 }
 
+func TestTriggersFileTicketAndMarksItsSource(t *testing.T) {
+	r := newRig(t)
+	r.tickets.changes = []ports.TicketChange{{Key: "KAN-1", ChangelogID: "content-hash", Fields: []string{"file"}, At: now}}
+	r.tickets.next = "c1"
+	r.tickets.tickets["KAN-1"] = ticket("KAN-1", statusInPrg, ana)
+
+	res := r.poll(t)
+
+	require.Equal(t, 1, res.Triggered)
+	ev := r.starter.stream("KAN-1")[0]
+	payload := mustTriggered(t, ev)
+	require.Equal(t, change.TriggerFile, payload.Source)
+	require.Equal(t, change.Actor{Kind: change.ActorSystem, ID: "file"}, ev.Actor)
+}
+
 func TestTriggeredCriteriaAreContentAddressedAndReplayable(t *testing.T) {
 	r := newRig(t)
 	text := "Refunds are idempotent"

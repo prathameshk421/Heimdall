@@ -15,6 +15,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	testpg "github.com/prathameshk421/flip_the_switch_hackathon/internal/testkit/postgres"
 )
@@ -167,4 +168,59 @@ func TestSliceOpensOneRoomAndOneBranchAcrossARestart(t *testing.T) {
 	require.Equal(t, change.StateRoomOpen, s.stateOf(acceptanceChange))
 	require.Equal(t, []string{acceptanceTitle}, sw.createCallTitles(), "still one open-room call after the restart")
 	require.Len(t, gh.refCalls(), 1, "still one create-ref call after the restart")
+}
+
+func TestFileTrackerProductionWiringReplaysThroughDurableCursor(t *testing.T) {
+	dsn := testpg.Start(t)
+	pool, err := pgxpool.New(context.Background(), dsn)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	ticketsDir, criterion := writeFileAcceptanceTicket(t)
+	sw := newFakeSwitch(t)
+	gh := newFakeGitHub(t)
+	s := &scenario{
+		t: t, dsn: dsn, cfgPath: writeFileAcceptanceConfig(t, writeAcceptanceSecrets(t), ticketsDir),
+		endpoint: endpoints{githubAPI: gh.srv.URL, switchBaseURL: sw.srv.URL, switchAgentID: acceptanceAgentID,
+			switchAgentName: acceptanceAgentName, switchBridgeID: acceptanceBridgeID},
+		sw: sw, gh: gh, store: postgres.NewStore(pool),
+	}
+
+	stop := s.startSlice()
+	require.Eventually(t, func() bool {
+		return s.eventCount(acceptanceChange, change.EventRoomOpened) == 1 &&
+			s.eventCount(acceptanceChange, change.EventBranchEnsured) == 1
+	}, acceptanceWaitFor, acceptancePollTick, "the registered file tracker must start the change")
+	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventChangeTriggered))
+	events, err := s.store.Load(context.Background(), acceptanceChange)
+	require.NoError(t, err)
+	var triggered change.Triggered
+	for _, event := range events {
+		if event.Type == change.EventChangeTriggered {
+			decoded, decodeErr := change.Decode(event)
+			require.NoError(t, decodeErr)
+			triggered = decoded.(change.Triggered)
+			require.Len(t, triggered.Criteria, 1)
+			require.Equal(t, change.Actor{Kind: change.ActorSystem, ID: "file"}, event.Actor)
+			require.Equal(t, []workflow.BlobRef{triggered.Criteria[0].Ref}, event.BlobRefs)
+		}
+	}
+	require.Equal(t, change.TriggerFile, triggered.Source)
+	require.Equal(t, criterion, triggered.Criteria[0].Text)
+	require.Equal(t, "blob:sha256:"+triggered.Criteria[0].Hash, string(triggered.Criteria[0].Ref))
+	cursor, err := s.store.GetCursor(context.Background(), "file:KAN")
+	require.NoError(t, err)
+	require.NotEmpty(t, cursor)
+	stop()
+
+	stop = s.startSlice()
+	require.Eventually(t, func() bool {
+		current, cursorErr := s.store.GetCursor(context.Background(), "file:KAN")
+		return cursorErr == nil && current != cursor
+	}, acceptanceWaitFor, acceptancePollTick, "the restarted file poller must read the overlap and advance its durable cursor")
+	stop()
+	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventChangeTriggered), "replay must not append another trigger")
+	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventRoomOpened), "replay must not open another room")
+	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventBranchEnsured), "replay must not create another branch")
+	require.Len(t, sw.createCallTitles(), 1)
+	require.Len(t, gh.refCalls(), 1)
 }
