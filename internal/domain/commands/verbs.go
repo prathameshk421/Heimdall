@@ -3,27 +3,29 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"unicode/utf8"
 )
 
 // Usage lines, without the prefix. They are shown in every bad-arguments reply
 // and in the unknown-command grammar, so they are the one place the grammar lives.
 const (
-	useUphold         = "uphold <finding>"
-	useDismiss        = "dismiss <finding> <reason of at least 15 characters>"
-	useStart          = "start <ticket>"
-	useReview         = "review @a @b @c"
-	useApprove        = "approve-tests"
-	useApproveProfile = "approve-profile <proposal_id>"
-	usePromoteProfile = "promote-profile <proposal_id>"
-	useChallenge      = "challenge <finding> <evidence>"
-	useRemember       = "remember <text>"
-	useForget         = "forget <memory_ref> <reason>"
-	useSpec           = "spec-change <text>"
-	useReject         = "reject <reason>"
-	useOverride       = "override <case> <reason>"
-	useWaive          = "waive-reviewer @x <reason>"
-	useIncident       = "incident <text>"
+	useUphold           = "uphold <finding>"
+	useDismiss          = "dismiss <finding> <reason of at least 15 characters>"
+	useStart            = "start <ticket>"
+	useReview           = "review @a @b @c"
+	useApprove          = "approve-tests"
+	useApproveProfile   = "approve-profile <proposal_id>"
+	useApproveKnowledge = "approve-knowledge <knowledge_id>"
+	usePromoteProfile   = "promote-profile <proposal_id>"
+	useChallenge        = "challenge <finding> <evidence>"
+	useRemember         = "remember <text>"
+	useForget           = "forget <memory_ref> <reason>"
+	useSpec             = "spec-change <text>"
+	useReject           = "reject <reason>"
+	useOverride         = "override <case> <reason>"
+	useWaive            = "waive-reviewer @x <reason>"
+	useIncident         = "incident <text>"
 )
 
 // parseUphold takes exactly one finding.
@@ -153,6 +155,9 @@ func parseReject(p, args string) (Reject, error) {
 func parseForget(p, args string) (Forget, error) {
 	ref, reason := cutWord(args)
 	name, err := parseName(ref, "memory_ref")
+	if strings.HasPrefix(ref, "knowledge:") && profileProposalRE.MatchString(strings.TrimPrefix(ref, "knowledge:")) {
+		name, err = ref, nil
+	}
 	if err != nil {
 		return Forget{}, fail(p, useForget, err)
 	}
@@ -160,6 +165,14 @@ func parseForget(p, args string) (Forget, error) {
 		return Forget{}, fail(p, useForget, errors.New("forget needs a reason"))
 	}
 	return Forget{MemoryRef: name, Reason: reason}, nil
+}
+
+func parseApproveKnowledge(p, args string) (ApproveKnowledge, error) {
+	value, rest := cutWord(args)
+	if rest != "" || !profileProposalRE.MatchString(value) {
+		return ApproveKnowledge{}, fail(p, useApproveKnowledge, errors.New("knowledge id must be 64 lowercase hex characters"))
+	}
+	return ApproveKnowledge{Ref: "knowledge:" + value}, nil
 }
 
 // parseOverride takes a case id and a reason.

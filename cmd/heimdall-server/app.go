@@ -165,6 +165,7 @@ type app struct {
 	comments          commentPoller
 	mcpHandler        http.Handler
 	agentSetupHandler http.Handler
+	workflowMemory    *knowledge.WorkflowMemory
 	episodeWorker     interface {
 		RunOnce(context.Context, int) (int, error)
 	}
@@ -502,7 +503,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	files, episodeWorker, err := assembleKnowledgeRetention(d, ad, store, blobs, clk)
+	files, episodeWorker, workflowMemory, err := assembleKnowledgeRetention(d, ad, store, blobs, clk)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +516,7 @@ func assembleWithBlobs(
 		closer = c
 	}
 	return &app{
-		pool: pool, poller: p, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, episodeWorker: episodeWorker, blobs: closer,
+		pool: pool, poller: p, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, episodeWorker: episodeWorker, workflowMemory: workflowMemory, blobs: closer,
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil

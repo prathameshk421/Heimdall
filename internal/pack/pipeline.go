@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -77,8 +78,16 @@ type Metadata struct {
 // PublishInput contains the pack source files and owner/reviewer assignment.
 type PublishInput struct {
 	Owner, Reviewer, ReplayKey string
+	ReviewDigest               string
 	CreatedAt                  time.Time
 	Files                      map[string][]byte
+}
+
+// ReviewOutput is the safe, redacted content and digest shown to an owner before publication.
+type ReviewOutput struct {
+	Files         map[string][]byte
+	Digest        string
+	RedactedFiles []string
 }
 
 // Service publishes encrypted packs and serves them only to their assigned reviewer.
@@ -94,6 +103,77 @@ type Service struct {
 	Clock      ports.Clock
 	MaxAge     time.Duration
 	MaxBytes   int64
+}
+
+// Review redacts both passes and returns a digest that Publish can require to bind the reviewed content.
+func (s *Service) Review(owner, reviewer string, input map[string][]byte) (ReviewOutput, error) {
+	if owner == "" || reviewer == "" || len(input) == 0 || s.MaxBytes <= 0 {
+		return ReviewOutput{}, ErrInvalidPackCryptoInput
+	}
+	files, _, err := redactFiles(input)
+	if err != nil {
+		return ReviewOutput{}, err
+	}
+	if filesSize(files) > s.MaxBytes {
+		return ReviewOutput{}, ErrPackTooLarge
+	}
+	fileHashes := make(map[string]string, len(files))
+	redacted := make([]string, 0)
+	for name, content := range files {
+		h := sha256.Sum256(content)
+		fileHashes[name] = hex.EncodeToString(h[:])
+		if !bytes.Equal(content, input[name]) {
+			redacted = append(redacted, name)
+		}
+	}
+	slices.Sort(redacted)
+	canonical, err := json.Marshal(struct {
+		Owner, Reviewer string
+		Files           map[string]string
+	}{owner, reviewer, fileHashes})
+	if err != nil {
+		return ReviewOutput{}, fmt.Errorf("encode pack review digest: %w", err)
+	}
+	digest := sha256.Sum256(canonical)
+	return ReviewOutput{Files: files, Digest: hex.EncodeToString(digest[:]), RedactedFiles: redacted}, nil
+}
+
+type callerContextKey struct{}
+
+// WithAuthenticatedCaller attaches an identity resolved by a trusted inbound authenticator for server-side checks.
+func WithAuthenticatedCaller(ctx context.Context, caller string) context.Context {
+	return context.WithValue(ctx, callerContextKey{}, caller)
+}
+
+// AuthenticatedCallerFromContext reads the identity installed by WithAuthenticatedCaller.
+func AuthenticatedCallerFromContext(ctx context.Context) (string, bool) {
+	caller, ok := ctx.Value(callerContextKey{}).(string)
+	return caller, ok && caller != ""
+}
+
+type ownerContextKey struct{}
+type repositoryContextKey struct{}
+
+// WithAuthenticatedOwner attaches an owner identity resolved by a trusted inbound person mapper.
+func WithAuthenticatedOwner(ctx context.Context, owner string) context.Context {
+	return context.WithValue(ctx, ownerContextKey{}, owner)
+}
+
+// AuthenticatedOwnerFromContext reads the identity installed by WithAuthenticatedOwner.
+func AuthenticatedOwnerFromContext(ctx context.Context) (string, bool) {
+	owner, ok := ctx.Value(ownerContextKey{}).(string)
+	return owner, ok && owner != ""
+}
+
+// WithPackRepository binds owner approval to the repository whose policy is being checked.
+func WithPackRepository(ctx context.Context, repo string) context.Context {
+	return context.WithValue(ctx, repositoryContextKey{}, repo)
+}
+
+// RepositoryFromContext reads the repository installed by the authenticated pack route.
+func RepositoryFromContext(ctx context.Context) (string, bool) {
+	repo, ok := ctx.Value(repositoryContextKey{}).(string)
+	return repo, ok && repo != ""
 }
 
 // Publish redacts, signs, encrypts, and stores a pack after trusted owner approval.
@@ -117,6 +197,15 @@ func (s *Service) authorizePublish(ctx context.Context, in PublishInput) error {
 	}
 	if err := s.authorizeOwner(ctx, in); err != nil {
 		return err
+	}
+	if in.ReviewDigest != "" {
+		review, err := s.Review(in.Owner, in.Reviewer, in.Files)
+		if err != nil {
+			return err
+		}
+		if review.Digest != in.ReviewDigest {
+			return ErrInvalidPackCryptoInput
+		}
 	}
 	return s.validatePublishConfig(in)
 }

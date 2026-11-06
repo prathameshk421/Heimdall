@@ -102,21 +102,22 @@ func lookupPerson(in Input, people People) (string, bool) {
 func parseCommand(src Source, verb, args string) (Command, error) {
 	p, _ := prefixOf(src)
 	parsers := map[string]func(p, args string) (Command, error){
-		"uphold":          command(parseUphold),
-		"dismiss":         command(parseDismiss),
-		"start":           command(parseStart),
-		"review":          command(parseReview),
-		"approve-tests":   approveTests,
-		"approve-profile": command(parseApproveProfile),
-		"promote-profile": command(parsePromoteProfile),
-		"challenge":       command(parseChallenge),
-		"remember":        command(parseRemember),
-		"forget":          command(parseForget),
-		"spec-change":     command(parseSpecChange),
-		"reject":          command(parseReject),
-		"override":        command(parseOverride),
-		"waive-reviewer":  command(parseWaiveReviewer),
-		"incident":        command(parseIncident),
+		"uphold":            command(parseUphold),
+		"dismiss":           command(parseDismiss),
+		"start":             command(parseStart),
+		"review":            command(parseReview),
+		"approve-tests":     approveTests,
+		"approve-profile":   command(parseApproveProfile),
+		"approve-knowledge": command(parseApproveKnowledge),
+		"promote-profile":   command(parsePromoteProfile),
+		"challenge":         command(parseChallenge),
+		"remember":          command(parseRemember),
+		"forget":            command(parseForget),
+		"spec-change":       command(parseSpecChange),
+		"reject":            command(parseReject),
+		"override":          command(parseOverride),
+		"waive-reviewer":    command(parseWaiveReviewer),
+		"incident":          command(parseIncident),
 	}
 	parse, ok := parsers[verb]
 	if !ok {
@@ -149,7 +150,7 @@ func grammar(src Source) string {
 	p, _ := prefixOf(src)
 	uses := []string{
 		useUphold, useDismiss, useReject, useOverride, useWaive, useReview,
-		useApprove, useApproveProfile, usePromoteProfile, useStart, useChallenge, useRemember, useForget, useSpec, useIncident,
+		useApprove, useApproveProfile, useApproveKnowledge, usePromoteProfile, useStart, useChallenge, useRemember, useForget, useSpec, useIncident,
 	}
 	for i, u := range uses {
 		uses[i] = p + " " + u

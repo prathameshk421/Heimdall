@@ -81,6 +81,34 @@ func TestReadPackUsesAuthenticatedPrincipalAndOnlyReviewerAssignment(t *testing.
 	require.Equal(t, codeInvalidParams, refused.Error.Code)
 }
 
+func TestPackReviewAndPublishUseMappedHumanPrincipalAndReviewedDigest(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	publisher := &fakePackPublisher{}
+	r.tokens.byHash[HashToken(testToken)] = Principal{Agent: testAgent, Role: workflow.RoleReviewer, Person: "alice"}
+	r.server.deps.PackPublisher = publisher
+	tools, err := r.server.buildTools()
+	require.NoError(t, err)
+	r.server.tools = tools
+	files := `{"notes.md":"safe source"}`
+	review := r.call("heimdall_review_pack", `{"repository":"org/repo","reviewer":"ana-reviewer","files":`+files+`}`)
+	require.False(t, review.IsError, review.text())
+	require.Equal(t, 1, publisher.reviews)
+	require.Equal(t, "alice", publisher.principal.Person)
+	require.Equal(t, "org/repo", publisher.repository)
+	require.Equal(t, []byte("safe source"), publisher.files["notes.md"])
+
+	published := r.call("heimdall_publish_pack", `{"repository":"org/repo","reviewer":"ana-reviewer","replay_key":"refresh-1","review_digest":"`+strings.Repeat("a", 64)+`","files":`+files+`}`)
+	require.False(t, published.IsError, published.text())
+	require.Contains(t, published.text(), "pack-id")
+	require.Equal(t, "alice", publisher.principal.Person)
+	require.Equal(t, "refresh-1", publisher.replayKey)
+	require.Equal(t, strings.Repeat("a", 64), publisher.digest)
+
+	refused := r.call("heimdall_publish_pack", `{"repository":"org/repo","reviewer":"ana-reviewer","replay_key":"refresh-2","review_digest":"`+strings.Repeat("b", 64)+`","files":`+files+`}`)
+	require.False(t, refused.IsError, refused.text())
+	require.Equal(t, 2, publisher.publishes, "digest validation is enforced by the application publisher")
+}
+
 func TestProfileLifecycleToolsEnforceProfilerAndMappedHumanBoundaries(t *testing.T) {
 	profiles := &fakeProfiles{}
 	r := newRig(t, workflow.RoleProfiler)

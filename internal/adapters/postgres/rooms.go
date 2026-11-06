@@ -62,6 +62,9 @@ func (s *Store) changeIDs(ctx context.Context) ([]id.ChangeID, error) {
 	return ids, nil
 }
 
+// ChangeIDs lists every change with durable events in deterministic order for replayable projections.
+func (s *Store) ChangeIDs(ctx context.Context) ([]id.ChangeID, error) { return s.changeIDs(ctx) }
+
 func (s *Store) openRoom(ctx context.Context, cid id.ChangeID) (OpenRoom, bool, error) {
 	events, err := s.Load(ctx, cid)
 	if err != nil {

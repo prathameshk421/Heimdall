@@ -48,6 +48,7 @@ func TestParseCommands(t *testing.T) {
 		{"reject", chat("heimdall reject " + long), Reject{Reason: long}},
 		{"approve-tests", chat("heimdall approve-tests"), ApproveTests{}},
 		{"approve-profile", chat("heimdall approve-profile " + strings.Repeat("a", 64)), ApproveProfile{ID: strings.Repeat("a", 64)}},
+		{"approve-knowledge", chat("heimdall approve-knowledge " + strings.Repeat("a", 64)), ApproveKnowledge{Ref: "knowledge:" + strings.Repeat("a", 64)}},
 		{"promote-profile", gh("/heimdall promote-profile " + strings.Repeat("b", 64)), PromoteProfile{ID: strings.Repeat("b", 64)}},
 		{"incident", gh("/heimdall incident double charge in prod"), Incident{Text: "double charge in prod"}},
 		{"challenge", chat("heimdall challenge F3 internal/pay/pay_test.go:42"), Challenge{Finding: "F3", Evidence: "internal/pay/pay_test.go:42"}},
@@ -55,6 +56,7 @@ func TestParseCommands(t *testing.T) {
 		{"remember", chat("heimdall remember refunds are capped at 500"), Remember{Text: "refunds are capped at 500"}},
 		{"remember multiline", chat("heimdall remember line one\nline two"), Remember{Text: "line one\nline two"}},
 		{"forget", chat("heimdall forget mem_abc " + long), Forget{MemoryRef: "mem_abc", Reason: long}},
+		{"forget knowledge source", chat("heimdall forget knowledge:" + strings.Repeat("a", 64) + " " + long), Forget{MemoryRef: "knowledge:" + strings.Repeat("a", 64), Reason: long}},
 		{"github mapped by login", gh("/heimdall approve-tests"), ApproveTests{}},
 		{"other mapped person", Input{Text: "heimdall approve-tests", Source: SourceChat, Sender: "u-bob"}, ApproveTests{}},
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	testpg "github.com/prathameshk421/flip_the_switch_hackathon/internal/testkit/postgres"
@@ -212,7 +213,7 @@ func liveGateBuildApp(t *testing.T, ghAdapter *github.Adapter) (*app, *pgxpool.P
 		repos:    []change.Repo{liveGateFixtureRepo},
 	}
 
-	appInstance, err := assemble(ctx, d, ad, pool, clock.System{})
+	appInstance, err := assemble(ctx, config.Config{}, d, ad, pool, clock.System{})
 	if err != nil {
 		pool.Close()
 		require.NoError(t, err, "assemble app")

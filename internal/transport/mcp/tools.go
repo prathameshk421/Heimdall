@@ -103,8 +103,21 @@ func (s *Server) buildTools() ([]tool, error) {
 		{name: "heimdall_report_progress", description: "Report progress in one short text. One report every 2 minutes.",
 			schema: reportProgressSchema(), roles: llmRoles(), handle: s.reportProgress},
 	}
+	tools = append(tools, s.optionalTools()...)
+	return tools, nil
+}
+
+// optionalTools returns the tools that exist only when their dependency is wired into the server.
+func (s *Server) optionalTools() []tool {
+	var tools []tool
 	if s.deps.Packs != nil {
 		tools = append(tools, tool{name: "heimdall_read_pack", description: "Read your own fresh, verified reviewer context pack. Private canaries are filtered before it is returned.", schema: readPackSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.readPack})
+	}
+	if s.deps.PackPublisher != nil {
+		tools = append(tools,
+			tool{name: "heimdall_review_pack", description: "Review a redacted pack preview as a mapped owner before publishing it to a reviewer.", schema: packReviewSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.reviewPack},
+			tool{name: "heimdall_publish_pack", description: "Publish the exact redacted pack preview approved by the mapped owner.", schema: packPublishSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.publishPack},
+		)
 	}
 	if s.deps.Files != nil {
 		tools = append(tools,
@@ -121,7 +134,7 @@ func (s *Server) buildTools() ([]tool, error) {
 			tool{name: "heimdall_promote_profile", description: "Promote an approved profile after a passing isolated trial.", schema: profileIDSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.promoteProfile},
 		)
 	}
-	return tools, nil
+	return tools
 }
 
 func proposeProfileSchema() json.RawMessage {
@@ -216,6 +229,14 @@ func (s *Server) promoteProfile(ctx context.Context, p Principal, args json.RawM
 
 func readPackSchema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"section":{"type":"string","maxLength":128}},"additionalProperties":false}`)
+}
+
+func packReviewSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"repository":{"type":"string","minLength":1,"maxLength":256},"reviewer":{"type":"string","minLength":1,"maxLength":128},"files":{"type":"object","minProperties":1,"maxProperties":128,"additionalProperties":{"type":"string","maxLength":65536}}},"required":["repository","reviewer","files"],"additionalProperties":false}`)
+}
+
+func packPublishSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"repository":{"type":"string","minLength":1,"maxLength":256},"reviewer":{"type":"string","minLength":1,"maxLength":128},"replay_key":{"type":"string","minLength":1,"maxLength":128},"review_digest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"files":{"type":"object","minProperties":1,"maxProperties":128,"additionalProperties":{"type":"string","maxLength":65536}}},"required":["repository","reviewer","replay_key","review_digest","files"],"additionalProperties":false}`)
 }
 
 func stageKnowledgeSchema() json.RawMessage {
@@ -565,6 +586,48 @@ func (s *Server) readPack(ctx context.Context, p Principal, args json.RawMessage
 		return "", fmt.Errorf("read reviewer context pack: %w", err)
 	}
 	return wrapUntrusted("private reviewer context pack", []byte(content))
+}
+
+func (s *Server) reviewPack(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		Repository string            `json:"repository"`
+		Reviewer   string            `json:"reviewer"`
+		Files      map[string]string `json:"files"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	files := make(map[string][]byte, len(input.Files))
+	for name, content := range input.Files {
+		files[name] = []byte(content)
+	}
+	preview, err := s.deps.PackPublisher.Review(ctx, p, input.Repository, input.Reviewer, files)
+	if err != nil {
+		return "", fmt.Errorf("review redacted context pack: %w", err)
+	}
+	return wrapUntrusted("redacted pack review", []byte(preview))
+}
+
+func (s *Server) publishPack(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		Repository   string            `json:"repository"`
+		Reviewer     string            `json:"reviewer"`
+		ReplayKey    string            `json:"replay_key"`
+		ReviewDigest string            `json:"review_digest"`
+		Files        map[string]string `json:"files"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	files := make(map[string][]byte, len(input.Files))
+	for name, content := range input.Files {
+		files[name] = []byte(content)
+	}
+	id, err := s.deps.PackPublisher.Publish(ctx, p, input.Repository, input.Reviewer, input.ReplayKey, input.ReviewDigest, files)
+	if err != nil {
+		return "", fmt.Errorf("publish reviewed context pack: %w", err)
+	}
+	return "Published reviewer context pack " + id + ".", nil
 }
 
 func (s *Server) stageKnowledge(ctx context.Context, p Principal, args json.RawMessage) (string, error) {

@@ -301,6 +301,22 @@ type fakePacks struct {
 	content   string
 }
 
+type fakePackPublisher struct {
+	principal                               Principal
+	repository, reviewer, replayKey, digest string
+	files                                   map[string][]byte
+	reviews, publishes                      int
+}
+
+func (f *fakePackPublisher) Review(_ context.Context, p Principal, repo, reviewer string, files map[string][]byte) (string, error) {
+	f.principal, f.repository, f.reviewer, f.files, f.reviews = p, repo, reviewer, files, f.reviews+1
+	return `{"review_digest":"` + strings.Repeat("a", 64) + `","files":{"notes.md":"redacted"}}`, nil
+}
+func (f *fakePackPublisher) Publish(_ context.Context, p Principal, repo, reviewer, replayKey, digest string, files map[string][]byte) (string, error) {
+	f.principal, f.repository, f.reviewer, f.replayKey, f.digest, f.files, f.publishes = p, repo, reviewer, replayKey, digest, files, f.publishes+1
+	return "pack-id", nil
+}
+
 func (f *fakePacks) Read(_ context.Context, p Principal, section string) (string, error) {
 	f.principal, f.section = p, section
 	if f.content == "" {

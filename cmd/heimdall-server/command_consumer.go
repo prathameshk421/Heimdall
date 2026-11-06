@@ -41,6 +41,7 @@ type commandRuntime struct {
 	clock     ports.Clock
 	intake    prIntakeHandler
 	profiles  mcp.Profiles
+	files     mcp.KnowledgeFiles
 	processor *collaboration.Processor
 }
 
@@ -84,14 +85,14 @@ func (r *commandRuntime) Authorize(ctx context.Context, target collaboration.Tar
 		return "", err
 	}
 	if profileCommand(cmd) {
-		identity, err := d.Resolve(peopleChannel(source), sender)
-		if err != nil {
-			return "", err
-		}
-		if identity.Kind != people.KindHuman || !slices.Contains(identity.Roles, people.RolePolicyOwner) {
-			return "", errors.New("sandbox profile approval and promotion require a mapped policy owner")
-		}
-		return identity.Name, nil
+		return mappedHuman(d, source, sender, func(id people.Identity) bool {
+			return slices.Contains(id.Roles, people.RolePolicyOwner)
+		}, "sandbox profile approval and promotion require a mapped policy owner")
+	}
+	if _, ok := cmd.(commands.ApproveKnowledge); ok {
+		return mappedHuman(d, source, sender, func(id people.Identity) bool {
+			return slices.Contains(id.Roles, people.RoleApprover) || slices.Contains(id.Roles, people.RolePolicyOwner)
+		}, "knowledge approval requires a mapped group approver or policy owner")
 	}
 	action, findingRef := commandAction(cmd)
 	if action == "" {
@@ -103,6 +104,18 @@ func (r *commandRuntime) Authorize(ctx context.Context, target collaboration.Tar
 		return "", err
 	}
 	return grant.Person, nil
+}
+
+// mappedHuman returns the name of a sender who is a mapped human and passes allowed; otherwise it refuses with msg.
+func mappedHuman(d *people.Directory, source commands.Source, sender string, allowed func(people.Identity) bool, msg string) (string, error) {
+	identity, err := d.Resolve(peopleChannel(source), sender)
+	if err != nil {
+		return "", err
+	}
+	if identity.Kind != people.KindHuman || !allowed(identity) {
+		return "", errors.New(msg)
+	}
+	return identity.Name, nil
 }
 
 type commandPeople struct{ directory *people.Directory }
@@ -305,19 +318,8 @@ func peopleChannel(source commands.Source) people.Channel {
 }
 
 func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Target, person string, source commands.Source, sourceRef string, cmd commands.Command) (string, error) {
-	if r.profiles != nil {
-		switch profile := cmd.(type) {
-		case commands.ApproveProfile:
-			if err := r.profiles.Approve(ctx, mcp.Principal{Person: person}, profile.ID); err != nil {
-				return "", err
-			}
-			return "The sandbox profile is approved for an isolated trial.", nil
-		case commands.PromoteProfile:
-			if err := r.profiles.Promote(ctx, mcp.Principal{Person: person}, profile.ID); err != nil {
-				return "", err
-			}
-			return "The passing sandbox profile is active for production jobs.", nil
-		}
+	if reply, handled, err := r.executeDirect(ctx, person, cmd); handled {
+		return reply, err
 	}
 	if cmd.Verb() == "start" {
 		return r.start(ctx, person, source, sourceRef, cmd.(commands.Start))
@@ -327,6 +329,9 @@ func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Targe
 		return "", fmt.Errorf("load command change: %w", err)
 	}
 	if hasCommandSource(state, source, sourceRef) {
+		if err := r.forgetKnowledge(ctx, person, cmd, true); err != nil {
+			return "", err
+		}
 		return "Already recorded.", nil
 	}
 	var events []change.Event
@@ -341,7 +346,60 @@ func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Targe
 	if _, err := r.engine.Advance(ctx, target.ChangeID, events); err != nil {
 		return "", fmt.Errorf("apply %s command: %w", cmd.Verb(), err)
 	}
+	if err := r.forgetKnowledge(ctx, person, cmd, false); err != nil {
+		return "", err
+	}
 	return actionReply(cmd), nil
+}
+
+// executeDirect runs the approval commands that act on the file and profile services rather than the change
+// log. handled is false for every other command.
+func (r *commandRuntime) executeDirect(ctx context.Context, person string, cmd commands.Command) (reply string, handled bool, err error) {
+	if approval, ok := cmd.(commands.ApproveKnowledge); ok {
+		if r.files == nil {
+			return "", true, errors.New("knowledge file approval is unavailable")
+		}
+		if err := r.files.Approve(ctx, mcp.Principal{Person: person}, approval.Ref); err != nil {
+			return "", true, err
+		}
+		return "The staged knowledge source is approved for team memory.", true, nil
+	}
+	if r.profiles == nil {
+		return "", false, nil
+	}
+	switch profile := cmd.(type) {
+	case commands.ApproveProfile:
+		if err := r.profiles.Approve(ctx, mcp.Principal{Person: person}, profile.ID); err != nil {
+			return "", true, err
+		}
+		return "The sandbox profile is approved for an isolated trial.", true, nil
+	case commands.PromoteProfile:
+		if err := r.profiles.Promote(ctx, mcp.Principal{Person: person}, profile.ID); err != nil {
+			return "", true, err
+		}
+		return "The passing sandbox profile is active for production jobs.", true, nil
+	}
+	return "", false, nil
+}
+
+// forgetKnowledge forgets the knowledge source a forget command names. A retry of an already recorded command
+// tolerates a source that is already gone.
+func (r *commandRuntime) forgetKnowledge(ctx context.Context, person string, cmd commands.Command, retry bool) error {
+	forget, ok := cmd.(commands.Forget)
+	if !ok || !strings.HasPrefix(forget.MemoryRef, "knowledge:") || r.files == nil {
+		return nil
+	}
+	err := r.files.Forget(ctx, mcp.Principal{Person: person}, forget.MemoryRef)
+	switch {
+	case err == nil:
+		return nil
+	case retry && errors.Is(err, ports.ErrNotFound):
+		return nil
+	case retry:
+		return fmt.Errorf("retry recorded knowledge forget: %w", err)
+	default:
+		return fmt.Errorf("forget approved knowledge source: %w", err)
+	}
 }
 
 func profileCommand(cmd commands.Command) bool {

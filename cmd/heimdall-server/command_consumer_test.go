@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,6 +129,41 @@ func TestProfileHumanCommandsRequireMappedPolicyOwnerAndUseMappedIdentity(t *tes
 	promoted := ports.Message{ID: "profile-promoted", Room: room.RoomID, Sender: "ana", Text: "heimdall promote-profile " + proposalID}
 	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, promoted))
 	require.Equal(t, []string{"ana"}, profiles.promotions)
+}
+
+type commandKnowledgeFiles struct{ approvals, forgets []string }
+
+func (*commandKnowledgeFiles) Stage(context.Context, mcp.Principal, mcp.Assignment, string, string, string, string, int) (mcp.KnowledgeFileInfo, error) {
+	return mcp.KnowledgeFileInfo{}, nil
+}
+func (f *commandKnowledgeFiles) Approve(_ context.Context, p mcp.Principal, ref string) error {
+	f.approvals = append(f.approvals, p.Person+":"+ref)
+	return nil
+}
+func (f *commandKnowledgeFiles) Forget(_ context.Context, p mcp.Principal, ref string) error {
+	f.forgets = append(f.forgets, p.Person+":"+ref)
+	return nil
+}
+
+func TestKnowledgeApprovalAndForgetCommandsUseMappedHumanAndPolicyBoundary(t *testing.T) {
+	cid := id.ChangeID("KAN-43")
+	runtime, _, chat, _ := setupCommandRuntime(t, cid, nil, ports.PR{})
+	files := &commandKnowledgeFiles{}
+	runtime.files = files
+	room := ports.RoomBinding{ChangeID: cid, RoomID: "knowledge-room"}
+	ref := "knowledge:" + strings.Repeat("a", 64)
+	denied := ports.Message{ID: "knowledge-denied", Room: room.RoomID, Sender: "dana", Text: "heimdall approve-knowledge " + strings.Repeat("a", 64)}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, denied))
+	require.Empty(t, files.approvals)
+	require.Contains(t, chat.posts[len(chat.posts)-1], "not authorized")
+
+	approved := ports.Message{ID: "knowledge-approved", Room: room.RoomID, Sender: "ana", Text: "heimdall approve-knowledge " + strings.Repeat("a", 64)}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, approved))
+	require.Equal(t, []string{"ana:" + ref}, files.approvals)
+
+	forgot := ports.Message{ID: "knowledge-forgot", Room: room.RoomID, Sender: "ana", Text: "heimdall forget " + ref + " poisoned source should be removed"}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, forgot))
+	require.Equal(t, []string{"ana:" + ref}, files.forgets)
 }
 
 func TestServerCommandRuntimeExecutesMappedRoomRememberAndPostsReply(t *testing.T) {

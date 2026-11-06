@@ -56,6 +56,10 @@ func (a *app) loops(ctx context.Context) {
 		wg.Add(1)
 		go func() { defer wg.Done(); a.episodeLoop(ctx) }()
 	}
+	if a.workflowMemory != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); a.workflowMemoryLoop(ctx) }()
+	}
 	go func() {
 		defer wg.Done()
 		a.tickLoop(ctx, ticks)
@@ -65,6 +69,19 @@ func (a *app) loops(ctx context.Context) {
 		a.drainLoop(ctx, wake, ticks)
 	}()
 	wg.Wait()
+}
+
+func (a *app) workflowMemoryLoop(ctx context.Context) {
+	for ctx.Err() == nil {
+		if stats, err := a.workflowMemory.Backfill(ctx); err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "workflow memory backfill failed; stable event keys make the next pass safe", "error", err)
+		} else if err == nil && stats.Queued > 0 {
+			a.logger.InfoContext(ctx, "workflow memory episodes queued", "changes", stats.Changes, "events", stats.Events, "queued", stats.Queued)
+		}
+		if err := clock.Wait(ctx, a.syncEvery); err != nil {
+			return
+		}
+	}
 }
 
 func (a *app) episodeLoop(ctx context.Context) {

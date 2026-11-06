@@ -14,29 +14,34 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
-func assembleKnowledgeRetention(d deps, ad adapters, store knowledgeStore, blobs ports.BlobStore, clk ports.Clock) (*knowledge.FileService, *knowledge.EpisodeWorker, error) {
+func assembleKnowledgeRetention(d deps, ad adapters, store knowledgeStore, blobs ports.BlobStore, clk ports.Clock) (*knowledge.FileService, *knowledge.EpisodeWorker, *knowledge.WorkflowMemory, error) {
 	if ad.vcs == nil || store == nil || blobs == nil || clk == nil {
-		return nil, nil, fmt.Errorf("knowledge file service dependencies are incomplete")
+		return nil, nil, nil, fmt.Errorf("knowledge file service dependencies are incomplete")
 	}
 	deleter, ok := blobs.(ports.BlobDeleter)
 	if !ok {
-		return nil, nil, fmt.Errorf("knowledge blob store does not support deletion")
+		return nil, nil, nil, fmt.Errorf("knowledge blob store does not support deletion")
 	}
 	caller, err := graphiti.NewHTTPCaller("http://graphiti:8000/mcp", d.httpClient)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build knowledge Graphiti caller: %w", err)
+		return nil, nil, nil, fmt.Errorf("build knowledge Graphiti caller: %w", err)
 	}
 	memory, err := graphiti.New(caller)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build knowledge Graphiti adapter: %w", err)
+		return nil, nil, nil, fmt.Errorf("build knowledge Graphiti adapter: %w", err)
 	}
 	worker, err := knowledge.NewEpisodeWorker(store, memory, clk)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build memory episode worker: %w", err)
+		return nil, nil, nil, fmt.Errorf("build memory episode worker: %w", err)
 	}
 	lifecycle, err := knowledge.NewQueuedEpisodeLifecycle(memory, store, clk)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build memory episode lifecycle: %w", err)
+		return nil, nil, nil, fmt.Errorf("build memory episode lifecycle: %w", err)
+	}
+	workflowMemory, err := knowledge.NewWorkflowMemory(worker, store,
+		knowledge.PolicyEventTeams{Code: ad.vcs, Decode: policyyaml.Decode}, knowledgeScanner{}, clk, ad.chat)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("build workflow memory projection: %w", err)
 	}
 	// Root pack keeps the fail-closed Redact API; T48's Gitleaks SecretScanner is a deferred
 	// cross-subsystem contract until pack APIs are unified.
@@ -44,14 +49,15 @@ func assembleKnowledgeRetention(d deps, ad adapters, store knowledgeStore, blobs
 		knowledge.PolicyFileApproval{Code: ad.vcs, Decode: policyyaml.Decode}, worker, lifecycle,
 		knowledgeScanner{}, clk)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build knowledge file service: %w", err)
+		return nil, nil, nil, fmt.Errorf("build knowledge file service: %w", err)
 	}
-	return service, worker, nil
+	return service, worker, workflowMemory, nil
 }
 
 type knowledgeStore interface {
 	ports.KnowledgeFiles
 	ports.EpisodeQueue
+	knowledge.WorkflowHistory
 }
 
 type knowledgeScanner struct{}
@@ -62,6 +68,11 @@ func (knowledgeScanner) Scan(raw string) (string, []knowledge.RedactionSummary, 
 		return "", nil, err
 	}
 	return clean, nil, nil
+}
+
+func (scanner knowledgeScanner) Redact(raw string) (string, error) {
+	clean, _, err := scanner.Scan(raw)
+	return clean, err
 }
 
 type knowledgeFileAPI struct {

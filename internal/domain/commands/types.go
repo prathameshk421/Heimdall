@@ -88,6 +88,12 @@ type ApproveProfile struct{ ID string }
 // Verb returns the command word.
 func (ApproveProfile) Verb() string { return "approve-profile" }
 
+// ApproveKnowledge authorizes one staged knowledge source for ingestion.
+type ApproveKnowledge struct{ Ref string }
+
+// Verb returns the command word.
+func (ApproveKnowledge) Verb() string { return "approve-knowledge" }
+
 // PromoteProfile selects a profile after its isolated trial has passed.
 type PromoteProfile struct{ ID string }
 

@@ -100,6 +100,12 @@ type PackReader interface {
 	Read(context.Context, Principal, string) (string, error)
 }
 
+// PackPublisher stages an owner-visible redacted review and publishes exactly the reviewed content.
+type PackPublisher interface {
+	Review(context.Context, Principal, string, string, map[string][]byte) (string, error)
+	Publish(context.Context, Principal, string, string, string, string, map[string][]byte) (string, error)
+}
+
 // KnowledgeFileInfo is the non-content metadata returned by safe knowledge-file operations.
 type KnowledgeFileInfo struct {
 	Ref       string    `json:"ref"`
@@ -129,17 +135,18 @@ type Profiles interface {
 
 // Deps are the collaborators of a Server. Every field is required.
 type Deps struct {
-	Logger    *slog.Logger
-	Clock     ports.Clock
-	Tokens    Tokens
-	Tasks     Tasks
-	Reviews   Reviews
-	Code      Code
-	Blobs     Blobs
-	Knowledge Knowledge
-	Packs     PackReader
-	Files     KnowledgeFiles
-	Profiles  Profiles
+	Logger        *slog.Logger
+	Clock         ports.Clock
+	Tokens        Tokens
+	Tasks         Tasks
+	Reviews       Reviews
+	Code          Code
+	Blobs         Blobs
+	Knowledge     Knowledge
+	Packs         PackReader
+	PackPublisher PackPublisher
+	Files         KnowledgeFiles
+	Profiles      Profiles
 }
 
 // Server answers MCP requests for the agents' tools.
