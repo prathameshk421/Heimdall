@@ -446,6 +446,9 @@ func (r *commandRuntime) commandEvents(cid id.ChangeID, state []change.Event, pe
 	if resume, ok := cmd.(commands.Resume); ok {
 		return r.resumeEvents(cid, state, person, source, sourceRef, actor, resume)
 	}
+	if _, ok := cmd.(commands.ApproveTests); ok {
+		return r.signoffEvents(cid, state, person, source, sourceRef, actor)
+	}
 	return r.decisionEvents(cid, state, person, source, sourceRef, actor, cmd)
 }
 
@@ -858,4 +861,22 @@ func addressedCommand(body, prefix string) bool {
 		return false
 	}
 	return len(text) == len(prefix) || strings.ContainsRune(" \t\r\n", rune(text[len(prefix)]))
+}
+
+// signoffEvents records the test sign-off of a change that waits for it (A4). The approval is bound to the verified
+// tests tree; a change not waiting for sign-off refuses the command.
+func (r *commandRuntime) signoffEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, actor change.Actor) ([]change.Event, error) {
+	st, err := change.Replay(state)
+	if err != nil {
+		return nil, fmt.Errorf("read change for sign-off: %w", err)
+	}
+	payload, err := signoffPayload(st, state, person)
+	if err != nil {
+		return nil, err
+	}
+	ev, err := r.event(cid, actor, source, change.EventTestsApproved, payload, sourceRef)
+	if err != nil {
+		return nil, err
+	}
+	return []change.Event{ev}, nil
 }
