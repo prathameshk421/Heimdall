@@ -13,7 +13,8 @@ import (
 // Two projects poll on their own loops (A10 item 10). A project whose poll fails on every try does not stop the other
 // project from polling and triggering: each loop carries on by itself.
 func TestAFailingProjectDoesNotStopAnotherProjectsPoll(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// A deadline makes a broken loop fail on its assertions instead of hanging the test.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	good := &fakePoller{cancelAt: 3, cancel: cancel}
 	bad := &fakePoller{failFirst: 1 << 30}
