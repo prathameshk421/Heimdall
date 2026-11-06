@@ -35,7 +35,9 @@
 // # Invariants
 //
 //   - Every call to /mcp carries a bearer token. The token is hashed before lookup and is never logged, returned,
-//     or put in an error. The logger sees the tool name, agent, role and outcome, never arguments.
+//     or put in an error. The logger sees one INFO "mcp request" line per /mcp request (method, tool, role, agent,
+//     status, duration_ms), one WARN per refused token (remote address, no token), the tool name, agent, role and
+//     outcome of each tool call, never arguments.
 //   - A tool is listed and callable only for the roles of TECH_SPEC 14.1. A call to a tool the role does not have
 //     gets the same answer as an unknown tool (JSON-RPC invalid params), so the list is not an oracle.
 //   - Every tool except the protocol methods works on the agent's own active task. The envelope's role must equal
