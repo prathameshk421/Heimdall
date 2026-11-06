@@ -59,4 +59,7 @@ fi
 grep -q 'working_dir: /var/lib/heimdall$' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the server needs a writable working directory because its blob store path is relative' >&2; exit 1; }
 grep -q 'heimdall_data:/var/lib/heimdall' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the blob store directory must be a named volume so evidence survives restarts' >&2; exit 1; }
 grep -q 'chown 65532:65532 /var/lib/heimdall' "$root/deploy/Dockerfile.server" || { echo 'ASSERTION FAILED: the image must create the working directory owned by the server user' >&2; exit 1; }
+grep -q 'name: switch_default' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the server must join the Switch network, because 127.0.0.1 inside its container is not the VM Switch' >&2; exit 1; }
+grep -q 'network_mode: "service:heimdall-server"' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: a loopback forward must share the server network, because the config allows http only for loopback hosts' >&2; exit 1; }
+grep -q 'TCP:switch:8000' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the loopback forward must target the Switch service' >&2; exit 1; }
 echo 'deploy contract passed'

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
@@ -108,10 +110,12 @@ type streamRun struct {
 	seq        int64                       // highest SSE id delivered by this call
 	resumed    bool                        // the current connection was opened with Last-Event-ID
 	reconciled bool                        // read_context has run for the resume cursors
-	connID     string
+	connID     string                      // the connection id Switch reported in connection_state
 	failures   int
-	cancelConn context.CancelCauseFunc
-	stopBeats  func()
+
+	clientConnID string // the UUID this call made, sent on every open
+	cancelConn   context.CancelCauseFunc
+	stopBeats    func()
 }
 
 // stopError marks an error returned by DeliverFunc. It ends the stream, even when the error wraps ports.ErrUnavailable.
@@ -193,7 +197,11 @@ func (s *streamRun) open(ctx context.Context) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{"filter": {"all"}}
+	if s.clientConnID == "" {
+		s.clientConnID = uuid.NewString()
+	}
+	// Switch 0.31 refuses a stream without a client-made UUID, and wants the same one on every reconnect.
+	q := url.Values{"filter": {"all"}, "connection_id": {s.clientConnID}}
 	for _, r := range s.rooms {
 		q.Add("room_id", string(r))
 	}

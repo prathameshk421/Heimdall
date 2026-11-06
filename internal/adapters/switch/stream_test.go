@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -168,6 +170,33 @@ func TestStreamDeliversSequenceAndCursorPerRoom(t *testing.T) {
 	require.Equal(t, ports.Cursor("2026-11-04T12:00:02Z"), d[1].Cursor, "the second room has its own cursor")
 
 	require.Equal(t, ports.Cursor("2026-11-04T12:00:03Z"), d[2].Cursor, "the first room's cursor moved to its newest message")
+}
+
+func TestStreamSendsOneClientConnectionIDOnEveryOpenAsSwitchRequires(t *testing.T) {
+	f, c, _ := streamTest(t)
+	setStream(f, func(w http.ResponseWriter, _ *http.Request, n int) {
+		if n == 1 {
+			frame(w, 0, "connection_state", connectionState(connA, 1, testRoomUUID))
+			return // a dropped connection
+		}
+		frame(w, 0, "connection_state", connectionState(connB, 1, testRoomUUID))
+		frame(w, 0, "evicted", map[string]any{})
+	})
+	var got deliveryLog
+	require.ErrorIs(t, c.Stream(streamCtx(t), []change.RoomID{roomID(t, testRoomUUID)}, nil, got.deliver), ErrEvicted)
+
+	opens := streamOpens(f)
+	require.Len(t, opens, 2)
+	ids := make([]string, 0, 2)
+	for _, o := range opens {
+		q, err := url.ParseQuery(o.Query)
+		require.NoError(t, err)
+		id := q.Get("connection_id")
+		_, perr := uuid.Parse(id)
+		require.NoError(t, perr, "Switch 0.31 refuses a stream with no UUID connection_id, got %q", id)
+		ids = append(ids, id)
+	}
+	require.Equal(t, ids[0], ids[1], "a reconnect reuses the id so Switch keeps the connection across the drop")
 }
 
 func TestStreamReconnectResumesWithLastEventIDAndMarksReplayed(t *testing.T) {
