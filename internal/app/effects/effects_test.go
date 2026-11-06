@@ -250,6 +250,20 @@ func newKit(t *testing.T, events ...change.Event) *kit {
 	return k
 }
 
+func TestRoomOpenAsksForTheWorkflowAgentsToBeInTheRoom(t *testing.T) {
+	k := newKit(t, triggeredEvent(t))
+	room, err := effects.NewRoomOpen(effects.RoomOpenDeps{
+		Tickets: k.tickets, Chat: k.chat, Store: k.store, Ingest: k.ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Agents: []string{"test-author", "reviewer-1", "resolver"},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, room.Execute(context.Background(), roomEffect(t, "role:test-author", "person:ana")))
+	require.Len(t, k.chat.requests, 1)
+	require.Equal(t, []string{"test-author", "reviewer-1", "resolver"}, k.chat.requests[0].Agents,
+		"an agent that is not in the room never receives its @mention")
+}
+
 func TestRoomOpenPassesEffectKeyAsIdempotencyKeyAndTitleFromTracker(t *testing.T) {
 	k := newKit(t, triggeredEvent(t))
 	fx := roomEffect(t, "role:test-author", "person:ana")

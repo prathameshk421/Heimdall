@@ -665,12 +665,26 @@ func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports
 	return sync, intakeCase, nil
 }
 
+// workflowAgentNames lists the configured test author, reviewers and resolver, so a change room is made with them in it.
+func workflowAgentNames(a config.Agents) []string {
+	names := make([]string, 0, len(a.Reviewers)+2)
+	if a.TestAuthor != "" {
+		names = append(names, a.TestAuthor)
+	}
+	names = append(names, a.Reviewers...)
+	if a.Resolver != "" {
+		names = append(names, a.Resolver)
+	}
+	return names
+}
+
 // baseExecutors builds the room_open, github_branch, and github_check executors.
 func baseExecutors(
 	ad adapters, store ports.EventStore, in effects.Ingest, gen ports.IDs, clk ports.Clock,
 ) (room effects.RoomOpen, branch effects.GitHubBranch, check effects.GitHubCheck, err error) {
 	room, err = effects.NewRoomOpen(effects.RoomOpenDeps{
 		Tickets: ad.tickets, Chat: ad.chat, Store: store, Ingest: in, IDs: gen, Clock: clk,
+		Agents: workflowAgentNames(ad.agents),
 	})
 	if err != nil {
 		return room, branch, check, fmt.Errorf("build room_open executor: %w", err)

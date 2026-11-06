@@ -67,6 +67,21 @@ func TestOpenRoomCreatesTheRoomWithTheCoordinatorAsMember(t *testing.T) {
 	require.Contains(t, description, "PAY-142")
 }
 
+func TestOpenRoomPutsTheWorkflowAgentsInTheRoomWhenItIsCreated(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	_, err := c.OpenRoom(context.Background(), ports.RoomRequest{
+		ChangeID: "PAY-142", Title: "PAY-142 refunds", Key: "room_open:PAY-142:1:room",
+		Agents: []string{"test-author", "reviewer-1", testAgentName},
+	})
+	require.NoError(t, err)
+
+	creates := f.opCalls("create_room")
+	require.Len(t, creates, 1)
+	require.Equal(t, []any{testAgentName, "test-author", "reviewer-1"}, creates[0]["agent_names"],
+		"the coordinator first, then each workflow agent once, so an @mention reaches an agent that is in the room")
+}
+
 func TestOpenRoomAdoptsTheRoomItAlreadyMadeInsteadOfCreatingAnother(t *testing.T) {
 	f := newFakeSwitch(t)
 	c, _ := newTestClient(t, f)
