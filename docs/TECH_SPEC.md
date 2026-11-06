@@ -277,7 +277,7 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 |---|---|---|
 | `change.triggered` | ticket, repo, assignee, trigger source; Jira acceptance criteria as ordered `{id, text, hash, ref}` values | Jira webhook or fallback |
 | `room.opened`, `branch.ensured` | room id; branch, base sha | Adapters |
-| `task.assigned` / `task.acked` / `task.timed_out` / `task.failed` | task id, agent, role, deadline, bundle hash, reason | Engine |
+| `task.assigned` / `task.acked` / `task.timed_out` / `task.failed` / `task.progress` | task id, agent, role, deadline, bundle hash, reason or bounded progress text | Engine / agent tool |
 | `step.retried` / `step.escalated` | step id, attempt, reasons / attempts, reason | Engine (on_fail, 5.1) |
 | `question.asked` / `question.answered` | ids, refs, sender, message id | test-author, room sync |
 | `tests.submitted` / `tests.verified` / `tests.rejected` / `tests.committed` | refs, AC map, run ids, reasons, sha, tree hash; `tests.verified` also carries `needs_signoff`, set by the engine from policy (sensitive paths and labels, D131, D33): true sends the change to AWAITING_TEST_SIGNOFF, false to TESTS_READY | Agent, sandbox, GitHub, engine |
@@ -521,7 +521,7 @@ Full-corpus evals are not affordable at the $3 testing budget, so the build runs
 
 | Adapter | Use | Mechanism |
 |---|---|---|
-| `switchroom` | default | Addressed `post_message`; liveness from participants and agent detail; detects the unavailable reply |
+| `switchroom` | default | Addressed room post for task wake-up; managed-agent definitions and desired state go through Switch's `create_agent` / `update_agent_detail` operations. Creation is stopped until the host has installed the role-scoped MCP config. Switch reports liveness and owns process restart; Heimdall does not supervise it |
 | `headless` (later) | ephemeral reviews, evals | `opencode run` (or another runtime) in a fresh container, one task, destroyed |
 
 ### 6.9 Agent runtime and supervision (D80, D123, D125)
@@ -531,6 +531,9 @@ How the VM agents actually run. Switch ships a **headless agent controller** for
 | Concern | Rule |
 |---|---|
 | Runtime | OpenCode 1.x, pinned in `RUNBOOK.md` by T01 (Switch provider `opencode`, D144), model `openrouter/deepseek/deepseek-v4-flash` (D143), with the model's own settings (no forced temperature, D122). The definition sets `auto_mode: true`, `auto_approve: false` (D141) |
+| Enrollment | Optional `[agent_runtime] provider = "switchroom"` selects Heimdall's Switch managed-agent adapter. It creates a stopped OpenCode definition, with the configured machine and role instructions, then asks Switch to set desired state after host configuration is complete. The Switch controller remains the only process owner |
+| Heimdall MCP config | Each configured agent name has one unique role and one distinct token file (`agent_token_<name>`). The role template points at the Heimdall MCP endpoint and names only that agent's token file; host setup writes the resolved bearer into that agent's `opencode.json` mode 0600 before setting desired state to `running`. Duplicate role identities or token values are startup errors |
+| Host setup API | With `agent_runtime` selected, `POST /admin/agents/prepare` requires the Switch coordinator bearer. It idempotently reconciles each Switch definition, requests `stopped`, and returns the role, Switch id, MCP endpoint, token-file path, and SHA-256 fingerprint; it never returns token contents. Host setup installs each role's file, then posts `{agent, role, mcp_endpoint, token_sha256, credentials_installed:true}` to `/admin/agents/activate`. Heimdall checks the receipt against configured role, endpoint, and token file before asking Switch for `desired_state=running`. Repeating prepare stops agents for safe reconfiguration; repeating a valid activation is idempotent. Unavailable Switch calls return retryable 503; config conflicts return 409; invalid receipts return 400 |
 | Process | `switch-agent-controller`, enrolled with a one-time code from the gateway's Machines page and installed with `install-service --separate-users`. That creates a pool of system users (`sa<uid>-01` and so on, 16 by default), one systemd template unit per agent, a polkit rule that lets the controller start, stop, restart and reset those units and nothing else, and agent directories under `/var/lib/switch-agents/<uid>`. It runs as a system service, so it survives a reboot. Requires the server flag `FEATURE_FLAGS_ENABLED=agent_management`, Node 22.13+ (Switch's own component), the `opencode` CLI on the path, and the OpenRouter key and `SWITCH_CONTROLLER_SELF_UPDATE=off` in the controller's `--env-file` (D123, D144) |
 | Switch credentials | None in the agents. The controller holds one connection and agents reach Switch through its local relay with a token only the relay accepts |
 | Working directory | Per agent, under `<agents-dir>/agent/<agent-name>/`: `AGENTS.md` (role rules), `opencode.json` as in the example below (mode 0600, holding that agent's token, D142), `.opencode/skills/<role>/SKILL.md`, `scratch/`. No pack files (reviewers read their own pack through `heimdall_read_pack`, D156), no repo checkout, no GitHub or Jira credentials |

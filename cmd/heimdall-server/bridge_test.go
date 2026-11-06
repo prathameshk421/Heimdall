@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -354,4 +355,27 @@ func TestChecksAdapterPropagatesError(t *testing.T) {
 	ca := checksAdapter{reader: reader}
 	_, err := ca.CheckRuns(context.Background(), change.Repo("acme/pay"), id.SHA("0123456789abcdef0123456789abcdef01234567"))
 	require.ErrorIs(t, err, boom)
+}
+
+func TestTokenStoreRejectsAgentConfiguredForMultipleRoles(t *testing.T) {
+	secrets := t.TempDir()
+	require.NoError(t, os.WriteFile(secrets+"/agent_token_shared", []byte("role-token"), 0o400))
+	cfg := config.Config{SecretsDir: secrets, Agents: config.Agents{
+		TestAuthor: "shared",
+		Reviewers:  []string{"shared"},
+	}}
+	_, err := newTokenStore(cfg)
+	require.Error(t, err, "one Switch identity cannot receive two role-scoped MCP principals")
+}
+
+func TestTokenStoreRejectsTokenSharedByDifferentAgents(t *testing.T) {
+	secrets := t.TempDir()
+	require.NoError(t, os.WriteFile(secrets+"/agent_token_test-author", []byte("same-token"), 0o400))
+	require.NoError(t, os.WriteFile(secrets+"/agent_token_reviewer", []byte("same-token"), 0o400))
+	cfg := config.Config{SecretsDir: secrets, Agents: config.Agents{
+		TestAuthor: "test-author",
+		Reviewers:  []string{"reviewer"},
+	}}
+	_, err := newTokenStore(cfg)
+	require.Error(t, err, "two Switch identities cannot resolve to the same role-scoped MCP principal token")
 }

@@ -243,6 +243,7 @@ type tokenStore struct {
 
 func newTokenStore(cfg config.Config) (*tokenStore, error) {
 	m := make(map[string]mcp.Principal)
+	seenAgents := make(map[string]workflow.Role)
 	type agentRole struct {
 		agent string
 		role  workflow.Role
@@ -261,11 +262,18 @@ func newTokenStore(cfg config.Config) (*tokenStore, error) {
 	}
 
 	for _, ar := range list {
+		if previous, exists := seenAgents[ar.agent]; exists {
+			return nil, fmt.Errorf("agent %q is configured for both %s and %s", ar.agent, previous, ar.role)
+		}
+		seenAgents[ar.agent] = ar.role
 		token, err := cfg.Secret("agent_token_" + ar.agent)
 		if err != nil {
 			return nil, fmt.Errorf("agent_token_%s: %w", ar.agent, err)
 		}
 		hash := mcp.HashToken(token)
+		if _, exists := m[hash]; exists {
+			return nil, fmt.Errorf("agent token for %q duplicates another configured agent token", ar.agent)
+		}
 		m[hash] = mcp.Principal{
 			Agent: id.AgentName(ar.agent),
 			Role:  ar.role,
