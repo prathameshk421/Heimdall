@@ -62,6 +62,9 @@ func TestOpenRoomCreatesTheRoomWithTheCoordinatorAsMember(t *testing.T) {
 	require.Equal(t, "PAY-142 refunds", creates[0]["name"])
 	require.Equal(t, []any{testAgentName}, creates[0]["agent_names"], "the coordinator must be listed to join its own room")
 	require.Equal(t, "channel_public", creates[0]["channel_type"])
+	description, _ := creates[0]["description"].(string)
+	require.NotEmpty(t, description, "Switch 0.31 rejects create_room without a description")
+	require.Contains(t, description, "PAY-142")
 }
 
 func TestOpenRoomAdoptsTheRoomItAlreadyMadeInsteadOfCreatingAnother(t *testing.T) {

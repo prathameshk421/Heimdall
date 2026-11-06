@@ -92,7 +92,7 @@ func (c *Client) OpenRoom(ctx context.Context, r ports.RoomRequest) (change.Room
 			return err
 		}
 		if !found {
-			id, err = c.createRoom(ctx, r.Title)
+			id, err = c.createRoom(ctx, r.Title, fmt.Sprint(r.ChangeID))
 			if err != nil {
 				return err
 			}
@@ -127,12 +127,14 @@ func (c *Client) findRoom(ctx context.Context, title string) (change.RoomID, boo
 }
 
 // createRoom makes a public channel on the configured bridge with the coordinator listed, so it joins its own room.
-func (c *Client) createRoom(ctx context.Context, title string) (change.RoomID, error) {
+func (c *Client) createRoom(ctx context.Context, title, changeID string) (change.RoomID, error) {
 	var reply struct {
 		ID string `json:"id"`
 	}
 	args := map[string]any{
-		"name":         title,
+		"name": title,
+		// Switch 0.31 rejects create_room without a description.
+		"description":  "Heimdall review room for " + changeID,
 		"agent_names":  []string{c.agentName},
 		"channel_type": "channel_public",
 		"bridge_id":    c.bridgeID,
