@@ -44,6 +44,8 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runBudgetRun(rest, stdout, stderr)
 	case "secrets-sync":
 		return runSecretsSync(rest, stdout, stderr)
+	case "switch-register":
+		return runSwitchRegister(rest, stdout, stderr)
 	default:
 		writeDiagnostic(stderr, "heimdall: not built yet\n")
 		return exitNotBuilt

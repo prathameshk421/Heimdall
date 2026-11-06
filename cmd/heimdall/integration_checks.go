@@ -49,13 +49,14 @@ func checkGitHubIntegration(ctx context.Context, cfg config.Config) registry.Che
 	if err != nil {
 		return missingCheck("github", err)
 	}
-	key, err := cfg.Secret(privateKeyName)
+	// The App key is a PEM block, so it spans lines; the single-line reader would refuse every real key (A11).
+	key, err := cfg.SecretMultiline(privateKeyName)
 	if err != nil {
 		return missingCheck("github", err)
 	}
 	adapter, err := github.New(github.Config{
 		BaseURL:    "https://api.github.com",
-		App:        github.App{AppID: appID, InstallationID: installationID, PrivateKeyPEM: []byte(key)},
+		App:        github.App{AppID: appID, InstallationID: installationID, PrivateKeyPEM: key},
 		HTTPClient: &http.Client{Timeout: 15 * time.Second}, Clock: clock.System{}, Wait: clock.Wait,
 	})
 	if err != nil {
