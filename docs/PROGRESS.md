@@ -1,5 +1,14 @@
 # Heimdall progress
 
+## T106 runtime lifecycle continuation (Nov 6, 2026)
+
+- Started from clean `heimdall-build` HEAD `93374a4` in isolated worktree `t3/agent-runtime-e2e`.
+- Added a durable Postgres ledger that stores only setup receipt fingerprints, never bearer tokens. Activation records a receipt only after the Switch controller accepts the running-state request; a failed controller request remains retryable. Exact replay is idempotent, and a changed token fingerprint is recorded as a separate rotation.
+- Added connected restart coverage for receipt persistence across service and database-pool reconstruction, plus assignment → ack → timeout/reassign → failure/revocation replay after rebuilding the Postgres task index.
+- Focused checks passed: `go test ./internal/app/agentprovision ./cmd/heimdall-server`; Postgres component tests for receipt replay and lifecycle replay; `make fast` passed with 3,665 tests and lint/architecture checks clean.
+- `make verify` passed vet, architecture, lint, 3,748 unit/race/component tests, lint self-test, and harness hook/install suites. It stopped at `harness-check` because checkout file modes differed from the Git index; full verification is pending after restoring indexed modes.
+- **Not verified:** live Switch enrollment, controller service handoff, VM restart, and real OpenCode role-scoped execution.
+
 ## T109 local implementation (Nov 6, 2026)
 
 - Connected Jira polling and changelog deduplication to the workflow, then exercised the generated test-author task through authenticated MCP submission, workflow advancement, durable quality effect, stable red-first quality runs, pinned tree-hash commit, and failing then passing CI reports. The Postgres component regression also retries a submission after an injected engine-advance failure, verifies duplicate submissions do not append duplicate events, and verifies a repeated CI sync does not duplicate reports.

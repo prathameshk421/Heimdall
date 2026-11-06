@@ -33,6 +33,7 @@ type Agent struct {
 // Config describes the stable enrollment and MCP endpoint inputs shared by all role agents.
 type Config struct {
 	Provisioner ports.AgentProvisioner
+	Receipts    ports.AgentReceiptLedger
 	Secrets     SecretReader
 	Machine     string
 	MCPEndpoint string
@@ -46,30 +47,41 @@ type Service struct{ cfg Config }
 
 // New validates dependencies and the role map before any Switch request can be made.
 func New(cfg Config) (*Service, error) {
-	if cfg.Provisioner == nil || cfg.Secrets == nil {
-		return nil, errors.New("agent provision: provisioner and secrets are required")
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+	return &Service{cfg: cfg}, nil
+}
+
+func validateConfig(cfg Config) error {
+	if cfg.Provisioner == nil || cfg.Secrets == nil || cfg.Receipts == nil {
+		return errors.New("agent provision: provisioner, receipt ledger and secrets are required")
 	}
 	if cfg.Machine == "" || cfg.MCPEndpoint == "" || cfg.Model == "" || cfg.SecretsDir == "" {
-		return nil, errors.New("agent provision: machine, MCP endpoint, model and secrets directory are required")
+		return errors.New("agent provision: machine, MCP endpoint, model and secrets directory are required")
 	}
 	if len(cfg.Agents) == 0 {
-		return nil, errors.New("agent provision: at least one role agent is required")
+		return errors.New("agent provision: at least one role agent is required")
 	}
-	seen := make(map[id.AgentName]workflow.Role, len(cfg.Agents))
-	for _, a := range cfg.Agents {
+	return validateAgents(cfg.Agents)
+}
+
+func validateAgents(agents []Agent) error {
+	seen := make(map[id.AgentName]workflow.Role, len(agents))
+	for _, a := range agents {
 		ref := ports.AgentRef{Name: a.Name, Role: a.Role}
 		if err := ref.Validate(); err != nil {
-			return nil, fmt.Errorf("agent provision: %w", err)
+			return fmt.Errorf("agent provision: %w", err)
 		}
 		if previous, ok := seen[a.Name]; ok {
-			return nil, fmt.Errorf("agent provision: %q has roles %s and %s", a.Name, previous, a.Role)
+			return fmt.Errorf("agent provision: %q has roles %s and %s", a.Name, previous, a.Role)
 		}
 		if strings.TrimSpace(a.Description) == "" {
-			return nil, fmt.Errorf("agent provision: description is required for %q", a.Name)
+			return fmt.Errorf("agent provision: description is required for %q", a.Name)
 		}
 		seen[a.Name] = a.Role
 	}
-	return &Service{cfg: cfg}, nil
+	return nil
 }
 
 // Handoff is the non-secret role-specific config consumed by host setup. The bearer
@@ -185,6 +197,7 @@ func (s *Service) Activate(ctx context.Context, receipt Receipt) error {
 	if receipt.TokenSHA256 != hex.EncodeToString(hash[:]) {
 		return fmt.Errorf("agent provision %q: setup receipt token fingerprint mismatch: %w", agent.Name, ports.ErrInvalidRequest)
 	}
+	fingerprint := receiptFingerprint(receipt)
 	managed, err := s.cfg.Provisioner.EnsureManagedAgent(ctx, ports.ManagedAgentSpec{
 		Agent: ports.AgentRef{Name: agent.Name, Role: agent.Role}, Description: agent.Description,
 		Machine: s.cfg.Machine, Provider: "opencode", Model: s.cfg.Model, Instructions: agent.Instructions,
@@ -195,5 +208,14 @@ func (s *Service) Activate(ctx context.Context, receipt Receipt) error {
 	if err := s.cfg.Provisioner.SetManagedAgentState(ctx, managed.ID, ports.ManagedAgentRunning); err != nil {
 		return fmt.Errorf("agent provision %q: request Switch start: %w", agent.Name, err)
 	}
+	if _, err := s.cfg.Receipts.RecordAgentSetupReceipt(ctx, agent.Name, fingerprint); err != nil {
+		return fmt.Errorf("agent provision %q: persist setup receipt fingerprint: %w", agent.Name, err)
+	}
 	return nil
+}
+
+func receiptFingerprint(receipt Receipt) string {
+	canonical := string(receipt.Agent) + "\x00" + string(receipt.Role) + "\x00" + receipt.MCPEndpoint + "\x00" + receipt.TokenSHA256 + "\x00true"
+	hash := sha256.Sum256([]byte(canonical))
+	return hex.EncodeToString(hash[:])
 }

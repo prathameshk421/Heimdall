@@ -45,11 +45,11 @@ func taskAssignedEvent(cid id.ChangeID, ver int64, taskID id.TaskID, agent id.Ag
 	}
 }
 
-func taskTimedOutEvent(cid id.ChangeID, ver int64, taskID id.TaskID, agent id.AgentName, role workflow.Role, t time.Time) change.Event {
+func taskTimedOutEvent(cid id.ChangeID, ver int64, taskID id.TaskID, agent id.AgentName, t time.Time) change.Event {
 	raw, err := json.Marshal(change.TaskTimedOut{
 		TaskID: taskID,
 		Agent:  agent,
-		Role:   role,
+		Role:   workflow.RoleReviewer,
 		Reason: "deadline exceeded",
 	})
 	if err != nil {
@@ -64,6 +64,18 @@ func taskTimedOutEvent(cid id.ChangeID, ver int64, taskID id.TaskID, agent id.Ag
 		OccurredAt:    t,
 		CorrelationID: "corr-1",
 		Payload:       raw,
+	}
+}
+
+func taskAckedEvent(cid id.ChangeID, ver int64, taskID id.TaskID, agent id.AgentName, role workflow.Role, t time.Time) change.Event {
+	raw, err := json.Marshal(change.TaskAcked{TaskID: taskID, Agent: agent, Role: role})
+	if err != nil {
+		panic(err)
+	}
+	return change.Event{
+		ID: newEventID(), ChangeID: cid, Version: ver, Type: change.EventTaskAcked,
+		Actor: change.Actor{Kind: change.ActorAgent, ID: change.ActorID(agent)}, OccurredAt: t,
+		CorrelationID: "corr-1", Payload: raw,
 	}
 }
 
@@ -260,7 +272,7 @@ func TestTaskIndex(t *testing.T) {
 			evs := []change.Event{
 				roomEvent(cid1, 1, "room-1"),
 				taskAssignedEvent(cid1, 2, task1, alice, workflow.RoleReviewer, base.Add(2*time.Second)),
-				taskTimedOutEvent(cid1, 3, task1, alice, workflow.RoleReviewer, base.Add(3*time.Second)),
+				taskTimedOutEvent(cid1, 3, task1, alice, base.Add(3*time.Second)),
 			}
 			_, err := s.Append(ctx, cid1, 0, evs, nil)
 			require.NoError(t, err)
@@ -366,7 +378,7 @@ func TestTaskIndex(t *testing.T) {
 			roomEvent(cid1, 1, "room-1"),
 			taskAssignedEvent(cid1, 2, task1, alice, workflow.RoleReviewer, base.Add(2*time.Second)),
 			taskAssignedEvent(cid1, 3, task2, bob, workflow.RoleReviewer, base.Add(3*time.Second)),
-			taskTimedOutEvent(cid1, 4, task2, bob, workflow.RoleReviewer, base.Add(4*time.Second)),
+			taskTimedOutEvent(cid1, 4, task2, bob, base.Add(4*time.Second)),
 			reviewSubmittedEvent(cid1, 5, bob, base.Add(5*time.Second)),
 		}
 		_, err := s.Append(ctx, cid1, 0, evs, nil)
@@ -388,7 +400,7 @@ func TestTaskIndex(t *testing.T) {
 		evs := []change.Event{
 			roomEvent(cid1, 1, "room-1"),
 			taskAssignedEvent(cid1, 2, task1, alice, workflow.RoleReviewer, base.Add(2*time.Second)),
-			taskTimedOutEvent(cid1, 3, task1, alice, workflow.RoleReviewer, base.Add(3*time.Second)),
+			taskTimedOutEvent(cid1, 3, task1, alice, base.Add(3*time.Second)),
 			taskAssignedEvent(cid1, 4, task3, alice, workflow.RoleReviewer, base.Add(4*time.Second)),
 		}
 		_, err := s.Append(ctx, cid1, 0, evs, nil)
@@ -416,4 +428,52 @@ func TestTaskIndex(t *testing.T) {
 		require.Equal(t, int64(1), countRows(ctx, t, db.pool,
 			"SELECT count(*) FROM pg_indexes WHERE tablename = 'event' AND indexname = 'event_type_agent'"))
 	})
+}
+
+func TestTaskAssignmentAckTimeoutReassignAndFailureReplayAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	srv := startServer(t)
+	db := srv.database(ctx, t)
+	store := NewStore(db.pool)
+	idx := NewTaskIndex(db.pool)
+	cid := id.ChangeID("PAY-201")
+	alice := id.AgentName("alice")
+	task1 := id.TaskID("tsk_01HZX3K9QW7M2P5R8T0V4YB6AA")
+	task2 := id.TaskID("tsk_01HZX3K9QW7M2P5R8T0V4YB6BB")
+	_, err := store.Append(ctx, cid, 0, []change.Event{
+		roomEvent(cid, 1, "room-lifecycle"),
+		taskAssignedEvent(cid, 2, task1, alice, workflow.RoleReviewer, base.Add(2*time.Second)),
+	}, nil)
+	require.NoError(t, err)
+	ref, err := idx.ActiveTask(ctx, alice, workflow.RoleReviewer)
+	require.NoError(t, err)
+	require.Equal(t, task1, ref.TaskID)
+
+	_, err = store.Append(ctx, cid, 2, []change.Event{
+		taskAckedEvent(cid, 3, task1, alice, workflow.RoleReviewer, base.Add(3*time.Second)),
+	}, nil)
+	require.NoError(t, err)
+
+	// Reconstruct the Postgres adapters after a server restart; the acknowledgement and task remain durable.
+	restartedStore := NewStore(db.pool)
+	restartedIndex := NewTaskIndex(db.pool)
+	ref, err = restartedIndex.ActiveTask(ctx, alice, workflow.RoleReviewer)
+	require.NoError(t, err)
+	require.Equal(t, task1, ref.TaskID)
+
+	_, err = restartedStore.Append(ctx, cid, 3, []change.Event{
+		taskTimedOutEvent(cid, 4, task1, alice, base.Add(4*time.Second)),
+		taskAssignedEvent(cid, 5, task2, alice, workflow.RoleReviewer, base.Add(5*time.Second)),
+	}, nil)
+	require.NoError(t, err)
+	ref, err = restartedIndex.ActiveTask(ctx, alice, workflow.RoleReviewer)
+	require.NoError(t, err)
+	require.Equal(t, task2, ref.TaskID, "timeout revokes the old task and exposes the reassignment")
+
+	_, err = restartedStore.Append(ctx, cid, 5, []change.Event{
+		taskFailedEvent(cid, 6, task2, alice, workflow.RoleReviewer, base.Add(6*time.Second)),
+	}, nil)
+	require.NoError(t, err)
+	_, err = restartedIndex.ActiveTask(ctx, alice, workflow.RoleReviewer)
+	require.ErrorIs(t, err, ports.ErrNotFound, "failure revokes the active assignment")
 }

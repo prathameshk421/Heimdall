@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
@@ -22,6 +23,19 @@ type AgentRuntime interface {
 type AgentProvisioner interface {
 	EnsureManagedAgent(ctx context.Context, spec ManagedAgentSpec) (ManagedAgent, error)
 	SetManagedAgentState(ctx context.Context, agentID string, state ManagedAgentState) error
+}
+
+// AgentReceiptLedger records accepted host setup receipts by content fingerprint only.
+// Implementations must never receive or persist the bearer token value.
+type AgentReceiptLedger interface {
+	RecordAgentSetupReceipt(ctx context.Context, agent id.AgentName, fingerprint string) (bool, error)
+	LoadAgentSetupReceipt(ctx context.Context, agent id.AgentName) (AgentSetupReceipt, bool, error)
+}
+
+// AgentSetupReceipt is the non-secret, durable record of a host credential installation receipt.
+type AgentSetupReceipt struct {
+	Agent       id.AgentName
+	Fingerprint string
 }
 
 // ManagedAgentSpec is the non-secret definition Switch needs to enroll an agent.

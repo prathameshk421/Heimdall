@@ -58,7 +58,7 @@ type adapters struct {
 	project           string
 	repos             []change.Repo
 	provisioner       ports.AgentProvisioner
-	agentSetupHandler http.Handler
+	agentSetupHandler func(ports.AgentReceiptLedger) (http.Handler, error)
 }
 
 // projectRepos maps a tracker project key to its repository (trigger.Projects).
@@ -138,17 +138,20 @@ func selectAgentSetup(cfg config.Config, reg *registry.Registry, out *adapters) 
 	if err != nil {
 		return err
 	}
-	service, err := agentprovision.New(agentprovision.Config{
-		Provisioner: provisioner, Secrets: cfg, Machine: cfg.AgentRuntime.Machine,
-		MCPEndpoint: cfg.AgentRuntime.MCPEndpoint, Model: cfg.AgentRuntime.Model,
-		SecretsDir: cfg.SecretsDir, Agents: provisionAgents(cfg.Agents),
-	})
-	if err != nil {
-		return fmt.Errorf("agent_runtime config: %w", err)
-	}
-	setup, err := agentsetup.New(service, cfg, cfg.Switch.APIKeySecret)
-	if err != nil {
-		return fmt.Errorf("agent_runtime handoff: %w", err)
+	setup := func(receipts ports.AgentReceiptLedger) (http.Handler, error) {
+		service, err := agentprovision.New(agentprovision.Config{
+			Provisioner: provisioner, Receipts: receipts, Secrets: cfg, Machine: cfg.AgentRuntime.Machine,
+			MCPEndpoint: cfg.AgentRuntime.MCPEndpoint, Model: cfg.AgentRuntime.Model,
+			SecretsDir: cfg.SecretsDir, Agents: provisionAgents(cfg.Agents),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("agent_runtime config: %w", err)
+		}
+		handler, err := agentsetup.New(service, cfg, cfg.Switch.APIKeySecret)
+		if err != nil {
+			return nil, fmt.Errorf("agent_runtime handoff: %w", err)
+		}
+		return handler, nil
 	}
 	out.provisioner = provisioner
 	out.agentSetupHandler = setup
