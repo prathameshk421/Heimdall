@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
 
@@ -23,6 +24,7 @@ func validVerifyEvidencePayload() change.VerifyEvidencePayload {
 		Ticket:     id.ChangeID("PAY-142"),
 		FindingID:  id.FindingID("fnd_01HZX3K9QW7M2P5R8T0V4YB6CD"),
 		FindingRef: ref,
+		Severity:   finding.SeverityHigh,
 		HeadSHA:    id.SHA("0123456789abcdef0123456789abcdef01234567"),
 		TestPath:   "tests/heimdall/repro/repro_test.go",
 		TestSource: src,
@@ -99,6 +101,7 @@ func TestDecodeVerifyEvidencePayloadStrict(t *testing.T) {
 		"ticket": "PAY-142",
 		"finding_id": "fnd_01HZX3K9QW7M2P5R8T0V4YB6CD",
 		"finding_ref": "F1",
+		"severity": "high",
 		"head_sha": "0123456789abcdef0123456789abcdef01234567",
 		"test_path": "tests/repro_test.go",
 		"test_source": "` + src + `",
@@ -121,6 +124,7 @@ func TestDecodeVerifyEvidencePayloadStrict(t *testing.T) {
 		"ticket": "PAY-142",
 		"finding_id": "fnd_01HZX3K9QW7M2P5R8T0V4YB6CD",
 		"finding_ref": "F1",
+		"severity": "high",
 		"head_sha": "0123456789abcdef0123456789abcdef01234567",
 		"test_path": "tests/repro_test.go",
 		"test_source": "` + src + `",

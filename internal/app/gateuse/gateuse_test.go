@@ -202,7 +202,7 @@ func TestEachClauseCanFailInTheUseCase(t *testing.T) {
 		"blocking finding open": {
 			func(s *stream) gateuse.Outside {
 				s.add(change.EventFindingFiled, systemActor, change.FindingFiled{
-					FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, State: finding.StateOpen, By: "reviewer",
+					FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: "high", State: finding.StateOpen, By: "reviewer",
 				})
 				return greenOutside()
 			}, gate.ClauseBlocking,
@@ -358,7 +358,7 @@ func TestEvaluateAppendsWhenTheReasonsChange(t *testing.T) {
 	require.True(t, first.Appended)
 
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
-		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, State: finding.StateOpen, By: "reviewer",
+		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
 	evs := s.events()
 	added := evs[len(evs)-1]
@@ -475,14 +475,14 @@ func TestEvaluateIsDeterministic(t *testing.T) {
 
 func TestEvaluateFindingResolvedPasses(t *testing.T) {
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
-		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, State: finding.StateOpen, By: "reviewer",
+		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
 	resBlocked, _ := evaluate(t, s, greenOutside())
 	require.False(t, resBlocked.OK)
 	require.True(t, hasClause(resBlocked.Reasons, gate.ClauseBlocking))
 
 	s.add(change.EventFindingStateChanged, systemActor, change.FindingStateChanged{
-		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, State: finding.StateResolved, By: "author",
+		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: "high", State: finding.StateResolved, By: "author",
 	})
 	resResolved, _ := evaluate(t, s, greenOutside())
 	require.True(t, resResolved.OK)

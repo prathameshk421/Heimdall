@@ -324,13 +324,13 @@ func TestFoldLeavesReviewsUnknownUntilTheyArePicked(t *testing.T) {
 
 func TestFoldBuildsTheBlockingSetAndHumanCases(t *testing.T) {
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
-		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, State: finding.StateOpen, By: "reviewer",
+		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
 	f := fold(t, s)
 	require.Equal(t, []id.FindingID{findingID}, f.Blocking)
 
 	s.add(change.EventFindingStateChanged, systemActor, change.FindingStateChanged{
-		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, State: finding.StateResolved, By: "author",
+		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: "high", State: finding.StateResolved, By: "author",
 	})
 	f = fold(t, s)
 	require.Empty(t, f.Blocking)
@@ -348,7 +348,7 @@ func TestFoldBuildsTheBlockingSetAndHumanCases(t *testing.T) {
 
 func TestFoldNeverBlocksAnE4Finding(t *testing.T) {
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
-		FindingID: findingID, Ref: ref(1), Tier: finding.TierE4, State: finding.StateOpen, By: "reviewer",
+		FindingID: findingID, Ref: ref(1), Tier: finding.TierE4, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
 	f := fold(t, s)
 	require.Empty(t, f.Blocking)
@@ -399,7 +399,7 @@ func TestFoldApprovalDoesNotSurvivePushEvenWithSameHead(t *testing.T) {
 func TestFoldIsDeterministic(t *testing.T) {
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
 		FindingID: id.FindingID("fnd_01ARZ3NDEKTSV4RRFFQ69G5FAW"),
-		Ref:       ref(2), Tier: finding.TierE2, State: finding.StateOpen, By: "reviewer",
+		Ref:       ref(2), Tier: finding.TierE2, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
 	a := fold(t, s)
 	b := fold(t, s)

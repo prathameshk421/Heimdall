@@ -43,12 +43,12 @@ func TestLeadFoldLeavesTheHeadTestTreeUnknown(t *testing.T) {
 func TestLeadBlockingFollowsThePolicyThresholds(t *testing.T) {
 	filed := func(tier finding.Tier) *stream {
 		return greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
-			FindingID: findingID, Ref: ref(1), Tier: tier, State: finding.StateOpen, By: "reviewer",
+			FindingID: findingID, Ref: ref(1), Tier: tier, Severity: "high", State: finding.StateOpen, By: "reviewer",
 		})
 	}
 	out := greenOutside()
 	out.HeadTestTreeHash = string(testTree1)
-	out.PolicyAtBase.Blocking = policy.Blocking{MinSeverity: finding.SeverityCritical, MinTier: finding.TierE2}
+	out.PolicyAtBase.Blocking = policy.Blocking{MinSeverity: finding.SeverityHigh, MinTier: finding.TierE2}
 	out.PolicyAtHead = out.PolicyAtBase
 
 	res, _ := evaluate(t, filed(finding.TierE3), out)
@@ -83,7 +83,7 @@ func TestLeadALateCIReportForAnOldCommitDoesNotReplaceTheHeadResult(t *testing.T
 // Without a known policy the gate is red anyway; the fold's own default stays strict.
 func TestLeadFoldDefaultBlockingIsStrict(t *testing.T) {
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
-		FindingID: findingID, Ref: ref(1), Tier: finding.TierE3, State: finding.StateOpen, By: "reviewer",
+		FindingID: findingID, Ref: ref(1), Tier: finding.TierE3, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
 	facts, err := gateuse.Fold(s.events())
 	require.NoError(t, err)

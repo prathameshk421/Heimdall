@@ -68,7 +68,7 @@ func tablePayload(t *testing.T, s change.State, et change.EventType) json.RawMes
 }
 
 func findingPayload(state string) json.RawMessage {
-	return json.RawMessage(fmt.Sprintf(`{"finding_id":"fnd_01HZX3K9QW7M2P5R8T0V4YB6CD","ref":"F1","tier":"E1","state":%q,"by":"rekdfr"}`, state))
+	return json.RawMessage(fmt.Sprintf(`{"finding_id":"fnd_01HZX3K9QW7M2P5R8T0V4YB6CD","ref":"F1","tier":"E1","severity":"high","state":%q,"by":"rekdfr"}`, state))
 }
 
 func decisionPayload(kind string) json.RawMessage {

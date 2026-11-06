@@ -392,8 +392,7 @@ func (st *foldState) waive(p change.ReviewWaived) {
 	}
 }
 
-// finding records the latest state of a finding. The event carries no severity, so the severity is treated as
-// critical: a finding can never pass a policy threshold because a field is missing.
+// finding records the latest state of a finding with the severity its event carries (TECH_SPEC 11.1).
 func (st *foldState) finding(r change.FindingRecord) {
 	if _, ok := st.findingState[r.FindingID]; !ok {
 		st.findings = append(st.findings, r.FindingID)
@@ -401,7 +400,7 @@ func (st *foldState) finding(r change.FindingRecord) {
 	st.findingState[r.FindingID] = gate.FindingState{
 		ID:          r.FindingID,
 		Tier:        r.Tier,
-		Severity:    finding.SeverityCritical,
+		Severity:    r.Severity,
 		State:       r.State,
 		Fingerprint: r.Fingerprint,
 		Reporter:    string(r.By),
@@ -457,11 +456,10 @@ func (st *foldState) result() folded {
 	}
 }
 
-// strictBlocking is the threshold the fold uses when no policy is known: every open finding of tier E1 to E3 blocks. A
-// finding event carries no severity, so severity is taken as critical and only the policy's tier threshold can lift a
-// finding out of the blocking set.
+// strictBlocking is the threshold the fold uses when no policy is known: every open finding of tier E1 to E3 blocks,
+// whatever its severity. Only a policy's own thresholds can lift a finding out of the blocking set.
 func strictBlocking() policy.Blocking {
-	return policy.Blocking{MinSeverity: finding.SeverityCritical, MinTier: finding.TierE4}
+	return policy.Blocking{MinSeverity: finding.SeverityLow, MinTier: finding.TierE4}
 }
 
 // blockingFor returns the blocking thresholds of the policy at the merge base (invariant 5), or the strict default

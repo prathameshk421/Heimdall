@@ -2,6 +2,7 @@
   "finding_id": "fnd_01HZX3K9QW7M2P5R8T0V4YB6CD",
   "ref": "F1",
   "tier": "E1",
+  "severity": "high",
   "state": "open",
   "by": "bob-reviewer"
 }

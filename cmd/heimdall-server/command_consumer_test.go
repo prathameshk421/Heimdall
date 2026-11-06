@@ -256,7 +256,7 @@ func TestServerCommandRuntimeUpheldFindingChangesGateState(t *testing.T) {
 	require.NoError(t, err)
 	findingID := id.FindingID("fnd_01ARZ3NDEKTSV4RRFFQ69G5FAV")
 	filed, err := runtime.event(cid, change.Actor{Kind: change.ActorAgent, ID: "ana-reviewer"}, commands.SourceGitHub, change.EventFindingFiled,
-		change.FindingFiled{FindingID: findingID, Ref: id.FindingRef(1), Tier: "E3", State: "open", By: "ana-reviewer"}, "finding")
+		change.FindingFiled{FindingID: findingID, Ref: id.FindingRef(1), Tier: "E3", Severity: "high", State: "open", By: "ana-reviewer"}, "finding")
 	require.NoError(t, err)
 	caseOpened, err := runtime.event(cid, change.Actor{Kind: change.ActorHuman, ID: "bob"}, commands.SourceChat, change.EventCaseOpened,
 		change.CaseOpened{CaseID: id.CaseID("case_01ARZ3NDEKTSV4RRFFQ69G5FAV"), Finding: id.FindingRef(1)}, "case")
@@ -294,7 +294,7 @@ func TestServerCommandRuntimeRoutesGitHubCommentChallengeAndReplies(t *testing.T
 	runtime, store, _, comments := setupCommandRuntime(t, cid, nil, pr)
 	runtime.intake = prIntake{in: commandTestIntake{stream: cid}}
 	filed, err := runtime.event(cid, change.Actor{Kind: change.ActorAgent, ID: "ana-reviewer"}, commands.SourceGitHub, change.EventFindingFiled,
-		change.FindingFiled{FindingID: id.FindingID("fnd_01ARZ3NDEKTSV4RRFFQ69G5FAV"), Ref: id.FindingRef(1), Tier: "E3", State: "open", By: "ana-reviewer"}, "finding")
+		change.FindingFiled{FindingID: id.FindingID("fnd_01ARZ3NDEKTSV4RRFFQ69G5FAV"), Ref: id.FindingRef(1), Tier: "E3", Severity: "high", State: "open", By: "ana-reviewer"}, "finding")
 	require.NoError(t, err)
 	_, err = runtime.engine.Advance(context.Background(), cid, []change.Event{filed})
 	require.NoError(t, err)

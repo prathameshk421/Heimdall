@@ -39,5 +39,13 @@ func blocks(f FindingState, minimum policy.Blocking) bool {
 	if f.Consensus {
 		return true
 	}
-	return f.Tier.AtLeast(minimum.MinTier) && f.Severity.AtLeast(minimum.MinSeverity)
+	if !f.Tier.AtLeast(minimum.MinTier) {
+		return false
+	}
+	// A finding whose severity is missing or unknown is not below the minimum: it blocks, so no missing field can
+	// let a finding through (TECH_SPEC 11.1).
+	if !f.Severity.Valid() {
+		return true
+	}
+	return f.Severity.AtLeast(minimum.MinSeverity)
 }

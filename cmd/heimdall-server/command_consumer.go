@@ -574,7 +574,7 @@ func (r *commandRuntime) findingStateEvent(cid id.ChangeID, state []change.Event
 		return change.Event{}, fmt.Errorf("finding %s has no recorded state", ref)
 	}
 	stateChange := change.FindingStateChanged{
-		FindingID: previous.FindingID, Ref: previous.Ref, Tier: previous.Tier, State: target, By: change.ActorID(person),
+		FindingID: previous.FindingID, Ref: previous.Ref, Tier: previous.Tier, Severity: previous.Severity, State: target, By: change.ActorID(person),
 		Fingerprint: previous.Fingerprint, Confidence: previous.Confidence,
 	}
 	ev, err := r.event(cid, actor, source, change.EventFindingStateChanged, stateChange, sourceRef)

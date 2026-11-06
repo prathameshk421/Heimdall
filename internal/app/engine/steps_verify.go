@@ -79,6 +79,7 @@ func (VerifyEvidence) onFindingFiled(c ChangeView, e change.Event) (Result, erro
 		Ticket:     c.ID,
 		FindingID:  record.FindingID,
 		FindingRef: record.Ref,
+		Severity:   record.Severity,
 		HeadSHA:    headSHA,
 		TestPath:   testPath,
 		TestSource: testSource,
@@ -118,6 +119,7 @@ func (VerifyEvidence) onPRPushed(c ChangeView, e change.Event) (Result, error) {
 			Ticket:     c.ID,
 			FindingID:  f.id,
 			FindingRef: f.ref,
+			Severity:   f.severity,
 			HeadSHA:    pr.HeadSHA,
 			TestPath:   testPath,
 			TestSource: testSource,
@@ -162,6 +164,7 @@ type findingStateInfo struct {
 	id         id.FindingID
 	ref        id.FindingRef
 	tier       finding.Tier
+	severity   finding.Severity
 	state      finding.State
 	filedEvent change.Event
 }
@@ -241,6 +244,7 @@ func updateFindingMap(findings map[id.FindingID]*findingStateInfo, e change.Even
 				id:         rec.FindingID,
 				ref:        rec.Ref,
 				tier:       rec.Tier,
+				severity:   rec.Severity,
 				state:      rec.State,
 				filedEvent: e,
 			}

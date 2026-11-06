@@ -36,6 +36,7 @@ func (s *Service) buildFindingFiledEvent(
 		FindingID:   s.ids.NewFinding(),
 		Ref:         fRef,
 		Tier:        vf.tier,
+		Severity:    vf.input.Severity,
 		State:       st,
 		By:          change.ActorID(a.Agent),
 		Fingerprint: findingFingerprint(vf.input),

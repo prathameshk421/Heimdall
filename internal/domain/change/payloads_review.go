@@ -76,6 +76,7 @@ type FindingRecord struct {
 	FindingID   id.FindingID       `json:"finding_id"`
 	Ref         id.FindingRef      `json:"ref"`
 	Tier        finding.Tier       `json:"tier"`
+	Severity    finding.Severity   `json:"severity"`
 	State       finding.State      `json:"state"`
 	By          ActorID            `json:"by"`
 	Fingerprint string             `json:"fingerprint,omitempty"`
@@ -90,6 +91,8 @@ func (p FindingRecord) Validate() error {
 	v.add("ref", checkFindingRef(p.Ref))
 	_, err = finding.ParseTier(string(p.Tier))
 	v.add("tier", err)
+	_, err = finding.ParseSeverity(string(p.Severity))
+	v.add("severity", err)
 	_, err = finding.ParseState(string(p.State))
 	v.add("state", err)
 	v.add("by", checkActor(p.By))

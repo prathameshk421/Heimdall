@@ -18,14 +18,15 @@ const (
 
 // VerifyEvidencePayload is the payload of a verify_evidence effect (TECH_SPEC 11.1).
 type VerifyEvidencePayload struct {
-	Repo       Repo          `json:"repo"`
-	Ticket     id.ChangeID   `json:"ticket"`
-	FindingID  id.FindingID  `json:"finding_id"`
-	FindingRef id.FindingRef `json:"finding_ref"`
-	HeadSHA    id.SHA        `json:"head_sha"`
-	TestPath   string        `json:"test_path"`
-	TestSource string        `json:"test_source"`
-	TestName   string        `json:"test_name"`
+	Repo       Repo             `json:"repo"`
+	Ticket     id.ChangeID      `json:"ticket"`
+	FindingID  id.FindingID     `json:"finding_id"`
+	FindingRef id.FindingRef    `json:"finding_ref"`
+	Severity   finding.Severity `json:"severity"`
+	HeadSHA    id.SHA           `json:"head_sha"`
+	TestPath   string           `json:"test_path"`
+	TestSource string           `json:"test_source"`
+	TestName   string           `json:"test_name"`
 }
 
 // Validate returns every problem with the payload.
@@ -37,6 +38,8 @@ func (p VerifyEvidencePayload) Validate() error {
 	_, err = id.ParseFindingID(string(p.FindingID))
 	v.add("finding_id", err)
 	v.add("finding_ref", checkFindingRef(p.FindingRef))
+	_, err = finding.ParseSeverity(string(p.Severity))
+	v.add("severity", err)
 	v.add("head_sha", checkSHA(p.HeadSHA))
 	v.add("test_path", finding.CheckRepoPath(p.TestPath))
 	v.add("test_source", checkTestSource(p.TestSource))

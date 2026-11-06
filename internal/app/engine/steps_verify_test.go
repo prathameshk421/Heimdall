@@ -47,7 +47,7 @@ func sampleFindingFiledEvent(fndID id.FindingID, ref string, tier finding.Tier, 
 	payload := `{
 		"finding_id":"` + string(fndID) + `",
 		"ref":"` + ref + `",
-		"tier":"` + string(tier) + `",
+		"tier":"` + string(tier) + `","severity":"high",
 		"state":"open",
 		"by":"reviewer-agent",
 		"test_path":"tests/repro_test.go",
@@ -85,7 +85,7 @@ func TestVerifyEvidenceDoneWhenNoE1Waiting(t *testing.T) {
 		ChangeID: testTicket,
 		Version:  5,
 		Type:     change.EventFindingVerified,
-		Payload:  json.RawMessage(`{"finding_id":"` + string(testFnd2) + `","ref":"F2","tier":"E1","state":"open","by":"heimdall"}`),
+		Payload:  json.RawMessage(`{"finding_id":"` + string(testFnd2) + `","ref":"F2","tier":"E1","severity":"high","state":"open","by":"heimdall"}`),
 	}
 	v.Events = append(v.Events, verEv)
 	require.True(t, step.Done(v))
@@ -107,7 +107,7 @@ func TestVerifyEvidenceDoneWhenNoE1Waiting(t *testing.T) {
 		ChangeID: testTicket,
 		Version:  7,
 		Type:     change.EventFindingVerified,
-		Payload:  json.RawMessage(`{"finding_id":"` + string(testFnd2) + `","ref":"F2","tier":"E1","state":"open","by":"heimdall"}`),
+		Payload:  json.RawMessage(`{"finding_id":"` + string(testFnd2) + `","ref":"F2","tier":"E1","severity":"high","state":"open","by":"heimdall"}`),
 	}
 	v.Events = append(v.Events, verEv2)
 	require.True(t, step.Done(v))
@@ -168,7 +168,7 @@ func TestVerifyEvidenceOnFindingFiledAlreadyVerifiedNoEffect(t *testing.T) {
 		ChangeID: testTicket,
 		Version:  4,
 		Type:     change.EventFindingVerified,
-		Payload:  json.RawMessage(`{"finding_id":"` + string(testFnd1) + `","ref":"F1","tier":"E1","state":"open","by":"heimdall"}`),
+		Payload:  json.RawMessage(`{"finding_id":"` + string(testFnd1) + `","ref":"F1","tier":"E1","severity":"high","state":"open","by":"heimdall"}`),
 	}
 	evs = append(evs, filedEv, verEv)
 	view := engine.ChangeView{ID: testTicket, Events: evs}
@@ -221,7 +221,7 @@ func TestVerifyEvidenceMissingReproTestFails(t *testing.T) {
 	barePayload := `{
 		"finding_id":"` + string(testFnd1) + `",
 		"ref":"F1",
-		"tier":"E1",
+		"tier":"E1","severity":"high",
 		"state":"open",
 		"by":"reviewer-agent"
 	}`

@@ -1,5 +1,20 @@
 # Heimdall progress
 
+## Planning session (Nov 6, 2026): build-out and wiring plan
+
+- Added `docs/WIRING_PLAN.md`: Part A (12 build packages for what is unbuilt), Part B (wiring and VM deploy with real agents), Part C (end-to-end testing), plus owner approvals and a "Later" list (River, Telegram/Discord/Slack). No Go code was changed in this session; it only read the repo, the VM (read-only) and GitHub (read-only).
+- Read-only readiness findings: VM Switch stack and 3 numbered agents are up; Heimdall server, runner, Podman and Go are not on the VM; the fixture repo has a policy and branch protection but no CI workflow and names GitHub accounts that are not logged in locally. `.env` names were checked by the owner; all names `secrets-sync` needs are present. **Not verified:** Jira token validity, OpenRouter balance, Switch client field names against the Switch source, any live run.
+- **Noticed:** the working tree held uncommitted Go changes (finding severity and verify-evidence files under `internal/` and `cmd/heimdall-server`, plus `docs/TECH_SPEC.md`) that this session did not make. They look like parallel work toward plan package A1/A2. Their state and tests are not recorded here and not verified.
+
+## A1 finding severity (Nov 6, 2026)
+
+- Every finding event (`finding.filed`, `finding.verified`, `finding.state_changed`, and the verify-evidence effect) now carries `severity`, required by `FindingRecord.Validate` and `VerifyEvidencePayload.Validate`. The gate fold uses the stored severity; the old "everything is critical" fold is gone. Missing or unknown severity fails closed in `gate.blocks` (it blocks). With no policy known, the strict default is `min_severity: low` with tier E1 to E3 blocking, so unknown policy still blocks everything open.
+- Red first: `internal/app/gateuse/severity_test.go` observed an assertion failure (a low finding under `min_severity: medium` blocked) before the fold change.
+- Fixtures: finding events in tests and golden payloads gained `severity`. Two policy thresholds that assumed the all-critical fold were updated (`lead_review_test.go` now uses `high`). No test was weakened.
+- Evidence: `make fast` exit 0 (3,696 tests, lint 0) on two reruns. One earlier `make fast` run exited 2 at the unit step; its output was not captured and two reruns passed. **Not verified:** the cause of that one failure (a flaky unit test is the likely cause, not confirmed). Focused: `go test ./internal/domain/... ./internal/app/gateuse/ ./internal/app/engine/ ./internal/app/effects/ ./internal/app/agenttools/ ./cmd/heimdall-server/` all pass.
+- Mutations (3, each caught and restored): fold ignores stored severity (`TestSeverityBelowPolicyMinimumDoesNotBlock`); unknown severity does not block (`TestFindingWithUnknownSeverityBlocks`); strict default reverts to critical (`TestEachClauseCanFailInTheUseCase` and four more).
+- Not verified: `make verify` for this change (not run in this session); live events in Postgres from before this change (old events without severity will now fail decode, so an existing event log needs to be reset or migrated; no such log is known to exist outside test databases); real reviewer agent submissions with severity (covered only by unit tests and reviewer examples that already carry severity). `docs/TRACKER.md` has no row for A1; the work-package status lives here.
+
 ## T106 runtime lifecycle continuation (Nov 6, 2026)
 
 - Started from clean `heimdall-build` HEAD `93374a4` in isolated worktree `t3/agent-runtime-e2e`.

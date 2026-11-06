@@ -51,6 +51,7 @@ func sampleReproEffect() change.Effect {
 		Ticket:     veTicket,
 		FindingID:  veFndID,
 		FindingRef: ref,
+		Severity:   finding.SeverityHigh,
 		HeadSHA:    veHead,
 		TestPath:   veTestPath,
 		TestSource: src,
@@ -87,7 +88,7 @@ func sampleChangeEvents() []change.Event {
 			ChangeID: veTicket,
 			Version:  3,
 			Type:     change.EventFindingFiled,
-			Payload:  json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","tier":"E1","state":"open","by":"reviewer-agent"}`),
+			Payload:  json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","tier":"E1","severity":"high","state":"open","by":"reviewer-agent"}`),
 		},
 	}
 }
@@ -251,7 +252,7 @@ func TestVerifyEvidenceSkipsIfAlreadyRecorded(t *testing.T) {
 		ChangeID: veTicket,
 		Version:  4,
 		Type:     change.EventFindingVerified,
-		Payload:  json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","tier":"E1","state":"open","by":"heimdall"}`),
+		Payload:  json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","tier":"E1","severity":"high","state":"open","by":"heimdall"}`),
 	})
 	store := &fakeStore{events: events}
 	sandbox := &overlaySandboxFake{}

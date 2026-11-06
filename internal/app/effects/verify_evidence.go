@@ -145,6 +145,7 @@ func (v VerifyEvidence) ingestVerified(ctx context.Context, ticket id.ChangeID, 
 		FindingID: p.FindingID,
 		Ref:       p.FindingRef,
 		Tier:      finding.TierE1,
+		Severity:  p.Severity,
 		State:     finding.StateOpen,
 		By:        change.ActorID("heimdall"),
 	}
@@ -167,6 +168,7 @@ func (v VerifyEvidence) ingestUnverified(ctx context.Context, ticket id.ChangeID
 		FindingID: p.FindingID,
 		Ref:       p.FindingRef,
 		Tier:      finding.TierE4,
+		Severity:  p.Severity,
 		State:     finding.StateUnverified,
 		By:        change.ActorID("heimdall"),
 	}
