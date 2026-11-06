@@ -123,6 +123,18 @@ func TestBuildFromEventsProjectsContextDeterministically(t *testing.T) {
 	require.Contains(t, string(built.Bytes), `"base_sha":"abcdef1"`)
 	require.Contains(t, string(built.Bytes), `"head_sha":"abcdef4"`)
 	require.Contains(t, string(built.Bytes), `"criteria":["AC1","AC2"]`)
+
+	criterionText := "never inline this requirement"
+	criterionHash := sha256.Sum256([]byte(criterionText))
+	criterionHashText := hex.EncodeToString(criterionHash[:])
+	criterionEvents := []change.Event{bundleEvent(t, change.EventChangeTriggered, change.Triggered{
+		Ticket: "PAY-999", Repo: "acme/pay-demo", Assignee: "agent", Source: change.TriggerJira,
+		Criteria: []change.TicketCriterion{{ID: "AC1", Text: criterionText, Hash: criterionHashText, Ref: workflow.BlobRef("blob:sha256:" + criterionHashText)}},
+	})}
+	criterionBundle, err := BuildFromEvents(workflow.RoleTestAuthor, "PAY-999", criterionEvents)
+	require.NoError(t, err)
+	require.Contains(t, string(criterionBundle.Bytes), `"acceptance_criteria":[{"id":"AC1","ref":"blob:sha256:`+criterionHashText+`"}]`)
+	require.NotContains(t, string(criterionBundle.Bytes), criterionText, "ticket text stays outside the context bundle")
 }
 
 func bundleEvent(t *testing.T, typ change.EventType, payload change.Payload) change.Event {

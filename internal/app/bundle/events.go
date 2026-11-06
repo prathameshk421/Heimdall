@@ -74,6 +74,10 @@ func applyTriggered(req *Request, p change.Triggered) {
 	if p.Ticket != "" {
 		req.Change = string(p.Ticket)
 	}
+	for _, criterion := range p.Criteria {
+		req.Criteria = append(req.Criteria, criterion.ID)
+		req.AcceptanceCriteria = append(req.AcceptanceCriteria, workflow.CriterionRef{ID: criterion.ID, Ref: criterion.Ref})
+	}
 }
 
 func applyBranchEnsured(req *Request, p change.BranchEnsured) {

@@ -30,8 +30,10 @@
 //
 // Invariants. A port takes ctx first if it does I/O. Scope is set by the caller's server-side resolution, never by a
 // caller: MemoryQuery.Groups must be set, and a Memory adapter never widens them (TECH_SPEC 9.4). Untrusted text
-// (PR bodies, ticket descriptions, room messages) is bounded by MaxUntrustedText and is never placed in an event or
-// prompt by a port (TECH_SPEC 6.3).
+// (PR bodies, ticket descriptions, room messages) is bounded by MaxUntrustedText. Jira acceptance criteria are the
+// deliberate exception to event omission: the trigger captures their immutable text, SHA-256 and blob ref so replay
+// preserves the source. Bundles and task envelopes carry only refs, and MCP returns the text only through
+// read_untrusted (TECH_SPEC 6.3).
 //
 // Deliberate differences from TECH_SPEC 2.3. The spec's VCS interface has seven methods, so it is split by consumer
 // into PRReader, PRComments, BranchWriter, CheckWriter and CodeReader; the same methods, in the same signatures

@@ -1,16 +1,34 @@
 package change
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"regexp"
+	"strings"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
 // Triggered is the payload of change.triggered: a ticket became work (TECH_SPEC 3.2, D50).
 type Triggered struct {
-	Ticket   id.ChangeID   `json:"ticket"`
-	Repo     Repo          `json:"repo"`
-	Assignee ActorID       `json:"assignee"`
-	Source   TriggerSource `json:"source"`
+	Ticket   id.ChangeID       `json:"ticket"`
+	Repo     Repo              `json:"repo"`
+	Assignee ActorID           `json:"assignee"`
+	Source   TriggerSource     `json:"source"`
+	Criteria []TicketCriterion `json:"acceptance_criteria,omitempty"`
 }
+
+// TicketCriterion is the validated, immutable ticket requirement captured when work is triggered.
+type TicketCriterion struct {
+	ID   string           `json:"id"`
+	Text string           `json:"text"`
+	Hash string           `json:"hash"`
+	Ref  workflow.BlobRef `json:"ref"`
+}
+
+var ticketCriterionID = regexp.MustCompile(`^AC[1-9][0-9]{0,2}$`)
 
 // Validate returns every problem with the payload.
 func (p Triggered) Validate() error {
@@ -19,6 +37,27 @@ func (p Triggered) Validate() error {
 	v.add("repo", checkRepo(p.Repo))
 	v.add("assignee", checkActor(p.Assignee))
 	v.add("source", checkEnum(p.Source, p.Source.Valid()))
+	seen := map[string]bool{}
+	for _, c := range p.Criteria {
+		if !ticketCriterionID.MatchString(c.ID) {
+			v.add("acceptance_criteria", errors.New("invalid criterion id"))
+		}
+		if seen[c.ID] {
+			v.add("acceptance_criteria", errors.New("duplicate criterion id"))
+		}
+		seen[c.ID] = true
+		if strings.TrimSpace(c.Text) == "" || len(c.Text) > 64<<10 {
+			v.add("acceptance_criteria", errors.New("criterion text must be 1 to 65536 bytes"))
+		}
+		sum := sha256.Sum256([]byte(c.Text))
+		hash := hex.EncodeToString(sum[:])
+		if c.Hash != hash {
+			v.add("acceptance_criteria", errors.New("criterion hash does not match text"))
+		}
+		if c.Ref != workflow.BlobRef("blob:sha256:"+hash) {
+			v.add("acceptance_criteria", errors.New("criterion ref does not match text hash"))
+		}
+	}
 	return v.join()
 }
 

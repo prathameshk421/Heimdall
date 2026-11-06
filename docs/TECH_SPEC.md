@@ -275,7 +275,7 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 
 | Event | Key payload | Source |
 |---|---|---|
-| `change.triggered` | ticket, repo, assignee, trigger source | Jira webhook or fallback |
+| `change.triggered` | ticket, repo, assignee, trigger source; Jira acceptance criteria as ordered `{id, text, hash, ref}` values | Jira webhook or fallback |
 | `room.opened`, `branch.ensured` | room id; branch, base sha | Adapters |
 | `task.assigned` / `task.acked` / `task.timed_out` / `task.failed` | task id, agent, role, deadline, bundle hash, reason | Engine |
 | `step.retried` / `step.escalated` | step id, attempt, reasons / attempts, reason | Engine (on_fail, 5.1) |
@@ -447,6 +447,11 @@ Each LLM role is a skill plus the `heimdall` MCP tools. **VM agents run on OpenC
 6. Sessions are per room, so no context crosses from one change to another. A re-review in the same room keeps its context (D145).
 
 ### 6.3 Task envelope
+
+For Jira work, `acceptance_criteria` contains the ordered criterion IDs and refs captured by `change.triggered`. The
+trigger stores each source text as a content-addressed `BlobEvidence` object and records its SHA-256 and ref in the
+event, so a replay produces the same input. Criterion text remains untrusted: it is not in the role bundle or the task
+envelope and is available only through `heimdall_read_untrusted`, which wraps the text as data rather than instructions.
 
 ```json
 {
