@@ -14,14 +14,14 @@ import (
 
 // The tools this agent calls (TECH_SPEC 14.1).
 const (
-	toolGetTask        = "heimdall_get_task"
-	toolAck            = "heimdall_ack"
-	toolReadUntrusted  = "heimdall_read_untrusted"
-	toolReadCode       = "heimdall_read_code"
-	toolSubmitTests    = "heimdall_submit_tests"
-	toolSubmitReview   = "heimdall_submit_review"
-	toolSubmitVerdict  = "heimdall_submit_verdict"
-	toolReportProgress = "heimdall_report_progress"
+	toolGetTask        = "get_task"
+	toolAck            = "ack"
+	toolReadUntrusted  = "read_untrusted"
+	toolReadCode       = "read_code"
+	toolSubmitTests    = "submit_tests"
+	toolSubmitReview   = "submit_review"
+	toolSubmitVerdict  = "submit_verdict"
+	toolReportProgress = "report_progress"
 )
 
 // The canned values every scenario shares.
@@ -115,7 +115,7 @@ func scenarioNames() []string {
 	return names
 }
 
-// submissionBuilder returns the arguments of heimdall_submit_tests for one scenario. A builder that cannot derive its
+// submissionBuilder returns the arguments of submit_tests for one scenario. A builder that cannot derive its
 // canned submission from this task returns an error instead of sending something else.
 type submissionBuilder func(task workflow.TaskEnvelope) (any, error)
 

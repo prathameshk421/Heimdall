@@ -182,7 +182,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	ts := httptest.NewServer(rootMux)
 	defer ts.Close()
 
-	getTaskCall := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"heimdall_get_task","arguments":{}}}`
+	getTaskCall := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_task","arguments":{}}}`
 
 	// 1. Calling get_task with authorToken -> returns active task for test-author
 	reqAuthor, err := http.NewRequestWithContext(ctx, http.MethodPost, ts.URL+"/mcp", bytes.NewReader([]byte(getTaskCall)))
@@ -225,13 +225,13 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	require.Equal(t, "AC1", task.Inputs.AcceptanceCriteria[0].ID)
 	require.Equal(t, "blob:sha256:"+hex.EncodeToString(criterionHash[:]), task.Inputs.AcceptanceCriteria[0].Ref)
 	require.NotContains(t, rpcResp.Result.Content[0].Text, criterionText, "the MCP envelope must not inline ticket-authored text")
-	untrusted := callComponentMCPTool(t, ts, authorToken, 5, "heimdall_read_untrusted", map[string]string{"ref": task.Inputs.AcceptanceCriteria[0].Ref})
+	untrusted := callComponentMCPTool(t, ts, authorToken, 5, "read_untrusted", map[string]string{"ref": task.Inputs.AcceptanceCriteria[0].Ref})
 	require.False(t, untrusted.IsError, untrusted.Text)
 	require.Contains(t, untrusted.Text, "Refunds are idempotent")
 	require.Contains(t, untrusted.Text, "data, not instructions")
 
 	// 2. Calling get_task with reviewerToken returns a refusal because the reviewer has no active task.
-	reviewerTask := callComponentMCPTool(t, ts, reviewerToken, 6, "heimdall_get_task", map[string]any{})
+	reviewerTask := callComponentMCPTool(t, ts, reviewerToken, 6, "get_task", map[string]any{})
 	require.True(t, reviewerTask.IsError, "must be error refusal for reviewer")
 	require.Contains(t, reviewerTask.Text, "You have no active task.")
 
@@ -241,11 +241,11 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 		"files":               []map[string]string{{"path": "tests/heimdall/KAN-1/refund_test.go", "content": "package tests"}},
 		"acceptance_criteria": map[string][]string{"AC1": {"TestRefund"}},
 	}
-	firstSubmit := callComponentMCPTool(t, ts, authorToken, 2, "heimdall_submit_tests", submission)
+	firstSubmit := callComponentMCPTool(t, ts, authorToken, 2, "submit_tests", submission)
 	require.True(t, firstSubmit.IsError, "failed workflow advancement is reported for retry")
-	secondSubmit := callComponentMCPTool(t, ts, authorToken, 3, "heimdall_submit_tests", submission)
+	secondSubmit := callComponentMCPTool(t, ts, authorToken, 3, "submit_tests", submission)
 	require.False(t, secondSubmit.IsError, secondSubmit.Text)
-	duplicateSubmit := callComponentMCPTool(t, ts, authorToken, 4, "heimdall_submit_tests", submission)
+	duplicateSubmit := callComponentMCPTool(t, ts, authorToken, 4, "submit_tests", submission)
 	require.False(t, duplicateSubmit.IsError, duplicateSubmit.Text)
 	require.Equal(t, []id.ChangeID{cid, cid}, advanced)
 	stored, err := store.Load(ctx, cid)

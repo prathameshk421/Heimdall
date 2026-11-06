@@ -8,11 +8,11 @@
 //
 // Turn an agent's tool call into a checked request: authenticate the agent token, check the agent's role against
 // the tool, check the call against the agent's one active task, bound what goes back, and hand the rest to the
-// application. Tool table: TECH_SPEC 14.1. Tool names carry the heimdall_ prefix that the harness permits.
+// application. Tool table: TECH_SPEC 14.1. Wire tool names are bare: the server lists and accepts get_task, not
+// heimdall_get_task. OpenCode adds the heimdall_ prefix on the model side, from the server key heimdall.
 //
-// Tools built here: heimdall_get_task, heimdall_ack, heimdall_get_change, heimdall_read_untrusted,
-// heimdall_read_code, heimdall_submit_tests, heimdall_submit_review, heimdall_submit_verdict,
-// heimdall_ask_humans, heimdall_report_progress. The rest of the table (read_pack, ask_knowledge, run_check,
+// Tools built here: get_task, ack, get_change, read_untrusted, read_code, submit_tests, submit_review,
+// submit_verdict, ask_humans, report_progress. The rest of the table (read_pack, ask_knowledge, run_check,
 // challenge) belongs to later tasks.
 //
 // # API

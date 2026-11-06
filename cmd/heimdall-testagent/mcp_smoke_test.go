@@ -7,7 +7,7 @@ package main
 //
 // What it proves: the MCP edge at the endpoint answers initialize, notifications/initialized and tools/list with the
 // expected HTTP statuses (never 401), the JSON-RPC 2.0 envelope is well formed, tools/list returns at least one tool
-// and it contains heimdall_get_task.
+// and it contains get_task.
 // What it does not prove: any tool call, any task, any database row, any GitHub or Switch call.
 //
 // The token comes from the file named by HEIMDALL_AGENT_TOKEN_FILE. Only the path is read from the environment; the

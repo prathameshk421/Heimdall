@@ -111,8 +111,8 @@ func TestTheTokenNeverAppearsInAnyAnswerOrLog(t *testing.T) {
 		r.post("Bearer nope", initBody),
 		r.post("Bearer "+testToken, `{not json`),
 		r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":2,"method":"no/such"}`),
-		r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"heimdall_get_task","arguments":{}}}`),
-		r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"heimdall_get_task","arguments":{}}}`),
+		r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_task","arguments":{}}}`),
+		r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_task","arguments":{}}}`),
 	}
 	for i, rep := range bodies {
 		require.NotContains(t, rep.body, testToken, "reply %d", i)
@@ -128,10 +128,10 @@ func TestTheTokenNeverAppearsInAnyAnswerOrLog(t *testing.T) {
 
 func TestLogsCarryToolAgentRoleAndOutcomeButNeverArguments(t *testing.T) {
 	r := newRig(t, workflow.RoleReviewer)
-	res := r.call("heimdall_report_progress", `{"text":"secret-argument-marker"}`)
+	res := r.call("report_progress", `{"text":"secret-argument-marker"}`)
 	require.False(t, res.IsError, res.text())
 	logs := r.logs.String()
-	require.Contains(t, logs, "heimdall_report_progress")
+	require.Contains(t, logs, "report_progress")
 	require.Contains(t, logs, string(testAgent))
 	require.Contains(t, logs, "reviewer")
 	require.Contains(t, logs, "outcome")
