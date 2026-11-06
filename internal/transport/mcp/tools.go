@@ -651,8 +651,7 @@ func (s *Server) submitTests(ctx context.Context, p Principal, args json.RawMess
 
 // caseMatchesTask reports whether a verdict's case id matches the assignment's task.
 func caseMatchesTask(caseID id.CaseID, t workflow.TaskEnvelope) bool {
-	ulid := strings.TrimPrefix(string(caseID), "case_")
-	return ulid != "" && ulid == strings.TrimPrefix(string(t.TaskID), "tsk_")
+	return t.CaseID != "" && t.CaseID == caseID
 }
 
 // submitReview validates a review against its schema and task, then passes it to the application.

@@ -73,11 +73,13 @@ func (p ReviewWaived) Validate() error {
 // FindingRecord is the content every finding event carries: the id, the short name people use, the tier, the state
 // and who moved it (TECH_SPEC 3.2 and 11.1).
 type FindingRecord struct {
-	FindingID id.FindingID  `json:"finding_id"`
-	Ref       id.FindingRef `json:"ref"`
-	Tier      finding.Tier  `json:"tier"`
-	State     finding.State `json:"state"`
-	By        ActorID       `json:"by"`
+	FindingID   id.FindingID       `json:"finding_id"`
+	Ref         id.FindingRef      `json:"ref"`
+	Tier        finding.Tier       `json:"tier"`
+	State       finding.State      `json:"state"`
+	By          ActorID            `json:"by"`
+	Fingerprint string             `json:"fingerprint,omitempty"`
+	Confidence  finding.Confidence `json:"confidence,omitempty"`
 }
 
 // Validate returns every problem with the record.
@@ -91,6 +93,13 @@ func (p FindingRecord) Validate() error {
 	_, err = finding.ParseState(string(p.State))
 	v.add("state", err)
 	v.add("by", checkActor(p.By))
+	if p.Fingerprint != "" {
+		v.add("fingerprint", checkText(p.Fingerprint))
+	}
+	if p.Confidence != "" {
+		_, err := finding.ParseConfidence(string(p.Confidence))
+		v.add("confidence", err)
+	}
 	return v.join()
 }
 

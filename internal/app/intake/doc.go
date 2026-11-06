@@ -23,7 +23,9 @@
 // # The stream
 //
 // A PR with a ticket appends to the ticket's change (PAY-142). A PR with no ticket appends to its own stream,
-// pr-<repo>-<number> (D146, id.PRChangeID), which the reducer starts as UNLINKED_PR.
+// pr-<repo>-<number> (D146, id.PRChangeID), which the reducer starts as UNLINKED_PR. The pr.opened payload also
+// carries reviewer agent suggestions derived from CODEOWNERS and the person map at the merge base; the reviewer-pick
+// timeout consumes that event data without repository I/O in an engine step.
 //
 // # Policy
 //

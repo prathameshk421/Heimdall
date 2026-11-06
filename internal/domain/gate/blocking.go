@@ -9,11 +9,14 @@ import (
 // FindingState is what BlockingSet reads about one finding. Consensus is true when the finding is consensus-blocking
 // under TECH_SPEC 11.2b, which is decided by the caller.
 type FindingState struct {
-	ID        id.FindingID
-	Tier      finding.Tier
-	Severity  finding.Severity
-	State     finding.State
-	Consensus bool
+	ID          id.FindingID
+	Tier        finding.Tier
+	Severity    finding.Severity
+	State       finding.State
+	Consensus   bool
+	Fingerprint string
+	Reporter    string
+	Confidence  finding.Confidence
 }
 
 // BlockingSet returns the findings that hold a merge, in the order given (TECH_SPEC 11.1). A finding blocks only in a

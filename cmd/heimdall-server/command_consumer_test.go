@@ -9,6 +9,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/commands"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
@@ -161,18 +162,115 @@ func TestServerCommandRuntimeStartsTicketThroughTheEngineAndRecordsSource(t *tes
 	require.Equal(t, []string{"Started."}, chat.posts)
 }
 
+func TestServerCommandRuntimeSelectsReviewersForFanout(t *testing.T) {
+	cid := id.ChangeID("KAN-4")
+	room := ports.RoomBinding{ChangeID: cid, RoomID: "room-1"}
+	pr := ports.PR{Repo: "aarush323/PBL_TOS_RISK_ANALYZER", Number: 9, Author: "alice", BaseSHA: commandTestBase, HeadSHA: commandTestHead, State: ports.PRStateOpen}
+	runtime, store, _, _ := setupCommandRuntime(t, cid, nil, pr)
+	opened, err := runtime.event(cid, change.Actor{Kind: change.ActorGitHub, ID: "github"}, commands.SourceGitHub, change.EventPROpened,
+		change.PROpened{Repo: pr.Repo, Number: pr.Number, HeadSHA: pr.HeadSHA, Author: pr.Author}, "open-pr")
+	require.NoError(t, err)
+	_, err = runtime.engine.Advance(context.Background(), cid, []change.Event{opened})
+	require.NoError(t, err)
+	msg := ports.Message{ID: "switch-review-43", Room: room.RoomID, Sender: "alice", Text: "heimdall review @ana @eli", At: time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, msg))
+	events, err := store.Load(context.Background(), cid)
+	require.NoError(t, err)
+	var picked *change.ReviewersPicked
+	assigned := make(map[string]bool)
+	for _, ev := range events {
+		switch ev.Type {
+		case change.EventReviewersPicked:
+			payload, ok := mustPayload[change.ReviewersPicked](ev)
+			require.True(t, ok)
+			picked = &payload
+		case change.EventTaskAssigned:
+			payload, ok := mustPayload[change.TaskAssigned](ev)
+			require.True(t, ok)
+			assigned[string(payload.Agent)] = true
+		case change.EventChangeTriggered, change.EventRoomOpened, change.EventBranchEnsured,
+			change.EventTaskAcked, change.EventTaskTimedOut, change.EventTaskFailed, change.EventTaskProgress,
+			change.EventStepRetried, change.EventStepEscalated, change.EventQuestionAsked, change.EventQuestionAnswered,
+			change.EventTestsSubmitted, change.EventTestsVerified, change.EventTestsRejected, change.EventTestsCommitted,
+			change.EventTestsApproved, change.EventTicketChanged, change.EventPROpened, change.EventPRPushed,
+			change.EventPRLinked, change.EventPRClosed, change.EventSlopEvaluated, change.EventReviewSubmitted,
+			change.EventReviewUnavailable, change.EventReviewWaived, change.EventFindingFiled, change.EventFindingVerified,
+			change.EventFindingStateChanged, change.EventChallengeFiled, change.EventCaseOpened,
+			change.EventVerdictSubmitted, change.EventVerdictApplied, change.EventVerdictEscalated,
+			change.EventDecisionRecorded, change.EventApprovalRecorded, change.EventApprovalInvalidated,
+			change.EventCIReported, change.EventGateEvaluated, change.EventChangeRejected, change.EventChangeMerged:
+			// These event types are intentionally outside the selection and task-assignment assertions.
+		}
+	}
+	require.NotNil(t, picked, "review command must append the event that starts reviewer fan-out")
+	require.Equal(t, []change.ActorID{"ana-reviewer", "eli-reviewer"}, picked.People)
+	require.Equal(t, change.ActorID("alice"), picked.By)
+	require.Equal(t, change.PickCommand, picked.Method)
+	require.Equal(t, map[string]bool{"ana-reviewer": true, "eli-reviewer": true}, assigned,
+		"reviewer selection must wake exactly the selected agents with assigned tasks")
+}
+
+func TestServerCommandRuntimeUpheldFindingChangesGateState(t *testing.T) {
+	cid := id.ChangeID("KAN-5")
+	room := ports.RoomBinding{ChangeID: cid, RoomID: "room-1"}
+	pr := ports.PR{Repo: "aarush323/PBL_TOS_RISK_ANALYZER", Number: 10, Author: "bob", BaseSHA: commandTestBase, HeadSHA: commandTestHead, State: ports.PRStateOpen}
+	runtime, store, _, _ := setupCommandRuntime(t, cid, nil, pr)
+	opened, err := runtime.event(cid, change.Actor{Kind: change.ActorGitHub, ID: "bob"}, commands.SourceGitHub, change.EventPROpened,
+		change.PROpened{Repo: pr.Repo, Number: pr.Number, HeadSHA: pr.HeadSHA, Author: pr.Author}, "open-pr")
+	require.NoError(t, err)
+	findingID := id.FindingID("fnd_01ARZ3NDEKTSV4RRFFQ69G5FAV")
+	filed, err := runtime.event(cid, change.Actor{Kind: change.ActorAgent, ID: "ana-reviewer"}, commands.SourceGitHub, change.EventFindingFiled,
+		change.FindingFiled{FindingID: findingID, Ref: id.FindingRef(1), Tier: "E3", State: "open", By: "ana-reviewer"}, "finding")
+	require.NoError(t, err)
+	caseOpened, err := runtime.event(cid, change.Actor{Kind: change.ActorHuman, ID: "bob"}, commands.SourceChat, change.EventCaseOpened,
+		change.CaseOpened{CaseID: id.CaseID("case_01ARZ3NDEKTSV4RRFFQ69G5FAV"), Finding: id.FindingRef(1)}, "case")
+	require.NoError(t, err)
+	_, err = runtime.engine.Advance(context.Background(), cid, []change.Event{opened, filed, caseOpened})
+	require.NoError(t, err)
+	msg := ports.Message{ID: "switch-uphold-44", Room: room.RoomID, Sender: "alice", Text: "heimdall uphold F1", At: time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, msg))
+	events, err := store.Load(context.Background(), cid)
+	require.NoError(t, err)
+	var changed *change.FindingStateChanged
+	var applied *change.VerdictApplied
+	for _, ev := range events {
+		if ev.Type == change.EventFindingStateChanged {
+			payload, ok := mustPayload[change.FindingStateChanged](ev)
+			require.True(t, ok)
+			changed = &payload
+		}
+		if ev.Type == change.EventVerdictApplied {
+			payload, ok := mustPayload[change.VerdictApplied](ev)
+			require.True(t, ok)
+			applied = &payload
+		}
+	}
+	require.NotNil(t, changed, "human uphold must transition the finding state consumed by the gate")
+	require.Equal(t, findingID, changed.FindingID)
+	require.Equal(t, "upheld", string(changed.State))
+	require.NotNil(t, applied, "human decision must settle the challenged case for gate evaluation")
+	require.Equal(t, id.CaseID("case_01ARZ3NDEKTSV4RRFFQ69G5FAV"), applied.CaseID)
+}
+
 func TestServerCommandRuntimeRoutesGitHubCommentChallengeAndReplies(t *testing.T) {
 	cid := id.ChangeID("KAN-3")
 	pr := ports.PR{Repo: "aarush323/PBL_TOS_RISK_ANALYZER", Number: 9, Title: "Fix", Branch: "KAN-3-fix", Author: "bob", BaseSHA: commandTestBase, HeadSHA: commandTestHead, State: ports.PRStateOpen}
 	runtime, store, _, comments := setupCommandRuntime(t, cid, nil, pr)
 	runtime.intake = prIntake{in: commandTestIntake{stream: cid}}
+	filed, err := runtime.event(cid, change.Actor{Kind: change.ActorAgent, ID: "ana-reviewer"}, commands.SourceGitHub, change.EventFindingFiled,
+		change.FindingFiled{FindingID: id.FindingID("fnd_01ARZ3NDEKTSV4RRFFQ69G5FAV"), Ref: id.FindingRef(1), Tier: "E3", State: "open", By: "ana-reviewer"}, "finding")
+	require.NoError(t, err)
+	_, err = runtime.engine.Advance(context.Background(), cid, []change.Event{filed})
+	require.NoError(t, err)
 	created := time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)
 	comment := ports.IssueComment{ID: 41, Login: "bob", UserType: "User", Body: "/heimdall challenge F1 the regression test reproduces it", CreatedAt: created, UpdatedAt: created}
-	err := runtime.HandleGitHubComment(context.Background(), pr.Repo, pr, comment)
+	err = runtime.HandleGitHubComment(context.Background(), pr.Repo, pr, comment)
 	require.NoError(t, err)
 	events, err := store.Load(context.Background(), cid)
 	require.NoError(t, err)
 	found := false
+	foundState := false
+	foundCase := false
 	for _, ev := range events {
 		if ev.Type == change.EventChallengeFiled {
 			found = true
@@ -181,8 +279,22 @@ func TestServerCommandRuntimeRoutesGitHubCommentChallengeAndReplies(t *testing.T
 			require.Equal(t, "F1", payload.Finding.String())
 			require.Equal(t, 1, payload.Round)
 		}
+		if ev.Type == change.EventFindingStateChanged {
+			payload, ok := mustPayload[change.FindingStateChanged](ev)
+			require.True(t, ok)
+			require.Equal(t, "disputed", string(payload.State))
+			foundState = true
+		}
+		if ev.Type == change.EventCaseOpened {
+			payload, ok := mustPayload[change.CaseOpened](ev)
+			require.True(t, ok)
+			require.Equal(t, "F1", payload.Finding.String())
+			foundCase = true
+		}
 	}
 	require.True(t, found, "challenge command must append challenge.filed")
+	require.True(t, foundState, "challenge must move the finding into disputed state for the gate")
+	require.True(t, foundCase, "challenge must create a durable resolver case for fan-out")
 	require.Equal(t, []string{"Challenge recorded."}, comments.bodies)
 	comment.ID = 42
 	comment.UserType = "Bot"

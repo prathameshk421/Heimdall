@@ -318,6 +318,23 @@ func TestGoodPRPassesAndTheGateStaysPending(t *testing.T) {
 	require.Contains(t, c.Summary, "stays pending")
 }
 
+func TestIntakePersistsCODEOWNERSReviewerSuggestionsAtTheMergeBase(t *testing.T) {
+	r := newRig(t)
+	r.seed(t, true)
+	r.prs.pr = pullRequest(11, "PAY-142 refund rounding", "feature/PAY-142-refund", shaHead1)
+	r.prs.files = sourceFiles()
+	r.code.files[pathKey(shaBase, ".github/CODEOWNERS")] = []byte("internal/refund/** @temporaryhameshakagroup-alt\n")
+	res, err := r.in.HandlePR(context.Background(), testRepo, 11)
+	require.NoError(t, err)
+	events := r.ev.streams[res.Stream]
+	var opened map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(events[seededToBuilding].Payload, &opened))
+	var suggestions []string
+	require.NoError(t, json.Unmarshal(opened["suggested_reviewers"], &suggestions))
+	require.Equal(t, []string{"ana-reviewer"}, suggestions)
+	require.Contains(t, r.code.readAt, shaBase, "CODEOWNERS and identity mapping must come from merge base")
+}
+
 func TestPolicyIsReadAtTheMergeBaseNeverTheHead(t *testing.T) {
 	r := newRig(t)
 	r.seed(t, true)

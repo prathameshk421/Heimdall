@@ -128,10 +128,10 @@ func TestWorkflowBuildsAndEngineAcceptsIt(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, eng)
 
-	// Step count and ids: exactly the 10 surviving steps
+	// Step count and ids: exactly the 11 implemented steps
 	expectedIDs := []string{
 		"open_room", "branch", "write_tests", "test_qa", "commit",
-		"wait_pr", "slop", "pick", "review", "verify",
+		"wait_pr", "slop", "pick", "review", "verify", "deliberate",
 	}
 	actualIDs := make([]string, len(wf.Steps))
 	for i, s := range wf.Steps {

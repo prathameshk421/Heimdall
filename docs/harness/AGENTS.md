@@ -1,6 +1,6 @@
 # Heimdall: rules for coding agents
 
-You are building Heimdall one task at a time. You lose memory between sessions, so everything you need is in files. Read in this order, then stop reading and start: `docs/PROGRESS.md` (where the build is and what is next), this file, `docs/MVP_SCENARIOS.md` section 7 (the one build order), the task's row in `docs/IMPLEMENTATION_PLAN.md`, and the spec sections it cites. Precedence when docs disagree (D138): the highest-numbered backlog part from Part 8 on > `TECH_SPEC.md` > earlier backlog parts; `MVP_SCENARIOS.md` and `TEST_STRATEGY.md` govern testing, `CODING_STANDARDS.md` governs code. Product code lives in top-level folders (`cmd/`, `internal/`, `e2e/`), never under `docs/`.
+You are building Heimdall incrementally. Use `docs/PROGRESS.md` for the current state and next useful work, then read this file, `docs/MVP_SCENARIOS.md` section 7, the relevant row in `docs/IMPLEMENTATION_PLAN.md`, and the spec sections it cites. Precedence when docs disagree (D138): the highest-numbered backlog part from Part 8 on > `TECH_SPEC.md` > earlier backlog parts; `MVP_SCENARIOS.md` and `TEST_STRATEGY.md` govern testing, `CODING_STANDARDS.md` governs code. Product code lives in top-level folders (`cmd/`, `internal/`, `e2e/`), never under `docs/`.
 
 ## Commands (never invent others)
 
@@ -8,19 +8,19 @@ You are building Heimdall one task at a time. You lose memory between sessions, 
 |---|---|
 | `make fast` | format, vet, lint, unit tests. Under 60 s. Run constantly |
 | `make verify` | adds component and contract tests. Before every commit that ends a task |
-| `make prototype ONLY=P2` | the product board for one scenario. Run before and after your task |
+| `make prototype ONLY=P2` | the product board for one scenario. Use it to check integration progress when its environment is available; a blocked board step does not stop independent local work |
 | `make e2e T=T24` | the real-system check for a task. Run `make cost` first if an LLM is involved |
 | `make lint-selftest` | proves each lint rule still fires (fixtures in `testdata/lint`) |
 | `make harness-test` | every hook case; `make harness-install` copies `docs/harness/` into place and `make harness-install CHECK=1` fails on drift |
 
-## The loop (one task per session, one commit per task)
+## The loop
 
-1. Run `make prototype ONLY=<scenario>` and keep the red line.
-2. Write the failing test. Run it. Read why it fails. It must fail on an assertion.
-3. Write the smallest code that passes. Keep `make fast` green.
-4. `make verify`, then the real check. Try to break your own work once.
-5. Write the evidence (commands, exit status, key output lines, cost, what is **not verified**) into the tracker row and `docs/PROGRESS.md`.
-6. Commit `T##: what`. Stop.
+1. Read the task and its acceptance criteria. Check the relevant prototype board if useful; record missing environment prerequisites without treating them as a reason to stop unrelated work.
+2. Write the failing test. Run it and read why it fails. For behavior changes, it must fail on an assertion.
+3. Implement the change. Keep `make fast` green when the baseline allows; if unrelated baseline failures block it, record them and use focused checks for the changed code. Keep work focused on one concern; a task may take multiple sessions when needed.
+4. Run `make verify` and the task's real check when available and required by its acceptance criteria. Try to break your own work once. Record unavailable checks as `not verified` with the reason.
+5. Write the evidence (commands, exit status, key output lines, cost, what is **not verified**) into the tracker row and `docs/PROGRESS.md`. Keep task status honest; continue with independent work when an external prerequisite blocks only part of validation.
+6. Commit coherent, reviewable changes using the task identifier when appropriate. Do not commit failing checks without clearly saying so.
 
 ## Rules (each has an id so a hook or reviewer can cite it)
 
@@ -35,8 +35,8 @@ You are building Heimdall one task at a time. You lose memory between sessions, 
 - **R9 Real or "not verified".** If something could not run on the real system, write `not verified` with the reason. Never write "should work".
 - **R10 Scope.** One task, one concern. Do not refactor unrelated code. Anything else you notice goes into `docs/PROGRESS.md` under "Noticed".
 - **R11 Git.** Never `--no-verify`, never force-push, never push unless the human asks, never rewrite history, never commit a failing test without saying so.
-- **R13 No cuts, no hacks (D162).** Do not drop or reduce any task, step or check unless the owner explicitly says so. No temporary shortcuts or workarounds; implement it cleanly and correctly. If blocked, stop and ask.
-- **R12 Stuck.** After two failed attempts at the same error, stop and write what you tried and what you think is wrong into `PROGRESS.md`. Do not try a third variant of the same idea.
+- **R13 No cuts, no hacks (D162).** Do not drop or reduce any task, step or check unless the owner explicitly says so. No temporary shortcuts or workarounds; implement it cleanly and correctly. If a required action is blocked, record the cause and continue independent work; ask the owner only when a decision or access change is necessary.
+- **R12 Stuck.** After two failed attempts at the same error, stop repeating that approach and write what you tried and what you think is wrong into `PROGRESS.md`. Continue other useful work that does not depend on the unresolved issue.
 
 ## Things you cannot infer from the code (add new ones as you find them)
 

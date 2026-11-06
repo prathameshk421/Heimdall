@@ -82,7 +82,13 @@ func (s PickReviewers) OnTimeout(_ context.Context, c ChangeView) (Result, error
 	if s.Done(c) {
 		return Result{}, nil
 	}
-	people := s.spec.DefaultReviewers(c)
+	people, err := suggestedReviewers(c.Events)
+	if err != nil {
+		return Result{}, fmt.Errorf("human.pick_reviewers: read CODEOWNERS suggestions: %w", err)
+	}
+	if len(people) == 0 {
+		people = s.spec.DefaultReviewers(c)
+	}
 	if len(people) == 0 {
 		return Result{}, errors.New("human.pick_reviewers: no default reviewers provided")
 	}
@@ -110,4 +116,22 @@ func (s PickReviewers) OnTimeout(_ context.Context, c ChangeView) (Result, error
 		Payload:       raw,
 	}
 	return Result{Events: []change.Event{ev}}, nil
+}
+
+func suggestedReviewers(events []change.Event) ([]change.ActorID, error) {
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type != change.EventPROpened {
+			continue
+		}
+		payload, err := change.Decode(events[i])
+		if err != nil {
+			return nil, err
+		}
+		opened, ok := payload.(change.PROpened)
+		if !ok {
+			return nil, fmt.Errorf("payload of %s is not change.PROpened", events[i].Type)
+		}
+		return append([]change.ActorID(nil), opened.SuggestedReviewers...), nil
+	}
+	return nil, nil
 }

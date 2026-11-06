@@ -122,3 +122,21 @@ func TestPickReviewersSpecValidation(t *testing.T) {
 	_, err = engine.NewPickReviewers(engine.PickReviewersSpec{ID: "pick", Timeout: 15 * time.Minute, Clock: clock, IDs: ids, DefaultReviewers: def})
 	require.NoError(t, err)
 }
+
+func TestPickReviewersTimeoutUsesPersistedCodeownersSuggestions(t *testing.T) {
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	step, err := engine.NewPickReviewers(engine.PickReviewersSpec{
+		ID: "pick", Timeout: time.Minute, Clock: pickFakeClock{now: now}, IDs: &pickFakeIDs{},
+		DefaultReviewers: func(engine.ChangeView) []change.ActorID { return []change.ActorID{"configured-reviewer"} },
+	})
+	require.NoError(t, err)
+	opened := makeTestEvent(t, change.EventPROpened, change.PROpened{
+		Repo: "acme/pay", Number: 4, HeadSHA: "a100000000000000000000000000000000000001", Author: "author",
+		SuggestedReviewers: []change.ActorID{"ana-reviewer", "eli-reviewer"},
+	})
+	res, err := step.OnTimeout(context.Background(), engine.ChangeView{ID: "PAY-142", Events: []change.Event{opened}})
+	require.NoError(t, err)
+	var picked change.ReviewersPicked
+	require.NoError(t, json.Unmarshal(res.Events[0].Payload, &picked))
+	require.Equal(t, []change.ActorID{"ana-reviewer", "eli-reviewer"}, picked.People)
+}

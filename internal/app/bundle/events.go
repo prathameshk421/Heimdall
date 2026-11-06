@@ -21,6 +21,29 @@ func BuildFromEvents(role workflow.Role, changeID id.ChangeID, events []change.E
 	}
 	return Build(req)
 }
+
+// BuildForCaseEvents binds a resolver's deterministic bundle to one challenged case.
+func BuildForCaseEvents(changeID id.ChangeID, caseID id.CaseID, events []change.Event) (Bundle, error) {
+	req := Request{Role: workflow.RoleResolver, Change: string(changeID), CaseID: string(caseID), BudgetTokens: roleBudget(workflow.RoleResolver)}
+	for _, ev := range events {
+		if ev.Type != change.EventCaseOpened {
+			continue
+		}
+		p, err := change.Decode(ev)
+		if err != nil {
+			return Bundle{}, fmt.Errorf("decode case event %s: %w", ev.ID, err)
+		}
+		opened, ok := p.(change.CaseOpened)
+		if ok && opened.CaseID == caseID {
+			req.Criteria = append(req.Criteria, "Resolve finding "+opened.Finding.String())
+		}
+	}
+	if len(req.Criteria) == 0 {
+		return Bundle{}, fmt.Errorf("resolver case %s is not open", caseID)
+	}
+	return Build(req)
+}
+
 func applyEvent(req *Request, ev change.Event) error {
 	p, err := change.Decode(ev)
 	if err != nil {
