@@ -64,13 +64,16 @@ func (p TicketChanged) Validate() error {
 	return v.join()
 }
 
-// PROpened is the payload of pr.opened. Ticket is empty for a pull request that names no ticket (D146).
+// PROpened is the payload of pr.opened. Ticket is empty for a pull request that names no ticket (D146). SuggestedReviewers
+// are agent identities resolved from CODEOWNERS and the person map at the merge base; they are consumed only if the
+// human reviewer-pick timer expires.
 type PROpened struct {
-	Repo    Repo        `json:"repo"`
-	Number  int         `json:"number"`
-	HeadSHA id.SHA      `json:"head_sha"`
-	Author  ActorID     `json:"author"`
-	Ticket  id.ChangeID `json:"ticket,omitempty"`
+	Repo               Repo        `json:"repo"`
+	Number             int         `json:"number"`
+	HeadSHA            id.SHA      `json:"head_sha"`
+	Author             ActorID     `json:"author"`
+	Ticket             id.ChangeID `json:"ticket,omitempty"`
+	SuggestedReviewers []ActorID   `json:"suggested_reviewers,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -83,6 +86,7 @@ func (p PROpened) Validate() error {
 	if p.Ticket != "" {
 		v.add("ticket", checkTicket(p.Ticket))
 	}
+	v.each("suggested_reviewers", p.SuggestedReviewers, checkActor)
 	return v.join()
 }
 

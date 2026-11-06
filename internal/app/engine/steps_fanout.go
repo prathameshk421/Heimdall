@@ -271,12 +271,24 @@ func (s AgentFanout) buildUnavailableEvent(c ChangeView, agent id.AgentName, ass
 
 func terminalReviewers(c ChangeView) map[id.AgentName]bool {
 	terminal := make(map[id.AgentName]bool)
-	for _, ev := range c.Events {
+	for _, ev := range c.Events[reviewCycleStart(c.Events):] {
 		if ev.Type == change.EventReviewSubmitted || ev.Type == change.EventReviewUnavailable || ev.Type == change.EventReviewWaived {
 			recordTerminalReview(terminal, ev)
 		}
 	}
 	return terminal
+}
+
+// reviewCycleStart returns the first event at the current PR head. Review submissions, acknowledgements and task
+// assignments before that event belong to an older diff and cannot complete or suppress current review work.
+func reviewCycleStart(events []change.Event) int {
+	start := 0
+	for i, ev := range events {
+		if ev.Type == change.EventPROpened || ev.Type == change.EventPRPushed {
+			start = i
+		}
+	}
+	return start
 }
 
 func recordTerminalReview(m map[id.AgentName]bool, ev change.Event) {
@@ -297,7 +309,7 @@ func recordTerminalReview(m map[id.AgentName]bool, ev change.Event) {
 
 func assignedReviewers(c ChangeView) map[id.AgentName]bool {
 	assigned := make(map[id.AgentName]bool)
-	for _, ev := range c.Events {
+	for _, ev := range c.Events[reviewCycleStart(c.Events):] {
 		if ev.Type == change.EventTaskAssigned {
 			if p, err := change.Decode(ev); err == nil {
 				if ta, ok := p.(change.TaskAssigned); ok && ta.Role == workflow.RoleReviewer {
@@ -311,7 +323,7 @@ func assignedReviewers(c ChangeView) map[id.AgentName]bool {
 
 func ackedAgents(c ChangeView) map[id.AgentName]bool {
 	acked := make(map[id.AgentName]bool)
-	for _, ev := range c.Events {
+	for _, ev := range c.Events[reviewCycleStart(c.Events):] {
 		if ev.Type == change.EventTaskAcked {
 			if p, err := change.Decode(ev); err == nil {
 				if ta, ok := p.(change.TaskAcked); ok {
@@ -325,7 +337,7 @@ func ackedAgents(c ChangeView) map[id.AgentName]bool {
 
 func taskEventsForReviewers(c ChangeView) map[id.AgentName]change.Event {
 	taskEventForAgent := make(map[id.AgentName]change.Event)
-	for _, ev := range c.Events {
+	for _, ev := range c.Events[reviewCycleStart(c.Events):] {
 		if ev.Type == change.EventTaskAssigned {
 			if p, err := change.Decode(ev); err == nil {
 				if ta, ok := p.(change.TaskAssigned); ok && ta.Role == workflow.RoleReviewer {

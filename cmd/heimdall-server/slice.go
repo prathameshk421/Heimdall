@@ -24,6 +24,7 @@ const (
 	stepPick       = "pick"
 	stepReview     = "review"
 	stepVerify     = "verify"
+	stepDeliberate = "deliberate"
 )
 
 // sliceSteps returns the demo workflow and the engine steps that run it. The workflow is built from
@@ -48,7 +49,7 @@ func demoWorkflow() (workflow.Workflow, map[string]workflow.Step, error) {
 	full := workflow.Default()
 	stepNames := []string{
 		stepOpenRoom, stepBranch, stepWriteTests, stepTestQA, stepCommit,
-		stepWaitPR, stepSlop, stepPick, stepReview, stepVerify,
+		stepWaitPR, stepSlop, stepPick, stepReview, stepVerify, stepDeliberate,
 	}
 	m := make(map[string]workflow.Step, len(stepNames))
 	steps := make([]workflow.Step, 0, len(stepNames))
@@ -125,19 +126,7 @@ func buildLateEngineSteps(m map[string]workflow.Step, agents config.Agents, gen 
 		return nil, fmt.Errorf("step %s: %w", stepWaitPR, err)
 	}
 	sl := engine.NewSlop()
-	pk, err := engine.NewPickReviewers(engine.PickReviewersSpec{
-		ID:      m[stepPick].ID,
-		Timeout: m[stepPick].Timeout,
-		Clock:   clk,
-		IDs:     gen,
-		DefaultReviewers: func(_ engine.ChangeView) []change.ActorID {
-			var out []change.ActorID
-			for _, r := range agents.Reviewers {
-				out = append(out, change.ActorID(r))
-			}
-			return out
-		},
-	})
+	pk, err := newPickReviewersStep(m[stepPick], agents, gen, clk)
 	if err != nil {
 		return nil, fmt.Errorf("step %s: %w", stepPick, err)
 	}
@@ -173,7 +162,41 @@ func buildLateEngineSteps(m map[string]workflow.Step, agents config.Agents, gen 
 	if err != nil {
 		return nil, fmt.Errorf("step %s: %w", stepVerify, err)
 	}
-	return []engine.Step{wait, sl, pk, rev, verify}, nil
+	resolver, err := newResolverFanoutStep(m[stepDeliberate], agents, gen, clk)
+	if err != nil {
+		return nil, fmt.Errorf("step %s: %w", stepDeliberate, err)
+	}
+	return []engine.Step{wait, sl, pk, rev, verify, resolver}, nil
+}
+
+// newPickReviewersStep builds the reviewer selection step, preferring explicit selections in the change and falling
+// back to the configured reviewer agents.
+func newPickReviewersStep(step workflow.Step, agents config.Agents, gen ports.IDs, clk ports.Clock) (engine.Step, error) {
+	return engine.NewPickReviewers(engine.PickReviewersSpec{
+		ID:      step.ID,
+		Timeout: step.Timeout,
+		Clock:   clk,
+		IDs:     gen,
+		DefaultReviewers: func(_ engine.ChangeView) []change.ActorID {
+			var out []change.ActorID
+			for _, r := range agents.Reviewers {
+				out = append(out, change.ActorID(r))
+			}
+			return out
+		},
+	})
+}
+
+// newResolverFanoutStep builds the challenge resolver step, scoping each task to its case and bundle.
+func newResolverFanoutStep(step workflow.Step, agents config.Agents, gen ports.IDs, clk ports.Clock) (engine.Step, error) {
+	return engine.NewResolverFanout(step.ID, id.AgentName(agents.Resolver), step.Timeout, clk, gen,
+		func(changeID id.ChangeID, caseID id.CaseID, events []change.Event) ([]byte, workflow.BlobRef, error) {
+			built, err := bundle.BuildForCaseEvents(changeID, caseID, events)
+			if err != nil {
+				return nil, "", err
+			}
+			return built.Bytes, bundle.Hash(built), nil
+		})
 }
 
 // stepByID returns the step of w with the id, copied. A missing id is an error, so a change to the default workflow

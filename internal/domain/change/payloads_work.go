@@ -11,6 +11,7 @@ import (
 // TaskAssigned is the payload of task.assigned. BundleRef is the blob whose hash is the context bundle (TECH_SPEC 6.4).
 type TaskAssigned struct {
 	TaskID    id.TaskID        `json:"task_id"`
+	CaseID    id.CaseID        `json:"case_id,omitempty"`
 	Agent     id.AgentName     `json:"agent"`
 	Role      workflow.Role    `json:"role"`
 	Deadline  time.Time        `json:"deadline"`
@@ -21,6 +22,9 @@ type TaskAssigned struct {
 func (p TaskAssigned) Validate() error {
 	var v problems
 	v.add("task_id", checkTask(p.TaskID))
+	if p.CaseID != "" {
+		v.add("case_id", checkCase(p.CaseID))
+	}
 	v.add("agent", checkAgent(p.Agent))
 	v.add("role", checkRole(p.Role))
 	if p.Deadline.IsZero() {

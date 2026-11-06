@@ -139,15 +139,22 @@ func caseFileRef(task workflow.TaskEnvelope) (workflow.BlobRef, error) {
 	return "", errors.New("the task names no case file")
 }
 
-// caseIDOf returns the case the task settles. The server accepts a verdict only for the case that matches the task, so
-// the case id is the task id with the case prefix.
-func caseIDOf(task workflow.TaskEnvelope) id.CaseID {
-	return id.CaseID("case_" + strings.TrimPrefix(string(task.TaskID), "tsk_"))
+// caseIDOf returns the case the task settles. The server accepts a verdict only for the case the task is scoped to, so
+// an envelope with no case is a wrong setup and the run fails rather than guessing.
+func caseIDOf(task workflow.TaskEnvelope) (id.CaseID, error) {
+	if task.CaseID == "" {
+		return "", errors.New("the task names no case")
+	}
+	return task.CaseID, nil
 }
 
 // verdictFor returns the verdict of the plan for the task. Each citation quote must be a span of the case text the agent
 // read, or the plan does not match the case and nothing is sent.
 func (p verdictPlan) verdictFor(task workflow.TaskEnvelope, caseText string) (deliberation.Verdict, error) {
+	caseID, err := caseIDOf(task)
+	if err != nil {
+		return deliberation.Verdict{}, err
+	}
 	citations := make([]deliberation.Citation, 0, len(p.citations))
 	for _, c := range p.citations {
 		if !strings.Contains(caseText, c.quote) {
@@ -156,7 +163,7 @@ func (p verdictPlan) verdictFor(task workflow.TaskEnvelope, caseText string) (de
 		citations = append(citations, deliberation.Citation{Kind: c.kind, Ref: c.ref, Quote: c.quote})
 	}
 	return deliberation.Verdict{
-		CaseID:     caseIDOf(task),
+		CaseID:     caseID,
 		Decision:   p.decision,
 		Rationale:  p.rationale,
 		Citations:  citations,

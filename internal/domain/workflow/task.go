@@ -67,6 +67,7 @@ func (b *BlobRef) UnmarshalText(t []byte) error {
 // wrote is a reference, never inline text.
 type TaskEnvelope struct {
 	TaskID              id.TaskID `json:"task_id"`
+	CaseID              id.CaseID `json:"case_id,omitempty"`
 	Role                Role      `json:"role"`
 	Skill               string    `json:"skill"`
 	Change              ChangeRef `json:"change"`
@@ -127,6 +128,7 @@ func ciConclusion(c string) bool {
 func (e TaskEnvelope) Validate() error {
 	var errs []error
 	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
+	errs = append(errs, e.validateCaseID()...)
 	if _, err := ParseRole(string(e.Role)); err != nil {
 		add("%v", err)
 	}
@@ -150,6 +152,17 @@ func (e TaskEnvelope) Validate() error {
 	}
 	errs = append(errs, e.Inputs.validate()...)
 	return errors.Join(errs...)
+}
+
+// validateCaseID rejects a non-empty case id that is not a CaseID. An empty id is valid for case-free agent tasks.
+func (e TaskEnvelope) validateCaseID() []error {
+	if e.CaseID == "" {
+		return nil
+	}
+	if _, err := id.ParseCaseID(string(e.CaseID)); err != nil {
+		return []error{fmt.Errorf("case_id: %w", err)}
+	}
+	return nil
 }
 
 func (in Inputs) validate() []error {
