@@ -199,6 +199,18 @@ func TestStreamSendsOneClientConnectionIDOnEveryOpenAsSwitchRequires(t *testing.
 	require.Equal(t, ids[0], ids[1], "a reconnect reuses the id so Switch keeps the connection across the drop")
 }
 
+func TestStreamAcceptsAHeartbeatIntervalSentAsAFloat(t *testing.T) {
+	f, c, _ := streamTest(t)
+	setStream(f, func(w http.ResponseWriter, _ *http.Request, _ int) {
+		// Switch 0.31 sends the interval as 2.0, not 2.
+		_, _ = fmt.Fprintf(w, "event: connection_state\ndata: {\"connection_id\":%q,\"generation\":1,\"heartbeat_interval_seconds\":2.0}\n\n", connA)
+		frame(w, 0, "evicted", map[string]any{})
+	})
+	var got deliveryLog
+	err := c.Stream(streamCtx(t), []change.RoomID{roomID(t, testRoomUUID)}, nil, got.deliver)
+	require.ErrorIs(t, err, ErrEvicted, "a float interval must decode, not stop the stream")
+}
+
 func TestStreamReconnectResumesWithLastEventIDAndMarksReplayed(t *testing.T) {
 	f, c, log := streamTest(t)
 	setStream(f, func(w http.ResponseWriter, _ *http.Request, n int) {

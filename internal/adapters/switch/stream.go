@@ -293,9 +293,9 @@ func (s *streamRun) dispatch(ctx context.Context, f sseFrame) error {
 // the resume cursors back once.
 func (s *streamRun) connectionState(ctx context.Context, raw string) error {
 	var cs struct {
-		ConnectionID     string `json:"connection_id"`
-		Generation       int64  `json:"generation"`
-		HeartbeatSeconds int64  `json:"heartbeat_interval_seconds"`
+		ConnectionID     string  `json:"connection_id"`
+		Generation       int64   `json:"generation"`
+		HeartbeatSeconds float64 `json:"heartbeat_interval_seconds"` // Switch 0.31 sends 2.0
 	}
 	if err := json.Unmarshal([]byte(raw), &cs); err != nil {
 		return fmt.Errorf("switch stream: decode connection_state: %w", err)
@@ -305,7 +305,7 @@ func (s *streamRun) connectionState(ctx context.Context, raw string) error {
 	}
 	s.connID = cs.ConnectionID
 	s.failures = 0
-	s.startBeats(ctx, cs.ConnectionID, cs.Generation, time.Duration(cs.HeartbeatSeconds)*time.Second)
+	s.startBeats(ctx, cs.ConnectionID, cs.Generation, time.Duration(cs.HeartbeatSeconds*float64(time.Second)))
 	if s.reconciled {
 		return nil
 	}
