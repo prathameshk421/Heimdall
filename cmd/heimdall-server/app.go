@@ -411,6 +411,14 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
 	store := postgres.NewStore(pool)
+	var setupHandler http.Handler
+	if ad.agentSetupHandler != nil {
+		var err error
+		setupHandler, err = ad.agentSetupHandler(store)
+		if err != nil {
+			return nil, err
+		}
+	}
 	gen := ids.New()
 	wf, steps, err := sliceSteps(ad.agents, gen, clk)
 	if err != nil {
@@ -427,7 +435,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	if err != nil {
 		return nil, fmt.Errorf("open blob store: %w", err)
 	}
-	a, err := assembleWithBlobs(ctx, d, ad, store, pool, blobStore, eng, gen, clk)
+	a, err := assembleWithBlobs(ctx, d, ad, store, pool, blobStore, eng, gen, clk, setupHandler)
 	if err != nil {
 		_ = blobStore.Close()
 		return nil, err
@@ -437,7 +445,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 
 func assembleWithBlobs(
 	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
-	eng *engine.Engine, gen ports.IDs, clk ports.Clock,
+	eng *engine.Engine, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
 ) (*app, error) {
 	profileManager, err := assembleProfileLifecycle(ad, store, blobs, clk)
 	if err != nil {
@@ -487,7 +495,7 @@ func assembleWithBlobs(
 		closer = c
 	}
 	return &app{
-		pool: pool, poller: p, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: ad.agentSetupHandler, episodeWorker: episodeWorker, blobs: closer,
+		pool: pool, poller: p, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, episodeWorker: episodeWorker, blobs: closer,
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil

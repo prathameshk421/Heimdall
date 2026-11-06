@@ -50,10 +50,37 @@ func (s fakeSecrets) Secret(name string) (string, error) {
 	return v, nil
 }
 
+type fakeReceiptLedger struct {
+	records map[string]string
+	count   int
+}
+
+func (f *fakeReceiptLedger) RecordAgentSetupReceipt(_ context.Context, agent id.AgentName, fingerprint string) (bool, error) {
+	if f.records == nil {
+		f.records = make(map[string]string)
+	}
+	key := string(agent)
+	if existing, exists := f.records[key]; exists {
+		if existing != fingerprint {
+			return false, errors.New("receipt fingerprint conflict")
+		}
+		return false, nil
+	}
+	f.records[key] = fingerprint
+	f.count++
+	return true, nil
+}
+
+func (f *fakeReceiptLedger) LoadAgentSetupReceipt(_ context.Context, agent id.AgentName) (ports.AgentSetupReceipt, bool, error) {
+	fingerprint, ok := f.records[string(agent)]
+	return ports.AgentSetupReceipt{Agent: agent, Fingerprint: fingerprint}, ok, nil
+}
+
 func newService(t *testing.T, p *fakeProvisioner) *Service {
 	t.Helper()
 	svc, err := New(Config{
 		Provisioner: p,
+		Receipts:    &fakeReceiptLedger{},
 		Secrets:     fakeSecrets{"agent_token_test-author": "author-token", "agent_token_reviewer-1": "review-token"},
 		Machine:     "heimdall-vm", MCPEndpoint: "http://127.0.0.1:8080/mcp", Model: "openrouter/deepseek/deepseek-v4-flash",
 		SecretsDir: "/etc/heimdall/secrets",
@@ -66,8 +93,8 @@ func newService(t *testing.T, p *fakeProvisioner) *Service {
 	return svc
 }
 
-func testTokenHash(value string) string {
-	sum := sha256.Sum256([]byte(value))
+func testTokenHash() string {
+	sum := sha256.Sum256([]byte("author-token"))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -133,7 +160,7 @@ func TestActivateRequestsSwitchStartOnlyAfterCredentialReceiptMatches(t *testing
 func TestPrepareRejectsDuplicateMCPTokenValues(t *testing.T) {
 	p := &fakeProvisioner{}
 	cfg := Config{
-		Provisioner: p, Secrets: fakeSecrets{"agent_token_test-author": "same", "agent_token_reviewer-1": "same"},
+		Provisioner: p, Receipts: &fakeReceiptLedger{}, Secrets: fakeSecrets{"agent_token_test-author": "same", "agent_token_reviewer-1": "same"},
 		Machine: "heimdall-vm", MCPEndpoint: "http://127.0.0.1:8080/mcp", Model: "model", SecretsDir: "/secrets",
 		Agents: []Agent{
 			{Name: "test-author", Role: workflow.RoleTestAuthor, Description: "author"},
@@ -159,7 +186,7 @@ func TestActivationErrorRemainsRetryable(t *testing.T) {
 	p := &fakeProvisioner{err: errors.New("controller down")}
 	svc := newService(t, p)
 	receipt := Receipt{Agent: "test-author", Role: workflow.RoleTestAuthor, MCPEndpoint: "http://127.0.0.1:8080/mcp",
-		TokenSHA256: testTokenHash("author-token"), CredentialsInstalled: true}
+		TokenSHA256: testTokenHash(), CredentialsInstalled: true}
 	err := svc.Activate(context.Background(), receipt)
 	require.Error(t, err)
 	require.Empty(t, p.states)
@@ -169,7 +196,7 @@ func TestActivationRetryAfterControllerFailureReconcilesDesiredState(t *testing.
 	p := &fakeProvisioner{err: errors.New("controller unavailable")}
 	svc := newService(t, p)
 	receipt := Receipt{Agent: "test-author", Role: workflow.RoleTestAuthor, MCPEndpoint: "http://127.0.0.1:8080/mcp",
-		TokenSHA256: testTokenHash("author-token"), CredentialsInstalled: true}
+		TokenSHA256: testTokenHash(), CredentialsInstalled: true}
 	require.Error(t, svc.Activate(context.Background(), receipt))
 	p.err = nil
 	require.NoError(t, svc.Activate(context.Background(), receipt))
@@ -180,4 +207,26 @@ func TestActivationRetryAfterControllerFailureReconcilesDesiredState(t *testing.
 		require.Equal(t, "switch-test-author", state.id)
 		require.Equal(t, ports.ManagedAgentRunning, state.state)
 	}
+}
+
+func TestActivationRecordsDurableReceiptOnlyAfterSwitchAcceptsStart(t *testing.T) {
+	p := &fakeProvisioner{err: errors.New("controller unavailable")}
+	svc := newService(t, p)
+	ledger := svc.cfg.Receipts.(*fakeReceiptLedger)
+	receipt := Receipt{Agent: "test-author", Role: workflow.RoleTestAuthor, MCPEndpoint: "http://127.0.0.1:8080/mcp",
+		TokenSHA256: testTokenHash(), CredentialsInstalled: true}
+
+	err := svc.Activate(context.Background(), receipt)
+	require.Error(t, err)
+	require.Empty(t, ledger.records, "a failed controller activation must not be recorded as installed")
+
+	p.err = nil
+	require.NoError(t, svc.Activate(context.Background(), receipt))
+	stored, found, err := ledger.LoadAgentSetupReceipt(context.Background(), receipt.Agent)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, receipt.Agent, stored.Agent)
+	require.Equal(t, receiptFingerprint(receipt), stored.Fingerprint)
+	require.NoError(t, svc.Activate(context.Background(), receipt), "the same receipt can safely reconcile after a restart")
+	require.Equal(t, 1, ledger.count, "an exact replay adds no second local receipt")
 }

@@ -3,10 +3,11 @@
 ## T106 runtime lifecycle continuation (Nov 6, 2026)
 
 - Started from clean `heimdall-build` HEAD `93374a4` in isolated worktree `t3/agent-runtime-e2e`.
-- Added a retry/replay regression for activation after a controller outage: the first failure leaves the receipt retryable; subsequent attempts reconcile the same Switch managed identity and request running state without local duplicate state. No token contents are logged or asserted.
-- Focused agent provisioning and HTTP setup contract tests passed; `make fast` passed (3,664 tests, lint 0, archcheck 75 packages).
-- **Remaining T106 gaps/not verified:** no connected Postgres restart/replay test for assignment, ack, timeout/reassign, revoke, or setup receipts; server activation still depends on Switch desired-state calls and has no durable local installation receipt ledger; live Switch enrollment/controller service/OpenCode smoke unavailable in this pass. Do not mark T106 complete based on this slice.
-- `make verify` ran: vet/archcheck/lint, 3,744 unit/component tests, lint self-test (0 issues), 129 hook cases, and 14 installer cases passed; it stopped at `make harness-check` because checkout-only modes differ from the index (`AGENTS.md`, `.claude/settings.json`, `.golangci.yml` are 664 vs 644; hooks are 775 vs 755). No protected harness content was changed. Live VM/OpenCode checks not verified; no live model cost incurred.
+- Added a durable Postgres ledger that stores only setup receipt fingerprints, never bearer tokens. Activation records a receipt only after the Switch controller accepts the running-state request; a failed controller request remains retryable. Exact replay is idempotent, and a changed token fingerprint is recorded as a separate rotation.
+- Added connected restart coverage for receipt persistence across service and database-pool reconstruction, plus assignment → ack → timeout/reassign → failure/revocation replay after rebuilding the Postgres task index.
+- Focused checks passed: `go test ./internal/app/agentprovision ./cmd/heimdall-server`; Postgres component tests for receipt replay and lifecycle replay; `make fast` passed with 3,665 tests and lint/architecture checks clean.
+- `make verify` passed vet, architecture, lint, 3,748 unit/race/component tests, lint self-test, and harness hook/install suites. It stopped at `harness-check` because checkout file modes differed from the Git index; full verification is pending after restoring indexed modes.
+- **Not verified:** live Switch enrollment, controller service handoff, VM restart, and real OpenCode role-scoped execution.
 
 ## T109 local implementation (Nov 6, 2026)
 
