@@ -6,6 +6,14 @@
 - Read-only readiness findings: VM Switch stack and 3 numbered agents are up; Heimdall server, runner, Podman and Go are not on the VM; the fixture repo has a policy and branch protection but no CI workflow and names GitHub accounts that are not logged in locally. `.env` names were checked by the owner; all names `secrets-sync` needs are present. **Not verified:** Jira token validity, OpenRouter balance, Switch client field names against the Switch source, any live run.
 - **Noticed:** the working tree held uncommitted Go changes (finding severity and verify-evidence files under `internal/` and `cmd/heimdall-server`, plus `docs/TECH_SPEC.md`) that this session did not make. They look like parallel work toward plan package A1/A2. Their state and tests are not recorded here and not verified.
 
+## Live wiring: WP0 preflight (Nov 6, 2026, read-only)
+
+- `make fast` on `heimdall-build` before A1: exit 0, 3,691 tests.
+- VM check over ssh: `switch-agent-controller-1000` active, `heimdall-agent-firewall` active.
+- VM OS: Ubuntu 24.04.5 LTS. Podman: not installed, candidate 4.9.3+ds1-1ubuntu0.2 (root step needed).
+- **Not done:** the owner-steps document (needs the deploy and runner files read first), the doctor checks, and every Part B and Part C step. No root or live-system action was taken.
+- **Not verified:** the one `make fast` failure seen after A1 (see the A1 entry).
+
 ## A1 finding severity (Nov 6, 2026)
 
 - Every finding event (`finding.filed`, `finding.verified`, `finding.state_changed`, and the verify-evidence effect) now carries `severity`, required by `FindingRecord.Validate` and `VerifyEvidencePayload.Validate`. The gate fold uses the stored severity; the old "everything is critical" fold is gone. Missing or unknown severity fails closed in `gate.blocks` (it blocks). With no policy known, the strict default is `min_severity: low` with tier E1 to E3 blocking, so unknown policy still blocks everything open.
