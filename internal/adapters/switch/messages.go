@@ -88,7 +88,7 @@ func (c *Client) Read(ctx context.Context, room change.RoomID, after ports.Curso
 			return err
 		}
 		if reply.Truncated {
-			return fmt.Errorf("%w: switch read_context: history truncated, read again from an earlier cursor", ports.ErrUnavailable)
+			return fmt.Errorf("%w: read again from an earlier cursor", ErrTruncated)
 		}
 		out, err := flattenThreads(room, reply.Threads)
 		if err != nil {

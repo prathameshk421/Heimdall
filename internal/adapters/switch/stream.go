@@ -20,6 +20,10 @@ import (
 // ErrEvicted says Switch took the connection over. Stream returns it and does not reconnect.
 var ErrEvicted = errors.New("switch connection evicted")
 
+// ErrTruncated says Switch no longer holds the history from the cursor. It is an escalation, not an outage: retrying
+// the same read cannot succeed, so the stream does not retry it.
+var ErrTruncated = errors.New("switch history truncated")
+
 // ErrGap says Switch cannot replay from the last sequence this stream saw, for example after a Switch restart (V13).
 // Stream returns it and does not reconnect. The caller calls Stream again with its stored cursors, and that call reads
 // the missed history with read_context.

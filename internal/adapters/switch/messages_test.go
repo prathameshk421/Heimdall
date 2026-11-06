@@ -197,7 +197,8 @@ func TestReadTruncatedHistoryIsUnavailable(t *testing.T) {
 	}
 	c, _ := newTestClient(t, f)
 	msgs, cur, err := c.Read(context.Background(), roomID(t, testRoomUUID), "2026-11-04T12:00:01Z")
-	require.ErrorIs(t, err, ports.ErrUnavailable, "the caller must read again, not lose messages")
+	require.ErrorIs(t, err, ErrTruncated, "the caller escalates; a read again from the same cursor cannot succeed")
+	require.False(t, retryable(err), "a truncated history is not retried as an outage")
 	require.Nil(t, msgs)
 	require.Equal(t, ports.Cursor("2026-11-04T12:00:01Z"), cur, "a failed read returns the cursor it was given")
 }
