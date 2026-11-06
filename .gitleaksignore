@@ -248,3 +248,6 @@ fd88be1cf5457153f044cdab9f678571b3250c14:internal/pack/redact_test.go:generic-ap
 ff22a6be60943ef2c70a5f61082929cbce8ded80:internal/pack/redact_test.go:generic-api-key:44
 74f9fc5037ac7c6d70740b9c13979d69c5156737:internal/pack/redact_test.go:generic-api-key:44
 dddfe2b6ae3a88c46d39c91df1dd4a3887266504:internal/pack/redact_test.go:generic-api-key:44
+# Fake fixture credentials in the T48 branch history (internal/pack/pack_test.go), never on heimdall-build. Owner approved (Nov 6).
+96b86c8aae7743e3d4b0ebff354cf5c87130d738:internal/pack/pack_test.go:generic-api-key:16
+96b86c8aae7743e3d4b0ebff354cf5c87130d738:internal/pack/pack_test.go:generic-api-key:49
