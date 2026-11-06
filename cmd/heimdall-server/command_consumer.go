@@ -305,6 +305,8 @@ func generalAction(cmd commands.Command) (people.Action, string) {
 		return change.DecisionWaiveReviewer, ""
 	case commands.Incident:
 		return change.DecisionIncident, ""
+	case commands.Resume:
+		return change.DecisionResume, ""
 	default:
 		return "", ""
 	}
@@ -440,6 +442,9 @@ func (r *commandRuntime) commandEvents(cid id.ChangeID, state []change.Event, pe
 	actor := change.Actor{Kind: change.ActorHuman, ID: change.ActorID(person)}
 	if challenge, ok := cmd.(commands.Challenge); ok {
 		return r.challengeEvents(cid, state, person, source, sourceRef, actor, challenge)
+	}
+	if resume, ok := cmd.(commands.Resume); ok {
+		return r.resumeEvents(cid, state, person, source, sourceRef, actor, resume)
 	}
 	return r.decisionEvents(cid, state, person, source, sourceRef, actor, cmd)
 }
@@ -732,6 +737,8 @@ func commandTarget(cmd commands.Command, ref string) string {
 		return strings.Join(c.Reviewers, ",")
 	case commands.Start:
 		return c.Ticket
+	case commands.Resume:
+		return c.Step
 	}
 	if ref != "" {
 		return ref
@@ -792,6 +799,8 @@ func actionReply(cmd commands.Command) string {
 		return "Challenge recorded."
 	case commands.Start:
 		return "Started."
+	case commands.Resume:
+		return "Released. The engine will offer that step again."
 	case commands.Review:
 		return "Reviewers picked."
 	}

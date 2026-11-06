@@ -14,6 +14,7 @@ var (
 	findingRE         = regexp.MustCompile(`^F[1-9][0-9]{0,5}$`)
 	ticketRE          = regexp.MustCompile(`^[A-Z][A-Z0-9]*-[0-9]{1,9}$`)
 	nameRE            = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+	stepRE            = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 	handleRE          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}$`)
 	profileProposalRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )

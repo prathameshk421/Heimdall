@@ -286,7 +286,7 @@ func eventRepositoryAndBase(events []change.Event) (change.Repo, id.SHA) {
 		// Remaining event kinds carry no workflow memory signal.
 		case change.EventRoomOpened, change.EventTaskAssigned, change.EventTaskAcked,
 			change.EventTaskTimedOut, change.EventTaskFailed, change.EventTaskProgress,
-			change.EventStepRetried, change.EventStepEscalated, change.EventQuestionAsked,
+			change.EventStepRetried, change.EventStepEscalated, change.EventStepResumed, change.EventQuestionAsked,
 			change.EventQuestionAnswered, change.EventTestsSubmitted, change.EventTestsVerified,
 			change.EventTestsRejected, change.EventTestsCommitted, change.EventTestsApproved,
 			change.EventTicketChanged, change.EventPROpened, change.EventPRPushed, change.EventPRLinked,
@@ -321,7 +321,8 @@ func workflowMemoryStatus(event change.Event) (ports.EpisodeStatus, bool) {
 			return ports.EpisodeObserved, true
 		case change.DecisionReview, change.DecisionUphold, change.DecisionDismiss,
 			change.DecisionSpecChange, change.DecisionOverride, change.DecisionWaiveReviewer,
-			change.DecisionReject, change.DecisionApproveTests, change.DecisionStart, change.DecisionForget:
+			change.DecisionReject, change.DecisionApproveTests, change.DecisionStart, change.DecisionForget,
+			change.DecisionResume:
 			return ports.EpisodeConfirmed, true
 		default:
 			return ports.EpisodeConfirmed, true
@@ -334,7 +335,7 @@ func workflowMemoryStatus(event change.Event) (ports.EpisodeStatus, bool) {
 	case change.EventChangeTriggered, change.EventRoomOpened, change.EventBranchEnsured,
 		change.EventTaskAssigned, change.EventTaskAcked, change.EventTaskTimedOut,
 		change.EventTaskFailed, change.EventTaskProgress, change.EventStepRetried,
-		change.EventStepEscalated, change.EventQuestionAsked, change.EventQuestionAnswered,
+		change.EventStepEscalated, change.EventStepResumed, change.EventQuestionAsked, change.EventQuestionAnswered,
 		change.EventTestsSubmitted, change.EventTestsVerified, change.EventTestsRejected,
 		change.EventTestsCommitted, change.EventTestsApproved, change.EventTicketChanged,
 		change.EventPROpened, change.EventPRPushed, change.EventPRLinked, change.EventPRClosed,

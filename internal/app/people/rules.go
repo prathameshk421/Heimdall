@@ -37,6 +37,7 @@ func rules() map[Action]rule {
 		change.DecisionChallenge:     {needs: []requirement{needAuthor}},
 		change.DecisionRemember:      {needs: []requirement{needMember}},
 		change.DecisionForget:        {needs: []requirement{needApprover}},
+		change.DecisionResume:        {needs: []requirement{needApprover}},
 		ActionApprove:                {needs: []requirement{needApprover}, notAuthor: true, bindHead: true},
 	}
 }

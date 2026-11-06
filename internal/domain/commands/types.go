@@ -70,6 +70,12 @@ type Start struct{ Ticket string }
 // Verb returns the command word.
 func (Start) Verb() string { return "start" }
 
+// Resume releases an escalated workflow step so the engine offers it again. Step is the workflow step id.
+type Resume struct{ Step string }
+
+// Verb returns the command word.
+func (Resume) Verb() string { return "resume" }
+
 // Review asks one to three reviewers. Reviewers are handles without the leading @.
 type Review struct{ Reviewers []string }
 

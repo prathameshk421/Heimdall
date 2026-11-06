@@ -278,7 +278,7 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 | `change.triggered` | ticket, repo, assignee, trigger source; Jira acceptance criteria as ordered `{id, text, hash, ref}` values | Jira webhook or fallback |
 | `room.opened`, `branch.ensured` | room id; branch, base sha | Adapters |
 | `task.assigned` / `task.acked` / `task.timed_out` / `task.failed` / `task.progress` | task id, agent, role, deadline, bundle hash, reason or bounded progress text | Engine / agent tool |
-| `step.retried` / `step.escalated` | step id, attempt, reasons / attempts, reason | Engine (on_fail, 5.1) |
+| `step.retried` / `step.escalated` / `step.resumed` | step id, attempt, reasons / attempts, reason / step id, by | Engine (on_fail, 5.1); `step.resumed` is a person releasing an escalated step (A10 item 5) |
 | `question.asked` / `question.answered` | ids, refs, sender, message id | test-author, room sync |
 | `tests.submitted` / `tests.verified` / `tests.rejected` / `tests.committed` | refs, AC map, run ids, reasons, sha, tree hash; `tests.verified` also carries `needs_signoff`, set by the engine from policy (sensitive paths and labels, D131, D33): true sends the change to AWAITING_TEST_SIGNOFF, false to TESTS_READY | Agent, sandbox, GitHub, engine |
 | `tests.approved` | approver, tree hash (sensitive domains, D33) | Room or GitHub command |
@@ -855,6 +855,7 @@ Decisions arrive from strict-grammar GitHub comments by a verified actor, or (D4
 /heimdall challenge <finding> <evidence>           author (test path at head, run id, memory ref or decision ref, D152)
 /heimdall remember <text>                          member (records an observed fact, chat form of !remember in D65)
 /heimdall forget <memory_ref> <reason>             approver (invalidate a poisoned fact)
+/heimdall resume <step>                             approver (releases an escalated step so the engine offers it again; A10 item 5)
 ```
 
 That is the GitHub form. **In chat the same grammar starts with the plain word `heimdall`** (`heimdall uphold F3`), with no `!`, `/` or `@`, because Switch and the platforms take posts starting with `!` or `/` as their own commands and never pass them on (D139, V57). An unrecognised `heimdall …` post gets one short reply with the grammar. Edited comments and other text are ignored and never sent to a model. Without D47, chat replies count only for answering questions and picking reviewers (V7).

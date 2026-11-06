@@ -45,10 +45,11 @@ func (e *Engine) newPlan(v ChangeView) (*plan, error) {
 	return p, nil
 }
 
-// recoveryMarks returns the positions and step names of the step.retried and step.escalated events, in order.
+// recoveryMarks returns the positions and step names of the step.retried, step.resumed and step.escalated events, in
+// order. A step.resumed is a retry for this purpose: it cuts the step's view and releases a hold (A10 item 5).
 func recoveryMarks(evs []change.Event) (retries, escalations []mark, err error) {
 	for i, ev := range evs {
-		if ev.Type != change.EventStepRetried && ev.Type != change.EventStepEscalated {
+		if ev.Type != change.EventStepRetried && ev.Type != change.EventStepEscalated && ev.Type != change.EventStepResumed {
 			continue
 		}
 		p, err := change.Decode(ev)
@@ -57,6 +58,8 @@ func recoveryMarks(evs []change.Event) (retries, escalations []mark, err error) 
 		}
 		switch r := p.(type) {
 		case change.StepRetried:
+			retries = append(retries, mark{at: i, step: r.Step})
+		case change.StepResumed:
 			retries = append(retries, mark{at: i, step: r.Step})
 		case change.StepEscalated:
 			escalations = append(escalations, mark{at: i, step: r.Step})

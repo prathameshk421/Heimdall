@@ -31,6 +31,21 @@ type StepEscalated struct {
 	Reason   string `json:"reason"`
 }
 
+// StepResumed is the payload of step.resumed: a person released an escalated step (A10 item 5). Step is the workflow
+// step id. By is the person who resumed it. The step's view starts again at this event, and the step is offered again.
+type StepResumed struct {
+	Step string  `json:"step"`
+	By   ActorID `json:"by"`
+}
+
+// Validate returns every problem with the payload.
+func (p StepResumed) Validate() error {
+	var v problems
+	v.add("step", checkText(p.Step))
+	v.add("by", checkActor(p.By))
+	return v.join()
+}
+
 // Validate returns every problem with the payload.
 func (p StepEscalated) Validate() error {
 	var v problems

@@ -226,7 +226,7 @@ func TestServerCommandRuntimeSelectsReviewersForFanout(t *testing.T) {
 			assigned[string(payload.Agent)] = true
 		case change.EventChangeTriggered, change.EventRoomOpened, change.EventBranchEnsured,
 			change.EventTaskAcked, change.EventTaskTimedOut, change.EventTaskFailed, change.EventTaskProgress,
-			change.EventStepRetried, change.EventStepEscalated, change.EventQuestionAsked, change.EventQuestionAnswered,
+			change.EventStepRetried, change.EventStepEscalated, change.EventStepResumed, change.EventQuestionAsked, change.EventQuestionAnswered,
 			change.EventTestsSubmitted, change.EventTestsVerified, change.EventTestsRejected, change.EventTestsCommitted,
 			change.EventTestsApproved, change.EventTicketChanged, change.EventPROpened, change.EventPRPushed,
 			change.EventPRLinked, change.EventPRClosed, change.EventSlopEvaluated, change.EventReviewSubmitted,

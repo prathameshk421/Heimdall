@@ -50,13 +50,14 @@ const (
 	DecisionChallenge     DecisionKind = "challenge"
 	DecisionRemember      DecisionKind = "remember"
 	DecisionForget        DecisionKind = "forget"
+	DecisionResume        DecisionKind = "resume"
 )
 
 // Valid reports whether k is a decision kind.
 func (k DecisionKind) Valid() bool {
 	return oneOf(k, DecisionReview, DecisionUphold, DecisionDismiss, DecisionSpecChange, DecisionOverride,
 		DecisionWaiveReviewer, DecisionReject, DecisionApproveTests, DecisionIncident, DecisionStart,
-		DecisionChallenge, DecisionRemember, DecisionForget)
+		DecisionChallenge, DecisionRemember, DecisionForget, DecisionResume)
 }
 
 // Verdict is the resolver's answer to a case (TECH_SPEC 11.3).

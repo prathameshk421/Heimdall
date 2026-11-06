@@ -26,6 +26,7 @@ const (
 	useOverride         = "override <case> <reason>"
 	useWaive            = "waive-reviewer @x <reason>"
 	useIncident         = "incident <text>"
+	useResume           = "resume <step>"
 )
 
 // parseUphold takes exactly one finding.
@@ -75,6 +76,18 @@ func parseReview(p, args string) (Review, error) {
 		return Review{}, fail(p, useReview, err)
 	}
 	return Review{Reviewers: reviewers}, nil
+}
+
+// parseResume takes one workflow step id, as the escalation names it. The step id is lower case, as the workflow writes it.
+func parseResume(p, args string) (Resume, error) {
+	step, rest := cutWord(args)
+	if step == "" || rest != "" {
+		return Resume{}, fail(p, useResume, errors.New("resume takes one step id"))
+	}
+	if !stepRE.MatchString(step) {
+		return Resume{}, fail(p, useResume, fmt.Errorf("%q is not a workflow step id", step))
+	}
+	return Resume{Step: step}, nil
 }
 
 // checkApproveTests refuses any argument. The verb takes none.

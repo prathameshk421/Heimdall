@@ -27,14 +27,14 @@ func attempt(ch Channel, sender string, action Action) Attempt {
 	return Attempt{Channel: ch, Sender: sender, Action: action, SeenSHA: headSHA}
 }
 
-// allActions is every action the table must decide: the thirteen decision kinds of the grammar (TECH_SPEC
+// allActions is every action the table must decide: the fourteen decision kinds of the grammar (TECH_SPEC
 // 11.5) and the GitHub review approval.
 func allActions() []Action {
 	return []Action{
 		change.DecisionReview, change.DecisionUphold, change.DecisionDismiss, change.DecisionSpecChange,
 		change.DecisionOverride, change.DecisionWaiveReviewer, change.DecisionReject, change.DecisionApproveTests,
 		change.DecisionIncident, change.DecisionStart, change.DecisionChallenge, change.DecisionRemember,
-		change.DecisionForget, ActionApprove,
+		change.DecisionForget, change.DecisionResume, ActionApprove,
 	}
 }
 
@@ -64,6 +64,7 @@ func authorizeRows() []row {
 		{change.DecisionChallenge, ChannelChat, "dana", "alice", ErrWrongPerson, open},
 		{change.DecisionRemember, ChannelChat, "dana", "nobody", ErrUnknownSender, open},
 		{change.DecisionForget, ChannelChat, "alice", "dana", ErrWrongPerson, open},
+		{change.DecisionResume, ChannelChat, "alice", "dana", ErrWrongPerson, open},
 		{ActionApprove, ChannelGitHub, "alice", "eli", ErrWrongPerson, open},
 	}
 }
