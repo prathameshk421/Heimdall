@@ -133,6 +133,7 @@ func (c *Client) createRoom(ctx context.Context, title string) (change.RoomID, e
 	}
 	args := map[string]any{
 		"name":         title,
+		"description":  "Heimdall change room for " + title + ". Heimdall posts the change's facts here; reply with heimdall commands.",
 		"agent_names":  []string{c.agentName},
 		"channel_type": "channel_public",
 		"bridge_id":    c.bridgeID,
