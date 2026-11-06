@@ -327,6 +327,7 @@ func makeBaseStream(t *testing.T, h *testHarness, role workflow.Role, agent id.A
 
 	taskPayload, _ := json.Marshal(change.TaskAssigned{
 		TaskID:    testTaskID,
+		CaseID:    testCaseID,
 		Agent:     agent,
 		Role:      role,
 		Deadline:  now.Add(30 * time.Minute),
@@ -980,6 +981,7 @@ func TestSubmitVerdictHappyPath(t *testing.T) {
 		Agent:    testAgent,
 		Role:     workflow.RoleResolver,
 		Deadline: t0.Add(30 * time.Minute),
+		Task:     workflow.TaskEnvelope{CaseID: testCaseID},
 	}
 
 	v := deliberation.Verdict{
@@ -1003,6 +1005,41 @@ func TestSubmitVerdictHappyPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, evs, 13) // 10 base + 2 delib + 1 verdict
 	require.Equal(t, change.EventVerdictSubmitted, evs[12].Type)
+}
+
+func TestSubmitVerdictRequiresTheAssignedCase(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	makeDeliberationStream(t, h)
+
+	v := deliberation.Verdict{
+		CaseID:     testCaseID,
+		Decision:   deliberation.DecisionUphold,
+		Rationale:  "The cited code confirms the finding is valid and unhandled.",
+		Confidence: finding.ConfidenceHigh,
+		Citations: []deliberation.Citation{
+			{Kind: deliberation.CitationFinding, Ref: "F1", Quote: "The finding claim"},
+		},
+	}
+	assign := agenttools.Assignment{
+		ChangeID: testChangeID,
+		TaskID:   testTaskID,
+		Agent:    testAgent,
+		Role:     workflow.RoleResolver,
+		Deadline: t0.Add(30 * time.Minute),
+		Task:     workflow.TaskEnvelope{},
+	}
+
+	err := h.svc.SubmitVerdict(context.Background(), assign, v, false)
+	require.ErrorIs(t, err, agenttools.ErrValidation, "a verdict for any case must not settle an unserialised resolver task")
+
+	assign.Task.CaseID = id.CaseID("case_01J8Z3K9QW7M2P5R8T0V4YB6CE")
+	err = h.svc.SubmitVerdict(context.Background(), assign, v, false)
+	require.ErrorIs(t, err, agenttools.ErrValidation, "a verdict must settle its own case, not another case's")
+
+	evs, err := h.events.Load(context.Background(), testChangeID)
+	require.NoError(t, err)
+	require.Len(t, evs, 12, "a refused verdict appends nothing")
 }
 
 func TestAskHumansAndProgress(t *testing.T) {

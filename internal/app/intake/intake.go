@@ -124,8 +124,12 @@ func (in *Intake) HandlePR(ctx context.Context, repo change.Repo, n int) (Result
 	if err != nil {
 		return Result{}, err
 	}
+	suggested, err := in.reviewerSuggestions(ctx, repo, pr.BaseSHA, files)
+	if err != nil {
+		return Result{}, fmt.Errorf("select CODEOWNERS reviewers: %w", err)
+	}
 
-	j := job{repo: repo, pr: pr, ticket: ticket, stream: stream, v: v}
+	j := job{repo: repo, pr: pr, ticket: ticket, stream: stream, v: v, suggestedReviewers: suggested}
 	for attempt := 0; ; attempt++ {
 		res, err := in.appendOnce(ctx, j)
 		if !errors.Is(err, ports.ErrVersionConflict) {
@@ -223,11 +227,12 @@ func inDir(path, dir string) bool {
 
 // job is one handling of a pull request whose facts are fixed. appendOnce runs once per attempt.
 type job struct {
-	repo   change.Repo
-	pr     ports.PR
-	ticket id.ChangeID
-	stream id.ChangeID
-	v      verdict
+	repo               change.Repo
+	pr                 ports.PR
+	ticket             id.ChangeID
+	stream             id.ChangeID
+	v                  verdict
+	suggestedReviewers []change.ActorID
 }
 
 // streamView is the stream as one attempt loaded it: its state, its last version, and the last head this PR was
@@ -305,7 +310,8 @@ func (in *Intake) buildEvents(j job, expected int64, seen bool) ([]change.Event,
 		prPayload = change.PRPushed{Repo: j.repo, Number: j.pr.Number, HeadSHA: j.pr.HeadSHA}
 	} else {
 		prType = change.EventPROpened
-		prPayload = change.PROpened{Repo: j.repo, Number: j.pr.Number, HeadSHA: j.pr.HeadSHA, Author: j.pr.Author, Ticket: j.ticket}
+		prPayload = change.PROpened{Repo: j.repo, Number: j.pr.Number, HeadSHA: j.pr.HeadSHA, Author: j.pr.Author,
+			Ticket: j.ticket, SuggestedReviewers: j.suggestedReviewers}
 	}
 	slopPayload := change.SlopEvaluated{Pass: j.v.pass, FailingRules: j.v.rules}
 

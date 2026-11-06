@@ -17,6 +17,7 @@ import (
 // Request contains the trusted and referenced context selected for one role.
 type Request struct {
 	Role         workflow.Role  `json:"role"`
+	CaseID       string         `json:"case_id,omitempty"`
 	Change       string         `json:"change"`
 	BaseSHA      string         `json:"base_sha"`
 	HeadSHA      string         `json:"head_sha"`
@@ -43,6 +44,7 @@ type Bundle struct {
 
 type document struct {
 	Skill        string         `json:"skill"`
+	CaseID       string         `json:"case_id,omitempty"`
 	RoleRules    string         `json:"role_rules"`
 	Change       changeContext  `json:"change"`
 	Diff         string         `json:"diff,omitempty"`
@@ -75,7 +77,7 @@ func Build(req Request) (Bundle, error) {
 		}
 	}
 	content := document{
-		Skill: skillFor(req.Role), RoleRules: rulesFor(req.Role),
+		Skill: skillFor(req.Role), CaseID: req.CaseID, RoleRules: rulesFor(req.Role),
 		Change: changeContext{ID: req.Change, BaseSHA: req.BaseSHA, HeadSHA: req.HeadSHA},
 		Diff:   req.Diff, FilesChanged: sortedCopy(req.FilesChanged), Criteria: sortedCopy(req.Criteria),
 		CI: sortedCopy(req.CI), Pack: req.Pack, Memory: req.Memory, Untrusted: sortedRefs(req.Untrusted),

@@ -16,6 +16,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/people"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/commands"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -302,7 +303,12 @@ func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Targe
 	if hasCommandSource(state, source, sourceRef) {
 		return "Already recorded.", nil
 	}
-	events, err := r.commandEvents(target.ChangeID, state, person, source, sourceRef, cmd)
+	var events []change.Event
+	if review, ok := cmd.(commands.Review); ok {
+		events, err = r.reviewerSelectionEvents(ctx, target, person, source, sourceRef, review)
+	} else {
+		events, err = r.commandEvents(target.ChangeID, state, person, source, sourceRef, cmd)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -312,27 +318,204 @@ func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Targe
 	return actionReply(cmd), nil
 }
 
+func (r *commandRuntime) reviewerSelectionEvents(ctx context.Context, target collaboration.Target, person string, source commands.Source, sourceRef string, cmd commands.Review) ([]change.Event, error) {
+	directory, _, err := r.directory(ctx, target)
+	if err != nil {
+		return nil, fmt.Errorf("resolve requested reviewers: %w", err)
+	}
+	selected := make([]change.ActorID, 0, len(cmd.Reviewers))
+	for _, handle := range cmd.Reviewers {
+		identity, err := directory.Resolve(people.ChannelGitHub, handle)
+		if err != nil || identity.Kind != people.KindHuman || identity.Agent == "" {
+			return nil, fmt.Errorf("reviewer @%s is not a mapped person", handle)
+		}
+		selected = append(selected, change.ActorID(identity.Agent))
+	}
+	picked := change.ReviewersPicked{People: selected, By: change.ActorID(person), Method: change.PickCommand}
+	if err := picked.Validate(); err != nil {
+		return nil, fmt.Errorf("validate reviewer selection: %w", err)
+	}
+	ev, err := r.event(target.ChangeID, change.Actor{Kind: change.ActorHuman, ID: change.ActorID(person)}, source,
+		change.EventReviewersPicked, picked, sourceRef)
+	if err != nil {
+		return nil, err
+	}
+	return []change.Event{ev}, nil
+}
+
 func (r *commandRuntime) commandEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, cmd commands.Command) ([]change.Event, error) {
 	actor := change.Actor{Kind: change.ActorHuman, ID: change.ActorID(person)}
 	if challenge, ok := cmd.(commands.Challenge); ok {
-		round := challengeRound(state, challenge.Finding)
-		findingRef, err := id.ParseFindingRef(challenge.Finding)
-		if err != nil {
-			return nil, fmt.Errorf("parse challenged finding: %w", err)
-		}
-		ev, err := r.event(cid, actor, source, change.EventChallengeFiled, change.ChallengeFiled{Finding: findingRef, Round: round, Evidence: challenge.Evidence}, sourceRef)
-		if err != nil {
-			return nil, err
-		}
-		return []change.Event{ev}, nil
+		return r.challengeEvents(cid, state, person, source, sourceRef, actor, challenge)
 	}
+	return r.decisionEvents(cid, state, person, source, sourceRef, actor, cmd)
+}
+
+func (r *commandRuntime) challengeEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, actor change.Actor, cmd commands.Challenge) ([]change.Event, error) {
+	findingRef, err := id.ParseFindingRef(cmd.Finding)
+	if err != nil {
+		return nil, fmt.Errorf("parse challenged finding: %w", err)
+	}
+	ev, err := r.event(cid, actor, source, change.EventChallengeFiled,
+		change.ChallengeFiled{Finding: findingRef, Round: challengeRound(state, cmd.Finding), Evidence: cmd.Evidence}, sourceRef)
+	if err != nil {
+		return nil, err
+	}
+	stateEvent, err := r.findingStateEvent(cid, state, person, source, sourceRef, actor, cmd.Finding, finding.StateDisputed)
+	if err != nil {
+		return nil, err
+	}
+	caseID := r.ids.NewCase()
+	caseEvent, err := r.event(cid, actor, source, change.EventCaseOpened,
+		change.CaseOpened{CaseID: caseID, Finding: findingRef}, sourceRef)
+	if err != nil {
+		return nil, fmt.Errorf("open resolver case: %w", err)
+	}
+	return []change.Event{ev, stateEvent, caseEvent}, nil
+}
+
+func (r *commandRuntime) decisionEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, actor change.Actor, cmd commands.Command) ([]change.Event, error) {
 	action, ref := commandAction(cmd)
 	decision := change.DecisionRecorded{Kind: action, Target: commandTarget(cmd, ref), Login: change.ActorID(person), Reason: commandReason(cmd), SourceRef: sourceRef}
 	ev, err := r.event(cid, actor, source, change.EventDecisionRecorded, decision, sourceRef)
 	if err != nil {
 		return nil, err
 	}
-	return []change.Event{ev}, nil
+	var targetState finding.State
+	switch cmd.(type) {
+	case commands.Uphold:
+		targetState = finding.StateUpheld
+	case commands.Dismiss:
+		targetState = finding.StateDismissed
+	default:
+		return []change.Event{ev}, nil
+	}
+	stateEvent, err := r.findingStateEvent(cid, state, person, source, sourceRef, actor, ref, targetState)
+	if err != nil {
+		return nil, err
+	}
+	events := []change.Event{ev, stateEvent}
+	if targetState == finding.StateUpheld || targetState == finding.StateDismissed {
+		caseID, found, err := openCaseForFinding(state, ref)
+		if err != nil {
+			return nil, fmt.Errorf("find challenged case: %w", err)
+		}
+		if found {
+			verdict := change.VerdictUphold
+			if targetState == finding.StateDismissed {
+				verdict = change.VerdictDismiss
+			}
+			applied, err := r.event(cid, actor, source, change.EventVerdictApplied,
+				change.VerdictApplied{CaseID: caseID, Verdict: verdict, Citations: []string{ref}, Checks: []string{"human decision recorded"}}, sourceRef)
+			if err != nil {
+				return nil, fmt.Errorf("record human case decision: %w", err)
+			}
+			events = append(events, applied)
+		}
+	}
+	return events, nil
+}
+
+func openCaseForFinding(events []change.Event, ref string) (id.CaseID, bool, error) {
+	var current id.CaseID
+	for _, ev := range events {
+		if ev.Type == change.EventCaseOpened {
+			opened, err := decodeCaseOpened(ev)
+			if err != nil {
+				return "", false, err
+			}
+			if opened.Finding.String() == ref {
+				current = opened.CaseID
+			}
+			continue
+		}
+		if ev.Type != change.EventVerdictApplied && ev.Type != change.EventVerdictEscalated {
+			continue
+		}
+		caseID, err := decodeVerdictCase(ev)
+		if err != nil {
+			return "", false, err
+		}
+		if caseID == current {
+			current = ""
+		}
+	}
+	return current, current != "", nil
+}
+
+// decodeCaseOpened decodes a case.opened event into its payload.
+func decodeCaseOpened(ev change.Event) (change.CaseOpened, error) {
+	p, err := change.Decode(ev)
+	if err != nil {
+		return change.CaseOpened{}, fmt.Errorf("decode case.opened: %w", err)
+	}
+	opened, ok := p.(change.CaseOpened)
+	if !ok {
+		return change.CaseOpened{}, fmt.Errorf("case.opened payload is %T", p)
+	}
+	return opened, nil
+}
+
+// decodeVerdictCase returns the case a verdict event closes.
+func decodeVerdictCase(ev change.Event) (id.CaseID, error) {
+	p, err := change.Decode(ev)
+	if err != nil {
+		return "", fmt.Errorf("decode %s: %w", ev.Type, err)
+	}
+	switch done := p.(type) {
+	case change.VerdictApplied:
+		return done.CaseID, nil
+	case change.VerdictEscalated:
+		return done.CaseID, nil
+	default:
+		return "", fmt.Errorf("%s payload is %T, want a verdict", ev.Type, p)
+	}
+}
+
+func (r *commandRuntime) findingStateEvent(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, actor change.Actor, ref string, target finding.State) (change.Event, error) {
+	previous, ok, err := latestFindingRecord(state, ref)
+	if err != nil {
+		return change.Event{}, fmt.Errorf("read finding %s before state change: %w", ref, err)
+	}
+	if !ok {
+		return change.Event{}, fmt.Errorf("finding %s has no recorded state", ref)
+	}
+	stateChange := change.FindingStateChanged{
+		FindingID: previous.FindingID, Ref: previous.Ref, Tier: previous.Tier, State: target, By: change.ActorID(person),
+		Fingerprint: previous.Fingerprint, Confidence: previous.Confidence,
+	}
+	ev, err := r.event(cid, actor, source, change.EventFindingStateChanged, stateChange, sourceRef)
+	if err != nil {
+		return change.Event{}, err
+	}
+	return ev, nil
+}
+
+func latestFindingRecord(events []change.Event, ref string) (change.FindingRecord, bool, error) {
+	var latest change.FindingRecord
+	found := false
+	for _, ev := range events {
+		if ev.Type != change.EventFindingFiled && ev.Type != change.EventFindingVerified && ev.Type != change.EventFindingStateChanged {
+			continue
+		}
+		payload, err := change.Decode(ev)
+		if err != nil {
+			return change.FindingRecord{}, false, fmt.Errorf("decode %s: %w", ev.Type, err)
+		}
+		record := change.FindingRecord{}
+		switch value := payload.(type) {
+		case change.FindingFiled:
+			record = change.FindingRecord(value)
+		case change.FindingVerified:
+			record = change.FindingRecord(value)
+		case change.FindingStateChanged:
+			record = change.FindingRecord(value)
+		}
+		if record.Ref.String() == ref {
+			latest, found = record, true
+		}
+	}
+	return latest, found, nil
 }
 
 func challengeRound(events []change.Event, findingRef string) int {
@@ -516,6 +699,8 @@ func actionReply(cmd commands.Command) string {
 		return "Challenge recorded."
 	case commands.Start:
 		return "Started."
+	case commands.Review:
+		return "Reviewers picked."
 	}
 	return "Recorded."
 }

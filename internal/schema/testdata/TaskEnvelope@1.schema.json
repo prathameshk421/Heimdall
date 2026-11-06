@@ -4,6 +4,9 @@
     "task_id": {
       "type": "string"
     },
+    "case_id": {
+      "type": "string"
+    },
     "role": {
       "type": "string"
     },

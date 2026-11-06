@@ -41,6 +41,7 @@ func resolverTask(untrusted ...workflow.UntrustedRef) workflow.TaskEnvelope {
 	task.Role = workflow.RoleResolver
 	task.Skill = "resolver@1.0.0"
 	task.OutputSchema = "Verdict@1"
+	task.CaseID = id.CaseID("case_01J8Z3K9QW7M2P5R8T0V4YB6CD")
 	task.Inputs.FilesChanged = []string{"internal/refunds/service.go"}
 	task.Inputs.Untrusted = untrusted
 	return task

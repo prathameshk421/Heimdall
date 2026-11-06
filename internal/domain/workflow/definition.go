@@ -62,7 +62,7 @@ func Default() Workflow {
 		{ID: "signoff", After: []string{"test_qa"}, Do: "human.approve_tests", When: "sensitive_domain"},
 		{ID: "mutation", After: []string{"review"}, Do: "sandbox.mutation",
 			With: json.RawMessage(`{"scope":"changed_lines"}`)},
-		{ID: "deliberate", After: []string{"verify"}, Do: "deliberation.run", Role: RoleResolver,
+		{ID: "deliberate", After: []string{"verify"}, Do: "deliberation.run", Role: RoleResolver, Timeout: 30 * time.Minute,
 			With: json.RawMessage(`{"max_rounds":2}`)},
 		{ID: "gate", On: "any", Do: "rule.merge_allowed"},
 	}}

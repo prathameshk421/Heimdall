@@ -95,6 +95,7 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 		Acked:      acked,
 		Task: workflow.TaskEnvelope{
 			TaskID:   latest.TaskID,
+			CaseID:   latest.CaseID,
 			Role:     latest.Role,
 			Deadline: latest.Deadline,
 			Change:   workflow.ChangeRef{ID: ref.ChangeID},

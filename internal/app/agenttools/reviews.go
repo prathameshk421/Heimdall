@@ -2,7 +2,10 @@ package agenttools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
@@ -30,13 +33,22 @@ func (s *Service) buildFindingFiledEvent(
 		st = finding.StateUnverified
 	}
 	payload := change.FindingFiled{
-		FindingID: s.ids.NewFinding(),
-		Ref:       fRef,
-		Tier:      vf.tier,
-		State:     st,
-		By:        change.ActorID(a.Agent),
+		FindingID:   s.ids.NewFinding(),
+		Ref:         fRef,
+		Tier:        vf.tier,
+		State:       st,
+		By:          change.ActorID(a.Agent),
+		Fingerprint: findingFingerprint(vf.input),
+		Confidence:  vf.input.Confidence,
 	}
 	return s.buildEventWithID(eid, a.ChangeID, version, change.EventFindingFiled, a.Agent, corr, causation, payload, nil)
+}
+
+func findingFingerprint(input finding.Input) string {
+	location := strings.ToLower(strings.TrimSpace(input.Location.File))
+	claim := strings.ToLower(strings.Join(strings.Fields(input.Claim), " "))
+	sum := sha256.Sum256([]byte(string(input.Category) + "\n" + location + ":" + fmt.Sprint(input.Location.Lines[0], "-", input.Location.Lines[1]) + "\n" + claim))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *Service) buildReviewEvents(
@@ -224,6 +236,9 @@ func (s *Service) SubmitVerdict(ctx context.Context, a Assignment, v deliberatio
 	}
 	if err := v.Validate(); err != nil {
 		return fmt.Errorf("%w: %w", ErrValidation, err)
+	}
+	if a.Task.CaseID == "" || a.Task.CaseID != v.CaseID {
+		return fmt.Errorf("%w: case_id does not match the assigned resolver case", ErrValidation)
 	}
 
 	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {

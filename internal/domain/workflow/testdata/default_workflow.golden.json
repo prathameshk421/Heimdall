@@ -139,6 +139,7 @@
       ],
       "do": "deliberation.run",
       "role": "resolver",
+      "timeout_ns": 1800000000000,
       "with": {
         "max_rounds": 2
       }

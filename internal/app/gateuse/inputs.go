@@ -399,10 +399,13 @@ func (st *foldState) finding(r change.FindingRecord) {
 		st.findings = append(st.findings, r.FindingID)
 	}
 	st.findingState[r.FindingID] = gate.FindingState{
-		ID:       r.FindingID,
-		Tier:     r.Tier,
-		Severity: finding.SeverityCritical,
-		State:    r.State,
+		ID:          r.FindingID,
+		Tier:        r.Tier,
+		Severity:    finding.SeverityCritical,
+		State:       r.State,
+		Fingerprint: r.Fingerprint,
+		Reporter:    string(r.By),
+		Confidence:  r.Confidence,
 	}
 }
 

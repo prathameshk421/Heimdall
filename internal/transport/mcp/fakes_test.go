@@ -40,7 +40,7 @@ var t0 = time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
 
 // testEnvelope is a valid task for role, with one criterion (AC2), one untrusted PR body and one diff.
 func testEnvelope(role workflow.Role) workflow.TaskEnvelope {
-	return workflow.TaskEnvelope{
+	e := workflow.TaskEnvelope{
 		TaskID: id.TaskID("tsk_01J8Z3K9QW7M2P5R8T0V4YB6CD"),
 		Role:   role,
 		Skill:  string(role) + "@1.0.0",
@@ -58,6 +58,10 @@ func testEnvelope(role workflow.Role) workflow.TaskEnvelope {
 		OutputSchema:        "TestSubmission@1",
 		Deadline:            t0.Add(time.Hour),
 	}
+	if role == workflow.RoleResolver {
+		e.CaseID = id.CaseID("case_01J8Z3K9QW7M2P5R8T0V4YB6CD")
+	}
+	return e
 }
 
 type fakeClock struct{ now time.Time }
