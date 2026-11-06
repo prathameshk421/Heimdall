@@ -35,7 +35,7 @@ func TestPostSendsRoomAndBodyWithTheKeyFromTheSecretFile(t *testing.T) {
 	sent := f.sentMessages()
 	require.Len(t, sent, 1)
 	require.Equal(t, testRoomUUID, sent[0]["room_id"])
-	require.Equal(t, "heimdall uphold F1", sent[0]["body"])
+	require.Equal(t, "heimdall uphold F1", sent[0]["content"], "Switch names the text content")
 	for _, r := range f.requests() {
 		require.Equal(t, testAPIKey, r.Auth, "every call after registration uses the key file")
 	}

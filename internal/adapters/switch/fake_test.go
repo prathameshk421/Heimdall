@@ -241,7 +241,13 @@ func (f *fakeSwitch) handleOp(w http.ResponseWriter, r *http.Request, rec record
 	writeJSON(w, code, map[string]any{"result": out})
 }
 
+// handleMessage answers like Switch's SendMessageRequest: room_id and content are required, so a body field alone is
+// refused with 422 (Switch agent bridge api/schemas.py).
 func (f *fakeSwitch) handleMessage(w http.ResponseWriter, rec recorded) {
+	if _, ok := rec.Body["content"].(string); !ok {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"detail": "content is required"})
+		return
+	}
 	f.mu.Lock()
 	f.sent = append(f.sent, rec.Body)
 	code := f.messageCode
