@@ -37,6 +37,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/dashboard"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
@@ -164,6 +165,7 @@ type app struct {
 	roomStream        roomStreamRunner
 	comments          commentPoller
 	mcpHandler        http.Handler
+	dashboard         http.Handler
 	agentSetupHandler http.Handler
 	workflowMemory    *knowledge.WorkflowMemory
 	episodeWorker     interface {
@@ -480,6 +482,9 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	return a, nil
 }
 
+// dashboardInterval is how often the dashboard stream looks at the event log.
+const dashboardInterval = 2 * time.Second
+
 // newTicketPollers builds one ticket poller per listed project, each with its own cursor source provider:project
 // (A10 item 10).
 func newTicketPollers(ad adapters, store *postgres.Store, eng *engine.Engine, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock) ([]poller, error) {
@@ -542,6 +547,10 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
+	dash, err := dashboard.New(store, d.logger, dashboardInterval)
+	if err != nil {
+		return nil, fmt.Errorf("build dashboard: %w", err)
+	}
 	mcpH, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager)
 	if err != nil {
 		return nil, err
@@ -551,7 +560,7 @@ func assembleWithBlobs(
 		closer = c
 	}
 	return &app{
-		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, episodeWorker: episodeWorker, workflowMemory: workflowMemory, blobs: closer,
+		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, dashboard: dash, agentSetupHandler: setupHandler, episodeWorker: episodeWorker, workflowMemory: workflowMemory, blobs: closer,
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil

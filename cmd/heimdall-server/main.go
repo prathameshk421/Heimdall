@@ -113,6 +113,10 @@ func mountHTTP(router http.Handler, a *app) http.Handler {
 	if a != nil && a.mcpHandler != nil {
 		mux.Handle("/mcp", a.mcpHandler)
 	}
+	if a != nil && a.dashboard != nil {
+		mux.Handle("/dashboard", http.StripPrefix("/dashboard", a.dashboard))
+		mux.Handle("/dashboard/", http.StripPrefix("/dashboard", a.dashboard))
+	}
 	if a != nil && a.agentSetupHandler != nil {
 		mux.Handle("/admin/agents/", a.agentSetupHandler)
 	}
