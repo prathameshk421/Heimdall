@@ -714,6 +714,9 @@ func applySelection(doc map[string]any, sel map[string]string) error {
 			doc[section] = tbl
 		}
 		tbl[key] = value
+		if section == "tracker" && key == "provider" && value != "file" {
+			delete(tbl, "path")
+		}
 	}
 	return nil
 }

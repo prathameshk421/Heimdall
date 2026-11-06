@@ -331,3 +331,53 @@ base_branch = %q
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	return path
 }
+
+func writeFileAcceptanceConfig(t *testing.T, secretsDir, ticketsDir string) string {
+	t.Helper()
+	body := fmt.Sprintf(`listen = "127.0.0.1:0"
+secrets_dir = %q
+
+[database]
+url_secret = "database_url"
+
+[switch]
+base_url = "https://switch.example.test"
+agent_id = %q
+agent_name = %q
+bridge_id = %q
+api_key_secret = "switch_api_key"
+registration_token_secret = "switch_registration_token"
+
+[github]
+app_id_secret = "github_app_id"
+installation_id_secret = "github_app_installation_id"
+private_key_secret = "github_app_private_key"
+
+[vcs]
+provider = "github"
+
+[tracker]
+provider = "file"
+path = %q
+
+[chat]
+bridge = "switch"
+
+[[projects]]
+tracker_project = "KAN"
+repo = %q
+base_branch = %q
+`, secretsDir, acceptanceAgentID, acceptanceAgentName, acceptanceBridgeID, ticketsDir, acceptanceRepo, acceptanceBaseRef)
+	path := filepath.Join(t.TempDir(), "heimdall.toml")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	return path
+}
+
+func writeFileAcceptanceTicket(t *testing.T) (string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	body := "# KAN-1: Add refunds\nAssignee: ana\nStatus: In Progress\n\n## Acceptance criteria\n- Refunds are idempotent.\n"
+	path := filepath.Join(dir, "KAN-1.md")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	return dir, "Refunds are idempotent."
+}

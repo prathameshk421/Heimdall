@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 )
 
@@ -67,7 +66,7 @@ func writeLiveSecrets(t *testing.T, names map[string]string) string {
 
 // liveConfigBody builds a complete heimdall.toml. The URLs point at test doubles; nothing is called at build
 // time. Each secret key names a file in secretsDir (the map lets a test choose non-default names).
-func liveConfigBody(secretsDir, jiraURL, switchURL string, names map[string]string) string {
+func liveConfigBody(secretsDir, jiraURL string, names map[string]string) string {
 	return fmt.Sprintf(`listen = "127.0.0.1:0"
 secrets_dir = %q
 
@@ -81,7 +80,7 @@ email_secret = %q
 api_token_secret = %q
 
 [switch]
-base_url = %q
+base_url = "https://switch.example.test"
 agent_id = "agent-coord-1"
 agent_name = "heimdall-coordinator"
 bridge_id = "bridge-1"
@@ -108,14 +107,14 @@ repo = "aarush323/PBL_TOS_RISK_ANALYZER"
 base_branch = "heimdall-demo"
 `, secretsDir,
 		names["database_url"], jiraURL, names["jira_email"], names["jira_api_token"],
-		switchURL, names["switch_api_key"], names["switch_registration_token"],
+		names["switch_api_key"], names["switch_registration_token"],
 		names["github_app_id"], names["github_app_installation_id"], names["github_app_private_key"])
 }
 
 func liveConfig(t *testing.T, names map[string]string) (cfg config.Config, dir string) {
 	t.Helper()
 	dir = writeLiveSecrets(t, names)
-	cfg = loadTestConfig(t, liveConfigBody(dir, "https://jira.example.test", "https://switch.example.test", names))
+	cfg = loadTestConfig(t, liveConfigBody(dir, "https://jira.example.test", names))
 	return cfg, dir
 }
 
@@ -143,7 +142,7 @@ func TestProductionDepsNamesEveryMissingKey(t *testing.T) {
 	require.ErrorContains(t, err, "heimdall.toml")
 	for _, key := range []string{
 		"database.url_secret",
-		"jira.base_url", "jira.project_keys", "jira.email_secret", "jira.api_token_secret",
+		"tracker.provider",
 		"switch.base_url", "switch.agent_id", "switch.agent_name", "switch.bridge_id",
 		"switch.api_key_secret", "switch.registration_token_secret",
 		"github.app_id_secret", "github.installation_id_secret", "github.private_key_secret",
@@ -176,12 +175,33 @@ func TestCompleteConfigSelectsEveryAdapter(t *testing.T) {
 	cfg, _ := liveConfig(t, defaultSecretNames)
 	d, err := productionDeps(cfg, discardLogger())
 	require.NoError(t, err)
-	ad, err := selectAdapters(cfg, d, clock.System{})
+	ad, err := selectAdapters(cfg, d)
 	require.NoError(t, err, "a complete config must build every adapter")
 	require.NotNil(t, ad.tickets)
 	require.NotNil(t, ad.vcs)
 	require.NotNil(t, ad.chat)
 	require.Equal(t, "KAN", ad.project)
+}
+
+func TestFileTrackerConfigBuildsWithoutJiraSettingsOrSecrets(t *testing.T) {
+	tickets := t.TempDir()
+	names := map[string]string{
+		"database_url": "database_url", "github_app_id": "github_app_id",
+		"github_app_installation_id": "github_app_installation_id", "github_app_private_key": "github_app_private_key",
+		"switch_api_key": "switch_api_key", "switch_registration_token": "switch_registration_token",
+	}
+	secrets := writeLiveSecrets(t, names)
+	body := liveConfigBody(secrets, "", names)
+	jiraSection := "[jira]\nbase_url = \"\"\nproject_keys = [\"KAN\"]\nemail_secret = \"\"\napi_token_secret = \"\"\n\n"
+	body = strings.Replace(body, jiraSection, "", 1)
+	body = strings.Replace(body, "provider = \"jira\"", "provider = \"file\"\npath = \""+tickets+"\"", 1)
+	cfg := loadTestConfig(t, body)
+	d, err := productionDeps(cfg, discardLogger())
+	require.NoError(t, err)
+	ad, err := selectAdapters(cfg, d)
+	require.NoError(t, err)
+	require.NotNil(t, ad.tickets)
+	require.Equal(t, "file", ad.trackerProvider)
 }
 
 func TestCompleteConfigBuildsAnAppWithFakes(t *testing.T) {
@@ -214,7 +234,7 @@ func TestCompleteConfigUsesTheConfiguredSecretNames(t *testing.T) {
 	cfg, _ := liveConfig(t, custom)
 	d, err := productionDeps(cfg, discardLogger())
 	require.NoError(t, err)
-	_, err = selectAdapters(cfg, d, clock.System{})
+	_, err = selectAdapters(cfg, d)
 	require.NoError(t, err, "the adapters must read the secret file names the config gives, not the defaults")
 }
 
@@ -223,7 +243,7 @@ func TestProductionDepsRefusesProjectKeysThatDoNotMatchTheProjectMap(t *testing.
 	_, err := productionDeps(cfg, discardLogger())
 	require.NoError(t, err, "the helper config maps KAN and lists KAN")
 
-	body := liveConfigBody(writeLiveSecrets(t, defaultSecretNames), "https://jira.example.test", "https://switch.example.test", defaultSecretNames)
+	body := liveConfigBody(writeLiveSecrets(t, defaultSecretNames), "https://jira.example.test", defaultSecretNames)
 	body = strings.Replace(body, `tracker_project = "KAN"`, `tracker_project = "PAY"`, 1)
 	cfg = loadTestConfig(t, body)
 	_, err = productionDeps(cfg, discardLogger())
@@ -279,7 +299,7 @@ func TestBuildDoesNotLeakDatabaseURLOnOpenPoolFailure(t *testing.T) {
 
 func TestProductionDepsRefusesMultipleProjectKeysOrMultipleProjects(t *testing.T) {
 	// Multiple project keys
-	body := liveConfigBody(writeLiveSecrets(t, defaultSecretNames), "https://jira.example.test", "https://switch.example.test", defaultSecretNames)
+	body := liveConfigBody(writeLiveSecrets(t, defaultSecretNames), "https://jira.example.test", defaultSecretNames)
 	bodyMultiKey := strings.Replace(body, `project_keys = ["KAN"]`, `project_keys = ["KAN", "PAY"]`, 1)
 	cfgMultiKey := loadTestConfig(t, bodyMultiKey)
 	_, err := productionDeps(cfgMultiKey, discardLogger())

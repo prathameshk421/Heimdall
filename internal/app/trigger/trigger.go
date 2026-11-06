@@ -31,6 +31,7 @@ const (
 
 // statusField is the changelog field a status move names.
 const statusField = "status"
+const fileField = "file"
 
 // statusInProgress is the Jira status that starts a change (TECH_SPEC 13).
 const statusInProgress = "In Progress"
@@ -175,7 +176,8 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 	if err := ch.Validate(); err != nil {
 		return err
 	}
-	if !slices.Contains(ch.Fields, statusField) {
+	isFile := slices.Contains(ch.Fields, fileField)
+	if !isFile && !slices.Contains(ch.Fields, statusField) {
 		res.Ignored[ReasonNoStatusChange]++
 		return nil
 	}
@@ -200,7 +202,7 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 		res.Ignored[ReasonUnassigned]++
 		return nil
 	}
-	started, err := p.startTicket(ctx, ch.Key, repo, tk)
+	started, err := p.startTicket(ctx, ch.Key, repo, tk, isFile)
 	if err != nil {
 		return err
 	}
@@ -212,7 +214,7 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 	return nil
 }
 
-func (p *Poller) startTicket(ctx context.Context, key id.ChangeID, repo change.Repo, tk ports.Ticket) (bool, error) {
+func (p *Poller) startTicket(ctx context.Context, key id.ChangeID, repo change.Repo, tk ports.Ticket, isFile bool) (bool, error) {
 	if err := tk.Validate(); err != nil {
 		return false, fmt.Errorf("validate ticket: %w", err)
 	}
@@ -224,7 +226,7 @@ func (p *Poller) startTicket(ctx context.Context, key id.ChangeID, repo change.R
 		}
 		criteria = append(criteria, change.TicketCriterion{ID: c.ID, Text: c.Text, Hash: c.Hash, Ref: ref})
 	}
-	return p.startTriggered(ctx, key, repo, tk.Assignee, criteria)
+	return p.startTriggered(ctx, key, repo, tk.Assignee, criteria, isFile)
 }
 
 // storeCriterion writes ticket-authored text to durable content-addressed storage. Replay keeps the source text and
@@ -249,8 +251,8 @@ func (p *Poller) storeCriterion(ctx context.Context, text, wantHash string) (wor
 // startTriggered starts the change with change.triggered. A change that already exists refuses the start with
 // ports.ErrVersionConflict, which is the durable dedupe (TECH_SPEC 2.4). It reports false in that case, and it does
 // not retry.
-func (p *Poller) startTriggered(ctx context.Context, key id.ChangeID, repo change.Repo, assignee change.ActorID, criteria []change.TicketCriterion) (bool, error) {
-	ev, err := p.triggeredEvent(key, repo, assignee, criteria)
+func (p *Poller) startTriggered(ctx context.Context, key id.ChangeID, repo change.Repo, assignee change.ActorID, criteria []change.TicketCriterion, isFile bool) (bool, error) {
+	ev, err := p.triggeredEvent(key, repo, assignee, criteria, isFile)
 	if err != nil {
 		return false, err
 	}
@@ -266,8 +268,14 @@ func (p *Poller) startTriggered(ctx context.Context, key id.ChangeID, repo chang
 
 // triggeredEvent builds the change.triggered event of a ticket. The payload and the envelope are validated, and the
 // reducer must accept the event from the empty state, as internal/app/intake checks its events.
-func (p *Poller) triggeredEvent(key id.ChangeID, repo change.Repo, assignee change.ActorID, criteria []change.TicketCriterion) (change.Event, error) {
-	pl := change.Triggered{Ticket: key, Repo: repo, Assignee: assignee, Source: change.TriggerJira, Criteria: criteria}
+func (p *Poller) triggeredEvent(key id.ChangeID, repo change.Repo, assignee change.ActorID, criteria []change.TicketCriterion, isFile bool) (change.Event, error) {
+	source := change.TriggerJira
+	actor := change.Actor{Kind: change.ActorJira, ID: triggerActor}
+	if isFile {
+		source = change.TriggerFile
+		actor = change.Actor{Kind: change.ActorSystem, ID: "file"}
+	}
+	pl := change.Triggered{Ticket: key, Repo: repo, Assignee: assignee, Source: source, Criteria: criteria}
 	if err := pl.Validate(); err != nil {
 		return change.Event{}, fmt.Errorf("payload of change.triggered: %w", err)
 	}
@@ -285,7 +293,7 @@ func (p *Poller) triggeredEvent(key id.ChangeID, repo change.Repo, assignee chan
 		ChangeID:      key,
 		Version:       triggerVersion,
 		Type:          change.EventChangeTriggered,
-		Actor:         change.Actor{Kind: change.ActorJira, ID: triggerActor},
+		Actor:         actor,
 		OccurredAt:    p.clock.Now().UTC(),
 		CorrelationID: change.CorrelationID(eid.String()),
 		BlobRefs:      blobRefs,

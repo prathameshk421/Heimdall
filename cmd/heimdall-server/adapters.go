@@ -11,6 +11,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/github"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/registry"
 	switchchat "github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/switch"
+	filetracker "github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/tracker/file"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/tracker/jira"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agentprovision"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -56,6 +57,7 @@ type adapters struct {
 	tokens            mcp.Tokens
 	projects          projectRepos
 	project           string
+	trackerProvider   string
 	repos             []change.Repo
 	provisioner       ports.AgentProvisioner
 	agentSetupHandler func(ports.AgentReceiptLedger) (http.Handler, error)
@@ -87,12 +89,12 @@ type adapterFactory struct {
 
 // selectAdapters checks every slice selection against the registry and builds the adapters it names. It refuses a
 // missing or unknown selection before any adapter is built, and it names the heimdall.toml key of each problem.
-func selectAdapters(cfg config.Config, d deps, clk ports.Clock) (adapters, error) {
+func selectAdapters(cfg config.Config, d deps) (adapters, error) {
 	projects, project, repos, err := projectsOf(cfg)
 	if err != nil {
 		return adapters{}, err
 	}
-	f := adapterFactory{d: d, clk: clk, wait: clock.Wait, random: jitter{}, project: project}
+	f := adapterFactory{d: d, clk: clock.System{}, wait: clock.Wait, random: jitter{}, project: project}
 	reg, err := registry.Default(f.entries())
 	if err != nil {
 		return adapters{}, fmt.Errorf("register adapters: %w", err)
@@ -109,7 +111,8 @@ func selectAdapters(cfg config.Config, d deps, clk ports.Clock) (adapters, error
 	if len(problems) > 0 {
 		return adapters{}, fmt.Errorf("heimdall.toml: %w", errors.Join(problems...))
 	}
-	out := adapters{projects: projects, project: project, repos: repos, agents: cfg.Agents}
+	trackerProvider, _ := cfg.Selection(string(registry.KindTracker))
+	out := adapters{projects: projects, project: project, repos: repos, agents: cfg.Agents, trackerProvider: trackerProvider}
 	if out.tickets, err = selected[ports.TicketReader](cfg, reg, registry.KindTracker); err != nil {
 		return adapters{}, err
 	}
@@ -216,12 +219,23 @@ func (f adapterFactory) entries() []registry.Entry {
 		{Name: "jira", Kind: registry.KindTracker,
 			RequiredConfig: []string{jiraEmailFile, jiraAPIFile},
 			Factory:        f.jira, Check: notChecked},
+		{Name: "file", Kind: registry.KindTracker,
+			RequiredConfig: []string{"tracker.path"},
+			Factory:        f.fileTracker, Check: notChecked},
 		{Name: "switch", Kind: registry.KindChat,
 			RequiredConfig: []string{switchAPIKeyFile, switchRegistrationFile},
 			Factory:        f.switchChat, Check: notChecked},
 		{Name: "switchroom", Kind: registry.KindAgentRuntime,
 			RequiredConfig: []string{switchAPIKeyFile, switchRegistrationFile}, Factory: f.switchRuntime, Check: notChecked},
 	}
+}
+
+func (f adapterFactory) fileTracker(cfg config.Config) (any, error) {
+	a, err := filetracker.New(cfg.TrackerPath, f.clk)
+	if err != nil {
+		return nil, fmt.Errorf("file tracker: %w", err)
+	}
+	return a, nil
 }
 
 func (f adapterFactory) switchRuntime(cfg config.Config) (any, error) { return f.switchChat(cfg) }

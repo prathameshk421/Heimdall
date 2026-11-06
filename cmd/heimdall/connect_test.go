@@ -383,7 +383,7 @@ func TestConnectSelectionFieldKeys(t *testing.T) {
 }
 
 func TestWriteSelectionRoundTripKeepsProjectsAndMode(t *testing.T) {
-	extra := "[tracker]\nprovider = \"file\"\n\n[[projects]]\ntracker_project = \"PAY\"\nrepo = \"acme/pay\"\nbase_branch = \"main\"\n"
+	extra := "[tracker]\nprovider = \"file\"\npath = \"/tmp/tickets\"\n\n[[projects]]\ntracker_project = \"PAY\"\nrepo = \"acme/pay\"\nbase_branch = \"main\"\n"
 	dir, cfgPath := connectFixture(t, extra, nil)
 	require.NoError(t, writeSelection(cfgPath, map[string]string{"tracker.provider": "jira"}))
 	cfg := mustLoad(t, cfgPath)

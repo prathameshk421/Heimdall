@@ -53,6 +53,7 @@ type Config struct {
 	Projects     []Project
 	Database     Database
 	Jira         Jira
+	TrackerPath  string
 	Switch       Switch
 	GitHub       GitHub
 	Agents       Agents
@@ -121,7 +122,7 @@ type fileConfig struct {
 	GitHub       *fileGitHub       `toml:"github"`
 	Agents       *fileAgents       `toml:"agents"`
 	VCS          *fileProvider     `toml:"vcs"`
-	Tracker      *fileProvider     `toml:"tracker"`
+	Tracker      *fileTracker      `toml:"tracker"`
 	Chat         *fileChat         `toml:"chat"`
 	AgentRuntime *fileAgentRuntime `toml:"agent_runtime"`
 	Memory       *fileProvider     `toml:"memory"`
@@ -167,6 +168,11 @@ type fileGitHub struct {
 // fileProvider is a [section] whose only key is provider: the adapter name the registry must know.
 type fileProvider struct {
 	Provider *string `toml:"provider"`
+}
+
+type fileTracker struct {
+	Provider *string `toml:"provider"`
+	Path     *string `toml:"path"`
 }
 
 type fileAgentRuntime struct {
@@ -274,7 +280,7 @@ func addSelections(cfg *Config, raw fileConfig) []error {
 		value       *string
 	}{
 		{"vcs", "vcs.provider", providerOf(raw.VCS)},
-		{"tracker", "tracker.provider", providerOf(raw.Tracker)},
+		{"tracker", "tracker.provider", trackerProviderOf(raw.Tracker)},
 		{"chat", "chat.bridge", bridgeOf(raw.Chat)},
 		{"agent_runtime", "agent_runtime.provider", agentRuntimeProviderOf(raw.AgentRuntime)},
 		{"memory", "memory.provider", providerOf(raw.Memory)},
@@ -288,6 +294,22 @@ func addSelections(cfg *Config, raw fileConfig) []error {
 			errs = append(errs, fmt.Errorf("%s must not be empty", s.field))
 		default:
 			cfg.selections[s.kind] = *s.value
+		}
+	}
+	if raw.Tracker != nil {
+		provider := trackerProviderOf(raw.Tracker)
+		path := raw.Tracker.Path
+		if provider != nil && *provider == "file" {
+			switch {
+			case path == nil || *path == "":
+				errs = append(errs, errors.New("tracker.path must be set when tracker.provider is file"))
+			case !filepath.IsAbs(*path):
+				errs = append(errs, errors.New("tracker.path must be an absolute path"))
+			default:
+				cfg.TrackerPath = filepath.Clean(*path)
+			}
+		} else if path != nil {
+			errs = append(errs, errors.New("tracker.path is only valid when tracker.provider is file"))
 		}
 	}
 	return errs
@@ -596,6 +618,13 @@ func checkSecretKey(field string, raw *string) error {
 }
 
 func providerOf(p *fileProvider) *string {
+	if p == nil {
+		return nil
+	}
+	return p.Provider
+}
+
+func trackerProviderOf(p *fileTracker) *string {
 	if p == nil {
 		return nil
 	}

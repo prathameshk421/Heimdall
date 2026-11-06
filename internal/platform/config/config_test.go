@@ -37,6 +37,27 @@ func TestLoadAcceptsValidFileAndDefaultsListen(t *testing.T) {
 	require.False(t, ok, "an unmapped tracker project is not found")
 }
 
+func TestLoadAcceptsFileTrackerPath(t *testing.T) {
+	dir := t.TempDir()
+	trackerDir := t.TempDir()
+	cfg, err := Load(writeTOML(t, "secrets_dir = \""+dir+"\"\n[tracker]\nprovider = \"file\"\npath = \""+trackerDir+"\"\n"+goodProject))
+	require.NoError(t, err)
+	require.Equal(t, trackerDir, cfg.TrackerPath)
+}
+
+func TestLoadRequiresAbsoluteFileTrackerPath(t *testing.T) {
+	for _, tc := range []struct{ path, want string }{{"", "tracker.path"}, {"tickets", "absolute path"}} {
+		t.Run(tc.want, func(t *testing.T) {
+			body := "[tracker]\nprovider = \"file\"\n"
+			if tc.path != "" {
+				body += "path = \"" + tc.path + "\"\n"
+			}
+			_, err := Load(writeTOML(t, body+goodProject))
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
 func TestLoadDefaultsSecretsDirWhenAbsent(t *testing.T) {
 	cfg, err := Load(writeTOML(t, "listen = \":9000\"\n"+goodProject))
 	require.NoError(t, err)
