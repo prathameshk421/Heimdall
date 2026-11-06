@@ -3,12 +3,12 @@ package workflow
 import (
 	"errors"
 	"fmt"
-	"path"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
 
@@ -183,8 +183,9 @@ func validateFiles(files []string) []error {
 		errs = append(errs, fmt.Errorf("inputs.files_changed has %d entries, at most %d", len(files), maxFilesChanged))
 	}
 	for _, f := range files {
-		if f == "" || path.IsAbs(f) || path.Clean(f) != f || strings.HasPrefix(f, "../") || f == ".." {
-			errs = append(errs, fmt.Errorf("inputs.files_changed: %q is not a clean relative path inside the repository", f))
+		// The same rule findings and test sets use (finding.CheckRepoPath), so the three cannot drift (A10 item 7).
+		if err := finding.CheckRepoPath(f); err != nil {
+			errs = append(errs, fmt.Errorf("inputs.files_changed: %w", err))
 		}
 	}
 	return errs

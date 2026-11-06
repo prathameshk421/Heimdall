@@ -59,6 +59,8 @@ func TestTaskEnvelopeValidateRefusesWhatAnAgentCouldNotActOn(t *testing.T) {
 		"an unknown role":                      func(e *workflow.TaskEnvelope) { e.Role = "wizard" },
 		"a file path that escapes the repo":    func(e *workflow.TaskEnvelope) { e.Inputs.FilesChanged = []string{"../../etc/passwd"} },
 		"an absolute file path":                func(e *workflow.TaskEnvelope) { e.Inputs.FilesChanged = []string{"/etc/passwd"} },
+		"a file path with a backslash":         func(e *workflow.TaskEnvelope) { e.Inputs.FilesChanged = []string{`pay\refund.go`} },
+		"a file path with a control character": func(e *workflow.TaskEnvelope) { e.Inputs.FilesChanged = []string{"pay/refund\x07.go"} },
 		"a CI entry with a made-up conclusion": func(e *workflow.TaskEnvelope) { e.Inputs.CI[0].Conclusion = "maybe" },
 	}
 	for name, mutate := range mutations {
