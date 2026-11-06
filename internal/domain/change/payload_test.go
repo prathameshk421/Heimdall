@@ -176,7 +176,7 @@ func TestEveryTriggerSourceIsAccepted(t *testing.T) {
 }
 
 func TestPayloadsAcceptTheSwitchAndGitHubIdentifiersAsOpaqueText(t *testing.T) {
-	_, err := change.Decode(eventWith(change.EventQuestionAnswered, `{"question_id":"q-1","sender":"sw-88:alice","message_id":"msg_0042"}`))
+	_, err := change.Decode(eventWith(change.EventQuestionAnswered, `{"question_id":"q-1","sender":"sw-88:alice","message_id":"msg_0042","answer":"yes"}`))
 	require.NoError(t, err)
 }
 

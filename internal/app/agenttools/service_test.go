@@ -1066,6 +1066,13 @@ func TestAskHumansAndProgress(t *testing.T) {
 	require.Len(t, evs, 5)
 	require.Equal(t, change.EventQuestionAsked, evs[3].Type)
 	require.Equal(t, change.EventQuestionAsked, evs[4].Type)
+	// The room shows each question as Q1, Q2 and so on; the answer command names them that way (A14).
+	first, err := change.Decode(evs[3])
+	require.NoError(t, err)
+	second, err := change.Decode(evs[4])
+	require.NoError(t, err)
+	require.Equal(t, []string{"Q1"}, first.(change.QuestionAsked).Refs)
+	require.Equal(t, []string{"Q2"}, second.(change.QuestionAsked).Refs)
 
 	// Progress
 	err = h.svc.Progress(context.Background(), assign, "Analyzed requirements", t0.Add(10*time.Second))

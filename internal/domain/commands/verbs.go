@@ -27,6 +27,7 @@ const (
 	useWaive            = "waive-reviewer @x <reason>"
 	useIncident         = "incident <text>"
 	useResume           = "resume <step>"
+	useAnswer           = "answer <Q> <text>"
 )
 
 // parseUphold takes exactly one finding.
@@ -88,6 +89,18 @@ func parseResume(p, args string) (Resume, error) {
 		return Resume{}, fail(p, useResume, fmt.Errorf("%q is not a workflow step id", step))
 	}
 	return Resume{Step: step}, nil
+}
+
+// parseAnswer takes a question id (Q1, Q2 and so on) and the answer text, which runs to the end of the line.
+func parseAnswer(p, args string) (Answer, error) {
+	q, text := cutWord(args)
+	if q == "" || strings.TrimSpace(text) == "" {
+		return Answer{}, fail(p, useAnswer, errors.New("answer takes a question id and the answer text"))
+	}
+	if !questionRE.MatchString(q) {
+		return Answer{}, fail(p, useAnswer, fmt.Errorf("%q is not a question id such as Q1", q))
+	}
+	return Answer{Question: q, Text: strings.TrimSpace(text)}, nil
 }
 
 // checkApproveTests refuses any argument. The verb takes none.

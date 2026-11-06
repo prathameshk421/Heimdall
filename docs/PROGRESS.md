@@ -4,6 +4,7 @@
 
 - Added `docs/WIRING_PLAN.md`: Part A (12 build packages for what is unbuilt), Part B (wiring and VM deploy with real agents), Part C (end-to-end testing), plus owner approvals and a "Later" list (River, Telegram/Discord/Slack). No Go code was changed in this session; it only read the repo, the VM (read-only) and GitHub (read-only).
 - Read-only readiness findings: VM Switch stack and 3 numbered agents are up; Heimdall server, runner, Podman and Go are not on the VM; the fixture repo has a policy and branch protection but no CI workflow and names GitHub accounts that are not logged in locally. `.env` names were checked by the owner; all names `secrets-sync` needs are present. **Not verified:** Jira token validity, OpenRouter balance, Switch client field names against the Switch source, any live run.
+- Added `docs/AGENT_BEHAVIOR_SPEC.md` (agent prompts and guardrails, question loop, conversation mode with approval-based actions, mediated agent consults, memory rules, pack records and opt-in team memory, harness quality, about 70 test cases) and packages A13 to A19 in the plan. Decisions D164 to D169 are proposed there and not yet recorded in `BRAINSTORM_BACKLOG.md` or `TECH_SPEC.md`. Design only; nothing built or run.
 - **Noticed:** the working tree held uncommitted Go changes (finding severity and verify-evidence files under `internal/` and `cmd/heimdall-server`, plus `docs/TECH_SPEC.md`) that this session did not make. They look like parallel work toward plan package A1/A2. Their state and tests are not recorded here and not verified.
 
 ## A10 item 1: target status on ticket changes (Nov 6, 2026)
@@ -29,6 +30,128 @@
 - Mutations, each caught and restored: executor drops the key; adapter accepts no key; adapter accepts a blank key.
 - Evidence: `make fast` exit 0 (0 lint issues); `go vet` with all build tags clean.
 - **Not verified:** a live GitHub branch write (no GitHub call was made); whether GitHub itself dedupes on the key (the adapter's idempotency is still the branch-exists check, not the key).
+
+## A10 items 4, 7, 8, 9 (Nov 6, 2026)
+
+- **Item 7 (done, committed):** `workflow.validateFiles` now calls `finding.CheckRepoPath`, the one path rule. The rule is stricter (rejects backslashes, control characters, overlong paths). Red: two new cases in `task_test.go` (backslash, control character). Mutation M2 (path check dropped) caught on the backslash and escape cases. M1 (old narrower rule) did not compile on my first attempt, so the old rule was not run; this is not claimed as caught.
+- **Item 8 (decision, no code):** `TestsVerified.NeedsSignoff` has one producer (`internal/app/effects/test_quality.go`), which always sets it from the policy callback. A `*bool` is not needed now. Re-check if a second producer appears.
+- **Item 9 (done, test only):** the append-backend lookup in `internal/adapters/postgres/store_test.go` no longer matches query text. It finds the backend waiting on a lock in this database that is not the holder's own. Five repeated runs passed. Mutation (wait event `Client` instead of `Lock`) caught: the subtest fails after its 10 s wait.
+- **Item 4 (open, not reproduced):** `TestTimeoutModuleKillsProcessGroup` passed 18 of 18 runs. The assertion was not changed (the plan forbids that). Hypothesis, not confirmed: after the group is killed, the orphaned `sleep 30` can stay a zombie until it is reaped, and `kill(pid, 0)` succeeds on a zombie, so the check depends on how fast the parent reaps. The host's PID 1 is systemd. To confirm, reproduce under a parent that does not reap, or record the zombie state directly in the test.
+- **Still open in A10:** items 5 (resume command), 10 and 11. The plan in `docs/WIRING_PLAN.md` lists only items 1 to 9; `docs/HAIKU_START.md` says 1 to 11. Items 10 and 11 are not defined in the plan and need the owner's definition. Item 6 (River) stays deferred.
+- Evidence: `make fast` exit 0 (0 lint issues) after items 7 and 9.
+
+## A10 item 5: resume an escalated step (Nov 6, 2026)
+
+- Grammar: `heimdall resume <step>` (and `/heimdall resume <step>` on GitHub). One lower-case workflow step id; anything else is refused with the usage line.
+- Authorization: `DecisionResume` needs an approver (same as forget and spec-change). My choice: releasing an escalated step restarts agent work, so it takes the approver's authority, not a member's. Recorded in TECH_SPEC 11.5.
+- Event: `step.resumed` {step, by}. The planner treats it as a retry for windowing, so a resumed step is offered again with a fresh view and its attempts count from the resume. The server refuses a resume unless the step is escalated now (latest recovery event for that step is the escalation).
+- Red first: the engine test `TestAResumedStepIsCalledAgain` failed on its assertion (step not called after resume) before the planner change. The parser and the `stepEscalatedNow` test were built with their types first; their red was a build failure, then assertion failures on the first run.
+- Mutations, each caught and restored: planner ignores resume (engine test); escalated-now ignores resume (`TestStepEscalatedNowFollowsTheLatestRecoveryEvent`); parser accepts extra arguments (`TestParseResumeRefusesMissingOrBadSteps`, after a first attempt that did not compile).
+- Evidence: `make fast` exit 0 (0 lint issues) after fixing two exhaustive-switch findings for the new kinds.
+- **Not verified:** a live resume from a Switch room or a GitHub comment; a resume in every live state at runtime (the reducer table covers every state, the consumer path is unit-tested only).
+
+## A10 item 10: several Jira projects and repos (Nov 6, 2026)
+
+- The server now runs one ticket poller per listed Jira project, each with its own cursor source `jira:<KEY>` (the same key the single-project slice used, so a stored cursor still applies). Each project gets its own tracker reader (`projectTicketReaders`); ticket lookups by key use the first reader, since the Jira reader's project only scopes the change query.
+- The project check now requires `jira.project_keys` and the `[[projects]]` mappings to be the same set, with no repeats. The file tracker still polls one project (its poll is not project-scoped; refused with a message otherwise).
+- The poll loop runs once per poller (`pollLoop(ctx, p, wake)`); `loops` starts one goroutine per poller.
+- Red: `TestAFailingProjectDoesNotStopAnotherProjectsPoll` did not compile against the single-poller struct (the compile error was the red, not an assertion). It then passed.
+- Superseded tests: the old refusals of two projects were replaced. `TestBuildRefusesMoreThanOneTrackerProject` was removed (its rule is covered by the `productionDeps` tests, since `build` checks the adapter setup before the project rule). The `TestProductionDepsRefuses...` tests were updated to the new rule, and a positive case for two listed and mapped projects was added.
+- Mutations: every loop polls the first project (`M1`): caught only as a hang, because the healthy loop never reaches its cancel point; the test timed out rather than failing an assertion. Mapped-but-unlisted project allowed (`M2`): caught by two tests.
+- Evidence: `make fast` exit 0 (0 lint issues), after moving the file-tracker guard into a helper to meet the complexity limit.
+- **Not done from the item card:** the interleaved two-project trigger test (two projects' changes each trigger their own change). Not verified: two live Jira projects; a restart with two cursors; whether the Jira rate limit holds with two pollers.
+
+## A10 item 10: several projects and repos (Nov 6, 2026)
+
+- `jira.project_keys` and the `[[projects]]` mappings must now be the same set: a listed key without a mapping, a mapping without a listed key, or a repeat is refused (`checkProjectSelection`). Two or more projects are accepted.
+- One tracker reader and one poller per project. Each poller's cursor source is `<provider>:<project>`, the same key the single-project slice used, so existing `jira:KAN` cursors still apply. The server runs one poll loop per poller.
+- The file tracker still polls one project: its poll is not scoped by project, and it is refused when more than one is mapped.
+- Superseded tests: `TestBuildRefusesMoreThanOneTrackerProject` was removed (its rule is covered by `TestProductionDepsRefusesMultipleProjectKeysOrMultipleProjects`, which now tests the new rule). The two other refusal tests were rewritten for the new rule, and a positive case for two projects was added.
+- Red first: `TestAFailingProjectDoesNotStopAnotherProjectsPoll` (new file `loops_projects_test.go`). The first run did not compile (the poller list did not exist yet); after the change the test passes. Its deadline was added after a mutation hung it.
+- Mutations, each caught and restored: every loop polls the first project (the loop test fails on its assertion); mapped-but-unlisted project allowed (two `productionDeps` tests fail). Not run: a mutation of the loop start-up in `loops()` itself, which no test covers.
+- Note on shared files: `cmd/heimdall-server/adapters.go` was changed on disk during this work by another session. The helper `projectTicketReaders` in the current file includes a file-tracker check I had also written. The committed file is the one on disk when the commit was made.
+- Evidence: `make fast` exit 0 (0 lint issues) on the final tree. Lint once reported `parallel golangci-lint is running`, from another session; a rerun passed.
+- **Not verified:** a live two-project Jira poll; the per-project cursor rows in Postgres; a restart with two cursors.
+
+## A2 evidence E2 and E3, heimdall_run_check (Nov 6, 2026)
+
+- **E2:** a finding that cites a `go vet` tool result is confirmed (E2) only by a failure at the named location (`verify.TierForE2`). A push resolves it when the diagnostic at that location is gone (`verify.ResolvedE2`). The verify step requests the check through the runner (`ports.SandboxStatic`, `ports.CheckGoVet`), and the runner builds its command from the check name only.
+- **E3:** a finding that cites a memory reference is E3 only while the reference is found, confirmed and not superseded (`verify.TierForE3`). The server re-queries it with the citing reviewer's scopes (`knowledge.SearchService.Recheck`, which skips the answer cache). The review refs use the same check at submission (`MemoryExists`).
+- **Proofs on the event:** `finding.filed` carries the evidence the server repeats (`repro_test` for E1, `tool_result` for E2, `memory_ref` for E3). `VerifyEvidencePayload` carries a check or a memory re-query as well as the E1 repro test.
+- **Review path:** review submissions now go through the workflow engine (`agenttools.Config.Advance`), so the verify step sees the findings. The verify step also handles `review.submitted`, which opens it after review.
+- **Gate fold fix:** the server's verification events no longer erase who reported a finding or its fingerprint and confidence. Before this, verification made two independent reviewers look like one, and consensus did not hold the merge. Found by the review-gate journey test.
+- **heimdall_run_check:** reviewer and resolver only, five calls per task, `go_vet` only. The output is untrusted text (diagnostics stay inside the wrapper). Wired to the runner client in production.
+- Red first: the E2/E3 domain rules, the vet parser, the payload modes, and the executor paths each failed on an assertion before the implementation. The journey test failed at the blocking assertion before the fold fix.
+- Mutations, each caught and restored: E2 confirmed without location; E3 confirmed when superseded; the fold erasing reviewer facts (`TestVerificationDoesNotEraseConsensusFacts`).
+- Evidence: `make fast` exit 0 (0 lint issues).
+- **Not verified:** `oasdiff` (the card names it for OpenAPI files; only `go vet` is wired); a live runner run of `go vet` in the pinned image (Part B); a live Graphiti re-query (Graphiti is still unconfirmed, see T06); a live reviewer calling `heimdall_run_check`.
+
+## A3 chat command path (Nov 6, 2026): what was already built and this slice
+
+- Already in place before this slice: per-room cursor source `switch:room:<id>`, cursors saved only after a delivery is handled, unmapped senders get a reply and no event, mapped agents are ignored, a repeated command is recorded once by its source ref, and the room stream restarts from the stored cursors.
+- **This slice:** a truncated Switch history is `switchchat.ErrTruncated`, which is not retryable. Before, it was `ErrUnavailable` and retried forever. Test: `TestReadTruncatedHistoryIsUnavailable` (now asserts the escalation contract). Mutation (truncated treated as retryable) caught.
+- **Not done in A3:** the room loop logs the stream error at ERROR and retries after one second, so the stop is visible in the log but there is no escalation card for a person yet. `approve-tests` tree-hash binding and the `remember` route to A8 are still open.
+- **Not verified:** a live Switch truncated read; real Switch event names (WP1).
+
+## A4 test sign-off (Nov 6, 2026)
+
+- `approve-tests` now writes `tests.approved` bound to the tree hash of the latest verified run, and only while the change is in AWAITING_TEST_SIGNOFF (`cmd/heimdall-server/signoff.go`). Before this the command recorded a decision and nothing moved, so a sensitive change waited forever.
+- The author cannot approve (existing people rule, `notAuthor`). A changed tree goes back through verification and needs a new approval.
+- Red: `TestSignoffApprovalBindsToTheVerifiedTree` (compile red, then assertion). Mutation (state check removed) caught by `TestSignoffRefusesWhenNothingWaits`.
+- Evidence: `make fast` exit 0 (0 lint issues).
+- **Not verified:** a live approval from a Switch room (Part B).
+
+## A5 boot reconciliation (Nov 6, 2026)
+
+- The behaviour already existed: the PR sync and the ticket poll run at boot with no initial wait, the room stream restarts from its cursors, and the sync is restart-safe (`TestLeadDismissalIsFoundAfterARestart`, `TestSecondSyncAppendsNothing`).
+- Added one confirmation test, `TestBootAfterDowntimeAppendsMissedPushAndCIOnce`. It passed on its first run, so it is not a red-then-green test. It shows a push and a CI result missed while down are appended once, and a second boot appends nothing.
+- RUNBOOK section added. **Not verified:** a real VM restart with missed GitHub events (Part B).
+
+## A6 injection safety (Nov 6, 2026): partial
+
+- Added the twelve payloads as `internal/transport/mcp/testdata/injection/payloads.txt` and `TestUntrustedPayloadsCannotEscapeTheWrapper`: each payload stays inside one untrusted wrapper, is labelled as data, and cannot close it early. It passed on its first run because the wrapper already does this. Mutation (label removed) caught.
+- **Not done:** the card's state checks (no command accepted, no approval, no role change, no secret in output) for each payload planted in each source (ticket, PR body, file, review text). Those need the agents' live path and are not covered by this suite.
+- **Not verified:** a live agent reacting to the payloads (Part C).
+
+## A7 dashboard with SSE (Nov 6, 2026)
+
+- `internal/transport/dashboard`: a read-only page at `/dashboard` (server-rendered, one embedded template, a small inline script that reloads on an SSE `change` event; a strict CSP; no external asset). It reads the event log only. A blocked change shows its last gate reasons. The stream at `/dashboard/events` sends a change when its log grows. Loopback only (same rule as the listener).
+- Postgres `ListChanges` lists the change ids for the page (bounded at 500).
+- Tests: blocked change shows its reason; the stream sends a change within one look; a non-loopback caller is refused (mutation caught).
+- Found while testing: the strict gate decoder rejects valid gate payloads (SHA fields), so the view decodes only the verdict and reasons.
+- **Not done:** the card's "every state of the change machine renders" (only the blocked row and the unreadable fallback are tested). **Not verified:** the Postgres lister against a real database; the page in a browser.
+
+## A13 agent shared rules (Nov 6, 2026): slice
+
+- `testdata/agents/AGENTS.md` now carries the thirteen shared rules of the behaviour spec (2.1). It was five lines. The installer copies this file into every agent. `TestAgentRulesCoverAllThirteen` checks a phrase per rule; it failed on the old file (12 missing) and passes now.
+- **Not done in A13:** the role skills' conversation-mode, consult and memory sections (A14–A17), the profiler skill (A9), and the tool-name test extension. The test-author role's skill is still `skills/test-quality`; the card allows keeping that name. Rules 1 and 13 name `heimdall_reply` and `heimdall_do`, which do not exist until A15.
+- **Not verified:** how a real model follows these rules (A18, Part C).
+
+## WP1 Switch truth check (Nov 6, 2026): stream parameters
+
+- Checked against the Switch source (`~/.t3/projects/switchthon/switch`, `core/switch_core/bridges/agent/api/handlers.py`, `poll_events`) and the official agent protocol doc.
+- **Bug fixed:** the stream sent the declared rooms as repeated `room_id` parameters. Switch reads one comma-separated `rooms` parameter, so the server would not have received the rooms. Fixed in `internal/adapters/switch/stream.go`; the stream tests now check the `rooms` parameter (the old assertions locked in the wrong form).
+- Confirmed: the event names `evicted` and `gap`, and the `Last-Event-ID` header, match the protocol doc.
+- **Bug fixed:** the post sent `body`. Switch's `POST /agents/{id}/message` takes `room_id` and `content` (`SendMessageRequest`), so every live post would have been refused with 422. Fixed in `messages.go`; the fake now refuses a body without `content`, like Switch. Mutation (back to `body`) caught.
+- Confirmed: `read_context` takes `room_id` (matches the client). `post_message` on the operations endpoint has no room parameter (room comes from `connect_to_room`); the client uses the message route instead, which takes `room_id`, so no `connect_to_room` call is needed for posts.
+- **Bug fixed:** `create_room` requires `description` (`operations/definitions.py`); the coordinator did not send it, so no change room would open. Fixed, test `TestOpenRoomSendsTheDescriptionSwitchRequires`.
+- Checked and matching: `list_rooms`, `invite_agent_to_room` (room_id, agent_name), `create_reference`, `attach_reference_to_room`, `read_context` (room_id).
+- **Not checked yet:** `create_agent`, `list_managed_agents`, `update_agent_detail` (managed agents) and the register-known path.
+- **Not verified:** a live stream or post on the VM; the room must be assigned to the agent (Switch enforces it).
+
+## WP1 live config and doctor (Nov 6, 2026)
+
+- The live config is at `~/heimdall/heimdall.toml`, outside the repository, with no sensitive values in it. It sets the Jira site, project `KAN`, and the fixture repo `aarush323/heimdall-fixture-pay` on base `heimdall-test/demo-base` (decision D-D, never `main`). The Switch agent id, agent name and bridge id are placeholders until registration; the server refuses to boot with them.
+- **Bug fixed:** the CLI's agent-runtime registry entry was `opencode`, but the config validator and the spec use `switchroom`, so the doctor failed the config check. Renamed the CLI entry to `switchroom` and updated its tests.
+- Doctor run: config ok, docker ok, postgres skipped (no DSN yet). Every integration is missing only because the key files are not in place yet (`/run/secrets` is the container path; the host needs the owner's directory).
+- **Blocked on the owner:** steps 1 to 6 in `docs/WIRING_OWNER_STEPS.md`. Nothing after WP1 can run until the import is done.
+
+## A14 question loop (Nov 6, 2026): answer path slice
+
+- Questions are numbered per change, Q1, Q2 and so on, so the room and the answer command name the same question (`agenttools`, `TestAskHumansAndProgress`).
+- `heimdall answer Q1 <text>` (grammar, `commands.Answer`); any team member may answer (`DecisionAnswer`, needs member). The consumer writes `question.answered` with the answer text (a new field on the payload), refusing an unknown question and a second answer (`answerPayload`, unit tests).
+- **Not done:** the wake of the asking task after an answer; `get_task` returning `answers` inside the untrusted wrapper; the 4-hour timeout that marks questions `assumed`; reminders and escalation; late answers; the thread-reply form of answering; the component test Q1 to Q9 on real Postgres.
+- Mutation (duplicate answer allowed) caught. **Not verified:** a live answer from a Switch room.
 
 ## Live wiring: WP0 preflight (Nov 6, 2026, read-only)
 

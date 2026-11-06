@@ -130,6 +130,8 @@ type QuestionAnswered struct {
 	QuestionID QuestionID `json:"question_id"`
 	Sender     SenderID   `json:"sender"`
 	MessageID  MessageID  `json:"message_id"`
+	// Answer is the person's answer text. It is data for the agent, shown inside the untrusted wrapper (A14).
+	Answer string `json:"answer"`
 }
 
 // Validate returns every problem with the payload.
@@ -137,6 +139,7 @@ func (p QuestionAnswered) Validate() error {
 	var v problems
 	_, err := ParseQuestionID(string(p.QuestionID))
 	v.add("question_id", err)
+	v.add("answer", checkText(p.Answer))
 	_, err = ParseSenderID(string(p.Sender))
 	v.add("sender", err)
 	_, err = ParseMessageID(string(p.MessageID))

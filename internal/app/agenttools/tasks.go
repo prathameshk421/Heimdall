@@ -402,10 +402,18 @@ func (s *Service) buildQuestionEvents(a Assignment, existing []change.Event, ask
 	firstID := s.ids.NewEvent()
 	corr := correlationIDOf(existing, firstID)
 
+	// The short id of each question continues the change's count (Q1, Q2, then Q3 on a later ask), so the room and the
+	// answer command name the same question.
+	numbered := 0
+	for _, ev := range existing {
+		if ev.Type == change.EventQuestionAsked {
+			numbered++
+		}
+	}
 	for i, item := range asked {
 		payload := change.QuestionAsked{
 			QuestionID: item.qID,
-			Refs:       []string{item.ref},
+			Refs:       []string{fmt.Sprintf("Q%d", numbered+i+1)},
 			Sender:     item.senderID,
 			MessageID:  item.msgID,
 		}

@@ -321,7 +321,7 @@ func workflowMemoryStatus(event change.Event) (ports.EpisodeStatus, bool) {
 			return ports.EpisodeObserved, true
 		case change.DecisionReview, change.DecisionUphold, change.DecisionDismiss,
 			change.DecisionSpecChange, change.DecisionOverride, change.DecisionWaiveReviewer,
-			change.DecisionReject, change.DecisionApproveTests, change.DecisionStart, change.DecisionForget,
+			change.DecisionReject, change.DecisionApproveTests, change.DecisionStart, change.DecisionForget, change.DecisionAnswer,
 			change.DecisionResume:
 			return ports.EpisodeConfirmed, true
 		default:

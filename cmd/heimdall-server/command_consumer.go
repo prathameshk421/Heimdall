@@ -267,6 +267,9 @@ func commandAction(cmd commands.Command) (people.Action, string) {
 	if action, ref, ok := findingAction(cmd); ok {
 		return action, ref
 	}
+	if _, ok := cmd.(commands.Answer); ok {
+		return change.DecisionAnswer, ""
+	}
 	return generalAction(cmd)
 }
 
@@ -445,6 +448,9 @@ func (r *commandRuntime) commandEvents(cid id.ChangeID, state []change.Event, pe
 	}
 	if resume, ok := cmd.(commands.Resume); ok {
 		return r.resumeEvents(cid, state, person, source, sourceRef, actor, resume)
+	}
+	if ans, ok := cmd.(commands.Answer); ok {
+		return r.answerEvents(cid, state, person, source, sourceRef, actor, ans)
 	}
 	if _, ok := cmd.(commands.ApproveTests); ok {
 		return r.signoffEvents(cid, state, person, source, sourceRef, actor)
@@ -804,6 +810,8 @@ func actionReply(cmd commands.Command) string {
 		return "Started."
 	case commands.Resume:
 		return "Released. The engine will offer that step again."
+	case commands.Answer:
+		return "Answer recorded for the agent."
 	case commands.Review:
 		return "Reviewers picked."
 	}

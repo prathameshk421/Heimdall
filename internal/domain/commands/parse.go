@@ -119,6 +119,7 @@ func parseCommand(src Source, verb, args string) (Command, error) {
 		"waive-reviewer":    command(parseWaiveReviewer),
 		"incident":          command(parseIncident),
 		"resume":            command(parseResume),
+		"answer":            command(parseAnswer),
 	}
 	parse, ok := parsers[verb]
 	if !ok {
@@ -151,7 +152,7 @@ func grammar(src Source) string {
 	p, _ := prefixOf(src)
 	uses := []string{
 		useUphold, useDismiss, useReject, useOverride, useWaive, useReview,
-		useApprove, useApproveProfile, useApproveKnowledge, usePromoteProfile, useStart, useChallenge, useRemember, useForget, useSpec, useIncident, useResume,
+		useApprove, useApproveProfile, useApproveKnowledge, usePromoteProfile, useStart, useChallenge, useRemember, useForget, useSpec, useIncident, useResume, useAnswer,
 	}
 	for i, u := range uses {
 		uses[i] = p + " " + u

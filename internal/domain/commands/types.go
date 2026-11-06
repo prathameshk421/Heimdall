@@ -70,6 +70,13 @@ type Start struct{ Ticket string }
 // Verb returns the command word.
 func (Start) Verb() string { return "start" }
 
+// Answer gives a person's answer to one question the agent asked. Question is the short id the room shows (Q1, Q2);
+// Text is the answer, as the person wrote it.
+type Answer struct{ Question, Text string }
+
+// Verb returns the command word.
+func (Answer) Verb() string { return "answer" }
+
 // Resume releases an escalated workflow step so the engine offers it again. Step is the workflow step id.
 type Resume struct{ Step string }
 
