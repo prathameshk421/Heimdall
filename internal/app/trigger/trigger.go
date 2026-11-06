@@ -177,8 +177,8 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 		return err
 	}
 	isFile := slices.Contains(ch.Fields, fileField)
-	if !isFile && !slices.Contains(ch.Fields, statusField) {
-		res.Ignored[ReasonNoStatusChange]++
+	if reason, ok := earlyIgnore(ch, isFile); ok {
+		res.Ignored[reason]++
 		return nil
 	}
 	repo, ok := p.projects.RepoFor(projectOf(ch.Key))
@@ -194,7 +194,7 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 	if err != nil {
 		return fmt.Errorf("read ticket: %w", err)
 	}
-	if tk.Status != statusInProgress {
+	if isFile && tk.Status != statusInProgress {
 		res.Ignored[ReasonNotInProgress]++
 		return nil
 	}
@@ -212,6 +212,21 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 		res.AlreadyTriggered++
 	}
 	return nil
+}
+
+// earlyIgnore decides from the change alone. A status move is judged on the status it ended at (ToStatus); a file
+// change has no move, so the poll judges it on the ticket's current status later.
+func earlyIgnore(ch ports.TicketChange, isFile bool) (Reason, bool) {
+	if isFile {
+		return "", false
+	}
+	if !slices.Contains(ch.Fields, statusField) {
+		return ReasonNoStatusChange, true
+	}
+	if ch.ToStatus != statusInProgress {
+		return ReasonNotInProgress, true
+	}
+	return "", false
 }
 
 func (p *Poller) startTicket(ctx context.Context, key id.ChangeID, repo change.Repo, tk ports.Ticket, isFile bool) (bool, error) {

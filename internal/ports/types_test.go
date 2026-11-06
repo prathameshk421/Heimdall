@@ -180,8 +180,16 @@ func TestBlobClassValues(t *testing.T) {
 }
 
 func TestTicketChangeNeedsAKeyAndAChangelogEntry(t *testing.T) {
-	c := ports.TicketChange{Key: "KAN-7", ChangelogID: "10042", Fields: []string{"status"}, At: time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)}
+	c := ports.TicketChange{Key: "KAN-7", ChangelogID: "10042", Fields: []string{"status"}, ToStatus: "In Progress", At: time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)}
 	require.NoError(t, c.Validate())
 	c.ChangelogID = ""
 	require.Error(t, c.Validate())
+}
+
+// A status move must say the status it ended at; a change that names no status is refused (A10 item 1).
+func TestTicketChangeStatusNeedsAToStatus(t *testing.T) {
+	c := ports.TicketChange{Key: "KAN-7", ChangelogID: "10043", Fields: []string{"status"}, At: time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)}
+	require.Error(t, c.Validate())
+	c.ToStatus = "In Progress"
+	require.NoError(t, c.Validate())
 }

@@ -256,7 +256,7 @@ func (r *rig) poll(t *testing.T) trigger.PollResult {
 
 // statusChange is a changelog entry that touched the status field.
 func statusChange(key id.ChangeID, changelog string) ports.TicketChange {
-	return ports.TicketChange{Key: key, ChangelogID: changelog, Fields: []string{"status"}, At: now}
+	return ports.TicketChange{Key: key, ChangelogID: changelog, Fields: []string{"status"}, ToStatus: statusInPrg, At: now}
 }
 
 func ticket(key id.ChangeID, status string, assignee change.ActorID) ports.Ticket {
@@ -359,7 +359,7 @@ func mustTriggered(t *testing.T, ev change.Event) change.Triggered {
 
 func TestIgnoresAChangeThatIsNotInProgress(t *testing.T) {
 	r := newRig(t)
-	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
+	r.tickets.changes = []ports.TicketChange{statusMove("KAN-1", "10001", statusInRev)}
 	r.tickets.next = "c1"
 	r.tickets.tickets["KAN-1"] = ticket("KAN-1", statusInRev, ana)
 
@@ -581,7 +581,7 @@ func TestReasonsAreCountedInThePollResult(t *testing.T) {
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{
 		statusChange("KAN-1", "1"),
-		statusChange("KAN-2", "2"),
+		statusMove("KAN-2", "2", statusInRev),
 		statusChange("KAN-3", "3"),
 		statusChange("OPS-1", "4"),
 		{Key: "KAN-5", ChangelogID: "5", Fields: []string{"summary"}, At: now},

@@ -228,7 +228,7 @@ func (c *Client) issueChanges(is searchIssue, start time.Time) ([]ports.TicketCh
 		if len(fields) == 0 {
 			continue
 		}
-		out = append(out, ports.TicketChange{Key: key, ChangelogID: h.ID, Fields: fields, At: at.UTC()})
+		out = append(out, ports.TicketChange{Key: key, ChangelogID: h.ID, Fields: fields, ToStatus: toStatus(h.Items), At: at.UTC()})
 	}
 	return out, nil
 }
@@ -472,7 +472,18 @@ type changelogEntry struct {
 
 // changeItem names one field a changelog entry touched.
 type changeItem struct {
-	Field string `json:"field"`
+	Field    string `json:"field"`
+	ToString string `json:"toString"`
+}
+
+// toStatus returns the status a changelog entry moved to, or "" when the entry did not touch the status.
+func toStatus(items []changeItem) string {
+	for _, it := range items {
+		if it.Field == "status" {
+			return it.ToString
+		}
+	}
+	return ""
 }
 
 // ticketResponse is the issue read by Ticket.

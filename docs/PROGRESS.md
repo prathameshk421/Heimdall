@@ -6,6 +6,14 @@
 - Read-only readiness findings: VM Switch stack and 3 numbered agents are up; Heimdall server, runner, Podman and Go are not on the VM; the fixture repo has a policy and branch protection but no CI workflow and names GitHub accounts that are not logged in locally. `.env` names were checked by the owner; all names `secrets-sync` needs are present. **Not verified:** Jira token validity, OpenRouter balance, Switch client field names against the Switch source, any live run.
 - **Noticed:** the working tree held uncommitted Go changes (finding severity and verify-evidence files under `internal/` and `cmd/heimdall-server`, plus `docs/TECH_SPEC.md`) that this session did not make. They look like parallel work toward plan package A1/A2. Their state and tests are not recorded here and not verified.
 
+## A10 item 1: target status on ticket changes (Nov 6, 2026)
+
+- `ports.TicketChange` gained `ToStatus`, required when `Fields` names status (`Validate`). The Jira adapter reads it from the changelog item; the trigger judges a status move on it, so a ticket that moved to In Progress and back before the poll now triggers. File changes still use the current status (the file tracker has no move).
+- Red first: `internal/app/trigger/target_status_test.go` observed assertion failures for both directions before the change.
+- Evidence: `make fast` exit 0 after extracting `earlyIgnore` to keep `handle` under the cyclomatic limit (gocyclo 14 to 12).
+- Mutations, each caught and restored: trigger ignores ToStatus (`TestTriggerIgnoresAMoveThatEndedAwayFromInProgress` and others); Jira drops the status move (`TestOnlyHistoriesInsideTheWindowAreEmitted`); `Validate` accepts a missing ToStatus (`TestTicketChangeStatusNeedsAToStatus`).
+- **Not verified:** a live Jira transition (no live Jira call was made); `make verify` for this item.
+
 ## Live wiring: WP0 preflight (Nov 6, 2026, read-only)
 
 - `make fast` on `heimdall-build` before A1: exit 0, 3,691 tests.

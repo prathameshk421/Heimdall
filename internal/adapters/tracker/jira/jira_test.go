@@ -201,6 +201,7 @@ func TestOnlyHistoriesInsideTheWindowAreEmitted(t *testing.T) {
 	require.Equal(t, id.ChangeID("KAN-1"), changes[0].Key)
 	require.Equal(t, "10042", changes[0].ChangelogID)
 	require.Equal(t, []string{"status"}, changes[0].Fields)
+	require.Equal(t, "In Progress", changes[0].ToStatus, "the status the move ended at is read from the changelog")
 	require.True(t, changes[0].At.Equal(time.Date(2026, 11, 4, 9, 55, 0, 0, time.UTC)), "got %s", changes[0].At)
 	require.NoError(t, changes[0].Validate())
 }

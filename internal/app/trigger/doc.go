@@ -56,8 +56,8 @@
 //
 // # Known gaps
 //
-//   - The status is the current status. ports.TicketChange carries field names, not the status a move ended at. A
-//     ticket that moves to In Progress and on again before the poll is ignored.
+//   - A status move is judged on TicketChange.ToStatus, the status it ended at (A10 item 1). A file change has no move,
+//     so it is judged on the current status. A file-tracker ticket's status is therefore still read at poll time.
 //   - App accounts are not checked here. ports.Ticket has no account kind, so this package cannot tell an app account
 //     from a person. The Jira adapter drops app-assigned changes before they reach this package. A ticket that is
 //     reassigned to an app between the change read and the ticket read would still trigger. Closing this needs a

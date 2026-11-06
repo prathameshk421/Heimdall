@@ -2,6 +2,7 @@ package ports
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"time"
 
@@ -56,7 +57,9 @@ type TicketChange struct {
 	Key         id.ChangeID `json:"key"`
 	ChangelogID string      `json:"changelog_id"`
 	Fields      []string    `json:"fields"`
-	At          time.Time   `json:"at"`
+	// ToStatus is the status the move ended at, read from the changelog (required when Fields names status).
+	ToStatus string    `json:"to_status,omitempty"`
+	At       time.Time `json:"at"`
 }
 
 // Validate returns every problem with the change.
@@ -66,6 +69,10 @@ func (c TicketChange) Validate() error {
 	v.add("changelog_id", checkText(c.ChangelogID, 128))
 	v.require("fields", len(c.Fields) > 0, "must name at least one field")
 	v.each("fields", c.Fields, func(f string) error { return checkText(f, 128) })
+	if slices.Contains(c.Fields, "status") {
+		v.require("to_status", c.ToStatus != "", "must name the status the move ended at")
+		v.add("to_status", checkText(c.ToStatus, 128))
+	}
 	return v.join()
 }
 
