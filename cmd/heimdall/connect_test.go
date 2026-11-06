@@ -175,10 +175,10 @@ func TestConnectPlansContainResumableCoreIntegrationHandoffs(t *testing.T) {
 		want string
 	}{
 		{registry.KindVCS, "github", "approve and install the GitHub App from its manifest"},
-		{registry.KindTracker, "jira", "Jira site URL and project key"},
+		{registry.KindTracker, "jira", "jira.base_url and jira.project_keys"},
 		{registry.KindChat, "switch", "coordinator identity"},
 		{registry.KindAgentRuntime, "opencode", "OpenCode 1.19.5"},
-		{registry.KindMemory, "graphiti", "Compose waits for Graphiti's /health check"},
+		{registry.KindMemory, "graphiti", "Compose checks Graphiti health"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -187,6 +187,20 @@ func TestConnectPlansContainResumableCoreIntegrationHandoffs(t *testing.T) {
 			require.Contains(t, strings.Join(plan.Instructions, "\n"), tc.want)
 			require.Contains(t, strings.Join(plan.Instructions, "\n"), "heimdall connect --check")
 		})
+	}
+}
+
+func TestDefaultRegistryEntriesDeclareGuidedSteps(t *testing.T) {
+	reg, err := defaultRegistry()
+	require.NoError(t, err)
+	for _, description := range reg.Describe() {
+		entry, err := reg.Select(description.Kind, description.Name)
+		require.NoError(t, err)
+		require.NotEmpty(t, entry.GuidedSteps, description.Name)
+		for _, step := range entry.GuidedSteps {
+			require.NotContains(t, strings.ToLower(step), "secret value")
+			require.NotContains(t, strings.ToLower(step), "token=")
+		}
 	}
 }
 
@@ -420,6 +434,46 @@ func TestRunConnectKindWritesSelectionAndInstructions(t *testing.T) {
 	name, ok := mustLoad(t, cfgPath).Selection("vcs")
 	require.True(t, ok)
 	require.Equal(t, "github", name)
+}
+
+func TestConnectProgressPersistsAndResumesManualSteps(t *testing.T) {
+	dir, cfgPath := connectFixture(t, "", nil)
+	status := registry.StatusNeedsConfig
+	reg, err := registry.Default([]registry.Entry{{
+		Name: "local-test", Kind: registry.KindTracker,
+		GuidedSteps: []string{"create the tracker project", "run the read-only tracker check"},
+		Factory:     func(config.Config) (any, error) { return struct{}{}, nil },
+		Check: func(context.Context, config.Config) registry.CheckResult {
+			return registry.CheckResult{Status: status, Detail: "finish tracker project setup"}
+		},
+	}})
+	require.NoError(t, err)
+	deps := connectDeps{
+		getenv:        func(string) string { return "" },
+		loadConfig:    config.Load,
+		registry:      func() (*registry.Registry, error) { return reg, nil },
+		checkDeadline: time.Second,
+	}
+	var out, errOut bytes.Buffer
+	require.Equal(t, 0, runConnect([]string{"--config", cfgPath, "tracker", "local-test"}, strings.NewReader(""), &out, &errOut, deps), errOut.String())
+	statePath := filepath.Join(dir, "heimdall-connect-progress.json")
+	info, err := os.Stat(statePath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	out.Reset()
+	require.Equal(t, 0, runConnect([]string{"progress", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, deps), errOut.String())
+	require.Contains(t, out.String(), "tracker/local-test")
+	require.Contains(t, out.String(), "needs_config")
+	require.Contains(t, out.String(), "[pending] create the tracker project")
+
+	status = registry.StatusConnected
+	out.Reset()
+	errOut.Reset()
+	require.Equal(t, 0, runConnect([]string{"--config", cfgPath, "tracker", "local-test"}, strings.NewReader(""), &out, &errOut, deps), errOut.String())
+	out.Reset()
+	require.Equal(t, 0, runConnect([]string{"progress", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, deps), errOut.String())
+	require.Contains(t, out.String(), "connected")
+	require.Contains(t, out.String(), "[complete] create the tracker project")
 }
 
 func TestRunConnectMattermostTakesPublicAddressFlag(t *testing.T) {

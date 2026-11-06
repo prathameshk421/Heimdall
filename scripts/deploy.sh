@@ -32,6 +32,7 @@ fi
 
 [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || { echo 'deploy: invalid release tag' >&2; exit 2; }
 [[ "$DEPLOY_ARCH" == amd64 || "$DEPLOY_ARCH" == arm64 ]] || { echo 'deploy: DEPLOY_ARCH must be amd64 or arm64' >&2; exit 2; }
+[[ "$DEPLOY_AGENT_USER" =~ ^[a-z_][a-z0-9_-]*\$?$ ]] || { echo 'deploy: DEPLOY_AGENT_USER must be a valid Unix account name' >&2; exit 2; }
 
 artifact=$(mktemp -d)
 trap 'rm -rf "$artifact"' EXIT
@@ -66,7 +67,7 @@ printf '%s\n' "$tag" > "$artifact/RELEASE"
 if [[ "$dry_run" == 1 ]]; then
 	# Dry-run deliberately does not inspect secrets or connect to the host.
 	echo "DRY-RUN would stage the Linux binaries and $DEPLOY_SECRETS_DIR on $DEPLOY_HOST"
-	echo "DRY-RUN would install under /opt/heimdall/releases/$tag, start Compose, and verify /healthz and authenticated /mcp"
+	echo "DRY-RUN would install under /opt/heimdall/releases/$tag-<artifact-sha256>, start Compose, and verify /healthz and authenticated /mcp"
 	exit 0
 fi
 
@@ -172,38 +173,5 @@ done
 remote_tmp="/tmp/heimdall-deploy-$tag"
 scp "$artifact/release.tgz" "$DEPLOY_HOST:$remote_tmp.tgz"
 rsync -a --delete --chmod=F600,D700 "$DEPLOY_SECRETS_DIR/" "$DEPLOY_HOST:$remote_tmp-secrets/"
-ssh "$DEPLOY_HOST" "sudo -n /bin/sh -s -- '$tag' '$remote_tmp' '$DEPLOY_AGENT_USER' '$archive_hash'" <<'REMOTE'
-set -eu
-tag=$1
-tmp=$2
-agent_user=$3
-archive_hash=$4
-release="/opt/heimdall/releases/$tag"
-install -d -m 0755 /opt/heimdall/releases /etc/heimdall/secrets
-install -d -m 0755 "$release"
-previous_hash=$(cat "$release/.artifact.sha256" 2>/dev/null || true)
-if [ "$previous_hash" != "$archive_hash" ]; then
-	tar -xzf "$tmp.tgz" -C "$release"
-	printf '%s\n' "$archive_hash" > "$release/.artifact.sha256"
-fi
-rsync -a --delete --chmod=F600,D700 "$tmp-secrets/" /etc/heimdall/secrets/
-chmod 0600 /etc/heimdall/secrets/*
-ln -sfn "$release" /opt/heimdall/current.new
-mv -Tf /opt/heimdall/current.new /opt/heimdall/current
-cd /opt/heimdall/current
-export HEIMDALL_CONFIG=/opt/heimdall/current/deploy/heimdall.toml
-export HEIMDALL_SECRETS_DIR=/etc/heimdall/secrets
-export HEIMDALL_RELEASE=$tag
-if [ "$previous_hash" != "$archive_hash" ]; then
-	docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml build heimdall-server
-fi
-docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml up -d --wait --timeout 30
-curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null
-token=$(cat /etc/heimdall/secrets/agent_token_test-author)
-sudo -u "$agent_user" curl --fail --silent --show-error \
-  -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
-  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"heimdall-deploy-check","version":"1"}}}' \
-  http://127.0.0.1:8080/mcp >/dev/null
-rm -rf "$tmp.tgz" "$tmp-secrets"
-REMOTE
+ssh "$DEPLOY_HOST" "sudo -n /bin/sh -s -- '$tag' '$remote_tmp' '$DEPLOY_AGENT_USER' '$archive_hash' /opt/heimdall /etc/heimdall/secrets" < "$root/scripts/deploy-remote.sh"
 echo "deploy: release $tag is healthy and authenticated MCP is reachable"

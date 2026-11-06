@@ -42,8 +42,11 @@ Next: configure secret files without putting values in chat or command arguments
   DEPLOY_CONFIG='$setup_dir/heimdall.toml' DEPLOY_SECRETS_DIR='$setup_dir/secrets' make deploy
 Live tagged deployment also requires the matching detached signature and your operator-managed public key path;
 see deploy/RELEASES.md. The deployment script refuses to proceed until those match.
-For the agent runtime, complete the one-time Switch enrollment handoff in deploy/agents/README.md,
-then run deploy/agents/install-controller.sh on the host. Resume and check integrations with:
+For the agent runtime, enroll interactively without echoing the one-time code, then install the
+controller with the same persistent data directory (see deploy/agents/README.md):
+  heimdall controller enroll --server https://<switch-host> --name heimdall-vm --data-dir /var/lib/switch-agent-controller-data/<uid>
+  sudo deploy/agents/install-controller.sh --controller-user ubuntu --controller-data-dir /var/lib/switch-agent-controller-data/<uid>
+Resume and check integrations with:
   heimdall admin init --config '$setup_dir/heimdall.toml'
   heimdall connect --check --config '$setup_dir/heimdall.toml'
 EOF

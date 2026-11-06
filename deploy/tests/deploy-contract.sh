@@ -15,7 +15,7 @@ if grep -Eq '^[[:space:]]+-[[:space:]]+"?(0\.0\.0\.0|\*:|8080:8080)' "$root/depl
 fi
 grep -q '127\.0\.0\.1:8080:8080' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: service port is loopback-only' >&2; exit 1; }
 dry_run=$(make -C "$root" -n deploy CONFIG='/tmp/heimdall config.toml' SECRETS_DIR='/tmp/heimdall secrets')
-grep -Fq 'bash deploy/deploy.sh --config "/tmp/heimdall config.toml" --secrets-dir "/tmp/heimdall secrets"' <<<"$dry_run" || { echo 'ASSERTION FAILED: make deploy must pass quoted CONFIG and SECRETS_DIR paths to the deploy runner' >&2; exit 1; }
+grep -Fq 'DEPLOY_CONFIG="/tmp/heimdall config.toml" DEPLOY_SECRETS_DIR="/tmp/heimdall secrets" bash scripts/deploy.sh' <<<"$dry_run" || { echo 'ASSERTION FAILED: make deploy must pass CONFIG and SECRETS_DIR to the signed deploy runner' >&2; exit 1; }
 if "$script" --host test-host >/dev/null 2>&1; then
   echo 'ASSERTION FAILED: missing deploy inputs must be rejected' >&2
   exit 1

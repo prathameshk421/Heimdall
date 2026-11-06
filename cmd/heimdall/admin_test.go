@@ -10,6 +10,79 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAdminInitIsResumableAndRecordsNamesOnly(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "heimdall.toml")
+	secretsDir := filepath.Join(root, "secrets")
+	require.NoError(t, copySetupConfig(configPath))
+	run := func() (int, string, string) {
+		var out, errOut bytes.Buffer
+		code := runAdmin([]string{"init", "--config", configPath, "--secrets-dir", secretsDir}, bytes.NewReader(nil), &out, &errOut)
+		return code, out.String(), errOut.String()
+	}
+
+	code, first, errOut := run()
+	require.Zero(t, code, errOut)
+	require.Contains(t, first, "setup prepared")
+	require.Contains(t, first, "resume with: heimdall admin init")
+	require.Contains(t, first, "heimdall controller enroll")
+	require.Contains(t, first, "heimdall connect --check")
+	require.Contains(t, first, "database_url")
+	require.Contains(t, first, "agent_token_test-author")
+	statePath := filepath.Join(root, "heimdall-setup.json")
+	stateBefore, err := os.ReadFile(statePath)
+	require.NoError(t, err)
+	stateInfo, err := os.Stat(statePath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), stateInfo.Mode().Perm())
+	dirInfo, err := os.Stat(secretsDir)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
+
+	code, second, errOut := run()
+	require.Zero(t, code, errOut)
+	stateAfter, err := os.ReadFile(statePath)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+	require.Equal(t, stateBefore, stateAfter)
+}
+
+func TestAdminInitOnlyInspectsSecretFileMetadataAndRejectsUnsafeFiles(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "heimdall.toml")
+	secretsDir := filepath.Join(root, "secrets")
+	require.NoError(t, copySetupConfig(configPath))
+	require.NoError(t, os.Mkdir(secretsDir, 0o700))
+	secretPath := filepath.Join(secretsDir, "database_url")
+	require.NoError(t, os.WriteFile(secretPath, []byte("test-only-canary-secret"), 0o644))
+
+	var out, errOut bytes.Buffer
+	code := runAdmin([]string{"init", "--config", configPath, "--secrets-dir", secretsDir}, bytes.NewReader(nil), &out, &errOut)
+	require.Equal(t, 1, code)
+	require.Contains(t, errOut.String(), "private regular file")
+	require.NotContains(t, out.String()+errOut.String(), "test-only-canary-secret")
+
+	require.NoError(t, os.Chmod(secretPath, 0o600))
+	require.NoError(t, os.Remove(secretPath))
+	require.NoError(t, os.Symlink(filepath.Join(root, "outside"), secretPath))
+	out.Reset()
+	errOut.Reset()
+	code = runAdmin([]string{"init", "--config", configPath, "--secrets-dir", secretsDir}, bytes.NewReader(nil), &out, &errOut)
+	require.Equal(t, 1, code)
+	require.NotContains(t, out.String()+errOut.String(), "outside")
+}
+
+func TestAdminInitStartsGuidedSetupWithoutAConfigAndRefusesUnknownOperations(t *testing.T) {
+	var out, errOut bytes.Buffer
+	require.Equal(t, 2, runAdmin(nil, bytes.NewReader(nil), &out, &errOut))
+	errOut.Reset()
+	require.Equal(t, 2, runAdmin([]string{"upgrade"}, bytes.NewReader(nil), &out, &errOut))
+	require.Contains(t, errOut.String(), "usage:")
+	errOut.Reset()
+	require.Equal(t, 1, runAdmin([]string{"init"}, bytes.NewReader(nil), &out, &errOut))
+	require.Contains(t, errOut.String(), "input ended before setup answers were complete")
+}
+
 func TestAdminSecretSetPromptsTwiceAndNeverPrintsTheValue(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "heimdall.toml")

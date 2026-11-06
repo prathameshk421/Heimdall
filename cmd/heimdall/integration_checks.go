@@ -127,7 +127,34 @@ func checkOpenCode(ctx context.Context, cfg config.Config) registry.CheckResult 
 	if strings.TrimSpace(string(out)) != openCodeVersion {
 		return registry.CheckResult{Status: registry.StatusNeedsConfig, Detail: "OpenCode version does not match the pinned 1.19.5 runtime"}
 	}
-	return registry.CheckResult{Status: registry.StatusConnected, Detail: "OpenRouter credentials work and OpenCode 1.19.5 is installed; run admin init to check the controller service"}
+	if controller := checkControllerService(ctx, config.Getenv("SWITCH_CONTROLLER_UID")); controller.Status != registry.StatusConnected {
+		return controller
+	}
+	return registry.CheckResult{Status: registry.StatusConnected, Detail: "OpenRouter credentials work, OpenCode 1.19.5 is installed, and the enrolled controller service is active"}
+}
+
+func checkControllerService(ctx context.Context, configuredUID string) registry.CheckResult {
+	return controllerServiceCheck(ctx, configuredUID, func(checkCtx context.Context, service string) error {
+		// #nosec G204 -- service is derived from a UID parsed as a base-10 uint by controllerServiceCheck; no shell is invoked.
+		return exec.CommandContext(checkCtx, "systemctl", "is-active", "--quiet", service).Run()
+	})
+}
+
+func controllerServiceCheck(ctx context.Context, configuredUID string, active func(context.Context, string) error) registry.CheckResult {
+	uid := configuredUID
+	if uid == "" {
+		uid = "1000"
+	}
+	if _, err := strconv.ParseUint(uid, 10, 32); err != nil {
+		return registry.CheckResult{Status: registry.StatusNeedsConfig, Detail: "SWITCH_CONTROLLER_UID must be the numeric uid used when installing the controller service"}
+	}
+	service := "switch-agent-controller-" + uid + ".service"
+	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := active(checkCtx, service); err != nil {
+		return registry.CheckResult{Status: registry.StatusNeedsConfig, Detail: service + " is not active; enroll the controller and run deploy/agents/install-controller.sh"}
+	}
+	return registry.CheckResult{Status: registry.StatusConnected, Detail: service + " is active"}
 }
 
 func checkGraphitiContainer(ctx context.Context, _ config.Config) registry.CheckResult {

@@ -9,27 +9,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 )
 
-// runAdmin handles the initial operator configuration. It creates only the TOML file: integrations,
-// secret installation, and deployment remain separately guided steps.
-func runAdmin(args []string, in io.Reader, out, stderr io.Writer) int {
-	if len(args) >= 2 && args[0] == "secret" && args[1] == "set" {
-		return runAdminSecret(args[2:], out, stderr, config.Getenv, readHiddenSecret)
-	}
-	if len(args) == 0 || args[0] != "init" {
-		_ = writeAdmin(stderr, "usage: heimdall admin init [--config PATH]\n")
-		return 2
-	}
-	return runAdminInit(args, in, out, stderr)
-}
-
-func runAdminInit(args []string, in io.Reader, out, stderr io.Writer) int {
+func runAdminCreateConfig(args []string, in io.Reader, out, stderr io.Writer) int {
 	fs := flag.NewFlagSet("heimdall admin init", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	pathFlag := fs.String("config", "", "path to heimdall.toml (default: HEIMDALL_CONFIG or /etc/heimdall/heimdall.toml)")
@@ -43,6 +29,10 @@ func runAdminInit(args []string, in io.Reader, out, stderr io.Writer) int {
 	}
 	if path == "" {
 		path = "/etc/heimdall/heimdall.toml"
+	}
+	path, err := canonicalAdminConfigPath(path)
+	if err != nil {
+		return writeAdmin(stderr, "heimdall admin init: config path is invalid\n")
 	}
 	status := adminConfigStatus(path)
 	if status == 0 {
@@ -67,27 +57,6 @@ func runAdminInit(args []string, in io.Reader, out, stderr io.Writer) int {
 	return writeAdmin(out, "Required secret files: %s, %s, %s, %s, %s, %s, %s, %s.\n", answers.DatabaseURLSecret, answers.JiraEmailSecret, answers.JiraTokenSecret, answers.SwitchAPIKeySecret, answers.SwitchRegistrationSecret, answers.GitHubAppIDSecret, answers.GitHubInstallationSecret, answers.GitHubPrivateKeySecret)
 }
 
-func setupSecretNames(cfg config.Config) []string {
-	names := []string{
-		cfg.Database.URLSecret, cfg.Jira.EmailSecret, cfg.Jira.APITokenSecret,
-		cfg.Switch.APIKeySecret, cfg.Switch.RegistrationTokenSecret,
-		cfg.GitHub.AppIDSecret, cfg.GitHub.InstallationIDSecret, cfg.GitHub.PrivateKeySecret,
-		"postgres_password", "openrouter_api_key",
-	}
-	for _, name := range append([]string{cfg.Agents.TestAuthor}, append(cfg.Agents.Reviewers, cfg.Agents.Resolver)...) {
-		if name != "" {
-			names = append(names, "agent_token_"+name)
-		}
-	}
-	filtered := names[:0]
-	for _, name := range names {
-		if name != "" {
-			filtered = append(filtered, name)
-		}
-	}
-	return slices.Compact(slices.Sorted(slices.Values(filtered)))
-}
-
 func writeAdmin(w io.Writer, format string, args ...any) int {
 	if _, err := fmt.Fprintf(w, format, args...); err != nil {
 		return 1
@@ -97,17 +66,48 @@ func writeAdmin(w io.Writer, format string, args ...any) int {
 
 // adminConfigStatus returns 0 for an invalid existing file, 1 for a valid file, 2 when absent, and 3 on I/O errors.
 func adminConfigStatus(path string) int {
-	_, err := os.Stat(path)
+	cleanPath, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return 3
+	}
+	cleanPath = filepath.Clean(cleanPath)
+	root, err := os.OpenRoot(filepath.Dir(cleanPath))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 2
+		}
+		return 3
+	}
+	_, err = root.Stat(filepath.Base(cleanPath))
+	closeErr := root.Close()
+	if err == nil {
+		err = closeErr
+	}
 	if errors.Is(err, os.ErrNotExist) {
 		return 2
 	}
 	if err != nil {
 		return 3
 	}
-	if _, err := config.Load(path); err != nil {
+	if _, err := config.Load(cleanPath); err != nil {
 		return 0
 	}
 	return 1
+}
+
+func canonicalAdminConfigPath(path string) (string, error) {
+	if path == "" || strings.ContainsAny(path, "\x00\r\n") {
+		return "", errors.New("invalid config path")
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve config path: %w", err)
+	}
+	clean := filepath.Clean(absolute)
+	if !filepath.IsAbs(clean) {
+		return "", errors.New("config path must be absolute after resolution")
+	}
+	return clean, nil
 }
 
 func createAdminConfig(path string, answers adminAnswers) error {

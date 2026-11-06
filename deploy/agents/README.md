@@ -1,20 +1,23 @@
-# Agent runtime templates
+# Agent runtime and controller setup
 
-`testdata/agents/agents.json` is the install manifest. It maps the test-author, three reviewer slots, and resolver to an OpenCode config template and one of the checked-in skills. The referenced skills are `skills/test-quality/SKILL.md`, `skills/reviewer/SKILL.md`, and `skills/resolver/SKILL.md`.
+`testdata/agents/agents.json` is the role manifest. `install.sh --dry-run` validates all five templates, role skills, and token file metadata without printing token contents. The real installer writes the role configs under the controller's `/var/lib/switch-agents/1000/agent/<role>/` tree, mode `0600`, and assigns the configured owner.
 
-Run `deploy/agents/install.sh --dry-run --repo <checkout> --agents-dir <controller-root> --secrets-dir <secrets-dir>` to validate the manifest and print the five planned installations without reading or printing token contents. For the real install, omit `--dry-run` and pass `--owner <agent-user>` when the controller has already assigned the dedicated Unix user. The script writes under `<agents-dir>/agent/<name>/`, never contacts the VM, and does not install or alter Switch, systemd, or nftables.
+## Controller enrollment handoff
 
-Each `testdata/agents/*.opencode.json` is a template, not a runnable config. Its `{{file:secrets/agent_token_<name>}}` marker names the token file that `admin init` must read for that agent. The marker is deliberately not an environment variable and contains no credential. During installation, `admin init` writes the resolved bearer value into that agent's `opencode.json`, with mode `0600` and ownership set to the agent's dedicated user, as required by D142. Keep the source token file private and scoped to that agent; never copy it into this repository or logs.
+The Switch enrollment code is issued by an administrator in the Switch gateway's Machines page. Heimdall prompts for it without echo, retains it only for the enrollment call, and discards upstream output. The upstream CLI accepts the one-time code only as an argument, so it is briefly present in that process's argument vector; use a private administrator session and do not paste it into chat, a checked-in file, or a shared shell transcript. Install the pinned Switch controller release using Switch's published release verification, then enroll it:
 
-The controller's shared environment remains separate: `/etc/switch/agents.env` carries the OpenRouter key and `SWITCH_CONTROLLER_SELF_UPDATE=off`, owned by `ubuntu` with mode `0600`. Agent files live under the controller's per-agent directory (`<agents-dir>/<NN>/<agent-name>/` on the host; `/var/lib/switch-agents/1000/agent/<agent-name>/` in the Nov 4 VM setup). Install the selected skill as `.opencode/skills/<role>/SKILL.md`, create `scratch/`, and keep `AGENTS.md` in that agent directory. The installed config must retain the T01-proven `auto_mode: true` and scratch-only edit pattern. T27's live nftables and service installation are deployment work; these templates do not modify the VM.
+```sh
+controller_uid=$(id -u ubuntu)
+controller_data_dir="/var/lib/switch-agent-controller-data/$controller_uid"
+heimdall controller enroll --server https://<switch-host> --name heimdall-vm --data-dir "$controller_data_dir"
+```
 
-## Local runtime artifact
+Run this from the machine's private administrator session. The command confirms enrollment without printing the one-time code. Preserve `controller_data_dir` for the installer. Once enrollment succeeds, as root run:
 
-`deploy/agents/runtime` is the local, side-effect-free deployment contract for T27. Its `Render` function validates explicit controller, agent, version, port, group-id, and restricted OpenRouter CIDR inputs, then returns deterministic artifacts for an admin layer to write:
+```sh
+sudo deploy/agents/install-controller.sh --controller-user ubuntu --controller-data-dir "$controller_data_dir" --secrets-dir /etc/heimdall/secrets --agents-dir /var/lib/switch-agents/1000
+```
 
-- controller service drop-in with the pinned OpenCode and controller versions recorded;
-- one private-identity drop-in per controller-created agent unit;
-- `/etc/switch/agents.env` content containing only `SWITCH_CONTROLLER_SELF_UPDATE=off`, intended for mode `0600` (the OpenRouter key is supplied separately and is never rendered here);
-- an nftables table that drops IMDS access, permits only the configured loopback ports and OpenRouter HTTPS ranges for the agent group, then drops the group's other traffic.
+The controller installer requires Node.js 22.13+, OpenCode 1.19.5, `switch-agent-controller`, systemd, an enrolled controller, and a private `openrouter_api_key` file. It atomically creates `/etc/switch/agents.env` mode `0600` with the key and `SWITCH_CONTROLLER_SELF_UPDATE=off`, then invokes the upstream `doctor` after installing and enabling `switch-agent-controller-<uid>.service`. The upstream installer creates the configured agent-user pool, systemd template, polkit rule, and agent directory. The install command passes separate controller state, agents, and releases directories so none overlap. Re-running it refreshes the env file and reconciles the service. Recovery is `make recover`; it reconciles Compose, starts the controller unit if inactive, and checks the server, authenticated MCP endpoint, and Graphiti health.
 
-The package does not read secrets, resolve DNS, invoke `systemctl`/`nft`, or contact the VM. Applying the returned artifacts and proving agent boot/reboot, nftables behaviour, and a live OpenCode task remain deployment acceptance work and are currently **not verified**.
+`install-controller.sh --dry-run` reports the planned paths only; it does not inspect secret contents, call Switch, write files, or touch systemd. Controller enrollment itself is a manual gateway action, not part of local dry-run verification.

@@ -104,14 +104,12 @@ record: ## re-record real payloads for a task into testdata/real: make record T=
 	@test -n "$(T)" || { echo "usage: make record T=T24" >&2; exit 2; }
 	HEIMDALL_RECORD=$(CURDIR)/testdata/real bash scripts/run-tagged.sh e2e '^TestTask_$(T)$$' "record $(T)"
 
-.PHONY: cost deploy deploy-build release-sign upgrade setup restart recover fixtures-push prototype demo-check heimdall-bin
+.PHONY: cost fixtures-push prototype demo-check heimdall-bin deploy deploy-build release-sign upgrade setup restart recover
 cost: ## remaining LLM budget per purpose (T19)
 	go run ./cmd/heimdall cost $(if $(CONFIG),--config "$(CONFIG)",) $(if $(LEDGER),--ledger "$(LEDGER)",)
 
-deploy: CONFIG ?= deploy/heimdall.example.toml
-deploy: SECRETS_DIR ?= secrets
-deploy: ## build and install the Heimdall stack on the SSM-connected VM (T105)
-	bash deploy/deploy.sh --config "$(CONFIG)" --secrets-dir "$(SECRETS_DIR)"
+deploy: ## deploy an exact signed tag through the SSM-backed SSH alias
+	DEPLOY_CONFIG="$(CONFIG)" DEPLOY_SECRETS_DIR="$(SECRETS_DIR)" bash scripts/deploy.sh
 
 deploy-build: ## cross-build deterministic Linux release artifacts without a host connection
 	DEPLOY_BUILD_ONLY=1 bash scripts/deploy.sh
@@ -121,7 +119,7 @@ release-sign: ## sign a tag-named release archive with cosign
 	RELEASE_TAG='$(TAG)' RELEASE_SIGNING_KEY='$(RELEASE_SIGNING_KEY)' bash scripts/sign-release.sh
 
 upgrade: ## install an exact tagged release through the SSM-backed deploy workflow
-	bash scripts/deploy.sh
+	DEPLOY_CONFIG="$(CONFIG)" DEPLOY_SECRETS_DIR="$(SECRETS_DIR)" bash scripts/deploy.sh
 
 setup: ## create a private local operator workspace
 	bash scripts/setup.sh

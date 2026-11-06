@@ -2,11 +2,12 @@
 # Install the enrolled Switch agent controller and its shared, private environment file.
 set -euo pipefail
 
-usage() { echo 'usage: install-controller.sh [--dry-run] [--controller-user USER] [--secrets-dir DIR] [--agents-dir DIR]' >&2; }
+usage() { echo 'usage: install-controller.sh [--dry-run] [--controller-user USER] [--controller-data-dir DIR] [--secrets-dir DIR] [--agents-dir DIR]' >&2; }
 dry_run=false
 controller_user=${SWITCH_CONTROLLER_USER:-ubuntu}
 secrets_dir=${HEIMDALL_SECRETS_DIR:-/etc/heimdall/secrets}
 agents_dir=${SWITCH_AGENTS_DIR:-}
+controller_data_dir=${SWITCH_CONTROLLER_DATA_DIR:-}
 env_file=${SWITCH_CONTROLLER_ENV_FILE:-/etc/switch/agents.env}
 agent_users=${SWITCH_AGENT_USERS:-16}
 while (($#)); do
@@ -15,6 +16,7 @@ while (($#)); do
     --controller-user) [[ $# -ge 2 ]] || { usage; exit 2; }; controller_user=$2; shift 2 ;;
     --secrets-dir) [[ $# -ge 2 ]] || { usage; exit 2; }; secrets_dir=$2; shift 2 ;;
     --agents-dir) [[ $# -ge 2 ]] || { usage; exit 2; }; agents_dir=$2; shift 2 ;;
+    --controller-data-dir) [[ $# -ge 2 ]] || { usage; exit 2; }; controller_data_dir=$2; shift 2 ;;
     --env-file) [[ $# -ge 2 ]] || { usage; exit 2; }; env_file=$2; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo 'controller install: unknown option' >&2; usage; exit 2 ;;
@@ -24,6 +26,9 @@ done
 if ! id "$controller_user" >/dev/null 2>&1; then echo "controller install: controller user $controller_user does not exist" >&2; exit 1; fi
 controller_uid=$(id -u "$controller_user")
 if [[ -z "$agents_dir" ]]; then agents_dir="/var/lib/switch-agents/$controller_uid"; fi
+if [[ -z "$controller_data_dir" ]]; then controller_data_dir="/var/lib/switch-agent-controller-data/$controller_uid"; fi
+case "$controller_data_dir" in /*) ;; *) echo 'controller install: controller data directory must be absolute' >&2; exit 2 ;; esac
+case "$controller_data_dir" in *$'\n'*|*$'\r'*) echo 'controller install: controller data directory must be one line' >&2; exit 2 ;; esac
 for command_name in node opencode switch-agent-controller systemctl install python3; do
   command -v "$command_name" >/dev/null 2>&1 || { echo "controller install: required command unavailable: $command_name" >&2; exit 1; }
 done
@@ -61,7 +66,7 @@ fi
 mode=$(stat -c '%a' "$secrets_dir/openrouter_api_key")
 if (( (8#$mode & 077) != 0 )); then echo 'controller install: OpenRouter key file must be private (mode 0600 or stricter)' >&2; exit 1; fi
 if $dry_run; then
-	printf 'plan controller user=%s uid=%s agents_dir=%s env_file=%s agent_users=%s service=switch-agent-controller-%s.service\n' "$controller_user" "$controller_uid" "$agents_dir" "$env_file" "$agent_users" "$controller_uid"
+	printf 'plan controller user=%s uid=%s data_dir=%s agents_dir=%s env_file=%s agent_users=%s service=switch-agent-controller-%s.service\n' "$controller_user" "$controller_uid" "$controller_data_dir" "$agents_dir" "$env_file" "$agent_users" "$controller_uid"
   echo 'plan shared env contains OpenRouter key from a private file and SWITCH_CONTROLLER_SELF_UPDATE=off'
   echo 'dry-run: no files or services changed'
   exit 0
@@ -89,7 +94,6 @@ chown "$controller_user" "$tmp_env"
 mv -f "$tmp_env" "$env_file"
 chmod 0600 "$env_file"
 controller_uid=$(id -u "$controller_user")
-controller_data_dir=${SWITCH_CONTROLLER_DATA_DIR:-/var/lib/switch-agent-controller-data/$controller_uid}
 releases_dir=${SWITCH_CONTROLLER_RELEASES_DIR:-/var/lib/switch-agent-controller/$controller_uid/releases}
 switch-agent-controller install-service --separate-users --user "$controller_user" --data-dir "$controller_data_dir" --agents-dir "$agents_dir" --agent-users "$agent_users" --releases-dir "$releases_dir" --env-file "$env_file"
 systemctl enable --now "switch-agent-controller-$controller_uid.service"

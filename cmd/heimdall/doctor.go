@@ -53,6 +53,8 @@ type doctorDeps struct {
 	githubReader func(cfg config.Config) (installationReader, error)
 	// hostChecks runs read-only host prerequisites for the explicit --host mode.
 	hostChecks func(context.Context, string) []checkResult
+	// integrationChecks runs the same selected-provider read-only checks as `heimdall connect --check`.
+	integrationChecks func(context.Context, config.Config) []checkResult
 }
 
 // installationReader reads what the GitHub App's installation holds. The GitHub adapter's TokenSource satisfies it.
@@ -113,6 +115,9 @@ func collectDoctorChecks(host bool, configPath string, deps doctorDeps) []checkR
 	results := []checkResult{configRow, checkDocker(deps), checkPostgres()}
 	if provider, ok := cfg.Selection("vcs"); ok && provider == "github" {
 		results = append(results, checkGitHub(deps, cfg)...)
+	}
+	if deps.integrationChecks != nil {
+		results = append(results, deps.integrationChecks(context.Background(), cfg)...)
 	}
 	return results
 }
