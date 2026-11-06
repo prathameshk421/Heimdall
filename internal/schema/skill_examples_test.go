@@ -158,6 +158,21 @@ func TestSkillsNameOnlyToolsTheServerOffersTheirRole(t *testing.T) {
 	}
 }
 
+// TestEverySkillAcksItsTaskRightAfterGetTask guards TECH_SPEC 6.2 step 3: an agent acks within 60 s of the
+// assignment, or the task times out. The room message names only heimdall_get_task, so the skill must name
+// heimdall_ack as the next call, before the agent reads anything else. A live test-author run read the ticket and
+// asked questions but never acked, because the test-quality skill did not name the tool.
+func TestEverySkillAcksItsTaskRightAfterGetTask(t *testing.T) {
+	for _, skill := range []string{"test-quality", "reviewer", "resolver"} {
+		t.Run(skill, func(t *testing.T) {
+			calls := toolName.FindAllString(skillBody(t, skill), -1)
+			require.GreaterOrEqual(t, len(calls), 2, "skills/%s/SKILL.md names too few tools", skill)
+			require.Equal(t, []string{"heimdall_get_task", "heimdall_ack"}, calls[:2],
+				"skills/%s/SKILL.md must name heimdall_get_task, then heimdall_ack, before any other tool", skill)
+		})
+	}
+}
+
 func TestSkillsCarryNoEmDashAndNoPlaceholderWords(t *testing.T) {
 	for _, skill := range []string{"reviewer", "resolver"} {
 		body := skillBody(t, skill)
