@@ -158,7 +158,7 @@ type endpoints struct {
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
 type app struct {
 	pool              *pgxpool.Pool
-	poller            poller
+	pollers           []poller
 	drainer           drainer
 	syncer            syncer
 	roomStream        roomStreamRunner
@@ -313,25 +313,41 @@ func missingConfigKeys(cfg config.Config) []string {
 	return missing
 }
 
-// checkProjectSelection requires one Jira project key and requires it to be the one project the slice maps. The
-// poller uses one cursor source and one repository mapping, so a mismatch or a second key would poll a project it
-// cannot start.
+// checkProjectSelection requires the Jira project keys and the mapped projects to be the same set, with no repeats. Each
+// listed project gets its own poller and cursor (A10 item 10). The file tracker still polls one project: its poll is
+// not scoped by project.
 func checkProjectSelection(cfg config.Config) error {
 	tracker, _ := cfg.Selection("tracker")
 	if tracker != "jira" {
 		if tracker == "file" && len(cfg.Projects) != 1 {
-			return fmt.Errorf("projects: the slice polls one tracker project, but heimdall.toml maps %d", len(cfg.Projects))
+			return fmt.Errorf("projects: the file tracker polls one project, but heimdall.toml maps %d", len(cfg.Projects))
 		}
 		return nil
 	}
-	if len(cfg.Jira.ProjectKeys) != 1 {
-		return fmt.Errorf("jira.project_keys: the slice polls one tracker project, but heimdall.toml lists %d", len(cfg.Jira.ProjectKeys))
+	if len(cfg.Projects) == 0 {
+		return fmt.Errorf("projects: heimdall.toml maps no tracker project")
 	}
-	if len(cfg.Projects) != 1 {
-		return fmt.Errorf("projects: the slice polls one tracker project, but heimdall.toml maps %d", len(cfg.Projects))
+	listed := map[string]bool{}
+	for _, k := range cfg.Jira.ProjectKeys {
+		if listed[k] {
+			return fmt.Errorf("jira.project_keys: %q is listed twice", k)
+		}
+		listed[k] = true
 	}
-	if cfg.Jira.ProjectKeys[0] != cfg.Projects[0].TrackerProject {
-		return fmt.Errorf("jira.project_keys: %q is not the project mapped by projects, which maps %q", cfg.Jira.ProjectKeys[0], cfg.Projects[0].TrackerProject)
+	mapped := map[string]bool{}
+	for _, p := range cfg.Projects {
+		if mapped[p.TrackerProject] {
+			return fmt.Errorf("projects: %q is mapped twice", p.TrackerProject)
+		}
+		mapped[p.TrackerProject] = true
+		if !listed[p.TrackerProject] {
+			return fmt.Errorf("projects: %q is mapped but not listed in jira.project_keys", p.TrackerProject)
+		}
+	}
+	for _, k := range cfg.Jira.ProjectKeys {
+		if !mapped[k] {
+			return fmt.Errorf("jira.project_keys: %q has no [[projects]] mapping", k)
+		}
 	}
 	return nil
 }
@@ -483,17 +499,22 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, fmt.Errorf("build outbox drainer: %w", err)
 	}
-	p, err := trigger.New(trigger.Config{
-		Tickets:  ad.tickets,
-		Starter:  starter{eng: eng},
-		Cursors:  cursorStore{table: store, source: ad.trackerProvider + ":" + ad.project},
-		Projects: ad.projects,
-		Blobs:    blobs,
-		Clock:    clk,
-		IDs:      gen,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build ticket poller: %w", err)
+	// One poller per project, each with its own cursor source provider:project (A10 item 10).
+	pollers := make([]poller, 0, len(ad.projectKeys))
+	for _, key := range ad.projectKeys {
+		tp, err := trigger.New(trigger.Config{
+			Tickets:  ad.projectTickets[key],
+			Starter:  starter{eng: eng},
+			Cursors:  cursorStore{table: store, source: ad.trackerProvider + ":" + key},
+			Projects: ad.projects,
+			Blobs:    blobs,
+			Clock:    clk,
+			IDs:      gen,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("build ticket poller for %s: %w", key, err)
+		}
+		pollers = append(pollers, tp)
 	}
 	sync, intakeCase, err := assembleSyncer(ad, store, gen, clk)
 	if err != nil {
@@ -516,7 +537,7 @@ func assembleWithBlobs(
 		closer = c
 	}
 	return &app{
-		pool: pool, poller: p, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, episodeWorker: episodeWorker, workflowMemory: workflowMemory, blobs: closer,
+		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, episodeWorker: episodeWorker, workflowMemory: workflowMemory, blobs: closer,
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil

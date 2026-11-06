@@ -198,7 +198,7 @@ func TestCompleteConfigSelectsEveryAdapter(t *testing.T) {
 	require.NotNil(t, ad.tickets)
 	require.NotNil(t, ad.vcs)
 	require.NotNil(t, ad.chat)
-	require.Equal(t, "KAN", ad.project)
+	require.Equal(t, []string{"KAN"}, ad.projectKeys)
 }
 
 func TestFileTrackerConfigBuildsWithoutJiraSettingsOrSecrets(t *testing.T) {
@@ -233,7 +233,7 @@ func TestCompleteConfigBuildsAnAppWithFakes(t *testing.T) {
 	a, err := build(context.Background(), cfg, d)
 	require.NoError(t, err)
 	require.NotNil(t, a)
-	require.NotNil(t, a.poller)
+	require.Len(t, a.pollers, 1)
 	require.NotNil(t, a.drainer)
 	a.close()
 }
@@ -265,8 +265,7 @@ func TestProductionDepsRefusesProjectKeysThatDoNotMatchTheProjectMap(t *testing.
 	body = strings.Replace(body, `tracker_project = "KAN"`, `tracker_project = "PAY"`, 1)
 	cfg = loadTestConfig(t, body)
 	_, err = productionDeps(cfg, discardLogger())
-	require.ErrorContains(t, err, "jira.project_keys")
-	require.ErrorContains(t, err, "KAN")
+	require.ErrorContains(t, err, "project_keys")
 	require.ErrorContains(t, err, "PAY")
 }
 
@@ -316,18 +315,23 @@ func TestBuildDoesNotLeakDatabaseURLOnOpenPoolFailure(t *testing.T) {
 }
 
 func TestProductionDepsRefusesMultipleProjectKeysOrMultipleProjects(t *testing.T) {
-	// Multiple project keys
+	// A listed key with no mapping is refused: PAY is listed but only KAN is mapped.
 	body := liveConfigBody(writeLiveSecrets(t, defaultSecretNames), "https://jira.example.test", defaultSecretNames)
 	bodyMultiKey := strings.Replace(body, `project_keys = ["KAN"]`, `project_keys = ["KAN", "PAY"]`, 1)
 	cfgMultiKey := loadTestConfig(t, bodyMultiKey)
 	_, err := productionDeps(cfgMultiKey, discardLogger())
-	require.ErrorContains(t, err, "jira.project_keys")
-	require.ErrorContains(t, err, "lists 2")
+	require.ErrorContains(t, err, "project_keys")
+	require.ErrorContains(t, err, "PAY")
 
-	// Multiple projects in mapping
+	// A mapped project that is not listed is refused.
 	bodyMultiProj := body + "\n[[projects]]\ntracker_project = \"PAY\"\nrepo = \"owner/pay\"\nbase_branch = \"main\"\n"
 	cfgMultiProj := loadTestConfig(t, bodyMultiProj)
 	_, err = productionDeps(cfgMultiProj, discardLogger())
-	require.ErrorContains(t, err, "projects")
-	require.ErrorContains(t, err, "maps 2")
+	require.ErrorContains(t, err, "PAY")
+	require.ErrorContains(t, err, "project_keys")
+
+	// Two listed and two mapped projects are accepted (A10 item 10).
+	bothListed := strings.Replace(bodyMultiProj, `project_keys = ["KAN"]`, `project_keys = ["KAN", "PAY"]`, 1)
+	_, err = productionDeps(loadTestConfig(t, bothListed), discardLogger())
+	require.NoError(t, err, "two listed and mapped projects must be accepted")
 }

@@ -32,11 +32,14 @@ func (a *app) loops(ctx context.Context) {
 	wake := make(chan struct{}, 1)
 	ticks := make(chan time.Time)
 	var wg sync.WaitGroup
-	wg.Add(3)
-	go func() {
-		defer wg.Done()
-		a.pollLoop(ctx, wake)
-	}()
+	// One poll loop per project, plus the drain tick and the drainer (A10 item 10).
+	wg.Add(len(a.pollers) + 2)
+	for _, p := range a.pollers {
+		go func() {
+			defer wg.Done()
+			a.pollLoop(ctx, p, wake)
+		}()
+	}
 	if a.syncer != nil {
 		wg.Add(1)
 		go func() {
@@ -157,9 +160,9 @@ func (a *app) syncLoop(ctx context.Context, wake chan<- struct{}) {
 
 // pollLoop polls the tickets, then waits for the poll interval, until ctx is done. After each poll it wakes the
 // drainer, so an effect the poll committed runs without waiting for the next tick. A poll error is logged.
-func (a *app) pollLoop(ctx context.Context, wake chan<- struct{}) {
+func (a *app) pollLoop(ctx context.Context, p poller, wake chan<- struct{}) {
 	for {
-		res, err := a.poller.PollOnce(ctx)
+		res, err := p.PollOnce(ctx)
 		switch {
 		case err != nil && ctx.Err() == nil:
 			a.logger.ErrorContext(ctx, "ticket poll failed; the next poll retries", "error", err)

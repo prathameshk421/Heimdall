@@ -100,31 +100,6 @@ bridge = "switch"
 	require.ErrorContains(t, err, "valid names are file, jira")
 }
 
-func TestBuildRefusesMoreThanOneTrackerProject(t *testing.T) {
-	cfg := loadTestConfig(t, `
-[vcs]
-provider = "github"
-
-[tracker]
-provider = "jira"
-
-[chat]
-bridge = "switch"
-
-[[projects]]
-tracker_project = "KAN"
-repo = "aarush323/PBL_TOS_RISK_ANALYZER"
-base_branch = "heimdall-demo"
-
-[[projects]]
-tracker_project = "PAY"
-repo = "aarush323/heimdall-fixture-pay"
-base_branch = "main"
-`)
-	_, err := build(context.Background(), cfg, testDeps())
-	require.ErrorContains(t, err, "maps 2")
-}
-
 func TestBuildRefusesDepsThatCannotRun(t *testing.T) {
 	cfg := loadTestConfig(t, trackerProjectBody)
 	d := testDeps()

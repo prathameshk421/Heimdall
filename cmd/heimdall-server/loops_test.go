@@ -81,7 +81,7 @@ func TestLoopsStartAndJoinRoomStreamAndGitHubCommentConsumers(t *testing.T) {
 	defer cancel()
 	room := &blockingRoomStream{started: make(chan struct{}, 1)}
 	comments := &recordingCommentPoller{started: make(chan struct{}, 1)}
-	a := &app{poller: &fakePoller{}, drainer: &recordingDrainer{}, roomStream: room, comments: comments, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour}
+	a := &app{pollers: []poller{&fakePoller{}}, drainer: &recordingDrainer{}, roomStream: room, comments: comments, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour}
 	done := make(chan struct{})
 	go func() { a.loops(ctx); close(done) }()
 	select {
@@ -115,9 +115,9 @@ func TestPollLoopKeepsPollingAfterAPollError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	fp := &fakePoller{failFirst: 3, cancelAt: 5, cancel: cancel}
-	a := &app{poller: fp, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Millisecond}
+	a := &app{pollers: []poller{fp}, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Millisecond}
 
-	a.pollLoop(ctx, make(chan struct{}, 1))
+	a.pollLoop(ctx, fp, make(chan struct{}, 1))
 
 	require.Equal(t, 5, fp.calls, "three failed polls must not stop the loop")
 }
@@ -127,10 +127,10 @@ func TestPollLoopWakesTheDrainerAfterEachPoll(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	fp := &fakePoller{cancelAt: 1, cancel: cancel}
-	a := &app{poller: fp, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Hour}
+	a := &app{pollers: []poller{fp}, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Hour}
 	wake := make(chan struct{}, 1)
 
-	a.pollLoop(ctx, wake)
+	a.pollLoop(ctx, fp, wake)
 
 	require.Len(t, wake, 1, "the last poll left a wake for the drainer")
 }
@@ -141,7 +141,7 @@ func TestLoopsRunTheDrainer(t *testing.T) {
 	defer cancel()
 	d := &recordingDrainer{}
 	a := &app{
-		poller: &fakePoller{}, drainer: d, logger: discardLogger(), clock: clock.System{},
+		pollers: []poller{&fakePoller{}}, drainer: d, logger: discardLogger(), clock: clock.System{},
 		pollEvery: time.Hour, drainTick: time.Hour,
 	}
 	done := make(chan struct{})
@@ -162,7 +162,7 @@ func TestLoopsWaitForTheDrainerBeforeReturning(t *testing.T) {
 	defer cancel()
 	d := &blockingDrainer{release: make(chan struct{})}
 	a := &app{
-		poller: &fakePoller{}, drainer: d, logger: discardLogger(), clock: clock.System{},
+		pollers: []poller{&fakePoller{}}, drainer: d, logger: discardLogger(), clock: clock.System{},
 		pollEvery: time.Hour, drainTick: time.Hour,
 	}
 	returned := make(chan struct{})
@@ -266,7 +266,7 @@ func TestLoopsRunTheSyncer(t *testing.T) {
 	fs := &fakeSyncer{}
 	d := &recordingDrainer{}
 	a := &app{
-		poller: &fakePoller{}, syncer: fs, drainer: d, logger: discardLogger(), clock: clock.System{},
+		pollers: []poller{&fakePoller{}}, syncer: fs, drainer: d, logger: discardLogger(), clock: clock.System{},
 		pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour,
 	}
 	done := make(chan struct{})
@@ -287,7 +287,7 @@ func TestLoopsWaitForTheSyncerBeforeReturning(t *testing.T) {
 	s := &blockingSyncer{started: make(chan struct{}, 1), release: make(chan struct{})}
 	d := &recordingDrainer{}
 	a := &app{
-		poller: &fakePoller{}, syncer: s, drainer: d, logger: discardLogger(), clock: clock.System{},
+		pollers: []poller{&fakePoller{}}, syncer: s, drainer: d, logger: discardLogger(), clock: clock.System{},
 		pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour,
 	}
 	returned := make(chan struct{})

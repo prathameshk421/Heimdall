@@ -56,7 +56,8 @@ type adapters struct {
 	agents            config.Agents
 	tokens            mcp.Tokens
 	projects          projectRepos
-	project           string
+	projectKeys       []string
+	projectTickets    map[string]ports.TicketReader
 	trackerProvider   string
 	repos             []change.Repo
 	provisioner       ports.AgentProvisioner
@@ -90,11 +91,11 @@ type adapterFactory struct {
 // selectAdapters checks every slice selection against the registry and builds the adapters it names. It refuses a
 // missing or unknown selection before any adapter is built, and it names the heimdall.toml key of each problem.
 func selectAdapters(cfg config.Config, d deps) (adapters, error) {
-	projects, project, repos, err := projectsOf(cfg)
+	projects, keys, repos, err := projectsOf(cfg)
 	if err != nil {
 		return adapters{}, err
 	}
-	f := adapterFactory{d: d, clk: clock.System{}, wait: clock.Wait, random: jitter{}, project: project}
+	f := adapterFactory{d: d, clk: clock.System{}, wait: clock.Wait, random: jitter{}, project: keys[0]}
 	reg, err := registry.Default(f.entries())
 	if err != nil {
 		return adapters{}, fmt.Errorf("register adapters: %w", err)
@@ -112,10 +113,12 @@ func selectAdapters(cfg config.Config, d deps) (adapters, error) {
 		return adapters{}, fmt.Errorf("heimdall.toml: %w", errors.Join(problems...))
 	}
 	trackerProvider, _ := cfg.Selection(string(registry.KindTracker))
-	out := adapters{projects: projects, project: project, repos: repos, agents: cfg.Agents, trackerProvider: trackerProvider}
-	if out.tickets, err = selected[ports.TicketReader](cfg, reg, registry.KindTracker); err != nil {
+	out := adapters{projects: projects, projectKeys: keys, repos: repos, agents: cfg.Agents, trackerProvider: trackerProvider}
+	if out.projectTickets, err = projectTicketReaders(cfg, f, keys); err != nil {
 		return adapters{}, err
 	}
+	// Ticket lookups by key use the first reader: the Jira reader's project only scopes the change query.
+	out.tickets = out.projectTickets[keys[0]]
 	if out.vcs, err = selected[vcsPort](cfg, reg, registry.KindVCS); err != nil {
 		return adapters{}, err
 	}
@@ -193,21 +196,49 @@ func selected[T any](cfg config.Config, reg *registry.Registry, kind registry.Ki
 
 // projectsOf maps each tracker project to its repository and lists the watched repositories. The slice polls one Jira
 // project, because the Jira client reads one project and the cursor has one source; a config with more projects is refused.
-func projectsOf(cfg config.Config) (projectRepos, string, []change.Repo, error) {
-	if len(cfg.Projects) != 1 {
-		return nil, "", nil, fmt.Errorf("the slice polls one tracker project, but heimdall.toml maps %d", len(cfg.Projects))
+func projectsOf(cfg config.Config) (projectRepos, []string, []change.Repo, error) {
+	if len(cfg.Projects) == 0 {
+		return nil, nil, nil, fmt.Errorf("projects: heimdall.toml maps no tracker project")
 	}
 	out := projectRepos{}
+	var keys []string
 	var repos []change.Repo
 	for _, p := range cfg.Projects {
 		repo, err := change.ParseRepo(p.Repo)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("projects %s: %w", p.TrackerProject, err)
+			return nil, nil, nil, fmt.Errorf("projects %s: %w", p.TrackerProject, err)
+		}
+		if _, dup := out[p.TrackerProject]; dup {
+			return nil, nil, nil, fmt.Errorf("projects %s: mapped twice", p.TrackerProject)
 		}
 		out[p.TrackerProject] = repo
+		keys = append(keys, p.TrackerProject)
 		repos = append(repos, repo)
 	}
-	return out, cfg.Projects[0].TrackerProject, repos, nil
+	return out, keys, repos, nil
+}
+
+// projectTicketReaders builds one tracker reader per project, so each project's poll queries only that project
+// (A10 item 10).
+func projectTicketReaders(cfg config.Config, f adapterFactory, keys []string) (map[string]ports.TicketReader, error) {
+	if provider, _ := cfg.Selection(string(registry.KindTracker)); provider == "file" && len(keys) != 1 {
+		return nil, fmt.Errorf("projects: the file tracker polls one project, but heimdall.toml maps %d", len(keys))
+	}
+	out := make(map[string]ports.TicketReader, len(keys))
+	for _, key := range keys {
+		fk := f
+		fk.project = key
+		reg, err := registry.Default(fk.entries())
+		if err != nil {
+			return nil, fmt.Errorf("register adapters for %s: %w", key, err)
+		}
+		t, err := selected[ports.TicketReader](cfg, reg, registry.KindTracker)
+		if err != nil {
+			return nil, err
+		}
+		out[key] = t
+	}
+	return out, nil
 }
 
 // entries lists the adapters the server knows, by kind and name.
