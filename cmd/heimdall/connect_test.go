@@ -61,7 +61,7 @@ func TestDefaultRegistryDescribesPlannedEntries(t *testing.T) {
 		{Name: "mattermost", Kind: registry.KindChat, RequiredConfig: []string{"mattermost_token"}},
 		{Name: "switch", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
 		{Name: "teams", Kind: registry.KindChat},
-		{Name: "opencode", Kind: registry.KindAgentRuntime, RequiredConfig: []string{"openrouter_api_key"}},
+		{Name: "switchroom", Kind: registry.KindAgentRuntime, RequiredConfig: []string{"openrouter_api_key"}},
 		{Name: "graphiti", Kind: registry.KindMemory},
 	}, reg.Describe())
 }
@@ -159,7 +159,7 @@ func TestConnectCheckIsNonInteractiveAndChecksEveryRegisteredIntegration(t *test
 	require.Equal(t, 0, code, errOut.String())
 	require.Contains(t, out.String(), "github")
 	require.Contains(t, out.String(), "jira")
-	require.Contains(t, out.String(), "opencode")
+	require.Contains(t, out.String(), "switchroom")
 	require.Contains(t, out.String(), "graphiti")
 	require.Empty(t, errOut.String())
 }
@@ -177,7 +177,7 @@ func TestConnectPlansContainResumableCoreIntegrationHandoffs(t *testing.T) {
 		{registry.KindVCS, "github", "approve and install the GitHub App from its manifest"},
 		{registry.KindTracker, "jira", "jira.base_url and jira.project_keys"},
 		{registry.KindChat, "switch", "coordinator identity"},
-		{registry.KindAgentRuntime, "opencode", "OpenCode 1.19.5"},
+		{registry.KindAgentRuntime, "switchroom", "OpenCode 1.19.5"},
 		{registry.KindMemory, "graphiti", "Compose checks Graphiti health"},
 	}
 	for _, tc := range cases {
