@@ -313,7 +313,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	checks := &jiraJourneyChecks{runs: []prsync.CheckRun{{ID: "check-1", Name: "ci", Status: prsync.CheckCompleted,
 		Conclusion: change.CIFailure, SHA: acceptanceCommitSHA}}}
 	syncer, err := prsync.New(prsync.Config{
-		Repos: []change.Repo{ciPR.Repo}, PRs: jiraJourneyPRs{pr: ciPR}, Intake: jiraJourneyIntake{cid: cid},
+		Repos: []change.Repo{ciPR.Repo}, PRs: jiraJourneyPRs{pr: ciPR}, Streams: store, Intake: jiraJourneyIntake{cid: cid},
 		Reviews: jiraJourneyReviews{}, Checks: checks, Gate: &jiraJourneyGate{}, Events: store, Clock: clk, IDs: gen,
 	})
 	require.NoError(t, err)
@@ -449,10 +449,15 @@ func (p jiraJourneyPRs) OpenPRs(context.Context, change.Repo) ([]ports.PR, error
 	return []ports.PR{p.pr}, nil
 }
 
+// PR returns the one pull request, which stays open in this journey.
+func (p jiraJourneyPRs) PR(context.Context, change.Repo, int) (ports.PR, error) {
+	return p.pr, nil
+}
+
 type jiraJourneyIntake struct{ cid id.ChangeID }
 
-func (i jiraJourneyIntake) HandlePR(context.Context, change.Repo, int) (id.ChangeID, error) {
-	return i.cid, nil
+func (i jiraJourneyIntake) HandlePR(context.Context, change.Repo, int) (prsync.Handled, error) {
+	return prsync.Handled{Change: i.cid}, nil
 }
 
 type jiraJourneyReviews struct{}

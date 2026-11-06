@@ -48,6 +48,8 @@ const (
 	pollInterval = 15 * time.Second
 	// syncInterval is the wait between two pull request syncs.
 	syncInterval = 10 * time.Second
+	// reconcileInterval is the wait between two reconcile passes, which also run at boot (TECH_SPEC 2.2, D56).
+	reconcileInterval = 5 * time.Minute
 	// drainTick is the longest the outbox waits between two batches when no wake arrives.
 	drainTick = 2 * time.Second
 	// maxAttempts is the task budget of a retry (engine.Config.MaxAttempts). The slice has no retry, so it is a bound only.
@@ -190,6 +192,7 @@ type drainer interface {
 // syncer is the part of prsync.Syncer the loop uses. A test supplies a fake one.
 type syncer interface {
 	SyncOnce(ctx context.Context) (prsync.Result, error)
+	Reconcile(ctx context.Context) (prsync.Result, error)
 }
 
 type roomStreamRunner interface{ Run(context.Context) error }
@@ -615,7 +618,7 @@ func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports
 }
 
 // assembleSyncer wires the policy decoder, gate source, evaluator, intake and PR syncer.
-func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, error) {
+func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, error) {
 	gateSrc, err := gateuse.NewSource(gateuse.SourceConfig{
 		PRs:    ad.vcs,
 		Code:   ad.vcs,
@@ -647,7 +650,8 @@ func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk port
 	sync, err := prsync.New(prsync.Config{
 		Repos:   ad.repos,
 		PRs:     ad.vcs,
-		Intake:  prIntake{in: intakeCase},
+		Streams: store,
+		Intake:  syncIntake{in: intakeCase},
 		Reviews: reviewsAdapter{reader: ad.vcs},
 		Checks:  checksAdapter{reader: ad.vcs},
 		Gate:    prGate{eval: gateEval},

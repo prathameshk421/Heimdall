@@ -30,8 +30,18 @@
 //  4. Check runs: completed check runs on the PR head commit produce ci.reported events. In-progress or conclusion-less
 //     runs append nothing. Check runs for old heads are ignored. Deduplication suppresses runs whose (check, sha,
 //     conclusion) matches the latest ci.reported for that check.
-//  5. Gate evaluation: Gate.Evaluate is called for every change that received at least one new event or whose PR head
-//     changed. Unchanged pull requests do not run the gate.
+//  5. Gate evaluation: Gate.Evaluate is called for every change that received at least one new event, whose PR head
+//     changed in this process, or for which Intake appended pr.opened or pr.pushed (Handled.Appended). The last case
+//     covers a head that moved while the server was down: after a restart the in-memory head is gone. Unchanged pull
+//     requests do not run the gate.
+//
+// # Reconcile (boot and every 5 minutes)
+//
+// OpenPRs lists open pull requests only, so SyncOnce never sees a PR that closed. Reconcile reads each open pull request
+// stream of the event log (Streams.OpenPRStreams) and fetches it with PRs.PR. A PR that GitHub reports closed gets
+// pr.closed, once, through the same append as rule 2. A PR that is still open is left to SyncOnce. A failed read goes to
+// Result.Failed and the others go on. Reconcile is idempotent: a second call, or a restart, appends nothing for a stream
+// that has pr.closed. The server runs it before the first sync and then every reconcileInterval (TECH_SPEC 2.2, D56).
 //
 // # Consistency and Failure Isolation
 //

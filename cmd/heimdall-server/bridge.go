@@ -106,6 +106,21 @@ func (p prIntake) HandlePR(ctx context.Context, repo change.Repo, n int) (id.Cha
 	return res.Stream, nil
 }
 
+// syncIntake adapts intake.Intake to prsync.Intake. Unlike prIntake it keeps whether intake appended events, which the
+// sync needs after a restart (prsync.Handled).
+type syncIntake struct {
+	in intakeHandler
+}
+
+// HandlePR runs intake for pull request n and returns the change ID it belongs to and whether intake appended events.
+func (p syncIntake) HandlePR(ctx context.Context, repo change.Repo, n int) (prsync.Handled, error) {
+	res, err := p.in.HandlePR(ctx, repo, n)
+	if err != nil {
+		return prsync.Handled{}, err
+	}
+	return prsync.Handled{Change: res.Stream, Appended: res.Appended}, nil
+}
+
 // gateEvaluator is the part of gateuse.Evaluator that prGate needs.
 type gateEvaluator interface {
 	Evaluate(ctx context.Context, changeID id.ChangeID) (gateuse.Result, error)

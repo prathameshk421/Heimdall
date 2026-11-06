@@ -61,9 +61,16 @@ type CheckRun struct {
 	SHA        id.SHA
 }
 
+// Handled says what Intake did for one pull request. Appended is true when Intake appended pr.opened or pr.pushed,
+// which it does when the head is not in the log yet. That is also the first sight of a head after a restart.
+type Handled struct {
+	Change   id.ChangeID
+	Appended bool
+}
+
 // Intake processes an open pull request through slop and intake logic, returning the change it belongs to.
 type Intake interface {
-	HandlePR(ctx context.Context, repo change.Repo, n int) (changeID id.ChangeID, err error)
+	HandlePR(ctx context.Context, repo change.Repo, n int) (Handled, error)
 }
 
 // Gate evaluates the merge rule for a change.
@@ -81,9 +88,10 @@ type Checks interface {
 	CheckRuns(ctx context.Context, repo change.Repo, sha id.SHA) ([]CheckRun, error)
 }
 
-// PRs lists open pull requests for a repository.
+// PRs lists open pull requests for a repository, and reads one pull request in any state.
 type PRs interface {
 	OpenPRs(ctx context.Context, repo change.Repo) ([]ports.PR, error)
+	PR(ctx context.Context, repo change.Repo, n int) (ports.PR, error)
 }
 
 // FailedPR records a failure to sync one pull request.
@@ -105,6 +113,7 @@ type Result struct {
 type Config struct {
 	Repos   []change.Repo
 	PRs     PRs
+	Streams ports.PRStreams
 	Intake  Intake
 	Reviews Reviews
 	Checks  Checks
@@ -118,6 +127,7 @@ type Config struct {
 type Syncer struct {
 	repos   []change.Repo
 	prs     PRs
+	streams ports.PRStreams
 	intake  Intake
 	reviews Reviews
 	checks  Checks
@@ -139,6 +149,9 @@ func New(cfg Config) (*Syncer, error) {
 	}
 	if cfg.PRs == nil {
 		missing = append(missing, "PRs")
+	}
+	if cfg.Streams == nil {
+		missing = append(missing, "Streams")
 	}
 	if cfg.Intake == nil {
 		missing = append(missing, "Intake")
@@ -167,6 +180,7 @@ func New(cfg Config) (*Syncer, error) {
 	return &Syncer{
 		repos:        cfg.Repos,
 		prs:          cfg.PRs,
+		streams:      cfg.Streams,
 		intake:       cfg.Intake,
 		reviews:      cfg.Reviews,
 		checks:       cfg.Checks,
@@ -178,6 +192,37 @@ func New(cfg Config) (*Syncer, error) {
 		lastHeads:    make(map[id.ChangeID]id.SHA),
 		lastVersions: make(map[id.ChangeID]int64),
 	}, nil
+}
+
+// Reconcile is the boot pass (TECH_SPEC 2.2, D56). It reads each pull request that the event log still holds as open,
+// and appends pr.closed for each one that GitHub now reports closed: a PR merged or closed while the server was down
+// never reaches SyncOnce, because OpenPRs lists open pull requests only. A pull request that is still open is left to
+// SyncOnce. A failed read is named in Failed and the next pull request goes on. It is idempotent: a stream that has
+// pr.closed already is skipped, so a restart or a second call appends nothing.
+func (s *Syncer) Reconcile(ctx context.Context) (Result, error) {
+	streams, err := s.streams.OpenPRStreams(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("list open pull request streams: %w", err)
+	}
+	var res Result
+	for _, st := range streams {
+		pr, err := s.prs.PR(ctx, st.Repo, st.Number)
+		if err != nil {
+			res.Failed = append(res.Failed, FailedPR{Repo: st.Repo, Number: st.Number,
+				Err: fmt.Errorf("read pull request %s#%d: %w", st.Repo, st.Number, err)})
+			continue
+		}
+		if pr.State != ports.PRStateClosed {
+			continue
+		}
+		appended, err := s.appendClosedOnce(ctx, st.Change, st.Repo, pr)
+		if err != nil {
+			res.Failed = append(res.Failed, FailedPR{Repo: st.Repo, Number: st.Number, Err: err})
+			continue
+		}
+		res.Appended += appended
+	}
+	return res, nil
 }
 
 // SyncOnce runs one synchronization cycle across all configured repositories.
@@ -199,20 +244,30 @@ func (s *Syncer) SyncOnce(ctx context.Context) (Result, error) {
 	return res, nil
 }
 
+// intakeChange runs intake for a pull request. When intake fails for a closed PR, the change comes from the branch or
+// title, so its pr.closed still lands on the right stream.
+func (s *Syncer) intakeChange(ctx context.Context, repo change.Repo, pr ports.PR) (Handled, error) {
+	handled, err := s.intake.HandlePR(ctx, repo, pr.Number)
+	if err == nil {
+		return handled, nil
+	}
+	if pr.State != ports.PRStateClosed {
+		return Handled{}, fmt.Errorf("intake PR %s#%d: %w", repo, pr.Number, err)
+	}
+	derived, derr := changeIDForPR(pr)
+	if derr != nil {
+		return Handled{}, fmt.Errorf("intake PR %s#%d: %w", repo, pr.Number, err)
+	}
+	return Handled{Change: derived}, nil
+}
+
 // syncPR synchronizes a single pull request.
 func (s *Syncer) syncPR(ctx context.Context, repo change.Repo, pr ports.PR, res *Result) error {
-	changeID, err := s.intake.HandlePR(ctx, repo, pr.Number)
+	handled, err := s.intakeChange(ctx, repo, pr)
 	if err != nil {
-		if pr.State == ports.PRStateClosed {
-			if derived, derr := changeIDForPR(pr); derr == nil {
-				changeID = derived
-			} else {
-				return fmt.Errorf("intake PR %s#%d: %w", repo, pr.Number, err)
-			}
-		} else {
-			return fmt.Errorf("intake PR %s#%d: %w", repo, pr.Number, err)
-		}
+		return err
 	}
+	changeID := handled.Change
 
 	if pr.State == ports.PRStateClosed {
 		appended, err := s.appendClosedOnce(ctx, changeID, repo, pr)
@@ -239,7 +294,9 @@ func (s *Syncer) syncPR(ctx context.Context, repo change.Repo, pr ports.PR, res 
 	}
 	res.Appended += appended
 
-	if appended > 0 || headChanged {
+	// handled.Appended covers a head the log did not hold yet. After a restart headChanged is false, because the
+	// in-memory head is gone, so intake's append is the only sign that the gate must run again.
+	if appended > 0 || headChanged || handled.Appended {
 		if err := s.gate.Evaluate(ctx, changeID); err != nil {
 			return fmt.Errorf("evaluate gate for %s: %w", changeID, err)
 		}

@@ -43,3 +43,16 @@ type Outbox interface {
 
 // ErrEffectLeased is returned when a keyed effect is held by another worker's live lease.
 var ErrEffectLeased = errors.New("effect has a live lease")
+
+// OpenPRStream is one change whose latest pull request has no pr.closed event in the log.
+type OpenPRStream struct {
+	Change id.ChangeID
+	Repo   change.Repo
+	Number int
+}
+
+// PRStreams lists the changes whose pull request is still open in the event log, so the reconciler can ask GitHub
+// about each one (TECH_SPEC 2.2, D56). Consumer: internal/app/prsync. Adapter: internal/adapters/postgres.
+type PRStreams interface {
+	OpenPRStreams(ctx context.Context) ([]OpenPRStream, error)
+}

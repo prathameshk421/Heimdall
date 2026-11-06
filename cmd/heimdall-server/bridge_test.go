@@ -229,6 +229,15 @@ func TestPRIntakeReturnsChangeIDFromIntakeResult(t *testing.T) {
 	require.Equal(t, id.ChangeID("PAY-1"), cid)
 }
 
+// The sync adapter keeps whether intake appended events, so a restarted sync can re-run the gate (prsync.Handled).
+func TestSyncIntakeReturnsChangeIDAndAppendedFromIntakeResult(t *testing.T) {
+	h := &fakeIntakeHandler{res: intake.Result{Stream: id.ChangeID("PAY-1"), Appended: true}}
+	si := syncIntake{in: h}
+	got, err := si.HandlePR(context.Background(), change.Repo("acme/pay"), 1)
+	require.NoError(t, err)
+	require.Equal(t, prsync.Handled{Change: id.ChangeID("PAY-1"), Appended: true}, got)
+}
+
 func TestPRIntakePropagatesError(t *testing.T) {
 	boom := errors.New("intake failed")
 	h := &fakeIntakeHandler{err: boom}

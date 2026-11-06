@@ -15,11 +15,11 @@ Live status for `IMPLEMENTATION_PLAN.md` (the plan holds the details, refs and g
 | G1 skeleton and frozen interfaces | 3 | 8 | 13 |
 | G2 walking skeleton | 4 | 7 | 23 |
 | G3 review loop | 5 | 4 | 11 |
-| G4 product experience, agent quality, freeze | 6 | 0 | 16 |
+| G4 product experience, agent quality, freeze | 6 | 2 | 16 |
 | G5 ship | 7 | 0 | 5 |
 | G6 core workflow readiness | 8 | 0 | 5 |
 | G7 platform connections | 9 | 0 | 3 |
-| **All** | | **32** | **97** |
+| **All** | | **33** | **97** |
 
 The build order is `MVP_SCENARIOS.md` section 7. Gates are checkpoints on it.
 
@@ -142,7 +142,7 @@ T01, T02 and T03 in the next table finish Stage 1.
 | todo | T61 | Test sign-off for sensitive domains (`approve-tests`) | Dev 2 |  | T30, T32 | Money-movement ticket waits for approval before "build" is announced |  |
 | todo | T62 | Security: untrusted wrapping, injection heuristics, server-side injection invariants in CI on every push; the 12-payload suite against live agents as a budgeted eval (D115) | Dev 2 |  | T44 | Zero state changes from injections |  |
 | todo | T63 | Read-only dashboard with SSE (changes, timeline, blockers, findings, open asks) | Dev 3 |  | T47 | Live updates during a full run |  |
-| todo | T64 | Boot reconciliation | Dev 3 |  | T24, T25 | Stopped-VM events recovered after start |  |
+| done | T64 | Boot reconciliation | Dev 3 |  | T24, T25 | Stopped-VM events recovered after start | `Syncer.Reconcile` (boot, then every 5 min, D56) appends `pr.closed` for a PR merged while the server was down, once. A head that moved while down re-runs the gate (intake's append is the signal). Evidence: 6 new prsync unit tests (red on assertions first; mutations of the boot call and the gate condition caught), 1 Postgres component test for `OpenPRStreams`, 2 loop-order tests, 1 server component test (3 boots, one `pr.closed`, real Postgres). Ported onto `heimdall-build` (commit `e22f5d6`): `make fast` exit 0 (3701 tests, lint 0 issues); `make race` exit 0 on the old base. Not green in `make verify`, both pre-existing and outside T64: `harness-test` 2 of 129 (docker mount cases, GNU coreutils PATH), `vuln` (klauspost/compress v1.20.1). Not verified: live GitHub, a real VM stop, outbox leases of a crashed process (they expire after 3 min). Jira needs no change: the ticket cursor already resumes. |
 | todo | T65 | Chat memory: change-room digest at close; listed channels with keywords or `heimdall remember` | Dev 4 |  | T49 | Digest episode appears after merge |  |
 | todo | T66 | Baselines: CodeRabbit and plain DeepSeek reviewer on `good-pr`, saved verbatim | Dev 4 |  | T31 | Files in `seed/baseline/` |  |
 | todo | T67 | Teams: `chat.bridge: teams`, thread replies for asks, `heimdall …` tested | Teams friend + Dev 1 |  | T09, T32 | A change room runs in Teams |  |

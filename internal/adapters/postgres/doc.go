@@ -6,6 +6,8 @@
 //   - Migrate(ctx, pool): applies the embedded migrations (forward only). Safe to run on every boot.
 //   - NewStore(pool) *Store: implements ports.EventStore (Append, Load) and ports.Outbox (Pending, Claim, Done, Fail).
 //   - Store.OpenRooms: discovers persisted nonterminal changes with rooms by validating and replaying event history.
+//   - Store.OpenPRStreams(ctx): implements ports.PRStreams. The changes whose latest pr.opened has no pr.closed after it
+//     (the boot reconcile, D56). Read only.
 //   - Store.GetCursor, SetCursor: the cursor table (pollers, D64; the Switch stream, D46). A missing cursor is
 //     ports.ErrNotFound.
 //   - Store.SeenDelivery(provider, id): webhook dedupe. It returns true when the delivery was already recorded.

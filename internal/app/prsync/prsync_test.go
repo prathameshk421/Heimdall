@@ -73,21 +73,62 @@ func (f *fakeEvents) Load(_ context.Context, changeID id.ChangeID) ([]change.Eve
 	return append([]change.Event(nil), f.streams[changeID]...), nil
 }
 
+// OpenPRStreams lists the changes whose latest pr.opened has no pr.closed after it, as the Postgres query does.
+func (f *fakeEvents) OpenPRStreams(_ context.Context) ([]ports.OpenPRStream, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []ports.OpenPRStream
+	for cid, evs := range f.streams {
+		var opened *change.Event
+		for i := range evs {
+			if evs[i].Type == change.EventPROpened {
+				opened = &evs[i]
+			}
+		}
+		if opened == nil {
+			continue
+		}
+		closed := false
+		for _, e := range evs {
+			if e.Type == change.EventPRClosed && e.Version > opened.Version {
+				closed = true
+			}
+		}
+		if closed {
+			continue
+		}
+		var pl change.PROpened
+		if err := json.Unmarshal(opened.Payload, &pl); err != nil {
+			return nil, err
+		}
+		out = append(out, ports.OpenPRStream{Change: cid, Repo: pl.Repo, Number: pl.Number})
+	}
+	return out, nil
+}
+
 func (f *fakeEvents) setStream(changeID id.ChangeID, evs []change.Event) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.streams[changeID] = append([]change.Event(nil), evs...)
 }
 
-// fakePRs implements prsync.PRs.
+// fakePRs implements prsync.PRs. current is what GitHub reports for one pull request in any state; the open list is
+// built from prs and never holds a closed pull request, as the real OpenPRs call.
 type fakePRs struct {
-	mu  sync.Mutex
-	prs map[change.Repo][]ports.PR
-	err map[change.Repo]error
+	mu      sync.Mutex
+	prs     map[change.Repo][]ports.PR
+	err     map[change.Repo]error
+	current map[int]ports.PR
+	readErr map[int]error
 }
 
 func newFakePRs() *fakePRs {
-	return &fakePRs{prs: make(map[change.Repo][]ports.PR), err: make(map[change.Repo]error)}
+	return &fakePRs{
+		prs:     make(map[change.Repo][]ports.PR),
+		err:     make(map[change.Repo]error),
+		current: make(map[int]ports.PR),
+		readErr: make(map[int]error),
+	}
 }
 
 func (f *fakePRs) OpenPRs(_ context.Context, repo change.Repo) ([]ports.PR, error) {
@@ -99,30 +140,44 @@ func (f *fakePRs) OpenPRs(_ context.Context, repo change.Repo) ([]ports.PR, erro
 	return append([]ports.PR(nil), f.prs[repo]...), nil
 }
 
-// fakeIntake implements prsync.Intake.
+func (f *fakePRs) PR(_ context.Context, _ change.Repo, n int) (ports.PR, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.readErr[n]; err != nil {
+		return ports.PR{}, err
+	}
+	pr, ok := f.current[n]
+	if !ok {
+		return ports.PR{}, ports.ErrNotFound
+	}
+	return pr, nil
+}
+
+// fakeIntake implements prsync.Intake. appended says which pull requests had a new head to append (see Handled).
 type fakeIntake struct {
 	mu       sync.Mutex
 	changeID map[int]id.ChangeID
 	err      map[int]error
+	appended map[int]bool
 	calls    []int
 }
 
 func newFakeIntake() *fakeIntake {
-	return &fakeIntake{changeID: make(map[int]id.ChangeID), err: make(map[int]error)}
+	return &fakeIntake{changeID: make(map[int]id.ChangeID), err: make(map[int]error), appended: make(map[int]bool)}
 }
 
-func (f *fakeIntake) HandlePR(_ context.Context, _ change.Repo, n int) (id.ChangeID, error) {
+func (f *fakeIntake) HandlePR(_ context.Context, _ change.Repo, n int) (prsync.Handled, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, n)
 	if err := f.err[n]; err != nil {
-		return "", err
+		return prsync.Handled{}, err
 	}
 	cid, ok := f.changeID[n]
 	if !ok {
 		cid = id.ChangeID(fmt.Sprintf("PAY-%d", n))
 	}
-	return cid, nil
+	return prsync.Handled{Change: cid, Appended: f.appended[n]}, nil
 }
 
 // fakeReviews implements prsync.Reviews.
@@ -232,9 +287,18 @@ func newRig(t *testing.T) *rig {
 		ids:     &seqIDs{},
 		clock:   fakeClock{at: testNow},
 	}
+	r.syncer = r.restart(t)
+	return r
+}
+
+// restart builds a new Syncer on the same event log and GitHub fakes. It has no memory of earlier syncs, as after a
+// restart of the server.
+func (r *rig) restart(t *testing.T) *prsync.Syncer {
+	t.Helper()
 	s, err := prsync.New(prsync.Config{
 		Repos:   r.repos,
 		PRs:     r.prs,
+		Streams: r.events,
 		Intake:  r.intake,
 		Reviews: r.reviews,
 		Checks:  r.checks,
@@ -244,8 +308,7 @@ func newRig(t *testing.T) *rig {
 		IDs:     r.ids,
 	})
 	require.NoError(t, err)
-	r.syncer = s
-	return r
+	return s
 }
 
 func samplePR(n int, sha id.SHA, state ports.PRState) ports.PR {
@@ -717,6 +780,7 @@ func TestNewRequiresAllPorts(t *testing.T) {
 	cfg := prsync.Config{
 		Repos:   r.repos,
 		PRs:     r.prs,
+		Streams: r.events,
 		Intake:  r.intake,
 		Reviews: r.reviews,
 		Checks:  r.checks,
@@ -740,4 +804,134 @@ func TestNewRequiresAllPorts(t *testing.T) {
 	_, err = prsync.New(bad)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Repos")
+
+	bad = cfg
+	bad.Streams = nil
+	_, err = prsync.New(bad)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Streams")
+}
+
+// seedMergedWhileDown is the state a server leaves behind when it stops with PR n open: the log holds pr.opened and
+// GitHub later merges the PR while the server is off.
+func (r *rig) seedMergedWhileDown(changeID id.ChangeID, n int) {
+	r.seedInitialPROpened(changeID, n, head1)
+	merged := samplePR(n, head1, ports.PRStateClosed)
+	merged.Merged = true
+	r.prs.current[n] = merged
+}
+
+// The open list never holds a closed pull request. Without a reconcile, a PR merged while the server was down keeps
+// its open stream forever (D56).
+func TestReconcileRecordsPRMergedWhileDown(t *testing.T) {
+	r := newRig(t)
+	changeID := id.ChangeID("PAY-10")
+	r.seedMergedWhileDown(changeID, 10)
+
+	res, err := r.syncer.Reconcile(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, res.Failed)
+	require.Equal(t, 1, res.Appended)
+
+	evs, err := r.events.Load(context.Background(), changeID)
+	require.NoError(t, err)
+	require.Len(t, evs, 2)
+	require.Equal(t, change.EventPRClosed, evs[1].Type)
+	var cl change.PRClosed
+	require.NoError(t, json.Unmarshal(evs[1].Payload, &cl))
+	require.True(t, cl.Merged)
+	require.Equal(t, 10, cl.Number)
+	require.Equal(t, testRepo, cl.Repo)
+}
+
+// A second reconcile, a restart, or a sync after the reconcile adds no second pr.closed.
+func TestReconcileIsIdempotentAcrossRestarts(t *testing.T) {
+	r := newRig(t)
+	changeID := id.ChangeID("PAY-10")
+	r.seedMergedWhileDown(changeID, 10)
+
+	_, err := r.syncer.Reconcile(context.Background())
+	require.NoError(t, err)
+	again, err := r.syncer.Reconcile(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, again.Appended)
+
+	fresh := r.restart(t)
+	res, err := fresh.Reconcile(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, res.Appended)
+	_, err = fresh.SyncOnce(context.Background())
+	require.NoError(t, err)
+
+	evs, err := r.events.Load(context.Background(), changeID)
+	require.NoError(t, err)
+	require.Len(t, evs, 2, "exactly one pr.closed")
+}
+
+// A pull request that is still open is left to SyncOnce: the reconcile appends nothing for it.
+func TestReconcileLeavesOpenPRAlone(t *testing.T) {
+	r := newRig(t)
+	changeID := id.ChangeID("PAY-10")
+	r.seedInitialPROpened(changeID, 10, head1)
+	r.prs.current[10] = samplePR(10, head1, ports.PRStateOpen)
+
+	res, err := r.syncer.Reconcile(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, res.Appended)
+	require.Empty(t, res.Failed)
+
+	evs, err := r.events.Load(context.Background(), changeID)
+	require.NoError(t, err)
+	require.Len(t, evs, 1)
+}
+
+// One pull request that cannot be read is named in Failed, and the others are still reconciled.
+func TestReconcileReadFailureDoesNotStopOthers(t *testing.T) {
+	r := newRig(t)
+	r.seedMergedWhileDown(id.ChangeID("PAY-10"), 10)
+	r.seedMergedWhileDown(id.ChangeID("PAY-11"), 11)
+	r.prs.readErr[10] = ports.ErrUnavailable
+
+	res, err := r.syncer.Reconcile(context.Background())
+	require.NoError(t, err)
+	require.Len(t, res.Failed, 1)
+	require.Equal(t, 10, res.Failed[0].Number)
+	require.ErrorIs(t, res.Failed[0].Err, ports.ErrUnavailable)
+	require.Equal(t, 1, res.Appended)
+
+	evs, err := r.events.Load(context.Background(), id.ChangeID("PAY-11"))
+	require.NoError(t, err)
+	require.Len(t, evs, 2)
+}
+
+// The head moved to head2 while the server was down. The first sync after the restart must evaluate the gate for
+// the new head, because intake appended the pr.pushed. The in-memory head of the old process is gone.
+func TestRestartedSyncEvaluatesGateWhenIntakeAppendedAHead(t *testing.T) {
+	r := newRig(t)
+	changeID := id.ChangeID("PAY-10")
+	r.seedInitialPROpened(changeID, 10, head1)
+	r.prs.prs[testRepo] = []ports.PR{samplePR(10, head2, ports.PRStateOpen)}
+	r.intake.changeID[10] = changeID
+	r.intake.appended[10] = true
+
+	fresh := r.restart(t)
+	res, err := fresh.SyncOnce(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, res.Failed)
+	require.Equal(t, 1, res.Evaluated)
+	require.Equal(t, []id.ChangeID{changeID}, r.gate.evaluated())
+}
+
+// A restarted sync of an unchanged pull request does not run the gate: intake appended nothing.
+func TestRestartedSyncOfUnchangedPRDoesNotEvaluateGate(t *testing.T) {
+	r := newRig(t)
+	changeID := id.ChangeID("PAY-10")
+	r.seedInitialPROpened(changeID, 10, head1)
+	r.prs.prs[testRepo] = []ports.PR{samplePR(10, head1, ports.PRStateOpen)}
+	r.intake.changeID[10] = changeID
+
+	res, err := r.restart(t).SyncOnce(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, res.Evaluated)
+	require.Empty(t, r.gate.evaluated())
 }
