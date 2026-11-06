@@ -456,7 +456,7 @@ func assembleWithBlobs(
 	}
 	p, err := trigger.New(trigger.Config{
 		Tickets:  ad.tickets,
-		Starter:  starter{eng: eng, memory: workflowMemory, store: store},
+		Starter:  starter{eng: eng, memory: workflowMemory, store: store, logger: d.logger},
 		Cursors:  cursorStore{table: store, source: cursorSourcePrefix + ad.project},
 		Projects: ad.projects,
 		Clock:    clk,

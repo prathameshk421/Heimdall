@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -35,15 +36,21 @@ type starter struct {
 	eng    *engine.Engine
 	memory *knowledge.WorkflowIngestor
 	store  ports.EventStore
+	logger *slog.Logger
 }
 
 // Start opens the change. A change that already exists returns an error that wraps ports.ErrVersionConflict.
+// Once the change is durably opened, memory capture is best effort here: the durable workflow backfill replays the
+// stored events from its persisted sequence, so a capture failure must not stop the trigger's cursor from advancing.
 func (s starter) Start(ctx context.Context, first change.Event) error {
 	_, err := s.eng.Start(ctx, first)
 	if err != nil {
 		return err
 	}
-	return s.capture(ctx, first.ChangeID)
+	if err := s.capture(ctx, first.ChangeID); err != nil && s.logger != nil {
+		s.logger.ErrorContext(ctx, "workflow memory capture deferred to durable backfill", "change", first.ChangeID, "error", err)
+	}
+	return nil
 }
 
 func (s starter) capture(ctx context.Context, changeID id.ChangeID) error {
