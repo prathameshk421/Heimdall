@@ -206,11 +206,28 @@ func (l MemoryLabel) Valid() bool {
 // MemoryItem is one fact returned by a search. Only confirmed, non-superseded items are E3 evidence.
 type MemoryItem struct {
 	Ref       string      `json:"ref"`
+	SourceKey string      `json:"source_key,omitempty"`
 	Text      string      `json:"text"`
 	Label     MemoryLabel `json:"label"`
 	SourceURL string      `json:"source_url"`
 	ValidAt   time.Time   `json:"valid_at"`
 	InvalidAt *time.Time  `json:"invalid_at,omitempty"`
+}
+
+// KnowledgeFile records one safe, human-reviewed repository document and its retention metadata.
+type KnowledgeFile struct {
+	Ref        string
+	Repository change.Repo
+	Path       string
+	SHA        id.SHA
+	Group      string
+	SourceURL  string
+	Blob       workflow.BlobRef
+	Kind       string
+	State      string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	ApprovedBy string
 }
 
 // Validate returns every problem with the item.

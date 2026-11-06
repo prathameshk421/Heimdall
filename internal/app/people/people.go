@@ -1,6 +1,7 @@
 package people
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -193,6 +194,19 @@ func (d *Directory) HumanName(ch Channel, sender string) (string, bool) {
 		return "", false
 	}
 	return ident.Name, true
+}
+
+// GroupsForAgent returns the policy teams of the human mapped to a reviewer agent.
+func (d *Directory) GroupsForAgent(ctx context.Context, agent id.AgentName) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	for _, person := range d.persons {
+		if person.agent == string(agent) {
+			return slices.Clone(person.groups), nil
+		}
+	}
+	return nil, fmt.Errorf("agent %q has no mapped person for memory scope", agent)
 }
 
 // human builds the identity of a mapped person. Roles are derived from the policy, so they cannot be set by a command.

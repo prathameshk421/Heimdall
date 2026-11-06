@@ -44,6 +44,18 @@ func (a *app) loops(ctx context.Context) {
 			a.syncLoop(ctx, wake)
 		}()
 	}
+	if a.retention != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); a.knowledgeRetentionLoop(ctx) }()
+	}
+	if a.episodeWorker != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); a.episodeDeliveryLoop(ctx) }()
+	}
+	if a.memoryBackfill != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); a.workflowBackfillLoop(ctx) }()
+	}
 	go func() {
 		defer wg.Done()
 		a.tickLoop(ctx, ticks)
@@ -53,6 +65,49 @@ func (a *app) loops(ctx context.Context) {
 		a.drainLoop(ctx, wake, ticks)
 	}()
 	wg.Wait()
+}
+
+// workflowBackfillLoop retries durable event projection from the last persisted global sequence after startup and on
+// each drain cadence. Queue errors leave the cursor unchanged, so a later pass safely replays stable event keys.
+func (a *app) workflowBackfillLoop(ctx context.Context) {
+	for {
+		if err := a.memoryBackfill(ctx); err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "workflow memory backfill failed; durable cursor will retry", "error", err)
+		}
+		if err := clock.Wait(ctx, drainTick); err != nil {
+			return
+		}
+	}
+}
+
+func (a *app) episodeDeliveryLoop(ctx context.Context) {
+	for {
+		delivered, err := a.episodeWorker.RunOnce(ctx, 100)
+		if err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "memory episode delivery failed; pending episodes will retry", "error", err)
+		} else if err == nil && delivered > 0 {
+			a.logger.InfoContext(ctx, "memory episodes delivered", "count", delivered)
+		}
+		if err := clock.Wait(ctx, drainTick); err != nil {
+			return
+		}
+	}
+}
+
+// knowledgeRetentionLoop expires staged/approved files and deletes their memory episodes and blobs. It runs once at
+// startup and then every interval; errors are logged and retried on the next cadence.
+func (a *app) knowledgeRetentionLoop(ctx context.Context) {
+	for {
+		removed, err := a.retention.Expire(ctx)
+		if err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "knowledge retention sweep failed; the next sweep retries", "error", err)
+		} else if err == nil && removed > 0 {
+			a.logger.InfoContext(ctx, "expired knowledge files removed", "count", removed)
+		}
+		if err := clock.Wait(ctx, knowledgeRetentionInterval); err != nil {
+			return
+		}
+	}
 }
 
 // syncLoop syncs open pull requests, reviews and check runs, then waits for the sync interval, until ctx is done.

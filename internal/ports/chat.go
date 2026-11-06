@@ -17,3 +17,8 @@ type Chat interface {
 	// Read returns the messages after the cursor and the cursor to continue from.
 	Read(ctx context.Context, room change.RoomID, after Cursor) ([]Message, Cursor, error)
 }
+
+// RoomSummarizer extracts an observed change-room digest from already redacted Switch messages.
+type RoomSummarizer interface {
+	SummarizeRoom(context.Context, string, []Message) (string, error)
+}

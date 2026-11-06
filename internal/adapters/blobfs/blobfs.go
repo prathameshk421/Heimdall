@@ -109,8 +109,29 @@ func (s *Store) Get(ctx context.Context, ref workflow.BlobRef) (io.ReadCloser, e
 	return nil, ports.ErrNotFound
 }
 
-func classes() [5]ports.BlobClass {
-	return [5]ports.BlobClass{ports.BlobLog, ports.BlobDiff, ports.BlobBundle, ports.BlobPack, ports.BlobEvidence}
+// Delete removes a blob from its class after the owner has proved no live references remain.
+func (s *Store) Delete(ctx context.Context, class ports.BlobClass, ref workflow.BlobRef) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("delete blob: %w", err)
+	}
+	if !class.Valid() {
+		return fmt.Errorf("delete blob: invalid class %q", class)
+	}
+	hash, ok := parseRef(ref)
+	if !ok {
+		return errors.New("delete blob: invalid reference")
+	}
+	if err := s.root.Remove(blobPath(class, hash)); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ports.ErrNotFound
+		}
+		return fmt.Errorf("delete blob: %w", err)
+	}
+	return nil
+}
+
+func classes() [6]ports.BlobClass {
+	return [6]ports.BlobClass{ports.BlobLog, ports.BlobDiff, ports.BlobBundle, ports.BlobPack, ports.BlobEvidence, ports.BlobKnowledge}
 }
 
 func (s *Store) createTemp(dir string) (*os.File, string, error) {

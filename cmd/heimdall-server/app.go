@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/blobfs"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/graphiti"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/localrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
@@ -20,6 +21,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
@@ -42,6 +44,8 @@ const (
 	syncInterval = 10 * time.Second
 	// drainTick is the longest the outbox waits between two batches when no wake arrives.
 	drainTick = 2 * time.Second
+	// knowledgeRetentionInterval bounds how long expired approved knowledge remains available.
+	knowledgeRetentionInterval = 30 * time.Minute
 	// maxAttempts is the task budget of a retry (engine.Config.MaxAttempts). The slice has no retry, so it is a bound only.
 	maxAttempts = 3
 	// outboxBatch is how many effects one drain claims at once.
@@ -62,15 +66,17 @@ const (
 // client and the timing. Every field is required. openPool and migrate are injected so a test can prove the wiring
 // without a live Postgres; productionDeps fills them with the real pgxpool and migration functions.
 type deps struct {
-	databaseURL string
-	endpoints   endpoints
-	httpClient  *http.Client
-	logger      *slog.Logger
-	pollEvery   time.Duration
-	syncEvery   time.Duration
-	drainTick   time.Duration
-	openPool    func(ctx context.Context, url string) (*pgxpool.Pool, error)
-	migrate     func(ctx context.Context, pool *pgxpool.Pool) error
+	databaseURL    string
+	endpoints      endpoints
+	httpClient     *http.Client
+	logger         *slog.Logger
+	packIdentities packIdentityResolver
+	configuration  config.Config
+	pollEvery      time.Duration
+	syncEvery      time.Duration
+	drainTick      time.Duration
+	openPool       func(ctx context.Context, url string) (*pgxpool.Pool, error)
+	migrate        func(ctx context.Context, pool *pgxpool.Pool) error
 }
 
 // String implements fmt.Stringer, redacting the database URL.
@@ -151,17 +157,21 @@ type endpoints struct {
 
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
 type app struct {
-	pool       *pgxpool.Pool
-	poller     poller
-	drainer    drainer
-	syncer     syncer
-	mcpHandler http.Handler
-	blobs      io.Closer
-	logger     *slog.Logger
-	clock      ports.Clock
-	pollEvery  time.Duration
-	syncEvery  time.Duration
-	drainTick  time.Duration
+	pool           *pgxpool.Pool
+	poller         poller
+	drainer        drainer
+	syncer         syncer
+	mcpHandler     http.Handler
+	packUpload     http.Handler
+	blobs          io.Closer
+	logger         *slog.Logger
+	clock          ports.Clock
+	pollEvery      time.Duration
+	syncEvery      time.Duration
+	drainTick      time.Duration
+	retention      knowledgeRetention
+	episodeWorker  episodeDrainer
+	memoryBackfill func(context.Context) error
 }
 
 // poller is the part of trigger.Poller the loop uses. A test supplies a fake one.
@@ -177,6 +187,14 @@ type drainer interface {
 // syncer is the part of prsync.Syncer the loop uses. A test supplies a fake one.
 type syncer interface {
 	SyncOnce(ctx context.Context) (prsync.Result, error)
+}
+
+type knowledgeRetention interface {
+	Expire(context.Context) (int, error)
+}
+
+type episodeDrainer interface {
+	RunOnce(context.Context, int) (int, error)
 }
 
 // close releases the blob store and the database pool. Call it after the loops have stopped.
@@ -233,9 +251,10 @@ func productionDeps(cfg config.Config, logger *slog.Logger) (deps, error) {
 		return deps{}, err
 	}
 	return deps{
-		databaseURL: databaseURL,
-		httpClient:  &http.Client{},
-		logger:      logger,
+		databaseURL:   databaseURL,
+		httpClient:    &http.Client{},
+		logger:        logger,
+		configuration: cfg,
 		endpoints: endpoints{
 			jiraBaseURL:     cfg.Jira.BaseURL,
 			githubAPI:       githubAPIRoot,
@@ -420,7 +439,11 @@ func assembleWithBlobs(
 	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
 	eng *engine.Engine, gen ports.IDs, clk ports.Clock,
 ) (*app, error) {
-	execs, err := executors(ctx, ad, store, blobs, ingestor{eng: eng}, gen, clk)
+	retention, episodeWorker, workflowMemory, err := assembleKnowledgeRetention(d, ad, store, store, blobs, clk)
+	if err != nil {
+		return nil, err
+	}
+	execs, err := executors(ctx, ad, store, blobs, ingestor{eng: eng, memory: workflowMemory, store: store}, gen, clk)
 	if err != nil {
 		return nil, err
 	}
@@ -433,7 +456,7 @@ func assembleWithBlobs(
 	}
 	p, err := trigger.New(trigger.Config{
 		Tickets:  ad.tickets,
-		Starter:  starter{eng: eng},
+		Starter:  starter{eng: eng, memory: workflowMemory, store: store},
 		Cursors:  cursorStore{table: store, source: cursorSourcePrefix + ad.project},
 		Projects: ad.projects,
 		Clock:    clk,
@@ -446,24 +469,38 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	mcpH, err := assembleMCP(d, ad, store, pool, blobs, gen, clk)
+	mcpH, err := assembleMCP(d, ad, store, pool, blobs, gen, clk, retention)
 	if err != nil {
 		return nil, err
+	}
+	packUpload, err := newPackUploadHandler(d, ad.tokens, blobs, pool)
+	if err != nil {
+		return nil, fmt.Errorf("build pack upload handler: %w", err)
 	}
 	var closer io.Closer
 	if c, ok := blobs.(io.Closer); ok {
 		closer = c
 	}
 	return &app{
-		pool: pool, poller: p, drainer: box, syncer: sync, mcpHandler: mcpH, blobs: closer,
-		logger: d.logger, clock: clk,
+		pool: pool, poller: p, drainer: box, syncer: sync, mcpHandler: mcpH, packUpload: packUpload, blobs: closer,
+		logger: d.logger, clock: clk, retention: retention, episodeWorker: episodeWorker,
+		memoryBackfill: func(ctx context.Context) error {
+			_, err := workflowMemory.Backfill(ctx, store, workflowCursor{table: store}, 250)
+			return err
+		},
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
 }
 
+// mcpStore is the event store plus the durable episode-trust ledger that knowledge search reads.
+type mcpStore interface {
+	ports.EventStore
+	ports.EpisodeSourceTrust
+}
+
 // assembleMCP wires the task index, agent tools service, adapters, and MCP server.
 func assembleMCP(
-	d deps, ad adapters, store ports.EventStore, pool *pgxpool.Pool, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock,
+	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock, files *knowledge.FileService,
 ) (http.Handler, error) {
 	taskIndex := postgres.NewTaskIndex(pool)
 	asker := &chatAsker{chat: ad.chat, store: store, ids: gen}
@@ -486,15 +523,35 @@ func assembleMCP(
 	tracker := &assignmentAgentTracker{agents: make(map[id.TaskID]id.AgentName)}
 	tasksAdp := &tasksAdapter{svc: toolsSvc, tracker: tracker}
 	reviewsAdp := &mcpReviewsAdapter{svc: toolsSvc, tracker: tracker}
+	graphitiCaller, err := graphiti.NewHTTPCaller("http://graphiti:8000/mcp", d.httpClient)
+	if err != nil {
+		return nil, fmt.Errorf("build graphiti caller: %w", err)
+	}
+	memory, err := graphiti.New(graphitiCaller)
+	if err != nil {
+		return nil, fmt.Errorf("build graphiti adapter: %w", err)
+	}
+	knowledgeSvc, err := knowledge.NewSearchService(memory, knowledge.PolicyScopes{Code: ad.vcs, Decode: policyyaml.Decode}, knowledgeQueryAudit{logger: d.logger}, clk, store)
+	if err != nil {
+		return nil, fmt.Errorf("build knowledge service: %w", err)
+	}
 
+	packReader, err := newPackReader(d, blobs, pool, clk, ad.vcs)
+	if err != nil {
+		return nil, err
+	}
+	fileManager := newKnowledgeFileManager(files, ad.vcs)
 	mcpSrv, err := mcp.NewServer(mcp.Deps{
-		Logger:  d.logger,
-		Clock:   clk,
-		Tokens:  tokStore,
-		Tasks:   tasksAdp,
-		Reviews: reviewsAdp,
-		Code:    ad.vcs,
-		Blobs:   blobs,
+		Logger:    d.logger,
+		Clock:     clk,
+		Tokens:    tokStore,
+		Tasks:     tasksAdp,
+		Reviews:   reviewsAdp,
+		Code:      ad.vcs,
+		Blobs:     blobs,
+		Knowledge: knowledgeSvc,
+		Packs:     packReader,
+		Files:     fileManager,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build mcp server: %w", err)

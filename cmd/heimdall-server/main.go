@@ -60,6 +60,9 @@ func run(
 			mux := http.NewServeMux()
 			mux.Handle("/", handler)
 			mux.Handle("/mcp", a.mcpHandler)
+			if a.packUpload != nil {
+				mux.Handle("/packs/upload", a.packUpload)
+			}
 			handler = mux
 		}
 	}

@@ -173,7 +173,7 @@ func TestRoomRequestAndMessage(t *testing.T) {
 }
 
 func TestBlobClassValues(t *testing.T) {
-	for _, c := range []ports.BlobClass{ports.BlobLog, ports.BlobDiff, ports.BlobBundle, ports.BlobPack, ports.BlobEvidence} {
+	for _, c := range []ports.BlobClass{ports.BlobLog, ports.BlobDiff, ports.BlobBundle, ports.BlobPack, ports.BlobEvidence, ports.BlobKnowledge} {
 		require.True(t, c.Valid(), c)
 	}
 	require.False(t, ports.BlobClass("video").Valid())

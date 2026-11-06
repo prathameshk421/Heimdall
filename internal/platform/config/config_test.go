@@ -44,6 +44,13 @@ func TestLoadDefaultsSecretsDirWhenAbsent(t *testing.T) {
 	require.Equal(t, ":9000", cfg.Listen)
 }
 
+func TestLoadMapsHumanKnowledgeTokensToNamedSecretFiles(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := Load(writeTOML(t, "secrets_dir = \""+dir+"\"\n"+goodProject+"\n[human_tokens]\nalice = \"alice_mcp_token\"\n"))
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"alice": "alice_mcp_token"}, cfg.HumanTokens)
+}
+
 func TestLoadRefusals(t *testing.T) {
 	dir := t.TempDir()
 	head := "secrets_dir = \"" + dir + "\"\n"
@@ -53,6 +60,7 @@ func TestLoadRefusals(t *testing.T) {
 		wantErr string
 	}{
 		{"unknown top-level key", head + "bogus = 1\n", "bogus"},
+		{"human token with no secret name", head + goodProject + "\n[human_tokens]\nalice = \"\"\n", "human_tokens.alice"},
 		{"unknown key inside a project", head + "[[projects]]\ntracker_project = \"KAN\"\nrepo = \"a/b\"\nbase_branch = \"main\"\nextra = true\n", "extra"},
 		{"empty secrets_dir", "secrets_dir = \"\"\n" + goodProject, "secrets_dir"},
 		{"empty listen", head + "listen = \"\"\n" + goodProject, "listen"},

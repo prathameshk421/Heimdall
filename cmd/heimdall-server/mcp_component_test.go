@@ -49,26 +49,29 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	store := postgres.NewStore(pool)
 
 	cid := id.ChangeID("KAN-1")
-	tid := id.TaskID("task-test-author")
 	now := time.Now().UTC()
 	gen := ids.New()
+	tid := gen.NewTask()
 	clk := clock.System{}
 
 	// Seed triggered and task.assigned in the real Postgres event store
 	trigPayload, err := json.Marshal(change.Triggered{
-		Ticket: cid,
-		Repo:   change.Repo("aarush323/PBL_TOS_RISK_ANALYZER"),
+		Ticket:   cid,
+		Repo:     change.Repo("aarush323/PBL_TOS_RISK_ANALYZER"),
+		Assignee: change.ActorID("test-author"),
+		Source:   change.TriggerJira,
 	})
 	require.NoError(t, err)
 
 	trigEv := change.Event{
-		ID:         gen.NewEvent(),
-		ChangeID:   cid,
-		Version:    1,
-		Type:       change.EventChangeTriggered,
-		Actor:      change.Actor{Kind: change.ActorJira, ID: "jira"},
-		OccurredAt: now.Add(-time.Minute),
-		Payload:    trigPayload,
+		ID:            gen.NewEvent(),
+		ChangeID:      cid,
+		Version:       1,
+		Type:          change.EventChangeTriggered,
+		Actor:         change.Actor{Kind: change.ActorJira, ID: "jira"},
+		CorrelationID: change.CorrelationID("test-correlation"),
+		OccurredAt:    now.Add(-time.Minute),
+		Payload:       trigPayload,
 	}
 
 	taskPayload, err := json.Marshal(change.TaskAssigned{
@@ -81,13 +84,14 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	assignEv := change.Event{
-		ID:         gen.NewEvent(),
-		ChangeID:   cid,
-		Version:    2,
-		Type:       change.EventTaskAssigned,
-		Actor:      change.Actor{Kind: change.ActorSystem, ID: "heimdall"},
-		OccurredAt: now.Add(-30 * time.Second),
-		Payload:    taskPayload,
+		ID:            gen.NewEvent(),
+		ChangeID:      cid,
+		Version:       2,
+		Type:          change.EventTaskAssigned,
+		Actor:         change.Actor{Kind: change.ActorSystem, ID: "heimdall"},
+		CorrelationID: change.CorrelationID("test-correlation"),
+		OccurredAt:    now.Add(-30 * time.Second),
+		Payload:       taskPayload,
 	}
 
 	_, err = store.Append(ctx, cid, 0, []change.Event{trigEv, assignEv}, nil)
@@ -129,13 +133,14 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	}
 
 	mcpSrv, err := mcp.NewServer(mcp.Deps{
-		Logger:  discardLogger(),
-		Clock:   clk,
-		Tokens:  tokStore,
-		Tasks:   tasks,
-		Reviews: reviews,
-		Code:    dummyVCS{},
-		Blobs:   blobs,
+		Logger:    discardLogger(),
+		Clock:     clk,
+		Tokens:    tokStore,
+		Tasks:     tasks,
+		Reviews:   reviews,
+		Code:      dummyVCS{},
+		Blobs:     blobs,
+		Knowledge: testMCPKnowledge{},
 	})
 	require.NoError(t, err)
 

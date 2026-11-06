@@ -16,6 +16,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
@@ -31,25 +32,59 @@ import (
 // starter opens a change with its first event. It adapts engine.Start, which also returns an outcome the poller
 // does not use (trigger.Starter).
 type starter struct {
-	eng *engine.Engine
+	eng    *engine.Engine
+	memory *knowledge.WorkflowIngestor
+	store  ports.EventStore
 }
 
 // Start opens the change. A change that already exists returns an error that wraps ports.ErrVersionConflict.
 func (s starter) Start(ctx context.Context, first change.Event) error {
 	_, err := s.eng.Start(ctx, first)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.capture(ctx, first.ChangeID)
+}
+
+func (s starter) capture(ctx context.Context, changeID id.ChangeID) error {
+	if s.memory == nil || s.store == nil {
+		return nil
+	}
+	events, err := s.store.Load(ctx, changeID)
+	if err != nil {
+		return fmt.Errorf("load started workflow for memory ingestion: %w", err)
+	}
+	if _, err := s.memory.Record(ctx, events); err != nil {
+		return fmt.Errorf("record started workflow memory: %w", err)
+	}
+	return nil
 }
 
 // ingestor hands the events of an executor to the engine (effects.Ingest). It adapts engine.Advance, which also
 // returns an outcome the executors do not use.
 type ingestor struct {
-	eng *engine.Engine
+	eng    *engine.Engine
+	memory *knowledge.WorkflowIngestor
+	store  ports.EventStore
 }
 
 // Ingest stores the events and runs the steps that follow them.
 func (i ingestor) Ingest(ctx context.Context, changeID id.ChangeID, evs []change.Event) error {
 	_, err := i.eng.Advance(ctx, changeID, evs)
-	return err
+	if err != nil {
+		return err
+	}
+	if i.memory == nil || i.store == nil {
+		return nil
+	}
+	stream, err := i.store.Load(ctx, changeID)
+	if err != nil {
+		return fmt.Errorf("load advanced workflow for memory ingestion: %w", err)
+	}
+	if _, err := i.memory.Record(ctx, stream); err != nil {
+		return fmt.Errorf("record advanced workflow memory: %w", err)
+	}
+	return nil
 }
 
 // cursorTable is the cursor part of postgres.Store.
@@ -268,6 +303,17 @@ func newTokenStore(cfg config.Config) (*tokenStore, error) {
 			Agent: id.AgentName(ar.agent),
 			Role:  ar.role,
 		}
+	}
+	for person, secretName := range cfg.HumanTokens {
+		token, err := cfg.Secret(secretName)
+		if err != nil {
+			return nil, fmt.Errorf("human_tokens.%s: %w", person, err)
+		}
+		hash := mcp.HashToken(token)
+		if existing, ok := m[hash]; ok && existing != (mcp.Principal{Person: person, Human: true}) {
+			return nil, fmt.Errorf("human_tokens.%s: token is already assigned to another principal", person)
+		}
+		m[hash] = mcp.Principal{Person: person, Human: true}
 	}
 	return &tokenStore{principals: m}, nil
 }

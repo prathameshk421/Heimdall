@@ -29,6 +29,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "secrets-sync" {
 		os.Exit(runSecretsSync(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "pack" {
+		os.Exit(runPack(os.Args[2:], os.Stdin, os.Stdout))
+	}
 	fmt.Fprintln(os.Stderr, "heimdall: not built yet")
 	os.Exit(exitNotBuilt)
 }

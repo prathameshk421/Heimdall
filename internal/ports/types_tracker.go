@@ -134,17 +134,18 @@ type BlobClass string
 // The blob classes. Logs and diffs are kept 90 days; packs are deleted on revocation; evidence is kept while a
 // decision, verdict or approval refers to it.
 const (
-	BlobLog      BlobClass = "log"
-	BlobDiff     BlobClass = "diff"
-	BlobBundle   BlobClass = "bundle"
-	BlobPack     BlobClass = "pack"
-	BlobEvidence BlobClass = "evidence"
+	BlobLog       BlobClass = "log"
+	BlobDiff      BlobClass = "diff"
+	BlobBundle    BlobClass = "bundle"
+	BlobPack      BlobClass = "pack"
+	BlobEvidence  BlobClass = "evidence"
+	BlobKnowledge BlobClass = "knowledge"
 )
 
 // Valid reports whether c is a blob class.
 func (c BlobClass) Valid() bool {
 	switch c {
-	case BlobLog, BlobDiff, BlobBundle, BlobPack, BlobEvidence:
+	case BlobLog, BlobDiff, BlobBundle, BlobPack, BlobEvidence, BlobKnowledge:
 		return true
 	}
 	return false

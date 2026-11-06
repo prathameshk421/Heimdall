@@ -56,6 +56,59 @@ func TestGetTaskReturnsTheEnvelopeToTheRoleThatOwnsIt(t *testing.T) {
 	}
 }
 
+func TestAskKnowledgeIsAvailableToReviewersAndDoesNotAcceptCallerGroups(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	res := r.call("heimdall_ask_knowledge", `{"question":"refund idempotency"}`)
+	require.False(t, res.IsError, res.text())
+	require.Contains(t, res.text(), "memory_ref")
+	require.Empty(t, r.knowledge.query.Groups, "team groups are added by the application, never supplied by the agent")
+	refused := r.call("heimdall_ask_knowledge", `{"question":"refund idempotency","groups":["other-team"]}`)
+	require.True(t, refused.IsError)
+}
+
+func TestReadPackUsesAuthenticatedPrincipalAndOnlyReviewerAssignment(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	res := r.call("heimdall_read_pack", `{"section":"invariants"}`)
+	require.False(t, res.IsError, res.text())
+	require.Equal(t, Principal{Agent: testAgent, Role: workflow.RoleReviewer}, r.packs.principal)
+	require.Equal(t, "invariants", r.packs.section)
+	require.Contains(t, res.text(), "private reviewer context pack")
+	require.Contains(t, res.text(), "[PRIVATE PACK CANARY]")
+
+	author := newRig(t, workflow.RoleTestAuthor)
+	refused := author.rpc("tools/call", `{"name":"heimdall_read_pack","arguments":{}}`)
+	require.NotNil(t, refused.Error)
+	require.Equal(t, codeInvalidParams, refused.Error.Code)
+}
+
+func TestKnowledgeFileStageIsTaskScopedAndApprovalUsesMappedPerson(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	stage := r.call("heimdall_stage_knowledge", `{"path":"docs/adr/1.md","group":"payments","kind":"adr","retention_days":30}`)
+	require.False(t, stage.IsError, stage.text())
+	require.Equal(t, Principal{Agent: testAgent, Role: workflow.RoleReviewer}, r.files.stagePrincipal)
+	require.Equal(t, "payments", r.files.group)
+	require.Contains(t, stage.text(), "knowledge:pending")
+
+	unmapped := r.rpc("tools/call", `{"name":"heimdall_approve_knowledge","arguments":{"ref":"knowledge:pending"}}`)
+	require.NotNil(t, unmapped.Error)
+	require.Empty(t, r.files.approvePrincipal.Person, "caller cannot pass a person identity in tool arguments")
+
+	r.tokens.byHash[HashToken(testToken)] = Principal{Agent: testAgent, Role: workflow.RoleReviewer, Person: "alice"}
+	agentPrincipal := r.rpc("tools/call", `{"name":"heimdall_approve_knowledge","arguments":{"ref":"knowledge:pending"}}`)
+	require.NotNil(t, agentPrincipal.Error, "an agent credential cannot become human approval by carrying a Person field")
+	require.Empty(t, r.files.approvePrincipal.Person)
+
+	r.tokens.byHash[HashToken(testToken)] = Principal{Person: "alice", Human: true}
+	approved := r.call("heimdall_approve_knowledge", `{"ref":"knowledge:pending"}`)
+	require.False(t, approved.IsError, approved.text())
+	require.Equal(t, "alice", r.files.approvePrincipal.Person)
+	require.Equal(t, "knowledge:pending", r.files.ref)
+
+	forgot := r.call("heimdall_forget_knowledge", `{"ref":"knowledge:pending"}`)
+	require.False(t, forgot.IsError, forgot.text())
+	require.Equal(t, "alice", r.files.forgetPrincipal.Person)
+}
+
 func TestGetTaskNeverInlinesUntrustedText(t *testing.T) {
 	r := newRig(t, workflow.RoleReviewer)
 	res := r.call("heimdall_get_task", `{}`)

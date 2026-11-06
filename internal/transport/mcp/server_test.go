@@ -24,7 +24,7 @@ type wireTool struct {
 func expectedTools(role workflow.Role) []string {
 	all := []string{
 		"heimdall_get_task", "heimdall_ack", "heimdall_get_change",
-		"heimdall_read_untrusted", "heimdall_read_code", "heimdall_report_progress",
+		"heimdall_read_untrusted", "heimdall_read_code", "heimdall_ask_knowledge", "heimdall_report_progress",
 	}
 	switch role {
 	case workflow.RoleTestAuthor:
@@ -32,11 +32,23 @@ func expectedTools(role workflow.Role) []string {
 	case workflow.RoleResolver:
 		return append(all, "heimdall_ask_humans", "heimdall_submit_verdict")
 	case workflow.RoleReviewer:
-		return append(all, "heimdall_submit_review")
+		return append(all, "heimdall_submit_review", "heimdall_read_pack", "heimdall_stage_knowledge")
 	case workflow.RoleProfiler:
 		return all
 	}
 	return nil
+}
+
+func TestKnowledgeLifecycleToolsAreListedOnlyForAuthenticatedHumanPrincipals(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	r.tokens.byHash[HashToken(testToken)] = Principal{Person: "alice", Human: true}
+	require.ElementsMatch(t, []string{"heimdall_approve_knowledge", "heimdall_forget_knowledge"}, toolNames(listTools(t, r)))
+	approved := r.call("heimdall_approve_knowledge", `{"ref":"knowledge:pending"}`)
+	require.False(t, approved.IsError, approved.text())
+
+	r.tokens.byHash[HashToken(testToken)] = Principal{Agent: testAgent, Role: workflow.RoleReviewer, Person: "alice", Human: true}
+	forged := r.rpc("tools/call", `{"name":"heimdall_approve_knowledge","arguments":{"ref":"knowledge:pending"}}`)
+	require.NotNil(t, forged.Error, "a human flag cannot be combined with an agent principal")
 }
 
 func allLLMRoles() []workflow.Role {
