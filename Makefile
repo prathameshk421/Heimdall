@@ -124,6 +124,16 @@ upgrade: ## install an exact tagged release through the SSM-backed deploy workfl
 setup: ## create a private local operator workspace
 	bash scripts/setup.sh
 
+.PHONY: secrets-local
+# Target-specific, so deploy and upgrade keep their own SECRETS_DIR default.
+secrets-local: SECRETS_DIR ?= $(HOME)/heimdall/secrets
+secrets-local: ENV_FILE ?= .env
+secrets-local: ## fill the laptop secrets dir from ENV_FILE (default .env; SECRETS_DIR default ~/heimdall/secrets); prints no values (D148)
+	mkdir -p -m 0700 "$(SECRETS_DIR)"
+	chmod 0700 "$(SECRETS_DIR)"
+	go run ./cmd/heimdall secrets-sync --env "$(ENV_FILE)" --out "$(SECRETS_DIR)"
+	@echo "secrets-local: wrote secrets to $(SECRETS_DIR)"
+
 restart: ## restart the deployed service and verify health and authenticated MCP
 	bash scripts/operate.sh restart
 
