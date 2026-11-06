@@ -1,5 +1,12 @@
 # Heimdall progress
 
+## T109 local implementation (Nov 6, 2026)
+
+- Connected Jira polling and changelog deduplication to the workflow, then exercised the generated test-author task through authenticated MCP submission, workflow advancement, durable quality effect, stable red-first quality runs, pinned tree-hash commit, and failing then passing CI reports. The Postgres component regression also retries a submission after an injected engine-advance failure, verifies duplicate submissions do not append duplicate events, and verifies a repeated CI sync does not duplicate reports.
+- Submission events and their quality effects are now appended through `engine.Advance` as one operation. Test-quality checks execute submitted files as overlays, and the commit effect requires a nonempty tests-directory tree hash rather than falling back to a commit SHA.
+- Evidence: focused component test passed; focused `agenttools`, `effects`, and server unit tests passed; `make fast` passed (3,602 tests, lint 0, archcheck 71 packages); final `make verify` passed (3,602 unit tests, 3,681 race/component tests, lint self-test, 129 hook cases, 14 installer cases, harness check, 44 script cases, govulncheck and Gitleaks). The earlier verify attempt found workspace-only harness mode drift and then an existing compression vulnerability; modes were restored to the Git index and the dependency was updated to the patched v1.20.2 before the passing verify.
+- **Not verified:** real Jira transition, live OpenCode test authoring, real GitHub branch commit/checks, model cost ledger, and replay behavior against live providers. The Jira ticket acceptance criteria still do not reach the assigned MCP task envelope, so production test submissions with AC IDs need the T25/task-input contract wired before this is a complete live journey.
+
 ## Current handoff (Nov 5, 2026)
 
 Branch: `heimdall-build`. Commit `92e00b2` and its 14 parents were pushed to `origin/heimdall-build` after the owner asked for periodic pushes. The checkout remains dirty with parallel task work; current uncommitted changes were not included in that push.

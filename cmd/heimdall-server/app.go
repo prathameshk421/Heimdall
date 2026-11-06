@@ -477,7 +477,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	mcpH, err := assembleMCP(d, ad, store, pool, blobs, gen, clk, files, profileManager)
+	mcpH, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +514,7 @@ func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engin
 
 // assembleMCP wires the task index, agent tools service, adapters, and MCP server.
 func assembleMCP(
-	d deps, ad adapters, store ports.EventStore, pool *pgxpool.Pool, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
+	d deps, ad adapters, store ports.EventStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng *engine.Engine, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
 ) (http.Handler, error) {
 	taskIndex := postgres.NewTaskIndex(pool)
 	asker := &chatAsker{chat: ad.chat, store: store, ids: gen}
@@ -537,7 +537,10 @@ func assembleMCP(
 		tokStore = &tokenStore{principals: make(map[string]mcp.Principal)}
 	}
 	tracker := &assignmentAgentTracker{agents: make(map[id.TaskID]id.AgentName)}
-	tasksAdp := &tasksAdapter{svc: toolsSvc, tracker: tracker}
+	tasksAdp := &tasksAdapter{svc: toolsSvc, tracker: tracker, advanceTests: func(ctx context.Context, changeID id.ChangeID, event change.Event) error {
+		_, err := eng.Advance(ctx, changeID, []change.Event{event})
+		return err
+	}}
 	outputFilter, err := appreview.NewOutputFilter(nil, outputAudit{logger: d.logger})
 	if err != nil {
 		return nil, fmt.Errorf("build agent output filter: %w", err)

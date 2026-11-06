@@ -109,7 +109,7 @@ func (t TestQuality) Execute(ctx context.Context, fx change.Effect) error {
 		return err
 	}
 
-	return t.ingestOutcome(ctx, p.Ticket, l, baseSHA, runIDs, allReasons)
+	return t.ingestOutcome(ctx, p.Repo, p.Ticket, l, baseSHA, runIDs, allReasons)
 }
 
 func (t TestQuality) readSubmission(ctx context.Context, ticket id.ChangeID, ref workflow.BlobRef) (testset.Submission, error) {
@@ -135,7 +135,7 @@ func (t TestQuality) runChecks(ctx context.Context, p change.TestQualityPayload,
 	}
 	allReasons = append(allReasons, seamReasons...)
 
-	flakeReports, flakeRunIDs, flakeReasons, err := t.checkFlake(ctx, p.Repo, p.Ticket, baseSHA)
+	flakeReports, flakeRunIDs, flakeReasons, err := t.checkFlake(ctx, p.Repo, p.Ticket, baseSHA, sub)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -172,21 +172,22 @@ func (t TestQuality) checkSeam(sub testset.Submission) ([]string, error) {
 	return reasons, nil
 }
 
-func (t TestQuality) checkFlake(ctx context.Context, repo change.Repo, ticket id.ChangeID, baseSHA id.SHA) ([]verify.Report, []id.RunID, []string, error) {
+func (t TestQuality) checkFlake(ctx context.Context, repo change.Repo, ticket id.ChangeID, baseSHA id.SHA, sub testset.Submission) ([]verify.Report, []id.RunID, []string, error) {
 	dir := "tests/heimdall/" + string(ticket)
+	overlays := overlayFiles(sub)
 	var flakeReports []verify.Report
 	var runIDs []id.RunID
 
 	for i := 0; i < verify.RequiredRuns; i++ {
 		runID := t.deps.IDs.NewRun()
 		runIDs = append(runIDs, runID)
-		res, err := t.deps.Sandbox.Run(ctx, ports.SandboxJob{
+		res, err := t.runSandbox(ctx, ports.SandboxJob{
 			Kind:    ports.SandboxRedFirst,
 			Repo:    repo,
 			SHA:     baseSHA,
 			Dir:     dir,
 			Timeout: 3 * time.Minute,
-		})
+		}, overlays)
 		if err != nil {
 			return nil, nil, nil, failf(err, "test_quality %s: sandbox run %d", ticket, i+1)
 		}
@@ -209,13 +210,13 @@ func (t TestQuality) checkRedFirst(ctx context.Context, repo change.Repo, ticket
 	if headSHA != "" && headSHA != baseSHA {
 		dir := "tests/heimdall/" + string(ticket)
 		runID := t.deps.IDs.NewRun()
-		resHead, err := t.deps.Sandbox.Run(ctx, ports.SandboxJob{
+		resHead, err := t.runSandbox(ctx, ports.SandboxJob{
 			Kind:    ports.SandboxRedFirst,
 			Repo:    repo,
 			SHA:     headSHA,
 			Dir:     dir,
 			Timeout: 3 * time.Minute,
-		})
+		}, overlayFiles(sub))
 		if err != nil {
 			return nil, nil, failf(err, "test_quality %s: sandbox head run", ticket)
 		}
@@ -244,7 +245,30 @@ func (t TestQuality) checkRedFirst(ctx context.Context, repo change.Repo, ticket
 	return nil, reasons, nil
 }
 
-func (t TestQuality) ingestOutcome(ctx context.Context, ticket id.ChangeID, l loadedChange, baseSHA id.SHA, runIDs []id.RunID, reasons []string) error {
+type overlaySandbox interface {
+	RunOverlay(context.Context, ports.SandboxJob, []ports.File) (ports.SandboxResult, error)
+}
+
+func (t TestQuality) runSandbox(ctx context.Context, job ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error) {
+	if len(overlays) == 0 {
+		return t.deps.Sandbox.Run(ctx, job)
+	}
+	sandbox, ok := t.deps.Sandbox.(overlaySandbox)
+	if !ok {
+		return ports.SandboxResult{}, fmt.Errorf("sandbox does not support test-submission overlays")
+	}
+	return sandbox.RunOverlay(ctx, job, overlays)
+}
+
+func overlayFiles(sub testset.Submission) []ports.File {
+	files := make([]ports.File, 0, len(sub.Files))
+	for _, file := range sub.Files {
+		files = append(files, ports.File{Path: file.Path, Content: []byte(file.Content)})
+	}
+	return files
+}
+
+func (t TestQuality) ingestOutcome(ctx context.Context, repo change.Repo, ticket id.ChangeID, l loadedChange, baseSHA id.SHA, runIDs []id.RunID, reasons []string) error {
 	cause := l.first(change.EventTestsSubmitted)
 	if cause == nil {
 		return failf(nil, "test_quality %s: no tests.submitted in the change", ticket)
@@ -252,7 +276,7 @@ func (t TestQuality) ingestOutcome(ctx context.Context, ticket id.ChangeID, l lo
 	if len(reasons) > 0 {
 		return t.ingestRejected(ctx, ticket, cause, baseSHA, runIDs, reasons)
 	}
-	return t.ingestVerified(ctx, ticket, cause, baseSHA, runIDs, l)
+	return t.ingestVerified(ctx, repo, ticket, cause, baseSHA, runIDs, l)
 }
 
 func (t TestQuality) ingestRejected(ctx context.Context, ticket id.ChangeID, cause *change.Event, baseSHA id.SHA, runIDs []id.RunID, reasons []string) error {
@@ -275,13 +299,17 @@ func (t TestQuality) ingestRejected(ctx context.Context, ticket id.ChangeID, cau
 	return nil
 }
 
-func (t TestQuality) ingestVerified(ctx context.Context, ticket id.ChangeID, cause *change.Event, baseSHA id.SHA, runIDs []id.RunID, l loadedChange) error {
-	treeHash := baseSHA
+func (t TestQuality) ingestVerified(ctx context.Context, repo change.Repo, ticket id.ChangeID, cause *change.Event, baseSHA id.SHA, runIDs []id.RunID, l loadedChange) error {
 	dir := "tests/heimdall/" + string(ticket)
-	if t.deps.Code != nil {
-		if th, err := t.deps.Code.TreeHash(ctx, change.Repo(""), baseSHA, dir); err == nil && th != "" {
-			treeHash = th
-		}
+	if t.deps.Code == nil {
+		return failf(nil, "test_quality %s: code reader is required to pin %s", ticket, dir)
+	}
+	treeHash, err := t.deps.Code.TreeHash(ctx, repo, baseSHA, dir)
+	if err != nil {
+		return failf(err, "test_quality %s: read tests tree", ticket)
+	}
+	if treeHash == "" {
+		return failf(nil, "test_quality %s: empty tests tree hash for %s at %s", ticket, dir, baseSHA)
 	}
 	needsSignoff := false
 	if t.deps.NeedsSignoff != nil {

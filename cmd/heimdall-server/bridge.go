@@ -307,9 +307,10 @@ func (tr *assignmentAgentTracker) toAgenttools(a mcp.Assignment) agenttools.Assi
 
 // tasksAdapter adapts agenttools.Service to mcp.Tasks.
 type tasksAdapter struct {
-	svc     *agenttools.Service
-	tracker *assignmentAgentTracker
-	filter  interface {
+	svc          *agenttools.Service
+	tracker      *assignmentAgentTracker
+	advanceTests func(context.Context, id.ChangeID, change.Event) error
+	filter       interface {
 		Filter(context.Context, string) (string, error)
 	}
 }
@@ -331,7 +332,24 @@ func (t *tasksAdapter) Ack(ctx context.Context, a mcp.Assignment, at time.Time) 
 }
 
 func (t *tasksAdapter) SubmitTests(ctx context.Context, a mcp.Assignment, sub testset.Submission, late bool) error {
-	return t.svc.SubmitTests(ctx, t.tracker.toAgenttools(a), sub, late)
+	assignment := t.tracker.toAgenttools(a)
+	ev, prepared, isLate, err := t.svc.PrepareTestsSubmission(ctx, assignment, sub, late)
+	if err != nil {
+		return err
+	}
+	if !prepared {
+		return nil
+	}
+	if t.advanceTests == nil {
+		return errors.New("submit tests: workflow advancer is not configured")
+	}
+	if err := t.advanceTests(ctx, assignment.ChangeID, ev); err != nil {
+		return fmt.Errorf("advance workflow after test submission: %w", err)
+	}
+	if isLate {
+		return fmt.Errorf("%w: test submission received after deadline", agenttools.ErrLateSubmission)
+	}
+	return nil
 }
 
 func (t *tasksAdapter) AskHumans(ctx context.Context, a mcp.Assignment, questions []string) error {
