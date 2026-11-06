@@ -30,6 +30,15 @@ For a company installation, the administrator must provide the VM, restricted SS
 
 Do not expose port 8080, Postgres, FalkorDB, Graphiti, or Mattermost directly to the internet. Use the documented tunnel for private access. Teams has additional public-hostname and port requirements in [`docs/TEAMS_SETUP.md`](TEAMS_SETUP.md); it is not a prerequisite for a Mattermost-only install.
 
+### Data volume encryption (guidance; not checked by Heimdall)
+
+The data volume that holds the Postgres data and the Heimdall config should be encrypted at rest. Heimdall does not check this and has no `doctor` item for it; the administrator confirms it. How to check:
+
+- Linux with LUKS: `lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINT` should show a `crypt` layer under the mount point of the data volume. `sudo cryptsetup status <mapper-name>` should report `cipher` and `active`.
+- AWS EBS: `aws ec2 describe-volumes --volume-ids <id> --query 'Volumes[].Encrypted'` should print `[true]`.
+
+The current test VM's disk is not encrypted. Do not run company data on it. This guidance is not verified on a company host.
+
 ## Phase 2: install and deploy the current stack
 
 ### Supported now
