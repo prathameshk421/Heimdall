@@ -164,3 +164,20 @@ func TestActivationErrorRemainsRetryable(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, p.states)
 }
+
+func TestActivationRetryAfterControllerFailureReconcilesDesiredState(t *testing.T) {
+	p := &fakeProvisioner{err: errors.New("controller unavailable")}
+	svc := newService(t, p)
+	receipt := Receipt{Agent: "test-author", Role: workflow.RoleTestAuthor, MCPEndpoint: "http://127.0.0.1:8080/mcp",
+		TokenSHA256: testTokenHash("author-token"), CredentialsInstalled: true}
+	require.Error(t, svc.Activate(context.Background(), receipt))
+	p.err = nil
+	require.NoError(t, svc.Activate(context.Background(), receipt))
+	require.NoError(t, svc.Activate(context.Background(), receipt))
+	require.Len(t, p.ensures, 3, "each retry must reconcile the managed definition before requesting state")
+	require.Len(t, p.states, 2)
+	for _, state := range p.states {
+		require.Equal(t, "switch-test-author", state.id)
+		require.Equal(t, ports.ManagedAgentRunning, state.state)
+	}
+}

@@ -1,5 +1,13 @@
 # Heimdall progress
 
+## T106 runtime lifecycle continuation (Nov 6, 2026)
+
+- Started from clean `heimdall-build` HEAD `93374a4` in isolated worktree `t3/agent-runtime-e2e`.
+- Added a retry/replay regression for activation after a controller outage: the first failure leaves the receipt retryable; subsequent attempts reconcile the same Switch managed identity and request running state without local duplicate state. No token contents are logged or asserted.
+- Focused agent provisioning and HTTP setup contract tests passed; `make fast` passed (3,664 tests, lint 0, archcheck 75 packages).
+- **Remaining T106 gaps/not verified:** no connected Postgres restart/replay test for assignment, ack, timeout/reassign, revoke, or setup receipts; server activation still depends on Switch desired-state calls and has no durable local installation receipt ledger; live Switch enrollment/controller service/OpenCode smoke unavailable in this pass. Do not mark T106 complete based on this slice.
+- `make verify` ran: vet/archcheck/lint, 3,744 unit/component tests, lint self-test (0 issues), 129 hook cases, and 14 installer cases passed; it stopped at `make harness-check` because checkout-only modes differ from the index (`AGENTS.md`, `.claude/settings.json`, `.golangci.yml` are 664 vs 644; hooks are 775 vs 755). No protected harness content was changed. Live VM/OpenCode checks not verified; no live model cost incurred.
+
 ## T109 local implementation (Nov 6, 2026)
 
 - Connected Jira polling and changelog deduplication to the workflow, then exercised the generated test-author task through authenticated MCP submission, workflow advancement, durable quality effect, stable red-first quality runs, pinned tree-hash commit, and failing then passing CI reports. The Postgres component regression also retries a submission after an injected engine-advance failure, verifies duplicate submissions do not append duplicate events, and verifies a repeated CI sync does not duplicate reports.
