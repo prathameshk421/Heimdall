@@ -1,5 +1,14 @@
 # Heimdall progress
 
+## First live deploy and first Discord run (Nov 7, 2026)
+
+- **Deployed to the VM** (`ssh heimdall-vm`, Tailscale 100.86.14.6): `deploy/deploy.sh` now completes. Server `/healthz` answers 200, `/mcp` answers 405, the dashboard `/` answers 200 (loopback only), the runner socket is visible in the server container, and `heimdall-runner` and `heimdall-compose` are active and enabled. Eight deploy defects found and fixed, each with a red contract assertion in `deploy/tests/deploy-contract.sh`: runner chdir, PATH for `runc`, approved-profiles directory and group, compose layout under `/opt/heimdall/deploy`, `COPY --chmod`, secret owner 65532 at mode 0600, a writable named volume for the blob store, and the loopback forward to Switch (a `socat` sidecar that restarts with the server).
+- **Switch 0.31 contract fixes** (all red then green in `internal/adapters/switch`): the stream needs a client UUID `connection_id` on every open; `heartbeat_interval_seconds` arrives as a float; `create_room` needs a `description`; the message field is `content`, not `body`. Rooms are now created with the workflow agents as members.
+- **Live evidence.** Jira KAN-1, KAN-2 and KAN-3 moved to In Progress. The poll triggered each change, Heimdall opened a Discord room per ticket (`#demo-...`) on the Switchathon (LGTM) bridge, created the GitHub branch `KAN-n-...`, and posted the task message. In KAN-2 the six agents joined and `test-author` started a real OpenCode session after the coordinator was given the same owner as the agents (one row changed in Switch's agents table).
+- **Merged and verified locally:** T19 (budget-run refuses below 2x estimate), T22 (effects start before they run; crashed effects are in doubt, not retried; policy needs owner confirmation), T64 (boot reconcile), T63 (read-only dashboard), T17 (`make secrets-local`, signal test), `switch-register`, CLI accepts `switchroom`. `make fast` exit 0, 3,740 tests, 0 lint issues at `a64db89`.
+- **Not verified / open:** the test author reports it has no `heimdall_get_task` tool: the agents' OpenCode configs do not yet carry the Heimdall MCP server and their token (T27/T106 provisioning not run on this VM). So no test files landed, no CI run, no reviewer round, no gate. Telegram was not exercised (its bridge cannot create rooms). `make verify` was not run. Two failed attempts' room rows for KAN-1 predate the room-members fix, so that room has no agents. Spend so far is under $0.01 per `make cost`, plus one test-author session of unknown size.
+- **Noticed:** the effects log shows only "post room message", not the cause (`failure.Error()` hides it). `docs/TRACKER.md` rows are not updated. The signed v0.1.0 release and cosign keys remain on a friend's machine; this deploy used a locally built binary, not a signed tag.
+
 ## T106 runtime lifecycle continuation (Nov 6, 2026)
 
 - Started from clean `heimdall-build` HEAD `93374a4` in isolated worktree `t3/agent-runtime-e2e`.
