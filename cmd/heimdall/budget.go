@@ -148,6 +148,10 @@ func runBudgetRunWithDeps(args []string, stdout, stderr io.Writer, deps budgetRu
 		complain(stderr, "heimdall budget-run: read provider balance before run: %v\n", err)
 		return doctorExitFail
 	}
+	if reserve := 2 * options.estimate; start < reserve {
+		complain(stderr, "heimdall budget-run: live balance $%.4f is below 2x estimate $%.4f; run refused\n", start, reserve)
+		return doctorExitFail
+	}
 	childCode := deps.run(context.Background(), options.command, stdout, stderr)
 	end, err := deps.balance(cfg)
 	if err != nil {
