@@ -62,4 +62,5 @@ grep -q 'chown 65532:65532 /var/lib/heimdall' "$root/deploy/Dockerfile.server" |
 grep -q 'name: switch_default' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the server must join the Switch network, because 127.0.0.1 inside its container is not the VM Switch' >&2; exit 1; }
 grep -q 'network_mode: "service:heimdall-server"' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: a loopback forward must share the server network, because the config allows http only for loopback hosts' >&2; exit 1; }
 grep -q 'TCP:switch:8000' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the loopback forward must target the Switch service' >&2; exit 1; }
+grep -q 'depends_on: {heimdall-server: {condition: service_started, restart: true}}' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the forward sidecar shares the server network, so it must restart whenever the server does' >&2; exit 1; }
 echo 'deploy contract passed'

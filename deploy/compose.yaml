@@ -73,7 +73,8 @@ services:
     image: alpine/socat:1.8.0.3
     command: ["TCP-LISTEN:8000,fork,reuseaddr,bind=127.0.0.1", "TCP:switch:8000"]
     network_mode: "service:heimdall-server"
-    depends_on: [heimdall-server]
+    # It shares the server's network namespace, so a server restart leaves it on a dead one: restart it too.
+    depends_on: {heimdall-server: {condition: service_started, restart: true}}
     restart: unless-stopped
 
   postgres:
