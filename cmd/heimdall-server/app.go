@@ -459,6 +459,7 @@ func assembleWithBlobs(
 		Starter:  starter{eng: eng},
 		Cursors:  cursorStore{table: store, source: cursorSourcePrefix + ad.project},
 		Projects: ad.projects,
+		Blobs:    blobs,
 		Clock:    clk,
 		IDs:      gen,
 	})

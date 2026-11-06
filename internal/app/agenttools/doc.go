@@ -6,7 +6,8 @@
 // # Purpose
 //
 // Provide the application logic that backs the MCP server tools for Heimdall agents:
-//   - Current: resolve an agent's active task from TaskIndex and rebuild the assignment from the change stream.
+//   - Current: resolve an agent's active task from TaskIndex and rebuild the assignment from the change stream,
+//     including ticket acceptance-criterion refs captured in change.triggered.
 //   - Ack: acknowledge an assigned task within the 60-second window.
 //   - SubmitTests: record test submissions from test authors with blob-stored contents, enforcing deadline timeouts and idempotency.
 //   - SubmitReview: validate review findings (path and line ranges), filing valid findings and the review submission.

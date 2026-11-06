@@ -16,19 +16,20 @@ import (
 
 // Request contains the trusted and referenced context selected for one role.
 type Request struct {
-	Role         workflow.Role  `json:"role"`
-	CaseID       string         `json:"case_id,omitempty"`
-	Change       string         `json:"change"`
-	BaseSHA      string         `json:"base_sha"`
-	HeadSHA      string         `json:"head_sha"`
-	Diff         string         `json:"diff,omitempty"`
-	FilesChanged []string       `json:"files_changed,omitempty"`
-	Criteria     []string       `json:"criteria,omitempty"`
-	CI           []string       `json:"ci,omitempty"`
-	Untrusted    []UntrustedRef `json:"untrusted,omitempty"`
-	Pack         string         `json:"pack,omitempty"`
-	Memory       string         `json:"memory,omitempty"`
-	BudgetTokens int            `json:"budget_tokens"`
+	Role               workflow.Role           `json:"role"`
+	CaseID             string                  `json:"case_id,omitempty"`
+	Change             string                  `json:"change"`
+	BaseSHA            string                  `json:"base_sha"`
+	HeadSHA            string                  `json:"head_sha"`
+	Diff               string                  `json:"diff,omitempty"`
+	FilesChanged       []string                `json:"files_changed,omitempty"`
+	Criteria           []string                `json:"criteria,omitempty"`
+	AcceptanceCriteria []workflow.CriterionRef `json:"acceptance_criteria,omitempty"`
+	CI                 []string                `json:"ci,omitempty"`
+	Untrusted          []UntrustedRef          `json:"untrusted,omitempty"`
+	Pack               string                  `json:"pack,omitempty"`
+	Memory             string                  `json:"memory,omitempty"`
+	BudgetTokens       int                     `json:"budget_tokens"`
 }
 
 // UntrustedRef identifies externally authored content without embedding it.
@@ -43,17 +44,18 @@ type Bundle struct {
 }
 
 type document struct {
-	Skill        string         `json:"skill"`
-	CaseID       string         `json:"case_id,omitempty"`
-	RoleRules    string         `json:"role_rules"`
-	Change       changeContext  `json:"change"`
-	Diff         string         `json:"diff,omitempty"`
-	FilesChanged []string       `json:"files_changed,omitempty"`
-	Criteria     []string       `json:"criteria,omitempty"`
-	CI           []string       `json:"ci,omitempty"`
-	Pack         string         `json:"pack,omitempty"`
-	Memory       string         `json:"memory,omitempty"`
-	Untrusted    []UntrustedRef `json:"untrusted,omitempty"`
+	Skill              string                  `json:"skill"`
+	CaseID             string                  `json:"case_id,omitempty"`
+	RoleRules          string                  `json:"role_rules"`
+	Change             changeContext           `json:"change"`
+	Diff               string                  `json:"diff,omitempty"`
+	FilesChanged       []string                `json:"files_changed,omitempty"`
+	Criteria           []string                `json:"criteria,omitempty"`
+	AcceptanceCriteria []workflow.CriterionRef `json:"acceptance_criteria,omitempty"`
+	CI                 []string                `json:"ci,omitempty"`
+	Pack               string                  `json:"pack,omitempty"`
+	Memory             string                  `json:"memory,omitempty"`
+	Untrusted          []UntrustedRef          `json:"untrusted,omitempty"`
 }
 
 type changeContext struct {
@@ -76,11 +78,17 @@ func Build(req Request) (Bundle, error) {
 			return Bundle{}, fmt.Errorf("build %s context bundle: untrusted %s reference: %w", req.Role, item.Source, err)
 		}
 	}
+	for _, item := range req.AcceptanceCriteria {
+		if _, err := workflow.ParseBlobRef(string(item.Ref)); err != nil {
+			return Bundle{}, fmt.Errorf("build %s context bundle: criterion %s reference: %w", req.Role, item.ID, err)
+		}
+	}
 	content := document{
 		Skill: skillFor(req.Role), CaseID: req.CaseID, RoleRules: rulesFor(req.Role),
 		Change: changeContext{ID: req.Change, BaseSHA: req.BaseSHA, HeadSHA: req.HeadSHA},
 		Diff:   req.Diff, FilesChanged: sortedCopy(req.FilesChanged), Criteria: sortedCopy(req.Criteria),
-		CI: sortedCopy(req.CI), Pack: req.Pack, Memory: req.Memory, Untrusted: sortedRefs(req.Untrusted),
+		AcceptanceCriteria: sortedCriterionRefs(req.AcceptanceCriteria),
+		CI:                 sortedCopy(req.CI), Pack: req.Pack, Memory: req.Memory, Untrusted: sortedRefs(req.Untrusted),
 	}
 	raw, err := marshalCanonical(content)
 	if err != nil {
@@ -139,6 +147,12 @@ func sortedRefs(values []UntrustedRef) []UntrustedRef {
 		}
 		return strings.Compare(string(a.Ref), string(b.Ref))
 	})
+	return result
+}
+
+func sortedCriterionRefs(values []workflow.CriterionRef) []workflow.CriterionRef {
+	result := append([]workflow.CriterionRef(nil), values...)
+	slices.SortFunc(result, func(a, b workflow.CriterionRef) int { return strings.Compare(a.ID, b.ID) })
 	return result
 }
 

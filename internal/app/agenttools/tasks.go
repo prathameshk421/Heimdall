@@ -44,7 +44,7 @@ func (s *Service) Current(ctx context.Context, agent id.AgentName, role workflow
 		return Assignment{}, err
 	}
 
-	return buildAssignment(ref, latestTask, assignedAt, acked), nil
+	return buildAssignment(ref, latestTask, assignedAt, acked, events), nil
 }
 
 func findActiveTaskInEvents(events []change.Event, taskID id.TaskID) (*change.TaskAssigned, time.Time, bool) {
@@ -83,7 +83,24 @@ func validateCurrentTask(latest *change.TaskAssigned, agent id.AgentName, role w
 	return nil
 }
 
-func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assignedAt time.Time, acked bool) Assignment {
+func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assignedAt time.Time, acked bool, events []change.Event) Assignment {
+	criteria := make([]workflow.CriterionRef, 0)
+	for _, ev := range events {
+		if ev.Type != change.EventChangeTriggered {
+			continue
+		}
+		payload, err := change.Decode(ev)
+		if err != nil {
+			continue
+		}
+		triggered, ok := payload.(change.Triggered)
+		if !ok {
+			continue
+		}
+		for _, criterion := range triggered.Criteria {
+			criteria = append(criteria, workflow.CriterionRef{ID: criterion.ID, Ref: criterion.Ref})
+		}
+	}
 	return Assignment{
 		ChangeID:   ref.ChangeID,
 		TaskID:     latest.TaskID,
@@ -99,6 +116,7 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 			Role:     latest.Role,
 			Deadline: latest.Deadline,
 			Change:   workflow.ChangeRef{ID: ref.ChangeID},
+			Inputs:   workflow.Inputs{AcceptanceCriteria: criteria},
 		},
 	}
 }
