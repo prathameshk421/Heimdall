@@ -152,9 +152,14 @@ func (f *fakeSwitch) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/agents/" + acceptanceAgentID + "/message":
-		body, _ := args["body"].(string)
+		// Switch 0.31 reads the text from content and answers 422 when it is missing.
+		content, _ := args["content"].(string)
+		if content == "" {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"detail": "content: Field required"})
+			return
+		}
 		f.mu.Lock()
-		f.postCalls = append(f.postCalls, body)
+		f.postCalls = append(f.postCalls, content)
 		f.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	case "/agents/" + acceptanceAgentID + "/ops/list_rooms":
@@ -164,6 +169,11 @@ func (f *fakeSwitch) serve(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"result": out})
 	case "/agents/" + acceptanceAgentID + "/ops/create_room":
 		title, _ := args["name"].(string)
+		// Switch 0.31 answers 400 when create_room has no description.
+		if description, _ := args["description"].(string); description == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "create_room requires: description"})
+			return
+		}
 		f.mu.Lock()
 		f.createCalls = append(f.createCalls, title)
 		f.rooms = append(f.rooms, map[string]any{"room_id": acceptanceRoomID, "name": title, "archived": false})
