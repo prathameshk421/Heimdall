@@ -232,7 +232,7 @@ type Memory interface {
 
 - **Event-sourced per change.** Versions 1..n, enforced by `UNIQUE(change_id, version)`. Use cases load, reduce, decide and append with an expected version. On conflict they reload and retry, up to 5 times.
 - **Per-change serialization.** Mutating jobs carry River unique key `change:<id>`, and transactions take `pg_advisory_xact_lock(hashtext(change_id))`. Different changes run in parallel; one change never races itself.
-- **Transactional outbox.** Side effects (GitHub check, room post, Jira write, memory episode) are written as `outbox` rows in the same transaction as the event that causes them. Workers drain the outbox. Nothing external happens without a committed event, and every committed effect eventually happens.
+- **Transactional outbox.** Side effects (GitHub check, room post, Jira write, memory episode) are written as `outbox` rows in the same transaction as the event that causes them. Workers drain the outbox. Nothing external happens without a committed event. A committed effect that has not started eventually happens. Before the executor runs, the drainer marks the row started, under its lease. A row that crashed after its mark is in doubt: the drainer never runs it again, and a person reconciles it through the `outbox_in_doubt` view (T22).
 - **Idempotent effects.** Each outbox row has a deterministic key (for example `check:<repo>:<sha>:<gate_version>`). Check runs are updated by external id, comments carry a hidden marker, and room posts are deduplicated by key.
 - **Derived gate.** `MERGE_ALLOWED` is never stored as truth. It is recomputed for the head SHA after every event and published only when it changes.
 

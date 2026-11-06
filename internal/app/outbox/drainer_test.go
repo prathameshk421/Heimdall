@@ -21,18 +21,20 @@ type memRow struct {
 	fx       change.Effect
 	done     bool
 	leased   bool
+	started  bool
 	attempts int
 	lastErr  string
 }
 
 // memOutbox is an in-memory ports.Outbox. A lease is a flag, not a clock: lease expiry is tested against PostgreSQL in
-// the component test, so these tests check what the drainer decides.
+// the component test, so these tests check what the drainer decides. expireLease stands for the lease running out.
 type memOutbox struct {
 	mu       sync.Mutex
 	rows     []*memRow
 	limits   []int
 	leases   []time.Duration
 	claimErr error
+	startErr error
 	doneErr  func(change.EffectKey) error
 }
 
@@ -97,7 +99,7 @@ func (m *memOutbox) Claim(_ context.Context, limit int, lease time.Duration) ([]
 	}
 	var out []change.Effect
 	for _, r := range m.rows {
-		if !r.done && !r.leased && r.attempts < 8 && len(out) < limit {
+		if !r.done && !r.leased && !r.started && r.attempts < 8 && len(out) < limit {
 			r.leased = true
 			out = append(out, r.fx)
 		}
@@ -119,11 +121,45 @@ func (m *memOutbox) ClaimEffect(_ context.Context, key change.EffectKey, lease t
 		if r.leased {
 			return nil, ports.ErrEffectLeased
 		}
+		if r.started {
+			return nil, nil // in doubt: the lease ran out after the start mark, so it is never claimed again
+		}
 		r.leased = true
 		fx := r.fx
 		return &fx, nil
 	}
 	return nil, nil
+}
+
+// expireLease stands for the lease of key running out, as when its drainer died.
+func (m *memOutbox) expireLease(key change.EffectKey) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.row(key).leased = false
+}
+
+// Start marks the effect as started, as the database does: only the holder of a live lease may start a row, and a row
+// starts once. startErr, when set, is returned once and nothing is marked.
+func (m *memOutbox) Start(ctx context.Context, key change.EffectKey) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("start %s: %w", key, err)
+	}
+	if m.startErr != nil {
+		err := m.startErr
+		m.startErr = nil
+		return err
+	}
+	r := m.row(key)
+	if r == nil {
+		return fmt.Errorf("start %s: %w", key, ports.ErrNotFound)
+	}
+	if r.done || !r.leased || r.started {
+		return fmt.Errorf("start %s: no live lease for an unstarted effect", key)
+	}
+	r.started = true
+	return nil
 }
 
 func (m *memOutbox) Done(ctx context.Context, key change.EffectKey) error {
@@ -162,6 +198,7 @@ func (m *memOutbox) Fail(ctx context.Context, key change.EffectKey, reason strin
 	r.attempts++
 	r.lastErr = reason
 	r.leased = false
+	r.started = false
 	return nil
 }
 
@@ -294,6 +331,67 @@ func TestRunOnceExecutesEveryEffectAndMarksItDone(t *testing.T) {
 	pending, err := box.Pending(ctx, 10)
 	require.NoError(t, err)
 	require.Empty(t, pending)
+}
+
+// A crash after Execute and before Done must not run the effect again. The first drainer performs the effect and then
+// dies before Done reaches the database. A restarted drainer, after the lease runs out, must leave the effect alone.
+func TestCrashAfterExecuteIsNeverRepeated(t *testing.T) {
+	ctx := context.Background()
+	fx := effectOf(change.EffectRoomPost, 1)
+	box := newMemOutbox(fx)
+	box.doneErr = func(change.EffectKey) error { return errors.New("simulated kill -9 before Done") }
+	ex := &fakeExec{}
+	first := mustNew(t, config(box, allKinds(ex)))
+
+	_, err := first.RunOnce(ctx)
+	require.ErrorContains(t, err, "simulated kill -9")
+	require.Equal(t, []change.EffectKey{fx.Key}, ex.keys(), "the action was performed before the crash")
+
+	box.doneErr = nil
+	box.expireLease(fx.Key)
+	restarted := mustNew(t, config(box, allKinds(ex)))
+	for range 3 {
+		res, err := restarted.RunOnce(ctx)
+		require.NoError(t, err)
+		require.Equal(t, DrainResult{}, res, "an effect that started is in doubt, so it is never claimed again")
+	}
+	require.Equal(t, []change.EffectKey{fx.Key}, ex.keys(), "the effect ran once, not twice")
+	require.False(t, box.state(fx.Key).done, "the effect stays in doubt for a person to reconcile")
+}
+
+// The start mark is written before the executor runs. A crash during the execution then leaves a trace in the
+// database, and the restart can tell that the effect may have run.
+func TestStartIsRecordedBeforeTheExecutorRuns(t *testing.T) {
+	ctx := context.Background()
+	fx := effectOf(change.EffectRoomPost, 1)
+	box := newMemOutbox(fx)
+	var startedWhenRun bool
+	ex := &fakeExec{fn: func(context.Context, change.Effect) error {
+		startedWhenRun = box.state(fx.Key).started
+		return nil
+	}}
+	d := mustNew(t, config(box, allKinds(ex)))
+
+	res, err := d.RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, DrainResult{Claimed: 1, Done: 1}, res)
+	require.True(t, startedWhenRun, "the start mark is set before the executor runs")
+}
+
+// An effect whose start is refused is not executed. The database refuses a start when the lease is gone, so another
+// drainer may hold the effect now; running it here would make a duplicate.
+func TestRefusedStartMeansNoExecution(t *testing.T) {
+	ctx := context.Background()
+	fx := effectOf(change.EffectRoomPost, 1)
+	box := newMemOutbox(fx)
+	box.startErr = errors.New("lease lost")
+	ex := &fakeExec{}
+	d := mustNew(t, config(box, allKinds(ex)))
+
+	res, err := d.RunOnce(ctx)
+	require.ErrorContains(t, err, "lease lost")
+	require.Equal(t, DrainResult{Claimed: 1}, res)
+	require.Empty(t, ex.keys(), "nothing ran, so nothing can run twice")
 }
 
 func TestExecutorErrorIsRecordedWithItsTextAndRetried(t *testing.T) {

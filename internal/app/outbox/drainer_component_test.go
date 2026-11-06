@@ -171,7 +171,7 @@ func TestDrainerWithPostgres(t *testing.T) {
 		require.Empty(t, pending)
 	})
 
-	t.Run("a crash after Execute and before Done re-runs the effect with the same key after its lease expires", func(t *testing.T) {
+	t.Run("a crash after Execute and before Done never runs the effect again, and lists it as in doubt", func(t *testing.T) {
 		pool := newPool(t)
 		ctx := context.Background()
 		store := pgstore.NewStore(pool)
@@ -199,16 +199,21 @@ func TestDrainerWithPostgres(t *testing.T) {
 		require.Equal(t, outbox.DrainResult{}, again, "while the lease is live the effect is not claimed again")
 
 		require.Eventually(t, func() bool {
-			res, err := d.RunOnce(ctx)
-			return err == nil && res.Done == 1
-		}, 10*time.Second, 20*time.Millisecond, "the expired lease hands the effect out again")
+			var expired bool
+			err := pool.QueryRow(ctx, "SELECT claimed_until <= now() FROM outbox WHERE effect_key = $1", string(fx.Key)).Scan(&expired)
+			return err == nil && expired
+		}, 10*time.Second, 20*time.Millisecond, "the lease on the effect runs out")
+
+		restarted, err := d.RunOnce(ctx)
+		require.NoError(t, err)
+		require.Equal(t, outbox.DrainResult{}, restarted, "after the lease runs out, a started effect is in doubt and not claimed")
 
 		sys.mu.Lock()
 		defer sys.mu.Unlock()
-		require.Equal(t, 2, sys.calls[fx.Key], "the effect ran a second time")
-		require.Equal(t, 1, sys.actions[fx.Key], "the outside system, deduplicating by key, performed one action")
-		pending, err := store.Pending(ctx, 10)
-		require.NoError(t, err)
-		require.Empty(t, pending)
+		require.Equal(t, 1, sys.calls[fx.Key], "the effect ran once, not twice")
+		require.Equal(t, 1, sys.actions[fx.Key], "the outside system performed one action")
+		var inDoubt int
+		require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM outbox_in_doubt").Scan(&inDoubt))
+		require.Equal(t, 1, inDoubt, "the effect is listed as in doubt for reconciliation")
 	})
 }

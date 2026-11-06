@@ -48,6 +48,30 @@ func (s *Store) Pending(ctx context.Context, limit int) ([]change.Effect, error)
 	return out, nil
 }
 
+// Start records that the executor of a claimed effect is about to run, before it runs (T22, TECH_SPEC 2.4). The
+// UPDATE matches only an undone row that has not started and whose lease is still live on the database clock. A
+// drainer that lost its lease, or that starts a row twice, is refused, and so it must run nothing. An unknown key is
+// ports.ErrNotFound.
+func (s *Store) Start(ctx context.Context, key change.EffectKey) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE outbox SET started_at = now()
+		WHERE effect_key = $1 AND done_at IS NULL AND started_at IS NULL AND claimed_until > now()`, string(key))
+	if err != nil {
+		return fmt.Errorf("start effect %s: %w", key, err)
+	}
+	if tag.RowsAffected() == 1 {
+		return nil
+	}
+	var found bool
+	err = s.pool.QueryRow(ctx, "SELECT true FROM outbox WHERE effect_key = $1", string(key)).Scan(&found)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("start effect %s: %w", key, ports.ErrNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("start effect %s: %w", key, err)
+	}
+	return fmt.Errorf("start effect %s: the effect is not under a live lease of an unstarted row", key)
+}
+
 // Done marks an effect as performed and releases its lease. A second call changes nothing and is not an error; the
 // first done_at stays.
 func (s *Store) Done(ctx context.Context, key change.EffectKey) error {
@@ -62,12 +86,14 @@ func (s *Store) Done(ctx context.Context, key change.EffectKey) error {
 	return nil
 }
 
-// Fail records one failed attempt, its reason, and releases the lease, so the effect is claimable again at once.
+// Fail records one failed attempt, its reason, and releases the lease, so the effect is claimable again at once. It
+// also clears the start mark: a reported failure means the action did not happen, so the retry is not in doubt.
 // A failure reported after the effect is done is refused, because it would contradict a performed effect; the
 // drainer must not report both.
 func (s *Store) Fail(ctx context.Context, key change.EffectKey, reason string) error {
 	tag, err := s.pool.Exec(ctx,
-		"UPDATE outbox SET attempts = attempts + 1, last_error = $2, claimed_until = NULL WHERE effect_key = $1 AND done_at IS NULL",
+		`UPDATE outbox SET attempts = attempts + 1, last_error = $2, claimed_until = NULL, started_at = NULL
+		WHERE effect_key = $1 AND done_at IS NULL`,
 		string(key), reason)
 	if err != nil {
 		return fmt.Errorf("record failure of %s: %w", key, err)
@@ -89,11 +115,12 @@ func (s *Store) Fail(ctx context.Context, key change.EffectKey, reason string) e
 	return fmt.Errorf("record failure of %s: no row changed", key)
 }
 
-// Claim takes a lease on up to limit effects that are not done, have failed fewer than maxAttempts times, and whose
-// lease is free or expired. The rows are chosen oldest first with FOR UPDATE SKIP LOCKED, so two claims running at
-// once never choose the same row, and the UPDATE sets claimed_until = now() + lease in the same statement, so the
-// lease starts in the database's clock. The returned effects are in creation order. limit and lease must be
-// positive; a lease under one microsecond cannot be stored and is refused.
+// Claim takes a lease on up to limit effects that are not done, have failed fewer than maxAttempts times, have not
+// started, and whose lease is free or expired. A started row whose lease ran out is in doubt and is never returned
+// (outbox_in_doubt). The rows are chosen oldest first with FOR UPDATE SKIP LOCKED, so two claims running at once
+// never choose the same row, and the UPDATE sets claimed_until = now() + lease in the same statement, so the lease
+// starts in the database's clock. The returned effects are in creation order. limit and lease must be positive; a
+// lease under one microsecond cannot be stored and is refused.
 func (s *Store) Claim(ctx context.Context, limit int, lease time.Duration) ([]change.Effect, error) {
 	if limit < 1 {
 		return nil, fmt.Errorf("claim effects: limit %d must be 1 or more", limit)
@@ -105,7 +132,7 @@ func (s *Store) Claim(ctx context.Context, limit int, lease time.Duration) ([]ch
 	rows, err := s.pool.Query(ctx, `UPDATE outbox SET claimed_until = now() + $3::bigint * interval '1 microsecond'
 		WHERE id IN (
 		  SELECT id FROM outbox
-		  WHERE done_at IS NULL AND attempts < $1 AND (claimed_until IS NULL OR claimed_until <= now())
+		  WHERE done_at IS NULL AND attempts < $1 AND started_at IS NULL AND (claimed_until IS NULL OR claimed_until <= now())
 		  ORDER BY created_at, id
 		  LIMIT $2
 		  FOR UPDATE SKIP LOCKED)
@@ -157,7 +184,7 @@ func (s *Store) ClaimEffect(ctx context.Context, key change.EffectKey, lease tim
 	var kind, target string
 	var payload []byte
 	err := s.pool.QueryRow(ctx, `UPDATE outbox SET claimed_until = now() + $2::bigint * interval '1 microsecond'
-		WHERE effect_key = $1 AND done_at IS NULL AND attempts < $3 AND (claimed_until IS NULL OR claimed_until <= now())
+		WHERE effect_key = $1 AND done_at IS NULL AND attempts < $3 AND started_at IS NULL AND (claimed_until IS NULL OR claimed_until <= now())
 		RETURNING effect_key, kind, target, payload`, string(key), micros, maxAttempts).Scan(&fx.Key, &kind, &target, &payload)
 	if err == nil {
 		fx.Kind, fx.Target, fx.Payload = change.EffectKind(kind), target, payload

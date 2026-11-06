@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -214,6 +215,106 @@ func TestOutboxLease(t *testing.T) {
 	t.Run("a failure for an unknown effect is not found", func(t *testing.T) {
 		s := NewStore(srv.database(ctx, t).pool)
 		require.ErrorIs(t, s.Fail(ctx, change.EffectKey("room_post:PAY-142:9:none"), "x"), ports.ErrNotFound)
+	})
+}
+
+// expireLease moves the lease of key into the past, as if its drainer had died. It uses the database clock, as Claim
+// does, so the test does not wait for a lease to run out.
+func expireLease(ctx context.Context, t *testing.T, pool *pgxpool.Pool, key change.EffectKey) {
+	t.Helper()
+	tag, err := pool.Exec(ctx, "UPDATE outbox SET claimed_until = now() - interval '1 second' WHERE effect_key = $1", string(key))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, tag.RowsAffected())
+}
+
+func TestOutboxStart(t *testing.T) {
+	ctx := context.Background()
+	srv := startServer(t)
+
+	t.Run("a started row is not claimed again after its lease runs out, and is listed as in doubt", func(t *testing.T) {
+		db := srv.database(ctx, t)
+		s := NewStore(db.pool)
+		fx := appendOne(ctx, t, s, 1, "started")
+
+		_, err := s.Claim(ctx, 1, claimLong)
+		require.NoError(t, err)
+		require.NoError(t, s.Start(ctx, fx.Key))
+		require.Equal(t, int64(0), countRows(ctx, t, db.pool, "SELECT count(*) FROM outbox_in_doubt"), "a live lease is not in doubt")
+
+		expireLease(ctx, t, db.pool, fx.Key)
+		require.Equal(t, int64(1), countRows(ctx, t, db.pool, "SELECT count(*) FROM outbox_in_doubt"))
+		got, err := s.Claim(ctx, 10, claimLong)
+		require.NoError(t, err)
+		require.Empty(t, got, "an effect that may have run is never handed out again")
+	})
+
+	t.Run("start needs a live lease, so a drainer that lost its lease cannot start the row", func(t *testing.T) {
+		db := srv.database(ctx, t)
+		s := NewStore(db.pool)
+		fx := appendOne(ctx, t, s, 1, "lost")
+
+		_, err := s.Claim(ctx, 1, claimLong)
+		require.NoError(t, err)
+		expireLease(ctx, t, db.pool, fx.Key)
+		require.Error(t, s.Start(ctx, fx.Key))
+		require.Equal(t, int64(0), countRows(ctx, t, db.pool,
+			"SELECT count(*) FROM outbox WHERE effect_key = $1 AND started_at IS NOT NULL", string(fx.Key)))
+	})
+
+	t.Run("start refuses an unclaimed effect and a second start", func(t *testing.T) {
+		db := srv.database(ctx, t)
+		s := NewStore(db.pool)
+		fx := appendOne(ctx, t, s, 1, "twice")
+
+		require.Error(t, s.Start(ctx, fx.Key), "an effect nobody claimed cannot start")
+		_, err := s.Claim(ctx, 1, claimLong)
+		require.NoError(t, err)
+		require.NoError(t, s.Start(ctx, fx.Key))
+		require.Error(t, s.Start(ctx, fx.Key), "a row starts once")
+	})
+
+	t.Run("start refuses a done effect and an unknown key", func(t *testing.T) {
+		db := srv.database(ctx, t)
+		s := NewStore(db.pool)
+		fx := appendOne(ctx, t, s, 1, "done")
+
+		_, err := s.Claim(ctx, 1, claimLong)
+		require.NoError(t, err)
+		require.NoError(t, s.Done(ctx, fx.Key))
+		require.Error(t, s.Start(ctx, fx.Key))
+		require.ErrorIs(t, s.Start(ctx, "no:such:effect"), ports.ErrNotFound)
+	})
+
+	t.Run("fail after start clears the mark, so the effect is claimable at once", func(t *testing.T) {
+		db := srv.database(ctx, t)
+		s := NewStore(db.pool)
+		fx := appendOne(ctx, t, s, 1, "retry")
+
+		_, err := s.Claim(ctx, 1, claimLong)
+		require.NoError(t, err)
+		require.NoError(t, s.Start(ctx, fx.Key))
+		require.NoError(t, s.Fail(ctx, fx.Key, "upstream 503"))
+		require.Equal(t, int64(0), countRows(ctx, t, db.pool, "SELECT count(*) FROM outbox_in_doubt"),
+			"a reported failure is not in doubt")
+
+		got, err := s.Claim(ctx, 1, claimLong)
+		require.NoError(t, err)
+		require.Equal(t, []change.EffectKey{fx.Key}, keysOf(got))
+	})
+
+	t.Run("ClaimEffect never returns an in-doubt row", func(t *testing.T) {
+		db := srv.database(ctx, t)
+		s := NewStore(db.pool)
+		fx := appendOne(ctx, t, s, 1, "keyed")
+
+		_, err := s.Claim(ctx, 1, claimLong)
+		require.NoError(t, err)
+		require.NoError(t, s.Start(ctx, fx.Key))
+		expireLease(ctx, t, db.pool, fx.Key)
+
+		got, err := s.ClaimEffect(ctx, fx.Key, claimLong)
+		require.NoError(t, err)
+		require.Nil(t, got, "a started effect whose lease ran out is in doubt and is not claimed by key either")
 	})
 }
 

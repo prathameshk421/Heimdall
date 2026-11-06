@@ -55,6 +55,7 @@ func (*fakeOutbox) Claim(_ context.Context, limit int, _ time.Duration) ([]chang
 func (*fakeOutbox) ClaimEffect(_ context.Context, _ change.EffectKey, _ time.Duration) (*change.Effect, error) {
 	return nil, nil
 }
+func (*fakeOutbox) Start(_ context.Context, _ change.EffectKey) error          { return nil }
 func (*fakeOutbox) Fail(_ context.Context, _ change.EffectKey, _ string) error { return nil }
 
 type fakePRs struct{}
@@ -253,6 +254,7 @@ func TestEventStoreAndOutboxContracts(t *testing.T) {
 	fx, err := box.Pending(ctx, 4)
 	require.NoError(t, err)
 	require.Len(t, fx, 4)
+	require.NoError(t, box.Start(ctx, key))
 	require.NoError(t, box.Done(ctx, key))
 	require.NoError(t, box.Fail(ctx, key, "timeout"))
 }

@@ -28,15 +28,18 @@
 // that takes no lease; it is for inspection. Claim (T22) takes a lease: in one UPDATE it selects the oldest rows whose
 // lease is free or expired with FOR UPDATE SKIP LOCKED, and sets claimed_until = now() + lease, so the lease starts on
 // the database clock. Two live leases never cover one row, and a row locked by another transaction is skipped rather
-// than waited for. Done sets done_at once, is idempotent, and clears the lease. Fail adds one attempt, records the
-// reason and clears the lease, so a failed row is claimable at once; after eight attempts the row is in the outbox_dead
-// view and out of Pending and Claim. A Fail after Done is refused, because it would contradict a performed effect. The
-// triggers allow UPDATE only of done_at, attempts, last_error and claimed_until; DELETE and TRUNCATE are refused on
-// outbox as on event.
+// than waited for. Start (T22) sets started_at once, only on an undone row that has not started and whose lease is
+// live; it is the mark the drainer sets before it runs an executor. A started row whose lease has run out is in doubt:
+// it is listed by the outbox_in_doubt view, and Claim never returns it again. Done sets done_at once, is idempotent,
+// and clears the lease. Fail adds one attempt, records the reason, clears the lease and clears started_at, so a failed
+// row is claimable at once; after eight attempts the row is in the outbox_dead view and out of Pending and Claim. A
+// Fail after Done is refused, because it would contradict a performed effect. The triggers allow UPDATE only of
+// done_at, attempts, last_error, claimed_until and started_at; DELETE and TRUNCATE are refused on outbox as on event.
 //
 // Invariants.
 //   - Triggers on event refuse UPDATE, DELETE and TRUNCATE (4.1). Triggers on outbox refuse DELETE and TRUNCATE and any
-//     UPDATE that changes a column other than done_at, attempts, last_error or claimed_until.
+//     UPDATE that changes a column other than done_at, attempts, last_error, claimed_until or started_at.
+//   - A started row never gets a new lease from Claim, so a crash after the start mark cannot run the executor twice.
 //   - UNIQUE (change_id, version) on event: at most one event per version of a change.
 //   - A unique violation on that constraint is reported as ports.ErrVersionConflict (translateAppendErr), and the
 //     database error stays in the chain.
@@ -47,6 +50,8 @@
 //   - the outbox_dead view (done_at NULL and attempts >= 8): the dead-letter view that TECH_SPEC 2.1 names.
 //   - outbox.claimed_until TIMESTAMPTZ (migration 0002, T22): the end of the drainer's lease. The guard function is
 //     replaced to allow this one column; the rest of the guard is unchanged.
+//   - outbox.started_at TIMESTAMPTZ and the outbox_in_doubt view (migration 0010, T22): the start mark that makes a
+//     crash after execution visible instead of repeating the effect. The guard allows this one more column.
 //   - the migrations also create goose's own version table, which is bookkeeping and not part of the spec.
 //
 // Failure modes. A database that is down makes every call return a wrapped error; nothing is partially written
