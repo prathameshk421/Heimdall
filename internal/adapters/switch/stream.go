@@ -197,10 +197,12 @@ func (s *streamRun) open(ctx context.Context) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{"filter": {"all"}}
+	// Switch reads the declared rooms as one comma-separated "rooms" parameter (agent bridge events handler).
+	names := make([]string, 0, len(s.rooms))
 	for _, r := range s.rooms {
-		q.Add("room_id", string(r))
+		names = append(names, string(r))
 	}
+	q := url.Values{"filter": {"all"}, "rooms": {strings.Join(names, ",")}}
 	path := "/agents/" + c.agentID + "/events"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+q.Encode(), nil)
 	if err != nil {

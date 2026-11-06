@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -130,7 +131,7 @@ func TestStreamOpensWithFilterAllTheRoomsAndTheKeyAndNoCursor(t *testing.T) {
 	require.Equal(t, "text/event-stream", opens[0].Accept)
 	require.Equal(t, testAPIKey, opens[0].Auth)
 	require.Contains(t, opens[0].Query, "filter=all")
-	require.Contains(t, opens[0].Query, "room_id="+testRoomUUID)
+	require.Contains(t, roomsOf(t, opens[0].Query), testRoomUUID)
 	require.Empty(t, opens[0].LastEventID, "the first connection has nothing to resume")
 	require.Empty(t, opens[0].Connection)
 	require.Empty(t, f.opCalls("read_context"), "no resume cursor means no history read")
@@ -151,8 +152,8 @@ func TestStreamDeliversSequenceAndCursorPerRoom(t *testing.T) {
 
 	opens := streamOpens(f)
 	require.Len(t, opens, 1)
-	require.Contains(t, opens[0].Query, "room_id="+testRoomUUID)
-	require.Contains(t, opens[0].Query, "room_id="+testOtherRoom, "every declared room is on the URL")
+	require.Contains(t, roomsOf(t, opens[0].Query), testRoomUUID)
+	require.Contains(t, roomsOf(t, opens[0].Query), testOtherRoom, "every declared room is on the URL")
 
 	d := got.all()
 	require.Len(t, d, 3)
@@ -388,4 +389,12 @@ func TestStreamFailedBeatEndsTheConnectionAndReconnectsNamingIt(t *testing.T) {
 	opens := streamOpens(f)
 	require.Len(t, opens, 2, "a beat that Switch refuses ends the connection, and the stream reconnects")
 	require.Equal(t, connA, opens[1].Connection)
+}
+
+// roomsOf returns the rooms a stream URL declares: one comma-separated "rooms" parameter, as Switch reads it.
+func roomsOf(t *testing.T, rawQuery string) string {
+	t.Helper()
+	q, err := url.ParseQuery(rawQuery)
+	require.NoError(t, err)
+	return q.Get("rooms")
 }
