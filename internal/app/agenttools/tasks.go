@@ -300,6 +300,45 @@ func (s *Service) SubmitTests(ctx context.Context, a Assignment, sub testset.Sub
 	return nil
 }
 
+// PrepareTestsSubmission validates and builds the event the workflow engine must append with its step decisions.
+// Keeping this separate from SubmitTests lets the server atomically store tests.submitted together with the
+// test-quality outbox effect. Duplicate content returns found=false and remains a no-op.
+func (s *Service) PrepareTestsSubmission(ctx context.Context, a Assignment, sub testset.Submission, late bool) (change.Event, bool, bool, error) {
+	if a.Role != workflow.RoleTestAuthor {
+		return change.Event{}, false, false, fmt.Errorf("%w: role %s cannot submit tests", ErrWrongRole, a.Role)
+	}
+	if err := validateSubmissionExpect(a.ChangeID, a.Task.Inputs, sub); err != nil {
+		return change.Event{}, false, false, fmt.Errorf("%w: %w", ErrValidation, err)
+	}
+	blobRef, err := s.storeSubmissionBlob(ctx, sub)
+	if err != nil {
+		return change.Event{}, false, false, err
+	}
+	existing, err := s.events.Load(ctx, a.ChangeID)
+	if err != nil {
+		return change.Event{}, false, false, fmt.Errorf("load change %s: %w", a.ChangeID, err)
+	}
+	if err := checkTaskAgent(existing, a); err != nil {
+		return change.Event{}, false, false, err
+	}
+	if hasDuplicateSubmission(existing, blobRef) {
+		return change.Event{}, false, false, nil
+	}
+	isLate := late || s.clock.Now().After(a.Deadline)
+	if isLate {
+		ev, err := s.buildTimedOutEvent(a, blobRef, existing)
+		if err != nil {
+			return change.Event{}, false, false, err
+		}
+		return ev, true, true, nil
+	}
+	ev, err := s.buildTestsSubmittedEvent(a, sub, blobRef, existing)
+	if err != nil {
+		return change.Event{}, false, false, err
+	}
+	return ev, true, false, nil
+}
+
 type askedItem struct {
 	qID      change.QuestionID
 	senderID change.SenderID

@@ -3,6 +3,7 @@ package effects_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,25 @@ type fakeSource struct {
 	err         error
 }
 
+type fakeTestQualityCode struct {
+	repo change.Repo
+	sha  id.SHA
+	dir  string
+	tree id.SHA
+	err  error
+}
+
+func (f *fakeTestQualityCode) TreeHash(_ context.Context, repo change.Repo, sha id.SHA, dir string) (id.SHA, error) {
+	f.repo, f.sha, f.dir = repo, sha, dir
+	return f.tree, f.err
+}
+func (*fakeTestQualityCode) ReadFile(context.Context, change.Repo, id.SHA, string) ([]byte, error) {
+	return nil, ports.ErrNotFound
+}
+func (*fakeTestQualityCode) Tarball(context.Context, change.Repo, id.SHA) (io.ReadCloser, error) {
+	return nil, ports.ErrNotFound
+}
+
 func (f *fakeSource) Fetch(_ context.Context, repo change.Repo, sha id.SHA) error {
 	f.fetchedRepo = repo
 	f.fetchedSHA = sha
@@ -28,9 +48,15 @@ func (f *fakeSource) Fetch(_ context.Context, repo change.Repo, sha id.SHA) erro
 }
 
 type fakeSandbox struct {
-	runs    []ports.SandboxJob
-	results []ports.SandboxResult
-	idx     int
+	runs     []ports.SandboxJob
+	overlays [][]ports.File
+	results  []ports.SandboxResult
+	idx      int
+}
+
+func (f *fakeSandbox) RunOverlay(ctx context.Context, j ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error) {
+	f.overlays = append(f.overlays, overlays)
+	return f.Run(ctx, j)
 }
 
 func (f *fakeSandbox) Run(_ context.Context, j ports.SandboxJob) (ports.SandboxResult, error) {
@@ -66,6 +92,7 @@ func TestTestQualityExecutorSuccess(t *testing.T) {
 
 	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: subBytes}}
 	source := &fakeSource{}
+	code := &fakeTestQualityCode{tree: id.SHA("abcdef0123456789abcdef0123456789abcdef01")}
 	sandbox := &fakeSandbox{
 		results: []ports.SandboxResult{
 			// 3 flake runs on base: all fail on TestA (stable failure on base)
@@ -110,6 +137,7 @@ func TestTestQualityExecutorSuccess(t *testing.T) {
 		Ingest:  ingest,
 		IDs:     ids,
 		Clock:   clock,
+		Code:    code,
 	})
 	require.NoError(t, err)
 
@@ -131,6 +159,11 @@ func TestTestQualityExecutorSuccess(t *testing.T) {
 
 	err = exec.Execute(ctx, fx)
 	require.NoError(t, err)
+	require.Len(t, sandbox.overlays, 3, "each flake run evaluates the submitted test overlay")
+	for _, overlay := range sandbox.overlays {
+		require.Equal(t, "tests/heimdall/PAY-142/refund_test.go", overlay[0].Path)
+		require.Equal(t, "package refund_test\n", string(overlay[0].Content))
+	}
 
 	// Source was fetched
 	require.Equal(t, change.Repo("acme/pay-demo"), source.fetchedRepo)
@@ -143,6 +176,9 @@ func TestTestQualityExecutorSuccess(t *testing.T) {
 	var verified change.TestsVerified
 	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &verified))
 	require.Equal(t, baseSHA, verified.SHA)
+	require.Equal(t, code.tree, verified.TreeHash)
+	require.Equal(t, change.Repo("acme/pay-demo"), code.repo)
+	require.Equal(t, "tests/heimdall/PAY-142", code.dir)
 	require.Len(t, verified.RunIDs, 3)
 }
 
@@ -163,6 +199,7 @@ func TestTestQualityExecutorWithHeadPassesRedFirst(t *testing.T) {
 
 	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: subBytes}}
 	source := &fakeSource{}
+	code := &fakeTestQualityCode{tree: id.SHA("abcdef0123456789abcdef0123456789abcdef01")}
 	sandbox := &fakeSandbox{
 		results: []ports.SandboxResult{
 			// 3 runs on base: fail
@@ -207,6 +244,7 @@ func TestTestQualityExecutorWithHeadPassesRedFirst(t *testing.T) {
 		Ingest:  ingest,
 		IDs:     &fakeIDs{},
 		Clock:   fixedClock{},
+		Code:    code,
 	})
 	require.NoError(t, err)
 
@@ -219,10 +257,47 @@ func TestTestQualityExecutorWithHeadPassesRedFirst(t *testing.T) {
 
 	err = exec.Execute(ctx, fx)
 	require.NoError(t, err)
+	require.Len(t, sandbox.overlays, 4, "base and head checks both evaluate the submitted tests")
+	require.Equal(t, change.Repo("acme/pay-demo"), code.repo)
+	require.Equal(t, "tests/heimdall/PAY-142", code.dir)
 
 	require.Len(t, ingest.written, 1)
 	require.Equal(t, change.EventTestsVerified, ingest.written[0].Type)
 	require.Len(t, sandbox.runs, 4) // 3 base + 1 head
+}
+
+func TestTestQualityRefusesVerificationWithoutPinnedTreeHash(t *testing.T) {
+	ctx := context.Background()
+	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
+	sub := testset.Submission{
+		Files:              []testset.File{{Path: "tests/heimdall/PAY-142/refund_test.go", Content: "package refund_test\\n"}},
+		AcceptanceCriteria: map[string][]string{"AC1": {"TestA"}},
+	}
+	subBytes, err := json.Marshal(sub)
+	require.NoError(t, err)
+	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: subBytes}}
+	sandbox := &fakeSandbox{results: []ports.SandboxResult{
+		{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
+		{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
+		{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
+	}}
+	store := &fakeStore{events: []change.Event{
+		{ID: "ev-1", ChangeID: "PAY-142", Type: change.EventBranchEnsured, Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","base_sha":"` + string(baseSHA) + `"}`)},
+		{ID: "ev-2", ChangeID: "PAY-142", Type: change.EventTestsSubmitted, BlobRefs: []workflow.BlobRef{blobRef}, Payload: json.RawMessage(`{"refs":["tests/heimdall/PAY-142/refund_test.go"],"ac_map":{"AC1":["TestA"]},"sha":"` + string(baseSHA) + `","tree_hash":"` + string(baseSHA) + `"}`)},
+	}}
+	ingest := &fakeIngest{}
+	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
+		Blobs: blobs, Source: &fakeSource{}, Sandbox: sandbox, Store: store, Ingest: ingest,
+		IDs: &fakeIDs{}, Clock: fixedClock{}, Code: &fakeTestQualityCode{},
+	})
+	require.NoError(t, err)
+	err = exec.Execute(ctx, change.Effect{
+		Key: "test_quality:PAY-142:1:test_qa", Kind: change.EffectTestQuality, Target: "PAY-142",
+		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `"}`),
+	})
+	require.ErrorContains(t, err, "empty tests tree hash")
+	require.Empty(t, ingest.written, "verification must not be recorded without a content tree hash")
 }
 
 func TestTestQualityExecutorWithHeadRejectsFailingRedFirst(t *testing.T) {

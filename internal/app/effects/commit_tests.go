@@ -87,7 +87,10 @@ func (c CommitTests) Execute(ctx context.Context, fx change.Effect) error {
 		return failf(err, "commit_tests %s: commit files", ticket)
 	}
 
-	treeHash := c.treeHash(ctx, p.Repo, sha, p.Dir)
+	treeHash, err := c.treeHash(ctx, p.Repo, sha, p.Dir)
+	if err != nil {
+		return failf(err, "commit_tests %s: pin tests tree", ticket)
+	}
 	return c.ingestCommitted(ctx, ticket, l, sha, treeHash)
 }
 
@@ -108,13 +111,18 @@ func (c CommitTests) readFiles(ctx context.Context, ticket id.ChangeID, cf []cha
 	return files, nil
 }
 
-func (c CommitTests) treeHash(ctx context.Context, repo change.Repo, sha id.SHA, dir string) id.SHA {
-	if c.deps.Code != nil {
-		if th, err := c.deps.Code.TreeHash(ctx, repo, sha, dir); err == nil && th != "" {
-			return th
-		}
+func (c CommitTests) treeHash(ctx context.Context, repo change.Repo, sha id.SHA, dir string) (id.SHA, error) {
+	if c.deps.Code == nil {
+		return "", fmt.Errorf("code reader is required to pin %s at %s", dir, sha)
 	}
-	return sha
+	th, err := c.deps.Code.TreeHash(ctx, repo, sha, dir)
+	if err != nil {
+		return "", fmt.Errorf("read tree hash: %w", err)
+	}
+	if th == "" {
+		return "", fmt.Errorf("empty tree hash for %s at %s", dir, sha)
+	}
+	return th, nil
 }
 
 func (c CommitTests) ingestCommitted(ctx context.Context, ticket id.ChangeID, l loadedChange, sha, treeHash id.SHA) error {
