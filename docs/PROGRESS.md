@@ -14,6 +14,14 @@
 - Mutations, each caught and restored: trigger ignores ToStatus (`TestTriggerIgnoresAMoveThatEndedAwayFromInProgress` and others); Jira drops the status move (`TestOnlyHistoriesInsideTheWindowAreEmitted`); `Validate` accepts a missing ToStatus (`TestTicketChangeStatusNeedsAToStatus`).
 - **Not verified:** a live Jira transition (no live Jira call was made); `make verify` for this item.
 
+## A10 item 2: Jira app-account rule (Nov 6, 2026)
+
+- `ports.Ticket.AssigneeIsApp` is set by the Jira adapter from `accountType == "app"`, and the trigger ignores such a ticket with `ReasonAppAccount`, so the rule runs in the trigger and not only in the adapter. The KAN golden tickets gained `assignee_is_app: false` (their assignee is a person).
+- Red first: `TestIgnoresATicketAssignedToAnAppAccount` and `TestTicketAssignedToAnAppAccountIsMarkedAsOne` observed assertion failures before the change.
+- Mutations, each caught and restored: trigger ignores the flag; Jira reads the wrong account kind; Jira never sets the flag.
+- Evidence: `make fast` exit 0 (0 lint issues).
+- **Not verified:** a live Jira app-account assignee.
+
 ## Live wiring: WP0 preflight (Nov 6, 2026, read-only)
 
 - `make fast` on `heimdall-build` before A1: exit 0, 3,691 tests.

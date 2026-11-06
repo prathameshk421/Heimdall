@@ -27,6 +27,7 @@ const (
 	ReasonTicketNotFound  Reason = "ticket_not_found"
 	ReasonNotInProgress   Reason = "not_in_progress"
 	ReasonUnassigned      Reason = "unassigned"
+	ReasonAppAccount      Reason = "app_account"
 )
 
 // statusField is the changelog field a status move names.
@@ -200,6 +201,10 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 	}
 	if tk.Assignee == "" {
 		res.Ignored[ReasonUnassigned]++
+		return nil
+	}
+	if tk.AssigneeIsApp {
+		res.Ignored[ReasonAppAccount]++
 		return nil
 	}
 	started, err := p.startTicket(ctx, ch.Key, repo, tk, isFile)

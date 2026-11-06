@@ -4,8 +4,21 @@
   "assignee": "557058:ana",
   "status": "In Progress",
   "criteria": [
-    {"id": "AC1", "hash": "ac2b1b845ebad7009d3c2b30429cc6749b46c002a64195ca31302ae3f48155d0", "text": "A refund cannot exceed the original payment."},
-    {"id": "AC2", "hash": "d90ada66450d86c9c521e39a304e939f8d6285e83541583af16658442be1d280", "text": "Refunding twice with the same Idempotency-Key returns the first refund."},
-    {"id": "AC3", "hash": "952d5076c2340899cbe43b682dcf4f526644c388540a17c078d03273a749361d", "text": "Only the merchant can refund, as set by @ana."}
-  ]
+    {
+      "id": "AC1",
+      "hash": "ac2b1b845ebad7009d3c2b30429cc6749b46c002a64195ca31302ae3f48155d0",
+      "text": "A refund cannot exceed the original payment."
+    },
+    {
+      "id": "AC2",
+      "hash": "d90ada66450d86c9c521e39a304e939f8d6285e83541583af16658442be1d280",
+      "text": "Refunding twice with the same Idempotency-Key returns the first refund."
+    },
+    {
+      "id": "AC3",
+      "hash": "952d5076c2340899cbe43b682dcf4f526644c388540a17c078d03273a749361d",
+      "text": "Only the merchant can refund, as set by @ana."
+    }
+  ],
+  "assignee_is_app": false
 }

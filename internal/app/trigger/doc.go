@@ -58,10 +58,9 @@
 //
 //   - A status move is judged on TicketChange.ToStatus, the status it ended at (A10 item 1). A file change has no move,
 //     so it is judged on the current status. A file-tracker ticket's status is therefore still read at poll time.
-//   - App accounts are not checked here. ports.Ticket has no account kind, so this package cannot tell an app account
-//     from a person. The Jira adapter drops app-assigned changes before they reach this package. A ticket that is
-//     reassigned to an app between the change read and the ticket read would still trigger. Closing this needs a
-//     port field (see the report of T36).
+//   - App accounts: ports.Ticket.AssigneeIsApp marks an app assignee (A10 item 2), and the rule ignores it with
+//     ReasonAppAccount. The Jira adapter also drops app-assigned changes early. A ticket reassigned to an app between
+//     the change read and the ticket read is still judged on the ticket read.
 //
 // # Invariants
 //

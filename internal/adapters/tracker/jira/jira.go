@@ -297,6 +297,7 @@ func (c *Client) Ticket(ctx context.Context, key id.ChangeID) (ports.Ticket, err
 	}
 	if is.Fields.Assignee != nil {
 		tk.Assignee = change.ActorID(is.Fields.Assignee.AccountID)
+		tk.AssigneeIsApp = is.Fields.Assignee.AccountType == "app"
 	}
 	if err := tk.Validate(); err != nil {
 		return ports.Ticket{}, fmt.Errorf("jira ticket %s: %w", string(key), err)
