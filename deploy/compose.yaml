@@ -22,12 +22,15 @@ services:
       dockerfile: deploy/Dockerfile.server
     image: heimdall-server:dev
     command: ["--config", "/etc/heimdall/heimdall.toml"]
+    # The blob store path is relative (.heimdall/blobs), so the working directory is a durable named volume.
+    working_dir: /var/lib/heimdall
     # The server gets only the narrow sandbox API socket. The host container-engine socket is never mounted.
     group_add:
       - "${HEIMDALL_RUNNER_GID:?set HEIMDALL_RUNNER_GID to the runner socket group id}"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
+      - heimdall_data:/var/lib/heimdall
       - type: bind
         source: /run/heimdall-runner/runner.sock
         target: /run/heimdall-runner/runner.sock
@@ -144,6 +147,7 @@ networks:
   memory:
 
 volumes:
+  heimdall_data:
   postgres_data:
   falkordb_data:
   ollama_data:
