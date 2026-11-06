@@ -40,7 +40,7 @@ func (a *Adapter) branchHead(ctx context.Context, token, base, branch string) (s
 }
 
 // EnsureBranch creates name at from when it does not exist, and does nothing when it does.
-func (a *Adapter) EnsureBranch(ctx context.Context, repo change.Repo, from id.SHA, name string) error {
+func (a *Adapter) EnsureBranch(ctx context.Context, repo change.Repo, from id.SHA, name string, key string) error {
 	base, err := repoPath(repo)
 	if err != nil {
 		return err
@@ -50,6 +50,9 @@ func (a *Adapter) EnsureBranch(ctx context.Context, repo change.Repo, from id.SH
 	}
 	if err := checkBranch(name); err != nil {
 		return err
+	}
+	if strings.TrimSpace(key) == "" {
+		return errors.New("github: ensure branch needs an idempotency key")
 	}
 	token, err := a.tokens.Writer(ctx, OpBranchWrite, repo)
 	if err != nil {

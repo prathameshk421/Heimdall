@@ -22,6 +22,14 @@
 - Evidence: `make fast` exit 0 (0 lint issues).
 - **Not verified:** a live Jira app-account assignee.
 
+## A10 item 3: EnsureBranch carries the effect key (Nov 6, 2026)
+
+- `ports.BranchWriter.EnsureBranch` takes the effect key. The GitHub adapter refuses a blank key before any request; the executor passes `string(fx.Key)`.
+- Honest note on red: the port change and the executor change went in together, so the new assertion (`k.branches.key` equals the effect key, in `TestBranchWritesNameAtBaseAndIngestsBranchEnsured`) was not seen failing on its own. The three mutations below stand in for that check.
+- Mutations, each caught and restored: executor drops the key; adapter accepts no key; adapter accepts a blank key.
+- Evidence: `make fast` exit 0 (0 lint issues); `go vet` with all build tags clean.
+- **Not verified:** a live GitHub branch write (no GitHub call was made); whether GitHub itself dedupes on the key (the adapter's idempotency is still the branch-exists check, not the key).
+
 ## Live wiring: WP0 preflight (Nov 6, 2026, read-only)
 
 - `make fast` on `heimdall-build` before A1: exit 0, 3,691 tests.

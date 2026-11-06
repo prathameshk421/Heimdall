@@ -141,11 +141,12 @@ type fakeBranches struct {
 	repo  change.Repo
 	from  id.SHA
 	name  string
+	key   string
 }
 
-func (f *fakeBranches) EnsureBranch(_ context.Context, r change.Repo, from id.SHA, name string) error {
+func (f *fakeBranches) EnsureBranch(_ context.Context, r change.Repo, from id.SHA, name string, key string) error {
 	f.calls++
-	f.repo, f.from, f.name = r, from, name
+	f.repo, f.from, f.name, f.key = r, from, name, key
 	return f.err
 }
 
@@ -395,11 +396,13 @@ func TestBranchWritesNameAtBaseAndIngestsBranchEnsured(t *testing.T) {
 	k := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
 	room := roomOpenedEvent(t)
 
-	require.NoError(t, k.branch.Execute(context.Background(), branchEffect(t, change.DefaultBranchTemplate)))
+	fx := branchEffect(t, change.DefaultBranchTemplate)
+	require.NoError(t, k.branch.Execute(context.Background(), fx))
 	require.Equal(t, 1, k.branches.calls)
 	require.Equal(t, repo, k.branches.repo)
 	require.Equal(t, base, k.branches.from)
 	require.Equal(t, "KAN-7-fix-refunds-on-partial-capture", k.branches.name)
+	require.Equal(t, string(fx.Key), k.branches.key, "the effect key travels to the branch write (A10 item 3)")
 
 	require.Equal(t, 1, k.ingest.calls)
 	require.Len(t, k.ingest.written, 1)

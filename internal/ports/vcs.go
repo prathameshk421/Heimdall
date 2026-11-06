@@ -45,8 +45,9 @@ type PRCommentReader interface {
 
 // BranchWriter makes test branches and commits. Consumer: the test-author flow (TECH_SPEC 7).
 type BranchWriter interface {
-	// EnsureBranch creates name at from when it does not exist, and does nothing when it does.
-	EnsureBranch(ctx context.Context, repo change.Repo, from id.SHA, name string) error
+	// EnsureBranch creates name at from when it does not exist, and does nothing when it does. key is the effect's
+	// idempotency key; it must be non-empty so every write can be tied to the effect that asked for it (A10 item 3).
+	EnsureBranch(ctx context.Context, repo change.Repo, from id.SHA, name string, key string) error
 	// CommitFiles writes files to branch in one commit and returns its SHA.
 	CommitFiles(ctx context.Context, repo change.Repo, branch, msg string, files []File) (id.SHA, error)
 }

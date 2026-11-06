@@ -176,7 +176,7 @@ func (dummyChat) Read(context.Context, change.RoomID, ports.Cursor) ([]ports.Mes
 
 type dummyVCS struct{}
 
-func (dummyVCS) EnsureBranch(context.Context, change.Repo, id.SHA, string) error { return nil }
+func (dummyVCS) EnsureBranch(context.Context, change.Repo, id.SHA, string, string) error { return nil }
 func (dummyVCS) CommitFiles(context.Context, change.Repo, string, string, []ports.File) (id.SHA, error) {
 	return "", nil
 }

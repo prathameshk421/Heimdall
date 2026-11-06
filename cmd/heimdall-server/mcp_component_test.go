@@ -434,7 +434,7 @@ type jiraJourneyBranchWriter struct {
 	files []ports.File
 }
 
-func (*jiraJourneyBranchWriter) EnsureBranch(context.Context, change.Repo, id.SHA, string) error {
+func (*jiraJourneyBranchWriter) EnsureBranch(context.Context, change.Repo, id.SHA, string, string) error {
 	return nil
 }
 func (w *jiraJourneyBranchWriter) CommitFiles(_ context.Context, _ change.Repo, _, _ string, files []ports.File) (id.SHA, error) {

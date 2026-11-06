@@ -61,7 +61,7 @@ func (fakeCommitCode) Tarball(context.Context, change.Repo, id.SHA) (io.ReadClos
 	return nil, ports.ErrNotFound
 }
 
-func (f *fakeBranchWriter) EnsureBranch(_ context.Context, _ change.Repo, _ id.SHA, _ string) error {
+func (f *fakeBranchWriter) EnsureBranch(_ context.Context, _ change.Repo, _ id.SHA, _ string, _ string) error {
 	return nil
 }
 

@@ -132,7 +132,7 @@ func TestEnsureBranchDoesNothingWhenItExists(t *testing.T) {
 	env.f.route("GET", repoRoot+"/git/ref/heads/heimdall-test/run1", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"object": map[string]any{"sha": shaHead}})
 	})
-	if err := env.a.EnsureBranch(context.Background(), testRepo, shaHead, "heimdall-test/run1"); err != nil {
+	if err := env.a.EnsureBranch(context.Background(), testRepo, shaHead, "heimdall-test/run1", "effect-key"); err != nil {
 		t.Fatalf("EnsureBranch: %v", err)
 	}
 	if env.f.count("POST", repoRoot+"/git/refs") != 0 {
@@ -148,7 +148,7 @@ func TestEnsureBranchCreatesItFromTheSha(t *testing.T) {
 	env.f.route("POST", repoRoot+"/git/refs", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{})
 	})
-	if err := env.a.EnsureBranch(context.Background(), testRepo, shaHead, "heimdall-test/run1"); err != nil {
+	if err := env.a.EnsureBranch(context.Background(), testRepo, shaHead, "heimdall-test/run1", "effect-key"); err != nil {
 		t.Fatalf("EnsureBranch: %v", err)
 	}
 	var body map[string]string
@@ -167,7 +167,7 @@ func TestEnsureBranchCreatesItFromTheSha(t *testing.T) {
 func TestEnsureBranchRefusesAnUnsafeName(t *testing.T) {
 	env := newTestEnv(t)
 	for _, name := range []string{"", "a..b", "-x", "a b", "a\nb"} {
-		if err := env.a.EnsureBranch(context.Background(), testRepo, shaHead, name); err == nil {
+		if err := env.a.EnsureBranch(context.Background(), testRepo, shaHead, name, "effect-key"); err == nil {
 			t.Errorf("branch %q was accepted", name)
 		}
 	}
@@ -374,5 +374,16 @@ func TestCommentRefusesAKeyThatCouldBreakTheMarker(t *testing.T) {
 		if err := env.a.Comment(context.Background(), testRepo, 9, change.EffectKey(key), "x"); err == nil {
 			t.Errorf("key %q was accepted", key)
 		}
+	}
+}
+
+// A branch write without an idempotency key is refused before any request is sent (A10 item 3).
+func TestEnsureBranchRefusesAnEmptyKeyWithoutAnyRequest(t *testing.T) {
+	env := newTestEnv(t)
+	if err := env.a.EnsureBranch(context.Background(), testRepo, shaHead, "heimdall-test/run1", " "); err == nil {
+		t.Fatal("an empty idempotency key must be refused")
+	}
+	if n := env.f.count("GET", repoRoot+"/git/ref/heads/heimdall-test/run1") + env.f.count("POST", repoRoot+"/git/refs"); n != 0 {
+		t.Errorf("requests sent = %d, want 0", n)
 	}
 }

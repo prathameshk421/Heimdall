@@ -162,7 +162,7 @@ func TestEachWriteOperationRunsOnItsOwnNarrowedToken(t *testing.T) {
 	env.f.route("POST", repoRoot+"/git/refs", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{})
 	})
-	if err := env.a.EnsureBranch(ctx, testRepo, shaHead, "heimdall-test/run1"); err != nil {
+	if err := env.a.EnsureBranch(ctx, testRepo, shaHead, "heimdall-test/run1", "effect-key"); err != nil {
 		t.Errorf("EnsureBranch on the branch token: %v", err)
 	}
 

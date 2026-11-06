@@ -90,7 +90,7 @@ type fakeBranches struct{}
 
 var _ ports.BranchWriter = fakeBranches{}
 
-func (fakeBranches) EnsureBranch(_ context.Context, _ change.Repo, _ id.SHA, _ string) error {
+func (fakeBranches) EnsureBranch(_ context.Context, _ change.Repo, _ id.SHA, _ string, _ string) error {
 	return nil
 }
 func (fakeBranches) CommitFiles(_ context.Context, _ change.Repo, _, _ string, _ []ports.File) (id.SHA, error) {
@@ -277,7 +277,7 @@ func TestVCSContractsAreSplitByConsumer(t *testing.T) {
 	require.Equal(t, shaA, head)
 
 	var branches ports.BranchWriter = fakeBranches{}
-	require.NoError(t, branches.EnsureBranch(ctx, repo, shaA, "PAY-142-tests"))
+	require.NoError(t, branches.EnsureBranch(ctx, repo, shaA, "PAY-142-tests", "effect-key"))
 	got, err := branches.CommitFiles(ctx, repo, "PAY-142-tests", "tests", []ports.File{{Path: "t.go"}})
 	require.NoError(t, err)
 	require.Equal(t, shaA, got)
