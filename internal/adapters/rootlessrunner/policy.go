@@ -1,0 +1,126 @@
+// Package rootlessrunner implements the server-side Unix-socket client and the isolated runner execution policy.
+// The runner process must execute under its dedicated Unix identity; only it invokes the rootless Podman CLI.
+package rootlessrunner
+
+import (
+	"errors"
+	"fmt"
+	"path"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/profileyaml"
+)
+
+var digestImage = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$`)
+
+// Policy maps a human-reviewed profile name to an immutable image reference.
+type Policy struct {
+	Images      map[string]string
+	Profiles    map[string]RepoProfile
+	ModuleCache string
+}
+
+// ContainerArgs returns fixed, restrictive Podman arguments for a single Go test job.
+// The source archive is mounted read-only and extracted into ephemeral /work inside the container.
+func (p Policy) ContainerArgs(profile, sourceArchive string, timeoutSeconds int) ([]string, error) {
+	return p.containerArgs(profile, sourceArchive, "", p.moduleCache(), "", timeoutSeconds)
+}
+
+// ContainerArgsWithOverlays adds a read-only, runner-staged overlay directory to the isolated job.
+// dir is the repository-relative directory the acceptance command's {dir} names; empty means the
+// profile's own tests directory.
+func (p Policy) ContainerArgsWithOverlays(
+	profile, sourceArchive, overlayDir, moduleCache, dir string, timeoutSeconds int,
+) ([]string, error) {
+	if overlayDir != "" {
+		if err := absoluteCleanPath(overlayDir); err != nil {
+			return nil, fmt.Errorf("overlay path: %w", err)
+		}
+	}
+	if moduleCache == "" {
+		moduleCache = p.moduleCache()
+	}
+	if err := absoluteCleanPath(moduleCache); err != nil {
+		return nil, fmt.Errorf("module cache path: %w", err)
+	}
+	return p.containerArgs(profile, sourceArchive, overlayDir, moduleCache, dir, timeoutSeconds)
+}
+
+// WithProfile returns a one-profile Policy for a single trial run. The trial profile never joins the
+// runner's promoted set, so a failed or unapproved artifact cannot be picked up by any other job.
+func (p Policy) WithProfile(name string, spec RepoProfile) (Policy, error) {
+	if !profileyaml.ProfileName.MatchString(name) {
+		return Policy{}, errors.New("profile name must be 1 to 64 lowercase name characters")
+	}
+	profiles := map[string]RepoProfile{name: spec}
+	return Policy{Images: p.Images, Profiles: profiles, ModuleCache: p.ModuleCache}, nil
+}
+
+func (p Policy) containerArgs(profile, sourceArchive, overlayDir, moduleCache, dir string, timeoutSeconds int) ([]string, error) {
+	image, ok := p.Images[profile]
+	testCommand := "go test -json -count=1 ./..."
+	if approved, exists := p.Profiles[profile]; exists {
+		image, ok = approved.Image, true
+		subst := dir
+		if subst == "" {
+			subst = approved.Paths.Tests
+		}
+		rel, err := cleanRelDir(subst)
+		if err != nil {
+			return nil, err
+		}
+		testCommand = strings.ReplaceAll(approved.Acceptance, "{dir}", "./"+rel)
+	}
+	if !ok || !digestImage.MatchString(image) {
+		return nil, ErrImageNotAllowed
+	}
+	if err := absoluteCleanPath(sourceArchive); err != nil {
+		return nil, fmt.Errorf("source archive path: %w", err)
+	}
+	if timeoutSeconds < 1 || timeoutSeconds > 600 {
+		return nil, errors.New("sandbox timeout must be between 1 and 600 seconds")
+	}
+	command := "mkdir -p /work/src && tar -xzf /input/source.tgz -C /work/src --no-same-owner --no-same-permissions"
+	args := []string{
+		"run", "--rm", "--pull=never", "--network=none", "--read-only", "--user=65532:65532",
+		"--group-add=keep-groups",
+		"--cap-drop=ALL", "--security-opt=no-new-privileges",
+		"--pids-limit=512", "--memory=2g", "--cpus=2", "--timeout=" + strconv.Itoa(timeoutSeconds) + "s",
+		"--tmpfs", "/work:rw,nosuid,nodev,size=512m,uid=65532,gid=65532,mode=0700", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m,uid=65532,gid=65532,mode=0700",
+		"--tmpfs", "/out:rw,noexec,nosuid,nodev,size=8m,uid=65532,gid=65532,mode=0700",
+		"--mount", "type=bind,src=" + sourceArchive + ",dst=/input/source.tgz,ro=true",
+		"--mount", "type=bind,src=" + moduleCache + ",dst=/go/pkg/mod,ro=true",
+	}
+	if overlayDir != "" {
+		args = append(args, "--mount", "type=bind,src="+overlayDir+",dst=/input/overlays,ro=true")
+		command += " && cp -a /input/overlays/. /work/src/"
+	}
+	args = append(args, image, "/bin/sh", "-c", "export GOCACHE=/tmp/go-cache GOMODCACHE=/go/pkg/mod GOPROXY=off && "+command+" && cd /work/src && "+testCommand)
+	return args, nil
+}
+
+// cleanRelDir validates the repository-relative directory an acceptance command names.
+func cleanRelDir(value string) (string, error) {
+	value = path.Clean(value)
+	if value == "." || path.IsAbs(value) || strings.HasPrefix(value, "../") || strings.ContainsAny(value, "\x00,\\") {
+		return "", errors.New("job directory escape is refused")
+	}
+	return value, nil
+}
+
+func (p Policy) moduleCache() string {
+	if p.ModuleCache != "" {
+		return p.ModuleCache
+	}
+	return "/var/lib/heimdall-runner/module-cache"
+}
+
+func absoluteCleanPath(value string) error {
+	if value == "" || !filepath.IsAbs(value) || filepath.Clean(value) != value || strings.ContainsAny(value, "\x00,\\") {
+		return errors.New("must be an absolute, clean filesystem path")
+	}
+	return nil
+}

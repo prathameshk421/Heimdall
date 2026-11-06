@@ -60,6 +60,32 @@ func testEnvelope(role workflow.Role) workflow.TaskEnvelope {
 	}
 }
 
+type fakeProfiles struct {
+	proposals, approvals, trials, promotions int
+	lastPrincipal                            Principal
+}
+
+func (f *fakeProfiles) Propose(_ context.Context, p Principal, repo string, artifact []byte) (ports.ProfileProposal, bool, error) {
+	f.proposals++
+	f.lastPrincipal = p
+	return ports.ProfileProposal{ID: strings.Repeat("a", 64), Repo: repo, State: ports.ProfileProposed, Artifact: artifact}, true, nil
+}
+func (f *fakeProfiles) Approve(_ context.Context, p Principal, _ string) error {
+	f.approvals++
+	f.lastPrincipal = p
+	return nil
+}
+func (f *fakeProfiles) Trial(_ context.Context, p Principal, _ string, sha id.SHA) (ports.ProfileTrial, error) {
+	f.trials++
+	f.lastPrincipal = p
+	return ports.ProfileTrial{Outcome: ports.TrialPassed, SHA: sha}, nil
+}
+func (f *fakeProfiles) Promote(_ context.Context, p Principal, _ string) error {
+	f.promotions++
+	f.lastPrincipal = p
+	return nil
+}
+
 type fakeClock struct{ now time.Time }
 
 func (c *fakeClock) Now() time.Time { return c.now }

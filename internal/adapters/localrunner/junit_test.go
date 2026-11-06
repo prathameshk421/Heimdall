@@ -41,6 +41,11 @@ func TestParseEventsPassingTest(t *testing.T) {
 	require.Equal(t, ports.OutcomePassed, res.Tests[0].Outcome)
 }
 
+func TestParseEventsRejectsAnOversizedIncompleteEvent(t *testing.T) {
+	_, _, err := localrunner.ParseEvents(strings.NewReader(strings.Repeat("x", 5<<20)))
+	require.Error(t, err)
+}
+
 func TestParseEventsAssertionFailure(t *testing.T) {
 	stream := strings.Join([]string{
 		`{"Time":"2026-11-05T00:00:00Z","Action":"start","Package":"acme/pkg"}`,

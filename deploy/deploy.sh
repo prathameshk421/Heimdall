@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'USAGE'
-Usage: deploy/deploy.sh [--host SSH_ALIAS] [--config FILE] [--secrets-dir DIR]
+Usage: HEIMDALL_GO_IMAGE=registry/name@sha256:<digest> deploy/deploy.sh [--host SSH_ALIAS] [--config FILE] [--secrets-dir DIR]
 
 Builds heimdall-server for Linux, transfers the binary and Compose artifacts,
 installs /etc/heimdall/secrets from a local directory, and enables the systemd
@@ -25,6 +25,9 @@ while (($#)); do
 	esac
 done
 
+go_image=${HEIMDALL_GO_IMAGE:-}
+[[ "$go_image" =~ ^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$ ]] || { echo 'deploy: HEIMDALL_GO_IMAGE must be an allowlisted Go image pinned by sha256 digest' >&2; exit 2; }
+
 [[ -n "$config" && -f "$config" ]] || { echo 'deploy: --config must name an existing heimdall.toml' >&2; exit 2; }
 [[ -n "$secrets_dir" && -d "$secrets_dir" ]] || { echo 'deploy: --secrets-dir must name an existing directory' >&2; exit 2; }
 required_secrets=(database_url postgres_password openrouter_api_key jira_email jira_api_token github_app_id github_app_installation_id github_app_private_key switch_api_key switch_registration_token agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver)
@@ -43,15 +46,22 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/payload/deploy/graphiti"
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o "$work/payload/heimdall-server" "$root/cmd/heimdall-server"
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o "$work/payload/heimdall-runner" "$root/cmd/heimdall-runner"
 install -m 0644 "$root/deploy/compose.yaml" "$work/payload/deploy/compose.yaml"
 install -m 0644 "$root/deploy/Dockerfile.server" "$work/payload/deploy/Dockerfile.server"
 install -m 0644 "$root/deploy/Dockerfile.server.dockerignore" "$work/payload/deploy/Dockerfile.server.dockerignore"
+install -m 0644 "$root/deploy/heimdall-runner.service" "$work/payload/heimdall-runner.service"
+printf 'HEIMDALL_GO_IMAGE=%s\n' "$go_image" >"$work/payload/runner.conf"
+chmod 0600 "$work/payload/runner.conf"
 install -m 0644 "$root/deploy/graphiti/config.yaml" "$work/payload/deploy/graphiti/config.yaml"
 install -m 0644 "$config" "$work/payload/heimdall.toml"
 chmod 0600 "$work/payload/heimdall.toml"
 
 ssh "$host" 'sudo install -d -o root -g root -m 0755 /opt/heimdall /etc/heimdall /etc/heimdall/secrets'
 scp "$work/payload/heimdall-server" "$host:/tmp/heimdall-server.new"
+scp "$work/payload/heimdall-runner" "$host:/tmp/heimdall-runner.new"
+scp "$work/payload/heimdall-runner.service" "$host:/tmp/heimdall-runner.service.new"
+scp "$work/payload/runner.conf" "$host:/tmp/runner.conf.new"
 scp "$work/payload/deploy/compose.yaml" "$work/payload/deploy/Dockerfile.server" "$work/payload/deploy/Dockerfile.server.dockerignore" "$host:/tmp/"
 scp "$work/payload/deploy/graphiti/config.yaml" "$host:/tmp/heimdall-graphiti-config.yaml"
 scp "$work/payload/heimdall.toml" "$host:/tmp/heimdall.toml.new"
@@ -67,12 +77,33 @@ install_if_changed() {
 }
 install_if_changed /tmp/heimdall-server.new /usr/local/bin/heimdall-server 0755
 install_if_changed /tmp/heimdall-server.new /opt/heimdall/heimdall-server 0644
+install_if_changed /tmp/heimdall-runner.new /usr/local/bin/heimdall-runner 0755
+install_if_changed /tmp/heimdall-runner.service.new /etc/systemd/system/heimdall-runner.service 0644
+install_if_changed /tmp/runner.conf.new /etc/heimdall/runner.conf 0600
 install_if_changed /tmp/compose.yaml /opt/heimdall/compose.yaml 0644
 install_if_changed /tmp/Dockerfile.server /opt/heimdall/Dockerfile.server 0644
 install_if_changed /tmp/Dockerfile.server.dockerignore /opt/heimdall/Dockerfile.server.dockerignore 0644
 install_if_changed /tmp/heimdall-graphiti-config.yaml /opt/heimdall/graphiti-config.yaml 0644
 install_if_changed /tmp/heimdall.toml.new /etc/heimdall/heimdall.toml 0600
-rm -f /tmp/heimdall-server.new /tmp/compose.yaml /tmp/Dockerfile.server /tmp/Dockerfile.server.dockerignore /tmp/heimdall-graphiti-config.yaml /tmp/heimdall.toml.new
+rm -f /tmp/heimdall-server.new /tmp/heimdall-runner.new /tmp/heimdall-runner.service.new /tmp/runner.conf.new /tmp/compose.yaml /tmp/Dockerfile.server /tmp/Dockerfile.server.dockerignore /tmp/heimdall-graphiti-config.yaml /tmp/heimdall.toml.new
+REMOTE
+
+ssh "$host" 'sudo sh -s' <<'REMOTE'
+set -eu
+command -v podman >/dev/null || { echo 'deploy: rootless Podman must be installed on the VM' >&2; exit 1; }
+getent group heimdall-runner-socket >/dev/null || groupadd --system heimdall-runner-socket
+id heimdall-runner >/dev/null 2>&1 || useradd --system --create-home --home-dir /var/lib/heimdall-runner --shell /usr/sbin/nologin heimdall-runner
+if ! grep -q '^heimdall-runner:' /etc/subuid 2>/dev/null || ! grep -q '^heimdall-runner:' /etc/subgid 2>/dev/null; then
+	start=200000
+	while awk -F: -v lo="$start" -v hi="$((start + 65535))" '$2 <= hi && $2 + $3 - 1 >= lo { found=1 } END { exit !found }' /etc/subuid /etc/subgid 2>/dev/null; do start=$((start + 65536)); done
+	usermod --add-subuids "$start-$((start + 65535))" --add-subgids "$start-$((start + 65535))" heimdall-runner
+fi
+install -d -o heimdall-runner -g heimdall-runner -m 0700 /var/lib/heimdall-runner
+install -d -o root -g root -m 0755 /opt/heimdall
+runner_gid=$(getent group heimdall-runner-socket | cut -d: -f3)
+printf 'HEIMDALL_RUNNER_GID=%s\n' "$runner_gid" >/tmp/heimdall.env.new
+if ! cmp -s /tmp/heimdall.env.new /opt/heimdall/.env; then install -o root -g root -m 0644 /tmp/heimdall.env.new /opt/heimdall/.env; fi
+rm -f /tmp/heimdall.env.new
 REMOTE
 
 # Secrets travel only over the established SSH transport. Tar names and modes are
@@ -81,11 +112,18 @@ tar -C "$secrets_dir" -cf - . | ssh "$host" 'sudo tar --no-same-owner -xf - -C /
 
 ssh "$host" 'sudo install -d -o root -g root -m 0755 /opt/heimdall/graphiti && sudo install -o root -g root -m 0644 /opt/heimdall/graphiti-config.yaml /opt/heimdall/graphiti/config.yaml && sudo rm -f /opt/heimdall/graphiti-config.yaml && sudo sh -s' <<'REMOTE'
 set -eu
+systemctl daemon-reload
+systemctl enable --now heimdall-runner.service
+go_image=$(sed -n 's/^HEIMDALL_GO_IMAGE=//p' /etc/heimdall/runner.conf)
+test -n "$go_image" || { echo 'deploy: pinned Go image is missing from runner.conf' >&2; exit 1; }
+runuser -u heimdall-runner -- env HOME=/var/lib/heimdall-runner XDG_RUNTIME_DIR=/run/heimdall-podman podman pull "$go_image"
+test -S /run/heimdall-runner/runner.sock || { echo 'deploy: heimdall-runner did not create its Unix socket' >&2; exit 1; }
 cat >/tmp/heimdall-compose.service.new <<'UNIT'
 [Unit]
 Description=Heimdall Compose stack
 Requires=docker.service
-After=docker.service network-online.target
+Requires=heimdall-runner.service
+After=docker.service heimdall-runner.service network-online.target
 
 [Service]
 Type=oneshot

@@ -44,7 +44,7 @@ func TestMappedRoomCommandPersistsAndRepliesThroughPostgres(t *testing.T) {
 	comments := &commandTestComments{}
 	ad := adapters{tickets: commandTestTickets{}, vcs: commandTestVCS{policy: policyBytes}, chat: chat,
 		projects: projectRepos{"KAN": "aarush323/PBL_TOS_RISK_ANALYZER"}}
-	runtime, err := newCommandRuntime(store, ad, eng, ids.New(), clock.System{}, nil)
+	runtime, err := newCommandRuntime(store, ad, eng, ids.New(), clock.System{}, nil, nil)
 	require.NoError(t, err)
 	runtime.comments = comments
 	room := ports.RoomBinding{ChangeID: cid, RoomID: "room-component"}

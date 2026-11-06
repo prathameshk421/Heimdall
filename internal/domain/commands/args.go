@@ -11,10 +11,11 @@ import (
 // These patterns are the whole argument grammar. Anything else is refused, so
 // a finding can never be a ULID and a ticket key can never carry shell text.
 var (
-	findingRE = regexp.MustCompile(`^F[1-9][0-9]{0,5}$`)
-	ticketRE  = regexp.MustCompile(`^[A-Z][A-Z0-9]*-[0-9]{1,9}$`)
-	nameRE    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
-	handleRE  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}$`)
+	findingRE         = regexp.MustCompile(`^F[1-9][0-9]{0,5}$`)
+	ticketRE          = regexp.MustCompile(`^[A-Z][A-Z0-9]*-[0-9]{1,9}$`)
+	nameRE            = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+	handleRE          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}$`)
+	profileProposalRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 const minDismissReason = 15
@@ -38,6 +39,14 @@ func cutWord(s string) (string, string) {
 		return s, ""
 	}
 	return s[:i], strings.TrimSpace(s[i:])
+}
+
+func parseProfileProposalID(args string) (string, error) {
+	value, rest := cutWord(args)
+	if rest != "" || !profileProposalRE.MatchString(value) {
+		return "", errors.New("proposal id must be 64 lowercase hex characters")
+	}
+	return value, nil
 }
 
 // fail builds the bad-arguments reply: the reason, then the usage line for the

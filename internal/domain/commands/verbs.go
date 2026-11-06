@@ -9,19 +9,21 @@ import (
 // Usage lines, without the prefix. They are shown in every bad-arguments reply
 // and in the unknown-command grammar, so they are the one place the grammar lives.
 const (
-	useUphold    = "uphold <finding>"
-	useDismiss   = "dismiss <finding> <reason of at least 15 characters>"
-	useStart     = "start <ticket>"
-	useReview    = "review @a @b @c"
-	useApprove   = "approve-tests"
-	useChallenge = "challenge <finding> <evidence>"
-	useRemember  = "remember <text>"
-	useForget    = "forget <memory_ref> <reason>"
-	useSpec      = "spec-change <text>"
-	useReject    = "reject <reason>"
-	useOverride  = "override <case> <reason>"
-	useWaive     = "waive-reviewer @x <reason>"
-	useIncident  = "incident <text>"
+	useUphold         = "uphold <finding>"
+	useDismiss        = "dismiss <finding> <reason of at least 15 characters>"
+	useStart          = "start <ticket>"
+	useReview         = "review @a @b @c"
+	useApprove        = "approve-tests"
+	useApproveProfile = "approve-profile <proposal_id>"
+	usePromoteProfile = "promote-profile <proposal_id>"
+	useChallenge      = "challenge <finding> <evidence>"
+	useRemember       = "remember <text>"
+	useForget         = "forget <memory_ref> <reason>"
+	useSpec           = "spec-change <text>"
+	useReject         = "reject <reason>"
+	useOverride       = "override <case> <reason>"
+	useWaive          = "waive-reviewer @x <reason>"
+	useIncident       = "incident <text>"
 )
 
 // parseUphold takes exactly one finding.
@@ -79,6 +81,22 @@ func checkApproveTests(p, args string) error {
 		return fail(p, useApprove, errors.New("approve-tests takes no arguments"))
 	}
 	return nil
+}
+
+func parseApproveProfile(p, args string) (ApproveProfile, error) {
+	id, err := parseProfileProposalID(args)
+	if err != nil {
+		return ApproveProfile{}, fail(p, useApproveProfile, err)
+	}
+	return ApproveProfile{ID: id}, nil
+}
+
+func parsePromoteProfile(p, args string) (PromoteProfile, error) {
+	id, err := parseProfileProposalID(args)
+	if err != nil {
+		return PromoteProfile{}, fail(p, usePromoteProfile, err)
+	}
+	return PromoteProfile{ID: id}, nil
 }
 
 // parseChallenge takes a finding and the evidence, which may run to several

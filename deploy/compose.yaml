@@ -22,9 +22,15 @@ services:
       dockerfile: deploy/Dockerfile.server
     image: heimdall-server:dev
     command: ["--config", "/etc/heimdall/heimdall.toml"]
+    # The server gets only the narrow sandbox API socket. The host container-engine socket is never mounted.
+    group_add:
+      - "${HEIMDALL_RUNNER_GID:?set HEIMDALL_RUNNER_GID to the runner socket group id}"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
+      - type: bind
+        source: /run/heimdall-runner/runner.sock
+        target: /run/heimdall-runner/runner.sock
       - type: bind
         source: ${HEIMDALL_CONFIG:?set HEIMDALL_CONFIG to a heimdall.toml (see deploy/heimdall.example.toml)}
         target: /etc/heimdall/heimdall.toml

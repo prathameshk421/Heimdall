@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/localrunner"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
@@ -433,18 +433,13 @@ func (s vcsSource) Fetch(ctx context.Context, repo change.Repo, sha id.SHA) erro
 	return nil
 }
 
-// localRunnerSandbox adapts *localrunner.Runner to ports.Sandbox and effects.OverlaySandbox.
-type localRunnerSandbox struct {
-	runner *localrunner.Runner
+// rootlessRunnerSandbox delegates untrusted tests over a Unix socket to the dedicated runner identity.
+type rootlessRunnerSandbox struct{ client rootlessrunner.Client }
+
+func (s rootlessRunnerSandbox) Run(ctx context.Context, j ports.SandboxJob) (ports.SandboxResult, error) {
+	return s.client.Run(ctx, j)
 }
 
-func (s *localRunnerSandbox) Run(ctx context.Context, j ports.SandboxJob) (ports.SandboxResult, error) {
-	return s.runner.Run(ctx, j)
-}
-
-func (s *localRunnerSandbox) RunOverlay(ctx context.Context, j ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error) {
-	return s.runner.RunJob(ctx, localrunner.Job{
-		SandboxJob: j,
-		Overlay:    overlays,
-	})
+func (s rootlessRunnerSandbox) RunOverlay(ctx context.Context, j ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error) {
+	return s.client.RunOverlay(ctx, j, overlays)
 }

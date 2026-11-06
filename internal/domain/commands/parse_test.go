@@ -47,6 +47,8 @@ func TestParseCommands(t *testing.T) {
 		{"waive-reviewer", chat("heimdall waive-reviewer @rev " + long), WaiveReviewer{Reviewer: "rev", Reason: long}},
 		{"reject", chat("heimdall reject " + long), Reject{Reason: long}},
 		{"approve-tests", chat("heimdall approve-tests"), ApproveTests{}},
+		{"approve-profile", chat("heimdall approve-profile " + strings.Repeat("a", 64)), ApproveProfile{ID: strings.Repeat("a", 64)}},
+		{"promote-profile", gh("/heimdall promote-profile " + strings.Repeat("b", 64)), PromoteProfile{ID: strings.Repeat("b", 64)}},
 		{"incident", gh("/heimdall incident double charge in prod"), Incident{Text: "double charge in prod"}},
 		{"challenge", chat("heimdall challenge F3 internal/pay/pay_test.go:42"), Challenge{Finding: "F3", Evidence: "internal/pay/pay_test.go:42"}},
 		{"challenge multiword evidence", chat("heimdall challenge F3 run 01JABC passes at head"), Challenge{Finding: "F3", Evidence: "run 01JABC passes at head"}},

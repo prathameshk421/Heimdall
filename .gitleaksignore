@@ -14,6 +14,7 @@ fba2285e1c64a1b1941d97be17f6010195c4a33e:testdata/repos/pay-demo/branches/big-no
 4d26a4ed15443a5d683a2fd6c9ccb54296b5d5ee:internal/adapters/tracker/jira/jira_test.go:generic-api-key:27
 # Exact historical findings in test/fixture content; the scanner remains enabled for all other matches.
 00442131a0776d480a5b1f273fe306422693fec2:internal/pack/redact_test.go:generic-api-key:44
+dddfe2b6ae3a88c46d39c91df1dd4a3887266504:internal/pack/redact_test.go:generic-api-key:44
 00c09b4bb58e54676162ed8f9b74d58edbf6ea0f:internal/pack/redact_test.go:generic-api-key:44
 0312b1d37795ad7a6ce90f552a526f6235b6b436:internal/pack/redact_test.go:generic-api-key:44
 0472ae87ede3e7569d71586c75c7646faa1faf5c:internal/pack/redact_test.go:generic-api-key:44

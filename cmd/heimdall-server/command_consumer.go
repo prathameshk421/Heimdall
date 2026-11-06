@@ -19,6 +19,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
 type prIntakeHandler interface {
@@ -38,12 +39,13 @@ type commandRuntime struct {
 	ids       ports.IDs
 	clock     ports.Clock
 	intake    prIntakeHandler
+	profiles  mcp.Profiles
 	processor *collaboration.Processor
 }
 
-func newCommandRuntime(events ports.EventStore, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, in prIntakeHandler) (*commandRuntime, error) {
+func newCommandRuntime(events ports.EventStore, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, in prIntakeHandler, profiles mcp.Profiles) (*commandRuntime, error) {
 	r := &commandRuntime{events: events, code: ad.vcs, prs: ad.vcs, repos: ad.vcs, tickets: ad.tickets, projects: ad.projects,
-		chat: ad.chat, comments: ad.vcs, engine: eng, ids: gen, clock: clk, intake: in}
+		chat: ad.chat, comments: ad.vcs, engine: eng, ids: gen, clock: clk, intake: in, profiles: profiles}
 	p, err := collaboration.New(collaboration.Config{Identity: r, Executor: r, Replies: r})
 	if err != nil {
 		return nil, fmt.Errorf("build command processor: %w", err)
@@ -79,6 +81,16 @@ func (r *commandRuntime) Authorize(ctx context.Context, target collaboration.Tar
 	d, state, err := r.directory(ctx, target)
 	if err != nil {
 		return "", err
+	}
+	if profileCommand(cmd) {
+		identity, err := d.Resolve(peopleChannel(source), sender)
+		if err != nil {
+			return "", err
+		}
+		if identity.Kind != people.KindHuman || !slices.Contains(identity.Roles, people.RolePolicyOwner) {
+			return "", errors.New("sandbox profile approval and promotion require a mapped policy owner")
+		}
+		return identity.Name, nil
 	}
 	action, findingRef := commandAction(cmd)
 	if action == "" {
@@ -292,6 +304,20 @@ func peopleChannel(source commands.Source) people.Channel {
 }
 
 func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Target, person string, source commands.Source, sourceRef string, cmd commands.Command) (string, error) {
+	if r.profiles != nil {
+		switch profile := cmd.(type) {
+		case commands.ApproveProfile:
+			if err := r.profiles.Approve(ctx, mcp.Principal{Person: person}, profile.ID); err != nil {
+				return "", err
+			}
+			return "The sandbox profile is approved for an isolated trial.", nil
+		case commands.PromoteProfile:
+			if err := r.profiles.Promote(ctx, mcp.Principal{Person: person}, profile.ID); err != nil {
+				return "", err
+			}
+			return "The passing sandbox profile is active for production jobs.", nil
+		}
+	}
 	if cmd.Verb() == "start" {
 		return r.start(ctx, person, source, sourceRef, cmd.(commands.Start))
 	}
@@ -310,6 +336,15 @@ func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Targe
 		return "", fmt.Errorf("apply %s command: %w", cmd.Verb(), err)
 	}
 	return actionReply(cmd), nil
+}
+
+func profileCommand(cmd commands.Command) bool {
+	switch cmd.(type) {
+	case commands.ApproveProfile, commands.PromoteProfile:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *commandRuntime) commandEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, cmd commands.Command) ([]change.Event, error) {

@@ -81,6 +81,33 @@ func TestReadPackUsesAuthenticatedPrincipalAndOnlyReviewerAssignment(t *testing.
 	require.Equal(t, codeInvalidParams, refused.Error.Code)
 }
 
+func TestProfileLifecycleToolsEnforceProfilerAndMappedHumanBoundaries(t *testing.T) {
+	profiles := &fakeProfiles{}
+	r := newRig(t, workflow.RoleProfiler)
+	r.server.deps.Profiles = profiles
+	tools, err := r.server.buildTools()
+	require.NoError(t, err)
+	r.server.tools = tools
+
+	proposed := r.call("heimdall_propose_profile", `{"artifact":"languages: [go]"}`)
+	require.False(t, proposed.IsError, proposed.text())
+	require.Equal(t, 1, profiles.proposals)
+	require.Equal(t, workflow.RoleProfiler, profiles.lastPrincipal.Role)
+
+	trial := r.call("heimdall_trial_profile", `{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sha":"a01b2c3d4e5f60718293a4b5c6d7e8f901234567"}`)
+	require.False(t, trial.IsError, trial.text())
+	require.Equal(t, 1, profiles.trials)
+
+	// A reviewer agent token has no human identity, so it cannot approve or promote on the owner's behalf.
+	r.tokens.byHash[HashToken(testToken)] = Principal{Agent: testAgent, Role: workflow.RoleReviewer}
+	approved := r.call("heimdall_approve_profile", `{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+	require.True(t, approved.IsError)
+	require.Equal(t, 0, profiles.approvals)
+	promoted := r.call("heimdall_promote_profile", `{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+	require.True(t, promoted.IsError)
+	require.Equal(t, 0, profiles.promotions)
+}
+
 func TestKnowledgeFileStageIsTaskScopedAndApprovalUsesMappedPerson(t *testing.T) {
 	r := newRig(t, workflow.RoleReviewer)
 	stage := r.call("heimdall_stage_knowledge", `{"path":"docs/adr/1.md","group":"payments","kind":"adr","retention_days":30}`)

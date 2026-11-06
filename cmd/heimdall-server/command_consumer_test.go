@@ -13,6 +13,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -84,10 +85,48 @@ func setupCommandRuntime(t *testing.T, cid id.ChangeID, tickets ports.TicketRead
 		tickets = commandTestTickets{}
 	}
 	ad := adapters{tickets: tickets, vcs: vcs, chat: chat, projects: projectRepos{"KAN": "aarush323/PBL_TOS_RISK_ANALYZER"}}
-	runtime, err := newCommandRuntime(store, ad, eng, gen, clock.System{}, nil)
+	runtime, err := newCommandRuntime(store, ad, eng, gen, clock.System{}, nil, nil)
 	require.NoError(t, err)
 	runtime.comments = comments
 	return runtime, store, chat, comments
+}
+
+type commandProfileFake struct{ approvals, promotions []string }
+
+func (f *commandProfileFake) Propose(context.Context, mcp.Principal, string, []byte) (ports.ProfileProposal, bool, error) {
+	return ports.ProfileProposal{}, false, nil
+}
+func (f *commandProfileFake) Approve(_ context.Context, p mcp.Principal, _ string) error {
+	f.approvals = append(f.approvals, p.Person)
+	return nil
+}
+func (f *commandProfileFake) Trial(context.Context, mcp.Principal, string, id.SHA) (ports.ProfileTrial, error) {
+	return ports.ProfileTrial{}, nil
+}
+func (f *commandProfileFake) Promote(_ context.Context, p mcp.Principal, _ string) error {
+	f.promotions = append(f.promotions, p.Person)
+	return nil
+}
+
+func TestProfileHumanCommandsRequireMappedPolicyOwnerAndUseMappedIdentity(t *testing.T) {
+	cid := id.ChangeID("KAN-42")
+	runtime, _, chat, _ := setupCommandRuntime(t, cid, nil, ports.PR{})
+	profiles := &commandProfileFake{}
+	runtime.profiles = profiles
+	room := ports.RoomBinding{ChangeID: cid, RoomID: "profile-room"}
+	proposalID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	denied := ports.Message{ID: "profile-denied", Room: room.RoomID, Sender: "bob", Text: "heimdall approve-profile " + proposalID}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, denied))
+	require.Empty(t, profiles.approvals)
+	require.Contains(t, chat.posts[len(chat.posts)-1], "not authorized")
+
+	approved := ports.Message{ID: "profile-approved", Room: room.RoomID, Sender: "ana", Text: "heimdall approve-profile " + proposalID}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, approved))
+	require.Equal(t, []string{"ana"}, profiles.approvals)
+
+	promoted := ports.Message{ID: "profile-promoted", Room: room.RoomID, Sender: "ana", Text: "heimdall promote-profile " + proposalID}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, promoted))
+	require.Equal(t, []string{"ana"}, profiles.promotions)
 }
 
 func TestServerCommandRuntimeExecutesMappedRoomRememberAndPostsReply(t *testing.T) {
