@@ -151,6 +151,32 @@ func TestDoctorRejectsAnUnknownFlagWithUsageStatus(t *testing.T) {
 	require.False(t, f.loadCalled)
 }
 
+func TestDoctorHostRunsHostChecksWithoutLoadingOperatorConfig(t *testing.T) {
+	f := passingDeps(nil)
+	f.hostChecks = func(context.Context, string) []checkResult {
+		return []checkResult{result("host.sudo", statusOK, "non-interactive sudo available")}
+	}
+	code, out, _ := runWith(t, []string{"--host"}, f)
+
+	require.Equal(t, 0, code, out)
+	require.False(t, f.loadCalled, "host prerequisites must run before an operator config exists")
+	require.Equal(t, "ok", statusOf(out, "host.sudo"), out)
+}
+
+func TestDoctorHostFailsWhenAHostPrerequisiteFails(t *testing.T) {
+	f := passingDeps(nil)
+	f.hostChecks = func(context.Context, string) []checkResult {
+		return []checkResult{result("host.nftables", statusFail, "nft command is unavailable")}
+	}
+	code, out, _ := runWith(t, []string{"--host", "--json"}, f)
+
+	require.Equal(t, 1, code, out)
+	var rows []checkResult
+	require.NoError(t, json.Unmarshal([]byte(out), &rows))
+	require.Equal(t, []checkResult{result("host.nftables", statusFail, "nft command is unavailable")}, rows)
+	require.False(t, f.loadCalled)
+}
+
 // fakeInstallation is the GitHub installation reader a test injects. It records each call and its deadline.
 type fakeInstallation struct {
 	inst        github.Installation

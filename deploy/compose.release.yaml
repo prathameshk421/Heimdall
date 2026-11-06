@@ -1,0 +1,7 @@
+# Production override: package the cross-compiled release binary into a minimal runtime image.
+services:
+  heimdall-server:
+    image: heimdall-server:${HEIMDALL_RELEASE:?set HEIMDALL_RELEASE to the release tag}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.release

@@ -10,6 +10,21 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
+func TestCheckUsesAuthenticatedReadOnlyRoomList(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+
+	err := c.Check(context.Background())
+
+	require.NoError(t, err)
+	reqs := f.requests()
+	require.Len(t, reqs, 1)
+	require.Equal(t, http.MethodPost, reqs[0].Method)
+	require.Equal(t, "/agents/"+testAgentID+"/ops/list_rooms", reqs[0].Path)
+	require.Equal(t, testAPIKey, reqs[0].Auth)
+	require.Empty(t, reqs[0].Body, "the read-only check must not change Switch state")
+}
+
 func TestRegisterCoordinatorUsesTheRegistrationTokenAndReturnsTheKeyOnce(t *testing.T) {
 	f := newFakeSwitch(t)
 	c, _ := newTestClient(t, f)

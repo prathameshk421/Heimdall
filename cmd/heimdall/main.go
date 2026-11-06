@@ -1,11 +1,12 @@
 // Command heimdall.
 //
-// The command line: connect, admin, doctor, pack, eval and the MCP stdio bridge. Only doctor is built so far.
+// The command line: admin setup, connect, doctor, cost and the MCP stdio bridge.
 package main
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -17,20 +18,32 @@ import (
 const exitNotBuilt = 2
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "doctor" {
-		os.Exit(runDoctor(os.Args[2:], os.Stdout, os.Stderr, realDoctorDeps()))
+	os.Exit(runCLI(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}
+
+func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		writeDiagnostic(stderr, "heimdall: not built yet\n")
+		return exitNotBuilt
 	}
-	if len(os.Args) > 1 && os.Args[1] == "connect" {
-		os.Exit(runConnect(os.Args[2:], os.Stdin, os.Stdout, os.Stderr, realConnectDeps()))
+	subcommand, rest := args[0], args[1:]
+	switch subcommand {
+	case "doctor":
+		return runDoctor(rest, stdout, stderr, realDoctorDeps())
+	case "connect":
+		return runConnect(rest, stdin, stdout, stderr, realConnectDeps())
+	case "admin":
+		return runAdmin(rest, stdout, stderr, config.Getenv)
+	case "controller":
+		return runController(rest, stdin, stdout, stderr, realControllerDeps())
+	case "cost":
+		return runCost(rest, stdout, stderr)
+	case "secrets-sync":
+		return runSecretsSync(rest, stdout, stderr)
+	default:
+		writeDiagnostic(stderr, "heimdall: not built yet\n")
+		return exitNotBuilt
 	}
-	if len(os.Args) > 1 && os.Args[1] == "cost" {
-		os.Exit(runCost(os.Args[2:], os.Stdout, os.Stderr))
-	}
-	if len(os.Args) > 1 && os.Args[1] == "secrets-sync" {
-		os.Exit(runSecretsSync(os.Args[2:], os.Stdout, os.Stderr))
-	}
-	fmt.Fprintln(os.Stderr, "heimdall: not built yet")
-	os.Exit(exitNotBuilt)
 }
 
 // realDoctorDeps wires the doctor checks to the real environment, config loader and docker CLI.
@@ -38,6 +51,10 @@ func realDoctorDeps() doctorDeps {
 	return doctorDeps{
 		getenv:     config.Getenv,
 		loadConfig: config.Load,
+		hostChecks: realHostChecks(config.Getenv),
+		integrationChecks: func(ctx context.Context, cfg config.Config) []checkResult {
+			return configuredIntegrationChecks(ctx, cfg, defaultRegistry, connectCheckDeadline)
+		},
 		dockerVersion: func(ctx context.Context) (string, error) {
 			out, err := exec.CommandContext(ctx, "docker", "version", "--format", "{{.Server.Version}}").CombinedOutput()
 			text := strings.TrimSpace(string(out))

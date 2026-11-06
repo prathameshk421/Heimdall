@@ -49,26 +49,33 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	store := postgres.NewStore(pool)
 
 	cid := id.ChangeID("KAN-1")
-	tid := id.TaskID("task-test-author")
 	now := time.Now().UTC()
 	gen := ids.New()
 	clk := clock.System{}
+	tid := gen.NewTask()
+	correlationID, err := change.ParseCorrelationID("component-mcp")
+	require.NoError(t, err)
+	assignee, err := change.ParseActorID("developer")
+	require.NoError(t, err)
 
 	// Seed triggered and task.assigned in the real Postgres event store
 	trigPayload, err := json.Marshal(change.Triggered{
-		Ticket: cid,
-		Repo:   change.Repo("aarush323/PBL_TOS_RISK_ANALYZER"),
+		Ticket:   cid,
+		Repo:     change.Repo("aarush323/PBL_TOS_RISK_ANALYZER"),
+		Assignee: assignee,
+		Source:   change.TriggerJira,
 	})
 	require.NoError(t, err)
 
 	trigEv := change.Event{
-		ID:         gen.NewEvent(),
-		ChangeID:   cid,
-		Version:    1,
-		Type:       change.EventChangeTriggered,
-		Actor:      change.Actor{Kind: change.ActorJira, ID: "jira"},
-		OccurredAt: now.Add(-time.Minute),
-		Payload:    trigPayload,
+		ID:            gen.NewEvent(),
+		ChangeID:      cid,
+		Version:       1,
+		Type:          change.EventChangeTriggered,
+		Actor:         change.Actor{Kind: change.ActorJira, ID: "jira"},
+		OccurredAt:    now.Add(-time.Minute),
+		CorrelationID: correlationID,
+		Payload:       trigPayload,
 	}
 
 	taskPayload, err := json.Marshal(change.TaskAssigned{
@@ -81,13 +88,14 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	assignEv := change.Event{
-		ID:         gen.NewEvent(),
-		ChangeID:   cid,
-		Version:    2,
-		Type:       change.EventTaskAssigned,
-		Actor:      change.Actor{Kind: change.ActorSystem, ID: "heimdall"},
-		OccurredAt: now.Add(-30 * time.Second),
-		Payload:    taskPayload,
+		ID:            gen.NewEvent(),
+		ChangeID:      cid,
+		Version:       2,
+		Type:          change.EventTaskAssigned,
+		Actor:         change.Actor{Kind: change.ActorSystem, ID: "heimdall"},
+		OccurredAt:    now.Add(-30 * time.Second),
+		CorrelationID: correlationID,
+		Payload:       taskPayload,
 	}
 
 	_, err = store.Append(ctx, cid, 0, []change.Event{trigEv, assignEv}, nil)

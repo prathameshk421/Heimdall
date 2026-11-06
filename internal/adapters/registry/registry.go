@@ -57,6 +57,9 @@ type Entry struct {
 	Name           string
 	Kind           Kind
 	RequiredConfig []string // secret file names and config keys the adapter needs
+	// GuidedSteps are ordered operator actions specific to this integration. Steps are instructions,
+	// never credential values, and are shown by connect after the secret-file requirements.
+	GuidedSteps []string
 	// Factory builds the adapter. It returns any because the registry is kind-agnostic; the wiring step
 	// asserts the value to the port for its Kind.
 	Factory func(cfg config.Config) (any, error)

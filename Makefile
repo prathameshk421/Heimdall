@@ -99,12 +99,34 @@ record: ## re-record real payloads for a task into testdata/real: make record T=
 	@test -n "$(T)" || { echo "usage: make record T=T24" >&2; exit 2; }
 	HEIMDALL_RECORD=$(CURDIR)/testdata/real bash scripts/run-tagged.sh e2e '^TestTask_$(T)$$' "record $(T)"
 
-.PHONY: cost fixtures-push prototype demo-check heimdall-bin
+.PHONY: cost fixtures-push prototype demo-check heimdall-bin deploy deploy-build release-sign upgrade setup restart recover
 cost: ## remaining LLM budget per purpose (T19)
 	@echo "make cost: the budget guard is not built yet (T19). No live model run is allowed until it is." >&2; exit 1
 
 fixtures-push: ## publish testdata/repos/pay-demo to the fixture repo (T31)
 	@echo "make fixtures-push: testdata/repos/pay-demo does not exist yet (T31)." >&2; exit 1
+
+deploy: ## deploy an exact tagged release through the SSM-backed SSH alias (DEPLOY_DRY_RUN=1 for a local plan)
+	bash scripts/deploy.sh
+
+deploy-build: ## cross-build the Linux release artifacts locally without a tag, SSH, or secret access
+	DEPLOY_BUILD_ONLY=1 bash scripts/deploy.sh
+
+release-sign: ## sign .cache/releases/$(TAG).tgz with RELEASE_SIGNING_KEY using cosign sign-blob
+	@test -n "$(TAG)" || { echo "usage: make release-sign TAG=vX RELEASE_SIGNING_KEY=<key-path-or-KMS-ref>" >&2; exit 2; }
+	RELEASE_TAG='$(TAG)' RELEASE_SIGNING_KEY='$(RELEASE_SIGNING_KEY)' bash scripts/sign-release.sh
+
+upgrade: ## install the next exact tagged release (same verified deployment path as make deploy)
+	bash scripts/deploy.sh
+
+setup: ## create a private local operator workspace without reading or creating credentials
+	bash scripts/setup.sh
+
+restart: ## restart the deployed service and verify health plus authenticated MCP
+	bash scripts/operate.sh restart
+
+recover: ## reconcile the deployed stack and verify health plus authenticated MCP
+	bash scripts/operate.sh recover
 
 # ---- the product board (T98): the progress bar for the whole project ----
 
