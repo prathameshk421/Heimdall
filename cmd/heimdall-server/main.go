@@ -16,9 +16,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport"
+	dashboardedge "github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/dashboard"
 )
+
+// newTicker is the system ticker of the dashboard's live streams. The transport package never reads the clock.
+func newTicker(every time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTicker(every)
+	return t.C, t.Stop
+}
 
 const (
 	// readHeaderTimeout bounds how long a client may take to send headers (slowloris protection).
@@ -58,6 +66,12 @@ func run(
 		defer a.close()
 	}
 	handler = mountHTTP(handler, a)
+	if a != nil {
+		handler, err = dashboardedge.Mount(handler, postgres.NewStore(a.pool), logger, dashboardedge.Options{NewTicker: newTicker})
+		if err != nil {
+			return fmt.Errorf("mount dashboard: %w", err)
+		}
+	}
 	ln, err := listen(ctx, "tcp", cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", cfg.Listen, err)
