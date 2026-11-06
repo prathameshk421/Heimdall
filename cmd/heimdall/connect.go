@@ -163,7 +163,7 @@ func defaultRegistry() (*registry.Registry, error) {
 			GuidedSteps: []string{"set the Switch bridge URL, coordinator identity and bridge id in heimdall.toml", "complete coordinator registration in Switch", "enroll the headless controller from Switch Machines and run deploy/agents/install-controller.sh", "run heimdall connect --check to verify authenticated room listing"}},
 		{Name: "teams", Kind: registry.KindChat, Factory: notBuiltFactory, Check: notBuiltCheck(),
 			GuidedSteps: []string{"complete the Azure and Teams administrator steps in docs/TEAMS_SETUP.md", "create the Teams connection in Switch Console", "run heimdall connect --check after the bridge is active"}},
-		{Name: "opencode", Kind: registry.KindAgentRuntime, RequiredConfig: []string{"openrouter_api_key"}, Factory: notBuiltFactory, Check: checkOpenCode,
+		{Name: "switchroom", Kind: registry.KindAgentRuntime, RequiredConfig: []string{"openrouter_api_key"}, Factory: notBuiltFactory, Check: checkOpenCode,
 			GuidedSteps: []string{"install Node 22.23.4, OpenCode 1.19.5 and the signed Switch controller release", "enroll using heimdall controller enroll; keep the one-time code in the private terminal", "run deploy/agents/install-controller.sh --controller-data-dir with the same persistent path"}},
 		{Name: "graphiti", Kind: registry.KindMemory, Factory: notBuiltFactory, Check: checkGraphitiContainer,
 			GuidedSteps: []string{"create the openrouter_api_key secret file with mode 0600", "Graphiti and FalkorDB start during deployment; Compose checks Graphiti health", "run make recover to reconcile services and verify health"}},

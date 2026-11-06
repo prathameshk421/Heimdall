@@ -61,7 +61,7 @@ func TestDefaultRegistryDescribesPlannedEntries(t *testing.T) {
 		{Name: "mattermost", Kind: registry.KindChat, RequiredConfig: []string{"mattermost_token"}},
 		{Name: "switch", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
 		{Name: "teams", Kind: registry.KindChat},
-		{Name: "opencode", Kind: registry.KindAgentRuntime, RequiredConfig: []string{"openrouter_api_key"}},
+		{Name: "switchroom", Kind: registry.KindAgentRuntime, RequiredConfig: []string{"openrouter_api_key"}},
 		{Name: "graphiti", Kind: registry.KindMemory},
 	}, reg.Describe())
 }
@@ -159,7 +159,7 @@ func TestConnectCheckIsNonInteractiveAndChecksEveryRegisteredIntegration(t *test
 	require.Equal(t, 0, code, errOut.String())
 	require.Contains(t, out.String(), "github")
 	require.Contains(t, out.String(), "jira")
-	require.Contains(t, out.String(), "opencode")
+	require.Contains(t, out.String(), "switchroom")
 	require.Contains(t, out.String(), "graphiti")
 	require.Empty(t, errOut.String())
 }
@@ -177,7 +177,7 @@ func TestConnectPlansContainResumableCoreIntegrationHandoffs(t *testing.T) {
 		{registry.KindVCS, "github", "approve and install the GitHub App from its manifest"},
 		{registry.KindTracker, "jira", "jira.base_url and jira.project_keys"},
 		{registry.KindChat, "switch", "coordinator identity"},
-		{registry.KindAgentRuntime, "opencode", "OpenCode 1.19.5"},
+		{registry.KindAgentRuntime, "switchroom", "OpenCode 1.19.5"},
 		{registry.KindMemory, "graphiti", "Compose checks Graphiti health"},
 	}
 	for _, tc := range cases {
@@ -421,6 +421,50 @@ func TestWriteSelectionRefusesFileThatDoesNotLoad(t *testing.T) {
 	after, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
 	require.Equal(t, before, after, "a file that does not load strictly must not be rewritten")
+}
+
+// switchroomSelection is the agent_runtime section that config.Load accepts. The CLI must accept it too.
+const switchroomSelection = "[agent_runtime]\nprovider = \"switchroom\"\nmachine = \"heimdall-vm\"\nmcp_endpoint = \"http://127.0.0.1:8080/mcp\"\n"
+
+func TestSwitchroomAgentRuntimeSelectionIsAcceptedByConnect(t *testing.T) {
+	_, cfgPath := connectFixture(t, switchroomSelection, nil)
+
+	var out, errOut bytes.Buffer
+	code := runConnect([]string{"list", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, testConnectDeps())
+	require.Equal(t, 0, code, errOut.String())
+	require.NotContains(t, errOut.String(), "valid names are")
+	rows := map[string][]string{}
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n")[1:] {
+		f := strings.Fields(line)
+		rows[f[0]] = f[:4]
+	}
+	require.Equal(t, "yes", rows["switchroom"][2], out.String())
+
+	out.Reset()
+	errOut.Reset()
+	code = runConnect([]string{"--check", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, testConnectDeps())
+	require.Equal(t, 0, code, errOut.String())
+	require.NotContains(t, out.String()+errOut.String(), "valid names are")
+	require.Contains(t, out.String(), "switchroom")
+}
+
+func TestDoctorAcceptsSwitchroomAgentRuntimeSelection(t *testing.T) {
+	_, cfgPath := connectFixture(t, switchroomSelection, nil)
+	cfg := mustLoad(t, cfgPath)
+
+	rows := configuredIntegrationChecks(context.Background(), cfg, defaultRegistry, time.Second)
+	for _, row := range rows {
+		require.NotEqual(t, "integration.registry", row.Check, row.Detail)
+		require.NotContains(t, row.Detail, "valid names are")
+	}
+	var runtimeRow *checkResult
+	for i := range rows {
+		if rows[i].Check == "integration.agent_runtime.switchroom" {
+			runtimeRow = &rows[i]
+		}
+	}
+	require.NotNil(t, runtimeRow, "doctor must run the switchroom check")
+	require.Equal(t, statusMissing, runtimeRow.Status, "no OpenRouter secret is configured, so the check reports missing config")
 }
 
 func TestRunConnectKindWritesSelectionAndInstructions(t *testing.T) {
