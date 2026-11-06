@@ -113,7 +113,105 @@ func (s *Server) buildTools() ([]tool, error) {
 			tool{name: "heimdall_forget_knowledge", description: "Forget an approved knowledge source and tombstone its memory episode.", schema: knowledgeRefSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.forgetKnowledge},
 		)
 	}
+	if s.deps.Profiles != nil {
+		tools = append(tools,
+			tool{name: "heimdall_propose_profile", description: "Propose a bounded repository sandbox profile for human review.", schema: proposeProfileSchema(), roles: []workflow.Role{workflow.RoleProfiler}, handle: s.proposeProfile},
+			tool{name: "heimdall_trial_profile", description: "Run an approved profile once in an isolated runner and record its JUnit result.", schema: trialProfileSchema(), roles: []workflow.Role{workflow.RoleProfiler}, handle: s.trialProfile},
+			tool{name: "heimdall_approve_profile", description: "Approve a repository sandbox profile as the mapped human owner.", schema: profileIDSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.approveProfile},
+			tool{name: "heimdall_promote_profile", description: "Promote an approved profile after a passing isolated trial.", schema: profileIDSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.promoteProfile},
+		)
+	}
 	return tools, nil
+}
+
+func proposeProfileSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"artifact":{"type":"string","minLength":1,"maxLength":65536}},"required":["artifact"],"additionalProperties":false}`)
+}
+
+func trialProfileSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"sha":{"type":"string","pattern":"^[0-9a-f]{40}$"}},"required":["id","sha"],"additionalProperties":false}`)
+}
+
+func profileIDSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"id":{"type":"string","pattern":"^[0-9a-f]{64}$"}},"required":["id"],"additionalProperties":false}`)
+}
+
+func (s *Server) proposeProfile(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		Artifact string `json:"artifact"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	if p.Role != workflow.RoleProfiler {
+		return "", refusal("Only the profiler may propose repository sandbox profiles.")
+	}
+	a, err := s.currentTask(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	if a.Task.Role != workflow.RoleProfiler {
+		return "", refusal("A profile proposal requires an active profiler task.")
+	}
+	proposal, created, err := s.deps.Profiles.Propose(ctx, p, string(a.Task.Change.Repo), []byte(input.Artifact))
+	if err != nil {
+		return "", fmt.Errorf("propose sandbox profile: %w", err)
+	}
+	return marshalText(struct {
+		ID      string `json:"id"`
+		Created bool   `json:"created"`
+		State   string `json:"state"`
+	}{proposal.ID, created, string(proposal.State)})
+}
+
+func (s *Server) trialProfile(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		ID  string `json:"id"`
+		SHA string `json:"sha"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	if p.Role != workflow.RoleProfiler {
+		return "", refusal("Only the profiler may run a proposed profile trial.")
+	}
+	trial, err := s.deps.Profiles.Trial(ctx, p, input.ID, id.SHA(input.SHA))
+	if err != nil {
+		return "", fmt.Errorf("run sandbox profile trial: %w", err)
+	}
+	return marshalText(trial)
+}
+
+func (s *Server) approveProfile(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		ID string `json:"id"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	if p.Person == "" {
+		return "", refusal("Profile approval requires a mapped human owner.")
+	}
+	if err := s.deps.Profiles.Approve(ctx, p, input.ID); err != nil {
+		return "", fmt.Errorf("approve sandbox profile: %w", err)
+	}
+	return "The sandbox profile is approved for an isolated trial.", nil
+}
+
+func (s *Server) promoteProfile(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		ID string `json:"id"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	if p.Person == "" {
+		return "", refusal("Profile promotion requires a mapped human owner.")
+	}
+	if err := s.deps.Profiles.Promote(ctx, p, input.ID); err != nil {
+		return "", fmt.Errorf("promote sandbox profile: %w", err)
+	}
+	return "The passing sandbox profile is active for production jobs.", nil
 }
 
 func readPackSchema() json.RawMessage {

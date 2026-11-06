@@ -221,7 +221,7 @@ func TestExecutorsRegistersGitHubCheck(t *testing.T) {
 		chat:    dummyChat{},
 	}
 	blobs := newMemBlobStore()
-	execs, err := executors(context.Background(), ad, store, blobs, ingestor{eng: eng}, gen, clk)
+	execs, err := executors(context.Background(), ad, store, nil, blobs, ingestor{eng: eng}, gen, clk)
 	require.NoError(t, err)
 	ch, ok := execs[change.EffectGitHubCheck]
 	require.True(t, ok, "github_check executor must be registered")

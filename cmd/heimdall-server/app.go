@@ -14,9 +14,10 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/blobfs"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/graphiti"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/localrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/profileyaml"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
@@ -25,6 +26,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
+	appprofile "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/profile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	appreview "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/review"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/roomstream"
@@ -437,7 +439,11 @@ func assembleWithBlobs(
 	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
 	eng *engine.Engine, gen ports.IDs, clk ports.Clock,
 ) (*app, error) {
-	execs, err := executors(ctx, ad, store, blobs, ingestor{eng: eng}, gen, clk)
+	profileManager, err := assembleProfileLifecycle(ad, store, blobs, clk)
+	if err != nil {
+		return nil, err
+	}
+	execs, err := executors(ctx, ad, store, store, blobs, ingestor{eng: eng}, gen, clk)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +469,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	roomConsumer, commentConsumer, err := assembleCollaboration(store, ad, eng, gen, clk, d.syncEvery, intakeCase)
+	roomConsumer, commentConsumer, err := assembleCollaboration(store, ad, eng, gen, clk, d.syncEvery, intakeCase, profileManager)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +477,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	mcpH, err := assembleMCP(d, ad, store, pool, blobs, gen, clk, files)
+	mcpH, err := assembleMCP(d, ad, store, pool, blobs, gen, clk, files, profileManager)
 	if err != nil {
 		return nil, err
 	}
@@ -486,8 +492,8 @@ func assembleWithBlobs(
 	}, nil
 }
 
-func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, refreshEvery time.Duration, intakeCase *intake.Intake) (roomStreamRunner, commentPoller, error) {
-	runtime, err := newCommandRuntime(store, ad, eng, gen, clk, prIntake{in: intakeCase})
+func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, refreshEvery time.Duration, intakeCase *intake.Intake, profiles mcp.Profiles) (roomStreamRunner, commentPoller, error) {
+	runtime, err := newCommandRuntime(store, ad, eng, gen, clk, prIntake{in: intakeCase}, profiles)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -508,7 +514,7 @@ func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engin
 
 // assembleMCP wires the task index, agent tools service, adapters, and MCP server.
 func assembleMCP(
-	d deps, ad adapters, store ports.EventStore, pool *pgxpool.Pool, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock, files *knowledge.FileService,
+	d deps, ad adapters, store ports.EventStore, pool *pgxpool.Pool, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
 ) (http.Handler, error) {
 	taskIndex := postgres.NewTaskIndex(pool)
 	asker := &chatAsker{chat: ad.chat, store: store, ids: gen}
@@ -554,12 +560,25 @@ func assembleMCP(
 	mcpSrv, err := mcp.NewServer(mcp.Deps{
 		Logger: d.logger, Clock: clk, Tokens: tokStore, Tasks: tasksAdp,
 		Reviews: reviewsAdp, Code: ad.vcs, Blobs: blobs, Knowledge: knowledgeSvc,
-		Files: newKnowledgeFileManager(files, ad.vcs),
+		Files:    newKnowledgeFileManager(files, ad.vcs),
+		Profiles: profiles,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build mcp server: %w", err)
 	}
 	return mcpSrv.Handler(), nil
+}
+
+func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports.BlobStore, clk ports.Clock) (mcp.Profiles, error) {
+	client := rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}
+	service, err := appprofile.New(appprofile.Config{
+		Store: store, Parser: profileyaml.Parser{}, Policy: client, Trials: client, Syncer: client,
+		Warmer: client, Authorizer: profileAuthorizer{code: ad.vcs, repos: ad.vcs}, Clock: clk,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build sandbox profile lifecycle: %w", err)
+	}
+	return profileAPI{service: service}, nil
 }
 
 // assembleSyncer wires the policy decoder, gate source, evaluator, intake and PR syncer.
@@ -636,7 +655,7 @@ func baseExecutors(
 
 // executors maps each effect kind to its executor. Each executor checks the kind of the effect it receives, so a
 // swapped entry fails every effect it is given.
-func executors(ctx context.Context, ad adapters, store ports.EventStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
+func executors(ctx context.Context, ad adapters, store ports.EventStore, profiles ports.ProfileStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
 	room, branch, check, err := baseExecutors(ad, store, in, gen, clk)
 	if err != nil {
 		return nil, err
@@ -653,8 +672,10 @@ func executors(ctx context.Context, ad adapters, store ports.EventStore, blobs p
 	if err != nil {
 		return nil, fmt.Errorf("build github_commit_tests executor: %w", err)
 	}
-	runner := localrunner.New(ad.vcs, localrunner.WithBlobs(blobs), localrunner.WithClock(clk))
-	sandbox := &localRunnerSandbox{runner: runner}
+	sandbox := profileSandbox{
+		Sandbox:  rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
+		Profiles: profiles,
+	}
 	testQuality, err := effects.NewTestQuality(effects.TestQualityDeps{
 		Blobs: blobs, Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Store: store, Ingest: in, IDs: gen, Clock: clk, Code: ad.vcs,
 		ForbiddenImports: testQualityForbiddenImports(), NeedsSignoff: testQualityNeedsSignoff(ctx, blobs, ad.vcs),

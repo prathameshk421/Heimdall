@@ -82,6 +82,18 @@ type ApproveTests struct{}
 // Verb returns the command word.
 func (ApproveTests) Verb() string { return "approve-tests" }
 
+// ApproveProfile records the policy-owner approval of a sandbox profile proposal.
+type ApproveProfile struct{ ID string }
+
+// Verb returns the command word.
+func (ApproveProfile) Verb() string { return "approve-profile" }
+
+// PromoteProfile selects a profile after its isolated trial has passed.
+type PromoteProfile struct{ ID string }
+
+// Verb returns the command word.
+func (PromoteProfile) Verb() string { return "promote-profile" }
+
 // Challenge asks for a finding to be re-checked against new evidence.
 type Challenge struct{ Finding, Evidence string }
 

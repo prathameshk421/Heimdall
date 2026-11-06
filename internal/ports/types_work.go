@@ -49,11 +49,15 @@ type SandboxKind string
 
 // The sandbox jobs. Mutation is Later in the build and is listed so the enum matches the spec table.
 const (
-	SandboxRedFirst SandboxKind = "red_first"
-	SandboxRepro    SandboxKind = "repro"
-	SandboxStatic   SandboxKind = "static"
-	SandboxContract SandboxKind = "contract"
-	SandboxMutation SandboxKind = "mutation"
+	SandboxRedFirst     SandboxKind = "red_first"
+	SandboxRepro        SandboxKind = "repro"
+	SandboxStatic       SandboxKind = "static"
+	SandboxContract     SandboxKind = "contract"
+	SandboxMutation     SandboxKind = "mutation"
+	SandboxProfileTrial SandboxKind = "profile_trial"
+	// SandboxWarm is the read-only module-cache fetch job (TECH_SPEC 12.2, D153). It never runs
+	// repository code and its egress is allowlisted by the runner's fetch boundary.
+	SandboxWarm SandboxKind = "warm"
 )
 
 // maxSandboxTimeout is the longest any job may run (TECH_SPEC 12.2: 600 s for mutation, the largest limit).
@@ -66,15 +70,16 @@ type SandboxJob struct {
 	SHA     id.SHA        `json:"sha"`
 	Dir     string        `json:"dir"`
 	Timeout time.Duration `json:"timeout"`
+	Profile string        `json:"profile,omitempty"`
 }
 
 // Validate returns every problem with the job.
 func (j SandboxJob) Validate() error {
 	var v problems
 	switch j.Kind {
-	case SandboxRedFirst, SandboxRepro, SandboxStatic, SandboxContract, SandboxMutation:
+	case SandboxRedFirst, SandboxRepro, SandboxStatic, SandboxContract, SandboxMutation, SandboxProfileTrial, SandboxWarm:
 	default:
-		v.require("kind", false, "must be red_first, repro, static, contract or mutation")
+		v.require("kind", false, "must be a known sandbox job kind")
 	}
 	v.add("repo", checkRepo(j.Repo))
 	v.add("sha", checkSHA(j.SHA))

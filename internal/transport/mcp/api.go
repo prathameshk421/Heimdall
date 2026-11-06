@@ -119,6 +119,14 @@ type KnowledgeFiles interface {
 	Forget(context.Context, Principal, string) error
 }
 
+// Profiles is the authenticated sandbox-profile lifecycle available to profile agents and mapped owners.
+type Profiles interface {
+	Propose(context.Context, Principal, string, []byte) (ports.ProfileProposal, bool, error)
+	Approve(context.Context, Principal, string) error
+	Trial(context.Context, Principal, string, id.SHA) (ports.ProfileTrial, error)
+	Promote(context.Context, Principal, string) error
+}
+
 // Deps are the collaborators of a Server. Every field is required.
 type Deps struct {
 	Logger    *slog.Logger
@@ -131,6 +139,7 @@ type Deps struct {
 	Knowledge Knowledge
 	Packs     PackReader
 	Files     KnowledgeFiles
+	Profiles  Profiles
 }
 
 // Server answers MCP requests for the agents' tools.
