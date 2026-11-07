@@ -75,6 +75,9 @@ func applyTriggered(req *Request, p change.Triggered) {
 		req.Change = string(p.Ticket)
 	}
 	req.Repo = string(p.Repo)
+	if p.DescriptionRef != "" {
+		req.Untrusted = append(req.Untrusted, UntrustedRef{Source: "ticket description", Ref: p.DescriptionRef})
+	}
 	for _, criterion := range p.Criteria {
 		req.Criteria = append(req.Criteria, criterion.ID)
 		req.AcceptanceCriteria = append(req.AcceptanceCriteria, workflow.CriterionRef{ID: criterion.ID, Ref: criterion.Ref})

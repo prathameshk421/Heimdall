@@ -85,20 +85,29 @@ func validateCurrentTask(latest *change.TaskAssigned, agent id.AgentName, role w
 
 func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assignedAt time.Time, acked bool, events []change.Event) Assignment {
 	criteria := make([]workflow.CriterionRef, 0)
+	untrusted := make([]workflow.UntrustedRef, 0)
+	changeRef := workflow.ChangeRef{ID: ref.ChangeID}
 	for _, ev := range events {
-		if ev.Type != change.EventChangeTriggered {
-			continue
-		}
 		payload, err := change.Decode(ev)
 		if err != nil {
 			continue
 		}
-		triggered, ok := payload.(change.Triggered)
-		if !ok {
-			continue
-		}
-		for _, criterion := range triggered.Criteria {
-			criteria = append(criteria, workflow.CriterionRef{ID: criterion.ID, Ref: criterion.Ref})
+		switch p := payload.(type) {
+		case change.Triggered:
+			changeRef.Repo = string(p.Repo)
+			for _, criterion := range p.Criteria {
+				criteria = append(criteria, workflow.CriterionRef{ID: criterion.ID, Ref: criterion.Ref})
+			}
+			if p.DescriptionRef != "" {
+				untrusted = append(untrusted, workflow.UntrustedRef{Source: "ticket description", Ref: p.DescriptionRef})
+			}
+		case change.BranchEnsured:
+			changeRef.Repo = string(p.Repo)
+			changeRef.BaseSHA = p.BaseSHA
+		case change.PROpened:
+			changeRef.HeadSHA = p.HeadSHA
+		case change.PRPushed:
+			changeRef.HeadSHA = p.HeadSHA
 		}
 	}
 	return Assignment{
@@ -115,8 +124,8 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 			CaseID:   latest.CaseID,
 			Role:     latest.Role,
 			Deadline: latest.Deadline,
-			Change:   workflow.ChangeRef{ID: ref.ChangeID},
-			Inputs:   workflow.Inputs{AcceptanceCriteria: criteria, Answers: collectAnswers(events)},
+			Change:   changeRef,
+			Inputs:   workflow.Inputs{AcceptanceCriteria: criteria, Untrusted: untrusted, Answers: collectAnswers(events)},
 		},
 	}
 }

@@ -173,7 +173,7 @@ func (d *Drainer) drainOne(ctx context.Context, fx change.Effect) (bool, error) 
 	execErr := ex.Execute(execCtx, fx)
 	cancelExec()
 	if execErr != nil {
-		d.log.WarnContext(ctx, "outbox effect failed", "kind", fx.Kind, "key", fx.Key, "reason", execErr.Error())
+		d.log.WarnContext(ctx, "outbox effect failed", "kind", fx.Kind, "key", fx.Key, "reason", execErr.Error(), "cause", causeOf(execErr))
 		return false, d.failEffect(ctx, fx, execErr.Error())
 	}
 
@@ -229,4 +229,17 @@ func (d *Drainer) Run(ctx context.Context, wake <-chan struct{}, tick <-chan tim
 		}
 	}
 	return nil
+}
+
+// causeOf is the text of the error an executor wrapped, for the server log only: the stored reason deliberately omits it.
+func causeOf(err error) string {
+	cause := errors.Unwrap(err)
+	if cause == nil {
+		return ""
+	}
+	text := cause.Error()
+	if len(text) > 400 {
+		text = text[:400]
+	}
+	return text
 }

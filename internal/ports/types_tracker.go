@@ -34,6 +34,8 @@ type Ticket struct {
 	Assignee change.ActorID `json:"assignee"`
 	Status   string         `json:"status"`
 	Criteria []Criterion    `json:"criteria"`
+	// Description is the whole ticket text as the tracker holds it. The agent reads it as untrusted content.
+	Description string `json:"description,omitempty"`
 	// AssigneeIsApp is true when the assignee is an app account or automation, not a person (A10 item 2).
 	AssigneeIsApp bool `json:"assignee_is_app"`
 }

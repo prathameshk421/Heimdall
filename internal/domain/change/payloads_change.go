@@ -18,6 +18,8 @@ type Triggered struct {
 	Assignee ActorID           `json:"assignee"`
 	Source   TriggerSource     `json:"source"`
 	Criteria []TicketCriterion `json:"acceptance_criteria,omitempty"`
+	// DescriptionRef is the stored full ticket text, read by agents through read_untrusted.
+	DescriptionRef workflow.BlobRef `json:"description_ref,omitempty"`
 }
 
 // TicketCriterion is the validated, immutable ticket requirement captured when work is triggered.
@@ -37,6 +39,10 @@ func (p Triggered) Validate() error {
 	v.add("repo", checkRepo(p.Repo))
 	v.add("assignee", checkActor(p.Assignee))
 	v.add("source", checkEnum(p.Source, p.Source.Valid()))
+	if p.DescriptionRef != "" {
+		_, err := workflow.ParseBlobRef(string(p.DescriptionRef))
+		v.add("description_ref", err)
+	}
 	seen := map[string]bool{}
 	for _, c := range p.Criteria {
 		if !ticketCriterionID.MatchString(c.ID) {

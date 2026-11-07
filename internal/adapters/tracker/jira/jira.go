@@ -290,10 +290,11 @@ func (c *Client) Ticket(ctx context.Context, key id.ChangeID) (ports.Ticket, err
 		return ports.Ticket{}, fmt.Errorf("jira ticket %s: %w", string(key), err)
 	}
 	tk := ports.Ticket{
-		Key:      key,
-		Title:    is.Fields.Summary,
-		Status:   is.Fields.Status.Name,
-		Criteria: cs,
+		Key:         key,
+		Title:       is.Fields.Summary,
+		Status:      is.Fields.Status.Name,
+		Criteria:    cs,
+		Description: desc,
 	}
 	if is.Fields.Assignee != nil {
 		tk.Assignee = change.ActorID(is.Fields.Assignee.AccountID)

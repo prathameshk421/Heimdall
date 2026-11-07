@@ -1,24 +1,25 @@
 {
-  "key": "KAN-3",
-  "title": "Refund lookup",
   "assignee": "557058:ana",
-  "status": "In Progress",
+  "assignee_is_app": false,
   "criteria": [
     {
-      "id": "AC1",
       "hash": "acabe7c732ef5aecd1e385cf1c6f960f1c89ceef57688aa90ba948fac296f4dd",
+      "id": "AC1",
       "text": "GET /refunds/{id} returns the refund."
     },
     {
-      "id": "AC2",
       "hash": "27ed2843ed5072731beab8d3b44b57a3e077844b93e6f92dce3171275f9da39c",
+      "id": "AC2",
       "text": "Each refund links to its payment at https://example.atlassian.net/browse/PAY-142."
     },
     {
-      "id": "AC3",
       "hash": "eab0501e8d5296304b08f74821694179f4030bb879091c3ce83c0ed4440bb8ad",
+      "id": "AC3",
       "text": "Failed refunds are retried by the outbox."
     }
   ],
-  "assignee_is_app": false
+  "description": "Merchants and support read refunds by id.\n\n## Acceptance criteria\n\n1. GET /refunds/{id} returns the refund.\n2. Each refund links to its payment at https://example.atlassian.net/browse/PAY-142.\n3. Failed refunds are retried by the outbox.",
+  "key": "KAN-3",
+  "status": "In Progress",
+  "title": "Refund lookup"
 }

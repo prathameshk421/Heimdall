@@ -246,7 +246,29 @@ func (p *Poller) startTicket(ctx context.Context, key id.ChangeID, repo change.R
 		}
 		criteria = append(criteria, change.TicketCriterion{ID: c.ID, Text: c.Text, Hash: c.Hash, Ref: ref})
 	}
-	return p.startTriggered(ctx, key, repo, tk.Assignee, criteria, isFile)
+	descRef, err := p.storeDescription(ctx, tk.Description)
+	if err != nil {
+		return false, fmt.Errorf("store ticket description: %w", err)
+	}
+	return p.startTriggered(ctx, key, repo, tk.Assignee, criteria, descRef, isFile)
+}
+
+// maxDescriptionBytes bounds the stored ticket text; a longer description is cut, never refused.
+const maxDescriptionBytes = 256 << 10
+
+// storeDescription writes the whole ticket text as it came from the tracker. An empty description stores nothing.
+func (p *Poller) storeDescription(ctx context.Context, text string) (workflow.BlobRef, error) {
+	if strings.TrimSpace(text) == "" {
+		return "", nil
+	}
+	if len(text) > maxDescriptionBytes {
+		text = strings.ToValidUTF8(text[:maxDescriptionBytes], "")
+	}
+	ref, err := p.blobs.Put(ctx, ports.BlobEvidence, bytes.NewReader([]byte(text)))
+	if err != nil {
+		return "", fmt.Errorf("write blob: %w", err)
+	}
+	return ref, nil
 }
 
 // storeCriterion writes ticket-authored text to durable content-addressed storage. Replay keeps the source text and
@@ -271,8 +293,8 @@ func (p *Poller) storeCriterion(ctx context.Context, text, wantHash string) (wor
 // startTriggered starts the change with change.triggered. A change that already exists refuses the start with
 // ports.ErrVersionConflict, which is the durable dedupe (TECH_SPEC 2.4). It reports false in that case, and it does
 // not retry.
-func (p *Poller) startTriggered(ctx context.Context, key id.ChangeID, repo change.Repo, assignee change.ActorID, criteria []change.TicketCriterion, isFile bool) (bool, error) {
-	ev, err := p.triggeredEvent(key, repo, assignee, criteria, isFile)
+func (p *Poller) startTriggered(ctx context.Context, key id.ChangeID, repo change.Repo, assignee change.ActorID, criteria []change.TicketCriterion, descRef workflow.BlobRef, isFile bool) (bool, error) {
+	ev, err := p.triggeredEvent(key, repo, assignee, criteria, descRef, isFile)
 	if err != nil {
 		return false, err
 	}
@@ -288,14 +310,14 @@ func (p *Poller) startTriggered(ctx context.Context, key id.ChangeID, repo chang
 
 // triggeredEvent builds the change.triggered event of a ticket. The payload and the envelope are validated, and the
 // reducer must accept the event from the empty state, as internal/app/intake checks its events.
-func (p *Poller) triggeredEvent(key id.ChangeID, repo change.Repo, assignee change.ActorID, criteria []change.TicketCriterion, isFile bool) (change.Event, error) {
+func (p *Poller) triggeredEvent(key id.ChangeID, repo change.Repo, assignee change.ActorID, criteria []change.TicketCriterion, descRef workflow.BlobRef, isFile bool) (change.Event, error) {
 	source := change.TriggerJira
 	actor := change.Actor{Kind: change.ActorJira, ID: triggerActor}
 	if isFile {
 		source = change.TriggerFile
 		actor = change.Actor{Kind: change.ActorSystem, ID: "file"}
 	}
-	pl := change.Triggered{Ticket: key, Repo: repo, Assignee: assignee, Source: source, Criteria: criteria}
+	pl := change.Triggered{Ticket: key, Repo: repo, Assignee: assignee, Source: source, Criteria: criteria, DescriptionRef: descRef}
 	if err := pl.Validate(); err != nil {
 		return change.Event{}, fmt.Errorf("payload of change.triggered: %w", err)
 	}
@@ -307,6 +329,9 @@ func (p *Poller) triggeredEvent(key id.ChangeID, repo change.Repo, assignee chan
 	blobRefs := make([]workflow.BlobRef, 0, len(criteria))
 	for _, criterion := range criteria {
 		blobRefs = append(blobRefs, criterion.Ref)
+	}
+	if descRef != "" {
+		blobRefs = append(blobRefs, descRef)
 	}
 	ev := change.Event{
 		ID:            eid,
