@@ -153,6 +153,16 @@
 - **Not done:** the wake of the asking task after an answer; `get_task` returning `answers` inside the untrusted wrapper; the 4-hour timeout that marks questions `assumed`; reminders and escalation; late answers; the thread-reply form of answering; the component test Q1 to Q9 on real Postgres.
 - Mutation (duplicate answer allowed) caught. **Not verified:** a live answer from a Switch room.
 
+## Owner steps and WP1 registration (Nov 6, 2026): state at stop
+
+- **Owner steps 1 to 6 done** (`docs/WIRING_OWNER_STEPS.md`). Steps 1 and 2 first ran on the laptop, then on `heimdall-vm`: Podman 4.9.3 installed, runner user with subordinate IDs 100000 to 165535, group `heimdall-runner-socket`. Step 3: `golang@sha256:e519d3b0a5b285e5aa53ab9eef02bc6bbb9cb04608389b743a136a9ce75f0d1e`. Step 4: `secrets-sync` wrote 15 files, all mode 0600, directory 0700 (names and modes checked, not contents). Step 5: `make release-sign` ran twice, creating two transparency-log entries (3722997222 and 3722998215) that cannot be removed. Step 6: `make harness-check` passed; `make harness-install` reports the installed harness matches.
+- **Tag and release:** `v0.1.0` at `9d1d266` (the tag already existed and was reused). `DEPLOY_TAG=v0.1.0 make deploy-build` produced `.cache/releases/v0.1.0.tgz`; signature `.cache/releases/v0.1.0.tgz.sig`.
+- **Coordinator registration:** new command `heimdall switch-register --config ... --secrets-dir ...` (`cmd/heimdall/switch_register*.go`, commit `0b70b87`). Tests: the key is stored, never printed; a refused or empty reply is an error. Live run through an SSH tunnel gave agent `25dcbb57-907c-40f6-af53-a5577923813a`. The name `heimdall-coordinator` already existed on Switch (409), so the live config uses `heimdall-coord-live`.
+- **Doctor fix:** the GitHub check read the PEM key with the single-line reader. It now uses the multi-line reader; `integration.vcs.github` is ok.
+- **Config files:** `~/heimdall/heimdall.toml` (container paths) and `~/heimdall/heimdall.host.toml` (host paths), both outside the repo.
+- **Verification:** `make fast` exit 0, 0 lint issues, before the final commit.
+- **Not verified / still open:** Mattermost token file missing (chat bridge decision); Switch bridge id is a placeholder; `make deploy` not run; live stream and post on the VM not run; A14 wake and envelope answers; A8, A9, A11 to A12, A15 to A19; Part C; Telegram and Discord integration.
+
 ## Live wiring: WP0 preflight (Nov 6, 2026, read-only)
 
 - `make fast` on `heimdall-build` before A1: exit 0, 3,691 tests.
