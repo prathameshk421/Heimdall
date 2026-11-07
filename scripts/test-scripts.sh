@@ -411,5 +411,36 @@ git -C "$repo" commit -q -m leak >/dev/null 2>&1; code=$?
 out=$(bash "$root/deploy/tests/deploy-contract.sh" 2>&1); code=$?
 [ "$code" -eq 0 ] && grep -q 'deploy contract passed' <<<"$out"; check "deploy runner contract passes" $?
 
+# make secrets-local fills a private laptop secrets directory from a dotenv file and prints no secret value (D148).
+mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+local_work="$work/secrets-local"
+mkdir -p "$local_work/pem"
+printf '%s\n' '-----BEGIN FAKE KEY-----fake-pem-body-5e1d-----END FAKE KEY-----' > "$local_work/pem/app.pem"
+cat > "$local_work/dotenv" <<ENV
+OPENROUTER_API_KEY=fake-openrouter-7f3a9c
+ATLASSIAN_EMAIL=fake-user-4b2e@example.test
+ATLASSIAN_API_KEY=fake-atlassian-9d1c
+GITHUB_APP_ID=fake-app-8810
+GITHUB_APP_INSTALLATION_ID=fake-install-2277
+GITHUB_APP_PRIVATE_KEY_PATH=$local_work/pem/app.pem
+ENV
+secrets_out="$local_work/out/secrets"
+out=$(cd "$root" && make secrets-local ENV_FILE="$local_work/dotenv" SECRETS_DIR="$secrets_out" 2>&1); code=$?
+[ "$code" -eq 0 ]; check "make secrets-local exits 0 with a complete dotenv" $?
+[ "$(mode_of "$secrets_out")" = 700 ]; check "make secrets-local creates the secrets directory with mode 0700" $?
+for name in openrouter_api_key jira_email jira_api_token github_app_id github_app_installation_id github_app_private_key; do
+	[ -f "$secrets_out/$name" ] && [ "$(mode_of "$secrets_out/$name")" = 600 ]; check "make secrets-local writes $name with mode 0600" $?
+done
+[ "$(<"$secrets_out/openrouter_api_key")" = fake-openrouter-7f3a9c ]; check "make secrets-local copies the dotenv value into its secret file" $?
+leak=0
+for value in fake-openrouter-7f3a9c fake-user-4b2e@example.test fake-atlassian-9d1c fake-app-8810 fake-install-2277 fake-pem-body-5e1d; do
+	grep -qF "$value" <<<"$out" && leak=1
+done
+[ "$leak" -eq 0 ] && grep -q 'secrets-local: wrote secrets' <<<"$out"; check "make secrets-local output holds no secret value and reports success" $?
+out=$(cd "$root" && env -u SECRETS_DIR make -n secrets-local ENV_FILE="$local_work/dotenv" 2>&1); code=$?
+[ "$code" -eq 0 ] && grep -qF "$HOME/heimdall/secrets" <<<"$out"; check "make secrets-local defaults the directory to \$HOME/heimdall/secrets" $?
+out=$(cd "$root" && make secrets-local ENV_FILE="$local_work/missing.env" SECRETS_DIR="$local_work/missing-out" 2>&1); code=$?
+[ "$code" -ne 0 ] && grep -q 'cannot read dotenv file' <<<"$out"; check "make secrets-local fails and says so when the dotenv file is missing" $?
+
 echo "$total script cases, $fail failed"
 [ "$fail" -eq 0 ]

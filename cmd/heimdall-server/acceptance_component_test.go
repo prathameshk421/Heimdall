@@ -138,6 +138,9 @@ func TestSliceOpensOneRoomAndOneBranchAcrossARestart(t *testing.T) {
 
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventChangeTriggered), "one change.triggered")
 	require.Equal(t, change.StateWritingTests, s.stateOf(acceptanceChange))
+	require.Eventually(t, func() bool { return len(sw.invitedAgents()) == 1 },
+		acceptanceWaitFor, acceptancePollTick, "the test-author is invited into the change room before its task is posted")
+	require.Equal(t, []string{"test-author"}, sw.invitedAgents(), "the invite names the agent")
 	require.Eventually(t, func() bool { return len(sw.postBodies()) == 1 },
 		acceptanceWaitFor, acceptancePollTick, "the test-author assignment must be posted to the room")
 	posts := sw.postBodies()

@@ -12,7 +12,8 @@ import (
 )
 
 // Executor performs one kind of effect on the outside system. Effect.Key is the idempotency key to pass on.
-// An error it returns becomes the reason of Fail, verbatim, so it must not contain secrets.
+// An error it returns becomes the reason of Fail, verbatim, so it must not contain secrets. An error means the
+// action did not happen: the drainer retries the effect after an error, and it does not retry after a crash.
 type Executor interface {
 	Execute(ctx context.Context, fx change.Effect) error
 }
@@ -115,8 +116,8 @@ func checkTiming(cfg Config) []error {
 }
 
 // RunOnce claims one batch and works through it in claim order. An effect the executor fails, or one with no executor,
-// is failed with its reason. A failed Done or Fail, or a cancelled context, ends the batch with an error; the effects
-// not yet reached keep their leases and are claimed again when those expire.
+// is failed with its reason. A failed Start, Done or Fail, or a cancelled context, ends the batch with an error; the
+// effects not yet reached keep their leases and are claimed again when those expire.
 func (d *Drainer) RunOnce(ctx context.Context) (DrainResult, error) {
 	var res DrainResult
 	effects, err := d.box.Claim(ctx, d.batch, d.lease)
@@ -169,6 +170,10 @@ func (d *Drainer) drainOne(ctx context.Context, fx change.Effect) (bool, error) 
 		return false, d.failEffect(ctx, fx, reason)
 	}
 
+	if err := d.startEffect(ctx, fx.Key); err != nil {
+		return false, err
+	}
+
 	execCtx, cancelExec := context.WithTimeout(ctx, d.timeout)
 	execErr := ex.Execute(execCtx, fx)
 	cancelExec()
@@ -189,6 +194,17 @@ func (d *Drainer) drainOne(ctx context.Context, fx change.Effect) (bool, error) 
 // shutdown, and it has its own EffectTimeout, so a stuck database cannot hold the drainer.
 func (d *Drainer) bookkeeping(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), d.timeout)
+}
+
+// startEffect records the start of an effect before its executor runs. A refused start means this drainer no longer
+// holds the lease, so the executor must not run; the error ends the batch and the effect is left to its new holder.
+func (d *Drainer) startEffect(ctx context.Context, key change.EffectKey) error {
+	bctx, cancel := d.bookkeeping(ctx)
+	defer cancel()
+	if err := d.box.Start(bctx, key); err != nil {
+		return fmt.Errorf("drain outbox: start %s: %w", key, err)
+	}
+	return nil
 }
 
 func (d *Drainer) failEffect(ctx context.Context, fx change.Effect, reason string) error {

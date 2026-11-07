@@ -3,69 +3,73 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	switchchat "github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/switch"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 )
 
-// Exit statuses of switch-register.
 const (
-	exitOK      = 0
-	exitFailure = 1
-	exitUsage   = 2
+	switchRegisterOK    = 0
+	switchRegisterFail  = 1
+	switchRegisterUsage = 2
+	// registeringAgentID fills the client's required id field. Registration does not use it.
+	registeringAgentID = "registering"
 )
 
-// runSwitchRegister registers the Heimdall coordinator with Switch using the config's Switch settings and stores the
-// API key it returns in the key file the config names. It prints the agent id, never the key (WP1 step 2).
-func runSwitchRegister(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("switch-register", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	configPath := fs.String("config", "", "path to heimdall.toml")
-	dirFlag := fs.String("secrets-dir", "", "host directory for the key file (default: the config secrets_dir)")
-	if err := fs.Parse(args); err != nil {
-		return exitUsage
+// switchRegistrar adapts the Switch client to coordinatorRegistrar.
+type switchRegistrar struct{ client *switchchat.Client }
+
+func (s switchRegistrar) Register(ctx context.Context, agentType, name, description string) (string, string, error) {
+	reg, err := s.client.RegisterCoordinator(ctx, agentType, name, description)
+	if err != nil {
+		return "", "", err
 	}
-	if *configPath == "" {
-		writeDiagnostic(stderr, "switch-register: --config must name heimdall.toml\n")
-		return exitUsage
+	return reg.AgentID, reg.APIKey.Value(), nil
+}
+
+// runSwitchRegister registers the coordinator with Switch. It reads the registration token from the secrets
+// directory, writes the returned API key there with mode 0600, and prints only the agent id.
+func runSwitchRegister(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("heimdall switch-register", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	configPath := fs.String("config", "", "path to heimdall.toml (required)")
+	secretsDir := fs.String("secrets-dir", "", "host secrets directory, replacing secrets_dir from the config")
+	name := fs.String("name", "", "coordinator agent name (required)")
+	agentType := fs.String("type", "opencode", "Switch agent runtime type")
+	if err := fs.Parse(args); err != nil {
+		return switchRegisterUsage
+	}
+	if fs.NArg() != 0 || *configPath == "" || *name == "" {
+		writeDiagnostic(stderr, "usage: heimdall switch-register --config PATH --name NAME [--secrets-dir DIR] [--type opencode]\n")
+		return switchRegisterUsage
 	}
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		writeDiagnostic(stderr, "switch-register: load config: "+err.Error()+"\n")
-		return exitFailure
+		writeDiagnostic(stderr, "heimdall switch-register: load config failed\n")
+		return switchRegisterFail
 	}
-	if *dirFlag != "" {
-		cfg.SecretsDir = *dirFlag
+	if *secretsDir != "" {
+		cfg.SecretsDir = *secretsDir
 	}
-	secretsDir := cfg.SecretsDir
 	client, err := switchchat.New(switchchat.Config{
-		BaseURL:            cfg.Switch.BaseURL,
-		AgentID:            "registration",
-		AgentName:          cfg.Switch.AgentName,
-		BridgeID:           cfg.Switch.BridgeID,
-		Secrets:            cfg,
-		APIKeySecret:       cfg.Switch.APIKeySecret,
-		RegistrationSecret: cfg.Switch.RegistrationTokenSecret,
-		HTTPClient:         &http.Client{Timeout: 30 * time.Second},
-		Clock:              clock.System{},
-		Wait:               clock.Wait,
+		BaseURL: cfg.Switch.BaseURL, AgentID: registeringAgentID, AgentName: *name,
+		Secrets: cfg, APIKeySecret: cfg.Switch.APIKeySecret, RegistrationSecret: cfg.Switch.RegistrationTokenSecret,
+		HTTPClient: &http.Client{}, Clock: clock.System{}, Wait: clock.Wait,
 	})
 	if err != nil {
-		writeDiagnostic(stderr, "switch-register: build Switch client: "+err.Error()+"\n")
-		return exitFailure
+		writeDiagnostic(stderr, "heimdall switch-register: Switch configuration is incomplete\n")
+		return switchRegisterFail
 	}
-	agentID, err := registerCoordinator(context.Background(), switchRegistrar{client: client}, secretsDir, cfg.Switch.APIKeySecret, cfg.Switch.AgentName, writeSecretFile)
+	store := func(secret string, value []byte) error { return writeSecretFile(cfg.SecretsDir, secret, value) }
+	id, err := registerCoordinator(context.Background(), switchRegistrar{client: client}, store, cfg.Switch.APIKeySecret, *agentType, *name)
 	if err != nil {
-		writeDiagnostic(stderr, "switch-register: "+err.Error()+"\n")
-		return exitFailure
+		writeDiagnostic(stderr, fmt.Sprintf("heimdall switch-register: %v\n", err))
+		return switchRegisterFail
 	}
-	if err := writeRegistrationResult(stdout, agentID, cfg.Switch.APIKeySecret); err != nil {
-		writeDiagnostic(stderr, "switch-register: write result failed\n")
-		return exitFailure
-	}
-	return exitOK
+	_, _ = fmt.Fprintf(stdout, "registered coordinator %s; agent id %s; key stored as %s\n", *name, id, cfg.Switch.APIKeySecret)
+	return switchRegisterOK
 }

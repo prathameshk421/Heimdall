@@ -19,6 +19,9 @@ import (
 // "heimdall_*" is not mistaken for a tool called "heimdall_".
 var toolName = regexp.MustCompile(`heimdall_[a-z][a-z_]*`)
 
+// wireToolName matches a bare MCP tool name in backticks, as the tool table of TECH_SPEC 14.1 writes it.
+var wireToolName = regexp.MustCompile("`([a-z][a-z_]*)")
+
 // placeholder matches the words a skill must never carry into a run.
 var placeholder = regexp.MustCompile(`(?i)\b(todo|tbd)\b`)
 
@@ -155,6 +158,21 @@ func TestSkillsNameOnlyToolsTheServerOffersTheirRole(t *testing.T) {
 	}
 }
 
+// TestEverySkillAcksItsTaskRightAfterGetTask guards TECH_SPEC 6.2 step 3: an agent acks within 60 s of the
+// assignment, or the task times out. The room message names only heimdall_get_task, so the skill must name
+// heimdall_ack as the next call, before the agent reads anything else. A live test-author run read the ticket and
+// asked questions but never acked, because the test-quality skill did not name the tool.
+func TestEverySkillAcksItsTaskRightAfterGetTask(t *testing.T) {
+	for _, skill := range []string{"test-quality", "reviewer", "resolver"} {
+		t.Run(skill, func(t *testing.T) {
+			calls := toolName.FindAllString(skillBody(t, skill), -1)
+			require.GreaterOrEqual(t, len(calls), 2, "skills/%s/SKILL.md names too few tools", skill)
+			require.Equal(t, []string{"heimdall_get_task", "heimdall_ack"}, calls[:2],
+				"skills/%s/SKILL.md must name heimdall_get_task, then heimdall_ack, before any other tool", skill)
+		})
+	}
+}
+
 func TestSkillsCarryNoEmDashAndNoPlaceholderWords(t *testing.T) {
 	for _, skill := range []string{"reviewer", "resolver"} {
 		body := skillBody(t, skill)
@@ -198,15 +216,16 @@ func specToolTable(t *testing.T) (roles map[string]map[string]bool, later map[st
 		if section && strings.HasPrefix(line, "### ") {
 			section = false
 		}
-		if !section || !strings.HasPrefix(line, "| `heimdall_") {
+		if !section || !strings.HasPrefix(line, "| `") {
 			continue
 		}
 		cells := strings.Split(line, "|")
 		require.GreaterOrEqual(t, len(cells), 3, "malformed tool table row: %s", line)
-		names := toolName.FindAllString(cells[1], -1)
-		require.NotEmpty(t, names, "malformed tool table row: %s", line)
+		matches := wireToolName.FindAllStringSubmatch(cells[1], -1)
+		require.NotEmpty(t, matches, "malformed tool table row: %s", line)
 		allowed := roleSet(cells[2])
-		for _, name := range names {
+		for _, m := range matches {
+			name := modelToolName(t, m[1])
 			roles[name] = allowed
 			if strings.Contains(line, "(Later") {
 				later[name] = true
@@ -229,13 +248,21 @@ func roleSet(cell string) map[string]bool {
 	return set
 }
 
-// implementedTools reads the tool table the MCP server builds today.
+// modelToolName returns the name the model sees for a wire tool name. OpenCode shows an MCP tool as <server key>_<tool>,
+// and the server key is heimdall. Wire names are bare, so a wire name that already carries the prefix fails here.
+func modelToolName(t *testing.T, wire string) string {
+	t.Helper()
+	require.False(t, strings.HasPrefix(wire, "heimdall_"), "wire tool name %s carries the heimdall_ prefix; wire names are bare (TECH_SPEC 14.1)", wire)
+	return "heimdall_" + wire
+}
+
+// implementedTools reads the tool table the MCP server builds today, as the model sees each name.
 func implementedTools(t *testing.T) map[string]bool {
 	t.Helper()
 	body := readText(t, filepath.Join("..", "..", "internal", "transport", "mcp", "tools.go"))
 	set := map[string]bool{}
-	for _, m := range regexp.MustCompile(`name: "(heimdall_[a-z][a-z_]*)"`).FindAllStringSubmatch(body, -1) {
-		set[m[1]] = true
+	for _, m := range regexp.MustCompile(`name: "([a-z][a-z_]*)"`).FindAllStringSubmatch(body, -1) {
+		set[modelToolName(t, m[1])] = true
 	}
 	require.NotEmpty(t, set, "no tool names were found in internal/transport/mcp/tools.go")
 	return set

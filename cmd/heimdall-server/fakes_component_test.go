@@ -126,6 +126,7 @@ type fakeSwitch struct {
 	mu          sync.Mutex
 	rooms       []map[string]any
 	createCalls []string
+	inviteCalls []string
 	postCalls   []string
 	badAuth     int
 }
@@ -152,9 +153,14 @@ func (f *fakeSwitch) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/agents/" + acceptanceAgentID + "/message":
-		body, _ := args["body"].(string)
+		// Switch 0.31 reads the text from content and answers 422 when it is missing.
+		content, _ := args["content"].(string)
+		if content == "" {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"detail": "content: Field required"})
+			return
+		}
 		f.mu.Lock()
-		f.postCalls = append(f.postCalls, body)
+		f.postCalls = append(f.postCalls, content)
 		f.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	case "/agents/" + acceptanceAgentID + "/ops/list_rooms":
@@ -162,8 +168,25 @@ func (f *fakeSwitch) serve(w http.ResponseWriter, r *http.Request) {
 		out := append([]map[string]any{}, f.rooms...)
 		f.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{"result": out})
+	case "/agents/" + acceptanceAgentID + "/ops/invite_agent_to_room":
+		// Switch 0.31 invites an agent into a room by its Switch name; the call is idempotent.
+		agent, _ := args["agent_name"].(string)
+		if agent == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invite_agent_to_room requires: agent_name"})
+			return
+		}
+		f.mu.Lock()
+		f.inviteCalls = append(f.inviteCalls, agent)
+		f.mu.Unlock()
+		// Every op answers inside a result envelope; the adapter reads the ok field from it.
+		writeJSON(w, http.StatusOK, map[string]any{"result": map[string]any{"ok": true}})
 	case "/agents/" + acceptanceAgentID + "/ops/create_room":
 		title, _ := args["name"].(string)
+		// Switch 0.31 answers 400 when create_room has no description.
+		if description, _ := args["description"].(string); description == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "create_room requires: description"})
+			return
+		}
 		f.mu.Lock()
 		f.createCalls = append(f.createCalls, title)
 		f.rooms = append(f.rooms, map[string]any{"room_id": acceptanceRoomID, "name": title, "archived": false})
@@ -178,6 +201,13 @@ func (f *fakeSwitch) createCallTitles() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string{}, f.createCalls...)
+}
+
+// invitedAgents returns the agents invited into a room, in call order.
+func (f *fakeSwitch) invitedAgents() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string{}, f.inviteCalls...)
 }
 
 // postCounts returns the bodies of the messages posted to any room.

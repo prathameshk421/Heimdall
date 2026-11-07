@@ -30,7 +30,7 @@ func TestBootAfterDowntimeAppendsMissedPushAndCIOnce(t *testing.T) {
 	r.checks.checks[head2] = []prsync.CheckRun{{ID: "check-2", Name: "build", Status: prsync.CheckCompleted, Conclusion: change.CISuccess, SHA: head2}}
 
 	fresh, err := prsync.New(prsync.Config{
-		Repos: r.repos, PRs: r.prs, Intake: r.intake, Reviews: r.reviews, Checks: r.checks,
+		Repos: r.repos, PRs: r.prs, Streams: r.events, Intake: r.intake, Reviews: r.reviews, Checks: r.checks,
 		Gate: r.gate, Events: r.events, Clock: r.clock, IDs: r.ids,
 	})
 	require.NoError(t, err)

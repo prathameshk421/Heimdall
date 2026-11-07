@@ -37,7 +37,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/dashboard"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
@@ -49,6 +48,8 @@ const (
 	pollInterval = 15 * time.Second
 	// syncInterval is the wait between two pull request syncs.
 	syncInterval = 10 * time.Second
+	// reconcileInterval is the wait between two reconcile passes, which also run at boot (TECH_SPEC 2.2, D56).
+	reconcileInterval = 5 * time.Minute
 	// drainTick is the longest the outbox waits between two batches when no wake arrives.
 	drainTick = 2 * time.Second
 	// maxAttempts is the task budget of a retry (engine.Config.MaxAttempts). The slice has no retry, so it is a bound only.
@@ -165,7 +166,6 @@ type app struct {
 	roomStream        roomStreamRunner
 	comments          commentPoller
 	mcpHandler        http.Handler
-	dashboard         http.Handler
 	agentSetupHandler http.Handler
 	operatorAnswer    http.Handler
 	commands          *commandRuntime
@@ -194,6 +194,7 @@ type drainer interface {
 // syncer is the part of prsync.Syncer the loop uses. A test supplies a fake one.
 type syncer interface {
 	SyncOnce(ctx context.Context) (prsync.Result, error)
+	Reconcile(ctx context.Context) (prsync.Result, error)
 }
 
 type roomStreamRunner interface{ Run(context.Context) error }
@@ -485,9 +486,6 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	return a, nil
 }
 
-// dashboardInterval is how often the dashboard stream looks at the event log.
-const dashboardInterval = 2 * time.Second
-
 // newTicketPollers builds one ticket poller per listed project, each with its own cursor source provider:project
 // (A10 item 10).
 func newTicketPollers(ad adapters, store *postgres.Store, eng *engine.Engine, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock) ([]poller, error) {
@@ -550,10 +548,6 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	dash, err := dashboard.New(store, d.logger, dashboardInterval)
-	if err != nil {
-		return nil, fmt.Errorf("build dashboard: %w", err)
-	}
 	mcpH, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager)
 	if err != nil {
 		return nil, err
@@ -563,7 +557,7 @@ func assembleWithBlobs(
 		closer = c
 	}
 	return &app{
-		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, dashboard: dash, agentSetupHandler: setupHandler, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, blobs: closer,
+		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, blobs: closer,
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
@@ -680,7 +674,7 @@ func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports
 }
 
 // assembleSyncer wires the policy decoder, gate source, evaluator, intake and PR syncer.
-func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, error) {
+func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, error) {
 	gateSrc, err := gateuse.NewSource(gateuse.SourceConfig{
 		PRs:    ad.vcs,
 		Code:   ad.vcs,
@@ -712,7 +706,8 @@ func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk port
 	sync, err := prsync.New(prsync.Config{
 		Repos:   ad.repos,
 		PRs:     ad.vcs,
-		Intake:  prIntake{in: intakeCase},
+		Streams: store,
+		Intake:  syncIntake{in: intakeCase},
 		Reviews: reviewsAdapter{reader: ad.vcs},
 		Checks:  checksAdapter{reader: ad.vcs},
 		Gate:    prGate{eval: gateEval},
@@ -726,12 +721,26 @@ func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk port
 	return sync, intakeCase, nil
 }
 
+// workflowAgentNames lists the configured test author, reviewers and resolver, so a change room is made with them in it.
+func workflowAgentNames(a config.Agents) []string {
+	names := make([]string, 0, len(a.Reviewers)+2)
+	if a.TestAuthor != "" {
+		names = append(names, a.TestAuthor)
+	}
+	names = append(names, a.Reviewers...)
+	if a.Resolver != "" {
+		names = append(names, a.Resolver)
+	}
+	return names
+}
+
 // baseExecutors builds the room_open, github_branch, and github_check executors.
 func baseExecutors(
 	ad adapters, store ports.EventStore, in effects.Ingest, gen ports.IDs, clk ports.Clock,
 ) (room effects.RoomOpen, branch effects.GitHubBranch, check effects.GitHubCheck, err error) {
 	room, err = effects.NewRoomOpen(effects.RoomOpenDeps{
 		Tickets: ad.tickets, Chat: ad.chat, Store: store, Ingest: in, IDs: gen, Clock: clk,
+		Agents: workflowAgentNames(ad.agents),
 	})
 	if err != nil {
 		return room, branch, check, fmt.Errorf("build room_open executor: %w", err)

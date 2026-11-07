@@ -64,7 +64,7 @@ func TestLeadDismissalIsFoundAfterARestart(t *testing.T) {
 
 	// A new Syncer on the same event log and the same GitHub fakes: it has no memory of the first one.
 	fresh, err := prsync.New(prsync.Config{
-		Repos: r.repos, PRs: r.prs, Intake: r.intake, Reviews: r.reviews, Checks: r.checks,
+		Repos: r.repos, PRs: r.prs, Streams: r.events, Intake: r.intake, Reviews: r.reviews, Checks: r.checks,
 		Gate: r.gate, Events: r.events, Clock: r.clock, IDs: r.ids,
 	})
 	require.NoError(t, err)

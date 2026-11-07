@@ -54,13 +54,14 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 func command(name string) (func([]string) int, bool) {
 	commands := map[string]func([]string) int{
-		"doctor":       func(args []string) int { return runDoctor(args, os.Stdout, os.Stderr, realDoctorDeps()) },
-		"connect":      func(args []string) int { return runConnect(args, os.Stdin, os.Stdout, os.Stderr, realConnectDeps()) },
-		"cost":         func(args []string) int { return runCost(args, os.Stdout, os.Stderr) },
-		"budget-check": func(args []string) int { return runBudgetCheck(args, os.Stdout, os.Stderr) },
-		"budget-run":   func(args []string) int { return runBudgetRun(args, os.Stdout, os.Stderr) },
-		"secrets-sync": func(args []string) int { return runSecretsSync(args, os.Stdout, os.Stderr) },
-		"admin":        func(args []string) int { return runAdmin(args, os.Stdin, os.Stdout, os.Stderr) },
+		"doctor":          func(args []string) int { return runDoctor(args, os.Stdout, os.Stderr, realDoctorDeps()) },
+		"connect":         func(args []string) int { return runConnect(args, os.Stdin, os.Stdout, os.Stderr, realConnectDeps()) },
+		"cost":            func(args []string) int { return runCost(args, os.Stdout, os.Stderr) },
+		"budget-check":    func(args []string) int { return runBudgetCheck(args, os.Stdout, os.Stderr) },
+		"budget-run":      func(args []string) int { return runBudgetRun(args, os.Stdout, os.Stderr) },
+		"secrets-sync":    func(args []string) int { return runSecretsSync(args, os.Stdout, os.Stderr) },
+		"switch-register": func(args []string) int { return runSwitchRegister(args, os.Stdout, os.Stderr) },
+		"admin":           func(args []string) int { return runAdmin(args, os.Stdin, os.Stdout, os.Stderr) },
 		"controller": func(args []string) int {
 			return runController(args, os.Stdin, os.Stdout, os.Stderr, realControllerDeps())
 		},

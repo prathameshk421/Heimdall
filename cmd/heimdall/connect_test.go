@@ -423,6 +423,50 @@ func TestWriteSelectionRefusesFileThatDoesNotLoad(t *testing.T) {
 	require.Equal(t, before, after, "a file that does not load strictly must not be rewritten")
 }
 
+// switchroomSelection is the agent_runtime section that config.Load accepts. The CLI must accept it too.
+const switchroomSelection = "[agent_runtime]\nprovider = \"switchroom\"\nmachine = \"heimdall-vm\"\nmcp_endpoint = \"http://127.0.0.1:8080/mcp\"\n"
+
+func TestSwitchroomAgentRuntimeSelectionIsAcceptedByConnect(t *testing.T) {
+	_, cfgPath := connectFixture(t, switchroomSelection, nil)
+
+	var out, errOut bytes.Buffer
+	code := runConnect([]string{"list", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, testConnectDeps())
+	require.Equal(t, 0, code, errOut.String())
+	require.NotContains(t, errOut.String(), "valid names are")
+	rows := map[string][]string{}
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n")[1:] {
+		f := strings.Fields(line)
+		rows[f[0]] = f[:4]
+	}
+	require.Equal(t, "yes", rows["switchroom"][2], out.String())
+
+	out.Reset()
+	errOut.Reset()
+	code = runConnect([]string{"--check", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, testConnectDeps())
+	require.Equal(t, 0, code, errOut.String())
+	require.NotContains(t, out.String()+errOut.String(), "valid names are")
+	require.Contains(t, out.String(), "switchroom")
+}
+
+func TestDoctorAcceptsSwitchroomAgentRuntimeSelection(t *testing.T) {
+	_, cfgPath := connectFixture(t, switchroomSelection, nil)
+	cfg := mustLoad(t, cfgPath)
+
+	rows := configuredIntegrationChecks(context.Background(), cfg, defaultRegistry, time.Second)
+	for _, row := range rows {
+		require.NotEqual(t, "integration.registry", row.Check, row.Detail)
+		require.NotContains(t, row.Detail, "valid names are")
+	}
+	var runtimeRow *checkResult
+	for i := range rows {
+		if rows[i].Check == "integration.agent_runtime.switchroom" {
+			runtimeRow = &rows[i]
+		}
+	}
+	require.NotNil(t, runtimeRow, "doctor must run the switchroom check")
+	require.Equal(t, statusMissing, runtimeRow.Status, "no OpenRouter secret is configured, so the check reports missing config")
+}
+
 func TestRunConnectKindWritesSelectionAndInstructions(t *testing.T) {
 	dir, cfgPath := connectFixture(t, "", nil)
 	var out, errOut bytes.Buffer

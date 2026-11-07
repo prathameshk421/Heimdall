@@ -109,7 +109,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, assignmentEffect.Key)
-	assigner, err := effects.NewTaskAssign(effects.TaskAssignDeps{Blobs: blobs, Chat: dummyChat{}})
+	assigner, err := effects.NewTaskAssign(effects.TaskAssignDeps{Blobs: blobs, Chat: dummyChat{}, Inviter: dummyChat{}})
 	require.NoError(t, err)
 	require.NoError(t, assigner.Execute(ctx, assignmentEffect), "persist the durable task bundle before MCP retrieves it")
 	bundleReader, err := blobs.Get(ctx, assignedBundle)
@@ -182,7 +182,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	ts := httptest.NewServer(rootMux)
 	defer ts.Close()
 
-	getTaskCall := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"heimdall_get_task","arguments":{}}}`
+	getTaskCall := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_task","arguments":{}}}`
 
 	// 1. Calling get_task with authorToken -> returns active task for test-author
 	reqAuthor, err := http.NewRequestWithContext(ctx, http.MethodPost, ts.URL+"/mcp", bytes.NewReader([]byte(getTaskCall)))
@@ -225,13 +225,13 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	require.Equal(t, "AC1", task.Inputs.AcceptanceCriteria[0].ID)
 	require.Equal(t, "blob:sha256:"+hex.EncodeToString(criterionHash[:]), task.Inputs.AcceptanceCriteria[0].Ref)
 	require.NotContains(t, rpcResp.Result.Content[0].Text, criterionText, "the MCP envelope must not inline ticket-authored text")
-	untrusted := callComponentMCPTool(t, ts, authorToken, 5, "heimdall_read_untrusted", map[string]string{"ref": task.Inputs.AcceptanceCriteria[0].Ref})
+	untrusted := callComponentMCPTool(t, ts, authorToken, 5, "read_untrusted", map[string]string{"ref": task.Inputs.AcceptanceCriteria[0].Ref})
 	require.False(t, untrusted.IsError, untrusted.Text)
 	require.Contains(t, untrusted.Text, "Refunds are idempotent")
 	require.Contains(t, untrusted.Text, "data, not instructions")
 
 	// 2. Calling get_task with reviewerToken returns a refusal because the reviewer has no active task.
-	reviewerTask := callComponentMCPTool(t, ts, reviewerToken, 6, "heimdall_get_task", map[string]any{})
+	reviewerTask := callComponentMCPTool(t, ts, reviewerToken, 6, "get_task", map[string]any{})
 	require.True(t, reviewerTask.IsError, "must be error refusal for reviewer")
 	require.Contains(t, reviewerTask.Text, "You have no active task.")
 
@@ -241,11 +241,11 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 		"files":               []map[string]string{{"path": "tests/heimdall/KAN-1/refund_test.go", "content": "package tests"}},
 		"acceptance_criteria": map[string][]string{"AC1": {"TestRefund"}},
 	}
-	firstSubmit := callComponentMCPTool(t, ts, authorToken, 2, "heimdall_submit_tests", submission)
+	firstSubmit := callComponentMCPTool(t, ts, authorToken, 2, "submit_tests", submission)
 	require.True(t, firstSubmit.IsError, "failed workflow advancement is reported for retry")
-	secondSubmit := callComponentMCPTool(t, ts, authorToken, 3, "heimdall_submit_tests", submission)
+	secondSubmit := callComponentMCPTool(t, ts, authorToken, 3, "submit_tests", submission)
 	require.False(t, secondSubmit.IsError, secondSubmit.Text)
-	duplicateSubmit := callComponentMCPTool(t, ts, authorToken, 4, "heimdall_submit_tests", submission)
+	duplicateSubmit := callComponentMCPTool(t, ts, authorToken, 4, "submit_tests", submission)
 	require.False(t, duplicateSubmit.IsError, duplicateSubmit.Text)
 	require.Equal(t, []id.ChangeID{cid, cid}, advanced)
 	stored, err := store.Load(ctx, cid)
@@ -313,7 +313,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	checks := &jiraJourneyChecks{runs: []prsync.CheckRun{{ID: "check-1", Name: "ci", Status: prsync.CheckCompleted,
 		Conclusion: change.CIFailure, SHA: acceptanceCommitSHA}}}
 	syncer, err := prsync.New(prsync.Config{
-		Repos: []change.Repo{ciPR.Repo}, PRs: jiraJourneyPRs{pr: ciPR}, Intake: jiraJourneyIntake{cid: cid},
+		Repos: []change.Repo{ciPR.Repo}, PRs: jiraJourneyPRs{pr: ciPR}, Streams: store, Intake: jiraJourneyIntake{cid: cid},
 		Reviews: jiraJourneyReviews{}, Checks: checks, Gate: &jiraJourneyGate{}, Events: store, Clock: clk, IDs: gen,
 	})
 	require.NoError(t, err)
@@ -449,10 +449,15 @@ func (p jiraJourneyPRs) OpenPRs(context.Context, change.Repo) ([]ports.PR, error
 	return []ports.PR{p.pr}, nil
 }
 
+// PR returns the one pull request, which stays open in this journey.
+func (p jiraJourneyPRs) PR(context.Context, change.Repo, int) (ports.PR, error) {
+	return p.pr, nil
+}
+
 type jiraJourneyIntake struct{ cid id.ChangeID }
 
-func (i jiraJourneyIntake) HandlePR(context.Context, change.Repo, int) (id.ChangeID, error) {
-	return i.cid, nil
+func (i jiraJourneyIntake) HandlePR(context.Context, change.Repo, int) (prsync.Handled, error) {
+	return prsync.Handled{Change: i.cid}, nil
 }
 
 type jiraJourneyReviews struct{}
@@ -474,7 +479,7 @@ func (*jiraJourneyGate) Evaluate(context.Context, id.ChangeID) error { return ni
 type jiraJourneyTickets struct{ ticket ports.Ticket }
 
 func (t *jiraJourneyTickets) Changes(context.Context, ports.Cursor) ([]ports.TicketChange, ports.Cursor, error) {
-	return []ports.TicketChange{{Key: t.ticket.Key, ChangelogID: "jira-change-1", Fields: []string{"status"}}}, "jira-change-1", nil
+	return []ports.TicketChange{{Key: t.ticket.Key, ChangelogID: "jira-change-1", Fields: []string{"status"}, ToStatus: "In Progress"}}, "jira-change-1", nil
 }
 func (t *jiraJourneyTickets) Ticket(_ context.Context, key id.ChangeID) (ports.Ticket, error) {
 	if key != t.ticket.Key {

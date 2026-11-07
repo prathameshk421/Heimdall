@@ -1,59 +1,66 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 type fakeRegistrar struct {
 	id, key string
 	err     error
-	typ     string
+	gotType string
+	gotName string
 }
 
-func (f *fakeRegistrar) RegisterCoordinator(_ context.Context, agentType, _, _ string) (string, string, error) {
-	f.typ = agentType
+func (f *fakeRegistrar) Register(_ context.Context, agentType, name, _ string) (string, string, error) {
+	f.gotType, f.gotName = agentType, name
 	return f.id, f.key, f.err
 }
 
-// The key goes to its file and the output carries only the agent id: the key never reaches a log or a terminal.
-func TestRegisterCoordinatorStoresTheKeyAndPrintsOnlyTheID(t *testing.T) {
-	dir := t.TempDir()
-	r := &fakeRegistrar{id: "agent-42", key: "key-value-xyz"}
+func TestRegisterCoordinatorStoresTheKeyAndReturnsOnlyTheAgentID(t *testing.T) {
+	reg := &fakeRegistrar{id: "agent-1", key: "sw-key-value"}
+	stored := map[string]string{}
+	store := func(name string, value []byte) error { stored[name] = string(value); return nil }
 
-	id, err := registerCoordinator(context.Background(), r, dir, "switch_api_key", "heimdall-coordinator", writeTestKeyFile)
-	require.NoError(t, err)
-	require.Equal(t, "agent-42", id)
-	require.Equal(t, "opencode", r.typ)
-
-	stored, err := os.ReadFile(filepath.Join(dir, "switch_api_key"))
-	require.NoError(t, err)
-	require.Equal(t, "key-value-xyz", string(stored))
-
-	var out bytes.Buffer
-	require.NoError(t, writeRegistrationResult(&out, id, "switch_api_key"))
-	require.NotContains(t, out.String(), "key-value-xyz", "the key is never printed")
-	require.Contains(t, out.String(), "agent-42")
+	id, err := registerCoordinator(context.Background(), reg, store, "switch_api_key", "opencode", "heimdall-coord-live")
+	if err != nil {
+		t.Fatalf("registerCoordinator() error = %v", err)
+	}
+	if id != "agent-1" {
+		t.Fatalf("agent id = %q, want agent-1", id)
+	}
+	if stored["switch_api_key"] != "sw-key-value" {
+		t.Fatalf("stored = %v, want the key under switch_api_key", stored)
+	}
+	if reg.gotType != "opencode" || reg.gotName != "heimdall-coord-live" {
+		t.Fatalf("registered type=%q name=%q", reg.gotType, reg.gotName)
+	}
 }
 
-func TestRegisterCoordinatorRefusesAFailedRegistration(t *testing.T) {
-	r := &fakeRegistrar{err: errors.New("switch refused")}
-	_, err := registerCoordinator(context.Background(), r, t.TempDir(), "switch_api_key", "x", writeTestKeyFile)
-	require.ErrorContains(t, err, "switch refused")
+func TestRegisterCoordinatorNeverLeaksTheKeyInAnError(t *testing.T) {
+	reg := &fakeRegistrar{id: "agent-1", key: "sw-key-value"}
+	store := func(string, []byte) error { return errors.New("disk full") }
+
+	id, err := registerCoordinator(context.Background(), reg, store, "switch_api_key", "opencode", "heimdall-coord-live")
+	if err == nil {
+		t.Fatal("registerCoordinator() error = nil, want the store failure")
+	}
+	if strings.Contains(err.Error(), "sw-key-value") || strings.Contains(id, "sw-key-value") {
+		t.Fatalf("key leaked: id=%q err=%v", id, err)
+	}
 }
 
-func TestRegisterCoordinatorRefusesAnEmptyReply(t *testing.T) {
-	r := &fakeRegistrar{id: "agent-42"}
-	_, err := registerCoordinator(context.Background(), r, t.TempDir(), "switch_api_key", "x", writeTestKeyFile)
-	require.ErrorContains(t, err, "no agent id or key")
-}
+func TestRegisterCoordinatorStoresNothingWhenRegistrationFails(t *testing.T) {
+	reg := &fakeRegistrar{err: errors.New("409 conflict")}
+	called := false
+	store := func(string, []byte) error { called = true; return nil }
 
-func writeTestKeyFile(dir, name string, value []byte) error {
-	return os.WriteFile(filepath.Join(dir, name), value, 0o600)
+	if _, err := registerCoordinator(context.Background(), reg, store, "switch_api_key", "opencode", "x"); err == nil {
+		t.Fatal("registerCoordinator() error = nil, want the registration failure")
+	}
+	if called {
+		t.Fatal("store was called after a failed registration")
+	}
 }

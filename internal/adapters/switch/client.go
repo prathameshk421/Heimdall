@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
@@ -63,7 +62,6 @@ type Client struct {
 	regSecret    string
 	clock        ports.Clock
 	wait         func(ctx context.Context, d time.Duration) error
-	newConnID    func() string
 	breaker      breaker
 
 	// postMu serialises Post, so the check of posted and the send cannot interleave.
@@ -114,7 +112,6 @@ func New(cfg Config) (*Client, error) {
 		regSecret:    cfg.RegistrationSecret,
 		clock:        cfg.Clock,
 		wait:         cfg.Wait,
-		newConnID:    uuid.NewString,
 		posted:       map[change.EffectKey]bool{},
 	}, nil
 }

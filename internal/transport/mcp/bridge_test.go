@@ -60,7 +60,7 @@ func TestBridgeRelaysEachRequestAndWritesEachAnswer(t *testing.T) {
 	require.JSONEq(t, "1", string(first.ID))
 	require.JSONEq(t, "{}", string(first.Result))
 	require.JSONEq(t, "2", string(second.ID))
-	require.Contains(t, string(second.Result), "heimdall_get_task")
+	require.Contains(t, string(second.Result), "get_task")
 }
 
 func TestBridgeSendsTheTokenAsAHeaderOnly(t *testing.T) {

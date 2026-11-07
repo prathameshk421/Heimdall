@@ -22,15 +22,15 @@ services:
       dockerfile: deploy/Dockerfile.server
     image: heimdall-server:dev
     command: ["--config", "/etc/heimdall/heimdall.toml"]
+    # The blob store path is relative (.heimdall/blobs), so the working directory is a durable named volume.
+    working_dir: /var/lib/heimdall
     # The server gets only the narrow sandbox API socket. The host container-engine socket is never mounted.
     group_add:
       - "${HEIMDALL_RUNNER_GID:?set HEIMDALL_RUNNER_GID to the runner socket group id}"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
-      - type: volume
-        source: heimdall_data
-        target: /var/lib/heimdall
+      - heimdall_data:/var/lib/heimdall
       - type: bind
         source: /run/heimdall-runner/runner.sock
         target: /run/heimdall-runner/runner.sock
@@ -54,7 +54,8 @@ services:
       - agent_token_reviewer-2
       - agent_token_reviewer-3
       - agent_token_resolver
-    networks: [core, memory]
+    # The server reaches Switch by its service name on Switch's own network: 127.0.0.1 inside this container is not the VM.
+    networks: [core, memory, switch]
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,6 +65,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    restart: unless-stopped
+
+  # The config allows plain http only for a loopback host, so the server calls Switch at 127.0.0.1:8000. This sidecar
+  # shares the server's network namespace and forwards that loopback port to Switch's service on its own network.
+  switch-forward:
+    image: alpine/socat:1.8.0.3
+    command: ["TCP-LISTEN:8000,fork,reuseaddr,bind=127.0.0.1", "TCP:switch:8000"]
+    network_mode: "service:heimdall-server"
+    # It shares the server's network namespace, so a server restart leaves it on a dead one: restart it too.
+    depends_on: {heimdall-server: {condition: service_started, restart: true}}
     restart: unless-stopped
 
   postgres:
@@ -145,6 +156,9 @@ services:
 networks:
   core:
   memory:
+  switch:
+    external: true
+    name: switch_default
 
 volumes:
   heimdall_data:

@@ -92,7 +92,7 @@ func (c *Client) OpenRoom(ctx context.Context, r ports.RoomRequest) (change.Room
 			return err
 		}
 		if !found {
-			id, err = c.createRoom(ctx, r.Title)
+			id, err = c.createRoom(ctx, r.Title, fmt.Sprint(r.ChangeID), r.Agents)
 			if err != nil {
 				return err
 			}
@@ -127,14 +127,15 @@ func (c *Client) findRoom(ctx context.Context, title string) (change.RoomID, boo
 }
 
 // createRoom makes a public channel on the configured bridge with the coordinator listed, so it joins its own room.
-func (c *Client) createRoom(ctx context.Context, title string) (change.RoomID, error) {
+func (c *Client) createRoom(ctx context.Context, title, changeID string, agents []string) (change.RoomID, error) {
 	var reply struct {
 		ID string `json:"id"`
 	}
 	args := map[string]any{
-		"name":         title,
-		"description":  "Heimdall change room for " + title + ". Heimdall posts the change's facts here; reply with heimdall commands.",
-		"agent_names":  []string{c.agentName},
+		"name": title,
+		// Switch 0.31 rejects create_room without a description.
+		"description":  "Heimdall review room for " + changeID,
+		"agent_names":  c.roomMembers(agents),
 		"channel_type": "channel_public",
 		"bridge_id":    c.bridgeID,
 	}
@@ -146,6 +147,20 @@ func (c *Client) createRoom(ctx context.Context, title string) (change.RoomID, e
 		return "", fmt.Errorf("switch create_room: room id: %w", err)
 	}
 	return id, nil
+}
+
+// roomMembers lists the coordinator first, then each workflow agent once. Switch only delivers an @mention to an agent
+// that is in the room.
+func (c *Client) roomMembers(agents []string) []string {
+	members := []string{c.agentName}
+	seen := map[string]bool{c.agentName: true}
+	for _, a := range agents {
+		if a != "" && !seen[a] {
+			seen[a] = true
+			members = append(members, a)
+		}
+	}
+	return members
 }
 
 // InviteAgent adds an agent to a room by its Switch name.

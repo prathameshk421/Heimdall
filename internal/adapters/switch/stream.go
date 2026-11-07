@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
@@ -112,23 +114,12 @@ type streamRun struct {
 	seq        int64                       // highest SSE id delivered by this call
 	resumed    bool                        // the current connection was opened with Last-Event-ID
 	reconciled bool                        // read_context has run for the resume cursors
-	connID     string                      // the id Switch confirmed in connection_state; names the connection a reconnect replaces
-	clientConn string                      // the UUID this client generated; Switch wants the same one on every reconnect
+	connID     string                      // the connection id Switch reported in connection_state
 	failures   int
-	cancelConn context.CancelCauseFunc
-	stopBeats  func()
-}
 
-// connectionID is the id the stream names. Switch 0.31.0 refuses a stream with none, wants the client's own UUID the
-// first time and the same one on every reconnect; once Switch confirmed an id in connection_state, that one is used.
-func (s *streamRun) connectionID(c *Client) string {
-	if s.connID != "" {
-		return s.connID
-	}
-	if s.clientConn == "" {
-		s.clientConn = c.newConnID()
-	}
-	return s.clientConn
+	clientConnID string // the UUID this call made, sent on every open
+	cancelConn   context.CancelCauseFunc
+	stopBeats    func()
 }
 
 // stopError marks an error returned by DeliverFunc. It ends the stream, even when the error wraps ports.ErrUnavailable.
@@ -210,12 +201,20 @@ func (s *streamRun) open(ctx context.Context) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Switch reads the declared rooms as one comma-separated "rooms" parameter (agent bridge events handler).
+	if s.clientConnID == "" {
+		s.clientConnID = uuid.NewString()
+	}
+	// Switch 0.31 refuses a stream without a client-made UUID, and wants the same one on every reconnect. It reads
+	// the declared rooms as one comma-separated "rooms" parameter (agent bridge events handler, `_open_connection`).
 	names := make([]string, 0, len(s.rooms))
 	for _, r := range s.rooms {
 		names = append(names, string(r))
 	}
-	q := url.Values{"filter": {"all"}, "rooms": {strings.Join(names, ",")}, "connection_id": {s.connectionID(c)}}
+	q := url.Values{
+		"filter":        {"all"},
+		"rooms":         {strings.Join(names, ",")},
+		"connection_id": {s.clientConnID},
+	}
 	path := "/agents/" + c.agentID + "/events"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+q.Encode(), nil)
 	if err != nil {
@@ -306,7 +305,7 @@ func (s *streamRun) connectionState(ctx context.Context, raw string) error {
 	var cs struct {
 		ConnectionID     string  `json:"connection_id"`
 		Generation       int64   `json:"generation"`
-		HeartbeatSeconds float64 `json:"heartbeat_interval_seconds"` // Switch sends a float, such as 2.0
+		HeartbeatSeconds float64 `json:"heartbeat_interval_seconds"` // Switch 0.31 sends 2.0
 	}
 	if err := json.Unmarshal([]byte(raw), &cs); err != nil {
 		return fmt.Errorf("switch stream: decode connection_state: %w", err)

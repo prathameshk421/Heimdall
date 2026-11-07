@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -202,6 +203,10 @@ type fakeSyncer struct {
 	ran       atomic.Bool
 }
 
+func (f *fakeSyncer) Reconcile(context.Context) (prsync.Result, error) {
+	return prsync.Result{}, nil
+}
+
 func (f *fakeSyncer) SyncOnce(_ context.Context) (prsync.Result, error) {
 	f.ran.Store(true)
 	f.calls++
@@ -219,6 +224,10 @@ type blockingSyncer struct {
 	started  chan struct{}
 	release  chan struct{}
 	finished atomic.Bool
+}
+
+func (s *blockingSyncer) Reconcile(context.Context) (prsync.Result, error) {
+	return prsync.Result{}, nil
 }
 
 func (s *blockingSyncer) SyncOnce(ctx context.Context) (prsync.Result, error) {
@@ -318,4 +327,82 @@ func TestLoopsWaitForTheSyncerBeforeReturning(t *testing.T) {
 		}
 	}, 5*time.Second, time.Millisecond)
 	require.True(t, s.finished.Load())
+}
+
+// steppedClock is a clock the test moves. Each sync moves it forward by step.
+type steppedClock struct {
+	mu sync.Mutex
+	at time.Time
+}
+
+func (c *steppedClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.at
+}
+
+func (c *steppedClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(d)
+}
+
+// orderSyncer records the order of its reconcile and sync passes. Each sync moves the clock forward by step, and the
+// loop's context ends on sync number cancelAt.
+type orderSyncer struct {
+	order    []string
+	clk      *steppedClock
+	step     time.Duration
+	cancelAt int
+	cancel   context.CancelFunc
+}
+
+func (o *orderSyncer) Reconcile(context.Context) (prsync.Result, error) {
+	o.order = append(o.order, "reconcile")
+	return prsync.Result{}, nil
+}
+
+func (o *orderSyncer) SyncOnce(context.Context) (prsync.Result, error) {
+	o.order = append(o.order, "sync")
+	o.clk.advance(o.step)
+	if o.cancelAt > 0 && syncs(o.order) == o.cancelAt {
+		o.cancel()
+	}
+	return prsync.Result{Synced: 1}, nil
+}
+
+func syncs(order []string) int {
+	n := 0
+	for _, s := range order {
+		if s == "sync" {
+			n++
+		}
+	}
+	return n
+}
+
+// The boot pass runs before the first sync, so a stop during downtime is recovered before the next PR sync.
+func TestSyncLoopReconcilesAtBootBeforeTheFirstSync(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	clk := &steppedClock{at: time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)}
+	rec := &orderSyncer{clk: clk, step: time.Minute, cancelAt: 3, cancel: cancel}
+	a := &app{syncer: rec, logger: discardLogger(), clock: clk, syncEvery: time.Millisecond}
+
+	a.syncLoop(ctx, make(chan struct{}, 1))
+
+	require.Equal(t, []string{"reconcile", "sync", "sync", "sync"}, rec.order)
+}
+
+// The boot pass runs again once reconcileInterval has passed, and not before.
+func TestSyncLoopReconcilesAgainAfterTheInterval(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	clk := &steppedClock{at: time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)}
+	rec := &orderSyncer{clk: clk, step: reconcileInterval, cancelAt: 3, cancel: cancel}
+	a := &app{syncer: rec, logger: discardLogger(), clock: clk, syncEvery: time.Millisecond}
+
+	a.syncLoop(ctx, make(chan struct{}, 1))
+
+	require.Equal(t, []string{"reconcile", "sync", "reconcile", "sync", "reconcile", "sync"}, rec.order)
 }

@@ -177,7 +177,7 @@ func (p Policy) checkExternal(c *checker) {
 	if p.Tracker.Interval <= 0 {
 		c.addf("tracker.interval must be > 0, got %s", p.Tracker.Interval)
 	}
-	if !slices.Contains([]string{"mattermost", "teams"}, p.Chat.Bridge) {
-		c.addf("chat.bridge must be mattermost or teams, got %q", p.Chat.Bridge)
+	if !slices.Contains([]string{"mattermost", "teams", "switch"}, p.Chat.Bridge) {
+		c.addf("chat.bridge must be mattermost, teams or switch, got %q", p.Chat.Bridge)
 	}
 }

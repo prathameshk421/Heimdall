@@ -99,6 +99,8 @@ type RoomRequest struct {
 	ChangeID id.ChangeID      `json:"change_id"`
 	Title    string           `json:"title"`
 	Key      change.EffectKey `json:"key"`
+	// Agents are the workflow agents (test author, reviewers, resolver) to put in the room when it is made.
+	Agents []string `json:"agents,omitempty"`
 }
 
 // Validate returns every problem with the request.
@@ -107,6 +109,9 @@ func (r RoomRequest) Validate() error {
 	v.add("change_id", checkTicketOrPR(r.ChangeID))
 	v.add("title", checkText(r.Title, 256))
 	v.add("key", checkText(string(r.Key), 256))
+	for _, a := range r.Agents {
+		v.add("agents", checkText(a, 128))
+	}
 	return v.join()
 }
 

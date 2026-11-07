@@ -31,4 +31,36 @@ if "$script" --config "$root/deploy/heimdall.example.toml" --secrets-dir "$tmp/s
   echo 'ASSERTION FAILED: symlinked secret inputs must be refused' >&2
   exit 1
 fi
+runner_line=$(grep -n 'runuser -u heimdall-runner' "$script" | head -1 | cut -d: -f1)
+cd_line=$(grep -n '^cd /$' "$script" | head -1 | cut -d: -f1 || true)
+if [[ -z "$runner_line" || -z "$cd_line" || "$cd_line" -ge "$runner_line" ]]; then
+  echo 'ASSERTION FAILED: deploy must leave the SSH home directory before running as heimdall-runner' >&2
+  exit 1
+fi
+grep -q 'install -d -o root -g heimdall-runner-socket .*/etc/heimdall-runner/profiles' "$script" || { echo 'ASSERTION FAILED: deploy must create the approved profile directory the runner reads at start' >&2; exit 1; }
+grep -q 'runuser -u heimdall-runner -- env .*PATH=/usr/sbin' "$script" || { echo 'ASSERTION FAILED: runner podman pull must have /usr/sbin on PATH so podman finds runc' >&2; exit 1; }
+if grep -Eq '/opt/heimdall/(compose\.yaml|Dockerfile\.server)' "$script"; then
+  echo 'ASSERTION FAILED: compose files must be installed under /opt/heimdall/deploy so the relative build context and dockerfile paths resolve' >&2
+  exit 1
+fi
+grep -q 'compose -f /opt/heimdall/deploy/compose.yaml up' "$script" || { echo 'ASSERTION FAILED: the unit must run the compose file from /opt/heimdall/deploy' >&2; exit 1; }
+grep -q 'COPY --chmod=0755 heimdall-server ' "$root/deploy/Dockerfile.server" || { echo 'ASSERTION FAILED: the image must make the server binary executable because the deploy stages it as mode 0644' >&2; exit 1; }
+grep -q 'chown -R 65532:65532 /etc/heimdall/secrets' "$script" || { echo 'ASSERTION FAILED: secret files must be owned by the server container user 65532 and stay mode 0600 because the server refuses group or other access' >&2; exit 1; }
+if grep -q 'chmod 0640 {}' "$script"; then
+  echo 'ASSERTION FAILED: the server refuses secret files with group access, so they must not be 0640' >&2
+  exit 1
+fi
+grep -q 'chgrp 65532 /etc/heimdall/heimdall.toml' "$script" || { echo 'ASSERTION FAILED: the config file must be group-readable by the server container user 65532' >&2; exit 1; }
+grep -q '^chmod 0640 /etc/heimdall/heimdall.toml' "$script" || { echo 'ASSERTION FAILED: the config mode must be set even when the content is unchanged and the install is skipped' >&2; exit 1; }
+if grep -q 'chown -R root:root /etc/heimdall/secrets' "$script"; then
+  echo 'ASSERTION FAILED: secrets must not stay root-only, the server container could not read them' >&2
+  exit 1
+fi
+grep -q 'working_dir: /var/lib/heimdall$' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the server needs a writable working directory because its blob store path is relative' >&2; exit 1; }
+grep -q 'heimdall_data:/var/lib/heimdall' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the blob store directory must be a named volume so evidence survives restarts' >&2; exit 1; }
+grep -q 'chown 65532:65532 /var/lib/heimdall' "$root/deploy/Dockerfile.server" || { echo 'ASSERTION FAILED: the image must create the working directory owned by the server user' >&2; exit 1; }
+grep -q 'name: switch_default' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the server must join the Switch network, because 127.0.0.1 inside its container is not the VM Switch' >&2; exit 1; }
+grep -q 'network_mode: "service:heimdall-server"' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: a loopback forward must share the server network, because the config allows http only for loopback hosts' >&2; exit 1; }
+grep -q 'TCP:switch:8000' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the loopback forward must target the Switch service' >&2; exit 1; }
+grep -q 'depends_on: {heimdall-server: {condition: service_started, restart: true}}' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the forward sidecar shares the server network, so it must restart whenever the server does' >&2; exit 1; }
 echo 'deploy contract passed'

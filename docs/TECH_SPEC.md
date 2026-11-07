@@ -232,7 +232,7 @@ type Memory interface {
 
 - **Event-sourced per change.** Versions 1..n, enforced by `UNIQUE(change_id, version)`. Use cases load, reduce, decide and append with an expected version. On conflict they reload and retry, up to 5 times.
 - **Per-change serialization.** Mutating jobs carry River unique key `change:<id>`, and transactions take `pg_advisory_xact_lock(hashtext(change_id))`. Different changes run in parallel; one change never races itself.
-- **Transactional outbox.** Side effects (GitHub check, room post, Jira write, memory episode) are written as `outbox` rows in the same transaction as the event that causes them. Workers drain the outbox. Nothing external happens without a committed event, and every committed effect eventually happens.
+- **Transactional outbox.** Side effects (GitHub check, room post, Jira write, memory episode) are written as `outbox` rows in the same transaction as the event that causes them. Workers drain the outbox. Nothing external happens without a committed event. A committed effect that has not started eventually happens. Before the executor runs, the drainer marks the row started, under its lease. A row that crashed after its mark is in doubt: the drainer never runs it again, and a person reconciles it through the `outbox_in_doubt` view (T22).
 - **Idempotent effects.** Each outbox row has a deterministic key (for example `check:<repo>:<sha>:<gate_version>`). Check runs are updated by external id, comments carry a hidden marker, and room posts are deduplicated by key.
 - **Derived gate.** `MERGE_ALLOWED` is never stored as truth. It is recomputed for the head SHA after every event and published only when it changes.
 
@@ -978,21 +978,23 @@ ok ⇔ ticket linked
 
 ### 14.1 MCP tools (`/mcp` streamable HTTP; `heimdall mcp` is a stdio bridge)
 
+Wire names are bare. The server lists and accepts `get_task`, not `heimdall_get_task`. OpenCode 1.19.5 shows each MCP tool to the model as `<server key>_<tool>`. The server key is `heimdall`, so the model calls `heimdall_get_task`. Prompts, skills and the room message use that model-side name.
+
 | Tool | Roles |
 |---|---|
-| `heimdall_get_task`, `heimdall_ack`, `heimdall_get_change` | all |
-| `heimdall_read_untrusted(ref)` | all |
-| `heimdall_read_code(path, sha, range?)` | all (test-author: base SHA only) |
-| `heimdall_read_pack(section?)` | reviewer (own pack only, D156) |
-| `heimdall_ask_knowledge(question, entities?, as_of?)` | all |
-| `heimdall_run_check(kind, args)` | reviewer, resolver (counts toward budget) |
-| `heimdall_submit_tests` | test-author |
-| `heimdall_ask_humans(questions ≤3)` | test-author, resolver |
-| `heimdall_submit_review` | reviewer |
-| `heimdall_challenge(finding, evidence)` | reviewer, author |
-| `heimdall_claim_fix(finding, sha, evidence)` (Later, D160) | author |
-| `heimdall_submit_verdict` | resolver |
-| `heimdall_report_progress(text)` | all |
+| `get_task`, `ack`, `get_change` | all |
+| `read_untrusted(ref)` | all |
+| `read_code(path, sha, range?)` | all (test-author: base SHA only) |
+| `read_pack(section?)` | reviewer (own pack only, D156) |
+| `ask_knowledge(question, entities?, as_of?)` | all |
+| `run_check(kind, args)` | reviewer, resolver (counts toward budget) |
+| `submit_tests` | test-author |
+| `ask_humans(questions ≤3)` | test-author, resolver |
+| `submit_review` | reviewer |
+| `challenge(finding, evidence)` | reviewer, author |
+| `claim_fix(finding, sha, evidence)` (Later, D160) | author |
+| `submit_verdict` | resolver |
+| `report_progress(text)` | all |
 
 Schemas are generated from Go structs and versioned (`Review@1`). The previous version stays accepted for one release.
 

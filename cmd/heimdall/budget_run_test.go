@@ -47,6 +47,26 @@ func TestBudgetRunRecordsMeasuredSpendWhenCommandFails(t *testing.T) {
 	}
 }
 
+func TestBudgetRunRefusesBeforeRunWhenBalanceBelowReservation(t *testing.T) {
+	var out, errOut bytes.Buffer
+	ran, appended := false, false
+	deps := budgetRunDeps{
+		getenv:     func(string) string { return "" },
+		loadConfig: func(string) (config.Config, error) { return config.Config{}, nil },
+		balance:    func(config.Config) (float64, error) { return .3, nil },
+		append:     func(string, ports.LedgerEntry) error { appended = true; return nil },
+		run:        func(context.Context, []string, io.Writer, io.Writer) int { ran = true; return 0 },
+		now:        func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
+	}
+	code := runBudgetRunWithDeps([]string{"--purpose", "live", "--estimate", ".2", "--task", "T19", "--run-id", "run-3", "--model", "model-a", "--config", "test.toml", "--", "tagged-test"}, &out, &errOut, deps)
+	if code == 0 || ran || appended {
+		t.Fatalf("code=%d ran=%v appended=%v stderr=%q, want refusal with no run and no ledger line", code, ran, appended, errOut.String())
+	}
+	if !bytes.Contains(errOut.Bytes(), []byte("below 2x estimate")) {
+		t.Fatalf("stderr = %q, want a balance-below-reservation message", errOut.String())
+	}
+}
+
 func TestBudgetRunStopsAfterRecordingTwiceEstimate(t *testing.T) {
 	var out, errOut bytes.Buffer
 	var recorded ports.LedgerEntry

@@ -215,6 +215,45 @@ func TestStreamDeliversSequenceAndCursorPerRoom(t *testing.T) {
 	require.Equal(t, ports.Cursor("2026-11-04T12:00:03Z"), d[2].Cursor, "the first room's cursor moved to its newest message")
 }
 
+func TestStreamSendsOneClientConnectionIDOnEveryOpenAsSwitchRequires(t *testing.T) {
+	f, c, _ := streamTest(t)
+	setStream(f, func(w http.ResponseWriter, _ *http.Request, n int) {
+		if n == 1 {
+			frame(w, 0, "connection_state", connectionState(connA, 1, testRoomUUID))
+			return // a dropped connection
+		}
+		frame(w, 0, "connection_state", connectionState(connB, 1, testRoomUUID))
+		frame(w, 0, "evicted", map[string]any{})
+	})
+	var got deliveryLog
+	require.ErrorIs(t, c.Stream(streamCtx(t), []change.RoomID{roomID(t, testRoomUUID)}, nil, got.deliver), ErrEvicted)
+
+	opens := streamOpens(f)
+	require.Len(t, opens, 2)
+	ids := make([]string, 0, 2)
+	for _, o := range opens {
+		q, err := url.ParseQuery(o.Query)
+		require.NoError(t, err)
+		id := q.Get("connection_id")
+		_, perr := uuid.Parse(id)
+		require.NoError(t, perr, "Switch 0.31 refuses a stream with no UUID connection_id, got %q", id)
+		ids = append(ids, id)
+	}
+	require.Equal(t, ids[0], ids[1], "a reconnect reuses the id so Switch keeps the connection across the drop")
+}
+
+func TestStreamAcceptsAHeartbeatIntervalSentAsAFloat(t *testing.T) {
+	f, c, _ := streamTest(t)
+	setStream(f, func(w http.ResponseWriter, _ *http.Request, _ int) {
+		// Switch 0.31 sends the interval as 2.0, not 2.
+		_, _ = fmt.Fprintf(w, "event: connection_state\ndata: {\"connection_id\":%q,\"generation\":1,\"heartbeat_interval_seconds\":2.0}\n\n", connA)
+		frame(w, 0, "evicted", map[string]any{})
+	})
+	var got deliveryLog
+	err := c.Stream(streamCtx(t), []change.RoomID{roomID(t, testRoomUUID)}, nil, got.deliver)
+	require.ErrorIs(t, err, ErrEvicted, "a float interval must decode, not stop the stream")
+}
+
 func TestStreamReconnectResumesWithLastEventIDAndMarksReplayed(t *testing.T) {
 	f, c, log := streamTest(t)
 	setStream(f, func(w http.ResponseWriter, _ *http.Request, n int) {

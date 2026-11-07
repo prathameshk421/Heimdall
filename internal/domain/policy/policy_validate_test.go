@@ -39,6 +39,7 @@ func TestValidateBoundariesAndRulesTheSpecTestsDoNotPin(t *testing.T) {
 		"github interval of four seconds is refused":     {func(p *policy.Policy) { p.GitHub.Interval = policy.Duration(4 * time.Second) }, false, "github.interval"},
 		"github mode webhook is refused":                 {func(p *policy.Policy) { p.GitHub.Mode = "webhook" }, false, "github.mode"},
 		"teams bridge is accepted":                       {func(p *policy.Policy) { p.Chat.Bridge = "teams" }, true, ""},
+		"switch bridge is accepted":                      {func(p *policy.Policy) { p.Chat.Bridge = "switch" }, true, ""},
 		"file tracker is accepted":                       {func(p *policy.Policy) { p.Tracker.Kind = "file" }, true, ""},
 		"tracker with a zero interval is refused":        {func(p *policy.Policy) { p.Tracker.Interval = 0 }, false, "tracker.interval"},
 		"agent name with a space is refused":             {func(p *policy.Policy) { p.People["bob"] = policy.Person{GitHub: "bob", Agent: "Bob Reviewer"} }, false, "people.bob.agent"},
