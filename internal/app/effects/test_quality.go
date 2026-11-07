@@ -22,13 +22,14 @@ type Source interface {
 
 // TestQualityDeps are the dependencies of TestQuality.
 type TestQualityDeps struct {
-	Blobs            ports.BlobStore
-	Source           Source
-	Sandbox          ports.Sandbox
-	Store            ports.EventStore
-	Ingest           Ingest
-	IDs              ports.IDs
-	Clock            ports.Clock
+	Blobs   ports.BlobStore
+	Source  Source
+	Sandbox ports.Sandbox
+	Store   ports.EventStore
+	Ingest  Ingest
+	IDs     ports.IDs
+	Clock   ports.Clock
+	// Code is not used by verification any more: the pinned tree comes from the submission.
 	Code             ports.CodeReader
 	ForbiddenImports []string
 	NeedsSignoff     func(events []change.Event) bool
@@ -109,7 +110,7 @@ func (t TestQuality) Execute(ctx context.Context, fx change.Effect) error {
 		return err
 	}
 
-	return t.ingestOutcome(ctx, p.Repo, p.Ticket, l, baseSHA, runIDs, allReasons)
+	return t.ingestOutcome(ctx, p.Ticket, sub, l, baseSHA, runIDs, allReasons)
 }
 
 func (t TestQuality) readSubmission(ctx context.Context, ticket id.ChangeID, ref workflow.BlobRef) (testset.Submission, error) {
@@ -268,7 +269,7 @@ func overlayFiles(sub testset.Submission) []ports.File {
 	return files
 }
 
-func (t TestQuality) ingestOutcome(ctx context.Context, repo change.Repo, ticket id.ChangeID, l loadedChange, baseSHA id.SHA, runIDs []id.RunID, reasons []string) error {
+func (t TestQuality) ingestOutcome(ctx context.Context, ticket id.ChangeID, sub testset.Submission, l loadedChange, baseSHA id.SHA, runIDs []id.RunID, reasons []string) error {
 	cause := l.first(change.EventTestsSubmitted)
 	if cause == nil {
 		return failf(nil, "test_quality %s: no tests.submitted in the change", ticket)
@@ -276,7 +277,7 @@ func (t TestQuality) ingestOutcome(ctx context.Context, repo change.Repo, ticket
 	if len(reasons) > 0 {
 		return t.ingestRejected(ctx, ticket, cause, baseSHA, runIDs, reasons)
 	}
-	return t.ingestVerified(ctx, repo, ticket, cause, baseSHA, runIDs, l)
+	return t.ingestVerified(ctx, ticket, sub, cause, baseSHA, runIDs, l)
 }
 
 func (t TestQuality) ingestRejected(ctx context.Context, ticket id.ChangeID, cause *change.Event, baseSHA id.SHA, runIDs []id.RunID, reasons []string) error {
@@ -299,18 +300,16 @@ func (t TestQuality) ingestRejected(ctx context.Context, ticket id.ChangeID, cau
 	return nil
 }
 
-func (t TestQuality) ingestVerified(ctx context.Context, repo change.Repo, ticket id.ChangeID, cause *change.Event, baseSHA id.SHA, runIDs []id.RunID, l loadedChange) error {
+func (t TestQuality) ingestVerified(ctx context.Context, ticket id.ChangeID, sub testset.Submission, cause *change.Event, baseSHA id.SHA, runIDs []id.RunID, l loadedChange) error {
 	dir := "tests/heimdall/" + string(ticket)
-	if t.deps.Code == nil {
-		return failf(nil, "test_quality %s: code reader is required to pin %s", ticket, dir)
-	}
-	treeHash, err := t.deps.Code.TreeHash(ctx, repo, baseSHA, dir)
+	// The tests exist only as a sandbox overlay until they are committed, so the base commit has no such directory.
+	// The pinned tree is the one git gives the directory once these files are committed; the gate compares it with
+	// the tree it reads at the head.
+	tree, err := sub.TreeHash(dir)
 	if err != nil {
-		return failf(err, "test_quality %s: read tests tree", ticket)
+		return failf(err, "test_quality %s: pin the submitted tests tree", ticket)
 	}
-	if treeHash == "" {
-		return failf(nil, "test_quality %s: empty tests tree hash for %s at %s", ticket, dir, baseSHA)
-	}
+	treeHash := id.SHA(tree)
 	needsSignoff := false
 	if t.deps.NeedsSignoff != nil {
 		needsSignoff = t.deps.NeedsSignoff(l.events)

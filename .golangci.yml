@@ -73,7 +73,7 @@ linters:
           files: ["**/internal/domain/**", "!**/*_test.go"]   # tests may use testify and cmp (CODING_STANDARDS 8)
           list-mode: strict
           # R5: pure domain. An explicit list, not $gostd, so os, net, os/exec, log and the random packages cannot be imported.
-          allow: [errors, fmt, strings, slices, maps, regexp, unicode, unicode/utf8, time, path, strconv, encoding/json, encoding/hex, encoding/binary, crypto/sha256, bytes, io, reflect, sort, cmp, github.com/prathameshk421/flip_the_switch_hackathon/internal/domain]
+          allow: [errors, fmt, strings, slices, maps, regexp, unicode, unicode/utf8, time, path, strconv, encoding/json, encoding/hex, encoding/binary, crypto/sha256, crypto/sha1, bytes, io, reflect, sort, cmp, github.com/prathameshk421/flip_the_switch_hackathon/internal/domain]
           # depguard matches by prefix, so the allowed io and path would also let io/fs, io/ioutil and path/filepath in.
           deny:
             - { pkg: io/fs, desc: "R5: pure domain, no file system" }
@@ -104,6 +104,11 @@ linters:
     rules:
       - path: _test\.go
         linters: [funlen, gochecknoglobals, gosec]
+      # Owner yes (Nov 7): git names every object by SHA-1, and testset.TreeHash must produce the same tree id as the
+      # committed tests. This one file only; it is an identifier, not a security use.
+      - path: ^internal/domain/testset/treehash\.go$
+        linters: [gosec]
+        text: "G(401|505)"
       - path: _test\.go
         linters: [forbidigo]
         text: "(fmt\\.Print|panic|os\\.Getenv|os\\.Std|time\\.(Now|After|Tick|NewTimer|NewTicker|AfterFunc|Since|Until))"

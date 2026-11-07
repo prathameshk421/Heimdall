@@ -176,9 +176,12 @@ func TestTestQualityExecutorSuccess(t *testing.T) {
 	var verified change.TestsVerified
 	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &verified))
 	require.Equal(t, baseSHA, verified.SHA)
-	require.Equal(t, code.tree, verified.TreeHash)
-	require.Equal(t, change.Repo("acme/pay-demo"), code.repo)
-	require.Equal(t, "tests/heimdall/PAY-142", code.dir)
+	// The tests exist only in the overlay at this point, so the pinned tree is computed from the submitted files, the
+	// same hash git gives the committed directory. Reading the base commit found no such directory (live KAN-13).
+	wantTree, err := sub.TreeHash("tests/heimdall/PAY-142")
+	require.NoError(t, err)
+	require.Equal(t, id.SHA(wantTree), verified.TreeHash)
+	require.Empty(t, code.dir, "verification must not read the tests directory from the base commit")
 	require.Len(t, verified.RunIDs, 3)
 }
 
@@ -258,20 +261,19 @@ func TestTestQualityExecutorWithHeadPassesRedFirst(t *testing.T) {
 	err = exec.Execute(ctx, fx)
 	require.NoError(t, err)
 	require.Len(t, sandbox.overlays, 4, "base and head checks both evaluate the submitted tests")
-	require.Equal(t, change.Repo("acme/pay-demo"), code.repo)
-	require.Equal(t, "tests/heimdall/PAY-142", code.dir)
+	require.Empty(t, code.dir, "verification must not read the tests directory from the base commit")
 
 	require.Len(t, ingest.written, 1)
 	require.Equal(t, change.EventTestsVerified, ingest.written[0].Type)
 	require.Len(t, sandbox.runs, 4) // 3 base + 1 head
 }
 
-func TestTestQualityRefusesVerificationWithoutPinnedTreeHash(t *testing.T) {
+func TestTestQualityRefusesVerificationWhenAFileIsOutsideTheTestsDirectory(t *testing.T) {
 	ctx := context.Background()
 	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
 	sub := testset.Submission{
-		Files:              []testset.File{{Path: "tests/heimdall/PAY-142/refund_test.go", Content: "package refund_test\\n"}},
+		Files:              []testset.File{{Path: "tests/heimdall/PAY-999/refund_test.go", Content: "package refund_test\\n"}},
 		AcceptanceCriteria: map[string][]string{"AC1": {"TestA"}},
 	}
 	subBytes, err := json.Marshal(sub)
@@ -296,8 +298,8 @@ func TestTestQualityRefusesVerificationWithoutPinnedTreeHash(t *testing.T) {
 		Key: "test_quality:PAY-142:1:test_qa", Kind: change.EffectTestQuality, Target: "PAY-142",
 		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `"}`),
 	})
-	require.ErrorContains(t, err, "empty tests tree hash")
-	require.Empty(t, ingest.written, "verification must not be recorded without a content tree hash")
+	require.ErrorContains(t, err, "pin the submitted tests tree")
+	require.Empty(t, ingest.written, "verification must not be recorded for a tree that cannot be pinned")
 }
 
 func TestTestQualityExecutorWithHeadRejectsFailingRedFirst(t *testing.T) {
