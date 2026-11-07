@@ -8,7 +8,12 @@
 - **BLOCKED: OpenRouter key limit, `$4.03 of $4.00 used; does not reset`.** First seen 13:28:06 (resolver, reviewer-2), then test-author from 13:49:24. KAN-20's test agent cannot make a model call, so it never acks. It also over-runs the $3 testing cap, so the owner decides the new limit.
 - **Correction to the KAN-19 notes below:** reviewer-2 and the resolver were hitting this limit from 13:28, so part of "stale session" and "timed out" may have been this. Not separated.
 - **`heimdall pick` trap:** the command resolves GitHub handles to `identity.Agent` (`bob-reviewer` and so on), which are not running agents. Use the default pick for now.
-- **Not verified:** reviewers finding the planted bugs, findings, resolver, gate after review, approval, merge.
+- **Fixed live, in `5565d44`:** reviewers got no diff or changed files (`tasks.go`), so they guessed paths and hung; the drainer ran one effect at a time, so a sandbox run held every reviewer task (now 3 workers, one effect each); a repro test over 256 bytes was refused, so no E1 finding could be filed; a finding's claim and location were discarded. The reviewer pick waits 1 minute, not 15 (owner, spec updated).
+- **New display:** one self-updating Heimdall Review comment on the PR, a comment on each finding's line, multi-line chat cards. Seen live on [fixture-pay#9](https://github.com/aarush323/heimdall-fixture-pay/pull/9) at 14:42: reviewer-2 caught both planted bugs in about 90 s (F1 E1, F2 E4), two line comments, the comment and the Discord card. No new tests by owner decision.
+- **Uncommitted:** the banner says "confirmed" only after Heimdall ran the proof (`board.go`), and `docs/DEMO_RUN.md`.
+- **Second credit stop:** at 14:43 OpenRouter reported `exceed your available credits`. Owner chose DeepSeek's own API. `scratchpad/ds_switch.sh` puts the key in each agent's `opencode.json`, because Switch's env allowlist has no `DEEPSEEK_API_KEY`, and adds `3.173.0.0/16` to the agent firewall. **Not applied yet. Not verified that OpenCode works through this provider.** The firewall range covers one CloudFront address seen today; it may rotate.
+- **Known gaps:** KAN-21's test agent submitted `t.Error("red")` placeholders and test-quality passed them, so fake tests can reach a branch (not fixed). A session's first start can time out (`Shared SDK host failed`); restarting the agent unit cleared it, cause unknown. PR #8 shows a false "policy file changed" blocker, because KAN-14's branch is behind the base.
+- **Not verified:** three reviewers finishing one PR, Heimdall re-running a proof ("Bug confirmed"), the gate red because of a finding, resolver, approval, merge.
 
 ## KAN-18 unstuck: stall nudge, lean prompts (Nov 7, 11:30 UTC on)
 

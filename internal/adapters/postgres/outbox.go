@@ -92,7 +92,8 @@ func (s *Store) Done(ctx context.Context, key change.EffectKey) error {
 // drainer must not report both.
 func (s *Store) Fail(ctx context.Context, key change.EffectKey, reason string) error {
 	tag, err := s.pool.Exec(ctx,
-		`UPDATE outbox SET attempts = attempts + 1, last_error = $2, claimed_until = NULL, started_at = NULL
+		`UPDATE outbox SET attempts = attempts + 1, last_error = $2, started_at = NULL,
+			claimed_until = now() + interval '5 seconds' * power(2, attempts)
 		WHERE effect_key = $1 AND done_at IS NULL`,
 		string(key), reason)
 	if err != nil {

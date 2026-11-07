@@ -212,8 +212,10 @@ func (b board) verdict() string {
 		return alert("TIP", "🎉 **Merged.** Every merge rule passed.")
 	case b.gateSeen && b.gateOK:
 		return alert("TIP", "✅ **Ready to merge.** Every merge rule passes.")
+	case b.confirmed() > 0:
+		return alert("CAUTION", fmt.Sprintf("⛔ **Merge blocked: %s.** Heimdall ran the reviewer's test itself, and it fails on this commit.", count(b.confirmed(), "confirmed bug")))
 	case b.blocking() > 0:
-		return alert("CAUTION", fmt.Sprintf("⛔ **Merge blocked: %s.** Each one comes with a failing test that shows the problem on this commit.", count(b.blocking(), "proven bug")))
+		return alert("WARNING", fmt.Sprintf("🔬 **%s with proof.** Heimdall is running each proof itself to confirm it.", count(b.blocking(), "bug reported")))
 	case b.reviewing():
 		return alert("NOTE", "🤖 **AI review in progress.** Independent reviewers are reading this change now. This comment updates itself.")
 	case len(b.findings) > 0:
@@ -249,12 +251,23 @@ func (b board) pipeline() string {
 		"  class T,P done",
 		"  class A " + class(b.acceptance == "success", b.acceptance == "failure"),
 		"  class R " + class(reviewDone, false),
-		"  class V " + class(reviewDone && b.blocking() == 0, b.blocking() > 0),
+		"  class V " + class(reviewDone && b.blocking() == 0, b.confirmed() > 0),
 		"  class H " + class(b.approver != "", false),
 		"  class M " + class(b.merged, false),
 		"```",
 	}
 	return strings.Join(lines, "\n")
+}
+
+// confirmed counts the findings whose proof Heimdall ran itself, or that a person upheld.
+func (b board) confirmed() int {
+	n := 0
+	for _, f := range b.findings {
+		if f.State == "verified" || f.State == "upheld" {
+			n++
+		}
+	}
+	return n
 }
 
 // blocking counts the findings backed by a repeatable proof that nobody has dismissed.
@@ -304,7 +317,7 @@ func (b board) findingsCell() string {
 		}
 		return "⏳ None yet"
 	}
-	return fmt.Sprintf("🔎 %s, %d proven", count(len(b.findings), "finding"), b.blocking())
+	return fmt.Sprintf("🔎 %s, %d with proof, %d confirmed", count(len(b.findings), "finding"), b.blocking(), b.confirmed())
 }
 
 func (b board) approvalCell() string {
