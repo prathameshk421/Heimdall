@@ -143,13 +143,14 @@ p { margin: 0; text-wrap: pretty; }
 .player.live .play { opacity: 0; pointer-events: none; }
 
 /* ticker */
-.ticker { position: relative; z-index: 6; margin: -26px -3vw -26px; padding: 13px 0; background: var(--ink); color: var(--night-ink); transform: rotate(-1.1deg); overflow: hidden; box-shadow: 0 16px 40px -20px rgba(21,16,29,.7); }
-.ticker::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--bifrost); }
-.tick-run { display: flex; width: max-content; gap: 44px; font: 500 14.5px/1.3 var(--f-mono); white-space: nowrap; animation: slide 62s linear infinite; }
+.ticker { position: relative; padding: 15px 0; background: var(--night); }
+.ticker::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--bifrost); opacity: .55; }
+.tick-mask { overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent); mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent); }
+.tick-run { display: flex; width: max-content; gap: 44px; font: 400 13.5px/1.3 var(--f-mono); color: var(--night-dim); white-space: nowrap; animation: slide 72s linear infinite; }
 .ticker:hover .tick-run { animation-play-state: paused; }
 .tick-run span { display: inline-flex; align-items: center; gap: 12px; }
 .tick-run svg { width: 15px; height: 15px; flex: none; opacity: .75; }
-.tick-run b { font-weight: 500; color: var(--gold); }
+.tick-run b { font-weight: 400; color: var(--night-ink); }
 @keyframes slide { to { transform: translate3d(-50%,0,0); } }
 
 /* bands */
@@ -159,7 +160,7 @@ p { margin: 0; text-wrap: pretty; }
 /* hook */
 .hook { height: 215svh; }
 .hook-pin { position: sticky; top: 0; height: 100svh; min-height: 560px; overflow: hidden; display: grid; place-content: center; justify-items: center; text-align: center; padding-inline: 16px; }
-#diff { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .5; }
+#diff { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .14; }
 .hook-pin::after { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 56% at 50% 50%, rgba(21,16,29,.88), rgba(21,16,29,.28) 78%), linear-gradient(180deg, var(--night), transparent 22%, transparent 78%, var(--night)); }
 .hook-pin > :not(canvas) { position: relative; z-index: 1; }
 .big { font: 400 clamp(84px, 19vw, 300px)/.86 var(--f-display); letter-spacing: -.045em; color: #fff; font-variant-numeric: tabular-nums; }
@@ -398,7 +399,6 @@ p { margin: 0; text-wrap: pretty; }
   .nav .btn-nav { display: none; }
   .hero .cta .btn { flex: 1 1 auto; }
   .play small { display: none; }
-  .ticker { margin-inline: -6vw; }
 }
 @media (max-aspect-ratio: 1/1) {
   .hero { top: 92px; }
@@ -474,7 +474,11 @@ p { margin: 0; text-wrap: pretty; }
   </div>
 </header>
 
-<div class="ticker" aria-hidden="true">
+<main>
+
+<!-- HOOK -->
+<section class="band dark night" id="problem">
+  <div class="ticker" aria-hidden="true"><div class="tick-mask">
   <div class="tick-run" id="tickRun">
     <span><svg><use href="#i-discord"/></svg>KAN-21: the tests hold up. <b>They fail on the current code, as they should.</b></span>
     <span><svg><use href="#i-slack"/></svg>KAN-22 is with the Test Agent, which will <b>write failing tests</b> for its 2 acceptance criteria.</span>
@@ -484,12 +488,7 @@ p { margin: 0; text-wrap: pretty; }
     <span><svg><use href="#i-slack"/></svg>heimdall remember KAN-22 the health check must not touch the database. <b>Noted.</b></span>
     <span><svg><use href="#i-discord"/></svg>KAN-21: the tests are committed, <b>ready for the implementation.</b></span>
   </div>
-</div>
-
-<main>
-
-<!-- HOOK -->
-<section class="band dark night" data-band id="problem">
+  </div></div>
   <div class="hook" id="hook">
     <div class="hook-pin">
       <canvas id="diff" aria-hidden="true"></canvas>
@@ -917,7 +916,7 @@ p { margin: 0; text-wrap: pretty; }
     /* the number climbs with the scroll */
     const hp = seg(s, G.hook.top - vh * .15, G.hook.top + G.hook.h - vh * 1.05);
     count.textContent = fmt(76264 + (77460 - 76264) * ease(hp));
-    diff.style.clipPath = `inset(0 ${((1 - clamp(hp * 1.2 + .22)) * 100).toFixed(1)}% 0 0)`;
+    diff.style.opacity = (.14 + .36 * ease(seg(hp, 0, .7))).toFixed(3);
 
     /* the sentence lights word by word */
     const sp = seg(s + vh * .72, G.scrub.top, G.scrub.top + G.scrub.h * .78), lit = Math.round(sp * words.length);
