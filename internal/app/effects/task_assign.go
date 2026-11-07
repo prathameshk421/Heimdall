@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -64,11 +65,32 @@ func (t TaskAssign) Execute(ctx context.Context, fx change.Effect) error {
 		return failf(err, "task_assign %s: invite %s into the room", fx.Key, p.Agent)
 	}
 
-	text := fmt.Sprintf("@%s you have a new task. Call heimdall_get_task.", p.Agent)
+	text := TaskAssignText(string(p.Agent), p.Role)
 	err = t.deps.Chat.Post(ctx, p.RoomID, fx.Key, text)
 	if err != nil {
 		return failf(err, "task_assign %s: post room message", fx.Key)
 	}
 
 	return nil
+}
+
+// TaskAssignText is the room line that wakes an agent. People read the room too (Discord, Telegram), so it says what
+// the agent will do before the cue the agent acts on.
+func TaskAssignText(agent string, role workflow.Role) string {
+	return fmt.Sprintf("@%s New task: %s. Start with heimdall_get_task.", agent, roleWork(role))
+}
+
+// roleWork names the work of a role in a few plain words.
+func roleWork(role workflow.Role) string {
+	switch role {
+	case workflow.RoleTestAuthor:
+		return "write failing tests for the acceptance criteria"
+	case workflow.RoleReviewer:
+		return "review the pull request"
+	case workflow.RoleResolver:
+		return "settle the challenged findings"
+	case workflow.RoleProfiler:
+		return "propose a sandbox profile for the repository"
+	}
+	return "see the task"
 }
