@@ -1,0 +1,233 @@
+WEBVTT
+
+1
+00:00:00.300 --> 00:00:02.372
+This is Heimdall, built on Switch.
+
+2
+00:00:02.372 --> 00:00:04.140
+Nothing merges without proof.
+
+3
+00:00:04.690 --> 00:00:07.163
+Agents write most of our code now.
+
+4
+00:00:07.163 --> 00:00:09.055
+So pull requests got huge.
+
+5
+00:00:09.055 --> 00:00:10.218
+This one's ours.
+
+6
+00:00:10.218 --> 00:00:13.710
+Seventy-seven thousand lines, six hundred files.
+
+7
+00:00:14.010 --> 00:00:15.896
+Nobody's reading all that.
+
+8
+00:00:15.896 --> 00:00:18.870
+So a reviewer types LGTM, and hits merge.
+
+9
+00:00:19.090 --> 00:00:19.922
+And the tests?
+
+10
+00:00:19.922 --> 00:00:23.191
+The agent writes those too, and it writes them to pass.
+
+11
+00:00:23.191 --> 00:00:25.450
+A test that can't fail proves nothing.
+
+12
+00:00:25.670 --> 00:00:26.954
+Heimdall fixes both.
+
+13
+00:00:26.954 --> 00:00:29.906
+Reviewers that know what your developers know.
+
+14
+00:00:29.906 --> 00:00:33.500
+And red tests, written from the ticket, before the code.
+
+15
+00:00:33.700 --> 00:00:35.170
+Here's how it works.
+
+16
+00:00:35.170 --> 00:00:38.699
+A ticket moves in Jira, or a PR opens on GitHub.
+
+17
+00:00:38.699 --> 00:00:46.050
+Heimdall picks it up, wakes the right OpenCode agent, and runs every test inside a locked container.
+
+18
+00:00:46.270 --> 00:00:47.855
+Switch is the backbone.
+
+19
+00:00:47.855 --> 00:00:49.854
+Every agent gets an identity.
+
+20
+00:00:49.854 --> 00:00:51.577
+Every ticket gets a room.
+
+21
+00:00:51.577 --> 00:00:55.850
+And your team stays in Slack, Discord, Telegram or Mattermost.
+
+22
+00:00:56.070 --> 00:00:56.931
+Watch it run.
+
+23
+00:00:56.931 --> 00:01:02.299
+A real ticket moves to In Progress, with its money rules and acceptance criteria.
+
+24
+00:01:02.299 --> 00:01:03.889
+Nobody touches Heimdall.
+
+25
+00:01:03.889 --> 00:01:06.341
+Under a second later, there's a room.
+
+26
+00:01:06.341 --> 00:01:08.660
+Seconds later, an agent is working.
+
+27
+00:01:08.910 --> 00:01:13.113
+It writes tests from the ticket, and Heimdall runs them in the sandbox.
+
+28
+00:01:13.113 --> 00:01:15.540
+They must fail, and for the right reason.
+
+29
+00:01:15.760 --> 00:01:19.828
+A test that passes before the feature exists gets rejected.
+
+30
+00:01:19.828 --> 00:01:25.000
+What survives is pinned by hash, and runs in your CI on every pull request.
+
+31
+00:01:25.220 --> 00:01:26.008
+Now, review.
+
+32
+00:01:26.008 --> 00:01:32.183
+Heimdall captures what each developer knows: their docs, their history, their coding sessions.
+
+33
+00:01:32.183 --> 00:01:33.300
+Secrets go first.
+
+34
+00:01:33.300 --> 00:01:34.351
+They approve it.
+
+35
+00:01:34.351 --> 00:01:38.490
+It's signed, encrypted, and handed to their own reviewer agent.
+
+36
+00:01:38.710 --> 00:01:43.640
+Beneath them, a Graphiti knowledge graph holds the team's decisions and incidents.
+
+37
+00:01:43.860 --> 00:01:45.581
+A developer raises the PR.
+
+38
+00:01:45.581 --> 00:01:46.574
+The tests pass.
+
+39
+00:01:46.574 --> 00:01:49.685
+Three reviewers start, cut off from each other.
+
+40
+00:01:49.685 --> 00:01:53.061
+This one found that refunds can exceed the payment.
+
+41
+00:01:53.061 --> 00:01:55.510
+And it wrote a failing test as proof.
+
+42
+00:01:55.730 --> 00:01:59.340
+It lands on the exact line, on the pull request, and in chat.
+
+43
+00:01:59.560 --> 00:02:01.988
+Then ten rules decide, in plain Go.
+
+44
+00:02:01.988 --> 00:02:03.514
+No model in that path.
+
+45
+00:02:03.514 --> 00:02:07.260
+Only a person can approve, and only that exact commit.
+
+46
+00:02:07.480 --> 00:02:08.810
+Setup is one prompt.
+
+47
+00:02:08.810 --> 00:02:12.799
+Paste it into your coding agent, or run heimdall admin init.
+
+48
+00:02:12.799 --> 00:02:18.650
+It connects GitHub, Jira and your chat, and drafts your context pack for you to approve.
+
+49
+00:02:19.000 --> 00:02:21.527
+And it's all Go, on one small VM.
+
+50
+00:02:21.527 --> 00:02:23.671
+A forty-two megabyte server.
+
+51
+00:02:23.671 --> 00:02:25.968
+A ten megabyte sandbox runner.
+
+52
+00:02:25.968 --> 00:02:28.724
+Rootless containers with no network.
+
+53
+00:02:28.724 --> 00:02:29.719
+Seven agents.
+
+54
+00:02:29.719 --> 00:02:30.485
+Two cores.
+
+55
+00:02:30.485 --> 00:02:31.710
+No public ports.
+
+56
+00:02:32.010 --> 00:02:33.532
+Humans bring judgment.
+
+57
+00:02:33.532 --> 00:02:34.847
+Agents bring proof.
+
+58
+00:02:34.847 --> 00:02:35.470
+Heimdall.
