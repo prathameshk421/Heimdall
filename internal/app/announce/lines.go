@@ -44,10 +44,13 @@ type (
 	testsVerified struct {
 		NeedsSignoff bool `json:"needs_signoff"`
 	}
-	testsCommitted  struct{ SHA string }
-	stepEscalated   struct{ Step, Reason string }
-	branchEnsured   struct{ Branch string }
-	prOpened        struct{ Number int }
+	testsCommitted struct{ SHA string }
+	stepEscalated  struct{ Step, Reason string }
+	branchEnsured  struct{ Branch string }
+	prOpened       struct {
+		Number int
+		Repo   string
+	}
 	ciReported      struct{ Check, SHA, Conclusion string }
 	reviewersPicked struct{ People []string }
 	reviewSubmitted struct {
@@ -72,7 +75,6 @@ type (
 
 const (
 	maxReasonChars = 160
-	maxGateReasons = 5
 	// maxProgressChars bounds an agent's progress line.
 	maxProgressChars = 300
 )
@@ -221,7 +223,10 @@ func narratePROpened(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return review("📬 %s: pull request #%d is open. CI and the code reviewers are next.", k, p.Number), true
+	if p.Repo != "" {
+		return review("📬 %s: pull request #%d is open. Heimdall runs the acceptance tests, then the code reviewers start.\nhttps://github.com/%s/pull/%d", k, p.Number, p.Repo, p.Number), true
+	}
+	return review("📬 %s: pull request #%d is open. Heimdall runs the acceptance tests, then the code reviewers start.", k, p.Number), true
 }
 
 func narrateCI(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -298,24 +303,85 @@ func narrateFindingState(_ []change.Event, ev change.Event, k string) (Line, boo
 	return Line{}, false
 }
 
-func narrateGate(_ []change.Event, ev change.Event, k string) (Line, bool) {
+func narrateGate(history []change.Event, ev change.Event, k string) (Line, bool) {
 	var p gateEvaluated
 	if !decode(ev, &p) {
+		return Line{}, false
+	}
+	if prev, ok := previousGate(history, ev); ok && prev.OK == p.OK && slices.Equal(prev.Reasons, p.Reasons) {
 		return Line{}, false
 	}
 	if p.OK {
 		return review("✅ %s: the merge check passed. This one is ready to merge.", k), true
 	}
+	waiting, blocked := gateItems(p.Reasons)
 	var b strings.Builder
-	fmt.Fprintf(&b, "⛔ %s: the merge check is blocked.", k)
-	for i, reason := range p.Reasons {
-		if i == maxGateReasons {
-			fmt.Fprintf(&b, "\n• and %d more", len(p.Reasons)-maxGateReasons)
-			break
+	if len(blocked) > 0 {
+		fmt.Fprintf(&b, "⛔ %s: the merge is blocked.", k)
+		for _, item := range blocked {
+			fmt.Fprintf(&b, "\n• %s", item)
 		}
-		fmt.Fprintf(&b, "\n• %s", reason)
+		if len(waiting) > 0 {
+			fmt.Fprintf(&b, "\nAlso waiting for: %s.", strings.Join(waiting, ", "))
+		}
+	} else {
+		fmt.Fprintf(&b, "⏳ %s: not ready to merge yet. Waiting for: %s.", k, strings.Join(waiting, ", "))
 	}
 	return Line{Audience: AudienceReview, Text: b.String()}, true
+}
+
+// previousGate is the gate verdict stored before ev, so an unchanged verdict on a new head is not posted again.
+func previousGate(history []change.Event, ev change.Event) (gateEvaluated, bool) {
+	var prev gateEvaluated
+	found := false
+	for _, h := range history {
+		if h.ID == ev.ID {
+			break
+		}
+		if h.Type == change.EventGateEvaluated && decode(h, &prev) {
+			found = true
+		}
+	}
+	return prev, found
+}
+
+// gateItems splits the gate's reasons into the normal steps still to come (waiting) and real problems (blocked), in
+// plain words. A reason starts with its clause id ("ci: ..."); an unknown clause keeps its own text as a problem.
+func gateItems(reasons []string) (waiting, blocked []string) {
+	pending := map[string]string{
+		"reviews":  "the code reviews",
+		"approval": "an approval from an approver",
+	}
+	problems := map[string]string{
+		"ticket_linked":    "the pull request does not name its ticket",
+		"slop_passed":      "the pull request touches files outside the ticket's scope, or is too large",
+		"testset":          "the acceptance tests are not verified yet",
+		"test_tree_pinned": "the Heimdall tests on the branch differ from the verified ones",
+		"test_diff_scoped": "the pull request changes another ticket's Heimdall tests",
+		"blocking":         "a review finding must be fixed or dismissed",
+		"policy":           "the policy file changed and needs its owner's approval",
+	}
+	add := func(list *[]string, s string) {
+		if !slices.Contains(*list, s) {
+			*list = append(*list, s)
+		}
+	}
+	for _, r := range reasons {
+		clause, detail, _ := strings.Cut(r, ":")
+		switch {
+		case clause == "ci" && strings.Contains(detail, "has not reported"):
+			add(&waiting, "the acceptance tests to finish")
+		case clause == "ci":
+			add(&blocked, "a required check failed:"+detail)
+		case pending[clause] != "":
+			add(&waiting, pending[clause])
+		case problems[clause] != "":
+			add(&blocked, problems[clause])
+		default:
+			add(&blocked, r)
+		}
+	}
+	return waiting, blocked
 }
 
 // humanReasons turns the check's reasons into sentences a developer reads without knowing the internals.
