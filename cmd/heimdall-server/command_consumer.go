@@ -351,6 +351,11 @@ func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Targe
 	if _, err := r.engine.Advance(ctx, target.ChangeID, events); err != nil {
 		return "", fmt.Errorf("apply %s command: %w", cmd.Verb(), err)
 	}
+	if ans, ok := cmd.(commands.Answer); ok {
+		if err := r.wakeAsker(ctx, target.ChangeID, state, ans.Question, sourceRef); err != nil {
+			return "", fmt.Errorf("answer recorded but the agent was not woken: %w", err)
+		}
+	}
 	if err := r.forgetKnowledge(ctx, person, cmd, false); err != nil {
 		return "", err
 	}

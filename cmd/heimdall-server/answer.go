@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -53,4 +54,51 @@ func (r *commandRuntime) answerEvents(cid id.ChangeID, state []change.Event, per
 		return nil, err
 	}
 	return []change.Event{ev}, nil
+}
+
+// answerWake finds who to wake after an answer: the agent of the change's latest task, and the room to post in.
+func answerWake(state []change.Event) (id.AgentName, change.RoomID, bool) {
+	var agent id.AgentName
+	var room change.RoomID
+	for _, ev := range state {
+		if ev.Type == change.EventTaskAssigned {
+			var p struct {
+				Agent id.AgentName `json:"agent"`
+			}
+			if json.Unmarshal(ev.Payload, &p) == nil && p.Agent != "" {
+				agent = p.Agent
+			}
+		}
+		if ev.Type == change.EventRoomOpened {
+			var p struct {
+				RoomID change.RoomID `json:"room_id"`
+			}
+			if json.Unmarshal(ev.Payload, &p) == nil && p.RoomID != "" {
+				room = p.RoomID
+			}
+		}
+	}
+	return agent, room, agent != "" && room != ""
+}
+
+// wakeText is the room message that wakes the asking agent; it carries no answer text, which stays data behind
+// heimdall_get_task.
+func wakeText(agent id.AgentName, ref string) string {
+	return fmt.Sprintf("@%s %s was answered. Call heimdall_get_task.", agent, ref)
+}
+
+// wakeAsker posts the wake message once per question. A change with no task or no room has nobody to wake.
+func (r *commandRuntime) wakeAsker(ctx context.Context, cid id.ChangeID, state []change.Event, ref, sourceRef string) error {
+	agent, room, ok := answerWake(state)
+	if !ok {
+		return nil
+	}
+	key, err := change.IdempotencyKey(cid, 1, change.EffectRoomPost, "question-wake:"+sourceRef)
+	if err != nil {
+		return fmt.Errorf("build wake idempotency key: %w", err)
+	}
+	if err := r.chat.Post(ctx, room, key, wakeText(agent, ref)); err != nil {
+		return fmt.Errorf("wake %s: post room message: %w", agent, err)
+	}
+	return nil
 }
