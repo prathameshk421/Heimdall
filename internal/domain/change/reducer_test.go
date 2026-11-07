@@ -450,6 +450,8 @@ func TestContentDependentTransitions(t *testing.T) {
 		{"merged PR closed while in review is refused", change.StateInReview, change.EventPRClosed, json.RawMessage(prClosedMerged), "", true},
 		{"merged PR closed before approval is refused", change.StateBuilding, change.EventPRClosed, json.RawMessage(prClosedMerged), "", true},
 		{"merged PR closed when approved merges", change.StateApproved, change.EventPRClosed, json.RawMessage(prClosedMerged), change.StateMerged, false},
+		{"merged PR closed when ready merges, as a green gate holds an approval on head", change.StateReadyForApproval, change.EventPRClosed, json.RawMessage(prClosedMerged), change.StateMerged, false},
+		{"unmerged PR closed when ready rejects", change.StateReadyForApproval, change.EventPRClosed, json.RawMessage(prClosedUnmerged), change.StateRejected, false},
 		{"unmerged PR closed when approved rejects", change.StateApproved, change.EventPRClosed, json.RawMessage(prClosedUnmerged), change.StateRejected, false},
 		{"green gate in review is ready for approval", change.StateInReview, change.EventGateEvaluated, json.RawMessage(gateGreen), change.StateReadyForApproval, false},
 		{"red gate in review stays", change.StateInReview, change.EventGateEvaluated, json.RawMessage(gateRed), change.StateInReview, false},

@@ -47,7 +47,9 @@
 //
 // Events whose payload decides the move, and the field each reads (all through Decode):
 //   - pr.opened: ticket present or absent (D146, and which states it may start or attach from).
-//   - pr.closed: merged. A merge is only allowed from APPROVED.
+//   - pr.closed: merged. A merge is allowed from APPROVED and from READY_FOR_APPROVAL: that state is reached only by a
+//     green gate on the current head, and the gate is green only with a valid approval on it. An approval given before
+//     the gate turned green arrives in IN_REVIEW and moves nothing (KAN-22, Nov 7).
 //   - slop.evaluated: pass. A PR with no ticket cannot pass.
 //   - gate.evaluated: ok. Green in IN_REVIEW moves to READY_FOR_APPROVAL; red from READY_FOR_APPROVAL or APPROVED
 //     goes back to IN_REVIEW.
