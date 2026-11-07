@@ -755,8 +755,12 @@ func executors(ctx context.Context, ad adapters, store ports.EventStore, profile
 	if err != nil {
 		return nil, err
 	}
+	inviter, ok := ad.chat.(ports.RoomInviter)
+	if !ok {
+		return nil, errors.New("build task_assign executor: the selected chat cannot invite agents into a room")
+	}
 	taskAssign, err := effects.NewTaskAssign(effects.TaskAssignDeps{
-		Blobs: blobs, Chat: ad.chat,
+		Blobs: blobs, Chat: ad.chat, Inviter: inviter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build task_assign executor: %w", err)

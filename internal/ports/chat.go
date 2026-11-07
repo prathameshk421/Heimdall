@@ -47,3 +47,10 @@ type Chat interface {
 	// Read returns the messages after the cursor and the cursor to continue from.
 	Read(ctx context.Context, room change.RoomID, after Cursor) ([]Message, Cursor, error)
 }
+
+// RoomInviter adds an existing agent to a room by its Switch name. A room opens with only the coordinator in it, and an
+// agent receives a room's messages only once it is a member. Consumer: the task_assign executor. Adapter:
+// internal/adapters/switch.
+type RoomInviter interface {
+	InviteAgent(ctx context.Context, room change.RoomID, agentName string) error
+}

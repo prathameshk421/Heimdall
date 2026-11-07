@@ -14,8 +14,9 @@ import (
 
 // TaskAssignDeps are the dependencies of TaskAssign.
 type TaskAssignDeps struct {
-	Blobs ports.BlobStore
-	Chat  ports.Chat
+	Blobs   ports.BlobStore
+	Chat    ports.Chat
+	Inviter ports.RoomInviter
 }
 
 // TaskAssign performs task_assign effects: stores the bundle blob and posts a room notification.
@@ -30,6 +31,9 @@ func NewTaskAssign(d TaskAssignDeps) (TaskAssign, error) {
 	}
 	if d.Chat == nil {
 		return TaskAssign{}, fmt.Errorf("task_assign executor: missing chat")
+	}
+	if d.Inviter == nil {
+		return TaskAssign{}, fmt.Errorf("task_assign executor: missing inviter")
 	}
 	return TaskAssign{deps: d}, nil
 }
@@ -54,6 +58,10 @@ func (t TaskAssign) Execute(ctx context.Context, fx change.Effect) error {
 	_, err = t.deps.Blobs.Put(ctx, ports.BlobBundle, bytes.NewReader(p.Bundle))
 	if err != nil {
 		return failf(err, "task_assign %s: store bundle", fx.Key)
+	}
+
+	if err := t.deps.Inviter.InviteAgent(ctx, p.RoomID, string(p.Agent)); err != nil {
+		return failf(err, "task_assign %s: invite %s into the room", fx.Key, p.Agent)
 	}
 
 	text := fmt.Sprintf("@%s you have a new task. Call heimdall_get_task.", p.Agent)

@@ -145,6 +145,10 @@ func (dummyChat) Post(context.Context, change.RoomID, change.EffectKey, string) 
 	return nil
 }
 
+func (dummyChat) InviteAgent(context.Context, change.RoomID, string) error {
+	return nil
+}
+
 func (dummyChat) Read(context.Context, change.RoomID, ports.Cursor) ([]ports.Message, ports.Cursor, error) {
 	return nil, "", nil
 }

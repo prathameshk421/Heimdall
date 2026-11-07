@@ -96,6 +96,30 @@ func (m *mockChat) Read(_ context.Context, _ change.RoomID, _ ports.Cursor) ([]p
 	return nil, "", errors.New("not implemented")
 }
 
+type mockInvite struct {
+	room  change.RoomID
+	agent string
+}
+
+// mockInviter records invitations and whether the room had already been posted to when each one arrived.
+type mockInviter struct {
+	chat        *mockChat
+	invites     []mockInvite
+	postedFirst bool
+	err         error
+}
+
+func (m *mockInviter) InviteAgent(_ context.Context, room change.RoomID, agent string) error {
+	if m.err != nil {
+		return m.err
+	}
+	if m.chat != nil && len(m.chat.posts) > 0 {
+		m.postedFirst = true
+	}
+	m.invites = append(m.invites, mockInvite{room: room, agent: agent})
+	return nil
+}
+
 func makeTaskAssignEffect(t *testing.T, target string, bundleBytes []byte) change.Effect {
 	t.Helper()
 	payload := change.TaskAssignPayload{
@@ -122,10 +146,12 @@ func makeTaskAssignEffect(t *testing.T, target string, bundleBytes []byte) chang
 func TestTaskAssignSuccess(t *testing.T) {
 	blobs := &mockBlobStore{}
 	chat := &mockChat{}
+	inviter := &mockInviter{chat: chat}
 
 	exec, err := effects.NewTaskAssign(effects.TaskAssignDeps{
-		Blobs: blobs,
-		Chat:  chat,
+		Blobs:   blobs,
+		Chat:    chat,
+		Inviter: inviter,
 	})
 	require.NoError(t, err)
 
@@ -150,13 +176,45 @@ func TestTaskAssignSuccess(t *testing.T) {
 	require.Equal(t, "@bob-reviewer you have a new task. Call heimdall_get_task.", chat.posts[0].text)
 }
 
+// The agent must be in the room before it is addressed there: a room opens with only the coordinator in it.
+func TestTaskAssignInvitesTheAgentIntoTheRoomBeforePosting(t *testing.T) {
+	chat := &mockChat{}
+	inviter := &mockInviter{chat: chat}
+	exec, err := effects.NewTaskAssign(effects.TaskAssignDeps{Blobs: &mockBlobStore{}, Chat: chat, Inviter: inviter})
+	require.NoError(t, err)
+
+	bundle := []byte(`{"ticket":"PAY-142"}`)
+	sum := sha256.Sum256(bundle)
+	require.NoError(t, exec.Execute(context.Background(), makeTaskAssignEffect(t, fmt.Sprintf("blob:sha256:%s", hex.EncodeToString(sum[:])), bundle)))
+
+	require.Equal(t, []mockInvite{{room: "room_142", agent: "bob-reviewer"}}, inviter.invites)
+	require.False(t, inviter.postedFirst, "the invitation comes before the message")
+	require.Len(t, chat.posts, 1)
+}
+
+// A failed invitation is an error, and nothing is posted to a room the agent is not in.
+func TestTaskAssignInviteFailureStopsBeforeThePost(t *testing.T) {
+	chat := &mockChat{}
+	inviter := &mockInviter{chat: chat, err: errors.New("switch refused")}
+	exec, err := effects.NewTaskAssign(effects.TaskAssignDeps{Blobs: &mockBlobStore{}, Chat: chat, Inviter: inviter})
+	require.NoError(t, err)
+
+	bundle := []byte(`{"ticket":"PAY-142"}`)
+	sum := sha256.Sum256(bundle)
+	err = exec.Execute(context.Background(), makeTaskAssignEffect(t, fmt.Sprintf("blob:sha256:%s", hex.EncodeToString(sum[:])), bundle))
+	require.ErrorContains(t, err, "invite")
+	require.Empty(t, chat.posts)
+}
+
 func TestTaskAssignHashMismatchRefused(t *testing.T) {
 	blobs := &mockBlobStore{}
 	chat := &mockChat{}
+	inviter := &mockInviter{chat: chat}
 
 	exec, err := effects.NewTaskAssign(effects.TaskAssignDeps{
-		Blobs: blobs,
-		Chat:  chat,
+		Blobs:   blobs,
+		Chat:    chat,
+		Inviter: inviter,
 	})
 	require.NoError(t, err)
 
@@ -177,10 +235,12 @@ func TestTaskAssignHashMismatchRefused(t *testing.T) {
 func TestTaskAssignIdempotent(t *testing.T) {
 	blobs := &mockBlobStore{}
 	chat := &mockChat{}
+	inviter := &mockInviter{chat: chat}
 
 	exec, err := effects.NewTaskAssign(effects.TaskAssignDeps{
-		Blobs: blobs,
-		Chat:  chat,
+		Blobs:   blobs,
+		Chat:    chat,
+		Inviter: inviter,
 	})
 	require.NoError(t, err)
 
@@ -206,10 +266,12 @@ func TestTaskAssignNoSecretInErrors(t *testing.T) {
 	secretMsg := "top-secret-api-key-12345"
 	blobs := &mockBlobStore{putErr: errors.New(secretMsg)}
 	chat := &mockChat{}
+	inviter := &mockInviter{chat: chat}
 
 	exec, err := effects.NewTaskAssign(effects.TaskAssignDeps{
-		Blobs: blobs,
-		Chat:  chat,
+		Blobs:   blobs,
+		Chat:    chat,
+		Inviter: inviter,
 	})
 	require.NoError(t, err)
 
