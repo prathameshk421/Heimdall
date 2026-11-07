@@ -62,11 +62,16 @@ func (h operatorAnswer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h operatorAnswer) authorized(r *http.Request) bool {
+	return authorizedOperator(r, h.secrets, h.keyName)
+}
+
+// authorizedOperator checks the bearer token against the configured operator key.
+func authorizedOperator(r *http.Request, secrets operatorSecrets, keyName string) bool {
 	scheme, value, ok := strings.Cut(r.Header.Get("Authorization"), " ")
 	if !ok || !strings.EqualFold(scheme, "Bearer") || value == "" {
 		return false
 	}
-	want, err := h.secrets.Secret(h.keyName)
+	want, err := secrets.Secret(keyName)
 	if err != nil || want == "" {
 		return false
 	}

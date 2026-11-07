@@ -177,6 +177,7 @@ type app struct {
 	mcpHandler        http.Handler
 	agentSetupHandler http.Handler
 	operatorAnswer    http.Handler
+	operatorReject    http.Handler
 	packUpload        http.Handler
 	commands          *commandRuntime
 	workflowMemory    *knowledge.WorkflowMemory
@@ -463,6 +464,7 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 		return nil, err
 	}
 	a.operatorAnswer = operatorAnswer{answer: a.commands.OperatorAnswer, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
+	a.operatorReject = operatorReject{reject: a.commands.OperatorReject, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
 	return a, nil
 }
 
