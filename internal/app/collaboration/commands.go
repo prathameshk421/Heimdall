@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/commands"
@@ -124,22 +126,69 @@ func (p *Processor) dispatch(ctx context.Context, in Input, src commands.Source,
 	}
 	person, err := p.identity.Authorize(ctx, in.Target, src, in.Command.Sender, parsed.Command)
 	if err != nil {
-		return p.replies.Reply(ctx, in.Target, src, in.SourceRef, "You are not authorized to run that command.")
+		return p.replies.Reply(ctx, in.Target, src, in.SourceRef, "Sorry, you are not allowed to run that command. Ask an approver for this repository.")
 	}
 	message, err := p.executor.Execute(ctx, in.Target, person, src, in.SourceRef, parsed.Command)
 	if err != nil {
 		return fmt.Errorf("execute %s command: %w", parsed.Verb, err)
 	}
 	if message == "" {
-		message = "Recorded."
+		message = "Done."
 	}
 	return p.replies.Reply(ctx, in.Target, src, in.SourceRef, message)
 }
 
 // HandleRoomMessage is the roomstream adapter. The room-change binding is retained for policy and action resolution.
+// A person may name the ticket in the message ("heimdall uphold KAN-14 F1"); the key is not part of the command, so
+// it is taken out before the command is read.
 func (p *Processor) HandleRoomMessage(ctx context.Context, room ports.RoomBinding, message ports.Message) error {
 	return p.Handle(ctx, Input{
-		Command: commands.Input{Text: message.Text, Source: commands.SourceChat, Sender: string(message.Sender)},
+		Command: commands.Input{Text: withoutKey(message.Text, room.ChangeID), Source: commands.SourceChat, Sender: string(message.Sender)},
 		Target:  Target{Room: room, ChangeID: room.ChangeID}, SourceRef: string(message.ID),
 	})
+}
+
+// HandleSharedRoomMessage takes a message from a standing channel that serves several tickets. A command must name
+// its ticket; without one, or with two, the sender is asked which one they mean. Text that is not a command is left
+// alone.
+func (p *Processor) HandleSharedRoomMessage(ctx context.Context, _ change.RoomID, candidates []ports.RoomBinding, message ports.Message) error {
+	in := commands.Input{Text: message.Text, Source: commands.SourceChat, Sender: string(message.Sender)}
+	if !commands.IsCommand(in) {
+		return nil
+	}
+	var named []ports.RoomBinding
+	for _, c := range candidates {
+		if namesKey(message.Text, c.ChangeID) {
+			named = append(named, c)
+		}
+	}
+	if len(named) != 1 {
+		keys := make([]string, 0, len(candidates))
+		for _, c := range candidates {
+			keys = append(keys, string(c.ChangeID))
+		}
+		ask := "Which ticket is that about? Put its key in the message, for example: heimdall uphold " + string(candidates[0].ChangeID) +
+			" F1. Open tickets here: " + strings.Join(keys, ", ") + "."
+		first := candidates[0]
+		return p.replies.Reply(ctx, Target{Room: first, ChangeID: first.ChangeID}, commands.SourceChat, string(message.ID), ask)
+	}
+	return p.HandleRoomMessage(ctx, named[0], message)
+}
+
+// keyPattern matches a ticket key as a word, in any letter case.
+func keyPattern(key id.ChangeID) *regexp.Regexp {
+	return regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(string(key)) + `\b`)
+}
+
+func namesKey(text string, key id.ChangeID) bool { return keyPattern(key).MatchString(text) }
+
+// withoutKey removes the first mention of the ticket key from a command, so "heimdall uphold KAN-14 F1" reads as
+// "heimdall uphold F1".
+func withoutKey(text string, key id.ChangeID) string {
+	re := keyPattern(key)
+	loc := re.FindStringIndex(text)
+	if loc == nil {
+		return text
+	}
+	return strings.Join(strings.Fields(text[:loc[0]]+" "+text[loc[1]:]), " ")
 }

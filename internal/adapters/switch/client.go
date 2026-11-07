@@ -28,10 +28,16 @@ type Secrets interface {
 // every call, so a rotated key file is picked up without a restart. HTTPClient must not set a Timeout: the event
 // stream is long-lived, and every other call has its own 10 s deadline (TECH_SPEC 2.5).
 type Config struct {
-	BaseURL            string
-	AgentID            string
-	AgentName          string
-	BridgeID           string
+	BaseURL   string
+	AgentID   string
+	AgentName string
+	BridgeID  string
+	// SharedRoom, when set, is the one standing channel every change opens into: OpenRoom returns it instead of making
+	// a room per change.
+	SharedRoom change.RoomID
+	// InternalRooms makes each change's room an agent-only working room with no chat channel, so the agent has one
+	// session per ticket while people read the story in the standing channels.
+	InternalRooms      bool
 	Secrets            Secrets
 	APIKeySecret       string
 	RegistrationSecret string
@@ -52,17 +58,19 @@ const (
 
 // Client talks to one Switch bridge as the coordinator agent. It is safe for concurrent use.
 type Client struct {
-	http         *http.Client
-	baseURL      string
-	agentID      string
-	agentName    string
-	bridgeID     string
-	secrets      Secrets
-	apiKeySecret string
-	regSecret    string
-	clock        ports.Clock
-	wait         func(ctx context.Context, d time.Duration) error
-	breaker      breaker
+	http          *http.Client
+	baseURL       string
+	agentID       string
+	agentName     string
+	bridgeID      string
+	sharedRoom    change.RoomID
+	internalRooms bool
+	secrets       Secrets
+	apiKeySecret  string
+	regSecret     string
+	clock         ports.Clock
+	wait          func(ctx context.Context, d time.Duration) error
+	breaker       breaker
 
 	// postMu serialises Post, so the check of posted and the send cannot interleave.
 	postMu sync.Mutex
@@ -102,17 +110,19 @@ func New(cfg Config) (*Client, error) {
 		return nil, errors.New("switch: wait is required")
 	}
 	return &Client{
-		http:         cfg.HTTPClient,
-		baseURL:      strings.TrimRight(cfg.BaseURL, "/"),
-		agentID:      cfg.AgentID,
-		agentName:    cfg.AgentName,
-		bridgeID:     cfg.BridgeID,
-		secrets:      cfg.Secrets,
-		apiKeySecret: cfg.APIKeySecret,
-		regSecret:    cfg.RegistrationSecret,
-		clock:        cfg.Clock,
-		wait:         cfg.Wait,
-		posted:       map[change.EffectKey]bool{},
+		http:          cfg.HTTPClient,
+		baseURL:       strings.TrimRight(cfg.BaseURL, "/"),
+		agentID:       cfg.AgentID,
+		agentName:     cfg.AgentName,
+		bridgeID:      cfg.BridgeID,
+		sharedRoom:    cfg.SharedRoom,
+		internalRooms: cfg.InternalRooms,
+		secrets:       cfg.Secrets,
+		apiKeySecret:  cfg.APIKeySecret,
+		regSecret:     cfg.RegistrationSecret,
+		clock:         cfg.Clock,
+		wait:          cfg.Wait,
+		posted:        map[change.EffectKey]bool{},
 	}, nil
 }
 

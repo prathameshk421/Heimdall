@@ -120,7 +120,7 @@ func TestProfileHumanCommandsRequireMappedPolicyOwnerAndUseMappedIdentity(t *tes
 	denied := ports.Message{ID: "profile-denied", Room: room.RoomID, Sender: "bob", Text: "heimdall approve-profile " + proposalID}
 	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, denied))
 	require.Empty(t, profiles.approvals)
-	require.Contains(t, chat.posts[len(chat.posts)-1], "not authorized")
+	require.Contains(t, chat.posts[len(chat.posts)-1], "not allowed")
 
 	approved := ports.Message{ID: "profile-approved", Room: room.RoomID, Sender: "ana", Text: "heimdall approve-profile " + proposalID}
 	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, approved))
@@ -155,7 +155,7 @@ func TestKnowledgeApprovalAndForgetCommandsUseMappedHumanAndPolicyBoundary(t *te
 	denied := ports.Message{ID: "knowledge-denied", Room: room.RoomID, Sender: "dana", Text: "heimdall approve-knowledge " + strings.Repeat("a", 64)}
 	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, denied))
 	require.Empty(t, files.approvals)
-	require.Contains(t, chat.posts[len(chat.posts)-1], "not authorized")
+	require.Contains(t, chat.posts[len(chat.posts)-1], "not allowed")
 
 	approved := ports.Message{ID: "knowledge-approved", Room: room.RoomID, Sender: "ana", Text: "heimdall approve-knowledge " + strings.Repeat("a", 64)}
 	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, approved))
@@ -177,7 +177,7 @@ func TestServerCommandRuntimeExecutesMappedRoomRememberAndPostsReply(t *testing.
 	recorded := findDecision(t, events, "switch-message-31")
 	require.Equal(t, change.DecisionRemember, recorded.Kind)
 	require.Equal(t, "refunds are capped at 500", recorded.Reason)
-	require.Equal(t, []string{"I recorded that for this change."}, chat.posts)
+	require.Equal(t, []string{"Noted. I'll remember that."}, chat.posts)
 }
 
 func TestServerCommandRuntimeStartsTicketThroughTheEngineAndRecordsSource(t *testing.T) {
@@ -195,7 +195,7 @@ func TestServerCommandRuntimeStartsTicketThroughTheEngineAndRecordsSource(t *tes
 	require.Equal(t, change.TriggerManual, triggered.Source)
 	decision := findDecision(t, events, "switch-start-42")
 	require.Equal(t, change.DecisionStart, decision.Kind)
-	require.Equal(t, []string{"Started."}, chat.posts)
+	require.Equal(t, []string{"On it. I'm starting this ticket."}, chat.posts)
 }
 
 func TestServerCommandRuntimeSelectsReviewersForFanout(t *testing.T) {
@@ -331,7 +331,7 @@ func TestServerCommandRuntimeRoutesGitHubCommentChallengeAndReplies(t *testing.T
 	require.True(t, found, "challenge command must append challenge.filed")
 	require.True(t, foundState, "challenge must move the finding into disputed state for the gate")
 	require.True(t, foundCase, "challenge must create a durable resolver case for fan-out")
-	require.Equal(t, []string{"Challenge recorded."}, comments.bodies)
+	require.Equal(t, []string{"Challenge recorded. A resolver will decide it."}, comments.bodies)
 	comment.ID = 42
 	comment.UserType = "Bot"
 	require.NoError(t, runtime.HandleGitHubComment(context.Background(), pr.Repo, pr, comment))

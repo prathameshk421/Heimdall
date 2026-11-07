@@ -55,5 +55,5 @@ func TestMappedRoomCommandPersistsAndRepliesThroughPostgres(t *testing.T) {
 	decision := findDecision(t, events, string(message.ID))
 	require.Equal(t, change.DecisionRemember, decision.Kind)
 	require.Equal(t, "refunds are capped at 500", decision.Reason)
-	require.Equal(t, []string{"I recorded that for this change."}, chat.posts)
+	require.Equal(t, []string{"Noted. I'll remember that."}, chat.posts)
 }

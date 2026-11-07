@@ -14,6 +14,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
@@ -264,6 +265,9 @@ type chatAsker struct {
 	chat  ports.Chat
 	store ports.EventStore
 	ids   ports.IDs
+	// public, when set, is the standing channel where people read the agent's questions. The change's own room is an
+	// agent-only working room.
+	public change.RoomID
 }
 
 func (c *chatAsker) Ask(ctx context.Context, changeID id.ChangeID, question string) (change.QuestionID, change.SenderID, change.MessageID, error) {
@@ -281,6 +285,9 @@ func (c *chatAsker) Ask(ctx context.Context, changeID id.ChangeID, question stri
 				}
 			}
 		}
+	}
+	if c.public != "" {
+		roomID = c.public
 	}
 	key := change.EffectKey(fmt.Sprintf("ask:%s:%s", changeID, c.ids.NewEvent()))
 	if c.chat != nil {
@@ -393,13 +400,15 @@ type tasksAdapter struct {
 	svc          *agenttools.Service
 	tracker      *assignmentAgentTracker
 	advanceTests func(context.Context, id.ChangeID, change.Event) error
-	filter       interface {
+	// focus remembers the ticket each agent was last woken for.
+	focus  ports.CursorTable
+	filter interface {
 		Filter(context.Context, string) (string, error)
 	}
 }
 
 func (t *tasksAdapter) Current(ctx context.Context, p mcp.Principal) (mcp.Assignment, error) {
-	assign, err := t.svc.Current(ctx, p.Agent, p.Role)
+	assign, err := t.currentFor(ctx, p)
 	if err != nil {
 		if errors.Is(err, agenttools.ErrNoTask) {
 			return mcp.Assignment{}, mcp.ErrNoTask
@@ -408,6 +417,22 @@ func (t *tasksAdapter) Current(ctx context.Context, p mcp.Principal) (mcp.Assign
 	}
 	t.tracker.record(assign.TaskID, p.Agent)
 	return toMCPAssignment(assign), nil
+}
+
+// currentFor finds the agent's task: the ticket it named, else the ticket it was last woken for, else its oldest open
+// task. The wake-up names the ticket, and an agent that does not pass it is still pointed at the right one.
+func (t *tasksAdapter) currentFor(ctx context.Context, p mcp.Principal) (agenttools.Assignment, error) {
+	ticket := p.Ticket
+	if ticket == "" && t.focus != nil {
+		if v, err := t.focus.GetCursor(ctx, effects.FocusSource(string(p.Agent))); err == nil {
+			ticket = id.ChangeID(v)
+		}
+	}
+	assign, err := t.svc.CurrentFor(ctx, p.Agent, p.Role, ticket)
+	if errors.Is(err, agenttools.ErrNoTask) && ticket != "" && p.Ticket == "" {
+		return t.svc.Current(ctx, p.Agent, p.Role)
+	}
+	return assign, err
 }
 
 func (t *tasksAdapter) Ack(ctx context.Context, a mcp.Assignment, at time.Time) error {
@@ -485,6 +510,7 @@ func toMCPAssignment(a agenttools.Assignment) mcp.Assignment {
 		Task:       a.Task,
 		AssignedAt: a.AssignedAt,
 		Acked:      a.Acked,
+		History:    a.History,
 	}
 }
 

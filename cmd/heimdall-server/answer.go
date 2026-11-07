@@ -83,8 +83,8 @@ func answerWake(state []change.Event) (id.AgentName, change.RoomID, bool) {
 
 // wakeText is the room message that wakes the asking agent; it carries no answer text, which stays data behind
 // heimdall_get_task.
-func wakeText(agent id.AgentName, ref string) string {
-	return fmt.Sprintf("@%s %s was answered. Call heimdall_get_task.", agent, ref)
+func wakeText(agent id.AgentName, ticket id.ChangeID, ref string) string {
+	return fmt.Sprintf("@%s %s: %s has an answer. Call heimdall_get_task to read it.", agent, ticket, ref)
 }
 
 // wakeAsker posts the wake message once per question. A change with no task or no room has nobody to wake.
@@ -97,7 +97,7 @@ func (r *commandRuntime) wakeAsker(ctx context.Context, cid id.ChangeID, state [
 	if err != nil {
 		return fmt.Errorf("build wake idempotency key: %w", err)
 	}
-	if err := r.chat.Post(ctx, room, key, wakeText(agent, ref)); err != nil {
+	if err := r.chat.Post(ctx, room, key, wakeText(agent, cid, ref)); err != nil {
 		return fmt.Errorf("wake %s: post room message: %w", agent, err)
 	}
 	return nil

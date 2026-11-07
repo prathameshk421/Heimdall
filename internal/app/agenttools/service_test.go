@@ -469,8 +469,8 @@ func TestAckLateRefusal(t *testing.T) {
 		Deadline:   t0.Add(30 * time.Minute),
 	}
 
-	// Ack after 61 seconds from AssignedAt
-	lateAckTime := assign.AssignedAt.Add(61 * time.Second)
+	// Ack after the 10 minute window from AssignedAt
+	lateAckTime := assign.AssignedAt.Add(agenttools.AckWindow + time.Second)
 	err := h.svc.Ack(context.Background(), assign, lateAckTime)
 	require.ErrorIs(t, err, agenttools.ErrAckWindowExpired)
 }
@@ -1087,7 +1087,11 @@ func TestAskHumansAndProgress(t *testing.T) {
 	questions := []string{"Should refunds allow partial amounts?", "What is the max refund limit?"}
 	err := h.svc.AskHumans(context.Background(), assign, questions)
 	require.NoError(t, err)
-	require.Equal(t, questions, h.asker.calls)
+	// The room shows each question with its ticket, its number and the exact reply command.
+	require.Len(t, h.asker.calls, 2)
+	require.Contains(t, h.asker.calls[0], "PAY-142 needs an answer (Q1)")
+	require.Contains(t, h.asker.calls[0], questions[0])
+	require.Contains(t, h.asker.calls[1], "heimdall answer PAY-142 Q2 <your answer>")
 
 	evs, err := h.events.Load(context.Background(), testChangeID)
 	require.NoError(t, err)

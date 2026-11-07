@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -20,12 +21,21 @@ type Handler interface {
 	HandleRoomMessage(ctx context.Context, room ports.RoomBinding, message ports.Message) error
 }
 
+// SharedHandler is a Handler that can also take a message from a room that serves several changes. The handler finds
+// the ticket the message is about and, when it cannot, asks the sender which one.
+type SharedHandler interface {
+	HandleSharedRoomMessage(ctx context.Context, room change.RoomID, candidates []ports.RoomBinding, message ports.Message) error
+}
+
 // Config supplies the durable room/cursor stores and the Switch stream.
 type Config struct {
-	Rooms        ports.RoomIndex
-	Cursors      ports.CursorTable
-	Stream       ports.ChatStream
-	Handler      Handler
+	Rooms   ports.RoomIndex
+	Cursors ports.CursorTable
+	Stream  ports.ChatStream
+	Handler Handler
+	// Standing lists rooms that serve every open change besides the room it opened: the reviews channel, and the
+	// Telegram and Mattermost rooms. A command typed there names its ticket.
+	Standing     []change.RoomID
 	RefreshEvery time.Duration
 	Wait         func(context.Context, time.Duration) error
 }
@@ -37,6 +47,7 @@ type Service struct {
 	cursors      ports.CursorTable
 	stream       ports.ChatStream
 	handler      Handler
+	standing     []change.RoomID
 	refreshEvery time.Duration
 	wait         func(context.Context, time.Duration) error
 }
@@ -66,7 +77,7 @@ func New(cfg Config) (*Service, error) {
 		return nil, fmt.Errorf("room stream: missing or invalid: %s", strings.Join(missing, ", "))
 	}
 	return &Service{
-		rooms: cfg.Rooms, cursors: cfg.Cursors, stream: cfg.Stream, handler: cfg.Handler,
+		rooms: cfg.Rooms, cursors: cfg.Cursors, stream: cfg.Stream, handler: cfg.Handler, standing: cfg.Standing,
 		refreshEvery: cfg.RefreshEvery, wait: cfg.Wait,
 	}, nil
 }
@@ -97,11 +108,12 @@ func (s *Service) Cycle(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load active rooms: %w", err)
 	}
+	rooms = s.withStanding(rooms)
 	byRoom, cursors, err := s.restoreRoomCursors(ctx, rooms)
 	if err != nil {
 		return err
 	}
-	err = s.stream.StreamRooms(ctx, rooms, cursors, func(ctx context.Context, d ports.ChatDelivery) error {
+	err = s.stream.StreamRooms(ctx, uniqueRooms(rooms), cursors, func(ctx context.Context, d ports.ChatDelivery) error {
 		return s.deliver(ctx, byRoom, d)
 	})
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
@@ -110,14 +122,14 @@ func (s *Service) Cycle(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) restoreRoomCursors(ctx context.Context, rooms []ports.RoomBinding) (map[change.RoomID]ports.RoomBinding, map[change.RoomID]ports.Cursor, error) {
-	byRoom := make(map[change.RoomID]ports.RoomBinding, len(rooms))
+func (s *Service) restoreRoomCursors(ctx context.Context, rooms []ports.RoomBinding) (map[change.RoomID][]ports.RoomBinding, map[change.RoomID]ports.Cursor, error) {
+	byRoom := make(map[change.RoomID][]ports.RoomBinding, len(rooms))
 	cursors := make(map[change.RoomID]ports.Cursor, len(rooms))
 	for _, room := range rooms {
 		if _, err := idForRoom(room); err != nil {
 			return nil, nil, err
 		}
-		byRoom[room.RoomID] = room
+		byRoom[room.RoomID] = append(byRoom[room.RoomID], room)
 		value, err := s.cursors.GetCursor(ctx, cursorPrefix+string(room.RoomID))
 		if err != nil && !errors.Is(err, ports.ErrNotFound) {
 			return nil, nil, fmt.Errorf("load cursor for room %s: %w", room.RoomID, err)
@@ -129,12 +141,19 @@ func (s *Service) restoreRoomCursors(ctx context.Context, rooms []ports.RoomBind
 	return byRoom, cursors, nil
 }
 
-func (s *Service) deliver(ctx context.Context, rooms map[change.RoomID]ports.RoomBinding, d ports.ChatDelivery) error {
-	room, ok := rooms[d.Message.Room]
-	if !ok {
+func (s *Service) deliver(ctx context.Context, rooms map[change.RoomID][]ports.RoomBinding, d ports.ChatDelivery) error {
+	candidates, ok := rooms[d.Message.Room]
+	if !ok || len(candidates) == 0 {
 		return fmt.Errorf("message %s arrived for unindexed room %s", d.Message.ID, d.Message.Room)
 	}
-	if err := s.handler.HandleRoomMessage(ctx, room, d.Message); err != nil {
+	room := candidates[0]
+	var err error
+	if shared, isShared := s.handler.(SharedHandler); isShared && len(candidates) > 1 {
+		err = shared.HandleSharedRoomMessage(ctx, d.Message.Room, candidates, d.Message)
+	} else {
+		err = s.handler.HandleRoomMessage(ctx, room, d.Message)
+	}
+	if err != nil {
 		return fmt.Errorf("handle room %s message %s: %w", room.RoomID, d.Message.ID, err)
 	}
 	if d.Cursor == "" {
@@ -144,6 +163,47 @@ func (s *Service) deliver(ctx context.Context, rooms map[change.RoomID]ports.Roo
 		return fmt.Errorf("save cursor for room %s: %w", room.RoomID, err)
 	}
 	return nil
+}
+
+// withStanding adds, for every open change, a binding in each standing room it is not already bound to.
+func (s *Service) withStanding(rooms []ports.RoomBinding) []ports.RoomBinding {
+	if len(s.standing) == 0 {
+		return rooms
+	}
+	have := make(map[ports.RoomBinding]bool, len(rooms))
+	var changes []id.ChangeID
+	seen := map[id.ChangeID]bool{}
+	for _, r := range rooms {
+		have[r] = true
+		if !seen[r.ChangeID] {
+			seen[r.ChangeID] = true
+			changes = append(changes, r.ChangeID)
+		}
+	}
+	out := append([]ports.RoomBinding(nil), rooms...)
+	for _, cid := range changes {
+		for _, room := range s.standing {
+			b := ports.RoomBinding{ChangeID: cid, RoomID: room}
+			if !have[b] {
+				have[b] = true
+				out = append(out, b)
+			}
+		}
+	}
+	return out
+}
+
+// uniqueRooms lists each room once, in the order first seen: a room that serves several changes is streamed once.
+func uniqueRooms(rooms []ports.RoomBinding) []ports.RoomBinding {
+	seen := make(map[change.RoomID]bool, len(rooms))
+	out := make([]ports.RoomBinding, 0, len(rooms))
+	for _, r := range rooms {
+		if !seen[r.RoomID] {
+			seen[r.RoomID] = true
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func idForRoom(room ports.RoomBinding) (change.RoomID, error) {

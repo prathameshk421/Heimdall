@@ -16,7 +16,7 @@ You are building Heimdall incrementally. Use `docs/PROGRESS.md` for the current 
 ## The loop
 
 1. Read the task and its acceptance criteria. Check the relevant prototype board if useful; record missing environment prerequisites without treating them as a reason to stop unrelated work.
-2. Write the failing test. Run it and read why it fails. For behavior changes, it must fail on an assertion.
+2. For real logic (see R1), write the failing test first. For wording, prompts, config and glue, skip new tests.
 3. Implement the change. Keep `make fast` green when the baseline allows; if unrelated baseline failures block it, record them and use focused checks for the changed code. Keep work focused on one concern; a task may take multiple sessions when needed.
 4. Run `make verify` and the task's real check when available and required by its acceptance criteria. Try to break your own work once. Record unavailable checks as `not verified` with the reason.
 5. Write the evidence (commands, exit status, key output lines, cost, what is **not verified**) into the tracker row and `docs/PROGRESS.md`. Keep task status honest; continue with independent work when an external prerequisite blocks only part of validation.
@@ -24,7 +24,7 @@ You are building Heimdall incrementally. Use `docs/PROGRESS.md` for the current 
 
 ## Rules (each has an id so a hook or reviewer can cite it)
 
-- **R1 Red first.** No production code without a test you saw fail for the right reason.
+- **R1 Tests where they pay (owner decision, Nov 7).** Write a test first only for real logic: state machines, gates, parsing, money or security rules. Do not write tests for wording, prompts, config plumbing, wiring or glue, and do not spend time on mutation checks or repeated red runs. Keep existing tests passing (`make fast`), and update an existing assertion when the behavior it checks was changed on purpose. Speed on the demo path beats ceremony.
 - **R2 Never weaken a check to get green.** Do not skip, delete, loosen or `//nolint` a test, scenario, lint rule, timeout or hook. If a check is wrong, say why in the commit and ask. Edits to `.golangci.yml`, `e2e/scenarios`, `e2e/stories`, `testdata/real` and this file need the human's yes (the harness asks).
 - **R3 Dependency rule.** `domain` imports nothing internal; `app` imports `domain` and `ports`; adapters implement ports; `transport` calls `app`. Lint enforces it.
 - **R4 No test code in production, no speculative fallback, no scripted model reasoning** (`CODING_STANDARDS.md` section 12).

@@ -189,10 +189,10 @@ func TestAckInsideTheWindowIsRecordedWithItsTime(t *testing.T) {
 
 func TestAckAfterTheWindowIsRefused(t *testing.T) {
 	r := newRig(t, workflow.RoleReviewer)
-	r.clock.now = t0.Add(61 * time.Second)
+	r.clock.now = t0.Add(11 * time.Minute)
 	res := r.call("ack", `{}`)
 	require.True(t, res.IsError)
-	require.Contains(t, res.text(), "60 second")
+	require.Contains(t, res.text(), "acknowledgement window")
 	require.Empty(t, r.tasks.acks)
 }
 

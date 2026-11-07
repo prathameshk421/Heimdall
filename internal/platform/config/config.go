@@ -46,11 +46,27 @@ type Project struct {
 	BaseBranch     string
 }
 
+// Feed is a chat room that hears the story of every change besides the room of the change itself, for example the
+// Telegram group or a Mattermost channel. Audience is "tests", "review" or "both".
+type Feed struct {
+	RoomID   string
+	Audience string
+}
+
+// Rooms names the two standing channels every change uses: one for the tests, one for the reviews. Empty means a room
+// per change.
+type Rooms struct {
+	Tests   string
+	Reviews string
+}
+
 // Config is the validated infrastructure configuration. Load is the only way to get a non-zero one.
 type Config struct {
 	SecretsDir     string
 	Listen         string
 	Projects       []Project
+	Feeds          []Feed
+	Rooms          Rooms
 	HumanTokens    map[string]string
 	PackIdentities map[string]PackIdentitySecrets
 	Database       Database
@@ -127,6 +143,8 @@ type fileConfig struct {
 	SecretsDir     *string                     `toml:"secrets_dir"`
 	Listen         *string                     `toml:"listen"`
 	Projects       []fileProject               `toml:"projects"`
+	Feeds          []fileFeed                  `toml:"feeds"`
+	Rooms          *fileRooms                  `toml:"rooms"`
 	HumanTokens    map[string]string           `toml:"human_tokens"`
 	PackIdentities map[string]filePackIdentity `toml:"pack_identities"`
 	Database       *fileDatabase               `toml:"database"`
@@ -204,6 +222,16 @@ type fileAgentRuntime struct {
 // fileChat is [chat]. Its key is bridge, the Switch connection that carries chat (D79).
 type fileChat struct {
 	Bridge *string `toml:"bridge"`
+}
+
+type fileRooms struct {
+	Tests   string `toml:"tests"`
+	Reviews string `toml:"reviews"`
+}
+
+type fileFeed struct {
+	RoomID   string `toml:"room_id"`
+	Audience string `toml:"audience"`
 }
 
 type fileProject struct {
@@ -286,10 +314,43 @@ func build(raw fileConfig) (Config, error) {
 		cfg.Projects = append(cfg.Projects, proj)
 		cfg.byTracker[p.TrackerProject] = proj
 	}
+	if raw.Rooms != nil {
+		cfg.Rooms = Rooms{Tests: raw.Rooms.Tests, Reviews: raw.Rooms.Reviews}
+		if (cfg.Rooms.Tests == "") != (cfg.Rooms.Reviews == "") {
+			errs = append(errs, errors.New("rooms: tests and reviews must both be set, or neither"))
+		}
+	}
+	feeds, feedErrs := checkFeeds(raw.Feeds)
+	cfg.Feeds = feeds
+	errs = append(errs, feedErrs...)
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)
 	}
 	return cfg, nil
+}
+
+// checkFeeds validates the feed rooms: each has a room and a known audience, and no room is listed twice.
+func checkFeeds(raw []fileFeed) ([]Feed, []error) {
+	var errs []error
+	var feeds []Feed
+	seen := map[string]bool{}
+	for i, f := range raw {
+		where := fmt.Sprintf("feeds[%d]", i)
+		switch {
+		case f.RoomID == "":
+			errs = append(errs, fmt.Errorf("%s: room_id is required", where))
+			continue
+		case f.Audience != "tests" && f.Audience != "review" && f.Audience != "both":
+			errs = append(errs, fmt.Errorf("%s: audience %q must be tests, review or both", where, f.Audience))
+			continue
+		case seen[f.RoomID]:
+			errs = append(errs, fmt.Errorf("%s: room %q is listed twice", where, f.RoomID))
+			continue
+		}
+		seen[f.RoomID] = true
+		feeds = append(feeds, Feed(f))
+	}
+	return feeds, errs
 }
 
 func addKnowledgeSecrets(cfg *Config, raw fileConfig) []error {

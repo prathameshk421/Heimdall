@@ -14,24 +14,20 @@ type OpenRoom = ports.RoomBinding
 
 // OpenRooms discovers changes with an opened room that have not reached a terminal state. It validates the complete
 // persisted history before returning any projection; malformed chains, event envelopes, payloads, or transitions
-// fail the whole call. Results are ordered by change ID.
+// fail the whole call. Results are ordered by change ID. A room may appear for several changes.
 func (s *Store) OpenRooms(ctx context.Context) ([]ports.RoomBinding, error) {
 	ids, err := s.changeIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []ports.RoomBinding
-	roomOwners := make(map[change.RoomID]id.ChangeID)
 	for _, cid := range ids {
 		room, ok, err := s.openRoom(ctx, cid)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			if owner, exists := roomOwners[room.RoomID]; exists {
-				return nil, fmt.Errorf("room %s is recorded for changes %s and %s", room.RoomID, owner, cid)
-			}
-			roomOwners[room.RoomID] = cid
+			// Several changes can share one room: the standing tests and reviews channels serve every ticket.
 			out = append(out, room)
 		}
 	}

@@ -20,7 +20,32 @@ import (
 
 // Current finds the active task through the index and rebuilds the assignment from the latest task.assigned.
 func (s *Service) Current(ctx context.Context, agent id.AgentName, role workflow.Role) (Assignment, error) {
+	return s.CurrentFor(ctx, agent, role, "")
+}
+
+// ticketIndex is a task index that can find an agent's open task on one named ticket.
+type ticketIndex interface {
+	ActiveTaskFor(ctx context.Context, agent id.AgentName, role workflow.Role, ticket id.ChangeID) (ports.ActiveTaskRef, error)
+}
+
+// activeRef finds the open task: the one on the named ticket, or the agent's oldest when no ticket is named.
+func (s *Service) activeRef(ctx context.Context, agent id.AgentName, role workflow.Role, ticket id.ChangeID) (ports.ActiveTaskRef, error) {
+	if ticket == "" {
+		return s.index.ActiveTask(ctx, agent, role)
+	}
+	if byTicket, ok := s.index.(ticketIndex); ok {
+		return byTicket.ActiveTaskFor(ctx, agent, role, ticket)
+	}
 	ref, err := s.index.ActiveTask(ctx, agent, role)
+	if err == nil && ref.ChangeID != ticket {
+		return ports.ActiveTaskRef{}, ports.ErrNotFound
+	}
+	return ref, err
+}
+
+// CurrentFor is Current for one named ticket. An empty ticket means the agent's oldest open task.
+func (s *Service) CurrentFor(ctx context.Context, agent id.AgentName, role workflow.Role, ticket id.ChangeID) (Assignment, error) {
+	ref, err := s.activeRef(ctx, agent, role, ticket)
 	if err != nil {
 		if errors.Is(err, ports.ErrNotFound) {
 			return Assignment{}, fmt.Errorf("%w: %w", ErrNoTask, ports.ErrNotFound)
@@ -119,6 +144,7 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 		BundleRef:  latest.BundleRef,
 		AssignedAt: assignedAt,
 		Acked:      acked,
+		History:    ticketHistory(events),
 		Task: workflow.TaskEnvelope{
 			TaskID:   latest.TaskID,
 			CaseID:   latest.CaseID,
@@ -417,9 +443,21 @@ func validateQuestions(questions []string) error {
 }
 
 func (s *Service) postQuestions(ctx context.Context, cid id.ChangeID, questions []string) ([]askedItem, error) {
+	existing, err := s.events.Load(ctx, cid)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", cid, err)
+	}
+	numbered := 0
+	for _, ev := range existing {
+		if ev.Type == change.EventQuestionAsked {
+			numbered++
+		}
+	}
 	var asked []askedItem
-	for _, q := range questions {
-		qID, senderID, msgID, err := s.asker.Ask(ctx, cid, q)
+	for i, q := range questions {
+		n := numbered + i + 1
+		text := fmt.Sprintf("❓ %s needs an answer (Q%d)\n%s\nReply: heimdall answer %s Q%d <your answer>", cid, n, q, cid, n)
+		qID, senderID, msgID, err := s.asker.Ask(ctx, cid, text)
 		if err != nil {
 			return nil, fmt.Errorf("asker: %w", err)
 		}

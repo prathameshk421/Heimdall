@@ -60,6 +60,9 @@ type adapters struct {
 	projectTickets    map[string]ports.TicketReader
 	trackerProvider   string
 	repos             []change.Repo
+	testsRoom         change.RoomID
+	reviewsRoom       change.RoomID
+	standingRooms     []change.RoomID
 	provisioner       ports.AgentProvisioner
 	agentSetupHandler func(ports.AgentReceiptLedger) (http.Handler, error)
 }
@@ -113,7 +116,8 @@ func selectAdapters(cfg config.Config, d deps) (adapters, error) {
 		return adapters{}, fmt.Errorf("heimdall.toml: %w", errors.Join(problems...))
 	}
 	trackerProvider, _ := cfg.Selection(string(registry.KindTracker))
-	out := adapters{projects: projects, projectKeys: keys, repos: repos, agents: cfg.Agents, trackerProvider: trackerProvider}
+	out := adapters{projects: projects, projectKeys: keys, repos: repos, agents: cfg.Agents, trackerProvider: trackerProvider,
+		testsRoom: change.RoomID(cfg.Rooms.Tests), reviewsRoom: change.RoomID(cfg.Rooms.Reviews), standingRooms: standingRoomsOf(cfg)}
 	if out.projectTickets, err = projectTicketReaders(cfg, f, keys); err != nil {
 		return adapters{}, err
 	}
@@ -192,6 +196,22 @@ func selected[T any](cfg config.Config, reg *registry.Registry, kind registry.Ki
 		return zero, fmt.Errorf("%s %q does not implement the port the slice needs", kind, name)
 	}
 	return port, nil
+}
+
+// standingRoomsOf lists the rooms that serve every open change besides the room it opened: the reviews channel and
+// every feed room, so a command typed in any of them reaches its ticket.
+func standingRoomsOf(cfg config.Config) []change.RoomID {
+	var out []change.RoomID
+	if cfg.Rooms.Tests != "" {
+		out = append(out, change.RoomID(cfg.Rooms.Tests))
+	}
+	if cfg.Rooms.Reviews != "" {
+		out = append(out, change.RoomID(cfg.Rooms.Reviews))
+	}
+	for _, f := range cfg.Feeds {
+		out = append(out, change.RoomID(f.RoomID))
+	}
+	return out
 }
 
 // projectsOf maps each tracker project to its repository and lists the watched repositories. The slice polls one Jira
@@ -337,6 +357,7 @@ func (f adapterFactory) switchChat(cfg config.Config) (any, error) {
 		AgentID:            f.d.endpoints.switchAgentID,
 		AgentName:          f.d.endpoints.switchAgentName,
 		BridgeID:           f.d.endpoints.switchBridgeID,
+		InternalRooms:      cfg.Rooms.Tests != "",
 		Secrets:            cfg,
 		APIKeySecret:       cfg.Switch.APIKeySecret,
 		RegistrationSecret: cfg.Switch.RegistrationTokenSecret,

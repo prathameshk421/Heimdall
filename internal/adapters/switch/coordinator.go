@@ -139,6 +139,12 @@ func (c *Client) createRoom(ctx context.Context, title, changeID string, agents 
 		"channel_type": "channel_public",
 		"bridge_id":    c.bridgeID,
 	}
+	if c.internalRooms {
+		// An agent-only working room: no chat channel, so the agent's session for this ticket is its own.
+		delete(args, "bridge_id")
+		args["internal_only"] = true
+		args["description"] = "Heimdall working room for " + changeID
+	}
 	if err := c.operation(ctx, "create_room", args, &reply); err != nil {
 		return "", err
 	}
@@ -147,6 +153,35 @@ func (c *Client) createRoom(ctx context.Context, title, changeID string, agents 
 		return "", fmt.Errorf("switch create_room: room id: %w", err)
 	}
 	return id, nil
+}
+
+// CreateChannel makes a standing public channel on the bridge with the coordinator in it, for the feeds that carry the
+// story of every change (Discord and Mattermost test and review channels). It does not look for an existing channel of
+// the same name: the same name on two bridges is two channels.
+func (c *Client) CreateChannel(ctx context.Context, bridgeID, name, description string) (change.RoomID, error) {
+	var room change.RoomID
+	err := c.guarded(ctx, "create channel", func(ctx context.Context) error {
+		var reply struct {
+			ID string `json:"id"`
+		}
+		args := map[string]any{
+			"name":         name,
+			"description":  description,
+			"agent_names":  []string{c.agentName},
+			"channel_type": "channel_public",
+			"bridge_id":    bridgeID,
+		}
+		if err := c.operation(ctx, "create_room", args, &reply); err != nil {
+			return err
+		}
+		id, err := change.ParseRoomID(reply.ID)
+		if err != nil {
+			return fmt.Errorf("switch create_room: room id: %w", err)
+		}
+		room = id
+		return nil
+	})
+	return room, err
 }
 
 // roomMembers lists the coordinator first, then each workflow agent once. Switch only delivers an @mention to an agent
