@@ -13,6 +13,10 @@ type EpisodeQueue interface {
 	PendingEpisodes(context.Context, int) ([]Episode, error)
 	MarkEpisodeDelivered(context.Context, change.EffectKey, time.Time) error
 	InvalidateEpisode(context.Context, change.EffectKey, time.Time) error
+	// DeferEpisode records a failed delivery: the episode stays pending but is not offered again until a backoff
+	// that doubles with each failure (30 s, capped at 1 h) has passed, so one episode Graphiti rejects cannot
+	// block the ones behind it.
+	DeferEpisode(context.Context, change.EffectKey, time.Time) error
 }
 
 // EpisodeSourceTrust returns the durable status and tombstone state for one Graphiti source key.

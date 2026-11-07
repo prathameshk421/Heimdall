@@ -3,6 +3,7 @@ package graphiti
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -66,13 +67,85 @@ func TestSearchRefusesEmptyGroupScope(t *testing.T) {
 }
 
 type callerSpy struct {
-	names   []string
-	args    map[string]any
-	replies map[string]json.RawMessage
+	names    []string
+	args     map[string]any
+	allArgs  []map[string]any
+	replies  map[string]json.RawMessage
+	failing  map[string]bool
+	failWith error
 }
 
 func (c *callerSpy) Call(_ context.Context, name string, args map[string]any) (json.RawMessage, error) {
 	c.names = append(c.names, name)
 	c.args = args
+	c.allArgs = append(c.allArgs, args)
+	if c.failing[name] {
+		if c.failWith != nil {
+			return nil, c.failWith
+		}
+		return nil, errors.New("boom")
+	}
 	return c.replies[name], nil
+}
+
+func TestAsOfKeepsOnlyFactsValidAtThatTimeAndSendsNoInvertedServerFilter(t *testing.T) {
+	caller := &callerSpy{replies: map[string]json.RawMessage{
+		"search_memory_facts": json.RawMessage(`{"facts":[
+			{"uuid":"old","fact":"limit is 50","valid_at":"2025-01-01T00:00:00Z","invalid_at":"2025-06-01T00:00:00Z"},
+			{"uuid":"now","fact":"limit is 100","valid_at":"2025-06-01T00:00:00Z"},
+			{"uuid":"future","fact":"limit is 200","valid_at":"2027-01-01T00:00:00Z"},
+			{"uuid":"undated","fact":"refunds are idempotent"}]}`),
+		"search_nodes": json.RawMessage(`{"nodes":[]}`),
+	}}
+	adapter, err := New(caller)
+	require.NoError(t, err)
+	items, err := adapter.Search(context.Background(), ports.MemoryQuery{Question: "limit", Groups: []string{"payments"}, Limit: 20, AsOf: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)})
+	require.NoError(t, err)
+	var refs []string
+	for _, item := range items {
+		refs = append(refs, item.Ref)
+	}
+	require.Equal(t, []string{"memory:now", "memory:undated"}, refs)
+	for _, call := range caller.allArgs {
+		require.NotContains(t, call, "valid_at_after")
+		require.NotContains(t, call, "invalid_at_before")
+	}
+}
+
+func TestSearchOverFetchesWhenFilteringByTimeSoTheLimitStillFills(t *testing.T) {
+	caller := &callerSpy{replies: map[string]json.RawMessage{"search_memory_facts": json.RawMessage(`{"facts":[]}`), "search_nodes": json.RawMessage(`{"nodes":[]}`)}}
+	adapter, err := New(caller)
+	require.NoError(t, err)
+	_, err = adapter.Search(context.Background(), ports.MemoryQuery{Question: "q", Groups: []string{"g"}, Limit: 10, AsOf: time.Now()})
+	require.NoError(t, err)
+	require.Greater(t, caller.allArgs[0]["max_facts"], 10)
+}
+
+func TestSearchFoldsEntityNamesIntoTheQueryBecauseGraphitiHasNoSuchArgument(t *testing.T) {
+	caller := &callerSpy{replies: map[string]json.RawMessage{"search_memory_facts": json.RawMessage(`{"facts":[]}`), "search_nodes": json.RawMessage(`{"nodes":[]}`)}}
+	adapter, err := New(caller)
+	require.NoError(t, err)
+	_, err = adapter.Search(context.Background(), ports.MemoryQuery{Question: "who owns it", Entities: []string{"ledger"}, Groups: []string{"g"}, Limit: 5})
+	require.NoError(t, err)
+	require.Contains(t, caller.allArgs[0]["query"], "ledger")
+	require.NotContains(t, caller.allArgs[0], "entity_names")
+}
+
+func TestSearchStillAnswersFromFactsWhenTheNodeSearchFails(t *testing.T) {
+	caller := &callerSpy{replies: map[string]json.RawMessage{"search_memory_facts": json.RawMessage(`{"facts":[{"uuid":"f","fact":"a fact"}]}`)}, failing: map[string]bool{"search_nodes": true}}
+	adapter, err := New(caller)
+	require.NoError(t, err)
+	items, err := adapter.Search(context.Background(), ports.MemoryQuery{Question: "q", Groups: []string{"g"}, Limit: 5})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+}
+
+func TestSearchFailsWhenTheFactSearchFailsAndKeepsTheCause(t *testing.T) {
+	cause := errors.New("graphiti HTTP status 500")
+	caller := &callerSpy{failing: map[string]bool{"search_memory_facts": true}, failWith: cause}
+	adapter, err := New(caller)
+	require.NoError(t, err)
+	_, err = adapter.Search(context.Background(), ports.MemoryQuery{Question: "q", Groups: []string{"g"}, Limit: 5})
+	require.ErrorIs(t, err, ports.ErrUnavailable)
+	require.ErrorIs(t, err, cause)
 }

@@ -616,8 +616,14 @@ func (s *Server) askKnowledge(ctx context.Context, p Principal, args json.RawMes
 		}
 	}
 	items, err := s.deps.Knowledge.Ask(ctx, p.Agent, a.Task.TaskID, change.Repo(a.Task.Change.Repo), a.Task.Change.BaseSHA, query)
+	if errors.Is(err, ports.ErrUnavailable) {
+		return "", refusal("Team memory is unavailable right now. Do not retry in a loop: carry on without it and say in your result which facts you could not check against memory.")
+	}
 	if err != nil {
 		return "", fmt.Errorf("search knowledge: %w", err)
+	}
+	if len(items) == 0 {
+		return "No memory matched. Team memory may simply not hold this yet: it is not confirmation that nothing is known, so do not treat the silence as a pass.", nil
 	}
 	return marshalText(items)
 }

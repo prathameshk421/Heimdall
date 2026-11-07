@@ -40,7 +40,8 @@ func (s *Store) PendingEpisodes(ctx context.Context, limit int) ([]ports.Episode
 		return nil, errors.New("memory episode batch limit must be 1 to 1000")
 	}
 	rows, err := s.pool.Query(ctx, `SELECT episode_key, source, status, group_id, body FROM memory_episode_queue
-		WHERE delivered_at IS NULL AND invalidated_at IS NULL ORDER BY created_at, episode_key LIMIT $1`, limit)
+		WHERE delivered_at IS NULL AND invalidated_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+		ORDER BY created_at, episode_key LIMIT $1`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list pending memory episodes: %w", err)
 	}
@@ -59,6 +60,19 @@ func (s *Store) PendingEpisodes(ctx context.Context, limit int) ([]ports.Episode
 		return nil, fmt.Errorf("iterate pending memory episodes: %w", err)
 	}
 	return episodes, nil
+}
+
+// DeferEpisode counts a failed delivery and holds the episode back for 30 s doubled per earlier failure, up to 1 h.
+func (s *Store) DeferEpisode(ctx context.Context, key change.EffectKey, at time.Time) error {
+	if key == "" || at.IsZero() {
+		return errors.New("memory episode deferral is invalid")
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE memory_episode_queue SET attempts = attempts + 1,
+		next_attempt_at = $2::timestamptz + LEAST(interval '30 seconds' * power(2, LEAST(attempts, 7)), interval '1 hour')
+		WHERE episode_key = $1 AND delivered_at IS NULL AND invalidated_at IS NULL`, string(key), at); err != nil {
+		return fmt.Errorf("defer memory episode: %w", err)
+	}
+	return nil
 }
 
 // MarkEpisodeDelivered records successful Graphiti ingestion. Repeating the acknowledgement is harmless.

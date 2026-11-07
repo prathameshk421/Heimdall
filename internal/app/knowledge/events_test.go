@@ -153,3 +153,7 @@ type redactingMemory struct{}
 func (redactingMemory) Redact(text string) (string, error) {
 	return strings.ReplaceAll(text, "CANARY_TOKEN=abc", "[removed]"), nil
 }
+
+func (m *memoryEpisodeQueue) DeferEpisode(context.Context, change.EffectKey, time.Time) error {
+	return nil
+}

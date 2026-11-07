@@ -67,7 +67,14 @@ func episodeUUIDKey(key, group string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("heimdall:episode:"+group+":"+key)).String()
 }
 
-// Search calls both Graphiti fact and node searches with the same server-derived groups and temporal window.
+// overFetch is how many facts are requested per wanted item when results are filtered by time afterwards.
+const overFetch = 4
+
+// Search calls Graphiti's fact and node searches with the same server-derived groups. Graphiti's search tools take
+// no entity-name or "as of" argument (search_nodes takes no date at all, and valid_at_after with invalid_at_before
+// asks for the opposite of "valid at T"), so entity names are folded into the query and an as-of time is applied
+// here to each fact's own validity window. The fact search is required; the node search only adds context, so its
+// failure leaves the facts.
 func (a *Adapter) Search(ctx context.Context, query ports.MemoryQuery) ([]ports.MemoryItem, error) {
 	if err := query.Validate(); err != nil {
 		return nil, fmt.Errorf("validate Graphiti query: %w", err)
@@ -75,15 +82,15 @@ func (a *Adapter) Search(ctx context.Context, query ports.MemoryQuery) ([]ports.
 	groups := slices.Clone(query.Groups)
 	slices.Sort(groups)
 	groups = slices.Compact(groups)
-	args := map[string]any{"query": query.Question, "group_ids": groups, "max_facts": query.Limit}
-	if !query.AsOf.IsZero() {
-		args["valid_at_after"] = query.AsOf.UTC().Format(time.RFC3339Nano)
-		args["invalid_at_before"] = query.AsOf.UTC().Format(time.RFC3339Nano)
-	}
+	text := query.Question
 	if len(query.Entities) > 0 {
-		args["entity_names"] = slices.Clone(query.Entities)
+		text += " " + strings.Join(query.Entities, " ")
 	}
-	content, err := a.caller.Call(ctx, "search_memory_facts", args)
+	maxFacts := query.Limit
+	if !query.AsOf.IsZero() {
+		maxFacts = query.Limit * overFetch
+	}
+	content, err := a.caller.Call(ctx, "search_memory_facts", map[string]any{"query": text, "group_ids": groups, "max_facts": maxFacts})
 	if err != nil {
 		return nil, fmt.Errorf("search Graphiti facts: %w", mapUnavailable(err))
 	}
@@ -91,20 +98,12 @@ func (a *Adapter) Search(ctx context.Context, query ports.MemoryQuery) ([]ports.
 	if err != nil {
 		return nil, err
 	}
-	nodeArgs := map[string]any{"query": query.Question, "group_ids": groups, "max_nodes": query.Limit}
-	if !query.AsOf.IsZero() {
-		nodeArgs["valid_at_after"] = query.AsOf.UTC().Format(time.RFC3339Nano)
-		nodeArgs["invalid_at_before"] = query.AsOf.UTC().Format(time.RFC3339Nano)
+	items = validAt(items, query.AsOf)
+	if nodes, err := a.caller.Call(ctx, "search_nodes", map[string]any{"query": text, "group_ids": groups, "max_nodes": query.Limit}); err == nil {
+		if nodeItems, err := decodeNodes(nodes); err == nil {
+			items = append(items, nodeItems...)
+		}
 	}
-	nodes, err := a.caller.Call(ctx, "search_nodes", nodeArgs)
-	if err != nil {
-		return nil, fmt.Errorf("search Graphiti nodes: %w", mapUnavailable(err))
-	}
-	nodeItems, err := decodeNodes(nodes)
-	if err != nil {
-		return nil, err
-	}
-	items = append(items, nodeItems...)
 	if len(items) > query.Limit {
 		items = items[:query.Limit]
 	}
@@ -114,6 +113,25 @@ func (a *Adapter) Search(ctx context.Context, query ports.MemoryQuery) ([]ports.
 		}
 	}
 	return items, nil
+}
+
+// validAt keeps the items whose validity window contains asOf. A zero asOf keeps everything; an undated item is
+// kept, because Graphiti gave no window to exclude it by.
+func validAt(items []ports.MemoryItem, asOf time.Time) []ports.MemoryItem {
+	if asOf.IsZero() {
+		return items
+	}
+	kept := items[:0]
+	for _, item := range items {
+		if !item.ValidAt.IsZero() && item.ValidAt.After(asOf) {
+			continue
+		}
+		if item.InvalidAt != nil && !item.InvalidAt.After(asOf) {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	return kept
 }
 
 func decodeNodes(raw json.RawMessage) ([]ports.MemoryItem, error) {
@@ -230,6 +248,9 @@ func normalize(items []ports.MemoryItem) []ports.MemoryItem {
 	}
 	return items
 }
-func mapUnavailable(_ error) error {
-	return fmt.Errorf("graphiti request failed: %w", ports.ErrUnavailable)
+
+// mapUnavailable reports a Graphiti failure as ports.ErrUnavailable and keeps the cause for errors.Is and the log.
+// The causes the HTTP caller returns carry a status or a step, never query text or a response body.
+func mapUnavailable(cause error) error {
+	return fmt.Errorf("graphiti request failed: %w: %w", ports.ErrUnavailable, cause)
 }

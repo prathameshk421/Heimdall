@@ -1,5 +1,13 @@
 # Heimdall progress
 
+## Graphiti made usable and resilient (Nov 7)
+
+- **Found against the live server (read-only: `tools/list` and two empty searches on the VM):** (1) the server wraps structured output as `{"result": {...}}`, which the adapter never unwrapped, so every search returned zero items even with data; (2) the "as of" arguments were inverted (`valid_at_after` with `invalid_at_before`), `search_nodes` takes no date at all and `entity_names` is not an argument of either search; (3) every error cause was discarded, so a failure could not be diagnosed; (4) the live graph is empty (`No relevant facts found`): nothing had been delivered; (5) one episode Graphiti rejected blocked every later one forever (`RunOnce` stopped at the first failure, no attempt count).
+- **Fixed (red first, then green):** `unwrapResult` in the HTTP caller; as-of is applied to each fact's own validity window in the adapter (over-fetching 4x so the limit still fills), entity names go into the query text; the node search is optional, so its failure leaves the facts; the cause now travels with `ErrUnavailable`. The queue now has `attempts` and `next_attempt_at` (migration `0012`, `DeferEpisode`, backoff 30 s doubling to 1 h); the worker skips a failed episode, defers it, and ends the sweep only after 3 failures in a row. `ask_knowledge` tells the agent when memory is down (carry on, do not loop) and when nothing matched (silence is not confirmation).
+- **Evidence:** `make fast` exit 0, 4004 tests, 0 lint issues; the Postgres component test for the backoff passes against a real database with migration 0012 (`go test -tags component -run TestFailedEpisodeIsHeld`).
+- **Not verified:** nothing is deployed, so the VM still runs the old adapter and has no migration 0012; a real `add_memory` then search round trip (it needs the Graphiti LLM key, and `deploy/graphiti/config.yaml` still points at OpenRouter, whose limit was hit); `make verify`.
+- **Noticed:** the Graphiti container on the VM was recreated at 17:39 UTC during this check (`RestartCount=0`, fresh start). It may be a redeploy by someone else or my `get_status` call; not determined. The agents moved to Deploy but Graphiti's LLM and embedder still use OpenRouter.
+
 ## Personal context cards, end to end (Nov 7)
 
 - **What:** a reviewer reads its own personal cards (what it owns, rules that must hold, incidents, conventions) through a new `read_card` MCP tool. Cards are plain files, `<cards_dir>/<person>/*.md|yaml|yml|txt`, 64 KiB each, set by `cards_dir` in `heimdall.toml` (absent turns the tool off). The reviewer skill now lists and reads them first (step 2). Format and loading: `deploy/cards/README.md`, samples in `deploy/cards/examples/`.
@@ -13,6 +21,8 @@
 - The stop hook found `make fast` red on another session's uncommitted `read_card` work. Fixed with no behavior change: `assembleMCP` was too long, so `newTasksAdapter` now builds the task adapter (`cmd/heimdall-server/app.go`); `config.build` was too complex, so `addPaths` now sets the secrets dir, cards dir and listen address (`internal/platform/config/config.go`); the global `cardExtensions` in `cardsfs` was already a function, fixed by the other writer. The TECH_SPEC 14.1 `read_card` row held `\|` inside a table cell, so the schema test lost its role; the row now lists the extensions in words.
 - **Evidence:** lint 0 issues; `go test ./internal/schema` ok. One full `make fast` run had 2 tests time out at 50 s (`domain/change`, `testkit/fixtures`) while another session ran tests on the same machine; the fixtures case passed alone in 7 s.
 - **Not verified:** a clean full `make fast` after the TECH_SPEC fix; nothing committed. Another writer edits the same files at the same time; check `git diff` before a commit.
+- **Medium copy:** `docs/BLOG_MEDIUM.md` and `docs/BLOG_MEDIUM.html` (preview for copy and paste); Mermaid diagrams and the big tables rendered to `docs/assets/medium/fig1..fig6.png` (2200 px wide). Not published; publishing is the owner's step.
+- **Blog draft:** `docs/BLOG_GO_SANDBOX.md` (backend HLD and LLD in Go, the sandbox, lint and complexity checks). Numbers checked against the code and this file; Mermaid diagrams not rendered; not committed. No further Go edits from this session after the lint fixes above; Go files that changed since belong to the other writer.
 - **Measured for the blog (VM, `ps` RSS):** `heimdall-server` 63.9 MiB under load, `heimdall-runner` 10.7 MiB; VM 2 vCPU, 15.6 GB, 4.6 GB in use.
 
 ## Review flow check on a buggy PR (Nov 7, 13:45 UTC on)

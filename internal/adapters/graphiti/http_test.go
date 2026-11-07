@@ -107,3 +107,28 @@ func TestHTTPCallerOpensASessionAndReopensItWhenRefused(t *testing.T) {
 	require.Equal(t, 2, sessions, "a refused session is opened again once")
 	require.Equal(t, []string{"initialize", "notifications/initialized", "tools/call", "tools/call", "tools/call", "initialize", "notifications/initialized", "tools/call"}, calls)
 }
+
+func TestHTTPCallerUnwrapsTheResultKeyTheLiveServerAddsToStructuredContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var msg rpc
+		_ = json.NewDecoder(r.Body).Decode(&msg)
+		if msg.ID == nil {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		result := map[string]any{"serverInfo": 1}
+		if msg.Method == "tools/call" {
+			result = map[string]any{"structuredContent": map[string]any{"result": map[string]any{"message": "ok", "facts": []any{map[string]any{"uuid": "f-1"}}}}}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": result})
+	}))
+	defer server.Close()
+	caller, err := NewHTTPCaller(server.URL, server.Client())
+	require.NoError(t, err)
+	raw, err := caller.Call(context.Background(), "search_memory_facts", map[string]any{})
+	require.NoError(t, err)
+	items, err := decodeItems(raw)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+}

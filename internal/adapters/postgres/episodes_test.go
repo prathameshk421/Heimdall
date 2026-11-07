@@ -40,3 +40,24 @@ func TestMemoryEpisodeQueuePersistsTrustMetadataAndRetriesUntilDelivered(t *test
 	require.NoError(t, store.InvalidateEpisode(ctx, episode.Key, at.Add(3*time.Hour)), "invalidation is idempotent")
 	require.Error(t, store.EnqueueEpisode(ctx, episode), "a tombstoned source key cannot be replayed")
 }
+
+func TestFailedEpisodeIsHeldBackWithoutBlockingTheOnesBehindIt(t *testing.T) {
+	ctx := context.Background()
+	srv := startServer(t)
+	db := srv.database(ctx, t)
+	store := NewStore(db.pool)
+	poison := ports.Episode{Key: "episode:decision:poison", Source: "decision", Status: ports.EpisodeConfirmed, GroupID: "payments", Body: `{"claim":"a"}`}
+	later := ports.Episode{Key: "episode:decision:later", Source: "decision", Status: ports.EpisodeConfirmed, GroupID: "payments", Body: `{"claim":"b"}`}
+	require.NoError(t, store.EnqueueEpisode(ctx, poison))
+	require.NoError(t, store.EnqueueEpisode(ctx, later))
+
+	require.NoError(t, store.DeferEpisode(ctx, poison.Key, time.Now()))
+	pending, err := store.PendingEpisodes(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, []ports.Episode{later}, pending, "a deferred episode is not offered again before its backoff ends")
+
+	require.NoError(t, store.DeferEpisode(ctx, poison.Key, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+	pending, err = store.PendingEpisodes(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, pending, 2, "once the backoff has passed the episode is retried")
+}

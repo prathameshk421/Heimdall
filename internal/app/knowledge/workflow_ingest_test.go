@@ -155,3 +155,7 @@ func workflowMemoryEvent(t *testing.T, n int, typ change.EventType, actor change
 	require.NoError(t, event.Validate())
 	return event
 }
+
+func (q *workflowEpisodeQueue) DeferEpisode(context.Context, change.EffectKey, time.Time) error {
+	return nil
+}

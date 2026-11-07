@@ -209,7 +209,7 @@ func decodeToolReply(raw []byte, wantID uint64) (json.RawMessage, error) {
 		return nil, errors.New("graphiti tool call failed")
 	}
 	if len(reply.Result.Structured) > 0 {
-		return reply.Result.Structured, nil
+		return unwrapResult(reply.Result.Structured), nil
 	}
 	if len(reply.Result.Content) > 0 {
 		for _, item := range reply.Result.Content {
@@ -219,4 +219,17 @@ func decodeToolReply(raw []byte, wantID uint64) (json.RawMessage, error) {
 		}
 	}
 	return nil, errors.New("graphiti response has no result content")
+}
+
+// unwrapResult removes the {"result": ...} envelope the Graphiti server puts around structured tool output, so the
+// decoders see {"facts": [...]} as the tool defines it. Output without the envelope is returned unchanged.
+func unwrapResult(structured json.RawMessage) json.RawMessage {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(structured, &envelope); err != nil || len(envelope) != 1 {
+		return structured
+	}
+	if inner, ok := envelope["result"]; ok {
+		return inner
+	}
+	return structured
 }

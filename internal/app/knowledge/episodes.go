@@ -68,8 +68,13 @@ func (w *EpisodeWorker) Enqueue(ctx context.Context, episode ports.Episode) erro
 	return nil
 }
 
-// RunOnce delivers at most limit episodes. It stops at the first failure, which leaves that episode and later ones
-// pending; Graphiti uses the stable key for idempotent retry.
+// maxConsecutiveFailures ends a sweep when Graphiti looks down, so a long queue does not cost one timeout each.
+const maxConsecutiveFailures = 3
+
+// RunOnce delivers at most limit episodes. A failed episode stays pending, is pushed back by the queue's backoff and
+// the sweep goes on, so one episode Graphiti rejects cannot block the rest. After maxConsecutiveFailures failures
+// in a row the sweep ends, because Graphiti is probably down. Graphiti uses the stable key for idempotent retry.
+// The error names the first failed episode.
 func (w *EpisodeWorker) RunOnce(ctx context.Context, limit int) (int, error) {
 	if limit < 1 || limit > 1000 {
 		return 0, errors.New("memory episode batch limit must be 1 to 1000")
@@ -80,7 +85,8 @@ func (w *EpisodeWorker) RunOnce(ctx context.Context, limit int) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("load pending memory episodes: %w", err)
 	}
-	delivered := 0
+	delivered, streak := 0, 0
+	var first error
 	for _, episode := range items {
 		if err := ctx.Err(); err != nil {
 			return delivered, err
@@ -89,12 +95,22 @@ func (w *EpisodeWorker) RunOnce(ctx context.Context, limit int) (int, error) {
 			return delivered, fmt.Errorf("pending episode %q is invalid: %w", episode.Key, err)
 		}
 		if err := w.memory.AddEpisode(ctx, episode); err != nil {
-			return delivered, fmt.Errorf("deliver memory episode %q to Graphiti: %w", episode.Key, err)
+			if first == nil {
+				first = fmt.Errorf("deliver memory episode %q to Graphiti: %w", episode.Key, err)
+			}
+			if err := w.queue.DeferEpisode(ctx, change.EffectKey(episode.Key), w.clock.Now()); err != nil {
+				return delivered, fmt.Errorf("defer memory episode %q: %w", episode.Key, err)
+			}
+			if streak++; streak >= maxConsecutiveFailures {
+				break
+			}
+			continue
 		}
+		streak = 0
 		if err := w.queue.MarkEpisodeDelivered(ctx, change.EffectKey(episode.Key), w.clock.Now()); err != nil {
 			return delivered, fmt.Errorf("acknowledge memory episode %q: %w", episode.Key, err)
 		}
 		delivered++
 	}
-	return delivered, nil
+	return delivered, first
 }

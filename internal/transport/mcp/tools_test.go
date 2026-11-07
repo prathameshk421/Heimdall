@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -794,4 +795,28 @@ func TestReadCardIsReviewerOnlyAndUsesTheAuthenticatedPrincipal(t *testing.T) {
 		require.True(t, missing.IsError)
 		require.Contains(t, missing.text(), "No such card")
 	}
+}
+
+type failingKnowledge struct {
+	err   error
+	items []ports.MemoryItem
+}
+
+func (f failingKnowledge) Ask(context.Context, id.AgentName, id.TaskID, change.Repo, id.SHA, ports.MemoryQuery) ([]ports.MemoryItem, error) {
+	return f.items, f.err
+}
+
+func TestAskKnowledgeTellsTheAgentWhenMemoryIsDownOrEmpty(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	r.server.deps.Knowledge = failingKnowledge{err: ports.ErrUnavailable}
+	down := r.call("ask_knowledge", `{"question":"refund limit"}`)
+	require.True(t, down.IsError)
+	require.Contains(t, down.text(), "unavailable")
+	require.NotContains(t, down.text(), genericText, "the agent must be told to continue without memory, not see a bare failure")
+
+	r.server.deps.Knowledge = failingKnowledge{}
+	empty := r.call("ask_knowledge", `{"question":"refund limit"}`)
+	require.False(t, empty.IsError, empty.text())
+	require.Contains(t, empty.text(), "No memory matched")
+	require.Contains(t, empty.text(), "not confirmation")
 }
