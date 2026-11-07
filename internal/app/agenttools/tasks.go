@@ -200,13 +200,14 @@ func taskOutcomeMatches(p change.Payload, assigned change.TaskAssigned) bool {
 	}
 }
 
-// Ack records acknowledgement of the task within the 60s window.
+// Ack records acknowledgement of the task. A late ack is accepted until the task's deadline, so an agent that
+// recovers after a hang can still do the work; AckWindow only decides when the nudger starts mentioning the agent.
 func (s *Service) Ack(ctx context.Context, a Assignment, at time.Time) error {
 	if at.IsZero() {
 		at = s.clock.Now()
 	}
-	if at.Sub(a.AssignedAt) > AckWindow {
-		return fmt.Errorf("%w: ack at %v is after 60s window from %v", ErrAckWindowExpired, at, a.AssignedAt)
+	if !a.Deadline.IsZero() && at.After(a.Deadline) {
+		return fmt.Errorf("%w: ack at %v is after the task deadline %v", ErrAckWindowExpired, at, a.Deadline)
 	}
 
 	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
