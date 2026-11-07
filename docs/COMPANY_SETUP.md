@@ -62,7 +62,7 @@ The expected health response is `{"status":"ok"}`. `docker compose ... ps` shoul
 
 ### Manual/unverified
 
-The repository has no supported release installer, signed binary download flow, or implemented `heimdall admin init` command in this checkout. The technical design describes those future workflows, but they are not executable now. Building from source or running the compose stack is therefore an operator-managed/manual path, not a finished company installer.
+`make setup` and `heimdall admin init` now create the operator workspace and config and list missing secret files, and `make deploy` installs a signed tag ([`SETUP.md`](SETUP.md), [`../deploy/RELEASES.md`](../deploy/RELEASES.md)). There is still no one-command company installer. Building from source or running the compose stack is therefore an operator-managed/manual path, not a finished company installer.
 
 ## Phase 3: CLI connect and doctor
 
@@ -107,7 +107,7 @@ Controller enrollment, `install-service --separate-users`, systemd service owner
 
 ### Planned/blocking
 
-`heimdall admin init` is the planned resumable workflow that should perform host checks, deploy Switch, enroll the agent controller, create role agents, apply security boundaries, and resume after interruption. It is described in [`docs/TECH_SPEC.md`](TECH_SPEC.md) section 17 and tracked by T99/T27, but it is not a command in the current binary.
+`heimdall admin init` is the planned resumable workflow that should perform host checks, deploy Switch, enroll the agent controller, create role agents, apply security boundaries, and resume after interruption. It is described in [`docs/TECH_SPEC.md`](TECH_SPEC.md) section 17 and tracked by T99/T27. Today `heimdall admin init` covers the config and the secret-file checklist only; the host, Switch and agent steps are still manual ([`CLI.md`](CLI.md#admin-init)).
 
 ## Phase 5: first run
 

@@ -26,8 +26,10 @@
   <a href="#-see-it-work"><b>See it work</b></a> ·
   <a href="#-how-it-works"><b>How it works</b></a> ·
   <a href="#-why-switch"><b>Why Switch</b></a> ·
-  <a href="#-run-it"><b>Run it</b></a> ·
-  <a href="#-whats-live-today"><b>What's live</b></a>
+  <a href="#-quickstart"><b>Quickstart</b></a> ·
+  <a href="docs/CLI.md"><b>CLI</b></a> ·
+  <a href="#-whats-live-today"><b>What's live</b></a> ·
+  <a href="docs/README.md"><b>Docs</b></a>
 </p>
 
 ---
@@ -78,6 +80,7 @@ flowchart LR
   S --> D["Discord"]
   S --> T["Telegram"]
   S --> M["Mattermost"]
+  S --> K["Slack"]
 ```
 
 1. **A ticket moves to In Progress.** Heimdall opens a room, creates a branch and wakes the Test Agent.
@@ -129,11 +132,11 @@ Heimdall stops working without Switch. It provides the rooms, agent identities, 
 **How the channels are set up**
 
 - Each ticket gets a private Switch working room, so an agent keeps one session per ticket.
-- `heimdall-tests` and `heimdall-reviews` are public channels, bridged to Discord and Mattermost.
+- `heimdall-tests` and `heimdall-reviews` are public channels, bridged to Discord, Mattermost and Slack.
 - A Telegram group receives both stories.
-- Commands start with the plain word `heimdall`, for example `heimdall answer KAN-17 Q1 ...`. A command counts only if its sender is mapped in `heimdall.yaml`.
+- Commands start with the plain word `heimdall`, for example `heimdall uphold KAN-22 F1`. A command counts only if its sender is mapped in `heimdall.yaml`. The full list is in [`docs/CLI.md`](docs/CLI.md#2-chat-and-pr-commands).
 
-Room and bridge settings live in `heimdall.toml`, under `[rooms]` and `[[feeds]]`. See [`deploy/heimdall.example.toml`](deploy/heimdall.example.toml).
+Room and bridge settings live in `heimdall.toml`, under `[rooms]` and `[[feeds]]`. See [`deploy/heimdall.example.toml`](deploy/heimdall.example.toml). Slack connects through Switch's Socket Mode bridge, so the VM still needs no public URL.
 
 ## 🏎️ Built small, on purpose
 
@@ -149,9 +152,13 @@ Room and bridge settings live in `heimdall.toml`, under `[rooms]` and `[[feeds]]
 
 Measured on our VM on Nov 7, 2026.
 
-## 🚀 Run it
+## 🚀 Quickstart
 
-You need Go 1.27 and Docker.
+You need **Go 1.27** and **Docker**.
+
+```bash
+git clone https://github.com/prathameshk421/flip_the_switch_hackathon.git heimdall && cd heimdall
+```
 
 ```bash
 make tools
@@ -165,12 +172,52 @@ make fast
 make verify
 ```
 
-The full system needs a Linux VM, a Switch server, a GitHub App and a Jira project:
+`make fast` runs format, vet, the dependency rule, lint and unit tests in under a minute. `make verify` adds race and component tests and the vulnerability and secret scans. CI runs it.
 
-1. [`docs/RUNBOOK.md`](docs/RUNBOOK.md): Switch on the VM, secrets and the server's live run
-2. [`docs/COMPANY_SETUP.md`](docs/COMPANY_SETUP.md): connect your company's tools
-3. [`deploy/heimdall.example.toml`](deploy/heimdall.example.toml): server configuration
-4. [`deploy/agents/README.md`](deploy/agents/README.md): install the agents
+### Run the whole system
+
+The live system needs a Linux VM, a Switch server, a GitHub App, a Jira project and a model key. The short version:
+
+```bash
+make setup
+```
+
+```bash
+cp .env.example .env
+```
+
+```bash
+make secrets-local
+```
+
+```bash
+make deploy
+```
+
+`make setup` makes a private workspace with a starter `heimdall.toml`. [`.env.example`](.env.example) lists every key, and `make secrets-local` turns your `.env` into `0600` secret files without printing a value. The full walkthrough, from VM to first ticket, is **[`docs/SETUP.md`](docs/SETUP.md)**.
+
+| Guide | For |
+|---|---|
+| 📘 [`docs/SETUP.md`](docs/SETUP.md) | Step-by-step setup: workspace, secrets, people, deploy, agents, checks |
+| ⌨️ [`docs/CLI.md`](docs/CLI.md) | Every `heimdall` command, every chat command, the Make targets |
+| 🛠️ [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Switch on the VM, status, logs, recovery |
+| 🏢 [`docs/COMPANY_SETUP.md`](docs/COMPANY_SETUP.md) | A company rollout checklist |
+| 🤖 [`deploy/agents/README.md`](deploy/agents/README.md) | Installing the OpenCode agents |
+| 🗂️ [`docs/README.md`](docs/README.md) | Every doc, by purpose |
+
+### The CLI at a glance
+
+| Command | What it does |
+|---|---|
+| `heimdall admin init` | Create `heimdall.toml`, or resume setup and list missing secret files |
+| `heimdall admin secret set` | Store one secret from a hidden prompt |
+| `heimdall connect` | List, plan and check GitHub, Jira, chat, agent runtime and memory |
+| `heimdall connect people` | Map a person to their Switch id, GitHub login and reviewer |
+| `heimdall doctor` | Check config, Docker, integrations, and the VM with `--host` |
+| `heimdall pack refresh` / `review` | Build and approve a developer's encrypted context pack |
+| `heimdall cost` | Remaining LLM budget |
+
+No command takes a secret as an argument. Build the CLI with `make heimdall-bin`, which writes `.cache/heimdall`.
 
 The test repository is [`heimdall-fixture-pay`](https://github.com/aarush323/heimdall-fixture-pay), base branch `heimdall-test/demo-base`.
 
@@ -186,8 +233,9 @@ We keep this list honest. Evidence is in [`docs/PROGRESS.md`](docs/PROGRESS.md).
 - ✅ Reviewers filing findings with a failing test (KAN-20, KAN-21)
 - ✅ Line comments, the Heimdall Review comment, and cards in Discord and Telegram
 - ✅ `heimdall/acceptance`, and a red `heimdall/gate` from real events
-- ✅ A real human approval read from GitHub, and a Mattermost command recorded
+- ✅ A real human approval read from GitHub, and commands recorded from Mattermost and Slack
 - ✅ GitHub Actions on the fixture
+- ✅ **The whole story on Slack (KAN-22):** ticket, tests, PR card, three independent reviews, two real findings, `heimdall uphold` typed in Slack, the fix, a human approval, three clean re-reviews, a green `heimdall/gate`, and the merge
 
 <details>
 <summary><b>🚧 Built and tested, not yet seen live</b></summary>
@@ -195,10 +243,10 @@ We keep this list honest. Evidence is in [`docs/PROGRESS.md`](docs/PROGRESS.md).
 - 🚧 **Context packs:** code and unit tests exist in `internal/pack`. No pack ran on the live server, and the reviewer prompt does not call `read_pack` yet.
 - 🚧 **Graphiti memory:** Graphiti and FalkorDB run on the VM, but the graph is empty because delivery is blocked.
 - 🚧 **Different context per reviewer:** the three reviewers share one prompt today. The per-developer view is the design.
-- 🚧 **Three reviewers finishing one PR:** at most one has finished on a PR so far.
 - 🚧 **Heimdall re-running a reviewer's proof:** not seen live.
-- 🚧 **A gate red because of a finding, the resolver, a fix push, and a merge from agent events:** not seen live.
-- 🚧 **Discord and Telegram commands typed by a person:** not verified.
+- 🚧 **The resolver settling a disputed finding:** not seen live.
+- 🚧 **Personal context cards read by a live reviewer:** `read_card` is built and tested, not yet called on the VM.
+- 🚧 **Discord and Telegram commands typed by a person:** not verified. Slack and Mattermost are.
 
 **Known gaps:** a fake test that imports the product can still pass the judge. A new agent session can time out on first start, and restarting the unit clears it.
 
@@ -211,16 +259,18 @@ We keep this list honest. Evidence is in [`docs/PROGRESS.md`](docs/PROGRESS.md).
 |---|---|
 | `cmd/heimdall-server` | The server |
 | `cmd/heimdall-runner` | The sandbox runner |
-| `cmd/heimdall` | The CLI: `connect`, `doctor`, `pack`, people mapping |
+| `cmd/heimdall` | The CLI ([reference](docs/CLI.md)) |
 | `internal/domain` | Pure rules and types, including the gate |
 | `internal/app` | Use cases |
 | `internal/adapters` | GitHub, Jira, Switch, Postgres, Graphiti, runners |
 | `internal/transport` | MCP, dashboard, webhooks |
 | `internal/pack` | Context packs |
 | `skills/` | Prompts for the test author, reviewer and resolver |
-| `deploy/` | Compose stack, service units, config template |
-| `docs/` | Design, spec, runbook, progress |
+| `deploy/` | Compose stack, service units, config template, agent installer, context cards |
+| `docs/` | Setup, CLI, spec, runbook, progress ([index](docs/README.md)) |
+| `e2e/`, `testdata/` | Real-system checks, scenarios and recorded payloads |
 | `site/` | The landing page |
+| `video/` | The demo video |
 
 Coding agents start at [`CLAUDE.md`](CLAUDE.md). The design documents were written before the event opened.
 

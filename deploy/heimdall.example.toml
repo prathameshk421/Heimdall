@@ -65,6 +65,18 @@ test_author = "test-author"
 reviewers = ["reviewer-1", "reviewer-2", "reviewer-3"]
 resolver = "resolver"
 
+# Optional standing channels. Without [rooms], every change gets its own room. Make the rooms with
+# POST /admin/rooms (docs/RUNBOOK.md), then paste their Switch room ids here.
+# [rooms]
+# tests = "<switch room id of heimdall-tests>"
+# reviews = "<switch room id of heimdall-reviews>"
+
+# Optional feeds: more rooms that hear every change's story, for example a Telegram group or a Slack or
+# Mattermost channel bridged by Switch. audience is "tests", "review" or "both". Repeat the block per room.
+# [[feeds]]
+# room_id = "<switch room id>"
+# audience = "both"
+
 [[projects]]
 tracker_project = "KAN"
 repo = "aarush323/PBL_TOS_RISK_ANALYZER"
