@@ -1,5 +1,12 @@
 # Heimdall progress
 
+## Operator reject, rejected changes, and CI (Nov 7, 2026, after the limit reset)
+
+- **`POST /admin/reject`** (`cmd/heimdall-server/operator_reject.go`, same bearer key as `/admin/answer`): records a `reject` decision as actor `operator`; a repeat and an unknown change are refused. Red first (compile, then assertion); a mutation that drops the repeat guard fails the test. KAN-9, KAN-10 and KAN-11 were rejected through it on the VM (decision rows checked in the event table). The owner ran the call, because the repo hook (R8) blocks the agent from using the key.
+- **Found live after the rejects:** (1) the agent was still served tasks of rejected changes and `submit_tests` stored `tests.submitted` on rejected KAN-9 and KAN-11 (the engine stores what it is given); (2) those refused events made `OpenRooms` fail, so the Switch room stream stopped for every room. Fixes, each red on an assertion first: `PrepareTestsSubmission` checks the event against the reducer (`ErrReducerRefusal`); `ActiveTask` skips a change with `change.rejected` or a `reject` decision; `openRoom` treats a change whose replay stops in a terminal state as closed (a refused event inside a non-terminal history still fails discovery, test kept).
+- **CI failure (run 42353719864):** one test, `TestSliceOpensOneRoomAndOneBranchAcrossARestart`, still expected the old room title; the title leads with the ticket key since the T32 room change. `make fast` does not run component tests, so it was missed. Fixed. I also committed 6e5e36f with a gocyclo failure (I read the lint result after the commit); the next commit fixes it.
+- **Evidence:** `make fast` exit 0 (3943 tests, 0 lint issues); `make race` exit 0 (4039 tests). Deployed to the VM (binary hash `f38c10079...` matches the build, `/healthz` ok, no stream-stopped errors after restart). KAN-12 (assigned, In Progress) triggered, room opened, task assigned 08:32; **not verified:** the agent picking it up (no MCP call in the 20 min before the check; it needs a nudge in the room), the commit of the test, the Discord command on this ticket.
+
 ## Full merge of `origin/t3/t48-knowledge-pack` (Nov 7, 2026)
 
 - **Owner decision:** full merge of the T48 branch (2 commits, 34 conflicted files, about 90 hunks). Rule used: keep the later, live-verified behavior of `heimdall-build`; add every new T48 piece on top.
