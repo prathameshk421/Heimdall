@@ -102,8 +102,7 @@ func (n *taskNudger) nudge(ctx context.Context, a nudgeAgent, ref ports.ActiveTa
 	if err != nil {
 		return false, fmt.Errorf("nudge: build key: %w", err)
 	}
-	text := fmt.Sprintf("@%s %s is waiting for you. Call heimdall_get_task, it has your full instructions, then heimdall_ack.", a.name, ref.ChangeID)
-	if err := n.chat.Post(ctx, room, key, text); err != nil {
+	if err := n.postAckNudge(ctx, a, ref, room, key, source, count); err != nil {
 		return false, fmt.Errorf("nudge: post to %s: %w", room, err)
 	}
 	if err := n.cursors.SetCursor(ctx, source, strconv.Itoa(count+1)); err != nil {
@@ -139,6 +138,9 @@ func (n *taskNudger) nudgeStalled(ctx context.Context, a nudgeAgent, ref ports.A
 	if err != nil {
 		return false, fmt.Errorf("nudge: build stall key: %w", err)
 	}
+	if err := n.resetSession(ctx, ref, room, a.name, fmt.Sprintf("%s:%d", source, count)); err != nil {
+		return false, err
+	}
 	text := fmt.Sprintf("@%s %s has had no update for a few minutes. Call heimdall_get_task to see where it stands, then continue and submit your work.", a.name, ref.ChangeID)
 	if err := n.chat.Post(ctx, room, key, text); err != nil {
 		return false, fmt.Errorf("nudge: post stall nudge to %s: %w", room, err)
@@ -153,6 +155,33 @@ func (n *taskNudger) nudgeStalled(ctx context.Context, a nudgeAgent, ref ports.A
 		return false, fmt.Errorf("nudge: remember the agent's ticket: %w", err)
 	}
 	return true, nil
+}
+
+// postAckNudge mentions the agent again; from the second nudge on it first resets the agent's session, because an
+// agent that ignored one mention is usually stuck in its own history.
+func (n *taskNudger) postAckNudge(ctx context.Context, a nudgeAgent, ref ports.ActiveTaskRef, room change.RoomID, key change.EffectKey, source string, count int) error {
+	if count >= 1 {
+		if err := n.resetSession(ctx, ref, room, a.name, fmt.Sprintf("%s:%d", source, count)); err != nil {
+			return err
+		}
+	}
+	text := fmt.Sprintf("@%s %s is waiting for you. Call heimdall_get_task, it has your full instructions, then heimdall_ack.", a.name, ref.ChangeID)
+	return n.chat.Post(ctx, room, key, text)
+}
+
+// resetSession asks Switch to start the agent's session in the room fresh (the room command "!reset @agent") before
+// it is mentioned again. A stuck agent is usually stuck in its own history: on KAN-19 a reviewer kept saying it had
+// no tools after they were fixed, and on KAN-18 a looping model filled its context. Nothing is lost, because
+// heimdall_get_task returns the full instructions and the ticket's history.
+func (n *taskNudger) resetSession(ctx context.Context, ref ports.ActiveTaskRef, room change.RoomID, agent, discriminator string) error {
+	key, err := change.IdempotencyKey(ref.ChangeID, 1, change.EffectRoomPost, "reset:"+discriminator)
+	if err != nil {
+		return fmt.Errorf("nudge: build reset key: %w", err)
+	}
+	if err := n.chat.Post(ctx, room, key, "!reset @"+agent); err != nil {
+		return fmt.Errorf("nudge: reset the session of %s in %s: %w", agent, room, err)
+	}
+	return nil
 }
 
 // stallStart is when the current silence began: the later of the last event and the last stall nudge.
