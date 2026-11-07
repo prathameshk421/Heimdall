@@ -64,4 +64,10 @@ grep -q 'name: switch_default' "$root/deploy/compose.yaml" || { echo 'ASSERTION 
 grep -q 'network_mode: "service:heimdall-server"' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: a loopback forward must share the server network, because the config allows http only for loopback hosts' >&2; exit 1; }
 grep -q 'TCP:switch:8000' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the loopback forward must target the Switch service' >&2; exit 1; }
 grep -q 'depends_on: {heimdall-server: {condition: service_started, restart: true}}' "$root/deploy/compose.yaml" || { echo 'ASSERTION FAILED: the forward sidecar shares the server network, so it must restart whenever the server does' >&2; exit 1; }
+unit="$root/deploy/heimdall-runner.service"
+grep -q '^NoNewPrivileges=false$' "$unit" || { echo 'ASSERTION FAILED: rootless Podman runs the setuid newuidmap, which NoNewPrivileges=true turns into "write to uid_map failed: Operation not permitted"' >&2; exit 1; }
+grep -q '^RestrictSUIDSGID=true$' "$unit" || { echo 'ASSERTION FAILED: the runner may run setuid helpers but must never create setuid files' >&2; exit 1; }
+grep -q '^Delegate=yes$' "$unit" || { echo 'ASSERTION FAILED: the runner needs a delegated cgroup subtree to apply job limits' >&2; exit 1; }
+grep -q 'mount_program = ""' "$script" || { echo 'ASSERTION FAILED: the runner storage must pin native overlay; a fuse-overlayfs store needs /dev/fuse, which PrivateDevices hides, and every job fails to mount' >&2; exit 1; }
+grep -q '/var/lib/heimdall-runner/.config/containers/storage.conf' "$script" || { echo 'ASSERTION FAILED: deploy must install the runner storage.conf before the first pull' >&2; exit 1; }
 echo 'deploy contract passed'

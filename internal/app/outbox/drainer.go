@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -26,6 +28,9 @@ type Config struct {
 	Batch         int
 	Lease         time.Duration
 	EffectTimeout time.Duration
+	// KindTimeouts replaces EffectTimeout for the kinds it names, for effects that run longer than a remote call (a
+	// test_quality effect runs sandbox jobs of minutes). Each value must be positive.
+	KindTimeouts map[change.EffectKind]time.Duration
 }
 
 // Drainer runs the outbox. Build it with New.
@@ -36,6 +41,7 @@ type Drainer struct {
 	batch   int
 	lease   time.Duration
 	timeout time.Duration
+	byKind  map[change.EffectKind]time.Duration
 }
 
 // DrainResult counts what one batch did.
@@ -67,6 +73,7 @@ func New(cfg Config) (*Drainer, error) {
 		batch:   cfg.Batch,
 		lease:   cfg.Lease,
 		timeout: cfg.EffectTimeout,
+		byKind:  maps.Clone(cfg.KindTimeouts),
 	}, nil
 }
 
@@ -104,15 +111,31 @@ func checkTiming(cfg Config) []error {
 	if cfg.Lease <= 0 {
 		problems = append(problems, fmt.Errorf("lease %s must be positive", cfg.Lease))
 	}
+	longest := cfg.EffectTimeout
+	for _, kind := range slices.Sorted(maps.Keys(cfg.KindTimeouts)) {
+		d := cfg.KindTimeouts[kind]
+		if d <= 0 {
+			problems = append(problems, fmt.Errorf("timeout %s for effect kind %q must be positive", d, kind))
+		}
+		longest = max(longest, d)
+	}
 	if cfg.Batch >= 1 && cfg.EffectTimeout > 0 && cfg.Lease > 0 {
-		covered := time.Duration(cfg.Batch) * cfg.EffectTimeout
+		covered := time.Duration(cfg.Batch) * longest
 		if cfg.Lease <= covered {
 			problems = append(problems, fmt.Errorf(
-				"lease %s must exceed batch %d times the effect timeout %s (%s), so no effect of a batch runs after its lease expires",
-				cfg.Lease, cfg.Batch, cfg.EffectTimeout, covered))
+				"lease %s must exceed batch %d times the effect timeout %s (%s; the longest of any kind), so no effect of a batch runs after its lease expires",
+				cfg.Lease, cfg.Batch, longest, covered))
 		}
 	}
 	return problems
+}
+
+// timeoutFor returns the execution deadline of one effect kind.
+func (d *Drainer) timeoutFor(kind change.EffectKind) time.Duration {
+	if t, ok := d.byKind[kind]; ok {
+		return t
+	}
+	return d.timeout
 }
 
 // RunOnce claims one batch and works through it in claim order. An effect the executor fails, or one with no executor,
@@ -174,7 +197,7 @@ func (d *Drainer) drainOne(ctx context.Context, fx change.Effect) (bool, error) 
 		return false, err
 	}
 
-	execCtx, cancelExec := context.WithTimeout(ctx, d.timeout)
+	execCtx, cancelExec := context.WithTimeout(ctx, d.timeoutFor(fx.Kind))
 	execErr := ex.Execute(execCtx, fx)
 	cancelExec()
 	if execErr != nil {

@@ -21,7 +21,10 @@ ExecStartPre=+/bin/chgrp heimdall-runner-socket /run/heimdall-runner
 ExecStartPost=+/bin/sh -c 'for i in $(seq 1 50); do [ -S /run/heimdall-runner/runner.sock ] && chgrp heimdall-runner-socket /run/heimdall-runner/runner.sock && exit 0; sleep 0.2; done; exit 1'
 Environment=HOME=/var/lib/heimdall-runner
 UMask=0007
-NoNewPrivileges=true
+# Rootless Podman maps the job's user namespace through the setuid newuidmap/newgidmap. NoNewPrivileges=true strips the
+# setuid bit, and every job then fails with "write to uid_map failed: Operation not permitted" (found live, Nov 7;
+# owner decision). RestrictSUIDSGID below still stops the runner from creating setuid files.
+NoNewPrivileges=false
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true

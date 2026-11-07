@@ -215,7 +215,10 @@ func validateSubmissionExpect(cid id.ChangeID, in workflow.Inputs, sub testset.S
 		}
 		slices.Sort(acids)
 	}
-	return sub.Validate(testset.Expect{TestsDir: testsDir, ACIDs: acids})
+	if err := sub.Validate(testset.Expect{TestsDir: testsDir, ACIDs: acids}); err != nil {
+		return err
+	}
+	return errors.Join(goSourceProblems(sub)...)
 }
 
 func hasDuplicateSubmission(events []change.Event, blobRef workflow.BlobRef) bool {

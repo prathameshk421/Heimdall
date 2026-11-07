@@ -60,8 +60,13 @@ const (
 	outboxBatch = 8
 	// effectTimeout bounds one executor call. The lease must exceed outboxBatch times this (outbox.New).
 	effectTimeout = 20 * time.Second
-	// outboxLease is how long a claimed effect stays leased to one drainer.
-	outboxLease = 3 * time.Minute
+	// testQualityTimeout bounds a test_quality effect: two sandbox jobs of up to 3 minutes each, plus the runner's
+	// margin. With the 20 s default the outbox cancelled the run and every retry started another container (KAN-9).
+	testQualityTimeout = 7 * time.Minute
+	// outboxLease is how long a claimed effect stays leased to one drainer. It must exceed outboxBatch times the longest
+	// effect timeout (outbox.New). An effect that was running when the server stopped is in doubt and is not re-run on
+	// lease expiry (T22), so a long lease does not delay recovery.
+	outboxLease = 60 * time.Minute
 	// blobStoreRoot is the on-disk blob store until heimdall.toml gains a blobs path key.
 	blobStoreRoot = ".heimdall/blobs"
 	// githubAPIRoot is the production GitHub API, which is not site-specific and so needs no config key.
@@ -540,6 +545,7 @@ func assembleWithBlobs(
 	box, err := outbox.New(outbox.Config{
 		Outbox: store, Executors: execs, Logger: d.logger,
 		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
+		KindTimeouts: map[change.EffectKind]time.Duration{change.EffectTestQuality: testQualityTimeout},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build outbox drainer: %w", err)

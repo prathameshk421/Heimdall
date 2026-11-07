@@ -102,6 +102,20 @@ if ! grep -q '^heimdall-runner:' /etc/subuid 2>/dev/null || ! grep -q '^heimdall
 	usermod --add-subuids "$start-$((start + 65535))" --add-subgids "$start-$((start + 65535))" heimdall-runner
 fi
 install -d -o heimdall-runner -g heimdall-runner -m 0700 /var/lib/heimdall-runner
+# Pin native overlay. Without it Podman may fall back to fuse-overlayfs on first use, records that choice in the store,
+# and then needs /dev/fuse, which the unit's PrivateDevices hides: every job then fails to mount its root filesystem.
+install -d -o heimdall-runner -g heimdall-runner -m 0700 /var/lib/heimdall-runner/.config /var/lib/heimdall-runner/.config/containers
+printf '[storage]\ndriver = "overlay"\n\n[storage.options.overlay]\nmount_program = ""\n' >/tmp/heimdall-runner-storage.conf.new
+if ! cmp -s /tmp/heimdall-runner-storage.conf.new /var/lib/heimdall-runner/.config/containers/storage.conf; then
+	install -o heimdall-runner -g heimdall-runner -m 0600 /tmp/heimdall-runner-storage.conf.new /var/lib/heimdall-runner/.config/containers/storage.conf
+fi
+rm -f /tmp/heimdall-runner-storage.conf.new
+# A store created with fuse-overlayfs cannot be reused with native overlay; it holds only the pulled Go image, which the
+# pull below fetches again.
+cd /
+if [ "$(cat /var/lib/heimdall-runner/.local/share/containers/storage/overlay/.has-mount-program 2>/dev/null)" = "true" ]; then
+	runuser -u heimdall-runner -- env PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/var/lib/heimdall-runner XDG_RUNTIME_DIR=/run/heimdall-podman podman system reset --force
+fi
 install -d -o root -g root -m 0755 /opt/heimdall
 install -d -o root -g heimdall-runner-socket -m 0750 /etc/heimdall-runner /etc/heimdall-runner/profiles
 runner_gid=$(getent group heimdall-runner-socket | cut -d: -f3)
