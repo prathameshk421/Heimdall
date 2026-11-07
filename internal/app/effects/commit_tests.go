@@ -2,12 +2,15 @@ package effects
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
+	"slices"
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testset"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -94,21 +97,41 @@ func (c CommitTests) Execute(ctx context.Context, fx change.Effect) error {
 	return c.ingestCommitted(ctx, ticket, l, sha, treeHash)
 }
 
+// readFiles returns the content of each file to commit. A commit file's blob is the stored submission, so the file
+// is looked up in it by path: the executor commits the test source, never the submission JSON.
 func (c CommitTests) readFiles(ctx context.Context, ticket id.ChangeID, cf []change.CommitFile) ([]ports.File, error) {
+	bundles := map[workflow.BlobRef]testset.Submission{}
 	files := make([]ports.File, 0, len(cf))
 	for _, f := range cf {
-		rc, err := c.deps.Blobs.Get(ctx, f.BlobRef)
-		if err != nil {
-			return nil, failf(err, "commit_tests %s: get blob %s", ticket, f.BlobRef)
+		sub, ok := bundles[f.BlobRef]
+		if !ok {
+			var err error
+			if sub, err = c.readSubmission(ctx, ticket, f.BlobRef); err != nil {
+				return nil, err
+			}
+			bundles[f.BlobRef] = sub
 		}
-		content, err := io.ReadAll(rc)
-		_ = rc.Close()
-		if err != nil {
-			return nil, failf(err, "commit_tests %s: read blob %s", ticket, f.BlobRef)
+		idx := slices.IndexFunc(sub.Files, func(sf testset.File) bool { return sf.Path == f.Path })
+		if idx < 0 {
+			return nil, failf(nil, "commit_tests %s: the submission %s has no file %s", ticket, f.BlobRef, f.Path)
 		}
-		files = append(files, ports.File{Path: f.Path, Content: content})
+		files = append(files, ports.File{Path: f.Path, Content: []byte(sub.Files[idx].Content)})
 	}
 	return files, nil
+}
+
+func (c CommitTests) readSubmission(ctx context.Context, ticket id.ChangeID, ref workflow.BlobRef) (testset.Submission, error) {
+	rc, err := c.deps.Blobs.Get(ctx, ref)
+	if err != nil {
+		return testset.Submission{}, failf(err, "commit_tests %s: get blob %s", ticket, ref)
+	}
+	var sub testset.Submission
+	err = json.NewDecoder(rc).Decode(&sub)
+	_ = rc.Close()
+	if err != nil {
+		return testset.Submission{}, failf(err, "commit_tests %s: decode submission blob %s", ticket, ref)
+	}
+	return sub, nil
 }
 
 func (c CommitTests) treeHash(ctx context.Context, repo change.Repo, sha id.SHA, dir string) (id.SHA, error) {
