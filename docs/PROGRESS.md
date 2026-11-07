@@ -1,5 +1,13 @@
 # Heimdall progress
 
+## Slack bridge (Nov 7, 2026, in progress)
+
+- **Done.** Switch 0.31 has a native Slack bridge over Socket Mode, so the VM needs no public URL. Heimdall treats Slack as one more pair of feed channels. `withoutLeadingMention` now drops one leading Slack mention (`<@U0123ABC>` or `<@U0123ABC|name>`). `make fast` exit 0 (3986 tests).
+- **Waiting on the owner.** Create the Slack app from Switch's manifest (name "Heimdall"), make the `xapp-` (connections:write) and `xoxb-` tokens, and paste them in Switch Console under Connections.
+- **Next.** Read the Slack bridge id, make `heimdall-tests` and `heimdall-reviews` through `POST /admin/rooms`, add both under `[[feeds]]` in `/etc/heimdall/heimdall.toml`, deploy, map the owner's Slack member id in `heimdall.yaml`, then run one live ticket.
+- **Noticed.** The stop hook runs `make fast` in the main checkout, and `GOFILES` in the Makefile walks into `.claude/worktrees/*`. There it fails gofmt on the deliberately bad fixture `testdata/lint/bad/gofmt.go`. The fix is `-not -path './.claude/*'` in `GOFILES`. The Makefile is a guardrail file, so this needs the owner.
+- **Not verified.** Nothing ran against a real Slack workspace yet: no app or tokens exist. It is not known yet if Switch passes Slack mentions to the agent raw (`<@U..>`) or rewritten to `@name`. The parser accepts both.
+
 ## Demo build: channels, narrator, agent prompts, platforms (Nov 7, 2026, stopped at the usage limit)
 
 **State at the stop.** Everything below is merged to `main` and pushed. The VM runs the build from the commit before the last two small tweaks (progress line key trim, `RoleProfiler` lint case); those are in git but not deployed. `make fast` exit 0 (3978 tests, 0 lint issues). `make race` was not run after the channel work.

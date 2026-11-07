@@ -87,14 +87,17 @@ func commandBody(in Input) (string, bool) {
 	return rest, true
 }
 
-// withoutLeadingMention drops one leading @mention. Mattermost and Telegram deliver a message to an agent only when it
-// mentions the agent, so a command arrives as "@heimdall-coord-main heimdall uphold F1".
+// withoutLeadingMention drops one leading mention. Mattermost and Telegram deliver a message to an agent only when it
+// mentions the agent, so a command arrives as "@heimdall-coord-main heimdall uphold F1". Slack writes a mention as
+// "<@U0123ABC>" or "<@U0123ABC|name>", so the same command arrives as "<@U0123ABC> heimdall uphold F1".
 func withoutLeadingMention(text string) string {
-	if !strings.HasPrefix(text, "@") {
+	token, rest, found := strings.Cut(text, " ")
+	if !found {
 		return text
 	}
-	_, rest, found := strings.Cut(text, " ")
-	if !found {
+	isAt := strings.HasPrefix(token, "@")
+	isSlack := strings.HasPrefix(token, "<@") && strings.HasSuffix(token, ">")
+	if !isAt && !isSlack {
 		return text
 	}
 	return strings.TrimLeftFunc(rest, unicode.IsSpace)
