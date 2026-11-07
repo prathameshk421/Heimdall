@@ -100,6 +100,8 @@ func TestReviewLines(t *testing.T) {
 			"• 1 upheld finding is open\n• no approval on the latest commit"},
 		{"merged", nil, ev(t, change.EventChangeMerged, struct{}{}),
 			"Merged · KAN-14"},
+		{"merged on GitHub", nil, ev(t, change.EventPRClosed, change.PRClosed{Repo: "aarush323/heimdall-fixture-pay", Number: 10, HeadSHA: "59effae547d768799972d6e54eff32e82dbb7912", Merged: true}),
+			"Merged · KAN-14"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -118,4 +120,10 @@ func TestQuietEvents(t *testing.T) {
 	first := ev(t, change.EventTaskAssigned, change.TaskAssigned{Agent: "test-author", Role: workflow.RoleTestAuthor})
 	_, ok = narrate(t, []change.Event{first}, ev(t, change.EventTaskAssigned, change.TaskAssigned{Agent: "test-author", Role: workflow.RoleTestAuthor}))
 	require.False(t, ok, "a retried task is not announced twice")
+	closed := change.PRClosed{Repo: "aarush323/heimdall-fixture-pay", Number: 10, HeadSHA: "59effae547d768799972d6e54eff32e82dbb7912"}
+	_, ok = narrate(t, nil, ev(t, change.EventPRClosed, closed))
+	require.False(t, ok, "a pull request closed without a merge is not a merge")
+	closed.Merged = true
+	_, ok = narrate(t, []change.Event{ev(t, change.EventChangeMerged, struct{}{})}, ev(t, change.EventPRClosed, closed))
+	require.False(t, ok, "a merge Heimdall already announced is not announced twice")
 }
