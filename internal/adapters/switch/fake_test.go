@@ -271,6 +271,11 @@ func (f *fakeSwitch) handleBeat(w http.ResponseWriter, rec recorded) {
 }
 
 func (f *fakeSwitch) handleEvents(w http.ResponseWriter, r *http.Request) {
+	// Switch 0.31.0 refuses an event stream that names no connection: the client generates the id.
+	if r.URL.Query().Get("connection_id") == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "connection_id is required to open an event stream; generate a UUID and reuse it when reconnecting so the connection survives the drop"})
+		return
+	}
 	f.mu.Lock()
 	f.opens++
 	n := f.opens

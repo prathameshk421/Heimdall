@@ -112,10 +112,23 @@ type streamRun struct {
 	seq        int64                       // highest SSE id delivered by this call
 	resumed    bool                        // the current connection was opened with Last-Event-ID
 	reconciled bool                        // read_context has run for the resume cursors
-	connID     string
+	connID     string                      // the id Switch confirmed in connection_state; names the connection a reconnect replaces
+	clientConn string                      // the UUID this client generated; Switch wants the same one on every reconnect
 	failures   int
 	cancelConn context.CancelCauseFunc
 	stopBeats  func()
+}
+
+// connectionID is the id the stream names. Switch 0.31.0 refuses a stream with none, wants the client's own UUID the
+// first time and the same one on every reconnect; once Switch confirmed an id in connection_state, that one is used.
+func (s *streamRun) connectionID(c *Client) string {
+	if s.connID != "" {
+		return s.connID
+	}
+	if s.clientConn == "" {
+		s.clientConn = c.newConnID()
+	}
+	return s.clientConn
 }
 
 // stopError marks an error returned by DeliverFunc. It ends the stream, even when the error wraps ports.ErrUnavailable.
@@ -202,7 +215,7 @@ func (s *streamRun) open(ctx context.Context) (*http.Response, error) {
 	for _, r := range s.rooms {
 		names = append(names, string(r))
 	}
-	q := url.Values{"filter": {"all"}, "rooms": {strings.Join(names, ",")}}
+	q := url.Values{"filter": {"all"}, "rooms": {strings.Join(names, ",")}, "connection_id": {s.connectionID(c)}}
 	path := "/agents/" + c.agentID + "/events"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+q.Encode(), nil)
 	if err != nil {
