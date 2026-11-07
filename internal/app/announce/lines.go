@@ -122,7 +122,7 @@ func narrateRejected(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return tests("❌ %s: these tests did not pass my check. %s The test author will try again.", k, humanReasons(p.Reasons)), true
+	return tests("❌ %s: these tests did not pass my check. %s The Test Agent will try again.", k, humanReasons(p.Reasons)), true
 }
 
 func narrateVerified(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -169,9 +169,9 @@ func narrateAssigned(history []change.Event, ev change.Event, k string) (Line, b
 		}
 	}
 	lines := map[string]Line{
-		string(workflow.RoleTestAuthor): tests("🧪 %s is in progress. The test author is writing failing tests for the ticket's acceptance criteria.", k),
-		string(workflow.RoleReviewer):   review("🔍 %s: %s is reviewing the pull request now.", k, p.Agent),
-		string(workflow.RoleResolver):   review("⚖️ %s: %s is weighing a challenged finding.", k, p.Agent),
+		string(workflow.RoleTestAuthor): tests("🧪 %s is in progress. The Heimdall Test Agent is writing failing tests for the ticket's acceptance criteria.", k),
+		string(workflow.RoleReviewer):   review("🔍 %s: %s is reviewing the pull request now.", k, friendly(p.Agent)),
+		string(workflow.RoleResolver):   review("⚖️ %s: %s is weighing a challenged finding.", k, friendly(p.Agent)),
 	}
 	line, ok := lines[p.Role]
 	return line, ok
@@ -225,7 +225,7 @@ func narrateReviewDone(history []change.Event, ev change.Event, k string) (Line,
 		return Line{}, false
 	}
 	if len(p.FindingRefs) == 0 {
-		return review("🔍 %s: %s finished the review and found no issues.", k, p.Reviewer), true
+		return review("🔍 %s: %s finished the review and found no issues.", k, friendly(p.Reviewer)), true
 	}
 	severities := map[string]string{}
 	for _, h := range history {
@@ -242,7 +242,7 @@ func narrateReviewDone(history []change.Event, ev change.Event, k string) (Line,
 			items = append(items, n)
 		}
 	}
-	return review("🔍 %s: %s finished the review and found %s: %s.", k, p.Reviewer, count(len(items), "issue"), joinNames(items)), true
+	return review("🔍 %s: %s finished the review and found %s: %s.", k, friendly(p.Reviewer), count(len(items), "issue"), joinNames(items)), true
 }
 
 func narrateFindingState(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -375,4 +375,17 @@ func short(sha string) string {
 		return sha[:7]
 	}
 	return sha
+}
+
+// friendly names an agent by its role, the way people see it in chat: "reviewer-2" is "Heimdall Code Reviewer 2".
+func friendly(agent string) string {
+	switch {
+	case agent == "test-author":
+		return "the Heimdall Test Agent"
+	case agent == "resolver":
+		return "the Heimdall Resolver"
+	case strings.HasPrefix(agent, "reviewer-"):
+		return "Heimdall Code Reviewer " + strings.TrimPrefix(agent, "reviewer-")
+	}
+	return agent
 }
