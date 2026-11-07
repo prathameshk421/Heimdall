@@ -19,24 +19,27 @@ type workflowTimers struct {
 	eng   *engine.Engine
 	rooms ports.RoomIndex
 	clock ports.Clock
+	// fired holds every deadline already fired, by change, step and due time, so a step whose timeout changes
+	// nothing is not fired again on every pass (seen live: three deadlines refired every 15 seconds).
+	fired map[string]bool
 }
 
-// RunOnce fires every due timer of every open change and returns how many fired.
-func (w workflowTimers) RunOnce(ctx context.Context) (int, error) {
+// RunOnce fires every due timer of every open change and returns the deadlines it fired, as "change/step".
+func (w *workflowTimers) RunOnce(ctx context.Context) ([]string, error) {
 	bindings, err := w.rooms.OpenRooms(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("timers: list open changes: %w", err)
+		return nil, fmt.Errorf("timers: list open changes: %w", err)
 	}
 	seen := map[id.ChangeID]bool{}
-	fired := 0
+	var fired []string
 	var errs []error
 	for _, b := range bindings {
 		if seen[b.ChangeID] {
 			continue
 		}
 		seen[b.ChangeID] = true
-		n, err := w.fire(ctx, b.ChangeID)
-		fired += n
+		names, err := w.fire(ctx, b.ChangeID)
+		fired = append(fired, names...)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -45,21 +48,23 @@ func (w workflowTimers) RunOnce(ctx context.Context) (int, error) {
 }
 
 // fire runs the change once to learn its deadlines, then the OnTimeout of each one that is due.
-func (w workflowTimers) fire(ctx context.Context, cid id.ChangeID) (int, error) {
+func (w *workflowTimers) fire(ctx context.Context, cid id.ChangeID) ([]string, error) {
 	out, err := w.eng.Advance(ctx, cid, nil)
 	if err != nil {
-		return 0, fmt.Errorf("timers: run %s: %w", cid, err)
+		return nil, fmt.Errorf("timers: run %s: %w", cid, err)
 	}
 	now := w.clock.Now()
-	fired := 0
+	var fired []string
 	for _, t := range out.Timers {
-		if t.Due.After(now) {
+		key := fmt.Sprintf("%s|%s|%d", cid, t.Step, t.Due.UnixNano())
+		if t.Due.After(now) || w.fired[key] {
 			continue
 		}
 		if _, err := w.eng.Timeout(ctx, cid, t.Step); err != nil {
 			return fired, fmt.Errorf("timers: fire %s of %s: %w", t.Step, cid, err)
 		}
-		fired++
+		w.fired[key] = true
+		fired = append(fired, string(cid)+"/"+t.Step)
 	}
 	return fired, nil
 }
@@ -67,11 +72,12 @@ func (w workflowTimers) fire(ctx context.Context, cid id.ChangeID) (int, error) 
 // timerLoop fires due workflow deadlines every 15 seconds.
 func (a *app) timerLoop(ctx context.Context) {
 	for {
-		n, err := a.timers.RunOnce(ctx)
+		names, err := a.timers.RunOnce(ctx)
 		if err != nil && ctx.Err() == nil {
 			a.logger.ErrorContext(ctx, "workflow timers failed; they will be retried", "error", err)
-		} else if n > 0 {
-			a.logger.InfoContext(ctx, "workflow timers fired", "count", n)
+		}
+		if len(names) > 0 {
+			a.logger.InfoContext(ctx, "workflow timers fired", "timers", names)
 		}
 		if err := clock.Wait(ctx, 15*time.Second); err != nil {
 			return
