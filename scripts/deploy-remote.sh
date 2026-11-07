@@ -156,7 +156,9 @@ export HEIMDALL_RELEASE=$tag
 if [ "$previous_hash" != "$archive_hash" ]; then
 	docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml build heimdall-server
 fi
-docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml up -d --wait --timeout 30
+# The Switch sidecar joins the server's network namespace, so the server must be running before compose creates it.
+docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml up -d --wait --timeout 60 heimdall-server
+docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml up -d --wait --timeout 60
 curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null
 make_mcp_auth_config
 sudo -u "$agent_user" curl --fail --silent --show-error \

@@ -67,6 +67,9 @@ type AgentRuntimeConfig struct {
 	Machine     string
 	MCPEndpoint string
 	Model       string
+	// AgentsDir is the controller's per-agent directory root. Each role agent's directory is AgentsDir/<name>; empty
+	// leaves the directory to Switch.
+	AgentsDir string
 }
 
 const defaultAgentModel = "openrouter/deepseek/deepseek-v4-flash"
@@ -180,6 +183,7 @@ type fileAgentRuntime struct {
 	Machine     *string `toml:"machine"`
 	MCPEndpoint *string `toml:"mcp_endpoint"`
 	Model       *string `toml:"model"`
+	AgentsDir   *string `toml:"agents_dir"`
 }
 
 // fileChat is [chat]. Its key is bridge, the Switch connection that carries chat (D79).
@@ -371,12 +375,26 @@ func checkAgentRuntime(out *AgentRuntimeConfig, raw *fileAgentRuntime) []error {
 	if modelErr != nil {
 		errs = append(errs, modelErr)
 	}
+	errs = append(errs, validateAgentsDir(raw.AgentsDir)...)
 	if len(errs) == 0 {
 		out.Machine = *raw.Machine
 		out.MCPEndpoint = *raw.MCPEndpoint
 		out.Model = model
+		if raw.AgentsDir != nil {
+			out.AgentsDir = *raw.AgentsDir
+		}
 	}
 	return errs
+}
+
+func validateAgentsDir(dir *string) []error {
+	if dir == nil {
+		return nil
+	}
+	if !strings.HasPrefix(*dir, "/") || len(*dir) > 1024 || strings.ContainsAny(*dir, "\x00\r\n") {
+		return []error{errors.New("agent_runtime.agents_dir must be an absolute path of at most 1024 bytes")}
+	}
+	return nil
 }
 
 func validateRuntimeProvider(provider *string) []error {

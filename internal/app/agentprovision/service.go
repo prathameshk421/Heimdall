@@ -39,7 +39,9 @@ type Config struct {
 	MCPEndpoint string
 	Model       string
 	SecretsDir  string
-	Agents      []Agent
+	// AgentsDir is the controller's per-agent directory root; empty leaves each agent's directory to Switch.
+	AgentsDir string
+	Agents    []Agent
 }
 
 // Service reconciles Switch managed agents and creates setup handoffs for the host installer.
@@ -147,7 +149,7 @@ func (s *Service) Prepare(ctx context.Context) ([]Handoff, error) {
 		spec := ports.ManagedAgentSpec{
 			Agent: ports.AgentRef{Name: a.Name, Role: a.Role}, Description: a.Description,
 			Machine: s.cfg.Machine, Provider: "opencode", Model: s.cfg.Model,
-			Instructions: a.Instructions,
+			Instructions: a.Instructions, Directory: s.directoryOf(a.Name),
 		}
 		managed, err := s.cfg.Provisioner.EnsureManagedAgent(ctx, spec)
 		if err != nil {
@@ -201,6 +203,7 @@ func (s *Service) Activate(ctx context.Context, receipt Receipt) error {
 	managed, err := s.cfg.Provisioner.EnsureManagedAgent(ctx, ports.ManagedAgentSpec{
 		Agent: ports.AgentRef{Name: agent.Name, Role: agent.Role}, Description: agent.Description,
 		Machine: s.cfg.Machine, Provider: "opencode", Model: s.cfg.Model, Instructions: agent.Instructions,
+		Directory: s.directoryOf(agent.Name),
 	})
 	if err != nil {
 		return fmt.Errorf("agent provision %q: reconcile before activation: %w", agent.Name, err)
@@ -212,6 +215,14 @@ func (s *Service) Activate(ctx context.Context, receipt Receipt) error {
 		return fmt.Errorf("agent provision %q: persist setup receipt fingerprint: %w", agent.Name, err)
 	}
 	return nil
+}
+
+// directoryOf is the directory the host installer fills for the agent, or empty when Switch picks it.
+func (s *Service) directoryOf(name id.AgentName) string {
+	if s.cfg.AgentsDir == "" {
+		return ""
+	}
+	return filepath.Join(s.cfg.AgentsDir, string(name))
 }
 
 func receiptFingerprint(receipt Receipt) string {

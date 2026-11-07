@@ -148,7 +148,7 @@ func selectAgentSetup(cfg config.Config, reg *registry.Registry, out *adapters) 
 		service, err := agentprovision.New(agentprovision.Config{
 			Provisioner: provisioner, Receipts: receipts, Secrets: cfg, Machine: cfg.AgentRuntime.Machine,
 			MCPEndpoint: cfg.AgentRuntime.MCPEndpoint, Model: cfg.AgentRuntime.Model,
-			SecretsDir: cfg.SecretsDir, Agents: provisionAgents(cfg.Agents),
+			SecretsDir: cfg.SecretsDir, AgentsDir: cfg.AgentRuntime.AgentsDir, Agents: provisionAgents(cfg.Agents),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("agent_runtime config: %w", err)
@@ -166,11 +166,11 @@ func selectAgentSetup(cfg config.Config, reg *registry.Registry, out *adapters) 
 
 func provisionAgents(agents config.Agents) []agentprovision.Agent {
 	out := []agentprovision.Agent{
-		{Name: id.AgentName(agents.TestAuthor), Role: workflow.RoleTestAuthor, Description: "Heimdall test author", Instructions: "Follow the installed test-author skill. Get tasks and submit results through Heimdall MCP tools."},
+		{Name: id.AgentName(agents.TestAuthor), Role: workflow.RoleTestAuthor, Description: "Heimdall " + agents.TestAuthor, Instructions: "Follow the installed test-author skill. Get tasks and submit results through Heimdall MCP tools."},
 		{Name: id.AgentName(agents.Resolver), Role: workflow.RoleResolver, Description: "Heimdall resolver", Instructions: "Follow the installed resolver skill. Get tasks and submit results through Heimdall MCP tools."},
 	}
 	for _, name := range agents.Reviewers {
-		out = append(out, agentprovision.Agent{Name: id.AgentName(name), Role: workflow.RoleReviewer, Description: "Heimdall reviewer", Instructions: "Follow the installed reviewer skill. Get tasks and submit results through Heimdall MCP tools."})
+		out = append(out, agentprovision.Agent{Name: id.AgentName(name), Role: workflow.RoleReviewer, Description: "Heimdall " + name, Instructions: "Follow the installed reviewer skill. Get tasks and submit results through Heimdall MCP tools."})
 	}
 	return out
 }

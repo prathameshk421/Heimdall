@@ -84,6 +84,18 @@ model = "openrouter/deepseek/deepseek-v4-flash"
 	}, cfg.AgentRuntime)
 }
 
+// agents_dir names the controller's per-agent directory root. Each role agent's directory is under it, so the
+// definition Heimdall asks Switch for matches the directory the host installer fills.
+func TestLoadReadsTheAgentsDirectoryAndRefusesARelativeOne(t *testing.T) {
+	head := "secrets_dir = \"" + t.TempDir() + "\"\n" + liveSections + "\n[agent_runtime]\nprovider = \"switchroom\"\nmachine = \"heimdall-vm\"\nmcp_endpoint = \"http://127.0.0.1:8080/mcp\"\n"
+	cfg, err := Load(writeTOML(t, head+"agents_dir = \"/var/lib/switch-agents/1000/agent\"\n"))
+	require.NoError(t, err)
+	require.Equal(t, "/var/lib/switch-agents/1000/agent", cfg.AgentRuntime.AgentsDir)
+
+	_, err = Load(writeTOML(t, head+"agents_dir = \"agent\"\n"))
+	require.ErrorContains(t, err, "agent_runtime.agents_dir")
+}
+
 func TestAgentRuntimeRequiresSafeHostReachableMCPEndpoint(t *testing.T) {
 	head := "secrets_dir = \"" + t.TempDir() + "\"\n"
 	cases := []struct{ endpoint, want string }{

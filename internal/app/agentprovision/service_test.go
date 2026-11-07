@@ -93,6 +93,28 @@ func newService(t *testing.T, p *fakeProvisioner) *Service {
 	return svc
 }
 
+// Each definition asks Switch for the directory the host installer fills for that agent, so an agent that already
+// exists there is adopted instead of refused as a conflict.
+func TestPrepareAsksForEachAgentsOwnDirectory(t *testing.T) {
+	p := &fakeProvisioner{}
+	svc, err := New(Config{
+		Provisioner: p, Receipts: &fakeReceiptLedger{},
+		Secrets: fakeSecrets{"agent_token_test-author": "a", "agent_token_reviewer-1": "b"},
+		Machine: "heimdall-vm", MCPEndpoint: "http://127.0.0.1:8080/mcp", Model: "openrouter/deepseek/deepseek-v4-flash",
+		SecretsDir: "/etc/heimdall/secrets", AgentsDir: "/var/lib/switch-agents/1000/agent",
+		Agents: []Agent{
+			{Name: id.AgentName("reviewer-1"), Role: workflow.RoleReviewer, Description: "Heimdall reviewer-1"},
+			{Name: id.AgentName("test-author"), Role: workflow.RoleTestAuthor, Description: "Heimdall test-author"},
+		},
+	})
+	require.NoError(t, err)
+	_, err = svc.Prepare(context.Background())
+	require.NoError(t, err)
+	require.Len(t, p.ensures, 2)
+	require.Equal(t, "/var/lib/switch-agents/1000/agent/reviewer-1", p.ensures[0].Directory)
+	require.Equal(t, "/var/lib/switch-agents/1000/agent/test-author", p.ensures[1].Directory)
+}
+
 func testTokenHash() string {
 	sum := sha256.Sum256([]byte("author-token"))
 	return hex.EncodeToString(sum[:])
