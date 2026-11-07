@@ -121,7 +121,8 @@ func narrateProgress(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) || strings.TrimSpace(p.Text) == "" {
 		return Line{}, false
 	}
-	text := strings.TrimSpace(p.Text)
+	// The agent starts its own messages with the ticket key; the line already names it.
+	text := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(p.Text), k+":"))
 	if len(text) > maxProgressChars {
 		text = text[:maxProgressChars] + "..."
 	}
@@ -140,6 +141,8 @@ func friendlyRole(role string) string {
 		return "the Resolver"
 	case workflow.RoleReviewer:
 		return "a Code Reviewer"
+	case workflow.RoleProfiler:
+		return "the Profiler"
 	}
 	return "an agent"
 }
