@@ -132,7 +132,7 @@ func TestNarratorPostsToTheTicketRoomAndTheMatchingFeeds(t *testing.T) {
 	require.Len(t, rooms["dc-kan14"], 2, "the ticket room hears both stories")
 	require.Len(t, rooms["tg-dev"], 2, "the Telegram group hears both stories")
 	require.Len(t, rooms["mm-tests"], 1)
-	require.Contains(t, rooms["mm-tests"][0], "tests verified")
+	require.Contains(t, rooms["mm-tests"][0], "tests hold up")
 	require.Len(t, rooms["mm-review"], 1)
 	require.Contains(t, rooms["mm-review"][0], "merge check passed")
 

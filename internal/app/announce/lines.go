@@ -4,6 +4,7 @@
 package announce
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -113,7 +114,7 @@ func narrateSubmitted(_ []change.Event, ev change.Event, k string) (Line, bool) 
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return tests("🔎 %s: tests submitted (%s, covering %s). I'm running them on the current code to check that they fail for the right reason.",
+	return tests("🔎 %s: the Test Agent submitted its tests (%s, covering %s). I'm running them against the current code to confirm they fail for the right reason.",
 		k, count(len(p.Refs), "file"), joinNames(sortedKeys(p.ACMap))), true
 }
 
@@ -122,7 +123,7 @@ func narrateRejected(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return tests("❌ %s: these tests did not pass my check. %s The Test Agent will try again.", k, humanReasons(p.Reasons)), true
+	return tests("↩️ %s: I sent the tests back. %s The Test Agent is fixing them now.", k, humanReasons(p.Reasons)), true
 }
 
 func narrateVerified(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -131,9 +132,9 @@ func narrateVerified(_ []change.Event, ev change.Event, k string) (Line, bool) {
 		return Line{}, false
 	}
 	if p.NeedsSignoff {
-		return tests("⏸ %s: tests verified. A person has to approve them before I commit. Reply: heimdall approve-tests", k), true
+		return tests("⏸ %s: the tests hold up, and a person has to approve them before I commit. Reply: heimdall approve-tests", k), true
 	}
-	return tests("✅ %s: tests verified. They fail on the current code, as they should, and gave the same result on every run.", k), true
+	return tests("✅ %s: the tests hold up. They fail on the current code, as they should, and gave the same result on every run.", k), true
 }
 
 func narrateCommitted(history []change.Event, ev change.Event, k string) (Line, bool) {
@@ -141,7 +142,7 @@ func narrateCommitted(history []change.Event, ev change.Event, k string) (Line, 
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return tests("✅ %s: tests committed to branch %s (commit %s).", k, branchOf(history), short(p.SHA)), true
+	return tests("📌 %s: the tests are committed to branch %s (commit %s), ready for the implementation.", k, branchOf(history), short(p.SHA)), true
 }
 
 func narrateEscalated(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -149,7 +150,7 @@ func narrateEscalated(_ []change.Event, ev change.Event, k string) (Line, bool) 
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return tests("⚠️ %s: I'm stuck and need a person. %s. When it is fixed, reply: heimdall resume %s", k, strings.TrimSuffix(p.Reason, "."), p.Step), true
+	return tests("⚠️ %s: I'm stuck and need a person. %s. Once it is sorted out, reply: heimdall resume %s", k, strings.TrimSuffix(p.Reason, "."), p.Step), true
 }
 
 func narrateClosed(_ []change.Event, _ change.Event, k string) (Line, bool) {
@@ -169,8 +170,8 @@ func narrateAssigned(history []change.Event, ev change.Event, k string) (Line, b
 		}
 	}
 	lines := map[string]Line{
-		string(workflow.RoleTestAuthor): tests("🧪 %s is in progress. The Heimdall Test Agent is writing failing tests for the ticket's acceptance criteria.", k),
-		string(workflow.RoleReviewer):   review("🔍 %s: %s is reviewing the pull request now.", k, friendly(p.Agent)),
+		string(workflow.RoleTestAuthor): tests("🧪 %s is with the Heimdall Test Agent, which will write failing tests for its %s. It takes one ticket at a time.", k, criteriaPhrase(history)),
+		string(workflow.RoleReviewer):   review("🔍 %s: %s is reading the pull request now.", k, friendly(p.Agent)),
 		string(workflow.RoleResolver):   review("⚖️ %s: %s is weighing a challenged finding.", k, friendly(p.Agent)),
 	}
 	line, ok := lines[p.Role]
@@ -182,7 +183,7 @@ func narratePROpened(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return review("📬 %s: pull request #%d is open. I'm waiting for CI and the reviewers.", k, p.Number), true
+	return review("📬 %s: pull request #%d is open. CI and the code reviewers are next.", k, p.Number), true
 }
 
 func narrateCI(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -191,7 +192,7 @@ func narrateCI(_ []change.Event, ev change.Event, k string) (Line, bool) {
 		return Line{}, false
 	}
 	if p.Conclusion == "success" {
-		return review("✅ %s: CI passed on %s.", k, short(p.SHA)), true
+		return review("✅ %s: CI is green on %s.", k, short(p.SHA)), true
 	}
 	if p.Conclusion == "failure" {
 		return review("❌ %s: CI failed on %s (check: %s).", k, short(p.SHA), p.Check), true
@@ -204,7 +205,7 @@ func narratePicked(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) || len(p.People) == 0 {
 		return Line{}, false
 	}
-	return review("🔍 %s: reviewers picked: %s.", k, joinNames(p.People)), true
+	return review("🔍 %s: %s will review it.", k, joinNames(p.People)), true
 }
 
 func narrateApproval(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -225,7 +226,7 @@ func narrateReviewDone(history []change.Event, ev change.Event, k string) (Line,
 		return Line{}, false
 	}
 	if len(p.FindingRefs) == 0 {
-		return review("🔍 %s: %s finished the review and found no issues.", k, friendly(p.Reviewer)), true
+		return review("🔍 %s: %s finished and found no issues.", k, friendly(p.Reviewer)), true
 	}
 	severities := map[string]string{}
 	for _, h := range history {
@@ -242,7 +243,7 @@ func narrateReviewDone(history []change.Event, ev change.Event, k string) (Line,
 			items = append(items, n)
 		}
 	}
-	return review("🔍 %s: %s finished the review and found %s: %s.", k, friendly(p.Reviewer), count(len(items), "issue"), joinNames(items)), true
+	return review("🔍 %s: %s finished and found %s: %s.", k, friendly(p.Reviewer), count(len(items), "issue"), joinNames(items)), true
 }
 
 func narrateFindingState(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -251,10 +252,10 @@ func narrateFindingState(_ []change.Event, ev change.Event, k string) (Line, boo
 		return Line{}, false
 	}
 	if finding.State(p.State) == finding.StateUpheld {
-		return review("⚖️ %s: %s was upheld by %s. It must be fixed before merge.", k, p.Ref, p.By), true
+		return review("⚖️ %s: %s stands. %s upheld it, so it must be fixed before merge.", k, p.Ref, p.By), true
 	}
 	if finding.State(p.State) == finding.StateDismissed {
-		return review("⚖️ %s: %s was dismissed by %s.", k, p.Ref, p.By), true
+		return review("⚖️ %s: %s is dismissed. %s decided it does not block the merge.", k, p.Ref, p.By), true
 	}
 	return Line{}, false
 }
@@ -265,7 +266,7 @@ func narrateGate(_ []change.Event, ev change.Event, k string) (Line, bool) {
 		return Line{}, false
 	}
 	if p.OK {
-		return review("✅ %s: the merge check passed. This change is ready to merge.", k), true
+		return review("✅ %s: the merge check passed. This one is ready to merge.", k), true
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "⛔ %s: the merge check is blocked.", k)
@@ -388,4 +389,26 @@ func friendly(agent string) string {
 		return "Heimdall Code Reviewer " + strings.TrimPrefix(agent, "reviewer-")
 	}
 	return agent
+}
+
+// criteriaPhrase says how many acceptance criteria the ticket has, from its trigger event.
+func criteriaPhrase(history []change.Event) string {
+	for _, h := range history {
+		var p struct {
+			Criteria []json.RawMessage `json:"acceptance_criteria"`
+		}
+		if h.Type == change.EventChangeTriggered && decode(h, &p) {
+			if n := len(p.Criteria); n > 0 {
+				return criteriaCount(n)
+			}
+		}
+	}
+	return "acceptance criteria"
+}
+
+func criteriaCount(n int) string {
+	if n == 1 {
+		return "1 acceptance criterion"
+	}
+	return fmt.Sprintf("%d acceptance criteria", n)
 }

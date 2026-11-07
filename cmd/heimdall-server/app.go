@@ -34,7 +34,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
@@ -622,7 +621,7 @@ func assembleNarrator(d deps, ad adapters, store *postgres.Store) (*announce.Nar
 	for _, f := range d.configuration.Feeds {
 		feeds = append(feeds, announce.Feed{Room: change.RoomID(f.RoomID), Audience: announce.Audience(f.Audience)})
 	}
-	n, err := announce.New(announce.Config{History: store, Events: store, Cursors: store, Chat: ad.chat, Feeds: feeds, ReviewRoom: ad.reviewsRoom})
+	n, err := announce.New(announce.Config{History: store, Events: store, Cursors: store, Chat: ad.chat, Feeds: feeds, ReviewRoom: ad.reviewsRoom, TestsRoom: ad.testsRoom, Tickets: ad.tickets})
 	if err != nil {
 		return nil, fmt.Errorf("build narrator: %w", err)
 	}
@@ -660,7 +659,7 @@ func assembleMCP(
 	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng *engine.Engine, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
 ) (http.Handler, error) {
 	taskIndex := postgres.NewTaskIndex(pool)
-	asker := &chatAsker{chat: ad.chat, store: store, ids: gen}
+	asker := &chatAsker{chat: ad.chat, store: store, ids: gen, public: ad.testsRoom}
 	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk, store)
 	if err != nil {
 		return nil, err
@@ -847,13 +846,8 @@ func executors(ctx context.Context, ad adapters, store ports.EventStore, profile
 	if !ok {
 		return nil, errors.New("build task_assign executor: the selected chat cannot invite agents into a room")
 	}
-	roleRooms := map[workflow.Role]change.RoomID{}
-	if ad.reviewsRoom != "" {
-		roleRooms[workflow.RoleReviewer] = ad.reviewsRoom
-		roleRooms[workflow.RoleResolver] = ad.reviewsRoom
-	}
 	taskAssign, err := effects.NewTaskAssign(effects.TaskAssignDeps{
-		Blobs: blobs, Chat: ad.chat, Inviter: inviter, RoleRooms: roleRooms, Focus: cursorsOf(store),
+		Blobs: blobs, Chat: ad.chat, Inviter: inviter, Focus: cursorsOf(store),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build task_assign executor: %w", err)

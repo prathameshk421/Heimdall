@@ -265,6 +265,9 @@ type chatAsker struct {
 	chat  ports.Chat
 	store ports.EventStore
 	ids   ports.IDs
+	// public, when set, is the standing channel where people read the agent's questions. The change's own room is an
+	// agent-only working room.
+	public change.RoomID
 }
 
 func (c *chatAsker) Ask(ctx context.Context, changeID id.ChangeID, question string) (change.QuestionID, change.SenderID, change.MessageID, error) {
@@ -282,6 +285,9 @@ func (c *chatAsker) Ask(ctx context.Context, changeID id.ChangeID, question stri
 				}
 			}
 		}
+	}
+	if c.public != "" {
+		roomID = c.public
 	}
 	key := change.EffectKey(fmt.Sprintf("ask:%s:%s", changeID, c.ids.NewEvent()))
 	if c.chat != nil {

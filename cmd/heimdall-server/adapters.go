@@ -202,6 +202,9 @@ func selected[T any](cfg config.Config, reg *registry.Registry, kind registry.Ki
 // every feed room, so a command typed in any of them reaches its ticket.
 func standingRoomsOf(cfg config.Config) []change.RoomID {
 	var out []change.RoomID
+	if cfg.Rooms.Tests != "" {
+		out = append(out, change.RoomID(cfg.Rooms.Tests))
+	}
 	if cfg.Rooms.Reviews != "" {
 		out = append(out, change.RoomID(cfg.Rooms.Reviews))
 	}
@@ -354,7 +357,7 @@ func (f adapterFactory) switchChat(cfg config.Config) (any, error) {
 		AgentID:            f.d.endpoints.switchAgentID,
 		AgentName:          f.d.endpoints.switchAgentName,
 		BridgeID:           f.d.endpoints.switchBridgeID,
-		SharedRoom:         change.RoomID(cfg.Rooms.Tests),
+		InternalRooms:      cfg.Rooms.Tests != "",
 		Secrets:            cfg,
 		APIKeySecret:       cfg.Switch.APIKeySecret,
 		RegistrationSecret: cfg.Switch.RegistrationTokenSecret,

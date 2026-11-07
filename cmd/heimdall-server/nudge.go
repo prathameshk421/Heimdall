@@ -22,7 +22,7 @@ import (
 // waits one more step, so a slow agent is not spammed.
 const (
 	nudgeAfter = 45 * time.Second
-	nudgeMax   = 3
+	nudgeMax   = 12
 )
 
 // nudgeAgent is a workflow agent whose open task can be nudged.
@@ -168,6 +168,6 @@ func newTaskNudger(ad adapters, store ports.EventStore, cursors ports.CursorTabl
 	}
 	return &taskNudger{
 		index: postgres.NewTaskIndex(pool), events: store, chat: ad.chat, cursors: cursors, clock: clk,
-		agents: agents, reviewsRoom: ad.reviewsRoom,
+		agents: agents,
 	}
 }

@@ -85,9 +85,6 @@ func (c *Client) OpenRoom(ctx context.Context, r ports.RoomRequest) (change.Room
 	if err := r.Validate(); err != nil {
 		return "", fmt.Errorf("switch open room: %w", err)
 	}
-	if c.sharedRoom != "" {
-		return c.sharedRoom, nil
-	}
 	var room change.RoomID
 	err := c.guarded(ctx, "open room", func(ctx context.Context) error {
 		id, found, err := c.findRoom(ctx, r.Title)
@@ -141,6 +138,12 @@ func (c *Client) createRoom(ctx context.Context, title, changeID string, agents 
 		"agent_names":  c.roomMembers(agents),
 		"channel_type": "channel_public",
 		"bridge_id":    c.bridgeID,
+	}
+	if c.internalRooms {
+		// An agent-only working room: no chat channel, so the agent's session for this ticket is its own.
+		delete(args, "bridge_id")
+		args["internal_only"] = true
+		args["description"] = "Heimdall working room for " + changeID
 	}
 	if err := c.operation(ctx, "create_room", args, &reply); err != nil {
 		return "", err

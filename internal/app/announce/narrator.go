@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -35,11 +37,16 @@ type Config struct {
 	// ReviewRoom, when set, is the standing channel for the review story. Without it the review lines go to the room
 	// of the change, like the test lines.
 	ReviewRoom change.RoomID
+	// TestsRoom is the standing channel for the test story, set together with ReviewRoom.
+	TestsRoom change.RoomID
+	// Tickets, when set, gives the first line about a ticket its title: "KAN-16 (Add refund reasons to the Pay API)".
+	Tickets ports.TicketReader
 }
 
 // Narrator posts one plain line per milestone of every change to the change's room and to the feeds.
 type Narrator struct {
-	cfg Config
+	cfg    Config
+	titles map[id.ChangeID]string
 }
 
 // New builds the narrator, or refuses when a dependency is missing.
@@ -70,7 +77,7 @@ func New(cfg Config) (*Narrator, error) {
 			return nil, fmt.Errorf("announce: feed %s has audience %q, want tests, review or both", f.Room, f.Audience)
 		}
 	}
-	return &Narrator{cfg: cfg}, nil
+	return &Narrator{cfg: cfg, titles: map[id.ChangeID]string{}}, nil
 }
 
 // RunOnce reads the events after the cursor and posts a line for each one that has one. It returns how many events
@@ -159,6 +166,7 @@ func (n *Narrator) announce(ctx context.Context, ev change.Event) (bool, error) 
 	if !ok {
 		return false, nil
 	}
+	line.Text = n.withTitle(ctx, ev, line.Text)
 	for _, room := range n.rooms(before, line.Audience) {
 		key, err := change.IdempotencyKey(ev.ChangeID, 1, change.EffectRoomPost, "announce:"+string(ev.ID)+":"+string(room))
 		if err != nil {
@@ -174,19 +182,15 @@ func (n *Narrator) announce(ctx context.Context, ev change.Event) (bool, error) 
 // rooms lists where a line goes: the room of the change when it exists, then each feed that wants the audience.
 func (n *Narrator) rooms(history []change.Event, a Audience) []change.RoomID {
 	var out []change.RoomID
-	room := roomOf(history)
-	if n.cfg.ReviewRoom != "" {
-		switch a {
-		case AudienceReview:
-			room = n.cfg.ReviewRoom
-		case AudienceBoth:
-			if room != n.cfg.ReviewRoom {
-				out = append(out, n.cfg.ReviewRoom)
-			}
-		case AudienceTests:
+	if n.cfg.TestsRoom != "" && n.cfg.ReviewRoom != "" {
+		// Standing channels: the story is told there, not in the ticket's working room.
+		if a == AudienceTests || a == AudienceBoth {
+			out = append(out, n.cfg.TestsRoom)
 		}
-	}
-	if room != "" {
+		if a == AudienceReview || a == AudienceBoth {
+			out = append(out, n.cfg.ReviewRoom)
+		}
+	} else if room := roomOf(history); room != "" {
 		out = append(out, room)
 	}
 	for _, f := range n.cfg.Feeds {
@@ -207,4 +211,31 @@ func roomOf(history []change.Event) change.RoomID {
 		}
 	}
 	return ""
+}
+
+// firstMention marks the events whose line is the first thing people read about a ticket or its pull request.
+func firstMention(t change.EventType) bool {
+	return t == change.EventTaskAssigned || t == change.EventPROpened || t == change.EventChangeMerged
+}
+
+// withTitle puts the ticket title after the first mention of its key. A title that cannot be read leaves the line as it
+// is: the key alone is already clear.
+func (n *Narrator) withTitle(ctx context.Context, ev change.Event, text string) string {
+	if n.cfg.Tickets == nil || !firstMention(ev.Type) {
+		return text
+	}
+	title, ok := n.titles[ev.ChangeID]
+	if !ok {
+		t, err := n.cfg.Tickets.Ticket(ctx, ev.ChangeID)
+		if err != nil {
+			return text
+		}
+		title = t.Title
+		n.titles[ev.ChangeID] = title
+	}
+	if title == "" {
+		return text
+	}
+	key := string(ev.ChangeID)
+	return strings.Replace(text, key, key+" ("+title+")", 1)
 }
