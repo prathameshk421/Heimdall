@@ -182,6 +182,7 @@ type app struct {
 	operatorReject    http.Handler
 	operatorRoom      http.Handler
 	narrator          *announce.Narrator
+	nudger            *taskNudger
 	packUpload        http.Handler
 	commands          *commandRuntime
 	workflowMemory    *knowledge.WorkflowMemory
@@ -599,8 +600,8 @@ func assembleWithBlobs(
 		return nil, err
 	}
 	return &app{
-		narrator: narrator,
-		pool:     pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, retention: files, blobs: closerOf(blobs),
+		narrator: narrator, nudger: newTaskNudger(ad, store, store, pool, clk),
+		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
