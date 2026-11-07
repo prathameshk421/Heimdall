@@ -141,13 +141,17 @@ cat > "$work/remote-bin/sudo" <<'SH'
 if [[ "${1:-}" == -u ]]; then shift 2; fi
 exec "$@"
 SH
-chmod +x "$work/remote-bin/rsync" "$work/remote-bin/docker" "$work/remote-bin/curl" "$work/remote-bin/sudo"
+cat > "$work/remote-bin/chown" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${REMOTE_CHOWN_CAPTURE:-/dev/null}"
+SH
+chmod +x "$work/remote-bin/rsync" "$work/remote-bin/docker" "$work/remote-bin/curl" "$work/remote-bin/sudo" "$work/remote-bin/chown"
 remote_success_root="$work/remote-success"
 mkdir -p "$remote_success_root"
 cp "$work/remote-release.tgz" "$work/remote-success-stage.tgz"
 cp -a "$work/staged-secrets" "$work/remote-success-stage-secrets"
-REMOTE_DOCKER_CAPTURE="$work/remote-success-docker" REMOTE_CURL_CAPTURE="$work/remote-success-curl" PATH="$work/remote-bin:$PATH" sh "$root/scripts/deploy-remote.sh" v2.0.0 "$work/remote-success-stage" "$(id -un)" "$remote_hash" "$remote_success_root/install" "$remote_success_root/secrets" >/dev/null 2>&1; code=$?
-[ "$code" -eq 0 ] && [ "$(readlink "$remote_success_root/install/current")" = "$remote_success_root/install/releases/v2.0.0-$remote_hash" ] && [ ! -e "$work/remote-success-stage.tgz" ] && grep -q '/healthz' "$work/remote-success-curl" && grep -q '/mcp' "$work/remote-success-curl" && ! grep -q 'test-only-token' "$work/remote-success-curl"; check "remote activation advances after health and MCP using a private curl config file" $?
+REMOTE_CHOWN_CAPTURE="$work/remote-success-chown" REMOTE_DOCKER_CAPTURE="$work/remote-success-docker" REMOTE_CURL_CAPTURE="$work/remote-success-curl" PATH="$work/remote-bin:$PATH" sh "$root/scripts/deploy-remote.sh" v2.0.0 "$work/remote-success-stage" "$(id -un)" "$remote_hash" "$remote_success_root/install" "$remote_success_root/secrets" >/dev/null 2>&1; code=$?
+[ "$code" -eq 0 ] && [ "$(readlink "$remote_success_root/install/current")" = "$remote_success_root/install/releases/v2.0.0-$remote_hash" ] && [ ! -e "$work/remote-success-stage.tgz" ] && grep -q '/healthz' "$work/remote-success-curl" && grep -q '/mcp' "$work/remote-success-curl" && ! grep -q 'test-only-token' "$work/remote-success-curl" && grep -qx -- "-R 65532:65532 $remote_success_root/secrets" "$work/remote-success-chown"; check "remote activation advances after health and MCP using a private curl config file" $?
 remote_rollback_root="$work/remote-rollback"
 mkdir -p "$remote_rollback_root/install/releases/v1.0.0/deploy" "$remote_rollback_root/install/releases/v1.0.0/deploy" "$remote_rollback_root/secrets"
 : > "$remote_rollback_root/install/releases/v1.0.0/deploy/compose.yaml"
