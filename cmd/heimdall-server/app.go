@@ -182,6 +182,7 @@ type app struct {
 	operatorRoom      http.Handler
 	narrator          *announce.Narrator
 	nudger            *taskNudger
+	timers            *workflowTimers
 	packUpload        http.Handler
 	commands          *commandRuntime
 	workflowMemory    *knowledge.WorkflowMemory
@@ -607,7 +608,7 @@ func assembleWithBlobs(
 		return nil, err
 	}
 	return &app{
-		narrator: narrator, nudger: newTaskNudger(ad, store, store, pool, clk),
+		narrator: narrator, nudger: newTaskNudger(ad, store, store, pool, clk), timers: &workflowTimers{eng: eng, rooms: store, clock: clk},
 		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,

@@ -310,6 +310,9 @@ func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
 	if a.nudger != nil {
 		runs = append(runs, a.nudgeLoop)
 	}
+	if a.timers != nil {
+		runs = append(runs, a.timerLoop)
+	}
 	if a.episodeWorker != nil {
 		runs = append(runs, a.episodeDeliveryLoop)
 	}

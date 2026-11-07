@@ -164,7 +164,7 @@ func (s *Service) markGone(ctx context.Context, rooms []ports.RoomBinding) error
 	for _, r := range rooms {
 		room := r.RoomID
 		err := s.probe(ctx, room)
-		if !errors.Is(err, ports.ErrUnauthorized) && !errors.Is(err, ports.ErrNotFound) {
+		if !errors.Is(err, ports.ErrUnauthorized) && !errors.Is(err, ports.ErrNotFound) && !errors.Is(err, ports.ErrInvalidRequest) {
 			continue
 		}
 		if err := s.cursors.SetCursor(ctx, gonePrefix+string(room), "1"); err != nil {
