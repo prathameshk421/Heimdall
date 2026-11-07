@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/cardsfs"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/pack"
@@ -13,7 +14,8 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
-// cardsHandler lets a mapped human manage their own personal cards: GET /cards lists them, PUT /cards/<file>
+// cardsHandler lets a mapped human manage their own personal cards: GET /cards lists them, GET /cards/<file>
+// returns one, PUT /cards/<file>
 // stores one, DELETE /cards/<file> removes one. The folder is chosen by the bearer token, never by the path, so a
 // person can touch only their own cards; an agent token is refused, because agents read cards but never write them.
 // The server checks every card itself (size, front matter, secrets and personal data) whatever the client did.
@@ -44,12 +46,14 @@ func (h cardsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && name == "":
 		h.list(w, person)
+	case r.Method == http.MethodGet && name != "":
+		h.read(w, r, person, name)
 	case r.Method == http.MethodPut && name != "":
 		h.put(w, r, person, name)
 	case r.Method == http.MethodDelete && name != "":
 		h.remove(w, person, name)
 	default:
-		http.Error(w, "use GET /cards, PUT /cards/<file> or DELETE /cards/<file>", http.StatusMethodNotAllowed)
+		http.Error(w, "use GET /cards, GET /cards/<file>, PUT /cards/<file> or DELETE /cards/<file>", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -76,6 +80,20 @@ func (h cardsHandler) list(w http.ResponseWriter, person string) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string][]string{"cards": names})
+}
+
+func (h cardsHandler) read(w http.ResponseWriter, r *http.Request, person, name string) {
+	text, err := h.store.Read(person, name)
+	switch {
+	case errors.Is(err, cardsfs.ErrNotFound):
+		http.Error(w, "no such card", http.StatusNotFound)
+	case err != nil:
+		http.Error(w, "card could not be read: use a plain .md, .yaml, .yml or .txt file name", http.StatusBadRequest)
+	default:
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		http.ServeContent(w, r, name, time.Time{}, strings.NewReader(text))
+	}
 }
 
 func (h cardsHandler) put(w http.ResponseWriter, r *http.Request, person, name string) {

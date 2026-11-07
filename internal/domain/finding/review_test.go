@@ -43,6 +43,18 @@ func TestReviewValidateRefusesWhatCannotBeJudged(t *testing.T) {
 		{"a duplicate file", "review.golden.json", func(r *finding.Review) { r.FilesReviewed = []string{"a.go", "a.go"} }, "files_reviewed[1]"},
 		{"no head sha", "review.golden.json", func(r *finding.Review) { r.HeadSHA = "" }, "head_sha"},
 		{"a bad finding", "review.golden.json", func(r *finding.Review) { r.Findings[0].Claim = "x" }, "findings[0].claim"},
+		{"a bad rule verdict", "review.golden.json", func(r *finding.Review) {
+			r.RuleChecks = []finding.RuleCheck{{Card: "refunds.md", Verdict: "maybe"}}
+		}, "rule_checks[0]"},
+		{"a blank rule card", "review.golden.json", func(r *finding.Review) {
+			r.RuleChecks = []finding.RuleCheck{{Card: " ", Verdict: finding.RuleHolds}}
+		}, "rule_checks[0].card"},
+		{"too many rule checks", "review.golden.json", func(r *finding.Review) {
+			r.RuleChecks = make([]finding.RuleCheck, 13)
+			for i := range r.RuleChecks {
+				r.RuleChecks[i] = finding.RuleCheck{Card: "a.md", Verdict: finding.RuleHolds}
+			}
+		}, "rule_checks has 13 entries, at most 12"},
 		{"too many findings", "review.golden.json", func(r *finding.Review) {
 			r.Findings = make([]finding.Input, 51)
 			for i := range r.Findings {

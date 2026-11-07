@@ -223,6 +223,40 @@
       "type": "array",
       "maxItems": 50,
       "description": "The findings; each is backed by evidence"
+    },
+    "rule_checks": {
+      "items": {
+        "properties": {
+          "card": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "description": "The card file name the rule came from"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "violated",
+              "holds",
+              "not_applicable"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "One short sentence of why"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "card",
+          "verdict"
+        ]
+      },
+      "type": "array",
+      "maxItems": 12,
+      "description": "One entry per rule card you checked; optional"
     }
   },
   "additionalProperties": false,

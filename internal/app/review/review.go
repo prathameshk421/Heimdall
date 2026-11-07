@@ -125,6 +125,12 @@ func checkContextRefs(ctx context.Context, refs Refs, sub Submission, prefix str
 	var problems []Problem
 	for refIndex, ref := range contextRefs {
 		at := fmt.Sprintf("%s.context_refs[%d]", prefix, refIndex)
+		if name, isCard := finding.CardRef(ref); isCard {
+			if name == "" {
+				problems = append(problems, Problem{Message: at + " must be card: followed by a plain file name"})
+			}
+			continue
+		}
 		memory, err := refs.MemoryExists(ctx, sub.Change, sub.Caller, ref)
 		if err != nil {
 			return nil, fmt.Errorf("look up %s: %w", at, err)

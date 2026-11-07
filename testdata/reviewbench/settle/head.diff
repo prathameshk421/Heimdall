@@ -1,0 +1,58 @@
+diff -ruN base/cmd/settle/main.go head/cmd/settle/main.go
+--- a/cmd/settle/main.go	2026-11-08 01:00:55
++++ b/cmd/settle/main.go	2026-11-08 01:00:55
+@@ -11,7 +11,7 @@
+ )
+ 
+ func main() {
+-	dryRun := flag.Bool("dry-run", false, "plan the batch and send nothing")
++	dryRun := flag.Bool("preview", false, "plan the batch and send nothing")
+ 	flag.Parse()
+ 	store := merchants.NewStore()
+ 	run := payout.NewRunner(store, bank.NewClient(os.Getenv("BANK_URL")))
+diff -ruN base/internal/bank/client.go head/internal/bank/client.go
+--- a/internal/bank/client.go	2026-11-08 01:00:55
++++ b/internal/bank/client.go	2026-11-08 01:00:55
+@@ -4,11 +4,12 @@
+ 	"bytes"
+ 	"encoding/json"
+ 	"fmt"
++	"log/slog"
+ 	"net/http"
+ )
+ 
+ // maxBatch is how many lines one request carries.
+-const maxBatch = 500
++const maxBatch = 2000
+ 
+ // Line is one transfer.
+ type Line struct {
+@@ -26,6 +27,7 @@
+ func (c *Client) Send(lines []Line) error {
+ 	for start := 0; start < len(lines); start += maxBatch {
+ 		end := min(start+maxBatch, len(lines))
++		slog.Info("sending batch", "first_iban_merchant", lines[start].IBAN, "size", end-start)
+ 		if err := c.post(lines[start:end]); err != nil {
+ 			return fmt.Errorf("send batch at %d: %w", start, err)
+ 		}
+diff -ruN base/internal/merchants/store.go head/internal/merchants/store.go
+--- a/internal/merchants/store.go	2026-11-08 01:00:55
++++ b/internal/merchants/store.go	2026-11-08 01:00:55
+@@ -25,15 +25,11 @@
+ // NewStore returns an empty store.
+ func NewStore() *Store { return &Store{byID: map[string]*Merchant{}} }
+ 
+-// Lookup returns the merchant, or ErrNotFound.
++// Lookup returns the merchant, or nil when there is none. A missing merchant is normal during a backfill.
+ func (s *Store) Lookup(id string) (*Merchant, error) {
+ 	s.mu.Lock()
+ 	defer s.mu.Unlock()
+-	m, ok := s.byID[id]
+-	if !ok {
+-		return nil, ErrNotFound
+-	}
+-	return m, nil
++	return s.byID[id], nil
+ }
+ 
+ // Due lists the ids with a positive balance.

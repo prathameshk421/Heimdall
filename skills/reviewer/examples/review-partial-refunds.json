@@ -21,5 +21,8 @@
       ],
       "context_refs": ["mem_refund_cap_invariant"]
     }
+  ],
+  "rule_checks": [
+    {"card": "refund-cap.md", "verdict": "violated", "note": "The cap compares one request with the payment and ignores refunds already made."}
   ]
 }

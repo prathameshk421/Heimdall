@@ -634,3 +634,15 @@ Reason: OpenCode 1.19.5 shows an MCP tool to the model as `<server key>_<tool>`.
 Changed: `internal/transport/mcp/tools.go`, `doc.go`, `docs/TECH_SPEC.md` section 14.1, the MCP and testagent tests, and the skill-example test helpers. TECH_SPEC lines 442 to 444 and 474 keep `heimdall_get_task`, because they say what the model calls. The old names are not kept as aliases.
 
 Red: the test edits failed with `invalid params` on unknown tool names, and `TestSkillsNameOnlyToolsTheServerOffersTheirRole` failed on the prefix check. Green: `CGO_ENABLED=0 make fast` exits 0 with 3,740 tests. `go test -tags component -run MCP ./cmd/heimdall-server` passes. **Not verified:** a live OpenCode 1.19.5 run with the bare names, and the `live` smoke test against a running server (it compiles with `go vet -tags live`).
+
+## Review moat (Nov 8, 2026, branch `heimdall-moat`)
+
+Design, measurements and next steps: `docs/REVIEW_MOAT.md`. Built: rule cards v2 and ranker (`internal/domain/rulecard`), code graph with reversed PageRank, removed-symbol and contract-string checks (`internal/app/codegraph`), reviewer tools `search_code` and `find_symbol`, the review brief (`internal/app/reviewbrief`), `rule_checks` and `card:` refs on Review@1 (optional, grants no tier), outcome learning and human-gated proposals (`internal/app/reviewlearn`), narrated graph episodes under `v2` keys, the review ontology in `deploy/graphiti/config.yaml`, the `heimdall cards` CLI and session miner, and the rewritten reviewer skill.
+
+Bench `testdata/reviewbench/settle`, Haiku, 3 reviewers per arm, one synthetic PR: the two out-of-diff bugs went from 0 concrete finds (today's reviewer, with or without cards) to 3/3 with the change map; the person-only bug was found by its card holder only; the card holder filed no noise on the clean PR. Limits are in the doc.
+
+**Not verified:** nothing ran on the VM. No live DeepSeek or OpenCode run. `search_code` and `find_symbol` were not measured, because the eval agents had no Grep. `heimdall cards push`, `pull`, `inbox`, `accept` and `reject` ran against test servers only. The proposal worker and Graphiti narration ran in unit tests only. Graphiti delivery is still unconfirmed live. Old `workflow:` episodes stay in Graphiti, and events replay once under `v2` keys, which costs extraction tokens on the first backfill.
+
+**Noticed:** the worktree under `.claude/worktrees/` cannot be edited, because the edit guard compares paths with the main checkout and every file matches `.claude/*`. This branch lives in a sibling folder. The post-edit hook also prints a harmless vet path error outside the main checkout, so run vet by hand there.
+
+**Failing tests, not from this work:** `make verify` stops at `race` with 7 of 4,257 tests failing: `TestOutboxLease`, `TestOutboxStart` (each with one subtest), `TestOutboxDeadLetter`, `TestMergeGateEndToEnd` and `TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex`. All five top-level tests fail the same way on the untouched base commit `581986b` (run on this Mac, Nov 8), so the cause is older than this branch. Cause not investigated. No test was changed.

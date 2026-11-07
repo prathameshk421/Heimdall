@@ -36,6 +36,18 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runAdmin(rest, stdin, stdout, stderr)
 	case "controller":
 		return runController(rest, stdin, stdout, stderr, realControllerDeps())
+	case "pack":
+		return runPack(rest, stdin, stdout)
+	case "cards":
+		return runCards(rest, stdin, stdout, stderr)
+	default:
+		return runOutputOnly(subcommand, rest, stdout, stderr)
+	}
+}
+
+// runOutputOnly runs the subcommands that need no stdin.
+func runOutputOnly(subcommand string, rest []string, stdout, stderr io.Writer) int {
+	switch subcommand {
 	case "cost":
 		return runCost(rest, stdout, stderr)
 	case "budget-check":
@@ -46,8 +58,6 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runSecretsSync(rest, stdout, stderr)
 	case "switch-register":
 		return runSwitchRegister(rest, stdout, stderr)
-	case "pack":
-		return runPack(rest, stdin, stdout)
 	default:
 		writeDiagnostic(stderr, "heimdall: not built yet\n")
 		return exitNotBuilt

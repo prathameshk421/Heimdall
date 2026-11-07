@@ -989,6 +989,7 @@ Wire names are bare. The server lists and accepts `get_task`, not `heimdall_get_
 | `read_card(file?)` | reviewer (own cards only) |
 | `ask_knowledge(question, entities?, as_of?)` | all |
 | `run_check(kind, args)` | reviewer, resolver (counts toward budget) |
+| `search_code(pattern, path_glob?)`, `find_symbol(name)` | reviewer, resolver (head commit only) |
 | `submit_tests` | test-author |
 | `ask_humans(questions ≤3)` | test-author, resolver |
 | `submit_review` | reviewer |

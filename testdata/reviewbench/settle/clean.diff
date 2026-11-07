@@ -1,0 +1,36 @@
+diff -ruN base/internal/bank/client.go clean/internal/bank/client.go
+--- a/internal/bank/client.go	2026-11-08 01:00:55
++++ b/internal/bank/client.go	2026-11-08 01:00:55
+@@ -4,10 +4,11 @@
+ 	"bytes"
+ 	"encoding/json"
+ 	"fmt"
++	"log/slog"
+ 	"net/http"
+ )
+ 
+-// maxBatch is how many lines one request carries.
++// maxBatch is how many lines one request carries. The value is fixed by the bank contract.
+ const maxBatch = 500
+ 
+ // Line is one transfer.
+@@ -26,6 +27,7 @@
+ func (c *Client) Send(lines []Line) error {
+ 	for start := 0; start < len(lines); start += maxBatch {
+ 		end := min(start+maxBatch, len(lines))
++		slog.Info("sending batch", "first_iban_merchant", lines[start].IBAN, "size", end-start)
+ 		if err := c.post(lines[start:end]); err != nil {
+ 			return fmt.Errorf("send batch at %d: %w", start, err)
+ 		}
+diff -ruN base/internal/merchants/store.go clean/internal/merchants/store.go
+--- a/internal/merchants/store.go	2026-11-08 01:00:55
++++ b/internal/merchants/store.go	2026-11-08 01:00:55
+@@ -25,7 +25,7 @@
+ // NewStore returns an empty store.
+ func NewStore() *Store { return &Store{byID: map[string]*Merchant{}} }
+ 
+-// Lookup returns the merchant, or ErrNotFound.
++// Lookup returns the merchant, or ErrNotFound when no merchant has this id.
+ func (s *Store) Lookup(id string) (*Merchant, error) {
+ 	s.mu.Lock()
+ 	defer s.mu.Unlock()

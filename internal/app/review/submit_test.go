@@ -227,3 +227,23 @@ func problemText(result review.Result) string {
 	}
 	return strings.Join(parts, "\n")
 }
+
+func TestSubmitAcceptsAWellFormedCardRefAndGrantsNoTier(t *testing.T) {
+	f := validFinding()
+	f.Evidence = []finding.Evidence{{Type: finding.EvidenceReasoning, Reasoning: ptr("The rule in the card is broken by the new branch.")}}
+	f.ContextRefs = []string{"card:refund-cap.md"}
+	got, err := review.Submit(context.Background(), newRefs(), submission(f))
+	require.NoError(t, err)
+	require.Empty(t, got.Problems)
+	require.Equal(t, finding.TierE4, got.Findings[0].Tier)
+}
+
+func TestSubmitRefusesABadCardRef(t *testing.T) {
+	for _, ref := range []string{"card:", "card:../secret.md", "card:a/b.md", "card:.hidden", "card:" + strings.Repeat("a", 300)} {
+		f := validFinding()
+		f.ContextRefs = []string{ref}
+		got, err := review.Submit(context.Background(), newRefs(), submission(f))
+		require.NoError(t, err)
+		require.Contains(t, problemText(got), "context_refs[0]", ref)
+	}
+}

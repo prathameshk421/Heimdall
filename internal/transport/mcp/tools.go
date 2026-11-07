@@ -126,6 +126,13 @@ func (s *Server) optionalTools() []tool {
 	if s.deps.Cards != nil {
 		tools = append(tools, tool{name: "read_card", description: "Read your own personal context cards (what you own, the rules that must hold, past incidents). Call it with no file to list them, then with a file name to read one. Use what you learn as E4 pack_ref or reasoning evidence.", schema: readCardSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.readCard})
 	}
+	if s.deps.Graph != nil {
+		reviewers := []workflow.Role{workflow.RoleReviewer, workflow.RoleResolver}
+		tools = append(tools,
+			tool{name: "search_code", description: "Search the whole repository at the head commit with an RE2 pattern. An optional path glob limits the files. Returns at most 50 file:line hits. Use it to find callers and every other place a problem can occur.", schema: searchCodeSchema(), roles: reviewers, handle: s.searchCode},
+			tool{name: "find_symbol", description: "Find where a name is defined and used at the head commit, such as Create or RefundService.Create. Uses are a name match only, so read each one with read_code before you cite it.", schema: findSymbolSchema(), roles: reviewers, handle: s.findSymbol},
+		)
+	}
 	if s.deps.Packs != nil {
 		tools = append(tools, tool{name: "read_pack", description: "Read your own fresh, verified reviewer context pack. Private canaries are filtered before it is returned.", schema: readPackSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.readPack})
 	}
@@ -358,8 +365,8 @@ func criterionIDs(in workflow.Inputs) []string {
 	return ids
 }
 
-// getTask returns the task envelope. Every field in it is a server-built value or a reference, so no untrusted text
-// is inlined here.
+// getTask returns the task envelope. Every field in it is a server-built value or a reference. The only inlined text
+// is the brief, and each of its sections comes inside an untrusted wrapper.
 func (s *Server) getTask(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
 	if err := noArgs(args); err != nil {
 		return "", err
@@ -368,7 +375,7 @@ func (s *Server) getTask(ctx context.Context, p Principal, args json.RawMessage)
 	if err != nil {
 		return "", err
 	}
-	return taskWithInstructions(a.Task, p.Role, a.History, s.personalContext(ctx, p, a))
+	return taskWithInstructions(a.Task, p.Role, a.History, s.briefFields(ctx, p, a))
 }
 
 // personalContext returns the reviewer's own cards that apply to this change, wrapped as untrusted text, or "" when
@@ -395,7 +402,7 @@ func (s *Server) personalContext(ctx context.Context, p Principal, a Assignment)
 
 // taskWithInstructions returns the task envelope with the role's full instructions in front. The agents cannot read
 // files, so this is where their instructions arrive, fresh for every ticket, headed by the ticket they are for.
-func taskWithInstructions(task workflow.TaskEnvelope, role workflow.Role, history []string, personal string) (string, error) {
+func taskWithInstructions(task workflow.TaskEnvelope, role workflow.Role, history []string, extra map[string]string) (string, error) {
 	raw, err := json.Marshal(task)
 	if err != nil {
 		return "", fmt.Errorf("encode task: %w", err)
@@ -412,12 +419,15 @@ func taskWithInstructions(task workflow.TaskEnvelope, role workflow.Role, histor
 		return "", fmt.Errorf("encode instructions: %w", err)
 	}
 	fields["instructions"] = text
-	if personal != "" {
-		card, err := json.Marshal(personal)
-		if err != nil {
-			return "", fmt.Errorf("encode personal context: %w", err)
+	for name, value := range extra {
+		if value == "" {
+			continue
 		}
-		fields["personal_context"] = card
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return "", fmt.Errorf("encode %s: %w", name, err)
+		}
+		fields[name] = encoded
 	}
 	if len(history) > 0 {
 		story, err := json.Marshal(history)
@@ -863,10 +873,11 @@ func (s *Server) submitReview(ctx context.Context, p Principal, args json.RawMes
 		}
 		return "", refusalf("The review has invalid findings. Fix these problems and submit again:\n%s", strings.Join(lines, "\n"))
 	}
+	result := "The review is recorded."
 	if late {
-		return "The review is recorded as late.", nil
+		result = "The review is recorded as late."
 	}
-	return "The review is recorded.", nil
+	return result + s.obligationNudge(a, r), nil
 }
 
 // submitVerdict validates a verdict on a disputed finding and passes it to the application.

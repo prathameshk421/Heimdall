@@ -94,6 +94,28 @@ func ParseConfidence(s string) (Confidence, error) {
 	return parseEnum("confidence", s, ConfidenceHigh, ConfidenceMedium, ConfidenceLow)
 }
 
+// RuleVerdict is what a reviewer found when it checked one rule card.
+type RuleVerdict string
+
+// The rule verdicts.
+const (
+	RuleViolated      RuleVerdict = "violated"
+	RuleHolds         RuleVerdict = "holds"
+	RuleNotApplicable RuleVerdict = "not_applicable"
+)
+
+// ParseRuleVerdict validates s.
+func ParseRuleVerdict(s string) (RuleVerdict, error) {
+	return parseEnum("rule verdict", s, RuleViolated, RuleHolds, RuleNotApplicable)
+}
+
+// UnmarshalText validates while decoding.
+func (v *RuleVerdict) UnmarshalText(b []byte) error {
+	r, err := ParseRuleVerdict(string(b))
+	*v = r
+	return err
+}
+
 // ParseCategory validates s.
 func ParseCategory(s string) (Category, error) {
 	return parseEnum("category", s, CategoryCorrectness, CategorySecurity, CategoryCompat, CategoryOps, CategorySpecDrift, CategoryTests, CategoryStyle)

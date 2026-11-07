@@ -86,3 +86,19 @@ func TestCardsUploadRefusesSecretsBrokenFrontMatterAndOversizeBodies(t *testing.
 	require.Equal(t, http.StatusRequestEntityTooLarge, doCards(h, http.MethodPut, "/cards/a.md", "bob-token", strings.Repeat("x", cardsfs.MaxCardBytes+10)).Code)
 	require.Equal(t, http.StatusBadRequest, doCards(h, http.MethodPut, "/cards/a.md", "bob-token", "   \n").Code, "an empty card is refused")
 }
+
+func TestCardsUploadReturnsOnlyTheTokensOwnCardText(t *testing.T) {
+	h, dir := cardsServer(t)
+	card := "---\nstatus: proposed\n---\nrefunds must count earlier refunds"
+	require.Equal(t, http.StatusNoContent, doCards(h, http.MethodPut, "/cards/r.md", "bob-token", card).Code)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "alice"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "alice", "secret.md"), []byte("alice only"), 0o600))
+
+	got := doCards(h, http.MethodGet, "/cards/r.md", "bob-token", "")
+	require.Equal(t, http.StatusOK, got.Code)
+	require.Equal(t, card, got.Body.String())
+	require.Equal(t, http.StatusNotFound, doCards(h, http.MethodGet, "/cards/secret.md", "bob-token", "").Code, "another person's file is not visible")
+	require.Equal(t, http.StatusBadRequest, doCards(h, http.MethodGet, "/cards/../alice/secret.md", "bob-token", "").Code)
+	require.Equal(t, http.StatusUnauthorized, doCards(h, http.MethodGet, "/cards/r.md", "agent-token", "").Code)
+	require.Equal(t, http.StatusUnauthorized, doCards(h, http.MethodGet, "/cards/r.md", "", "").Code)
+}
