@@ -87,20 +87,23 @@ func commandBody(in Input) (string, bool) {
 	return rest, true
 }
 
-// withoutLeadingMention drops one leading mention. Mattermost and Telegram deliver a message to an agent only when it
+// withoutLeadingMention drops the leading mentions. Mattermost and Telegram deliver a message to an agent only when it
 // mentions the agent, so a command arrives as "@heimdall-coord-main heimdall uphold F1". Slack writes a mention as
-// "<@U0123ABC>" or "<@U0123ABC|name>", so the same command arrives as "<@U0123ABC> heimdall uphold F1".
+// "<@U0123ABC>" or "<@U0123ABC|name>". A mention of the Slack app reaches Switch as the agent plus the app's raw id, so
+// the same command arrives as "@heimdall-coord-main @U0CFX056ZRA heimdall uphold F1".
 func withoutLeadingMention(text string) string {
-	token, rest, found := strings.Cut(text, " ")
-	if !found {
-		return text
+	for {
+		token, rest, found := strings.Cut(text, " ")
+		if !found {
+			return text
+		}
+		isAt := strings.HasPrefix(token, "@")
+		isSlack := strings.HasPrefix(token, "<@") && strings.HasSuffix(token, ">")
+		if !isAt && !isSlack {
+			return text
+		}
+		text = strings.TrimLeftFunc(rest, unicode.IsSpace)
 	}
-	isAt := strings.HasPrefix(token, "@")
-	isSlack := strings.HasPrefix(token, "<@") && strings.HasSuffix(token, ">")
-	if !isAt && !isSlack {
-		return text
-	}
-	return strings.TrimLeftFunc(rest, unicode.IsSpace)
 }
 
 // lookupPerson resolves the sender through the people map. An empty sender or
