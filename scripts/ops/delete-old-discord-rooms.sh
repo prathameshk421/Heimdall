@@ -8,19 +8,32 @@ env_file=/opt/heimdall/switch/.env
 jar=$(mktemp)
 trap 'rm -f "$jar"' EXIT
 
-body=$(sudo awk -F= '
-  $1=="GATEWAY_ADMIN_EMAIL"    { sub(/^[^=]*=/, ""); gsub(/^"|"$/, ""); e=$0 }
-  $1=="GATEWAY_ADMIN_PASSWORD" { sub(/^[^=]*=/, ""); gsub(/^"|"$/, ""); p=$0 }
-  END { gsub(/\\/, "\\\\", p); gsub(/"/, "\\\"", p); printf "{\"email\":\"%s\",\"password\":\"%s\"}", e, p }
-' "$env_file")
+# A value may carry a CR (a file saved on Windows), quotes, or an "export " prefix; the last assignment wins, as in a
+# shell.
+read_env() {
+  sudo awk -v key="$1" '
+    { sub(/\r$/, ""); sub(/^export[ \t]+/, "") }
+    index($0, key "=") == 1 { v = substr($0, length(key) + 2) }
+    END {
+      if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2)
+      printf "%s", v
+    }' "$env_file"
+}
+email=$(read_env GATEWAY_ADMIN_EMAIL)
+password=$(read_env GATEWAY_ADMIN_PASSWORD)
+body=$(EMAIL="$email" PASSWORD="$password" python3 -c 'import json,os; print(json.dumps({"email": os.environ["EMAIL"], "password": os.environ["PASSWORD"]}))')
 
 code=$(curl -s -o /dev/null -w '%{http_code}' -c "$jar" -H 'Content-Type: application/json' \
   --data-binary @- http://127.0.0.1:8000/auth/login <<<"$body")
 unset body
 if [ "$code" != 200 ]; then
-  echo "login failed: HTTP $code" >&2
+  # Diagnostics without values: lengths, and whether Switch has a user with that email.
+  known=$(sudo docker exec -i switch-postgres-1 psql -U postgres -d switch -Atv email="$email" \
+    -c "select count(*) from users where lower(email) = lower(:'email')" 2>/dev/null || echo "?")
+  echo "login failed: HTTP $code (email length ${#email}, password length ${#password}, users with that email: $known)" >&2
   exit 1
 fi
+unset password
 echo "login ok"
 
 rooms=(
