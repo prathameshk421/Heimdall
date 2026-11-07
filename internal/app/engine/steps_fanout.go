@@ -217,7 +217,9 @@ func (AgentFanout) OnEvent(_ context.Context, _ ChangeView, _ change.Event) (Res
 	return Result{}, nil
 }
 
-// OnTimeout marks a reviewer whose task timed out without ack as review.unavailable.
+// OnTimeout marks every reviewer that has not submitted by the deadline as review.unavailable, acked or not. An acked
+// reviewer can hang (KAN-19: reviewer-1 waited on a question nobody would answer), and it must not hold the review open
+// for ever.
 func (s AgentFanout) OnTimeout(_ context.Context, c ChangeView) (Result, error) {
 	_, rp, ok, err := s.latestPicked(c)
 	if err != nil || !ok {
@@ -235,10 +237,10 @@ func (s AgentFanout) OnTimeout(_ context.Context, c ChangeView) (Result, error) 
 			continue
 		}
 		assignedEv, hasTask := taskEventForAgent[agent]
-		if !hasTask || acked[agent] {
+		if !hasTask {
 			continue
 		}
-		ev, err := s.buildUnavailableEvent(c, agent, assignedEv)
+		ev, err := s.buildUnavailableEvent(c, agent, assignedEv, acked[agent])
 		if err != nil {
 			return Result{}, err
 		}
@@ -247,10 +249,14 @@ func (s AgentFanout) OnTimeout(_ context.Context, c ChangeView) (Result, error) 
 	return Result{Events: timeoutEvs}, nil
 }
 
-func (s AgentFanout) buildUnavailableEvent(c ChangeView, agent id.AgentName, assignedEv change.Event) (change.Event, error) {
+func (s AgentFanout) buildUnavailableEvent(c ChangeView, agent id.AgentName, assignedEv change.Event, acked bool) (change.Event, error) {
+	reason := "task timed out without ack"
+	if acked {
+		reason = "task timed out without a review"
+	}
 	p := change.ReviewUnavailable{
 		Reviewer: agent,
-		Reason:   "task timed out without ack",
+		Reason:   reason,
 	}
 	raw, err := json.Marshal(p)
 	if err != nil {

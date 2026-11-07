@@ -341,17 +341,16 @@ func TestAgentFanoutOnTimeoutWithoutAck(t *testing.T) {
 	res, err := step.OnTimeout(context.Background(), view)
 	require.NoError(t, err)
 
-	// Bob should have review.unavailable
-	var foundUnavailable bool
+	// Both are released at the deadline: Bob never acked, Alice acked but submitted nothing (KAN-19: an acked reviewer
+	// hung on a question and would have held the review open for ever).
+	reasons := map[id.AgentName]string{}
 	for _, ev := range res.Events {
 		if ev.Type == change.EventReviewUnavailable {
 			var unavail change.ReviewUnavailable
 			require.NoError(t, json.Unmarshal(ev.Payload, &unavail))
-			if unavail.Reviewer == "bob-reviewer" {
-				foundUnavailable = true
-			}
-			require.NotEqual(t, id.AgentName("alice-reviewer"), unavail.Reviewer)
+			reasons[unavail.Reviewer] = unavail.Reason
 		}
 	}
-	require.True(t, foundUnavailable, "bob-reviewer should be marked review.unavailable")
+	require.Equal(t, "task timed out without ack", reasons["bob-reviewer"])
+	require.Equal(t, "task timed out without a review", reasons["alice-reviewer"])
 }
