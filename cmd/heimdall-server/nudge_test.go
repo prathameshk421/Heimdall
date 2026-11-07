@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestAStalledTaskIsNudgedAfterEachSilentWindowUpToTheCap(t *testing.T) {
+func TestAStalledTaskIsNudgedAfterASilentWindowUpToTheCap(t *testing.T) {
 	last := time.Date(2026, 11, 7, 11, 18, 0, 0, time.UTC)
 	cases := []struct {
 		name  string
@@ -15,8 +15,7 @@ func TestAStalledTaskIsNudgedAfterEachSilentWindowUpToTheCap(t *testing.T) {
 	}{
 		{"recent activity", stallAfter - time.Second, 0, false},
 		{"first window passed", stallAfter, 0, true},
-		{"second nudge waits a second window", stallAfter + time.Minute, 1, false},
-		{"second window passed", 2 * stallAfter, 1, true},
+		{"long silence", 4 * stallAfter, 1, true},
 		{"cap reached", 100 * stallAfter, stallMax, false},
 	}
 	for _, c := range cases {

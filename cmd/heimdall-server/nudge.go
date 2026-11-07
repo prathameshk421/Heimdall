@@ -119,6 +119,13 @@ func (n *taskNudger) nudgeStalled(ctx context.Context, a nudgeAgent, ref ports.A
 	if err != nil {
 		return false, err
 	}
+	if at, err := n.cursors.GetCursor(ctx, source+":at"); err == nil {
+		if prev, perr := time.Parse(time.RFC3339Nano, at); perr == nil && prev.After(last) {
+			last = prev
+		}
+	} else if !errors.Is(err, ports.ErrNotFound) {
+		return false, fmt.Errorf("nudge: read stall time: %w", err)
+	}
 	if !stallDue(n.clock.Now(), last, count) {
 		return false, nil
 	}
@@ -133,6 +140,9 @@ func (n *taskNudger) nudgeStalled(ctx context.Context, a nudgeAgent, ref ports.A
 	if err := n.cursors.SetCursor(ctx, source, strconv.Itoa(count+1)); err != nil {
 		return false, fmt.Errorf("nudge: save stall count: %w", err)
 	}
+	if err := n.cursors.SetCursor(ctx, source+":at", n.clock.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return false, fmt.Errorf("nudge: save stall time: %w", err)
+	}
 	if err := n.cursors.SetCursor(ctx, effects.FocusSource(a.name), string(ref.ChangeID)); err != nil {
 		return false, fmt.Errorf("nudge: remember the agent's ticket: %w", err)
 	}
@@ -146,13 +156,13 @@ const (
 	stallMax   = 4
 )
 
-// stallDue says whether a stall nudge is due: the change has been silent for stallAfter times one more than the
-// nudges already sent, and the cap is not reached.
+// stallDue says whether a stall nudge is due: nothing happened for stallAfter since the later of the last event and
+// the last stall nudge, and the cap is not reached.
 func stallDue(now, last time.Time, sent int) bool {
 	if last.IsZero() || sent >= stallMax {
 		return false
 	}
-	return now.Sub(last) >= stallAfter*time.Duration(sent+1)
+	return now.Sub(last) >= stallAfter
 }
 
 // lastActivity is the time of the newest event on the change at or after the assignment.
