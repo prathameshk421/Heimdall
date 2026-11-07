@@ -52,7 +52,11 @@ WHERE NOT EXISTS (
 		  OR ($2 = 'resolver' AND e.type = 'verdict.submitted')
 	  )
 )
-ORDER BY a.occurred_at ASC, a.seq ASC
+ORDER BY
+	-- A task whose change has a question no person has answered yet comes after every task that is not waiting.
+	((SELECT count(*) FROM event q WHERE q.change_id = a.change_id AND q.version > a.version AND q.type = 'question.asked')
+	 > (SELECT count(*) FROM event r WHERE r.change_id = a.change_id AND r.version > a.version AND r.type = 'question.answered')) ASC,
+	a.occurred_at ASC, a.seq ASC
 LIMIT 1;
 `
 
@@ -64,7 +68,8 @@ LIMIT 1;
 // assignment, verdict.submitted for the resolver).
 //
 // If the agent has more than one open task, ActiveTask returns the oldest one (by occurred_at, seq) and
-// lets the caller finish it first.
+// lets the caller finish it first, except that a task waiting on an unanswered human question comes after any
+// task that is not waiting.
 // If no open task exists, it returns ports.ErrNotFound.
 func (idx *TaskIndex) ActiveTask(ctx context.Context, agent id.AgentName, role workflow.Role) (ports.ActiveTaskRef, error) {
 	var cid, tid string

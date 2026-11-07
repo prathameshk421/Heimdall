@@ -167,6 +167,8 @@ type app struct {
 	mcpHandler        http.Handler
 	dashboard         http.Handler
 	agentSetupHandler http.Handler
+	operatorAnswer    http.Handler
+	commands          *commandRuntime
 	workflowMemory    *knowledge.WorkflowMemory
 	episodeWorker     interface {
 		RunOnce(context.Context, int) (int, error)
@@ -441,6 +443,7 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 		pool.Close()
 		return nil, err
 	}
+	a.operatorAnswer = operatorAnswer{answer: a.commands.OperatorAnswer, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
 	return a, nil
 }
 
@@ -539,7 +542,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	roomConsumer, commentConsumer, err := assembleCollaboration(store, ad, eng, gen, clk, d.syncEvery, intakeCase, profileManager)
+	roomConsumer, commentConsumer, runtime, err := assembleCollaboration(store, ad, eng, gen, clk, d.syncEvery, intakeCase, profileManager)
 	if err != nil {
 		return nil, err
 	}
@@ -560,30 +563,30 @@ func assembleWithBlobs(
 		closer = c
 	}
 	return &app{
-		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, dashboard: dash, agentSetupHandler: setupHandler, episodeWorker: episodeWorker, workflowMemory: workflowMemory, blobs: closer,
+		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, dashboard: dash, agentSetupHandler: setupHandler, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, blobs: closer,
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
 }
 
-func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, refreshEvery time.Duration, intakeCase *intake.Intake, profiles mcp.Profiles) (roomStreamRunner, commentPoller, error) {
+func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, refreshEvery time.Duration, intakeCase *intake.Intake, profiles mcp.Profiles) (roomStreamRunner, commentPoller, *commandRuntime, error) {
 	runtime, err := newCommandRuntime(store, ad, eng, gen, clk, prIntake{in: intakeCase}, profiles)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	stream, ok := ad.chat.(ports.ChatStream)
 	if !ok {
-		return nil, nil, errors.New("selected chat adapter does not implement the Switch room stream")
+		return nil, nil, nil, errors.New("selected chat adapter does not implement the Switch room stream")
 	}
 	roomConsumer, err := roomstream.New(roomstream.Config{Rooms: store, Cursors: store, Stream: stream, Handler: runtime.processor, RefreshEvery: refreshEvery, Wait: clock.Wait})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build Switch room consumer: %w", err)
+		return nil, nil, nil, fmt.Errorf("build Switch room consumer: %w", err)
 	}
 	commentConsumer, err := collaboration.NewGitHubCommentPoller(collaboration.CommentPollConfig{Repos: ad.repos, PRs: ad.vcs, Comments: ad.vcs, Cursors: store, Handler: runtime, Clock: clk})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build GitHub comment consumer: %w", err)
+		return nil, nil, nil, fmt.Errorf("build GitHub comment consumer: %w", err)
 	}
-	return roomConsumer, commentConsumer, nil
+	return roomConsumer, commentConsumer, runtime, nil
 }
 
 // assembleMCP wires the task index, agent tools service, adapters, and MCP server.

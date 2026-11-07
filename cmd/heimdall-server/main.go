@@ -120,5 +120,8 @@ func mountHTTP(router http.Handler, a *app) http.Handler {
 	if a != nil && a.agentSetupHandler != nil {
 		mux.Handle("/admin/agents/", a.agentSetupHandler)
 	}
+	if a != nil && a.operatorAnswer != nil {
+		mux.Handle("/admin/answer", a.operatorAnswer)
+	}
 	return mux
 }
