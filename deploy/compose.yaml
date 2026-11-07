@@ -28,6 +28,9 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
+      - type: volume
+        source: heimdall_data
+        target: /var/lib/heimdall
       - type: bind
         source: /run/heimdall-runner/runner.sock
         target: /run/heimdall-runner/runner.sock
@@ -144,6 +147,7 @@ networks:
   memory:
 
 volumes:
+  heimdall_data:
   postgres_data:
   falkordb_data:
   ollama_data:

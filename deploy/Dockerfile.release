@@ -2,6 +2,8 @@ ARG RUNTIME_IMAGE=alpine:3.24.3
 FROM ${RUNTIME_IMAGE}
 RUN addgroup -S -g 65532 heimdall && adduser -S -D -H -u 65532 -G heimdall heimdall
 COPY --chown=65532:65532 bin/heimdall-server /usr/local/bin/heimdall-server
+RUN mkdir -p /var/lib/heimdall && chown 65532:65532 /var/lib/heimdall
+WORKDIR /var/lib/heimdall
 USER 65532:65532
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
