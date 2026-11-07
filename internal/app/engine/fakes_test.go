@@ -242,6 +242,8 @@ type harness struct {
 	qaRejections int
 	// seenRetries holds every step.retried the test-author's step was offered in its view.
 	seenRetries []change.StepRetried
+	// retryHistoryHasRoom records, for each call that saw a retry, whether the view's full history still held room.opened.
+	retryHistoryHasRoom []bool
 }
 
 // rejectionReason is the one structured reason the sandbox gives for a rejected submission.
@@ -386,6 +388,7 @@ func (h *harness) agentTaskStep() *fakeStep {
 				p, err := change.Decode(ev)
 				require.NoError(h.t, err)
 				h.seenRetries = append(h.seenRetries, p.(change.StepRetried))
+				h.retryHistoryHasRoom = append(h.retryHistoryHasRoom, engine.ChangeView{ID: c.ID, Events: c.History}.Has(change.EventRoomOpened))
 			}
 		}
 		if c.Has(change.EventTaskAssigned) || c.Has(change.EventStepRetried) {

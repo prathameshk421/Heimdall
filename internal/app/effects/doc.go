@@ -20,8 +20,8 @@
 // Errors. Every error the executor returns has fixed text with ids. The text of a cause is never copied into the
 // message, so an outbox row stores no secret (outbox.Executor). The cause stays reachable with errors.Is and errors.As.
 //
-// Gap. ports.BranchWriter.EnsureBranch takes no idempotency key, so the branch write does not carry the effect key.
-// The port is idempotent by name (it does nothing when the branch exists), and the retry check above covers the rest.
+// ports.BranchWriter.EnsureBranch takes the effect key (A10 item 3), so the branch write carries it. The port is
+// idempotent by name (it does nothing when the branch exists), and the retry check above covers the rest.
 // No port reads the default branch head, so BaseReader is a consumer interface that no adapter implements yet.
 //
 // Tests. The tests use fakes for every port and for Ingest, and check the effect key, the title, the event fields,

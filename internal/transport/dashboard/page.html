@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heimdall changes</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 16px; color: #1d1d1f; background: #fff; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; vertical-align: top; }
+.blocked { color: #a40000; font-weight: 600; }
+.reason { font-size: 0.9em; color: #555; }
+</style>
+</head>
+<body>
+<h1>Changes</h1>
+<table>
+<thead><tr><th>Change</th><th>State</th><th>Last event</th><th>Blocked by</th></tr></thead>
+<tbody>
+{{range .Rows}}
+<tr>
+<td>{{.ID}}</td>
+<td>{{.State}}</td>
+<td>{{.LastType}} <span class="reason">v{{.Version}}</span></td>
+<td>{{if .Blocked}}<span class="blocked">blocked</span>{{range .Reasons}}<div class="reason">{{.}}</div>{{end}}{{else}}no{{end}}</td>
+</tr>
+{{else}}
+<tr><td colspan="4">No changes yet.</td></tr>
+{{end}}
+</tbody>
+</table>
+<script>
+(function () {
+  if (!window.EventSource) { return; }
+  var source = new EventSource("/events");
+  source.addEventListener("change", function () { window.location.reload(); });
+})();
+</script>
+</body>
+</html>

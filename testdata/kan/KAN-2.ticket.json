@@ -1,10 +1,20 @@
 {
-  "key": "KAN-2",
-  "title": "Ledger write",
   "assignee": "557058:ana",
-  "status": "In Progress",
+  "assignee_is_app": false,
   "criteria": [
-    {"id": "AC1", "hash": "4633cdbf30de20000c0319bf2abde46faf98756ad35117d77bcb3269bb04b4fd", "text": "Ledger entries are written in one transaction.\nincluding the refund row"},
-    {"id": "AC2", "hash": "f8c7780027c3531a12029f1ba64ec2957ed10632a883c74ebf6aa0b2f277253e", "text": "Currency stays the same as the payment."}
-  ]
+    {
+      "hash": "4633cdbf30de20000c0319bf2abde46faf98756ad35117d77bcb3269bb04b4fd",
+      "id": "AC1",
+      "text": "Ledger entries are written in one transaction.\nincluding the refund row"
+    },
+    {
+      "hash": "f8c7780027c3531a12029f1ba64ec2957ed10632a883c74ebf6aa0b2f277253e",
+      "id": "AC2",
+      "text": "Currency stays the same as the payment."
+    }
+  ],
+  "description": "### Acceptance criteria:\n\n- Ledger entries are written in one transaction.\n  - including the refund row\n- Currency stays the same as the payment.\n\n## Design\n\nNot criteria.",
+  "key": "KAN-2",
+  "status": "In Progress",
+  "title": "Ledger write"
 }

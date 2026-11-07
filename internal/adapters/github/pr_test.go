@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
@@ -89,7 +90,8 @@ func TestReviewsAndIssueCommentsCarryLoginAndCommit(t *testing.T) {
 	})
 	env.f.route("GET", "/repos/aarush323/heimdall-fixture-pay/issues/9/comments", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, []any{map[string]any{
-			"id": 4, "body": "hi", "user": map[string]any{"login": "bob", "type": "User"},
+			"id": 4, "body": "hi", "created_at": "2026-11-05T12:00:00Z", "updated_at": "2026-11-05T12:00:00Z",
+			"user": map[string]any{"login": "bob", "type": "User"},
 		}})
 	})
 	ctx := context.Background()
@@ -102,6 +104,9 @@ func TestReviewsAndIssueCommentsCarryLoginAndCommit(t *testing.T) {
 	if err != nil || len(comments) != 1 || comments[0].UserType != "User" || comments[0].Body != "hi" {
 		t.Fatalf("IssueComments = %+v, %v", comments, err)
 	}
+	if comments[0].CreatedAt.IsZero() || !comments[0].CreatedAt.Equal(comments[0].UpdatedAt) {
+		t.Errorf("IssueComment timestamps = %s / %s", comments[0].CreatedAt, comments[0].UpdatedAt)
+	}
 }
 
 func TestPRNotFoundIsErrNotFound(t *testing.T) {
@@ -112,5 +117,30 @@ func TestPRNotFoundIsErrNotFound(t *testing.T) {
 	_, err := env.a.PR(context.Background(), testRepo, 404)
 	if !errors.Is(err, ports.ErrNotFound) {
 		t.Errorf("error = %v, want ports.ErrNotFound", err)
+	}
+}
+
+func TestIssueCommentsSinceSendsCursorAndReturnsMetadata(t *testing.T) {
+	env := newTestEnv(t)
+	env.f.route("GET", "/repos/aarush323/heimdall-fixture-pay/issues/9/comments", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, []any{map[string]any{
+			"id": 12, "body": "/heimdall remember fact", "created_at": "2026-11-05T12:00:00Z", "updated_at": "2026-11-05T12:00:00Z",
+			"user": map[string]any{"login": "ana", "type": "User"},
+		}})
+	})
+	since := time.Date(2026, 11, 5, 11, 0, 0, 0, time.UTC)
+	comments, err := env.a.IssueCommentsSince(context.Background(), testRepo, 9, since)
+	if err != nil || len(comments) != 1 {
+		t.Fatalf("IssueCommentsSince = %+v, %v", comments, err)
+	}
+	if comments[0].Login != "ana" || !comments[0].CreatedAt.Equal(time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)) || !comments[0].CreatedAt.Equal(comments[0].UpdatedAt) {
+		t.Errorf("comment metadata = %+v", comments[0])
+	}
+	requests := env.f.requests()
+	if len(requests) == 0 {
+		t.Fatal("comments request was not recorded")
+	}
+	if !strings.Contains(requests[len(requests)-1].Query, "since=2026-11-05T11%3A00%3A00Z") {
+		t.Errorf("comments request query = %q", requests[len(requests)-1].Query)
 	}
 }

@@ -4,6 +4,9 @@
     "task_id": {
       "type": "string"
     },
+    "case_id": {
+      "type": "string"
+    },
     "role": {
       "type": "string"
     },
@@ -101,6 +104,29 @@
             "required": [
               "source",
               "ref"
+            ]
+          },
+          "type": "array"
+        },
+        "answers": {
+          "items": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "answer": {
+                "type": "string"
+              },
+              "answered_by": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "answer",
+              "answered_by"
             ]
           },
           "type": "array"

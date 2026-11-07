@@ -35,7 +35,8 @@ func TestPostSendsRoomAndBodyWithTheKeyFromTheSecretFile(t *testing.T) {
 	sent := f.sentMessages()
 	require.Len(t, sent, 1)
 	require.Equal(t, testRoomUUID, sent[0]["room_id"])
-	require.Equal(t, "heimdall uphold F1", sent[0]["body"])
+	require.Equal(t, "heimdall uphold F1", sent[0]["content"], "Switch 0.31 reads the text from content")
+	require.NotContains(t, sent[0], "body", "the real endpoint has no body field")
 	for _, r := range f.requests() {
 		require.Equal(t, testAPIKey, r.Auth, "every call after registration uses the key file")
 	}
@@ -197,7 +198,8 @@ func TestReadTruncatedHistoryIsUnavailable(t *testing.T) {
 	}
 	c, _ := newTestClient(t, f)
 	msgs, cur, err := c.Read(context.Background(), roomID(t, testRoomUUID), "2026-11-04T12:00:01Z")
-	require.ErrorIs(t, err, ports.ErrUnavailable, "the caller must read again, not lose messages")
+	require.ErrorIs(t, err, ErrTruncated, "the caller escalates; a read again from the same cursor cannot succeed")
+	require.False(t, retryable(err), "a truncated history is not retried as an outage")
 	require.Nil(t, msgs)
 	require.Equal(t, ports.Cursor("2026-11-04T12:00:01Z"), cur, "a failed read returns the cursor it was given")
 }

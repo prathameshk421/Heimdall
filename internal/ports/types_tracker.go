@@ -2,6 +2,7 @@ package ports
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"time"
 
@@ -33,6 +34,10 @@ type Ticket struct {
 	Assignee change.ActorID `json:"assignee"`
 	Status   string         `json:"status"`
 	Criteria []Criterion    `json:"criteria"`
+	// Description is the whole ticket text as the tracker holds it. The agent reads it as untrusted content.
+	Description string `json:"description,omitempty"`
+	// AssigneeIsApp is true when the assignee is an app account or automation, not a person (A10 item 2).
+	AssigneeIsApp bool `json:"assignee_is_app"`
 }
 
 // Validate returns every problem with the ticket, naming every bad criterion.
@@ -56,7 +61,9 @@ type TicketChange struct {
 	Key         id.ChangeID `json:"key"`
 	ChangelogID string      `json:"changelog_id"`
 	Fields      []string    `json:"fields"`
-	At          time.Time   `json:"at"`
+	// ToStatus is the status the move ended at, read from the changelog (required when Fields names status).
+	ToStatus string    `json:"to_status,omitempty"`
+	At       time.Time `json:"at"`
 }
 
 // Validate returns every problem with the change.
@@ -66,6 +73,10 @@ func (c TicketChange) Validate() error {
 	v.add("changelog_id", checkText(c.ChangelogID, 128))
 	v.require("fields", len(c.Fields) > 0, "must name at least one field")
 	v.each("fields", c.Fields, func(f string) error { return checkText(f, 128) })
+	if slices.Contains(c.Fields, "status") {
+		v.require("to_status", c.ToStatus != "", "must name the status the move ended at")
+		v.add("to_status", checkText(c.ToStatus, 128))
+	}
 	return v.join()
 }
 
@@ -88,6 +99,8 @@ type RoomRequest struct {
 	ChangeID id.ChangeID      `json:"change_id"`
 	Title    string           `json:"title"`
 	Key      change.EffectKey `json:"key"`
+	// Agents are the workflow agents (test author, reviewers, resolver) to put in the room when it is made.
+	Agents []string `json:"agents,omitempty"`
 }
 
 // Validate returns every problem with the request.
@@ -96,6 +109,9 @@ func (r RoomRequest) Validate() error {
 	v.add("change_id", checkTicketOrPR(r.ChangeID))
 	v.add("title", checkText(r.Title, 256))
 	v.add("key", checkText(string(r.Key), 256))
+	for _, a := range r.Agents {
+		v.add("agents", checkText(a, 128))
+	}
 	return v.join()
 }
 
@@ -134,17 +150,18 @@ type BlobClass string
 // The blob classes. Logs and diffs are kept 90 days; packs are deleted on revocation; evidence is kept while a
 // decision, verdict or approval refers to it.
 const (
-	BlobLog      BlobClass = "log"
-	BlobDiff     BlobClass = "diff"
-	BlobBundle   BlobClass = "bundle"
-	BlobPack     BlobClass = "pack"
-	BlobEvidence BlobClass = "evidence"
+	BlobLog       BlobClass = "log"
+	BlobDiff      BlobClass = "diff"
+	BlobBundle    BlobClass = "bundle"
+	BlobPack      BlobClass = "pack"
+	BlobEvidence  BlobClass = "evidence"
+	BlobKnowledge BlobClass = "knowledge"
 )
 
 // Valid reports whether c is a blob class.
 func (c BlobClass) Valid() bool {
 	switch c {
-	case BlobLog, BlobDiff, BlobBundle, BlobPack, BlobEvidence:
+	case BlobLog, BlobDiff, BlobBundle, BlobPack, BlobEvidence, BlobKnowledge:
 		return true
 	}
 	return false

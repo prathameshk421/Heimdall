@@ -51,6 +51,10 @@ type doctorDeps struct {
 	dockerVersion func(ctx context.Context) (string, error)
 	// githubReader builds the reader of the GitHub installation. It is used only when GitHub is the VCS provider.
 	githubReader func(cfg config.Config) (installationReader, error)
+	// hostChecks runs read-only host prerequisites for the explicit --host mode.
+	hostChecks func(context.Context, string) []checkResult
+	// integrationChecks runs the same selected-provider read-only checks as `heimdall connect --check`.
+	integrationChecks func(context.Context, config.Config) []checkResult
 }
 
 // installationReader reads what the GitHub App's installation holds. The GitHub adapter's TokenSource satisfies it.
@@ -66,6 +70,7 @@ func runDoctor(args []string, stdout, stderr io.Writer, deps doctorDeps) int {
 	fs.SetOutput(stderr)
 	asJSON := fs.Bool("json", false, "print the checks as a JSON array")
 	strict := fs.Bool("strict", false, "treat a too broad GitHub permission as a failure")
+	host := fs.Bool("host", false, "check VM host prerequisites (sudo, systemd, Docker, firewall, resources and reachability)")
 	configPath := fs.String("config", "", "path to heimdall.toml (default: HEIMDALL_CONFIG)")
 	if err := fs.Parse(args); err != nil {
 		return doctorExitUsage
@@ -75,15 +80,7 @@ func runDoctor(args []string, stdout, stderr io.Writer, deps doctorDeps) int {
 		return doctorExitUsage
 	}
 
-	cfg, configRow := checkConfig(*configPath, deps)
-	results := []checkResult{
-		configRow,
-		checkDocker(deps),
-		checkPostgres(),
-	}
-	if provider, ok := cfg.Selection("vcs"); ok && provider == "github" {
-		results = append(results, checkGitHub(deps, cfg)...)
-	}
+	results := collectDoctorChecks(*host, *configPath, deps)
 	failed := false
 	for _, r := range results {
 		failed = failed || blocks(r, *strict)
@@ -103,6 +100,26 @@ func runDoctor(args []string, stdout, stderr io.Writer, deps doctorDeps) int {
 		return doctorExitFail
 	}
 	return 0
+}
+
+func collectDoctorChecks(host bool, configPath string, deps doctorDeps) []checkResult {
+	if host {
+		if deps.hostChecks == nil {
+			return []checkResult{result("host", statusNotVerified, "host checks are not wired")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		return deps.hostChecks(ctx, configPath)
+	}
+	cfg, configRow := checkConfig(configPath, deps)
+	results := []checkResult{configRow, checkDocker(deps), checkPostgres()}
+	if provider, ok := cfg.Selection("vcs"); ok && provider == "github" {
+		results = append(results, checkGitHub(deps, cfg)...)
+	}
+	if deps.integrationChecks != nil {
+		results = append(results, deps.integrationChecks(context.Background(), cfg)...)
+	}
+	return results
 }
 
 // blocks says whether a row makes the exit status fail. A too broad permission is a warning unless strict is set.

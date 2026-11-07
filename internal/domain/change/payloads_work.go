@@ -11,6 +11,7 @@ import (
 // TaskAssigned is the payload of task.assigned. BundleRef is the blob whose hash is the context bundle (TECH_SPEC 6.4).
 type TaskAssigned struct {
 	TaskID    id.TaskID        `json:"task_id"`
+	CaseID    id.CaseID        `json:"case_id,omitempty"`
 	Agent     id.AgentName     `json:"agent"`
 	Role      workflow.Role    `json:"role"`
 	Deadline  time.Time        `json:"deadline"`
@@ -21,6 +22,9 @@ type TaskAssigned struct {
 func (p TaskAssigned) Validate() error {
 	var v problems
 	v.add("task_id", checkTask(p.TaskID))
+	if p.CaseID != "" {
+		v.add("case_id", checkCase(p.CaseID))
+	}
 	v.add("agent", checkAgent(p.Agent))
 	v.add("role", checkRole(p.Role))
 	if p.Deadline.IsZero() {
@@ -72,6 +76,24 @@ type TaskFailed struct {
 	Reason string        `json:"reason"`
 }
 
+// TaskProgress is a durable progress report for an assignment.
+type TaskProgress struct {
+	TaskID id.TaskID     `json:"task_id"`
+	Agent  id.AgentName  `json:"agent"`
+	Role   workflow.Role `json:"role"`
+	Text   string        `json:"text"`
+}
+
+// Validate checks the task identity and report text.
+func (p TaskProgress) Validate() error {
+	var v problems
+	v.add("task_id", checkTask(p.TaskID))
+	v.add("agent", checkAgent(p.Agent))
+	v.add("role", checkRole(p.Role))
+	v.add("text", checkText(p.Text))
+	return v.join()
+}
+
 // Validate returns every problem with the payload.
 func (p TaskFailed) Validate() error {
 	var v problems
@@ -108,6 +130,8 @@ type QuestionAnswered struct {
 	QuestionID QuestionID `json:"question_id"`
 	Sender     SenderID   `json:"sender"`
 	MessageID  MessageID  `json:"message_id"`
+	// Answer is the person's answer text. It is data for the agent, shown inside the untrusted wrapper (A14).
+	Answer string `json:"answer"`
 }
 
 // Validate returns every problem with the payload.
@@ -115,6 +139,7 @@ func (p QuestionAnswered) Validate() error {
 	var v problems
 	_, err := ParseQuestionID(string(p.QuestionID))
 	v.add("question_id", err)
+	v.add("answer", checkText(p.Answer))
 	_, err = ParseSenderID(string(p.Sender))
 	v.add("sender", err)
 	_, err = ParseMessageID(string(p.MessageID))

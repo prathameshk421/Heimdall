@@ -13,12 +13,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 // ErrEvicted says Switch took the connection over. Stream returns it and does not reconnect.
 var ErrEvicted = errors.New("switch connection evicted")
+
+// ErrTruncated says Switch no longer holds the history from the cursor. It is an escalation, not an outage: retrying
+// the same read cannot succeed, so the stream does not retry it.
+var ErrTruncated = errors.New("switch history truncated")
 
 // ErrGap says Switch cannot replay from the last sequence this stream saw, for example after a Switch restart (V13).
 // Stream returns it and does not reconnect. The caller calls Stream again with its stored cursors, and that call reads
@@ -34,6 +40,28 @@ type Delivery struct {
 	Sequence int64
 	Replayed bool
 	Cursor   ports.Cursor
+}
+
+// StreamRooms adapts Switch deliveries to the shared ports.ChatStream contract.
+func (c *Client) StreamRooms(
+	ctx context.Context,
+	rooms []ports.RoomBinding,
+	cursors map[change.RoomID]ports.Cursor,
+	deliver func(context.Context, ports.ChatDelivery) error,
+) error {
+	if deliver == nil {
+		return errors.New("switch stream: delivery handler is required")
+	}
+	roomIDs := make([]change.RoomID, 0, len(rooms))
+	for _, room := range rooms {
+		if _, err := change.ParseRoomID(string(room.RoomID)); err != nil {
+			return fmt.Errorf("switch stream: invalid room binding: %w", err)
+		}
+		roomIDs = append(roomIDs, room.RoomID)
+	}
+	return c.Stream(ctx, roomIDs, cursors, func(ctx context.Context, d Delivery) error {
+		return deliver(ctx, ports.ChatDelivery{Message: d.Message, Cursor: d.Cursor, Replayed: d.Replayed})
+	})
 }
 
 // DeliverFunc receives each delivery. A returned error stops the stream.
@@ -86,10 +114,12 @@ type streamRun struct {
 	seq        int64                       // highest SSE id delivered by this call
 	resumed    bool                        // the current connection was opened with Last-Event-ID
 	reconciled bool                        // read_context has run for the resume cursors
-	connID     string
+	connID     string                      // the connection id Switch reported in connection_state
 	failures   int
-	cancelConn context.CancelCauseFunc
-	stopBeats  func()
+
+	clientConnID string // the UUID this call made, sent on every open
+	cancelConn   context.CancelCauseFunc
+	stopBeats    func()
 }
 
 // stopError marks an error returned by DeliverFunc. It ends the stream, even when the error wraps ports.ErrUnavailable.
@@ -171,9 +201,19 @@ func (s *streamRun) open(ctx context.Context) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{"filter": {"all"}}
+	if s.clientConnID == "" {
+		s.clientConnID = uuid.NewString()
+	}
+	// Switch 0.31 refuses a stream without a client-made UUID, and wants the same one on every reconnect. It reads
+	// the declared rooms as one comma-separated "rooms" parameter (agent bridge events handler, `_open_connection`).
+	names := make([]string, 0, len(s.rooms))
 	for _, r := range s.rooms {
-		q.Add("room_id", string(r))
+		names = append(names, string(r))
+	}
+	q := url.Values{
+		"filter":        {"all"},
+		"rooms":         {strings.Join(names, ",")},
+		"connection_id": {s.clientConnID},
 	}
 	path := "/agents/" + c.agentID + "/events"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+q.Encode(), nil)
@@ -263,9 +303,9 @@ func (s *streamRun) dispatch(ctx context.Context, f sseFrame) error {
 // the resume cursors back once.
 func (s *streamRun) connectionState(ctx context.Context, raw string) error {
 	var cs struct {
-		ConnectionID     string `json:"connection_id"`
-		Generation       int64  `json:"generation"`
-		HeartbeatSeconds int64  `json:"heartbeat_interval_seconds"`
+		ConnectionID     string  `json:"connection_id"`
+		Generation       int64   `json:"generation"`
+		HeartbeatSeconds float64 `json:"heartbeat_interval_seconds"` // Switch 0.31 sends 2.0
 	}
 	if err := json.Unmarshal([]byte(raw), &cs); err != nil {
 		return fmt.Errorf("switch stream: decode connection_state: %w", err)
@@ -275,7 +315,7 @@ func (s *streamRun) connectionState(ctx context.Context, raw string) error {
 	}
 	s.connID = cs.ConnectionID
 	s.failures = 0
-	s.startBeats(ctx, cs.ConnectionID, cs.Generation, time.Duration(cs.HeartbeatSeconds)*time.Second)
+	s.startBeats(ctx, cs.ConnectionID, cs.Generation, time.Duration(cs.HeartbeatSeconds*float64(time.Second)))
 	if s.reconciled {
 		return nil
 	}

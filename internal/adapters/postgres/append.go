@@ -50,15 +50,27 @@ func (s *Store) Append(ctx context.Context, changeID id.ChangeID, expected int64
 		}
 	}
 	causing := stored[len(stored)-1].ID
-	for _, f := range fx {
-		if err := insertEffect(ctx, tx, causing, f); err != nil {
-			return 0, fmt.Errorf("append to %s: effect %s: %w", changeID, f.Key, err)
-		}
+	if err := s.insertEffects(ctx, tx, causing, fx); err != nil {
+		return 0, fmt.Errorf("append to %s: %w", changeID, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("append to %s: commit: %w", changeID, err)
 	}
 	return expected + int64(len(stored)), nil
+}
+
+func (s *Store) insertEffects(ctx context.Context, tx pgx.Tx, causing change.EventID, effects []change.Effect) error {
+	for _, f := range effects {
+		if err := insertEffect(ctx, tx, causing, f); err != nil {
+			return fmt.Errorf("effect %s: %w", f.Key, err)
+		}
+		if s.enqueuer != nil {
+			if err := s.enqueuer.EnqueueEffectTx(ctx, tx, f); err != nil {
+				return fmt.Errorf("enqueue effect %s: %w", f.Key, err)
+			}
+		}
+	}
+	return nil
 }
 
 // prepare checks the batch without touching the database and returns the events in the form they are stored: the

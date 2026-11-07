@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testset"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -24,8 +27,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
-// The fixed world of these tests: one test-author task with two acceptance criteria, one changed file and one
-// deadline an hour out.
+// The fixed world of these tests: one task with two acceptance criteria, changed files and one deadline an hour out.
 const (
 	// testToken is the canary every output test looks for. It must never appear in an output line or an error.
 	testToken   = "canary-token-7f3c1e"
@@ -33,11 +35,17 @@ const (
 	testRepo    = "acme/pay-demo"
 	changedFile = "internal/refunds/refunds.go"
 	testsDir    = "tests/heimdall/PAY-142"
+	testBase    = id.SHA("a01b2c3d4e5f60718293a4b5c6d7e8f901234567")
+	testHead    = id.SHA("9f1c2ab0c3d4e5f60718293a4b5c6d7e8f901234")
+	// baseFile is what the fake repository holds at the base commit, for every path.
+	baseFile = "package refunds\n"
+	// headFile is what the fake repository holds at the head commit, for every path. It has three lines.
+	headFile = "package refunds\n\nfunc Refund() error { return nil }\n"
 )
 
 var testNow = time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
 
-// testTask is the envelope get_task answers with.
+// testTask is the envelope get_task answers with for a test-author.
 func testTask() workflow.TaskEnvelope {
 	blob := func(byteHex string) workflow.BlobRef {
 		return workflow.BlobRef("blob:sha256:" + byteHex)
@@ -49,8 +57,8 @@ func testTask() workflow.TaskEnvelope {
 		Change: workflow.ChangeRef{
 			ID:      id.ChangeID("PAY-142"),
 			Repo:    testRepo,
-			BaseSHA: id.SHA("a01b2c3d4e5f60718293a4b5c6d7e8f901234567"),
-			HeadSHA: id.SHA("9f1c2ab0c3d4e5f60718293a4b5c6d7e8f901234"),
+			BaseSHA: testBase,
+			HeadSHA: testHead,
 		},
 		Goal: "Write failing tests for every acceptance criterion.",
 		Inputs: workflow.Inputs{
@@ -72,7 +80,7 @@ type testClock struct{ now time.Time }
 
 func (c testClock) Now() time.Time { return c.now }
 
-// testTokens resolves the canary token's hash to one test-author principal and remembers every lookup.
+// testTokens resolves the canary token's hash to one principal and remembers every lookup.
 type testTokens struct {
 	hash      string
 	principal mcp.Principal
@@ -135,44 +143,112 @@ func notify(ch chan struct{}) {
 	}
 }
 
-// testCode serves the changed file at the base commit only, which is all a test-author may read.
-type testCode struct{}
-
-func (testCode) ReadFile(_ context.Context, _ change.Repo, sha id.SHA, _ string) ([]byte, error) {
-	if sha != id.SHA("a01b2c3d4e5f60718293a4b5c6d7e8f901234567") {
-		return nil, ports.ErrNotFound
-	}
-	return []byte("package refunds\n"), nil
+// testCode serves a fixed file at the base and the head commit, and records every read so a test can see what the
+// agent read and in which order.
+type testCode struct {
+	reads []string
 }
 
-// testBlobs serves any blob reference with fixed text.
-type testBlobs struct{}
+func (c *testCode) ReadFile(_ context.Context, _ change.Repo, sha id.SHA, path string) ([]byte, error) {
+	c.reads = append(c.reads, string(sha)+" "+path)
+	switch sha {
+	case testBase:
+		return []byte(baseFile), nil
+	case testHead:
+		return []byte(headFile), nil
+	}
+	return nil, ports.ErrNotFound
+}
 
-func (testBlobs) Get(_ context.Context, _ workflow.BlobRef) (io.ReadCloser, error) {
+// testBlobs serves the text of each blob it is given, or a fixed text for a blob it does not know, and records every
+// reference that was read.
+type testBlobs struct {
+	texts map[workflow.BlobRef]string
+	reads []workflow.BlobRef
+}
+
+func (b *testBlobs) Get(_ context.Context, ref workflow.BlobRef) (io.ReadCloser, error) {
+	b.reads = append(b.reads, ref)
+	if text, ok := b.texts[ref]; ok {
+		return io.NopCloser(strings.NewReader(text)), nil
+	}
 	return io.NopCloser(strings.NewReader("criterion text")), nil
 }
 
-// newWorld wires the real MCP server to the fakes and serves it over HTTP. It returns the fakes a test asserts on.
-func newWorld(t *testing.T) (*testTokens, *testTasks, *httptest.Server) {
-	t.Helper()
-	tokens := &testTokens{
-		hash:      mcp.HashToken(testToken),
-		principal: mcp.Principal{Agent: testAgent, Role: workflow.RoleTestAuthor},
+// testReviews is the review side of the server. It records every review and verdict. It returns a finding error for
+// each finding whose file is not one of the change's files, as the application does.
+type testReviews struct {
+	reviews  []finding.Review
+	verdicts []deliberation.Verdict
+}
+
+func (f *testReviews) SubmitReview(_ context.Context, a mcp.Assignment, r finding.Review, _ bool) (mcp.SubmitReceipt, error) {
+	f.reviews = append(f.reviews, r)
+	var errs []mcp.FindingError
+	for i, fi := range r.Findings {
+		if !slices.Contains(a.Task.Inputs.FilesChanged, fi.Location.File) {
+			errs = append(errs, mcp.FindingError{Index: i, Message: "location.file is not a file of this change"})
+		}
 	}
-	tasks := &testTasks{task: testTask(), assigned: testNow}
-	logger := slog.New(slog.DiscardHandler)
+	return mcp.SubmitReceipt{Accepted: len(errs) == 0, FindingErrors: errs}, nil
+}
+
+func (f *testReviews) SubmitVerdict(_ context.Context, _ mcp.Assignment, v deliberation.Verdict, _ bool) error {
+	f.verdicts = append(f.verdicts, v)
+	return nil
+}
+
+// world is the real MCP server wired to the fakes, and the fakes a test asserts on.
+type world struct {
+	tokens  *testTokens
+	tasks   *testTasks
+	reviews *testReviews
+	code    *testCode
+	blobs   *testBlobs
+	hs      *httptest.Server
+}
+
+// buildWorld serves the real MCP server for a token of tokenRole and a task. The task is what get_task answers with.
+func buildWorld(t *testing.T, tokenRole workflow.Role, task workflow.TaskEnvelope, blobs *testBlobs) world {
+	t.Helper()
+	w := world{
+		tokens: &testTokens{
+			hash:      mcp.HashToken(testToken),
+			principal: mcp.Principal{Agent: testAgent, Role: tokenRole},
+		},
+		tasks:   &testTasks{task: task, assigned: testNow},
+		reviews: &testReviews{},
+		code:    &testCode{},
+		blobs:   blobs,
+	}
 	srv, err := mcp.NewServer(mcp.Deps{
-		Logger: logger,
-		Clock:  testClock{now: testNow},
-		Tokens: tokens,
-		Tasks:  tasks,
-		Code:   testCode{},
-		Blobs:  testBlobs{},
+		Logger:    slog.New(slog.DiscardHandler),
+		Clock:     testClock{now: testNow},
+		Tokens:    w.tokens,
+		Tasks:     w.tasks,
+		Reviews:   w.reviews,
+		Code:      w.code,
+		Blobs:     w.blobs,
+		Knowledge: knowledgeStub{},
 	})
 	require.NoError(t, err)
-	hs := httptest.NewServer(srv.Handler())
-	t.Cleanup(hs.Close)
-	return tokens, tasks, hs
+	w.hs = httptest.NewServer(srv.Handler())
+	t.Cleanup(w.hs.Close)
+	return w
+}
+
+type knowledgeStub struct{}
+
+func (knowledgeStub) Ask(context.Context, id.AgentName, id.TaskID, change.Repo, id.SHA, ports.MemoryQuery) ([]ports.MemoryItem, error) {
+	return nil, nil
+}
+
+// newWorld wires the real MCP server to the fakes for a test-author and serves it over HTTP. It returns the fakes a
+// test asserts on.
+func newWorld(t *testing.T) (*testTokens, *testTasks, *httptest.Server) {
+	t.Helper()
+	w := buildWorld(t, workflow.RoleTestAuthor, testTask(), &testBlobs{})
+	return w.tokens, w.tasks, w.hs
 }
 
 // writeToken writes the canary token to a file the way admin init does, with the trailing newline a file holds.

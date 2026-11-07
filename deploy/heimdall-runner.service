@@ -1,0 +1,48 @@
+[Unit]
+Description=Heimdall isolated test runner
+After=network.target
+
+[Service]
+Type=simple
+User=heimdall-runner
+# newuidmap (rootless Podman) refuses a process whose group is not the user's own, so the unit keeps the primary group and
+# hands the socket to the shared group after it appears.
+Group=heimdall-runner
+SupplementaryGroups=heimdall-runner-socket
+EnvironmentFile=/etc/heimdall/runner.conf
+ExecStart=/usr/local/bin/heimdall-runner --socket /run/heimdall-runner/runner.sock --go-image ${HEIMDALL_GO_IMAGE}
+RuntimeDirectory=heimdall-runner heimdall-podman
+RuntimeDirectoryMode=0750
+StateDirectory=heimdall-runner
+StateDirectoryMode=0700
+Environment=XDG_RUNTIME_DIR=/run/heimdall-podman
+ExecStartPre=/usr/bin/chmod 0700 /run/heimdall-podman
+ExecStartPre=+/bin/chgrp heimdall-runner-socket /run/heimdall-runner
+ExecStartPost=+/bin/sh -c 'for i in $(seq 1 50); do [ -S /run/heimdall-runner/runner.sock ] && chgrp heimdall-runner-socket /run/heimdall-runner/runner.sock && exit 0; sleep 0.2; done; exit 1'
+Environment=HOME=/var/lib/heimdall-runner
+UMask=0007
+# Rootless Podman maps the job's user namespace through the setuid newuidmap/newgidmap. NoNewPrivileges=true strips the
+# setuid bit, and every job then fails with "write to uid_map failed: Operation not permitted" (found live, Nov 7;
+# owner decision). RestrictSUIDSGID below still stops the runner from creating setuid files.
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/heimdall-runner /run/heimdall-podman /var/lib/heimdall-runner
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+LockPersonality=true
+MemoryDenyWriteExecute=false
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+# Rootless Podman enforces the job limits (memory, cpus, pids) through cgroups, so the unit owns a delegated subtree
+# and must be able to write it.
+Delegate=yes
+ProtectControlGroups=false
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

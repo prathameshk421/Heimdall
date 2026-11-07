@@ -1,5 +1,6 @@
 {
   "question_id": "q-1",
   "sender": "sw-88",
-  "message_id": "msg_0043"
+  "message_id": "msg_0043",
+  "answer": "use the 409 response for a repeat key"
 }

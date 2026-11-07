@@ -49,6 +49,9 @@ func defaultPayload(t *testing.T, et change.EventType) json.RawMessage {
 	if et == change.EventTaskAssigned {
 		return json.RawMessage(testAuthorTask)
 	}
+	if et == change.EventTaskProgress {
+		return json.RawMessage(`{"task_id":"tsk_01HZX3K9QW7M2P5R8T0V4YB6CD","agent":"bob-reviewer","role":"test-author","text":"working"}`)
+	}
 	if et == change.EventFindingStateChanged {
 		return findingPayload("fix_claimed")
 	}
@@ -65,7 +68,7 @@ func tablePayload(t *testing.T, s change.State, et change.EventType) json.RawMes
 }
 
 func findingPayload(state string) json.RawMessage {
-	return json.RawMessage(fmt.Sprintf(`{"finding_id":"fnd_01HZX3K9QW7M2P5R8T0V4YB6CD","ref":"F1","tier":"E1","state":%q,"by":"rekdfr"}`, state))
+	return json.RawMessage(fmt.Sprintf(`{"finding_id":"fnd_01HZX3K9QW7M2P5R8T0V4YB6CD","ref":"F1","tier":"E1","severity":"high","state":%q,"by":"rekdfr"}`, state))
 }
 
 func decisionPayload(kind string) json.RawMessage {
@@ -82,6 +85,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateTriggered: {
 		change.EventStepRetried:      change.StateTriggered,
+		change.EventStepResumed:      change.StateTriggered,
 		change.EventStepEscalated:    change.StateTriggered,
 		change.EventRoomOpened:       change.StateRoomOpen,
 		change.EventPROpened:         change.StateTriggered,
@@ -93,6 +97,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateRoomOpen: {
 		change.EventStepRetried:      change.StateRoomOpen,
+		change.EventStepResumed:      change.StateRoomOpen,
 		change.EventStepEscalated:    change.StateRoomOpen,
 		change.EventBranchEnsured:    change.StateRoomOpen,
 		change.EventTaskAssigned:     change.StateWritingTests,
@@ -107,11 +112,13 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateWritingTests: {
 		change.EventStepRetried:      change.StateWritingTests,
+		change.EventStepResumed:      change.StateWritingTests,
 		change.EventStepEscalated:    change.StateWritingTests,
 		change.EventTaskAssigned:     change.StateWritingTests,
 		change.EventTaskAcked:        change.StateWritingTests,
 		change.EventTaskTimedOut:     change.StateWritingTests,
 		change.EventTaskFailed:       change.StateWritingTests,
+		change.EventTaskProgress:     change.StateWritingTests,
 		change.EventQuestionAsked:    change.StateWritingTests,
 		change.EventQuestionAnswered: change.StateWritingTests,
 		change.EventTestsSubmitted:   change.StateVerifyingTests,
@@ -125,6 +132,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateVerifyingTests: {
 		change.EventStepRetried:      change.StateVerifyingTests,
+		change.EventStepResumed:      change.StateVerifyingTests,
 		change.EventStepEscalated:    change.StateVerifyingTests,
 		change.EventQuestionAsked:    change.StateVerifyingTests,
 		change.EventQuestionAnswered: change.StateVerifyingTests,
@@ -140,6 +148,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateAwaitingTestSignoff: {
 		change.EventStepRetried:      change.StateAwaitingTestSignoff,
+		change.EventStepResumed:      change.StateAwaitingTestSignoff,
 		change.EventStepEscalated:    change.StateAwaitingTestSignoff,
 		change.EventQuestionAsked:    change.StateAwaitingTestSignoff,
 		change.EventQuestionAnswered: change.StateAwaitingTestSignoff,
@@ -154,6 +163,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateTestsReady: {
 		change.EventStepRetried:      change.StateTestsReady,
+		change.EventStepResumed:      change.StateTestsReady,
 		change.EventStepEscalated:    change.StateTestsReady,
 		change.EventQuestionAsked:    change.StateTestsReady,
 		change.EventQuestionAnswered: change.StateTestsReady,
@@ -168,6 +178,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateBuilding: {
 		change.EventStepRetried:      change.StateBuilding,
+		change.EventStepResumed:      change.StateBuilding,
 		change.EventStepEscalated:    change.StateBuilding,
 		change.EventQuestionAsked:    change.StateBuilding,
 		change.EventQuestionAnswered: change.StateBuilding,
@@ -181,6 +192,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StatePROpen: {
 		change.EventStepRetried:         change.StatePROpen,
+		change.EventStepResumed:         change.StatePROpen,
 		change.EventStepEscalated:       change.StatePROpen,
 		change.EventSlopEvaluated:       change.StatePickingReviewers,
 		change.EventPRPushed:            change.StatePROpen,
@@ -194,6 +206,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateSlopRejected: {
 		change.EventStepRetried:         change.StateSlopRejected,
+		change.EventStepResumed:         change.StateSlopRejected,
 		change.EventStepEscalated:       change.StateSlopRejected,
 		change.EventPRPushed:            change.StatePROpen,
 		change.EventPRClosed:            change.StateRejected,
@@ -206,6 +219,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StatePickingReviewers: {
 		change.EventStepRetried:         change.StatePickingReviewers,
+		change.EventStepResumed:         change.StatePickingReviewers,
 		change.EventStepEscalated:       change.StatePickingReviewers,
 		change.EventReviewersPicked:     change.StateInReview,
 		change.EventPRPushed:            change.StatePROpen,
@@ -219,6 +233,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateInReview: {
 		change.EventStepRetried:         change.StateInReview,
+		change.EventStepResumed:         change.StateInReview,
 		change.EventStepEscalated:       change.StateInReview,
 		change.EventReviewSubmitted:     change.StateInReview,
 		change.EventReviewUnavailable:   change.StateInReview,
@@ -232,6 +247,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventTaskAcked:           change.StateInReview,
 		change.EventTaskTimedOut:        change.StateInReview,
 		change.EventTaskFailed:          change.StateInReview,
+		change.EventTaskProgress:        change.StateInReview,
 		change.EventPRPushed:            change.StatePROpen,
 		change.EventPRClosed:            change.StateRejected,
 		change.EventCIReported:          change.StateInReview,
@@ -243,6 +259,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateDeliberating: {
 		change.EventStepRetried:         change.StateDeliberating,
+		change.EventStepResumed:         change.StateDeliberating,
 		change.EventStepEscalated:       change.StateDeliberating,
 		change.EventCaseOpened:          change.StateDeliberating,
 		change.EventVerdictSubmitted:    change.StateDeliberating,
@@ -256,6 +273,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventTaskAcked:           change.StateDeliberating,
 		change.EventTaskTimedOut:        change.StateDeliberating,
 		change.EventTaskFailed:          change.StateDeliberating,
+		change.EventTaskProgress:        change.StateDeliberating,
 		change.EventPRPushed:            change.StatePROpen,
 		change.EventPRClosed:            change.StateRejected,
 		change.EventCIReported:          change.StateDeliberating,
@@ -267,6 +285,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateEscalated: {
 		change.EventStepRetried:         change.StateEscalated,
+		change.EventStepResumed:         change.StateEscalated,
 		change.EventStepEscalated:       change.StateEscalated,
 		change.EventChallengeFiled:      change.StateEscalated,
 		change.EventFindingFiled:        change.StateEscalated,
@@ -283,6 +302,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateFixing: {
 		change.EventStepRetried:         change.StateFixing,
+		change.EventStepResumed:         change.StateFixing,
 		change.EventStepEscalated:       change.StateFixing,
 		change.EventFindingFiled:        change.StateFixing,
 		change.EventFindingVerified:     change.StateFixing,
@@ -297,6 +317,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateVerifyingFix: {
 		change.EventStepRetried:         change.StateVerifyingFix,
+		change.EventStepResumed:         change.StateVerifyingFix,
 		change.EventStepEscalated:       change.StateVerifyingFix,
 		change.EventFindingFiled:        change.StateVerifyingFix,
 		change.EventFindingVerified:     change.StateVerifyingFix,
@@ -311,6 +332,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateReadyForApproval: {
 		change.EventStepRetried:         change.StateReadyForApproval,
+		change.EventStepResumed:         change.StateReadyForApproval,
 		change.EventStepEscalated:       change.StateReadyForApproval,
 		change.EventApprovalRecorded:    change.StateApproved,
 		change.EventApprovalInvalidated: change.StateInReview,
@@ -323,6 +345,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateApproved: {
 		change.EventStepRetried:         change.StateApproved,
+		change.EventStepResumed:         change.StateApproved,
 		change.EventStepEscalated:       change.StateApproved,
 		change.EventChangeMerged:        change.StateMerged,
 		change.EventApprovalRecorded:    change.StateApproved,
@@ -336,6 +359,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 	},
 	change.StateUnlinkedPR: {
 		change.EventStepRetried:      change.StateUnlinkedPR,
+		change.EventStepResumed:      change.StateUnlinkedPR,
 		change.EventStepEscalated:    change.StateUnlinkedPR,
 		change.EventPRPushed:         change.StateUnlinkedPR,
 		change.EventCIReported:       change.StateUnlinkedPR,

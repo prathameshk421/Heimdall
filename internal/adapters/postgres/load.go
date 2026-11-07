@@ -41,6 +41,50 @@ func (s *Store) Load(ctx context.Context, changeID id.ChangeID) ([]change.Event,
 	return out, nil
 }
 
+// EventsAfter returns events after a durable global sequence cursor, preserving append order across changes.
+func (s *Store) EventsAfter(ctx context.Context, after int64, limit int) ([]change.Event, int64, error) {
+	if after < 0 || limit < 1 || limit > 1000 {
+		return nil, after, fmt.Errorf("event history cursor and limit are invalid")
+	}
+	rows, err := s.pool.Query(ctx, "SELECT seq, "+eventColumns+" FROM event WHERE seq > $1 ORDER BY seq LIMIT $2", after, limit)
+	if err != nil {
+		return nil, after, fmt.Errorf("read workflow event history: %w", err)
+	}
+	defer rows.Close()
+	var events []change.Event
+	next := after
+	for rows.Next() {
+		var seq int64
+		var event change.Event
+		if err := scanSequencedEvent(rows, &seq, &event); err != nil {
+			return nil, after, fmt.Errorf("scan workflow event history: %w", err)
+		}
+		events = append(events, event)
+		next = seq
+	}
+	if err := rows.Err(); err != nil {
+		return nil, after, fmt.Errorf("iterate workflow event history: %w", err)
+	}
+	return events, next, nil
+}
+
+func scanSequencedEvent(row pgx.Rows, seq *int64, event *change.Event) error {
+	var (
+		eid, cid, typ, actorKind, actorID, corr string
+		version                                 int64
+		payload, prev, hash                     []byte
+		blobs                                   []string
+		causation                               *string
+		occurred                                time.Time
+	)
+	if err := row.Scan(seq, &eid, &cid, &version, &typ, &actorKind, &actorID, &payload, &blobs, &causation, &corr, &occurred, &prev, &hash); err != nil {
+		return fmt.Errorf("read event row: %w", err)
+	}
+	var err error
+	*event, err = eventFromColumns(eid, cid, version, typ, actorKind, actorID, payload, blobs, causation, corr, occurred, prev, hash)
+	return err
+}
+
 // scanEvent reads one row selected with eventColumns into an event.
 func scanEvent(row pgx.Row) (change.Event, error) {
 	var (
@@ -55,6 +99,14 @@ func scanEvent(row pgx.Row) (change.Event, error) {
 		&occurred, &prev, &hash); err != nil {
 		return change.Event{}, fmt.Errorf("read event: %w", err)
 	}
+	e, err := eventFromColumns(eid, cid, version, typ, actorKind, actorID, payload, blobs, causation, corr, occurred, prev, hash)
+	if err != nil {
+		return change.Event{}, err
+	}
+	return e, nil
+}
+
+func eventFromColumns(eid, cid string, version int64, typ, actorKind, actorID string, payload []byte, blobs []string, causation *string, corr string, occurred time.Time, prev, hash []byte) (change.Event, error) {
 	e := change.Event{
 		ID:            change.EventID(eid),
 		ChangeID:      id.ChangeID(cid),

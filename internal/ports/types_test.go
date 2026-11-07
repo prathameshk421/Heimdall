@@ -173,15 +173,23 @@ func TestRoomRequestAndMessage(t *testing.T) {
 }
 
 func TestBlobClassValues(t *testing.T) {
-	for _, c := range []ports.BlobClass{ports.BlobLog, ports.BlobDiff, ports.BlobBundle, ports.BlobPack, ports.BlobEvidence} {
+	for _, c := range []ports.BlobClass{ports.BlobLog, ports.BlobDiff, ports.BlobBundle, ports.BlobPack, ports.BlobEvidence, ports.BlobKnowledge} {
 		require.True(t, c.Valid(), c)
 	}
 	require.False(t, ports.BlobClass("video").Valid())
 }
 
 func TestTicketChangeNeedsAKeyAndAChangelogEntry(t *testing.T) {
-	c := ports.TicketChange{Key: "KAN-7", ChangelogID: "10042", Fields: []string{"status"}, At: time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)}
+	c := ports.TicketChange{Key: "KAN-7", ChangelogID: "10042", Fields: []string{"status"}, ToStatus: "In Progress", At: time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)}
 	require.NoError(t, c.Validate())
 	c.ChangelogID = ""
 	require.Error(t, c.Validate())
+}
+
+// A status move must say the status it ended at; a change that names no status is refused (A10 item 1).
+func TestTicketChangeStatusNeedsAToStatus(t *testing.T) {
+	c := ports.TicketChange{Key: "KAN-7", ChangelogID: "10043", Fields: []string{"status"}, At: time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)}
+	require.Error(t, c.Validate())
+	c.ToStatus = "In Progress"
+	require.NoError(t, c.Validate())
 }

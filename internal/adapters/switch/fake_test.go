@@ -115,6 +115,7 @@ func newFakeSwitch(t *testing.T) *fakeSwitch {
 }
 
 func (f *fakeSwitch) installDefaults() {
+	f.ops["list_managed_agents"] = func(map[string]any) (int, any) { return http.StatusOK, []any{} }
 	f.ops["list_rooms"] = func(map[string]any) (int, any) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -240,7 +241,13 @@ func (f *fakeSwitch) handleOp(w http.ResponseWriter, r *http.Request, rec record
 	writeJSON(w, code, map[string]any{"result": out})
 }
 
+// handleMessage answers like Switch's SendMessageRequest: room_id and content are required, so a body field alone is
+// refused with 422 (Switch agent bridge api/schemas.py).
 func (f *fakeSwitch) handleMessage(w http.ResponseWriter, rec recorded) {
+	if _, ok := rec.Body["content"].(string); !ok {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"detail": "content is required"})
+		return
+	}
 	f.mu.Lock()
 	f.sent = append(f.sent, rec.Body)
 	code := f.messageCode
@@ -264,6 +271,11 @@ func (f *fakeSwitch) handleBeat(w http.ResponseWriter, rec recorded) {
 }
 
 func (f *fakeSwitch) handleEvents(w http.ResponseWriter, r *http.Request) {
+	// Switch 0.31.0 refuses an event stream that names no connection: the client generates the id.
+	if r.URL.Query().Get("connection_id") == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "connection_id is required to open an event stream; generate a UUID and reuse it when reconnecting so the connection survives the drop"})
+		return
+	}
 	f.mu.Lock()
 	f.opens++
 	n := f.opens

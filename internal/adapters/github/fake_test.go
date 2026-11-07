@@ -196,20 +196,27 @@ type testEnv struct {
 	mints *int
 }
 
-func newTestEnv(t *testing.T) *testEnv {
+// envOption changes the adapter configuration a test env builds.
+type envOption func(*Config)
+
+func newTestEnv(t *testing.T, opts ...envOption) *testEnv {
 	t.Helper()
 	f := newFake(t)
 	clock := &fakeClock{now: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)}
 	key, pemBytes := testKey(t)
 	mints := installTokenRoute(t, f, clock, key)
 	w := &fakeWait{clock: clock}
-	a, err := New(Config{
+	cfg := Config{
 		BaseURL:    f.srv.URL,
 		App:        App{AppID: 7, InstallationID: 42, PrivateKeyPEM: pemBytes},
 		HTTPClient: f.srv.Client(),
 		Clock:      clock,
 		Wait:       w.wait,
-	})
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	a, err := New(cfg)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

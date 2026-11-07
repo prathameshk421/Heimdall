@@ -4,6 +4,7 @@
 *
 !go.mod
 !go.sum
+!heimdall-server
 !cmd
 !internal
 # The CLI and the test-only doubles are not part of the server image (D121).

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -35,6 +36,9 @@ var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 // value outside these characters is refused at boot.
 var projectKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
+// agentNamePattern is Switch's naming rule: lowercase alphanumeric, dots, dashes, underscores, max 64 chars.
+var agentNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
 // Project maps one tracker project to the repository it is built in (D147).
 type Project struct {
 	TrackerProject string
@@ -44,15 +48,45 @@ type Project struct {
 
 // Config is the validated infrastructure configuration. Load is the only way to get a non-zero one.
 type Config struct {
-	SecretsDir string
-	Listen     string
-	Projects   []Project
-	Database   Database
-	Jira       Jira
-	Switch     Switch
-	GitHub     GitHub
-	byTracker  map[string]Project
-	selections map[string]string
+	SecretsDir     string
+	Listen         string
+	Projects       []Project
+	HumanTokens    map[string]string
+	PackIdentities map[string]PackIdentitySecrets
+	Database       Database
+	Jira           Jira
+	TrackerPath    string
+	Switch         Switch
+	GitHub         GitHub
+	Agents         Agents
+	AgentRuntime   AgentRuntimeConfig
+	byTracker      map[string]Project
+	selections     map[string]string
+}
+
+// PackIdentitySecrets names the server-side verification and age decryption files for one policy person.
+type PackIdentitySecrets struct {
+	SigningPublicKey string
+	AgeIdentity      string
+}
+
+// AgentRuntimeConfig holds the Switch controller placement and per-agent MCP endpoint.
+type AgentRuntimeConfig struct {
+	Machine     string
+	MCPEndpoint string
+	Model       string
+	// AgentsDir is the controller's per-agent directory root. Each role agent's directory is AgentsDir/<name>; empty
+	// leaves the directory to Switch.
+	AgentsDir string
+}
+
+const defaultAgentModel = "openrouter/deepseek/deepseek-v4-flash"
+
+// Agents is [agents]. TestAuthor, Reviewers and Resolver name the agents participating in the workflow.
+type Agents struct {
+	TestAuthor string
+	Reviewers  []string
+	Resolver   string
 }
 
 // Database is [database]. URLSecret names the file under SecretsDir that holds the Postgres URL. The URL
@@ -90,18 +124,33 @@ type GitHub struct {
 
 // fileConfig mirrors heimdall.toml. Pointers tell an absent key (use the default) from an empty one (refuse).
 type fileConfig struct {
-	SecretsDir   *string       `toml:"secrets_dir"`
-	Listen       *string       `toml:"listen"`
-	Projects     []fileProject `toml:"projects"`
-	Database     *fileDatabase `toml:"database"`
-	Jira         *fileJira     `toml:"jira"`
-	Switch       *fileSwitch   `toml:"switch"`
-	GitHub       *fileGitHub   `toml:"github"`
-	VCS          *fileProvider `toml:"vcs"`
-	Tracker      *fileProvider `toml:"tracker"`
-	Chat         *fileChat     `toml:"chat"`
-	AgentRuntime *fileProvider `toml:"agent_runtime"`
-	Memory       *fileProvider `toml:"memory"`
+	SecretsDir     *string                     `toml:"secrets_dir"`
+	Listen         *string                     `toml:"listen"`
+	Projects       []fileProject               `toml:"projects"`
+	HumanTokens    map[string]string           `toml:"human_tokens"`
+	PackIdentities map[string]filePackIdentity `toml:"pack_identities"`
+	Database       *fileDatabase               `toml:"database"`
+	Jira           *fileJira                   `toml:"jira"`
+	Switch         *fileSwitch                 `toml:"switch"`
+	GitHub         *fileGitHub                 `toml:"github"`
+	Agents         *fileAgents                 `toml:"agents"`
+	VCS            *fileProvider               `toml:"vcs"`
+	Tracker        *fileTracker                `toml:"tracker"`
+	Chat           *fileChat                   `toml:"chat"`
+	AgentRuntime   *fileAgentRuntime           `toml:"agent_runtime"`
+	Memory         *fileProvider               `toml:"memory"`
+}
+
+type filePackIdentity struct {
+	SigningPublicKey *string `toml:"signing_public_key_secret"`
+	AgeIdentity      *string `toml:"age_identity_secret"`
+}
+
+// fileAgents is [agents]. Each key is validated by build.
+type fileAgents struct {
+	TestAuthor *string   `toml:"test_author"`
+	Reviewers  *[]string `toml:"reviewers"`
+	Resolver   *string   `toml:"resolver"`
 }
 
 // fileDatabase is [database]. url_secret is a secret file name, not the URL.
@@ -137,6 +186,19 @@ type fileGitHub struct {
 // fileProvider is a [section] whose only key is provider: the adapter name the registry must know.
 type fileProvider struct {
 	Provider *string `toml:"provider"`
+}
+
+type fileTracker struct {
+	Provider *string `toml:"provider"`
+	Path     *string `toml:"path"`
+}
+
+type fileAgentRuntime struct {
+	Provider    *string `toml:"provider"`
+	Machine     *string `toml:"machine"`
+	MCPEndpoint *string `toml:"mcp_endpoint"`
+	Model       *string `toml:"model"`
+	AgentsDir   *string `toml:"agents_dir"`
 }
 
 // fileChat is [chat]. Its key is bridge, the Switch connection that carries chat (D79).
@@ -193,6 +255,7 @@ func build(raw fileConfig) (Config, error) {
 	var errs []error
 	errs = append(errs, addSelections(&cfg, raw)...)
 	errs = append(errs, addLiveSections(&cfg, raw)...)
+	errs = append(errs, addKnowledgeSecrets(&cfg, raw)...)
 	if raw.SecretsDir != nil {
 		if *raw.SecretsDir == "" {
 			errs = append(errs, errors.New("secrets_dir must not be empty"))
@@ -229,6 +292,52 @@ func build(raw fileConfig) (Config, error) {
 	return cfg, nil
 }
 
+func addKnowledgeSecrets(cfg *Config, raw fileConfig) []error {
+	return append(addHumanTokens(cfg, raw.HumanTokens), addPackIdentities(cfg, raw.PackIdentities)...)
+}
+
+func addHumanTokens(cfg *Config, tokens map[string]string) []error {
+	var errs []error
+	if len(tokens) > 0 {
+		cfg.HumanTokens = make(map[string]string, len(tokens))
+		for person, secret := range tokens {
+			if person == "" || len(person) > 64 || strings.ContainsAny(person, " /\\\t\r\n") {
+				errs = append(errs, fmt.Errorf("human_tokens.%s: person key must be a non-empty policy person name of at most 64 characters", person))
+				continue
+			}
+			if err := checkSecretName(secret); err != nil {
+				errs = append(errs, fmt.Errorf("human_tokens.%s: secret name: %w", person, err))
+				continue
+			}
+			cfg.HumanTokens[person] = secret
+		}
+	}
+	return errs
+}
+
+func addPackIdentities(cfg *Config, identities map[string]filePackIdentity) []error {
+	var errs []error
+	if len(identities) > 0 {
+		cfg.PackIdentities = make(map[string]PackIdentitySecrets, len(identities))
+		for person, rawIdentity := range identities {
+			if person == "" || len(person) > 64 || strings.ContainsAny(person, " /\\\t\r\n") {
+				errs = append(errs, fmt.Errorf("pack_identities.%s: person key must be a non-empty policy person name of at most 64 characters", person))
+				continue
+			}
+			if err := checkSecretKey("pack_identities."+person+".signing_public_key_secret", rawIdentity.SigningPublicKey); err != nil {
+				errs = append(errs, err)
+			}
+			if err := checkSecretKey("pack_identities."+person+".age_identity_secret", rawIdentity.AgeIdentity); err != nil {
+				errs = append(errs, err)
+			}
+			if rawIdentity.SigningPublicKey != nil && rawIdentity.AgeIdentity != nil {
+				cfg.PackIdentities[person] = PackIdentitySecrets{SigningPublicKey: *rawIdentity.SigningPublicKey, AgeIdentity: *rawIdentity.AgeIdentity}
+			}
+		}
+	}
+	return errs
+}
+
 // addSelections records each provider selection that is present. An absent section or key means unset;
 // an empty value is refused, because an empty name can never match a registered adapter.
 func addSelections(cfg *Config, raw fileConfig) []error {
@@ -237,9 +346,9 @@ func addSelections(cfg *Config, raw fileConfig) []error {
 		value       *string
 	}{
 		{"vcs", "vcs.provider", providerOf(raw.VCS)},
-		{"tracker", "tracker.provider", providerOf(raw.Tracker)},
+		{"tracker", "tracker.provider", trackerProviderOf(raw.Tracker)},
 		{"chat", "chat.bridge", bridgeOf(raw.Chat)},
-		{"agent_runtime", "agent_runtime.provider", providerOf(raw.AgentRuntime)},
+		{"agent_runtime", "agent_runtime.provider", agentRuntimeProviderOf(raw.AgentRuntime)},
 		{"memory", "memory.provider", providerOf(raw.Memory)},
 	}
 	var errs []error
@@ -251,6 +360,22 @@ func addSelections(cfg *Config, raw fileConfig) []error {
 			errs = append(errs, fmt.Errorf("%s must not be empty", s.field))
 		default:
 			cfg.selections[s.kind] = *s.value
+		}
+	}
+	if raw.Tracker != nil {
+		provider := trackerProviderOf(raw.Tracker)
+		path := raw.Tracker.Path
+		if provider != nil && *provider == "file" {
+			switch {
+			case path == nil || *path == "":
+				errs = append(errs, errors.New("tracker.path must be set when tracker.provider is file"))
+			case !filepath.IsAbs(*path):
+				errs = append(errs, errors.New("tracker.path must be an absolute path"))
+			default:
+				cfg.TrackerPath = filepath.Clean(*path)
+			}
+		} else if path != nil {
+			errs = append(errs, errors.New("tracker.path is only valid when tracker.provider is file"))
 		}
 	}
 	return errs
@@ -292,6 +417,142 @@ func addLiveSections(cfg *Config, raw fileConfig) []error {
 				InstallationIDSecret: *raw.GitHub.InstallationIDSecret,
 				PrivateKeySecret:     *raw.GitHub.PrivateKeySecret,
 			}
+		}
+	}
+	if raw.Agents != nil {
+		errs = append(errs, checkAgents(&cfg.Agents, raw.Agents)...)
+	}
+	if raw.AgentRuntime != nil {
+		errs = append(errs, checkAgentRuntime(&cfg.AgentRuntime, raw.AgentRuntime)...)
+	}
+	return errs
+}
+
+func checkAgentRuntime(out *AgentRuntimeConfig, raw *fileAgentRuntime) []error {
+	var errs []error
+	errs = append(errs, validateRuntimeProvider(raw.Provider)...)
+	errs = append(errs, validateRuntimeMachine(raw.Machine)...)
+	errs = append(errs, validateMCPEndpoint(raw.MCPEndpoint)...)
+	model, modelErr := runtimeModel(raw.Model)
+	if modelErr != nil {
+		errs = append(errs, modelErr)
+	}
+	errs = append(errs, validateAgentsDir(raw.AgentsDir)...)
+	if len(errs) == 0 {
+		out.Machine = *raw.Machine
+		out.MCPEndpoint = *raw.MCPEndpoint
+		out.Model = model
+		if raw.AgentsDir != nil {
+			out.AgentsDir = *raw.AgentsDir
+		}
+	}
+	return errs
+}
+
+func validateAgentsDir(dir *string) []error {
+	if dir == nil {
+		return nil
+	}
+	if !strings.HasPrefix(*dir, "/") || len(*dir) > 1024 || strings.ContainsAny(*dir, "\x00\r\n") {
+		return []error{errors.New("agent_runtime.agents_dir must be an absolute path of at most 1024 bytes")}
+	}
+	return nil
+}
+
+func validateRuntimeProvider(provider *string) []error {
+	switch {
+	case provider == nil || *provider == "":
+		return []error{errors.New("agent_runtime.provider is required")}
+	case *provider != "switchroom":
+		return []error{errors.New("agent_runtime.provider must be switchroom")}
+	default:
+		return nil
+	}
+}
+
+func validateRuntimeMachine(machine *string) []error {
+	if machine == nil || strings.TrimSpace(*machine) == "" || len(*machine) > 128 {
+		return []error{errors.New("agent_runtime.machine is required and must be 1 to 128 bytes")}
+	}
+	return nil
+}
+
+func validateMCPEndpoint(endpoint *string) []error {
+	if endpoint == nil || *endpoint == "" {
+		return []error{errors.New("agent_runtime.mcp_endpoint is required")}
+	}
+	if err := checkBaseURL("agent_runtime.mcp_endpoint", endpoint); err != nil {
+		return []error{err}
+	}
+	u, err := url.Parse(*endpoint)
+	if err != nil || u.Path != "/mcp" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return []error{errors.New("agent_runtime.mcp_endpoint must be an /mcp URL without credentials, query or fragment")}
+	}
+	return nil
+}
+
+func runtimeModel(model *string) (string, error) {
+	if model == nil {
+		return defaultAgentModel, nil
+	}
+	if strings.TrimSpace(*model) == "" || len(*model) > 256 {
+		return "", errors.New("agent_runtime.model must be 1 to 256 bytes")
+	}
+	return *model, nil
+}
+
+// checkAgentName requires a valid Switch agent name.
+func checkAgentName(field, name string) error {
+	if name == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if !agentNamePattern.MatchString(name) {
+		return fmt.Errorf("%s: %q must match %s", field, name, agentNamePattern)
+	}
+	return nil
+}
+
+// checkReviewers validates the reviewers list.
+func checkReviewers(raw *[]string) ([]string, []error) {
+	if raw == nil || len(*raw) == 0 {
+		return nil, []error{errors.New("agents.reviewers is required and must list at least one reviewer")}
+	}
+	var errs []error
+	seen := map[string]bool{}
+	for _, r := range *raw {
+		if err := checkAgentName("agents.reviewers", r); err != nil {
+			errs = append(errs, err)
+		} else if seen[r] {
+			errs = append(errs, fmt.Errorf("agents.reviewers: %q is listed twice", r))
+		}
+		seen[r] = true
+	}
+	if len(errs) > 0 {
+		return nil, errs
+	}
+	return slices.Clone(*raw), nil
+}
+
+// checkAgents validates [agents] and records it when every key is good.
+func checkAgents(out *Agents, raw *fileAgents) []error {
+	var errs []error
+	if raw.TestAuthor == nil || *raw.TestAuthor == "" {
+		errs = append(errs, errors.New("agents.test_author is required"))
+	} else if err := checkAgentName("agents.test_author", *raw.TestAuthor); err != nil {
+		errs = append(errs, err)
+	}
+	revs, rerrs := checkReviewers(raw.Reviewers)
+	errs = append(errs, rerrs...)
+	if raw.Resolver == nil || *raw.Resolver == "" {
+		errs = append(errs, errors.New("agents.resolver is required"))
+	} else if err := checkAgentName("agents.resolver", *raw.Resolver); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) == 0 {
+		*out = Agents{
+			TestAuthor: *raw.TestAuthor,
+			Reviewers:  revs,
+			Resolver:   *raw.Resolver,
 		}
 	}
 	return errs
@@ -437,6 +698,20 @@ func checkSecretKey(field string, raw *string) error {
 }
 
 func providerOf(p *fileProvider) *string {
+	if p == nil {
+		return nil
+	}
+	return p.Provider
+}
+
+func trackerProviderOf(p *fileTracker) *string {
+	if p == nil {
+		return nil
+	}
+	return p.Provider
+}
+
+func agentRuntimeProviderOf(p *fileAgentRuntime) *string {
 	if p == nil {
 		return nil
 	}

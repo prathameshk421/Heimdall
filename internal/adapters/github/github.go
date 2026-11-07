@@ -30,22 +30,27 @@ type Config struct {
 	HTTPClient *http.Client
 	Clock      ports.Clock
 	Wait       func(ctx context.Context, d time.Duration) error
+	// BaseBranches names the branch each repository's changes are cut from and its policy is read at. A repository
+	// not listed uses its default branch.
+	BaseBranches map[change.Repo]string
 }
 
 // Adapter implements the VCS ports against GitHub. It is safe for concurrent use.
 type Adapter struct {
-	c      *client
-	tokens *TokenSource
+	c            *client
+	tokens       *TokenSource
+	baseBranches map[change.Repo]string
 }
 
 // The compile-time proof that the adapter satisfies every VCS port.
 var (
-	_ ports.PRReader     = (*Adapter)(nil)
-	_ ports.PRComments   = (*Adapter)(nil)
-	_ ports.BranchWriter = (*Adapter)(nil)
-	_ ports.CheckWriter  = (*Adapter)(nil)
-	_ ports.CodeReader   = (*Adapter)(nil)
-	_ ports.RepoReader   = (*Adapter)(nil)
+	_ ports.PRReader        = (*Adapter)(nil)
+	_ ports.PRComments      = (*Adapter)(nil)
+	_ ports.PRCommentReader = (*Adapter)(nil)
+	_ ports.BranchWriter    = (*Adapter)(nil)
+	_ ports.CheckWriter     = (*Adapter)(nil)
+	_ ports.CodeReader      = (*Adapter)(nil)
+	_ ports.RepoReader      = (*Adapter)(nil)
 )
 
 // New builds the adapter. It fails on a missing dependency, a base URL that is not absolute, or an App key that does
@@ -71,7 +76,14 @@ func New(cfg Config) (*Adapter, error) {
 		prCache: map[string]cachedPRs{},
 	}
 	tokens := &TokenSource{app: cfg.App, key: key, client: c, clock: cfg.Clock, cache: map[string]cachedToken{}}
-	return &Adapter{c: c, tokens: tokens}, nil
+	branches := make(map[change.Repo]string, len(cfg.BaseBranches))
+	for repo, branch := range cfg.BaseBranches {
+		if _, err := cleanPath(branch); err != nil {
+			return nil, fmt.Errorf("github: base branch of %s: %w", repo, err)
+		}
+		branches[repo] = branch
+	}
+	return &Adapter{c: c, tokens: tokens, baseBranches: branches}, nil
 }
 
 // Tokens returns the token source. doctor reads the installation's permissions through it.

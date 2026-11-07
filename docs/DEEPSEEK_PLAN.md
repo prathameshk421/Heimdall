@@ -1,9 +1,8 @@
-# Heimdall execution plan for DeepSeek (strict)
+# Heimdall execution notes for DeepSeek (historical)
 
 Plan version 2, Nov 4, 2026. This replaces the earlier draft of this file.
 
-**What this file is.** The work order for the next sessions: which task runs next, in which order, what
-"finished" means, and which shortcuts are refused. It is not the spec and it is not a rulebook of its own.
+**What this file is.** A dated execution plan and record of the Nov 4 queue. It is not the current work order or a rulebook. Use `docs/PROGRESS.md` and the task's current implementation-plan acceptance criteria to choose useful work. The board and external prerequisites are evidence, not gates on independent local work.
 
 **What this file is not.** It does not outrank `AGENTS.md`, `TECH_SPEC.md`, `MVP_SCENARIOS.md`,
 `TEST_STRATEGY.md` or `CODING_STANDARDS.md`. If this plan disagrees with any of them, they win, and the plan
@@ -30,7 +29,7 @@ No shortcuts, no fallbacks, no cheat codes: this is the real product, not a demo
 | 6 | `docs/CODING_STANDARDS.md` | structure, errors, purity, tests, dependencies, sections 8 and 12 especially |
 | 7 | the spec sections the task row cites in `docs/TECH_SPEC.md` | the behaviour |
 | 8 | the `doc.go` of every package you touch | its design note and traps; if it has none, you write it first |
-| 9 | the W-item for the task in section 3 of this file | the concrete order of work |
+| 9 | optional historical notes in section 3 | context only; current progress and task acceptance criteria take precedence |
 
 If a package has its own `AGENTS.md` beside its `doc.go`, read that too; it is the local trap list.
 
@@ -47,7 +46,7 @@ highest-numbered backlog part from Part 8 on
 governs the session. A real result that contradicts a decision changes the decision **and** the spec in the
 same commit; it never gets a quiet fallback.
 
-### 0.3 Start-of-session checklist (five commands, in this order)
+### 0.3 Environment snapshot (optional baseline)
 
 ```bash
 cd /home/aarush_linux/projects/switch_shi
@@ -57,16 +56,15 @@ export PATH=$HOME/.local/go/bin:$PATH
 make fast          # record the red set before touching anything
 ```
 
-Then read section 0.1. If `make fast` is red for a reason this plan does not name, stop and write it in
-`docs/PROGRESS.md` before editing product code. Do not "fix forward" into an unrelated package.
+Read section 0.1 as useful context. Record baseline failures in `docs/PROGRESS.md`, keep changes focused, and use task-scoped checks to make progress when unrelated failures prevent the full suite from running. Do not hide or misattribute baseline failures.
 
-### 0.4 End-of-session checklist
+### 0.4 Handoff notes
 
-- One task, one commit. The tree is green (`make fast`, and `make verify` for a task-ending commit).
+- Record the change, checks and failures accurately; do not claim a failing or unrun check passed.
 - `docs/PROGRESS.md` has the evidence bullet from section 1.4, including **not verified** items.
 - The task's `docs/TRACKER.md` row is `done` only if its done-when is met; else `doing` with what is missing.
 - `git status` has no stray binary, no `out.xml`, no scratch file, no `.env` anything.
-- The commit message is `T##: what` and does not claim a check that did not run.
+- Use focused, reviewable commits when committing; the message does not claim a check that did not run.
 
 ---
 
@@ -89,24 +87,24 @@ Then read section 0.1. If `make fast` is red for a reason this plan does not nam
 | R9 real or not verified | if it did not run on the real system, write `not verified` and why; never "should work" | evidence review |
 | R10 scope | one task, one concern; unrelated findings go to `PROGRESS.md` "Noticed" | diff review |
 | R11 git | no `--no-verify`, no force-push, no history rewrite, no push unless asked, no red commit | hook, review |
-| R12 stuck | after two failed attempts at the same error, write what you tried in `PROGRESS.md` and stop | session review |
-| R13 no cuts/hacks | do not drop or reduce a task, step or check; no temporary shortcut; if blocked, stop and ask | this plan, review, gate |
+| R12 stuck | after two failed attempts at the same error, write what you tried in `PROGRESS.md` and stop repeating that approach; continue independent work | session review |
+| R13 no cuts/hacks | do not drop or reduce a task, step or check; no temporary shortcut; record blockers and continue independent work; ask only when an owner decision/access change is needed | this plan, review, gate |
 
 A rule broken twice becomes a lint rule or a hook, not a paragraph of advice (`CODING_STANDARDS.md` 13).
 
-### 1.2 Definition of done (all eight, no exceptions)
+### 1.2 Evidence checklist (apply the relevant items)
 
 Derived from `TEST_STRATEGY.md` section 5 and made checkable:
 
 | # | Gate | Evidence required |
 |---|---|---|
-| 1 | Board step moved | `make prototype ONLY=<slice>` before/after, the named step green or `blocked` with a reason |
+| 1 | Board status, when relevant | `make prototype ONLY=<slice>` result, or the reason the environment is unavailable |
 | 2 | `doc.go` written or updated **before** code | file in diff, Purpose/API/Invariants/Failure modes/Tests |
 | 3 | Red seen | test name + the assertion line, saved in `PROGRESS.md` |
 | 4 | Green | `go test -count=1 ./<pkg>/...` exit 0 |
 | 5 | `make fast` | exit 0, test count and `0 issues` in the log |
-| 6 | `make verify` | exit 0 (or the named pre-existing exception, written down) |
-| 7 | Real check, or `not verified` | the command, exit status and key line; or the blocker |
+| 6 | `make verify` | exit 0, or the failure and affected checks recorded |
+| 7 | Real check, or `not verified` | command and result, or reason unavailable; required acceptance stays open until verified |
 | 8 | Mutation check | 4–5 one-line flips, each turned a test red; survivors recorded as missing tests |
 
 **Not done if any of these is true:** a test was written after the code and never seen red; a test passes
@@ -236,12 +234,11 @@ Last commit: `092b72c T12: compose verification passed (all services healthy, he
 
 - **W0 finishes everything half-done before any new feature.** That is the owner's order and it also unbreaks
   `make fast`.
-- One W-item = one task = one commit. A W-item may not be split across sessions without parking it in
-  `PROGRESS.md`.
+- Keep changes focused and reviewable. Work may span sessions; record partial progress in `PROGRESS.md`.
 - **Write fence:** each item lists the directories it owns. Do not edit outside the fence. Anything else you
   notice goes to `PROGRESS.md` "Noticed" (R10).
 - **Parallelism:** only after `make fast` is green and only on disjoint fences (section 6).
-- **Dependencies are real:** do not start an item whose `Depends` is not `done`/`doing-with-the-needed-half`.
+- **Dependencies are real:** do not claim dependent acceptance criteria are met until their prerequisites are met. Independent preparation or implementation may proceed; record what remains blocked.
 
 | W | Task | Depends | Commit message |
 |---|---|---|---|

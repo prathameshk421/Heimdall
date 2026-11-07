@@ -3,6 +3,7 @@ package ports
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -27,10 +28,26 @@ type PRComments interface {
 	Comment(ctx context.Context, repo change.Repo, n int, key change.EffectKey, body string) error
 }
 
+// IssueComment is one comment on a PR's conversation. CreatedAt and UpdatedAt let a consumer ignore edited commands.
+type IssueComment struct {
+	ID        int64
+	Login     string
+	UserType  string
+	Body      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// PRCommentReader reads human and bot issue comments on a pull request from a time cursor.
+type PRCommentReader interface {
+	IssueCommentsSince(ctx context.Context, repo change.Repo, n int, since time.Time) ([]IssueComment, error)
+}
+
 // BranchWriter makes test branches and commits. Consumer: the test-author flow (TECH_SPEC 7).
 type BranchWriter interface {
-	// EnsureBranch creates name at from when it does not exist, and does nothing when it does.
-	EnsureBranch(ctx context.Context, repo change.Repo, from id.SHA, name string) error
+	// EnsureBranch creates name at from when it does not exist, and does nothing when it does. key is the effect's
+	// idempotency key; it must be non-empty so every write can be tied to the effect that asked for it (A10 item 3).
+	EnsureBranch(ctx context.Context, repo change.Repo, from id.SHA, name string, key string) error
 	// CommitFiles writes files to branch in one commit and returns its SHA.
 	CommitFiles(ctx context.Context, repo change.Repo, branch, msg string, files []File) (id.SHA, error)
 }

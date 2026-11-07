@@ -15,6 +15,18 @@ import (
 type ChangeView struct {
 	ID     id.ChangeID
 	Events []change.Event
+	// History is every stored event of the change. Events can be a window that starts at a retry (plan.go); History is
+	// for facts of the whole change, such as its room, and never for what the step has done. Empty means Events is
+	// already the whole change.
+	History []change.Event
+}
+
+// history returns every stored event of the change: History when the view is a window, else Events.
+func (c ChangeView) history() []change.Event {
+	if len(c.History) > 0 {
+		return c.History
+	}
+	return c.Events
 }
 
 // Has reports whether the view holds an event of any of the given types.

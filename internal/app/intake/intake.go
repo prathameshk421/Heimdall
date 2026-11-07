@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -123,8 +124,12 @@ func (in *Intake) HandlePR(ctx context.Context, repo change.Repo, n int) (Result
 	if err != nil {
 		return Result{}, err
 	}
+	suggested, err := in.reviewerSuggestions(ctx, repo, pr.BaseSHA, files)
+	if err != nil {
+		return Result{}, fmt.Errorf("select CODEOWNERS reviewers: %w", err)
+	}
 
-	j := job{repo: repo, pr: pr, ticket: ticket, stream: stream, v: v}
+	j := job{repo: repo, pr: pr, ticket: ticket, stream: stream, v: v, suggestedReviewers: suggested}
 	for attempt := 0; ; attempt++ {
 		res, err := in.appendOnce(ctx, j)
 		if !errors.Is(err, ports.ErrVersionConflict) {
@@ -222,11 +227,12 @@ func inDir(path, dir string) bool {
 
 // job is one handling of a pull request whose facts are fixed. appendOnce runs once per attempt.
 type job struct {
-	repo   change.Repo
-	pr     ports.PR
-	ticket id.ChangeID
-	stream id.ChangeID
-	v      verdict
+	repo               change.Repo
+	pr                 ports.PR
+	ticket             id.ChangeID
+	stream             id.ChangeID
+	v                  verdict
+	suggestedReviewers []change.ActorID
 }
 
 // streamView is the stream as one attempt loaded it: its state, its last version, and the last head this PR was
@@ -304,7 +310,8 @@ func (in *Intake) buildEvents(j job, expected int64, seen bool) ([]change.Event,
 		prPayload = change.PRPushed{Repo: j.repo, Number: j.pr.Number, HeadSHA: j.pr.HeadSHA}
 	} else {
 		prType = change.EventPROpened
-		prPayload = change.PROpened{Repo: j.repo, Number: j.pr.Number, HeadSHA: j.pr.HeadSHA, Author: j.pr.Author, Ticket: j.ticket}
+		prPayload = change.PROpened{Repo: j.repo, Number: j.pr.Number, HeadSHA: j.pr.HeadSHA, Author: j.pr.Author,
+			Ticket: j.ticket, SuggestedReviewers: j.suggestedReviewers}
 	}
 	slopPayload := change.SlopEvaluated{Pass: j.v.pass, FailingRules: j.v.rules}
 
@@ -363,17 +370,18 @@ func (in *Intake) gateEffect(j job, newVersion int64) (change.Effect, error) {
 	if err != nil {
 		return change.Effect{}, fmt.Errorf("gate effect key: %w", err)
 	}
-	c := ports.Check{
-		Name:       gateCheck,
-		ExternalID: "gate:" + string(j.repo) + ":" + j.pr.HeadSHA.String(),
+	// The shared github_check payload: the executor reads the same type, and the effect key is the check's external id.
+	c := change.CheckPayload{
+		Repo:    j.repo,
+		SHA:     j.pr.HeadSHA,
+		Name:    gateCheck,
+		Summary: clipSummary(j.v.summary, change.MaxCheckSummary),
 	}
 	if j.v.pass {
-		c.Status = ports.CheckInProgress
-		c.Summary = j.v.summary
+		c.Status = change.CheckStatusInProgress
 	} else {
-		c.Status = ports.CheckCompleted
+		c.Status = change.CheckStatusCompleted
 		c.Conclusion = change.CIFailure
-		c.Summary = j.v.summary
 	}
 	if err := c.Validate(); err != nil {
 		return change.Effect{}, fmt.Errorf("gate check: %w", err)
@@ -383,6 +391,18 @@ func (in *Intake) gateEffect(j job, newVersion int64) (change.Effect, error) {
 		return change.Effect{}, fmt.Errorf("encode gate check: %w", err)
 	}
 	return change.Effect{Key: key, Kind: change.EffectGitHubCheck, Target: string(j.repo), Payload: raw}, nil
+}
+
+// clipSummary cuts s to at most limit bytes on a rune boundary, with an ellipsis inside the limit.
+func clipSummary(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit - 3
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
 }
 
 // lastHead returns the head sha of the latest pr.opened or pr.pushed for pull request n of repo, and whether one exists.

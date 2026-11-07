@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "share": "disabled",
+  "auto_mode": true,
+  "auto_approve": false,
+  "model": "openrouter/deepseek/deepseek-v4-flash",
+  "permission": {
+    "*": "deny",
+    "bash": "deny",
+    "webfetch": "deny",
+    "websearch": "deny",
+    "doom_loop": "deny",
+    "external_directory": { "*": "deny" },
+    "edit": { "*": "deny", "**/scratch/**": "allow" },
+    "heimdall_*": "allow"
+  },
+  "mcp": {
+    "heimdall": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer {{file:secrets/agent_token_test-author}}"
+      }
+    }
+  }
+}

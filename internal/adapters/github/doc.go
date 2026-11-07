@@ -37,6 +37,10 @@
 //     do not count against it.
 //   - Rate limits are waited out inside the call only up to two minutes. A longer Retry-After returns at once.
 //   - Only the first page of a list can be served from the ETag cache. A list spanning several pages is never cached.
+//   - Every other GET is conditional: the client keeps the last 200 reply per URL and Accept type (at most 256
+//     replies of 256 KiB) and sends its ETag. A 304 does not count against the rate limit and is served from that
+//     reply. The key has no token in it, so one Heimdall install must not serve two installations with different
+//     access to the same URL from one client.
 //   - Next-page links must stay on the configured API origin. A link to any other host is an error, not a request.
 //   - CodeReader.ReadFile uses the contents API, which returns a directory listing for a directory path and returns
 //     at most 1 MB. Larger files are not verified.

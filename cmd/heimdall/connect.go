@@ -12,6 +12,7 @@
 //
 //   - runConnect(args, stdin, stdout, stderr, deps) int: the command. Flags may come before, between or
 //     after positional arguments. Exit 0 on success, 1 on a failed operation, 2 on a bad command line.
+//   - `connect progress`: reads the private durable step record written by each provider connection attempt.
 //   - PlanConnect(reg, cfg, kind, name, answers) (ConnectPlan, error): the non-interactive core. It holds
 //     no secret value. The picker is a thin loop over it.
 //   - checkWithDeadline: runs Entry.Check under a deadline. A check that does not answer in time is
@@ -123,6 +124,8 @@ type ConnectPlan struct {
 // connectOpts are the flags of `heimdall connect`.
 type connectOpts struct {
 	asJSON        bool
+	list          bool
+	check         bool
 	configPath    string
 	publicAddress string
 }
@@ -148,11 +151,22 @@ func realConnectDeps() connectDeps {
 func defaultRegistry() (*registry.Registry, error) {
 	githubSecrets := []string{"github_app_id", "github_app_installation_id", "github_app_private_key"}
 	return registry.Default([]registry.Entry{
-		{Name: "github", Kind: registry.KindVCS, RequiredConfig: githubSecrets, Factory: notBuiltFactory, Check: notBuiltCheck(githubSecrets...)},
-		{Name: "file", Kind: registry.KindTracker, Factory: notBuiltFactory, Check: notBuiltCheck()},
-		{Name: "jira", Kind: registry.KindTracker, RequiredConfig: []string{"jira_api_token"}, Factory: notBuiltFactory, Check: notBuiltCheck("jira_api_token")},
-		{Name: "mattermost", Kind: registry.KindChat, RequiredConfig: []string{"mattermost_token"}, Factory: notBuiltFactory, Check: notBuiltCheck("mattermost_token")},
-		{Name: "teams", Kind: registry.KindChat, Factory: notBuiltFactory, Check: notBuiltCheck()},
+		{Name: "github", Kind: registry.KindVCS, RequiredConfig: githubSecrets, Factory: notBuiltFactory, Check: checkGitHubIntegration,
+			GuidedSteps: []string{"approve and install the GitHub App from its manifest; grant the required repository permissions", "run heimdall doctor to check installation permissions and repository access"}},
+		{Name: "file", Kind: registry.KindTracker, Factory: notBuiltFactory, Check: notBuiltCheck(),
+			GuidedSteps: []string{"configure the file tracker path for the local-mode installation", "run heimdall connect --check to verify the selected tracker"}},
+		{Name: "jira", Kind: registry.KindTracker, RequiredConfig: []string{"jira_email", "jira_api_token"}, Factory: notBuiltFactory, Check: checkJira,
+			GuidedSteps: []string{"set jira.base_url and jira.project_keys in heimdall.toml", "create the configured Jira email and API-token files under secrets_dir", "run heimdall connect --check to verify an authenticated Jira poll"}},
+		{Name: "mattermost", Kind: registry.KindChat, RequiredConfig: []string{"mattermost_token"}, Factory: notBuiltFactory, Check: notBuiltCheck("mattermost_token"),
+			GuidedSteps: []string{"Switch owns the Mattermost connection; finish it in Switch Console", "run heimdall connect --check after the bridge is active"}},
+		{Name: "switch", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}, Factory: notBuiltFactory, Check: checkSwitch,
+			GuidedSteps: []string{"set the Switch bridge URL, coordinator identity and bridge id in heimdall.toml", "complete coordinator registration in Switch", "enroll the headless controller from Switch Machines and run deploy/agents/install-controller.sh", "run heimdall connect --check to verify authenticated room listing"}},
+		{Name: "teams", Kind: registry.KindChat, Factory: notBuiltFactory, Check: notBuiltCheck(),
+			GuidedSteps: []string{"complete the Azure and Teams administrator steps in docs/TEAMS_SETUP.md", "create the Teams connection in Switch Console", "run heimdall connect --check after the bridge is active"}},
+		{Name: "switchroom", Kind: registry.KindAgentRuntime, RequiredConfig: []string{"openrouter_api_key"}, Factory: notBuiltFactory, Check: checkOpenCode,
+			GuidedSteps: []string{"install Node 22.23.4, OpenCode 1.19.5 and the signed Switch controller release", "enroll using heimdall controller enroll; keep the one-time code in the private terminal", "run deploy/agents/install-controller.sh --controller-data-dir with the same persistent path"}},
+		{Name: "graphiti", Kind: registry.KindMemory, Factory: notBuiltFactory, Check: checkGraphitiContainer,
+			GuidedSteps: []string{"create the openrouter_api_key secret file with mode 0600", "Graphiti and FalkorDB start during deployment; Compose checks Graphiti health", "run make recover to reconcile services and verify health"}},
 	})
 }
 
@@ -189,15 +203,39 @@ func runConnect(args []string, stdin io.Reader, stdout, stderr io.Writer, deps c
 	if !ok {
 		return connectExitUsage
 	}
-	if len(positional) == 0 {
-		return connectUsage(stderr, "expected list, or a kind: vcs, tracker, chat, agent_runtime or memory")
+	return runConnectParsed(opts, positional, stdin, stdout, stderr, deps)
+}
+
+func runConnectParsed(opts connectOpts, positional []string, stdin io.Reader, stdout, stderr io.Writer, deps connectDeps) int {
+	resolved, ok := resolveConnectAction(opts, positional)
+	if !ok {
+		return connectUsage(stderr, "expected list, progress, or a kind: vcs, tracker, chat, agent_runtime or memory")
 	}
-	if positional[0] == "list" {
-		if len(positional) != 1 || opts.publicAddress != "" {
-			return connectUsage(stderr, "list takes only --json and --config")
-		}
-		return runConnectList(opts, stdout, stderr, deps)
+	switch resolved[0] {
+	case "progress":
+		return runConnectProgressAction(opts, resolved, stdout, stderr, deps)
+	case "list":
+		return runConnectListAction(opts, resolved, stdout, stderr, deps)
+	default:
+		return runConnectIntegration(opts, resolved, stdin, stdout, stderr, deps)
 	}
+}
+
+func runConnectProgressAction(opts connectOpts, positional []string, stdout, stderr io.Writer, deps connectDeps) int {
+	if len(positional) != 1 || opts.asJSON || opts.list || opts.check || opts.publicAddress != "" {
+		return connectUsage(stderr, "progress takes only --config")
+	}
+	return runConnectProgress(opts.configPath, stdout, stderr, deps)
+}
+
+func runConnectListAction(opts connectOpts, positional []string, stdout, stderr io.Writer, deps connectDeps) int {
+	if len(positional) != 1 || opts.publicAddress != "" {
+		return connectUsage(stderr, "list takes only --json and --config")
+	}
+	return runConnectList(opts, stdout, stderr, deps)
+}
+
+func runConnectIntegration(opts connectOpts, positional []string, stdin io.Reader, stdout, stderr io.Writer, deps connectDeps) int {
 	if opts.asJSON {
 		return connectUsage(stderr, "--json applies to list only")
 	}
@@ -216,6 +254,16 @@ func runConnect(args []string, stdin io.Reader, stdout, stderr io.Writer, deps c
 	return runConnectKind(kind, name, opts, stdin, stdout, stderr, deps)
 }
 
+func resolveConnectAction(opts connectOpts, positional []string) ([]string, bool) {
+	if len(positional) != 0 {
+		return positional, true
+	}
+	if opts.list || opts.check {
+		return []string{"list"}, true
+	}
+	return nil, false
+}
+
 // parseConnectArgs reads the flags wherever they appear among the positional arguments. ok is false when
 // the flag package refused the command line; it has already written the reason to stderr.
 func parseConnectArgs(args []string, stderr io.Writer) (connectOpts, []string, bool) {
@@ -223,6 +271,8 @@ func parseConnectArgs(args []string, stderr io.Writer) (connectOpts, []string, b
 	fs := flag.NewFlagSet("heimdall connect", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.BoolVar(&opts.asJSON, "json", false, "print the list as JSON (list only)")
+	fs.BoolVar(&opts.list, "list", false, "list registered integrations")
+	fs.BoolVar(&opts.check, "check", false, "run every registered integration check")
 	fs.StringVar(&opts.configPath, "config", "", "path to heimdall.toml (default: HEIMDALL_CONFIG)")
 	fs.StringVar(&opts.publicAddress, "public-address", "", "public host name for mattermost, or \"internal only\"")
 	var positional []string
@@ -241,7 +291,7 @@ func parseConnectArgs(args []string, stderr io.Writer) (connectOpts, []string, b
 }
 
 func connectUsage(stderr io.Writer, reason string) int {
-	complain(stderr, "heimdall connect: %s\nusage: heimdall connect list [--json] [--config PATH]\n       heimdall connect <kind> [name] [--public-address VALUE] [--config PATH]\n", reason)
+	complain(stderr, "heimdall connect: %s\nusage: heimdall connect list [--json] [--config PATH]\n       heimdall connect progress [--config PATH]\n       heimdall connect <kind> [name] [--public-address VALUE] [--config PATH]\n", reason)
 	return connectExitUsage
 }
 
@@ -284,17 +334,20 @@ func runConnectList(opts connectOpts, stdout, stderr io.Writer, deps connectDeps
 			return connectExitFail
 		}
 		sel, selectedOK := env.cfg.Selection(string(d.Kind))
-		r := checkWithDeadline(context.Background(), e, env.cfg, deps.checkDeadline)
 		required := d.RequiredConfig
 		if required == nil {
 			required = []string{}
+		}
+		check := registry.CheckResult{Status: registry.StatusNeedsConfig, Detail: fmt.Sprintf("not selected; run heimdall connect %s %s to configure", d.Kind, d.Name)}
+		if selectedOK && sel == d.Name {
+			check = checkWithDeadline(context.Background(), e, env.cfg, deps.checkDeadline)
 		}
 		rows = append(rows, connectRow{
 			Name:           d.Name,
 			Kind:           string(d.Kind),
 			Selected:       selectedOK && sel == d.Name,
-			Status:         string(r.Status),
-			Detail:         r.Detail,
+			Status:         string(check.Status),
+			Detail:         check.Detail,
 			RequiredConfig: required,
 		})
 	}
@@ -372,12 +425,22 @@ func applyConnect(stdout, stderr io.Writer, plan ConnectPlan, env connectEnv, de
 		complain(stderr, "heimdall connect: %v\n", err)
 		return connectExitFail
 	}
+	updatedConfig, err := deps.loadConfig(env.path)
+	if err != nil {
+		complain(stderr, "heimdall connect: selection was written but the config no longer loads: %v\n", err)
+		return connectExitFail
+	}
+	env.cfg = updatedConfig
 	e, err := env.reg.Select(plan.Kind, plan.Name)
 	if err != nil {
 		complain(stderr, "heimdall connect: %v\n", err)
 		return connectExitFail
 	}
 	r := checkWithDeadline(context.Background(), e, env.cfg, deps.checkDeadline)
+	if err := recordConnectProgress(env.path, plan, r); err != nil {
+		complain(stderr, "heimdall connect: provider selection and check completed, but setup progress could not be saved: %v\n", err)
+		return connectExitFail
+	}
 	out := &lineWriter{w: stdout}
 	out.printf("%s %s selected in %s (comments in the file are not kept)\n", plan.Kind, plan.Name, env.path)
 	for _, line := range plan.Instructions {
@@ -562,6 +625,8 @@ func PlanConnect(reg *registry.Registry, cfg config.Config, kind registry.Kind, 
 		}
 	}
 	plan.Instructions = append(plan.Instructions, instructions...)
+	plan.Instructions = append(plan.Instructions, entry.GuidedSteps...)
+	plan.Instructions = append(plan.Instructions, "resume after any step with heimdall admin init, then run heimdall connect --check")
 	return plan, nil
 }
 
@@ -649,6 +714,9 @@ func applySelection(doc map[string]any, sel map[string]string) error {
 			doc[section] = tbl
 		}
 		tbl[key] = value
+		if section == "tracker" && key == "provider" && value != "file" {
+			delete(tbl, "path")
+		}
 	}
 	return nil
 }

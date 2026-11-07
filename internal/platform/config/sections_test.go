@@ -29,6 +29,11 @@ registration_token_secret = "switch_registration_token"
 app_id_secret = "github_app_id"
 installation_id_secret = "github_app_installation_id"
 private_key_secret = "github_app_private_key"
+
+[agents]
+test_author = "test-author"
+reviewers = ["reviewer-1", "reviewer-2"]
+resolver = "resolver"
 `
 
 func TestLoadReadsLiveSections(t *testing.T) {
@@ -54,6 +59,57 @@ func TestLoadReadsLiveSections(t *testing.T) {
 		InstallationIDSecret: "github_app_installation_id",
 		PrivateKeySecret:     "github_app_private_key",
 	}, cfg.GitHub)
+	require.Equal(t, Agents{
+		TestAuthor: "test-author",
+		Reviewers:  []string{"reviewer-1", "reviewer-2"},
+		Resolver:   "resolver",
+	}, cfg.Agents)
+}
+
+func TestLoadReadsSwitchAgentRuntimeContract(t *testing.T) {
+	body := "secrets_dir = \"" + t.TempDir() + "\"\n" + liveSections + `
+[agent_runtime]
+provider = "switchroom"
+machine = "heimdall-vm"
+mcp_endpoint = "http://127.0.0.1:8080/mcp"
+model = "openrouter/deepseek/deepseek-v4-flash"
+`
+	cfg, err := Load(writeTOML(t, body))
+	require.NoError(t, err)
+	provider, found := cfg.Selection("agent_runtime")
+	require.True(t, found)
+	require.Equal(t, "switchroom", provider)
+	require.Equal(t, AgentRuntimeConfig{
+		Machine: "heimdall-vm", MCPEndpoint: "http://127.0.0.1:8080/mcp", Model: "openrouter/deepseek/deepseek-v4-flash",
+	}, cfg.AgentRuntime)
+}
+
+// agents_dir names the controller's per-agent directory root. Each role agent's directory is under it, so the
+// definition Heimdall asks Switch for matches the directory the host installer fills.
+func TestLoadReadsTheAgentsDirectoryAndRefusesARelativeOne(t *testing.T) {
+	head := "secrets_dir = \"" + t.TempDir() + "\"\n" + liveSections + "\n[agent_runtime]\nprovider = \"switchroom\"\nmachine = \"heimdall-vm\"\nmcp_endpoint = \"http://127.0.0.1:8080/mcp\"\n"
+	cfg, err := Load(writeTOML(t, head+"agents_dir = \"/var/lib/switch-agents/1000/agent\"\n"))
+	require.NoError(t, err)
+	require.Equal(t, "/var/lib/switch-agents/1000/agent", cfg.AgentRuntime.AgentsDir)
+
+	_, err = Load(writeTOML(t, head+"agents_dir = \"agent\"\n"))
+	require.ErrorContains(t, err, "agent_runtime.agents_dir")
+}
+
+func TestAgentRuntimeRequiresSafeHostReachableMCPEndpoint(t *testing.T) {
+	head := "secrets_dir = \"" + t.TempDir() + "\"\n"
+	cases := []struct{ endpoint, want string }{
+		{"http://heimdall.example.test/mcp", "loopback"},
+		{"https://heimdall.example.test/", "/mcp URL"},
+		{"https://user@heimdall.example.test/mcp", "/mcp URL"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.endpoint, func(t *testing.T) {
+			body := head + liveSections + "\n[agent_runtime]\nprovider=\"switchroom\"\nmachine=\"heimdall-vm\"\nmcp_endpoint=\"" + tc.endpoint + "\"\n"
+			_, err := Load(writeTOML(t, body))
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestLoadAcceptsLoopbackHTTPURLs(t *testing.T) {
@@ -119,6 +175,15 @@ func TestLoadRefusesBadLiveSections(t *testing.T) {
 		{"unknown jira key", head + "[jira]\nbase_url = \"https://jira.example.test\"\nproject_keys = [\"KAN\"]\nemail_secret = \"jira_email\"\napi_token_secret = \"jira_api_token\"\nproject = \"KAN\"\n", "unknown key"},
 		{"unknown switch key", head + "[switch]\nbase_url = \"https://switch.example.test\"\nagent_id = \"a\"\nagent_name = \"n\"\nbridge_id = \"b\"\napi_key_secret = \"switch_api_key\"\nregistration_token_secret = \"switch_registration_token\"\nagent = \"a\"\n", "unknown key"},
 		{"unknown github key", head + "[github]\napp_id_secret = \"github_app_id\"\ninstallation_id_secret = \"github_app_installation_id\"\nprivate_key_secret = \"github_app_private_key\"\nkey = \"x\"\n", "unknown key"},
+		{"agents section without test_author", head + "[agents]\nreviewers = [\"rev1\"]\nresolver = \"res1\"\n", "agents.test_author"},
+		{"agents section with bad test_author", head + "[agents]\ntest_author = \"Bad Author!\"\nreviewers = [\"rev1\"]\nresolver = \"res1\"\n", "agents.test_author"},
+		{"agents section without reviewers", head + "[agents]\ntest_author = \"author\"\nresolver = \"res1\"\n", "agents.reviewers"},
+		{"agents section with empty reviewers", head + "[agents]\ntest_author = \"author\"\nreviewers = []\nresolver = \"res1\"\n", "agents.reviewers"},
+		{"agents section with duplicate reviewers", head + "[agents]\ntest_author = \"author\"\nreviewers = [\"rev1\", \"rev1\"]\nresolver = \"res1\"\n", "agents.reviewers"},
+		{"agents section with bad reviewer name", head + "[agents]\ntest_author = \"author\"\nreviewers = [\"bad reviewer!\"]\nresolver = \"res1\"\n", "agents.reviewers"},
+		{"agents section without resolver", head + "[agents]\ntest_author = \"author\"\nreviewers = [\"rev1\"]\n", "agents.resolver"},
+		{"agents section with bad resolver", head + "[agents]\ntest_author = \"author\"\nreviewers = [\"rev1\"]\nresolver = \"bad resolver!\"\n", "agents.resolver"},
+		{"unknown agents key", head + "[agents]\ntest_author = \"author\"\nreviewers = [\"rev1\"]\nresolver = \"res1\"\nextra = \"bad\"\n", "unknown key"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

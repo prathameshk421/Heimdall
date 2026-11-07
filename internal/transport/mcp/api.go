@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testset"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -21,8 +23,10 @@ import (
 
 // Principal is who a token belongs to: one agent in one role (TECH_SPEC 15.4).
 type Principal struct {
-	Agent id.AgentName
-	Role  workflow.Role
+	Agent  id.AgentName
+	Role   workflow.Role
+	Person string
+	Human  bool
 }
 
 // Assignment is the one active task of an agent. AssignedAt starts the 60 s ack window (TECH_SPEC 6.2).
@@ -31,6 +35,10 @@ type Assignment struct {
 	AssignedAt time.Time
 	Acked      bool
 }
+
+// ErrInvalidSubmission marks a problem the application found in what the agent submitted. Its message names only the
+// agent's own input, so the tool shows it to the agent as a refusal; every other failure stays generic.
+var ErrInvalidSubmission = errors.New("invalid submission")
 
 // ErrNoTask says the agent has no active task. The tool answers it as a refusal, not a protocol error.
 var ErrNoTask = errors.New("no active task")
@@ -56,6 +64,26 @@ type Tasks interface {
 	Progress(ctx context.Context, a Assignment, text string, at time.Time) error
 }
 
+// FindingError reports a validation problem with one finding in a review.
+type FindingError struct {
+	Index   int    `json:"index"`
+	Message string `json:"message"`
+}
+
+// SubmitReceipt tells the agent what was accepted and what was returned for fixing.
+// If all findings were accepted (or the review is clean), FindingErrors is empty.
+type SubmitReceipt struct {
+	Accepted      bool           `json:"accepted"`
+	FindingErrors []FindingError `json:"finding_errors,omitempty"`
+}
+
+// Reviews is the application side of reviews and verdicts. The app package satisfies it (T44, T60); until then the
+// tests use a fake.
+type Reviews interface {
+	SubmitReview(ctx context.Context, a Assignment, r finding.Review, late bool) (SubmitReceipt, error)
+	SubmitVerdict(ctx context.Context, a Assignment, v deliberation.Verdict, late bool) error
+}
+
 // Code reads one file at one commit. The adapter is the GitHub code reader (ports.CodeReader).
 type Code interface {
 	ReadFile(ctx context.Context, repo change.Repo, sha id.SHA, path string) ([]byte, error)
@@ -66,14 +94,66 @@ type Blobs interface {
 	Get(ctx context.Context, ref workflow.BlobRef) (io.ReadCloser, error)
 }
 
+// Knowledge is the app boundary for team-scoped Graphiti searches. Groups are resolved by the app, never by the tool.
+type Knowledge interface {
+	Ask(ctx context.Context, agent id.AgentName, task id.TaskID, repo change.Repo, base id.SHA, query ports.MemoryQuery) ([]ports.MemoryItem, error)
+}
+
+// PackReader loads only the pack owned by the authenticated principal. It must resolve the person's identity and
+// verification/decryption keys server-side; tool arguments never name an owner.
+type PackReader interface {
+	Read(context.Context, Principal, Assignment, string) (string, error)
+}
+
+// PackPublisher stages an owner-visible redacted review and publishes exactly the reviewed content.
+type PackPublisher interface {
+	Review(context.Context, Principal, string, string, map[string][]byte) (string, error)
+	Publish(context.Context, Principal, string, string, string, string, map[string][]byte) (string, error)
+}
+
+// KnowledgeFileInfo is the non-content metadata returned by safe knowledge-file operations.
+type KnowledgeFileInfo struct {
+	Ref       string    `json:"ref"`
+	Path      string    `json:"path"`
+	SHA       string    `json:"sha"`
+	Group     string    `json:"group"`
+	SourceURL string    `json:"source_url,omitempty"`
+	State     string    `json:"state"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Removed   []string  `json:"removed,omitempty"`
+}
+
+// KnowledgeFiles is the application boundary for policy-scoped staging and person-authorized approval/deletion.
+type KnowledgeFiles interface {
+	Stage(context.Context, Principal, Assignment, string, string, string, string, int) (KnowledgeFileInfo, error)
+	Approve(context.Context, Principal, string) error
+	Forget(context.Context, Principal, string) error
+}
+
+// Profiles is the authenticated sandbox-profile lifecycle available to profile agents and mapped owners.
+type Profiles interface {
+	Propose(context.Context, Principal, string, []byte) (ports.ProfileProposal, bool, error)
+	Approve(context.Context, Principal, string) error
+	Trial(context.Context, Principal, string, id.SHA) (ports.ProfileTrial, error)
+	Promote(context.Context, Principal, string) error
+}
+
 // Deps are the collaborators of a Server. Every field is required.
 type Deps struct {
-	Logger *slog.Logger
-	Clock  ports.Clock
-	Tokens Tokens
-	Tasks  Tasks
-	Code   Code
-	Blobs  Blobs
+	Logger        *slog.Logger
+	Clock         ports.Clock
+	Tokens        Tokens
+	Tasks         Tasks
+	Reviews       Reviews
+	Code          Code
+	Blobs         Blobs
+	Knowledge     Knowledge
+	Packs         PackReader
+	PackPublisher PackPublisher
+	Files         KnowledgeFiles
+	Profiles      Profiles
+	// Sandbox runs the fixed static checks of heimdall_run_check through the runner. The tool exists only when it is set.
+	Sandbox ports.Sandbox
 }
 
 // Server answers MCP requests for the agents' tools.
@@ -85,6 +165,11 @@ type Server struct {
 	// per process (TECH_SPEC 6.5), so a restart opens the window again.
 	progressMu   sync.Mutex
 	progressLast map[id.TaskID]time.Time
+
+	// checkMu guards checkRuns, the number of heimdall_run_check calls each task has made. Every call costs a sandbox
+	// job, so a task gets maxChecksPerTask of them (TECH_SPEC 14.1, "counts toward budget").
+	checkMu   sync.Mutex
+	checkRuns map[id.TaskID]int
 }
 
 // NewServer validates the dependencies and returns the server. A nil dependency is refused.
@@ -98,12 +183,16 @@ func NewServer(d Deps) (*Server, error) {
 		return nil, errors.New("mcp server token store must not be nil")
 	case d.Tasks == nil:
 		return nil, errors.New("mcp server tasks must not be nil")
+	case d.Reviews == nil:
+		return nil, errors.New("mcp server reviews must not be nil")
 	case d.Code == nil:
 		return nil, errors.New("mcp server code reader must not be nil")
 	case d.Blobs == nil:
 		return nil, errors.New("mcp server blob store must not be nil")
+	case d.Knowledge == nil:
+		return nil, errors.New("mcp server knowledge service must not be nil")
 	}
-	s := &Server{deps: d, progressLast: map[id.TaskID]time.Time{}}
+	s := &Server{deps: d, progressLast: map[id.TaskID]time.Time{}, checkRuns: map[id.TaskID]int{}}
 	tools, err := s.buildTools()
 	if err != nil {
 		return nil, fmt.Errorf("build mcp tools: %w", err)

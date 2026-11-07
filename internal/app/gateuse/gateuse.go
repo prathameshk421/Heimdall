@@ -9,20 +9,12 @@ import (
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/gate"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
-
-// checkJSON is the JSON payload shape for a github_check effect.
-type checkJSON struct {
-	Repo       change.Repo         `json:"repo"`
-	SHA        id.SHA              `json:"sha"`
-	Name       string              `json:"name"`
-	Status     ports.CheckStatus   `json:"status"`
-	Conclusion change.CIConclusion `json:"conclusion,omitempty"`
-	Summary    string              `json:"summary"`
-}
 
 // Config holds the ports an Evaluator needs. Every field is required.
 type Config struct {
@@ -127,8 +119,42 @@ func (e *Evaluator) evaluateGate(ctx context.Context, changeID id.ChangeID, f fo
 		return Outside{}, gate.Facts{}, gate.Decision{}, err
 	}
 	facts := applyOutside(f.facts, outside)
-	facts.Blocking = gate.BlockingSet(f.states, blockingFor(outside))
+	consensusStates := withConsensus(f.states, outside.PolicyAtBase.Consensus)
+	facts.Blocking = gate.BlockingSet(consensusStates, blockingFor(outside))
 	return outside, facts, gate.Evaluate(facts), nil
+}
+
+func withConsensus(states []gate.FindingState, rules policy.Consensus) []gate.FindingState {
+	reporters := highConfidenceReporters(states)
+	out := append([]gate.FindingState(nil), states...)
+	for i := range out {
+		if out[i].Fingerprint == "" {
+			continue
+		}
+		out[i].Consensus = reporters[out[i].Fingerprint] >= rules.MinHighReporters
+	}
+	return out
+}
+
+// highConfidenceReporters counts the distinct reporters who still hold each fingerprint at high confidence. Only a
+// live report counts: a dismissed, withdrawn or resolved report is a rejected claim, not a second opinion. This is the
+// build rule of TECH_SPEC 11.2b (D40); the weighted score is Later and must not decide a hold today.
+func highConfidenceReporters(states []gate.FindingState) map[string]int {
+	counts := make(map[string]map[string]bool)
+	for _, state := range states {
+		if state.Fingerprint == "" || state.Reporter == "" || state.Confidence != finding.ConfidenceHigh || !state.State.CanBlock() {
+			continue
+		}
+		if counts[state.Fingerprint] == nil {
+			counts[state.Fingerprint] = make(map[string]bool)
+		}
+		counts[state.Fingerprint][state.Reporter] = true
+	}
+	out := make(map[string]int, len(counts))
+	for fingerprint, reporters := range counts {
+		out[fingerprint] = len(reporters)
+	}
+	return out
 }
 
 func (e *Evaluator) tryEvaluate(ctx context.Context, changeID id.ChangeID) (Result, bool, error) {
@@ -297,13 +323,16 @@ func buildCheckEffect(
 		return change.Effect{}, fmt.Errorf("idempotency key: %w", err)
 	}
 
-	checkPayload := checkJSON{
+	checkPayload := change.CheckPayload{
 		Repo:       repo,
 		SHA:        head,
 		Name:       "heimdall/gate",
-		Status:     status,
+		Status:     change.CheckStatus(status),
 		Conclusion: conclusion,
-		Summary:    clip(summary, 2000),
+		Summary:    clip(summary, change.MaxCheckSummary),
+	}
+	if err := checkPayload.Validate(); err != nil {
+		return change.Effect{}, fmt.Errorf("github_check payload invalid: %w", err)
 	}
 	rawFx, err := json.Marshal(checkPayload)
 	if err != nil {

@@ -201,6 +201,7 @@ func TestOnlyHistoriesInsideTheWindowAreEmitted(t *testing.T) {
 	require.Equal(t, id.ChangeID("KAN-1"), changes[0].Key)
 	require.Equal(t, "10042", changes[0].ChangelogID)
 	require.Equal(t, []string{"status"}, changes[0].Fields)
+	require.Equal(t, "In Progress", changes[0].ToStatus, "the status the move ended at is read from the changelog")
 	require.True(t, changes[0].At.Equal(time.Date(2026, 11, 4, 9, 55, 0, 0, time.UTC)), "got %s", changes[0].At)
 	require.NoError(t, changes[0].Validate())
 }
@@ -496,4 +497,17 @@ func TestAFailedPollRecordsNothingSoTheNextPollReportsEveryChange(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, changes, 1, "KAN-1 was in the failed poll; it must still be reported, not dropped as seen")
 	require.Equal(t, id.ChangeID("KAN-1"), changes[0].Key)
+}
+
+func TestTicketAssignedToAnAppAccountIsMarkedAsOne(t *testing.T) {
+	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
+		reply(w, http.StatusOK, `{"key":"KAN-10","fields":{"summary":"Bot","status":{"name":"In Progress"},`+
+			`"assignee":{"accountId":"app:automation","accountType":"app"},"description":null}}`)
+	})
+	cl := newClient(t, f, &clock{at: now})
+
+	got, err := cl.Ticket(context.Background(), id.ChangeID("KAN-10"))
+
+	require.NoError(t, err)
+	require.True(t, got.AssigneeIsApp, "an app account is not a person")
 }

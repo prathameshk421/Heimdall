@@ -10,6 +10,18 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
+func TestCheckUsesAuthenticatedReadOnlyRoomList(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	if err := c.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	reqs := f.requests()
+	if len(reqs) != 1 || reqs[0].Method != http.MethodPost || reqs[0].Path != "/agents/"+testAgentID+"/ops/list_rooms" || reqs[0].Auth != testAPIKey || len(reqs[0].Body) != 0 {
+		t.Fatalf("unexpected check request: %#v", reqs)
+	}
+}
+
 func TestRegisterCoordinatorUsesTheRegistrationTokenAndReturnsTheKeyOnce(t *testing.T) {
 	f := newFakeSwitch(t)
 	c, _ := newTestClient(t, f)
@@ -50,6 +62,24 @@ func TestOpenRoomCreatesTheRoomWithTheCoordinatorAsMember(t *testing.T) {
 	require.Equal(t, "PAY-142 refunds", creates[0]["name"])
 	require.Equal(t, []any{testAgentName}, creates[0]["agent_names"], "the coordinator must be listed to join its own room")
 	require.Equal(t, "channel_public", creates[0]["channel_type"])
+	description, _ := creates[0]["description"].(string)
+	require.NotEmpty(t, description, "Switch 0.31 rejects create_room without a description")
+	require.Contains(t, description, "PAY-142")
+}
+
+func TestOpenRoomPutsTheWorkflowAgentsInTheRoomWhenItIsCreated(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	_, err := c.OpenRoom(context.Background(), ports.RoomRequest{
+		ChangeID: "PAY-142", Title: "PAY-142 refunds", Key: "room_open:PAY-142:1:room",
+		Agents: []string{"test-author", "reviewer-1", testAgentName},
+	})
+	require.NoError(t, err)
+
+	creates := f.opCalls("create_room")
+	require.Len(t, creates, 1)
+	require.Equal(t, []any{testAgentName, "test-author", "reviewer-1"}, creates[0]["agent_names"],
+		"the coordinator first, then each workflow agent once, so an @mention reaches an agent that is in the room")
 }
 
 func TestOpenRoomAdoptsTheRoomItAlreadyMadeInsteadOfCreatingAnother(t *testing.T) {

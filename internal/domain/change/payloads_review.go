@@ -73,11 +73,20 @@ func (p ReviewWaived) Validate() error {
 // FindingRecord is the content every finding event carries: the id, the short name people use, the tier, the state
 // and who moved it (TECH_SPEC 3.2 and 11.1).
 type FindingRecord struct {
-	FindingID id.FindingID  `json:"finding_id"`
-	Ref       id.FindingRef `json:"ref"`
-	Tier      finding.Tier  `json:"tier"`
-	State     finding.State `json:"state"`
-	By        ActorID       `json:"by"`
+	FindingID   id.FindingID       `json:"finding_id"`
+	Ref         id.FindingRef      `json:"ref"`
+	Tier        finding.Tier       `json:"tier"`
+	Severity    finding.Severity   `json:"severity"`
+	State       finding.State      `json:"state"`
+	By          ActorID            `json:"by"`
+	Fingerprint string             `json:"fingerprint,omitempty"`
+	Confidence  finding.Confidence `json:"confidence,omitempty"`
+	// ReproTest and ToolResult carry the evidence the sandbox repeats to verify the finding (E1 and E2). Only
+	// finding.filed sets them.
+	ReproTest  *finding.ReproTest  `json:"repro_test,omitempty"`
+	ToolResult *finding.ToolResult `json:"tool_result,omitempty"`
+	// MemoryRef is the memory reference of an E3 finding; the server re-queries it to verify the finding.
+	MemoryRef *string `json:"memory_ref,omitempty"`
 }
 
 // Validate returns every problem with the record.
@@ -88,9 +97,31 @@ func (p FindingRecord) Validate() error {
 	v.add("ref", checkFindingRef(p.Ref))
 	_, err = finding.ParseTier(string(p.Tier))
 	v.add("tier", err)
+	_, err = finding.ParseSeverity(string(p.Severity))
+	v.add("severity", err)
 	_, err = finding.ParseState(string(p.State))
 	v.add("state", err)
 	v.add("by", checkActor(p.By))
+	if p.Fingerprint != "" {
+		v.add("fingerprint", checkText(p.Fingerprint))
+	}
+	if p.Confidence != "" {
+		_, err := finding.ParseConfidence(string(p.Confidence))
+		v.add("confidence", err)
+	}
+	if p.ReproTest != nil {
+		v.add("repro_test.path", finding.CheckRepoPath(p.ReproTest.Path))
+		v.add("repro_test.name", checkText(p.ReproTest.Name))
+		v.add("repro_test.content", checkText(p.ReproTest.Content))
+	}
+	if p.MemoryRef != nil {
+		v.add("memory_ref", checkText(*p.MemoryRef))
+	}
+	if p.ToolResult != nil {
+		v.add("tool_result.tool", checkText(p.ToolResult.Tool))
+		v.add("tool_result.location.file", finding.CheckRepoPath(p.ToolResult.Location.File))
+		v.require("tool_result.location.lines", p.ToolResult.Location.Lines[0] >= 1 && p.ToolResult.Location.Lines[1] >= p.ToolResult.Location.Lines[0], "must be 1-based with the first at most the last")
+	}
 	return v.join()
 }
 

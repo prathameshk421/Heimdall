@@ -155,10 +155,14 @@ func TestAppend(t *testing.T) {
 			done <- err
 		}()
 
+		// The append is the only backend of this database that waits on a lock other than the holder's own backend. Find
+		// it by that, not by matching query text, so a rephrased query cannot make the test flaky (A10 item 9).
+		var holderPID int
+		require.NoError(t, holder.QueryRow(ctx, "SELECT pg_backend_pid()").Scan(&holderPID))
 		var pid int
 		require.Eventually(t, func() bool {
 			return holder.QueryRow(ctx, `SELECT pid FROM pg_stat_activity
-				WHERE wait_event_type = 'Lock' AND query LIKE 'SELECT pg_advisory_xact_lock%'`).Scan(&pid) == nil
+				WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> $1`, holderPID).Scan(&pid) == nil
 		}, 10*time.Second, 10*time.Millisecond, "the append never reached the change lock")
 		_, err = holder.Exec(ctx, "SELECT pg_terminate_backend($1)", pid)
 		require.NoError(t, err)

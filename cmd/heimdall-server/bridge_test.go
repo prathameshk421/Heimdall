@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -20,9 +24,42 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
+
+type sourceVCS struct {
+	vcsPort
+	called bool
+	err    error
+}
+
+func (v *sourceVCS) Tarball(context.Context, change.Repo, id.SHA) (io.ReadCloser, error) {
+	v.called = true
+	if v.err != nil {
+		return nil, v.err
+	}
+	return io.NopCloser(bytes.NewReader(nil)), nil
+}
+
+func TestVCSSourceFetchProbesTarballAndPropagatesErrors(t *testing.T) {
+	repo := change.Repo("owner/repo")
+	sha := id.SHA("abc")
+	t.Run("opens tarball", func(t *testing.T) {
+		v := &sourceVCS{}
+		require.NoError(t, (vcsSource{vcs: v}).Fetch(context.Background(), repo, sha))
+		require.True(t, v.called, "Fetch must call Tarball")
+	})
+	t.Run("does not swallow tarball error", func(t *testing.T) {
+		want := errors.New("tarball unavailable")
+		v := &sourceVCS{err: want}
+		err := (vcsSource{vcs: v}).Fetch(context.Background(), repo, sha)
+		require.True(t, v.called, "Fetch must call Tarball")
+		require.ErrorIs(t, err, want)
+	})
+}
 
 // fakeCursorTable is an in-memory cursor table. A source that was never set is ports.ErrNotFound, as in postgres.
 type fakeCursorTable struct {
@@ -81,6 +118,24 @@ func TestCursorStoreSaveWritesUnderItsSource(t *testing.T) {
 	require.Equal(t, []string{"jira:KAN=2026-11-05T10:05:00Z"}, table.saved)
 }
 
+func TestHumanTokenStoreReturnsOnlyPolicyPersonIdentity(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "alice_token"), []byte("mapped-human-credential\n"), 0o600))
+	store, err := newTokenStore(config.Config{SecretsDir: dir, HumanTokens: map[string]string{"alice": "alice_token"}})
+	require.NoError(t, err)
+	principal, err := store.Resolve(context.Background(), mcp.HashToken("mapped-human-credential"))
+	require.NoError(t, err)
+	require.Equal(t, mcp.Principal{Person: "alice", Human: true}, principal)
+}
+
+func TestHumanTokenStoreRefusesCredentialCollisionAcrossIdentities(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "alice_token"), []byte("shared-credential\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bob_token"), []byte("shared-credential\n"), 0o600))
+	_, err := newTokenStore(config.Config{SecretsDir: dir, HumanTokens: map[string]string{"alice": "alice_token", "bob": "bob_token"}})
+	require.ErrorContains(t, err, "already assigned to another principal")
+}
+
 // memStore is an in-memory ports.EventStore with the optimistic version check of the Postgres adapter.
 type memStore struct {
 	mu     sync.Mutex
@@ -112,10 +167,18 @@ func (m *memStore) Load(_ context.Context, cid id.ChangeID) ([]change.Event, err
 // newSliceEngine builds the engine of the slice on store, as assemble does.
 func newSliceEngine(t *testing.T, store ports.EventStore) *engine.Engine {
 	t.Helper()
-	wf, steps, err := sliceSteps()
+	agents := config.Agents{
+		TestAuthor: "test-author",
+		Reviewers:  []string{"reviewer-1", "reviewer-2"},
+		Resolver:   "resolver",
+	}
+	gen := ids.New()
+	clk := clock.System{}
+	wf, steps, err := sliceSteps(agents, gen, clk)
 	require.NoError(t, err)
 	eng, err := engine.New(engine.Config{
-		Workflow: wf, Steps: steps, Store: store, Clock: clock.System{}, IDs: ids.New(), MaxAttempts: maxAttempts,
+		Workflow: wf, Steps: steps, Store: store, Clock: clk, IDs: gen, MaxAttempts: maxAttempts,
+		Roles: sliceRoles(), Schemas: sliceSchemas(),
 	})
 	require.NoError(t, err)
 	return eng
@@ -184,6 +247,15 @@ func TestPRIntakeReturnsChangeIDFromIntakeResult(t *testing.T) {
 	cid, err := pi.HandlePR(context.Background(), change.Repo("acme/pay"), 1)
 	require.NoError(t, err)
 	require.Equal(t, id.ChangeID("PAY-1"), cid)
+}
+
+// The sync adapter keeps whether intake appended events, so a restarted sync can re-run the gate (prsync.Handled).
+func TestSyncIntakeReturnsChangeIDAndAppendedFromIntakeResult(t *testing.T) {
+	h := &fakeIntakeHandler{res: intake.Result{Stream: id.ChangeID("PAY-1"), Appended: true}}
+	si := syncIntake{in: h}
+	got, err := si.HandlePR(context.Background(), change.Repo("acme/pay"), 1)
+	require.NoError(t, err)
+	require.Equal(t, prsync.Handled{Change: id.ChangeID("PAY-1"), Appended: true}, got)
 }
 
 func TestPRIntakePropagatesError(t *testing.T) {
@@ -312,4 +384,27 @@ func TestChecksAdapterPropagatesError(t *testing.T) {
 	ca := checksAdapter{reader: reader}
 	_, err := ca.CheckRuns(context.Background(), change.Repo("acme/pay"), id.SHA("0123456789abcdef0123456789abcdef01234567"))
 	require.ErrorIs(t, err, boom)
+}
+
+func TestTokenStoreRejectsAgentConfiguredForMultipleRoles(t *testing.T) {
+	secrets := t.TempDir()
+	require.NoError(t, os.WriteFile(secrets+"/agent_token_shared", []byte("role-token"), 0o400))
+	cfg := config.Config{SecretsDir: secrets, Agents: config.Agents{
+		TestAuthor: "shared",
+		Reviewers:  []string{"shared"},
+	}}
+	_, err := newTokenStore(cfg)
+	require.Error(t, err, "one Switch identity cannot receive two role-scoped MCP principals")
+}
+
+func TestTokenStoreRejectsTokenSharedByDifferentAgents(t *testing.T) {
+	secrets := t.TempDir()
+	require.NoError(t, os.WriteFile(secrets+"/agent_token_test-author", []byte("same-token"), 0o400))
+	require.NoError(t, os.WriteFile(secrets+"/agent_token_reviewer", []byte("same-token"), 0o400))
+	cfg := config.Config{SecretsDir: secrets, Agents: config.Agents{
+		TestAuthor: "test-author",
+		Reviewers:  []string{"reviewer"},
+	}}
+	_, err := newTokenStore(cfg)
+	require.Error(t, err, "two Switch identities cannot resolve to the same role-scoped MCP principal token")
 }

@@ -1,9 +1,13 @@
 package trigger_test
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +17,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -24,6 +29,30 @@ const (
 )
 
 var now = time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
+
+type fakeBlobs struct{ data map[workflow.BlobRef][]byte }
+
+func (f *fakeBlobs) Put(_ context.Context, _ ports.BlobClass, r io.Reader) (workflow.BlobRef, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	ref := workflow.BlobRef("blob:sha256:" + hex.EncodeToString(sum[:]))
+	if f.data == nil {
+		f.data = make(map[workflow.BlobRef][]byte)
+	}
+	f.data[ref] = bytes.Clone(data)
+	return ref, nil
+}
+
+func (f *fakeBlobs) Get(_ context.Context, ref workflow.BlobRef) (io.ReadCloser, error) {
+	data, ok := f.data[ref]
+	if !ok {
+		return nil, ports.ErrNotFound
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
 
 // fakeTickets is a TicketReader. With reportOnce it returns each change once, as the Jira adapter does after it has
 // recorded a change as seen.
@@ -190,13 +219,14 @@ type rig struct {
 	tickets *fakeTickets
 	starter *fakeStarter
 	cursors *fakeCursors
+	blobs   *fakeBlobs
 	ids     *seqIDs
 	poller  *trigger.Poller
 }
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	r := &rig{tickets: newFakeTickets(), starter: newFakeStarter(), cursors: &fakeCursors{}, ids: &seqIDs{}}
+	r := &rig{tickets: newFakeTickets(), starter: newFakeStarter(), cursors: &fakeCursors{}, blobs: &fakeBlobs{}, ids: &seqIDs{}}
 	r.poller = r.build(t, r.cursors)
 	return r
 }
@@ -209,6 +239,7 @@ func (r *rig) build(t *testing.T, cursors trigger.CursorStore) *trigger.Poller {
 		Starter:  r.starter,
 		Cursors:  cursors,
 		Projects: fakeProjects{"KAN": repoPay},
+		Blobs:    r.blobs,
 		Clock:    fakeClock{at: now},
 		IDs:      r.ids,
 	})
@@ -225,7 +256,7 @@ func (r *rig) poll(t *testing.T) trigger.PollResult {
 
 // statusChange is a changelog entry that touched the status field.
 func statusChange(key id.ChangeID, changelog string) ports.TicketChange {
-	return ports.TicketChange{Key: key, ChangelogID: changelog, Fields: []string{"status"}, At: now}
+	return ports.TicketChange{Key: key, ChangelogID: changelog, Fields: []string{"status"}, ToStatus: statusInPrg, At: now}
 }
 
 func ticket(key id.ChangeID, status string, assignee change.ActorID) ports.Ticket {
@@ -268,9 +299,67 @@ func TestTriggersOnceForAValidChange(t *testing.T) {
 	require.Equal(t, []ports.Cursor{"c1"}, r.cursors.savedCursors())
 }
 
+func TestTriggersFileTicketAndMarksItsSource(t *testing.T) {
+	r := newRig(t)
+	r.tickets.changes = []ports.TicketChange{{Key: "KAN-1", ChangelogID: "content-hash", Fields: []string{"file"}, At: now}}
+	r.tickets.next = "c1"
+	r.tickets.tickets["KAN-1"] = ticket("KAN-1", statusInPrg, ana)
+
+	res := r.poll(t)
+
+	require.Equal(t, 1, res.Triggered)
+	ev := r.starter.stream("KAN-1")[0]
+	payload := mustTriggered(t, ev)
+	require.Equal(t, change.TriggerFile, payload.Source)
+	require.Equal(t, change.Actor{Kind: change.ActorSystem, ID: "file"}, ev.Actor)
+}
+
+func TestTriggeredCriteriaAreContentAddressedAndReplayable(t *testing.T) {
+	r := newRig(t)
+	text := "Refunds are idempotent"
+	sum := sha256.Sum256([]byte(text))
+	hash := hex.EncodeToString(sum[:])
+	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
+	r.tickets.next = "c1"
+	tk := ticket("KAN-1", statusInPrg, ana)
+	tk.Criteria = []ports.Criterion{{ID: "AC1", Text: text, Hash: hash}}
+	r.tickets.tickets["KAN-1"] = tk
+
+	require.Equal(t, 1, r.poll(t).Triggered)
+	events := r.starter.stream("KAN-1")
+	require.Len(t, events, 1)
+	payload, err := change.Decode(events[0])
+	require.NoError(t, err)
+	triggered := payload.(change.Triggered)
+	require.Equal(t, []change.TicketCriterion{{ID: "AC1", Text: text, Hash: hash, Ref: workflow.BlobRef("blob:sha256:" + hash)}}, triggered.Criteria)
+	require.Equal(t, []workflow.BlobRef{workflow.BlobRef("blob:sha256:" + hash)}, events[0].BlobRefs,
+		"the durable event must reference the criterion blob for retention and replay")
+	replayed := r.poll(t)
+	require.Equal(t, 1, replayed.AlreadyTriggered)
+	require.Equal(t, triggered.Criteria, mustTriggered(t, r.starter.stream("KAN-1")[0]).Criteria,
+		"replaying the Jira change keeps the same content-addressed criterion")
+	stored, err := r.blobs.Get(context.Background(), triggered.Criteria[0].Ref)
+	require.NoError(t, err)
+	content, err := io.ReadAll(stored)
+	require.NoError(t, err)
+	require.NoError(t, stored.Close())
+	require.Equal(t, text, string(content))
+	_, err = change.Decode(events[0])
+	require.NoError(t, err, "event replay must retain the criterion ref, text and hash")
+}
+
+func mustTriggered(t *testing.T, ev change.Event) change.Triggered {
+	t.Helper()
+	payload, err := change.Decode(ev)
+	require.NoError(t, err)
+	triggered, ok := payload.(change.Triggered)
+	require.True(t, ok)
+	return triggered
+}
+
 func TestIgnoresAChangeThatIsNotInProgress(t *testing.T) {
 	r := newRig(t)
-	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
+	r.tickets.changes = []ports.TicketChange{statusMove("KAN-1", "10001", statusInRev)}
 	r.tickets.next = "c1"
 	r.tickets.tickets["KAN-1"] = ticket("KAN-1", statusInRev, ana)
 
@@ -492,7 +581,7 @@ func TestReasonsAreCountedInThePollResult(t *testing.T) {
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{
 		statusChange("KAN-1", "1"),
-		statusChange("KAN-2", "2"),
+		statusMove("KAN-2", "2", statusInRev),
 		statusChange("KAN-3", "3"),
 		statusChange("OPS-1", "4"),
 		{Key: "KAN-5", ChangelogID: "5", Fields: []string{"summary"}, At: now},
@@ -527,6 +616,7 @@ func TestNewRefusesANilPort(t *testing.T) {
 			Starter:  r.starter,
 			Cursors:  r.cursors,
 			Projects: fakeProjects{"KAN": repoPay},
+			Blobs:    r.blobs,
 			Clock:    fakeClock{at: now},
 			IDs:      r.ids,
 		}
@@ -539,6 +629,7 @@ func TestNewRefusesANilPort(t *testing.T) {
 		{"Starter", func(c *trigger.Config) { c.Starter = nil }},
 		{"Cursors", func(c *trigger.Config) { c.Cursors = nil }},
 		{"Projects", func(c *trigger.Config) { c.Projects = nil }},
+		{"Blobs", func(c *trigger.Config) { c.Blobs = nil }},
 		{"Clock", func(c *trigger.Config) { c.Clock = nil }},
 		{"IDs", func(c *trigger.Config) { c.IDs = nil }},
 	}

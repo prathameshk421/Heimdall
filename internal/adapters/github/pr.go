@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -149,6 +150,11 @@ func (a *Adapter) Reviews(ctx context.Context, repo change.Repo, n int) ([]Revie
 
 // IssueComments returns every comment on a pull request's conversation.
 func (a *Adapter) IssueComments(ctx context.Context, repo change.Repo, n int) ([]IssueComment, error) {
+	return a.IssueCommentsSince(ctx, repo, n, time.Time{})
+}
+
+// IssueCommentsSince returns comments created at or after since. A zero cursor requests the full history.
+func (a *Adapter) IssueCommentsSince(ctx context.Context, repo change.Repo, n int, since time.Time) ([]IssueComment, error) {
 	base, err := repoPath(repo)
 	if err != nil {
 		return nil, err
@@ -157,13 +163,20 @@ func (a *Adapter) IssueComments(ctx context.Context, repo change.Repo, n int) ([
 	if err != nil {
 		return nil, err
 	}
-	pg, err := listAll[commentJSON](ctx, a.c, token, fmt.Sprintf("%s/issues/%d/comments", base, n), url.Values{"per_page": {perPage}}, "")
+	query := url.Values{"per_page": {perPage}}
+	if !since.IsZero() {
+		query.Set("since", since.UTC().Format(time.RFC3339))
+	}
+	pg, err := listAll[commentJSON](ctx, a.c, token, fmt.Sprintf("%s/issues/%d/comments", base, n), query, "")
 	if err != nil {
 		return nil, err
 	}
 	out := make([]IssueComment, 0, len(pg.items))
 	for _, c := range pg.items {
-		out = append(out, IssueComment{ID: c.ID, Login: c.User.Login, UserType: c.User.Type, Body: c.Body})
+		out = append(out, IssueComment{
+			ID: c.ID, Login: c.User.Login, UserType: c.User.Type, Body: c.Body,
+			CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		})
 	}
 	return out, nil
 }

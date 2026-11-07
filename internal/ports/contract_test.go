@@ -52,6 +52,10 @@ func (f *fakeOutbox) Done(_ context.Context, k change.EffectKey) error {
 func (*fakeOutbox) Claim(_ context.Context, limit int, _ time.Duration) ([]change.Effect, error) {
 	return make([]change.Effect, limit), nil
 }
+func (*fakeOutbox) ClaimEffect(_ context.Context, _ change.EffectKey, _ time.Duration) (*change.Effect, error) {
+	return nil, nil
+}
+func (*fakeOutbox) Start(_ context.Context, _ change.EffectKey) error          { return nil }
 func (*fakeOutbox) Fail(_ context.Context, _ change.EffectKey, _ string) error { return nil }
 
 type fakePRs struct{}
@@ -87,7 +91,7 @@ type fakeBranches struct{}
 
 var _ ports.BranchWriter = fakeBranches{}
 
-func (fakeBranches) EnsureBranch(_ context.Context, _ change.Repo, _ id.SHA, _ string) error {
+func (fakeBranches) EnsureBranch(_ context.Context, _ change.Repo, _ id.SHA, _ string, _ string) error {
 	return nil
 }
 func (fakeBranches) CommitFiles(_ context.Context, _ change.Repo, _, _ string, _ []ports.File) (id.SHA, error) {
@@ -250,6 +254,7 @@ func TestEventStoreAndOutboxContracts(t *testing.T) {
 	fx, err := box.Pending(ctx, 4)
 	require.NoError(t, err)
 	require.Len(t, fx, 4)
+	require.NoError(t, box.Start(ctx, key))
 	require.NoError(t, box.Done(ctx, key))
 	require.NoError(t, box.Fail(ctx, key, "timeout"))
 }
@@ -274,7 +279,7 @@ func TestVCSContractsAreSplitByConsumer(t *testing.T) {
 	require.Equal(t, shaA, head)
 
 	var branches ports.BranchWriter = fakeBranches{}
-	require.NoError(t, branches.EnsureBranch(ctx, repo, shaA, "PAY-142-tests"))
+	require.NoError(t, branches.EnsureBranch(ctx, repo, shaA, "PAY-142-tests", "effect-key"))
 	got, err := branches.CommitFiles(ctx, repo, "PAY-142-tests", "tests", []ports.File{{Path: "t.go"}})
 	require.NoError(t, err)
 	require.Equal(t, shaA, got)

@@ -2,12 +2,15 @@ package switchchat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -130,10 +133,52 @@ func TestStreamOpensWithFilterAllTheRoomsAndTheKeyAndNoCursor(t *testing.T) {
 	require.Equal(t, "text/event-stream", opens[0].Accept)
 	require.Equal(t, testAPIKey, opens[0].Auth)
 	require.Contains(t, opens[0].Query, "filter=all")
-	require.Contains(t, opens[0].Query, "room_id="+testRoomUUID)
+	require.Contains(t, roomsOf(t, opens[0].Query), testRoomUUID)
 	require.Empty(t, opens[0].LastEventID, "the first connection has nothing to resume")
 	require.Empty(t, opens[0].Connection)
 	require.Empty(t, f.opCalls("read_context"), "no resume cursor means no history read")
+}
+
+// Switch 0.31.0 wants the connection id from the client, as a UUID in the query, and wants the same one on every
+// reconnect so the connection survives the drop. A first attempt that dies before any frame still keeps its id.
+func TestStreamSendsAClientGeneratedConnectionIDAndReusesItOnReconnect(t *testing.T) {
+	f, c, _ := streamTest(t)
+	setStream(f, func(w http.ResponseWriter, _ *http.Request, n int) {
+		if n == 1 {
+			return // the body ends before any frame: a dropped connection
+		}
+		frame(w, 0, "connection_state", connectionState(connA, 1, testRoomUUID))
+		frame(w, 0, "evicted", map[string]any{})
+	})
+	var got deliveryLog
+	require.ErrorIs(t, c.Stream(streamCtx(t), []change.RoomID{roomID(t, testRoomUUID)}, nil, got.deliver), ErrEvicted)
+
+	opens := streamOpens(f)
+	require.Len(t, opens, 2)
+	first := connectionIDOf(t, opens[0].Query)
+	_, err := uuid.Parse(first)
+	require.NoError(t, err, "the client generates a UUID")
+	require.Equal(t, first, connectionIDOf(t, opens[1].Query), "the reconnect reuses the id")
+}
+
+// Switch 0.31.0 sends the heartbeat interval as a JSON float ("2.0"), not an integer, so connection_state must decode it.
+func TestStreamAcceptsAFloatHeartbeatInterval(t *testing.T) {
+	f, c, _ := streamTest(t)
+	setStream(f, func(w http.ResponseWriter, _ *http.Request, _ int) {
+		state := connectionState(connA, 8589936915, testRoomUUID)
+		state["heartbeat_interval_seconds"] = json.RawMessage("2.0")
+		frame(w, 0, "connection_state", state)
+		frame(w, 0, "evicted", map[string]any{})
+	})
+	var got deliveryLog
+	require.ErrorIs(t, c.Stream(streamCtx(t), []change.RoomID{roomID(t, testRoomUUID)}, nil, got.deliver), ErrEvicted)
+}
+
+func connectionIDOf(t *testing.T, rawQuery string) string {
+	t.Helper()
+	q, err := url.ParseQuery(rawQuery)
+	require.NoError(t, err)
+	return q.Get("connection_id")
 }
 
 func TestStreamDeliversSequenceAndCursorPerRoom(t *testing.T) {
@@ -151,8 +196,8 @@ func TestStreamDeliversSequenceAndCursorPerRoom(t *testing.T) {
 
 	opens := streamOpens(f)
 	require.Len(t, opens, 1)
-	require.Contains(t, opens[0].Query, "room_id="+testRoomUUID)
-	require.Contains(t, opens[0].Query, "room_id="+testOtherRoom, "every declared room is on the URL")
+	require.Contains(t, roomsOf(t, opens[0].Query), testRoomUUID)
+	require.Contains(t, roomsOf(t, opens[0].Query), testOtherRoom, "every declared room is on the URL")
 
 	d := got.all()
 	require.Len(t, d, 3)
@@ -168,6 +213,45 @@ func TestStreamDeliversSequenceAndCursorPerRoom(t *testing.T) {
 	require.Equal(t, ports.Cursor("2026-11-04T12:00:02Z"), d[1].Cursor, "the second room has its own cursor")
 
 	require.Equal(t, ports.Cursor("2026-11-04T12:00:03Z"), d[2].Cursor, "the first room's cursor moved to its newest message")
+}
+
+func TestStreamSendsOneClientConnectionIDOnEveryOpenAsSwitchRequires(t *testing.T) {
+	f, c, _ := streamTest(t)
+	setStream(f, func(w http.ResponseWriter, _ *http.Request, n int) {
+		if n == 1 {
+			frame(w, 0, "connection_state", connectionState(connA, 1, testRoomUUID))
+			return // a dropped connection
+		}
+		frame(w, 0, "connection_state", connectionState(connB, 1, testRoomUUID))
+		frame(w, 0, "evicted", map[string]any{})
+	})
+	var got deliveryLog
+	require.ErrorIs(t, c.Stream(streamCtx(t), []change.RoomID{roomID(t, testRoomUUID)}, nil, got.deliver), ErrEvicted)
+
+	opens := streamOpens(f)
+	require.Len(t, opens, 2)
+	ids := make([]string, 0, 2)
+	for _, o := range opens {
+		q, err := url.ParseQuery(o.Query)
+		require.NoError(t, err)
+		id := q.Get("connection_id")
+		_, perr := uuid.Parse(id)
+		require.NoError(t, perr, "Switch 0.31 refuses a stream with no UUID connection_id, got %q", id)
+		ids = append(ids, id)
+	}
+	require.Equal(t, ids[0], ids[1], "a reconnect reuses the id so Switch keeps the connection across the drop")
+}
+
+func TestStreamAcceptsAHeartbeatIntervalSentAsAFloat(t *testing.T) {
+	f, c, _ := streamTest(t)
+	setStream(f, func(w http.ResponseWriter, _ *http.Request, _ int) {
+		// Switch 0.31 sends the interval as 2.0, not 2.
+		_, _ = fmt.Fprintf(w, "event: connection_state\ndata: {\"connection_id\":%q,\"generation\":1,\"heartbeat_interval_seconds\":2.0}\n\n", connA)
+		frame(w, 0, "evicted", map[string]any{})
+	})
+	var got deliveryLog
+	err := c.Stream(streamCtx(t), []change.RoomID{roomID(t, testRoomUUID)}, nil, got.deliver)
+	require.ErrorIs(t, err, ErrEvicted, "a float interval must decode, not stop the stream")
 }
 
 func TestStreamReconnectResumesWithLastEventIDAndMarksReplayed(t *testing.T) {
@@ -388,4 +472,12 @@ func TestStreamFailedBeatEndsTheConnectionAndReconnectsNamingIt(t *testing.T) {
 	opens := streamOpens(f)
 	require.Len(t, opens, 2, "a beat that Switch refuses ends the connection, and the stream reconnects")
 	require.Equal(t, connA, opens[1].Connection)
+}
+
+// roomsOf returns the rooms a stream URL declares: one comma-separated "rooms" parameter, as Switch reads it.
+func roomsOf(t *testing.T, rawQuery string) string {
+	t.Helper()
+	q, err := url.ParseQuery(rawQuery)
+	require.NoError(t, err)
+	return q.Get("rooms")
 }

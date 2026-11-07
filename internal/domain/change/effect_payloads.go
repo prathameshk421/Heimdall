@@ -133,6 +133,9 @@ func decodeEffectPayload(raw json.RawMessage, required []string, v interface{ Va
 	if keys == nil {
 		return errors.New("must be a JSON object, not null")
 	}
+	if err := rejectDuplicateKeys(raw); err != nil {
+		return err
+	}
 	for _, k := range required {
 		if _, ok := keys[k]; !ok {
 			return fmt.Errorf("missing field %q", k)
@@ -147,6 +150,35 @@ func decodeEffectPayload(raw json.RawMessage, required []string, v interface{ Va
 		return errors.New("has data after the object")
 	}
 	return v.Validate()
+}
+
+// rejectDuplicateKeys refuses an object that holds one key twice: the decoder would keep the last, and two readers of
+// one payload could then disagree about what it says. Only the top-level keys are checked.
+func rejectDuplicateKeys(raw json.RawMessage) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if _, err := dec.Token(); err != nil { // the opening brace
+		return fmt.Errorf("not a JSON object: %w", err)
+	}
+	seen := make(map[string]bool)
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return fmt.Errorf("payload JSON error: %w", err)
+		}
+		key, ok := t.(string)
+		if !ok {
+			return fmt.Errorf("expected a string key, got %v", t)
+		}
+		if seen[key] {
+			return fmt.Errorf("duplicate key %q", key)
+		}
+		seen[key] = true
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return fmt.Errorf("value of key %q: %w", key, err)
+		}
+	}
+	return nil
 }
 
 // checkInviteEntry accepts "role:<name>" and "person:<id>". The placeholder is refused here: CheckInviteTemplate

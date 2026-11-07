@@ -87,6 +87,8 @@ type fakeGateGitHub struct {
 	policyBytes []byte
 	mu          sync.Mutex
 	headSHA     id.SHA
+	closed      bool
+	merged      bool
 	reviews     []map[string]any
 	checks      []recordedCheckCall
 	pullsCalls  int
@@ -114,6 +116,21 @@ func (f *fakeGateGitHub) setReviews(revs []map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reviews = append([]map[string]any(nil), revs...)
+}
+
+// setClosed makes PR 1 closed (and merged when merged is true). A closed PR is not in the open list, as on GitHub.
+func (f *fakeGateGitHub) setClosed(merged bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = true
+	f.merged = merged
+}
+
+// prState returns the state fields of PR 1 as GitHub reports them now.
+func (f *fakeGateGitHub) prState() (head id.SHA, closed, merged bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.headSHA, f.closed, f.merged
 }
 
 func (f *fakeGateGitHub) checkCallsCount() int {
@@ -186,15 +203,17 @@ func (f *fakeGateGitHub) servePulls(w http.ResponseWriter, r *http.Request, repo
 	case repoPath + "/pulls":
 		f.mu.Lock()
 		f.pullsCalls++
-		head := f.headSHA
+		head, closed, merged := f.headSHA, f.closed, f.merged
 		f.mu.Unlock()
-		writeJSON(w, http.StatusOK, []any{f.prJSON(head)})
+		if closed {
+			writeJSON(w, http.StatusOK, []any{})
+			return true
+		}
+		writeJSON(w, http.StatusOK, []any{f.prJSON(head, closed, merged)})
 		return true
 	case repoPath + "/pulls/1":
-		f.mu.Lock()
-		head := f.headSHA
-		f.mu.Unlock()
-		writeJSON(w, http.StatusOK, f.prJSON(head))
+		head, closed, merged := f.prState()
+		writeJSON(w, http.StatusOK, f.prJSON(head, closed, merged))
 		return true
 	case repoPath + "/pulls/1/files":
 		writeJSON(w, http.StatusOK, []any{
@@ -216,13 +235,17 @@ func (f *fakeGateGitHub) servePulls(w http.ResponseWriter, r *http.Request, repo
 	return false
 }
 
-func (f *fakeGateGitHub) prJSON(head id.SHA) map[string]any {
+func (f *fakeGateGitHub) prJSON(head id.SHA, closed, merged bool) map[string]any {
+	state := "open"
+	if closed {
+		state = "closed"
+	}
 	return map[string]any{
 		"number": 1,
 		"title":  "PAY-1: Add payment feature",
 		"body":   "## Justification\nInitial implementation of PAY-1.",
-		"state":  "open",
-		"merged": false,
+		"state":  state,
+		"merged": merged,
 		"user":   map[string]any{"login": gateTestAuthor},
 		"head":   map[string]any{"ref": "feature/PAY-1", "sha": string(head)},
 		"base":   map[string]any{"sha": string(gateTestBaseSHA)},
@@ -431,6 +454,11 @@ provider = "jira"
 
 [chat]
 bridge = "switch"
+
+[agents]
+test_author = "test-author"
+reviewers = ["reviewer-1", "reviewer-2"]
+resolver = "resolver"
 
 [[projects]]
 tracker_project = "PAY"

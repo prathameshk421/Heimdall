@@ -228,7 +228,7 @@ func (c *Client) issueChanges(is searchIssue, start time.Time) ([]ports.TicketCh
 		if len(fields) == 0 {
 			continue
 		}
-		out = append(out, ports.TicketChange{Key: key, ChangelogID: h.ID, Fields: fields, At: at.UTC()})
+		out = append(out, ports.TicketChange{Key: key, ChangelogID: h.ID, Fields: fields, ToStatus: toStatus(h.Items), At: at.UTC()})
 	}
 	return out, nil
 }
@@ -290,13 +290,15 @@ func (c *Client) Ticket(ctx context.Context, key id.ChangeID) (ports.Ticket, err
 		return ports.Ticket{}, fmt.Errorf("jira ticket %s: %w", string(key), err)
 	}
 	tk := ports.Ticket{
-		Key:      key,
-		Title:    is.Fields.Summary,
-		Status:   is.Fields.Status.Name,
-		Criteria: cs,
+		Key:         key,
+		Title:       is.Fields.Summary,
+		Status:      is.Fields.Status.Name,
+		Criteria:    cs,
+		Description: desc,
 	}
 	if is.Fields.Assignee != nil {
 		tk.Assignee = change.ActorID(is.Fields.Assignee.AccountID)
+		tk.AssigneeIsApp = is.Fields.Assignee.AccountType == "app"
 	}
 	if err := tk.Validate(); err != nil {
 		return ports.Ticket{}, fmt.Errorf("jira ticket %s: %w", string(key), err)
@@ -472,7 +474,18 @@ type changelogEntry struct {
 
 // changeItem names one field a changelog entry touched.
 type changeItem struct {
-	Field string `json:"field"`
+	Field    string `json:"field"`
+	ToString string `json:"toString"`
+}
+
+// toStatus returns the status a changelog entry moved to, or "" when the entry did not touch the status.
+func toStatus(items []changeItem) string {
+	for _, it := range items {
+		if it.Field == "status" {
+			return it.ToString
+		}
+	}
+	return ""
 }
 
 // ticketResponse is the issue read by Ticket.

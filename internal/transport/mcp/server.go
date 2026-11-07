@@ -8,8 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -29,22 +29,103 @@ func supportedProtocolVersion(v string) bool {
 	return v == "2025-03-26" || v == latestProtocolVersion
 }
 
-// serveMCP answers one POST /mcp: authenticate, read the body, then answer the JSON-RPC message.
+// serveMCP answers one POST /mcp: authenticate, read the body, then answer the JSON-RPC message. Every request
+// writes one INFO line when it ends (logRequest), including a refused one.
 func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.authenticate(w, r)
+	ctx := r.Context()
+	start := s.deps.Clock.Now()
+	rec := &statusRecorder{ResponseWriter: w}
+	var p Principal
+	var facts requestFacts
+	defer func() { s.logRequest(ctx, p, facts, rec.status(), start) }()
+
+	var ok bool
+	p, ok = s.authenticate(rec, r)
 	if !ok {
 		return
 	}
-	body, ok := s.readBody(w, r)
+	body, ok := s.readBody(rec, r)
 	if !ok {
 		return
 	}
-	rep, status := s.answer(r.Context(), p, body)
+	rep, status := s.answer(ctx, p, body, &facts)
 	if rep == nil {
-		w.WriteHeader(http.StatusAccepted)
+		rec.WriteHeader(http.StatusAccepted)
 		return
 	}
-	writeJSONReply(w, status, rep)
+	writeJSONReply(rec, status, rep)
+}
+
+// requestFacts is what the request line says about the JSON-RPC body. It holds the method and the tool name only.
+// The arguments, the headers and the token are never in it.
+type requestFacts struct {
+	method string
+	tool   string
+}
+
+// statusRecorder keeps the first status code the handler writes, so the request line can name it.
+type statusRecorder struct {
+	http.ResponseWriter
+	code int
+}
+
+// WriteHeader records the status code and passes it on.
+func (w *statusRecorder) WriteHeader(code int) {
+	if w.code == 0 {
+		w.code = code
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// status returns the written status code. A handler that wrote a body without a header got 200.
+func (w *statusRecorder) status() int {
+	if w.code == 0 {
+		return http.StatusOK
+	}
+	return w.code
+}
+
+// logRequest writes the one INFO line for a request to /mcp. It names the method, the tool, the role and agent
+// (empty when the request was not authenticated), the status and the duration. A 401 also carries
+// outcome=unauthenticated. The line never carries headers, the token, the body or the arguments.
+func (s *Server) logRequest(ctx context.Context, p Principal, facts requestFacts, status int, start time.Time) {
+	attrs := []any{
+		"method", facts.method,
+		"tool", facts.tool,
+		"role", string(p.Role),
+		"agent", string(p.Agent),
+		"status", status,
+		"duration_ms", s.deps.Clock.Now().Sub(start).Milliseconds(),
+	}
+	if status == http.StatusUnauthorized {
+		attrs = append(attrs, "outcome", "unauthenticated")
+	}
+	s.deps.Logger.InfoContext(ctx, "mcp request", attrs...)
+}
+
+// methodForLog returns the method as the request line names it. A method the server does not know is "other", so
+// the log never carries text the client chose.
+func methodForLog(method string) string {
+	switch method {
+	case "initialize", "ping", "tools/list", "tools/call", "notifications/initialized", "notifications/cancelled":
+		return method
+	default:
+		return "other"
+	}
+}
+
+// toolNameOf returns the name in tools/call params when the server has a tool of that name, and "" otherwise.
+func (s *Server) toolNameOf(params json.RawMessage) string {
+	var call callParams
+	if err := json.Unmarshal(params, &call); err != nil {
+		return ""
+	}
+	for _, t := range s.tools {
+		if t.name == call.Name {
+			return t.name
+		}
+	}
+	return ""
 }
 
 // bearerToken returns the token of an "Authorization: Bearer <token>" header. Anything else is not a token.
@@ -64,6 +145,7 @@ func bearerToken(header string) (string, bool) {
 func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (Principal, bool) {
 	token, ok := bearerToken(r.Header.Get("Authorization"))
 	if !ok {
+		s.deps.Logger.WarnContext(r.Context(), "mcp authentication failed", "remote_addr", r.RemoteAddr, "reason", "no bearer token")
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		writeStatus(w, http.StatusUnauthorized, "a bearer token is required")
 		return Principal{}, false
@@ -71,6 +153,7 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (Principal
 	p, err := s.deps.Tokens.Resolve(r.Context(), HashToken(token))
 	switch {
 	case errors.Is(err, ports.ErrUnauthorized):
+		s.deps.Logger.WarnContext(r.Context(), "mcp authentication failed", "remote_addr", r.RemoteAddr, "reason", "unknown or revoked token")
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		writeStatus(w, http.StatusUnauthorized, "the token is unknown or revoked")
 		return Principal{}, false
@@ -100,7 +183,8 @@ func (s *Server) readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool)
 
 // answer parses one JSON-RPC message and returns its reply and HTTP status. A notification has no reply, so it
 // returns nil. Framing errors (not JSON, a batch, a wrong version) are 400; method and parameter errors are 200.
-func (s *Server) answer(ctx context.Context, p Principal, body []byte) (*rpcReply, int) {
+// It fills facts with the method and, for tools/call, the tool name.
+func (s *Server) answer(ctx context.Context, p Principal, body []byte, facts *requestFacts) (*rpcReply, int) {
 	if trimmed := bytes.TrimLeft(body, " \t\r\n"); len(trimmed) > 0 && trimmed[0] == '[' {
 		rep := errorReply(nullID(), codeInvalidRequest, "batch requests are not supported")
 		return &rep, http.StatusBadRequest
@@ -113,6 +197,10 @@ func (s *Server) answer(ctx context.Context, p Principal, body []byte) (*rpcRepl
 	if msg.JSONRPC != "2.0" || msg.Method == "" {
 		rep := errorReply(idOrNull(msg.ID), codeInvalidRequest, "invalid request")
 		return &rep, http.StatusBadRequest
+	}
+	facts.method = methodForLog(msg.Method)
+	if msg.Method == "tools/call" {
+		facts.tool = s.toolNameOf(msg.Params)
 	}
 	if msg.ID == nil {
 		s.deps.Logger.DebugContext(ctx, "mcp notification", "method", msg.Method, "agent", p.Agent)
@@ -156,7 +244,7 @@ func (s *Server) dispatch(ctx context.Context, p Principal, msg rpcMessage) (any
 	case "ping":
 		return struct{}{}, nil
 	case "tools/list":
-		return s.listTools(p.Role), nil
+		return s.listPrincipalTools(p), nil
 	case "tools/call":
 		return s.callTool(ctx, p, msg.Params)
 	default:
@@ -216,10 +304,12 @@ type toolDescriptor struct {
 }
 
 // listTools returns the tools the role may call. A tool the role lacks is not listed at all.
-func (s *Server) listTools(role workflow.Role) toolListing {
+func (s *Server) listPrincipalTools(p Principal) toolListing {
 	out := toolListing{Tools: []toolDescriptor{}}
 	for _, t := range s.tools {
-		if t.allows(role) {
+		if t.humanOnly && p.Human && p.Person != "" && p.Agent == "" {
+			out.Tools = append(out.Tools, toolDescriptor{Name: t.name, Description: t.description, InputSchema: t.schema})
+		} else if !t.humanOnly && t.allows(p.Role) {
 			out.Tools = append(out.Tools, toolDescriptor{Name: t.name, Description: t.description, InputSchema: t.schema})
 		}
 	}
@@ -239,7 +329,7 @@ func (s *Server) callTool(ctx context.Context, p Principal, params json.RawMessa
 	if err := json.Unmarshal(params, &call); err != nil || call.Name == "" {
 		return nil, invalidParams()
 	}
-	t, ok := s.toolFor(call.Name, p.Role)
+	t, ok := s.toolFor(call.Name, p)
 	if !ok {
 		return nil, invalidParams()
 	}
@@ -248,9 +338,15 @@ func (s *Server) callTool(ctx context.Context, p Principal, params json.RawMessa
 }
 
 // toolFor returns the named tool when the role may call it.
-func (s *Server) toolFor(name string, role workflow.Role) (tool, bool) {
+func (s *Server) toolFor(name string, p Principal) (tool, bool) {
 	for _, t := range s.tools {
-		if t.name == name && t.allows(role) {
+		if t.name != name {
+			continue
+		}
+		if t.humanOnly && p.Human && p.Person != "" && p.Agent == "" {
+			return t, true
+		}
+		if !t.humanOnly && t.allows(p.Role) {
 			return t, true
 		}
 	}

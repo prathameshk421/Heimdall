@@ -68,6 +68,9 @@ type folded struct {
 
 // pending reports whether the tests or the slop rule have not reported yet. Such a check is in_progress, not red.
 func (f folded) pending() bool {
+	if f.slopSeen && !f.facts.Slop.Pass {
+		return false // a slop rejection is final for this head: the check is red, not pending
+	}
 	return !f.slopSeen || !f.verifiedSeen || !f.committedSeen
 }
 
@@ -129,6 +132,7 @@ type foldState struct {
 	reviewsKnown bool
 	reviews      []gate.ReviewRequest
 	waived       map[string]bool
+	reviewed     map[string]bool // reviewers whose review followed the current head
 
 	findings     []id.FindingID
 	findingState map[id.FindingID]gate.FindingState
@@ -140,6 +144,7 @@ func newFoldState() *foldState {
 	return &foldState{
 		ci:           make(map[string]ciResult),
 		waived:       make(map[string]bool),
+		reviewed:     make(map[string]bool),
 		findingState: make(map[id.FindingID]gate.FindingState),
 		human:        make(map[id.CaseID]bool),
 	}
@@ -214,6 +219,8 @@ func (st *foldState) applyReview(p change.Payload) bool {
 		st.invalidate(v)
 	case change.ReviewersPicked:
 		st.pickReviewers(v)
+	case change.ReviewSubmitted:
+		st.reviewSubmitted(v)
 	case change.ReviewWaived:
 		st.waive(v)
 	default:
@@ -225,11 +232,11 @@ func (st *foldState) applyReview(p change.Payload) bool {
 func (st *foldState) applyFindings(p change.Payload) {
 	switch v := p.(type) {
 	case change.FindingFiled:
-		st.finding(change.FindingRecord(v))
+		st.finding(change.FindingRecord(v), true)
 	case change.FindingVerified:
-		st.finding(change.FindingRecord(v))
+		st.finding(change.FindingRecord(v), false)
 	case change.FindingStateChanged:
-		st.finding(change.FindingRecord(v))
+		st.finding(change.FindingRecord(v), false)
 	case change.CaseOpened:
 		st.human[v.CaseID] = true
 	case change.VerdictEscalated:
@@ -253,6 +260,7 @@ func (st *foldState) opened(p change.PROpened) error {
 		return err
 	}
 	st.head = p.HeadSHA
+	st.resetReviews()
 	st.author = p.Author
 	if p.Ticket != "" {
 		st.ticketLinked = true
@@ -268,6 +276,7 @@ func (st *foldState) pushed(p change.PRPushed) error {
 		return err
 	}
 	st.head = p.HeadSHA
+	st.resetReviews()
 	st.approvals = nil
 	st.ci = make(map[string]ciResult)
 	return nil
@@ -349,7 +358,27 @@ func (st *foldState) pickReviewers(p change.ReviewersPicked) {
 	st.reviews = make([]gate.ReviewRequest, 0, len(p.People))
 	for _, person := range p.People {
 		name := string(person)
-		st.reviews = append(st.reviews, gate.ReviewRequest{Reviewer: name, Waived: st.waived[name]})
+		st.reviews = append(st.reviews, gate.ReviewRequest{Reviewer: name, Covered: st.reviewed[name], Waived: st.waived[name]})
+	}
+}
+
+// reviewSubmitted covers a reviewer for the current head. The event carries no head sha, so a review counts for the head
+// it follows; a later push resets it (resetReviews). A review from someone who was not asked covers nobody.
+func (st *foldState) reviewSubmitted(p change.ReviewSubmitted) {
+	name := string(p.Reviewer)
+	st.reviewed[name] = true
+	for i := range st.reviews {
+		if strings.EqualFold(st.reviews[i].Reviewer, name) {
+			st.reviews[i].Covered = true
+		}
+	}
+}
+
+// resetReviews voids every review: the head changed, so each reviewer must look again.
+func (st *foldState) resetReviews() {
+	st.reviewed = make(map[string]bool)
+	for i := range st.reviews {
+		st.reviews[i].Covered = false
 	}
 }
 
@@ -363,17 +392,29 @@ func (st *foldState) waive(p change.ReviewWaived) {
 	}
 }
 
-// finding records the latest state of a finding. The event carries no severity, so the severity is treated as
-// critical: a finding can never pass a policy threshold because a field is missing.
-func (st *foldState) finding(r change.FindingRecord) {
-	if _, ok := st.findingState[r.FindingID]; !ok {
+// finding records the latest state of a finding with the severity its event carries (TECH_SPEC 11.1).
+//
+// Only the filing event names the reporter. A verification or a state change is written by the server, so it must not
+// replace the reviewer: consensus counts distinct reviewers, and the server is not one (A2).
+func (st *foldState) finding(r change.FindingRecord, filed bool) {
+	prev, seen := st.findingState[r.FindingID]
+	if !seen {
 		st.findings = append(st.findings, r.FindingID)
 	}
 	st.findingState[r.FindingID] = gate.FindingState{
-		ID:       r.FindingID,
-		Tier:     r.Tier,
-		Severity: finding.SeverityCritical,
-		State:    r.State,
+		ID:          r.FindingID,
+		Tier:        r.Tier,
+		Severity:    r.Severity,
+		State:       r.State,
+		Fingerprint: r.Fingerprint,
+		Reporter:    string(r.By),
+		Confidence:  r.Confidence,
+	}
+	if seen && !filed {
+		// The server's events carry no reviewer facts; keep the ones the filing event set.
+		next := st.findingState[r.FindingID]
+		next.Reporter, next.Fingerprint, next.Confidence = prev.Reporter, prev.Fingerprint, prev.Confidence
+		st.findingState[r.FindingID] = next
 	}
 }
 
@@ -425,11 +466,10 @@ func (st *foldState) result() folded {
 	}
 }
 
-// strictBlocking is the threshold the fold uses when no policy is known: every open finding of tier E1 to E3 blocks. A
-// finding event carries no severity, so severity is taken as critical and only the policy's tier threshold can lift a
-// finding out of the blocking set.
+// strictBlocking is the threshold the fold uses when no policy is known: every open finding of tier E1 to E3 blocks,
+// whatever its severity. Only a policy's own thresholds can lift a finding out of the blocking set.
 func strictBlocking() policy.Blocking {
-	return policy.Blocking{MinSeverity: finding.SeverityCritical, MinTier: finding.TierE4}
+	return policy.Blocking{MinSeverity: finding.SeverityLow, MinTier: finding.TierE4}
 }
 
 // blockingFor returns the blocking thresholds of the policy at the merge base (invariant 5), or the strict default

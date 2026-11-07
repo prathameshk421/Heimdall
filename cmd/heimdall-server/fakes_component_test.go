@@ -120,12 +120,14 @@ func (f *fakeJira) searchCount() int {
 	return f.searches
 }
 
-// fakeSwitch serves the two Switch operations the room needs: list_rooms and create_room.
+// fakeSwitch serves the Switch operations the slice needs: list_rooms, create_room and message.
 type fakeSwitch struct {
 	srv         *httptest.Server
 	mu          sync.Mutex
 	rooms       []map[string]any
 	createCalls []string
+	inviteCalls []string
+	postCalls   []string
 	badAuth     int
 }
 
@@ -150,13 +152,41 @@ func (f *fakeSwitch) serve(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&args)
 	}
 	switch r.URL.Path {
+	case "/agents/" + acceptanceAgentID + "/message":
+		// Switch 0.31 reads the text from content and answers 422 when it is missing.
+		content, _ := args["content"].(string)
+		if content == "" {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"detail": "content: Field required"})
+			return
+		}
+		f.mu.Lock()
+		f.postCalls = append(f.postCalls, content)
+		f.mu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	case "/agents/" + acceptanceAgentID + "/ops/list_rooms":
 		f.mu.Lock()
 		out := append([]map[string]any{}, f.rooms...)
 		f.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{"result": out})
+	case "/agents/" + acceptanceAgentID + "/ops/invite_agent_to_room":
+		// Switch 0.31 invites an agent into a room by its Switch name; the call is idempotent.
+		agent, _ := args["agent_name"].(string)
+		if agent == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invite_agent_to_room requires: agent_name"})
+			return
+		}
+		f.mu.Lock()
+		f.inviteCalls = append(f.inviteCalls, agent)
+		f.mu.Unlock()
+		// Every op answers inside a result envelope; the adapter reads the ok field from it.
+		writeJSON(w, http.StatusOK, map[string]any{"result": map[string]any{"ok": true}})
 	case "/agents/" + acceptanceAgentID + "/ops/create_room":
 		title, _ := args["name"].(string)
+		// Switch 0.31 answers 400 when create_room has no description.
+		if description, _ := args["description"].(string); description == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "create_room requires: description"})
+			return
+		}
 		f.mu.Lock()
 		f.createCalls = append(f.createCalls, title)
 		f.rooms = append(f.rooms, map[string]any{"room_id": acceptanceRoomID, "name": title, "archived": false})
@@ -171,6 +201,20 @@ func (f *fakeSwitch) createCallTitles() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string{}, f.createCalls...)
+}
+
+// invitedAgents returns the agents invited into a room, in call order.
+func (f *fakeSwitch) invitedAgents() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string{}, f.inviteCalls...)
+}
+
+// postCounts returns the bodies of the messages posted to any room.
+func (f *fakeSwitch) postBodies() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string{}, f.postCalls...)
 }
 
 // refCall is one create-ref request the fake GitHub received.
@@ -277,6 +321,10 @@ func writeAcceptanceSecrets(t *testing.T) string {
 		"github_app_installation_id": acceptanceInstall,
 		"switch_api_key":             acceptanceAPIKey,
 		"switch_registration_token":  "reg-token-value",
+		"agent_token_test-author":    "agent-token-author-value",
+		"agent_token_reviewer-1":     "agent-token-reviewer-1-value",
+		"agent_token_reviewer-2":     "agent-token-reviewer-2-value",
+		"agent_token_resolver":       "agent-token-resolver-value",
 	}
 	for name, value := range files {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(value+"\n"), 0o600))
@@ -322,6 +370,11 @@ provider = "jira"
 [chat]
 bridge = "switch"
 
+[agents]
+test_author = "test-author"
+reviewers = ["reviewer-1", "reviewer-2"]
+resolver = "resolver"
+
 [[projects]]
 tracker_project = "KAN"
 repo = %q
@@ -330,4 +383,54 @@ base_branch = %q
 	path := filepath.Join(t.TempDir(), "heimdall.toml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	return path
+}
+
+func writeFileAcceptanceConfig(t *testing.T, secretsDir, ticketsDir string) string {
+	t.Helper()
+	body := fmt.Sprintf(`listen = "127.0.0.1:0"
+secrets_dir = %q
+
+[database]
+url_secret = "database_url"
+
+[switch]
+base_url = "https://switch.example.test"
+agent_id = %q
+agent_name = %q
+bridge_id = %q
+api_key_secret = "switch_api_key"
+registration_token_secret = "switch_registration_token"
+
+[github]
+app_id_secret = "github_app_id"
+installation_id_secret = "github_app_installation_id"
+private_key_secret = "github_app_private_key"
+
+[vcs]
+provider = "github"
+
+[tracker]
+provider = "file"
+path = %q
+
+[chat]
+bridge = "switch"
+
+[[projects]]
+tracker_project = "KAN"
+repo = %q
+base_branch = %q
+`, secretsDir, acceptanceAgentID, acceptanceAgentName, acceptanceBridgeID, ticketsDir, acceptanceRepo, acceptanceBaseRef)
+	path := filepath.Join(t.TempDir(), "heimdall.toml")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	return path
+}
+
+func writeFileAcceptanceTicket(t *testing.T) (string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	body := "# KAN-1: Add refunds\nAssignee: ana\nStatus: In Progress\n\n## Acceptance criteria\n- Refunds are idempotent.\n"
+	path := filepath.Join(dir, "KAN-1.md")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	return dir, "Refunds are idempotent."
 }

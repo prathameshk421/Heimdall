@@ -85,7 +85,7 @@ func (g GitHubBranch) Execute(ctx context.Context, fx change.Effect) error {
 	if err != nil {
 		return failf(err, "github_branch %s: read base commit", p.Ticket)
 	}
-	if err := g.deps.Branches.EnsureBranch(ctx, p.Repo, base, name); err != nil {
+	if err := g.deps.Branches.EnsureBranch(ctx, p.Repo, base, name, string(fx.Key)); err != nil {
 		return failf(err, "github_branch %s: ensure branch", p.Ticket)
 	}
 	payload := change.BranchEnsured{Repo: p.Repo, Branch: name, BaseSHA: base}

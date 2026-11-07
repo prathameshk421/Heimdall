@@ -14,11 +14,14 @@ import (
 
 // The tools this agent calls (TECH_SPEC 14.1).
 const (
-	toolGetTask        = "heimdall_get_task"
-	toolAck            = "heimdall_ack"
-	toolReadCode       = "heimdall_read_code"
-	toolSubmitTests    = "heimdall_submit_tests"
-	toolReportProgress = "heimdall_report_progress"
+	toolGetTask        = "get_task"
+	toolAck            = "ack"
+	toolReadUntrusted  = "read_untrusted"
+	toolReadCode       = "read_code"
+	toolSubmitTests    = "submit_tests"
+	toolSubmitReview   = "submit_review"
+	toolSubmitVerdict  = "submit_verdict"
+	toolReportProgress = "report_progress"
 )
 
 // The canned values every scenario shares.
@@ -83,6 +86,13 @@ func allScenarios() []scenario {
 		{name: "schema-bad", about: "a JSON field the schema does not have", run: runSchemaBad},
 		{name: "slow", about: "acknowledge, report progress, then wait for the deadline without submitting", run: runSlow},
 		{name: "silent", about: "never acknowledge the task", run: runSilent},
+		{name: "review-clean", about: "a Review@1 with no findings, after reading every changed file at head", run: runReviewClean},
+		{name: "review-finding", about: "one finding on a changed file, a real line range and E2 tool evidence", run: runReviewFinding},
+		{name: "review-bad-path", about: "a finding outside the diff, then a corrected review after the refusal", run: runReviewBadPath},
+		{name: "review-silent", about: "a reviewer that never acknowledges the task", run: runReviewSilent},
+		{name: "verdict-uphold", about: "a verdict that upholds the finding on a failing run at head", run: runVerdictUphold},
+		{name: "verdict-dismiss", about: "a verdict that dismisses the finding on a confirmed decision", run: runVerdictDismiss},
+		{name: "verdict-needs-human", about: "a verdict that escalates on observed memory no run can check", run: runVerdictNeedsHuman},
 	}
 }
 
@@ -105,7 +115,7 @@ func scenarioNames() []string {
 	return names
 }
 
-// submissionBuilder returns the arguments of heimdall_submit_tests for one scenario. A builder that cannot derive its
+// submissionBuilder returns the arguments of submit_tests for one scenario. A builder that cannot derive its
 // canned submission from this task returns an error instead of sending something else.
 type submissionBuilder func(task workflow.TaskEnvelope) (any, error)
 
@@ -183,11 +193,16 @@ func runSlow(ctx context.Context, c *client, out io.Writer) error {
 
 // runSilent reads the task and stops without acknowledging, which is the 60 second ack window's failure path.
 func runSilent(ctx context.Context, c *client, out io.Writer) error {
+	return silentFlow(ctx, c, out, "silent")
+}
+
+// silentFlow reads the task and stops without acknowledging. name is the scenario's name, which starts the output line.
+func silentFlow(ctx context.Context, c *client, out io.Writer, name string) error {
 	if _, err := fetchTask(ctx, c); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(out, "silent: no ack: read the task and stopped without acknowledging\n"); err != nil {
-		return fmt.Errorf("write the silent outcome: %w", err)
+	if _, err := fmt.Fprintf(out, "%s: no ack: read the task and stopped without acknowledging\n", name); err != nil {
+		return fmt.Errorf("write the %s outcome: %w", name, err)
 	}
 	return nil
 }

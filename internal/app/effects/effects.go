@@ -111,6 +111,8 @@ type RoomOpenDeps struct {
 	Ingest  Ingest
 	IDs     ports.IDs
 	Clock   ports.Clock
+	// Agents are the workflow agents the room is created with, so Switch delivers an @mention to each.
+	Agents []string
 }
 
 // RoomOpen performs room_open effects: it asks Switch for the room of the change and records room.opened.
@@ -192,11 +194,17 @@ func (r RoomOpen) request(ctx context.Context, cid id.ChangeID, key change.Effec
 	if err != nil {
 		return ports.RoomRequest{}, failf(err, "room_open %s: read ticket", cid)
 	}
-	req := ports.RoomRequest{ChangeID: cid, Title: truncate(t.Title, maxRoomTitle), Key: key}
+	req := ports.RoomRequest{ChangeID: cid, Title: roomTitle(t), Key: key, Agents: r.deps.Agents}
 	if err := req.Validate(); err != nil {
 		return ports.RoomRequest{}, failf(err, "room_open %s: room request refused", cid)
 	}
 	return req, nil
+}
+
+// roomTitle leads with the ticket key. OpenRoom adopts an open room by its title, so two tickets with the same summary
+// would otherwise share one room (found live on KAN-9 and KAN-11). The key also names the chat channel.
+func roomTitle(t ports.Ticket) string {
+	return truncate(string(t.Key)+" "+t.Title, maxRoomTitle)
 }
 
 // roomPayload checks the kind and the target of a room_open effect and decodes its payload.

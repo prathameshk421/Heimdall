@@ -16,9 +16,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport"
+	dashboardedge "github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/dashboard"
 )
+
+// newTicker is the system ticker of the dashboard's live streams. The transport package never reads the clock.
+func newTicker(every time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTicker(every)
+	return t.C, t.Stop
+}
 
 const (
 	// readHeaderTimeout bounds how long a client may take to send headers (slowloris protection).
@@ -56,6 +64,13 @@ func run(
 	}
 	if a != nil {
 		defer a.close()
+	}
+	handler = mountHTTP(handler, a)
+	if a != nil {
+		handler, err = dashboardedge.Mount(handler, postgres.NewStore(a.pool), logger, dashboardedge.Options{NewTicker: newTicker})
+		if err != nil {
+			return fmt.Errorf("mount dashboard: %w", err)
+		}
 	}
 	ln, err := listen(ctx, "tcp", cfg.Listen)
 	if err != nil {
@@ -101,4 +116,28 @@ func main() {
 		logger.ErrorContext(context.Background(), "heimdall-server did not run", "error", err)
 		os.Exit(1)
 	}
+}
+
+// mountHTTP returns the root HTTP handler. Exact paths are routed: /mcp only when the app built an MCP handler,
+// /admin/agents/ only when agent setup is wired, and everything else goes to the router (/healthz among them).
+// An exact-path mux keeps /mcp a 404 (not a subtree match) when no slice is selected.
+func mountHTTP(router http.Handler, a *app) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", router)
+	if a != nil && a.mcpHandler != nil {
+		mux.Handle("/mcp", a.mcpHandler)
+	}
+	if a != nil && a.agentSetupHandler != nil {
+		mux.Handle("/admin/agents/", a.agentSetupHandler)
+	}
+	if a != nil && a.operatorAnswer != nil {
+		mux.Handle("/admin/answer", a.operatorAnswer)
+	}
+	if a != nil && a.operatorReject != nil {
+		mux.Handle("/admin/reject", a.operatorReject)
+	}
+	if a != nil && a.packUpload != nil {
+		mux.Handle("/packs/upload", a.packUpload)
+	}
+	return mux
 }

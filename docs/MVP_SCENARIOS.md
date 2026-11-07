@@ -10,7 +10,7 @@ So the tests are organised around that story:
 
 1. **The MVP is nine scenarios (P1 to P9, section 3).** Each is a script that drives the product only from the outside, the way people do: move a Jira ticket, type in a room, open a PR, push, approve a review. It asserts only what a person would see: room messages, the GitHub check, commits, the dashboard.
 2. **One board shows how far the prototype is.** `make prototype` runs every scenario step and prints a matrix of pass, fail and blocked. It is the progress bar for the whole project. At the start it is almost all red; at G5 it is all green.
-3. **Every task moves a named step.** A task is not "done" because its own tests pass. It is done when its own tests pass **and** the board step(s) it owns turned green (or the task is listed as infrastructure with the first step it unblocks). This is what stops us building impressive parts that never connect.
+3. **Every task connects to a named step.** The board shows whether the product scenarios work end to end. A green owned step is evidence of integration; a blocked step records the missing prerequisite and is not green. Do not claim an acceptance check passed when it did not run, but an unavailable external prerequisite does not stop independent local implementation or verification.
 4. **The demo script is a test.** `make demo-check` asserts the beats of the video in order (section 6).
 
 Unit, component and contract tests (layers L0 to L3) stay exactly as `TEST_STRATEGY.md` says. They are how a step gets fixed quickly. The scenarios are how we know it matters.

@@ -23,18 +23,32 @@ type wireTool struct {
 // LLM role, so profiler gets the same tools as reviewer.
 func expectedTools(role workflow.Role) []string {
 	all := []string{
-		"heimdall_get_task", "heimdall_ack", "heimdall_get_change",
-		"heimdall_read_untrusted", "heimdall_read_code", "heimdall_report_progress",
+		"get_task", "ack", "get_change",
+		"read_untrusted", "read_code", "ask_knowledge", "report_progress",
 	}
 	switch role {
 	case workflow.RoleTestAuthor:
-		return append(all, "heimdall_submit_tests", "heimdall_ask_humans")
+		return append(all, "submit_tests", "ask_humans")
 	case workflow.RoleResolver:
-		return append(all, "heimdall_ask_humans")
-	case workflow.RoleReviewer, workflow.RoleProfiler:
+		return append(all, "ask_humans", "submit_verdict")
+	case workflow.RoleReviewer:
+		return append(all, "submit_review", "read_pack", "stage_knowledge")
+	case workflow.RoleProfiler:
 		return all
 	}
 	return nil
+}
+
+func TestKnowledgeLifecycleToolsAreListedOnlyForAuthenticatedHumanPrincipals(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	r.tokens.byHash[HashToken(testToken)] = Principal{Person: "alice", Human: true}
+	require.ElementsMatch(t, []string{"approve_knowledge", "forget_knowledge"}, toolNames(listTools(t, r)))
+	approved := r.call("approve_knowledge", `{"ref":"knowledge:pending"}`)
+	require.False(t, approved.IsError, approved.text())
+
+	r.tokens.byHash[HashToken(testToken)] = Principal{Agent: testAgent, Role: workflow.RoleReviewer, Person: "alice", Human: true}
+	forged := r.rpc("tools/call", `{"name":"approve_knowledge","arguments":{"ref":"knowledge:pending"}}`)
+	require.NotNil(t, forged.Error, "a human flag cannot be combined with an agent principal")
 }
 
 func allLLMRoles() []workflow.Role {
@@ -176,8 +190,8 @@ func TestEveryListedToolHasADescriptionAndAClosedObjectSchema(t *testing.T) {
 
 func TestACallToAToolTheRoleLacksAnswersLikeAnUnknownTool(t *testing.T) {
 	r := newRig(t, workflow.RoleReviewer)
-	hidden := r.rpc("tools/call", `{"name":"heimdall_submit_tests","arguments":{}}`)
-	unknown := r.rpc("tools/call", `{"name":"heimdall_no_such_tool","arguments":{}}`)
+	hidden := r.rpc("tools/call", `{"name":"submit_tests","arguments":{}}`)
+	unknown := r.rpc("tools/call", `{"name":"no_such_tool","arguments":{}}`)
 	require.NotNil(t, hidden.Error)
 	require.NotNil(t, unknown.Error)
 	require.Equal(t, codeInvalidParams, hidden.Error.Code)
@@ -194,7 +208,7 @@ func TestToolsCallWithoutANameIsInvalidParams(t *testing.T) {
 
 func TestToolsCallWithArrayParamsIsInvalidParams(t *testing.T) {
 	r := newRig(t, workflow.RoleReviewer)
-	rep := r.rpc("tools/call", `["heimdall_get_task"]`)
+	rep := r.rpc("tools/call", `["get_task"]`)
 	require.NotNil(t, rep.Error)
 	require.Equal(t, codeInvalidParams, rep.Error.Code)
 }
@@ -203,11 +217,11 @@ func TestTheTaskEnvelopeMustBeForTheTokensRole(t *testing.T) {
 	r := newRig(t, workflow.RoleReviewer)
 	r.tasks.current.Task = testEnvelope(workflow.RoleTestAuthor)
 
-	got := r.call("heimdall_get_task", `{}`)
+	got := r.call("get_task", `{}`)
 	require.True(t, got.IsError, "a mismatched envelope must be refused")
 	require.NotContains(t, got.text(), "tsk_01J8", "the other role's envelope must not leak")
 
-	progress := r.call("heimdall_report_progress", `{"text":"hello"}`)
+	progress := r.call("report_progress", `{"text":"hello"}`)
 	require.True(t, progress.IsError)
 	require.Empty(t, r.tasks.progress, "no effect may run for a mismatched envelope")
 }
@@ -215,7 +229,7 @@ func TestTheTaskEnvelopeMustBeForTheTokensRole(t *testing.T) {
 func TestNoActiveTaskIsARefusalNotAProtocolError(t *testing.T) {
 	r := newRig(t, workflow.RoleTestAuthor)
 	r.tasks.currentErr = ErrNoTask
-	rep := r.rpc("tools/call", `{"name":"heimdall_get_task","arguments":{}}`)
+	rep := r.rpc("tools/call", `{"name":"get_task","arguments":{}}`)
 	require.Nil(t, rep.Error, "no active task is an answer the agent can act on, not a protocol error")
 	var res toolResult
 	require.NoError(t, decodeInto(rep.Result, &res))
@@ -226,9 +240,32 @@ func TestNoActiveTaskIsARefusalNotAProtocolError(t *testing.T) {
 func TestAnUnexpectedServerFailureIsGenericAndItsCauseIsLogged(t *testing.T) {
 	r := newRig(t, workflow.RoleTestAuthor)
 	r.tasks.currentErr = errors.New("postgres://heimdall:hunter2-cause@db refused")
-	res := r.call("heimdall_get_task", `{}`)
+	res := r.call("get_task", `{}`)
 	require.True(t, res.IsError)
 	require.Equal(t, "the server could not complete this call", res.text())
 	require.NotContains(t, res.text(), "hunter2")
 	require.Contains(t, r.logs.String(), "hunter2-cause", "the cause belongs in the log")
+}
+
+func TestReviewerCannotCallSubmitVerdictAndResolverCannotCallSubmitReview(t *testing.T) {
+	rev := newRig(t, workflow.RoleReviewer)
+	rep := rev.rpc("tools/call", `{"name":"submit_verdict","arguments":{}}`)
+	require.NotNil(t, rep.Error)
+	require.Equal(t, codeInvalidParams, rep.Error.Code)
+
+	res := newRig(t, workflow.RoleResolver)
+	rep = res.rpc("tools/call", `{"name":"submit_review","arguments":{}}`)
+	require.NotNil(t, rep.Error)
+	require.Equal(t, codeInvalidParams, rep.Error.Code)
+}
+
+func TestWrongRoleSeesNoSuchToolForSubmitReviewAndSubmitVerdict(t *testing.T) {
+	author := newRig(t, workflow.RoleTestAuthor)
+	rep := author.rpc("tools/call", `{"name":"submit_review","arguments":{}}`)
+	require.NotNil(t, rep.Error)
+	require.Equal(t, codeInvalidParams, rep.Error.Code)
+
+	rep = author.rpc("tools/call", `{"name":"submit_verdict","arguments":{}}`)
+	require.NotNil(t, rep.Error)
+	require.Equal(t, codeInvalidParams, rep.Error.Code)
 }

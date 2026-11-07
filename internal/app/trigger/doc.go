@@ -29,7 +29,10 @@
 //  5. The ticket has an assignee. Otherwise: unassigned.
 //
 // A change that passes every check starts with one change.triggered event. Its payload names the ticket, the repo, the
-// assignee and the source jira. Its actor is the jira actor. Its version is 1.
+// assignee and the source jira. Each ticket acceptance criterion is validated, stored in BlobEvidence under its
+// SHA-256 ref, and captured in the event with its ordered ID, source text, hash and ref. The role bundle and task
+// envelope contain only ID/ref pairs; MCP exposes the text only through read_untrusted. Its actor is the jira actor.
+// Its version is 1.
 //
 // # Dedupe
 //
@@ -53,12 +56,11 @@
 //
 // # Known gaps
 //
-//   - The status is the current status. ports.TicketChange carries field names, not the status a move ended at. A
-//     ticket that moves to In Progress and on again before the poll is ignored.
-//   - App accounts are not checked here. ports.Ticket has no account kind, so this package cannot tell an app account
-//     from a person. The Jira adapter drops app-assigned changes before they reach this package. A ticket that is
-//     reassigned to an app between the change read and the ticket read would still trigger. Closing this needs a
-//     port field (see the report of T36).
+//   - A status move is judged on TicketChange.ToStatus, the status it ended at (A10 item 1). A file change has no move,
+//     so it is judged on the current status. A file-tracker ticket's status is therefore still read at poll time.
+//   - App accounts: ports.Ticket.AssigneeIsApp marks an app assignee (A10 item 2), and the rule ignores it with
+//     ReasonAppAccount. The Jira adapter also drops app-assigned changes early. A ticket reassigned to an app between
+//     the change read and the ticket read is still judged on the ticket read.
 //
 // # Invariants
 //
@@ -71,7 +73,8 @@
 //
 // # Failure modes
 //
-// A port error is wrapped and returned, and the cursor stays where it was. An ErrVersionConflict from the Starter is
+// A port error, invalid ticket or failed criterion-blob write is wrapped and returned, and the cursor stays where it
+// was. Content-addressed writes are idempotent; a retry gets the same ref. An ErrVersionConflict from the Starter is
 // not an error. A cursor store that cannot save returns an error after the changes were handled. The next poll then
 // reads the same window again. The Starter refuses each repeat, so the changes count as AlreadyTriggered.
 //

@@ -3,12 +3,12 @@ package workflow
 import (
 	"errors"
 	"fmt"
-	"path"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
 
@@ -67,6 +67,7 @@ func (b *BlobRef) UnmarshalText(t []byte) error {
 // wrote is a reference, never inline text.
 type TaskEnvelope struct {
 	TaskID              id.TaskID `json:"task_id"`
+	CaseID              id.CaseID `json:"case_id,omitempty"`
 	Role                Role      `json:"role"`
 	Skill               string    `json:"skill"`
 	Change              ChangeRef `json:"change"`
@@ -92,6 +93,15 @@ type Inputs struct {
 	AcceptanceCriteria []CriterionRef `json:"acceptance_criteria"`
 	CI                 []CIResult     `json:"ci"`
 	Untrusted          []UntrustedRef `json:"untrusted"`
+	// Answers are the person's answers to this task's questions. The text is data, not instructions (A14).
+	Answers []AnswerRef `json:"answers,omitempty"`
+}
+
+// AnswerRef is one answered question: its short id (Q1), the answer text, and who gave it.
+type AnswerRef struct {
+	ID         string `json:"id"`
+	Answer     string `json:"answer"`
+	AnsweredBy string `json:"answered_by"`
 }
 
 // CriterionRef points at one acceptance criterion.
@@ -127,6 +137,7 @@ func ciConclusion(c string) bool {
 func (e TaskEnvelope) Validate() error {
 	var errs []error
 	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
+	errs = append(errs, e.validateCaseID()...)
 	if _, err := ParseRole(string(e.Role)); err != nil {
 		add("%v", err)
 	}
@@ -152,6 +163,17 @@ func (e TaskEnvelope) Validate() error {
 	return errors.Join(errs...)
 }
 
+// validateCaseID rejects a non-empty case id that is not a CaseID. An empty id is valid for case-free agent tasks.
+func (e TaskEnvelope) validateCaseID() []error {
+	if e.CaseID == "" {
+		return nil
+	}
+	if _, err := id.ParseCaseID(string(e.CaseID)); err != nil {
+		return []error{fmt.Errorf("case_id: %w", err)}
+	}
+	return nil
+}
+
 func (in Inputs) validate() []error {
 	var errs []error
 	if _, err := ParseBlobRef(string(in.Diff)); err != nil {
@@ -170,8 +192,9 @@ func validateFiles(files []string) []error {
 		errs = append(errs, fmt.Errorf("inputs.files_changed has %d entries, at most %d", len(files), maxFilesChanged))
 	}
 	for _, f := range files {
-		if f == "" || path.IsAbs(f) || path.Clean(f) != f || strings.HasPrefix(f, "../") || f == ".." {
-			errs = append(errs, fmt.Errorf("inputs.files_changed: %q is not a clean relative path inside the repository", f))
+		// The same rule findings and test sets use (finding.CheckRepoPath), so the three cannot drift (A10 item 7).
+		if err := finding.CheckRepoPath(f); err != nil {
+			errs = append(errs, fmt.Errorf("inputs.files_changed: %w", err))
 		}
 	}
 	return errs

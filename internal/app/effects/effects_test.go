@@ -141,11 +141,12 @@ type fakeBranches struct {
 	repo  change.Repo
 	from  id.SHA
 	name  string
+	key   string
 }
 
-func (f *fakeBranches) EnsureBranch(_ context.Context, r change.Repo, from id.SHA, name string) error {
+func (f *fakeBranches) EnsureBranch(_ context.Context, r change.Repo, from id.SHA, name string, key string) error {
 	f.calls++
-	f.repo, f.from, f.name = r, from, name
+	f.repo, f.from, f.name, f.key = r, from, name, key
 	return f.err
 }
 
@@ -250,6 +251,20 @@ func newKit(t *testing.T, events ...change.Event) *kit {
 	return k
 }
 
+func TestRoomOpenAsksForTheWorkflowAgentsToBeInTheRoom(t *testing.T) {
+	k := newKit(t, triggeredEvent(t))
+	room, err := effects.NewRoomOpen(effects.RoomOpenDeps{
+		Tickets: k.tickets, Chat: k.chat, Store: k.store, Ingest: k.ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Agents: []string{"test-author", "reviewer-1", "resolver"},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, room.Execute(context.Background(), roomEffect(t, "role:test-author", "person:ana")))
+	require.Len(t, k.chat.requests, 1)
+	require.Equal(t, []string{"test-author", "reviewer-1", "resolver"}, k.chat.requests[0].Agents,
+		"an agent that is not in the room never receives its @mention")
+}
+
 func TestRoomOpenPassesEffectKeyAsIdempotencyKeyAndTitleFromTracker(t *testing.T) {
 	k := newKit(t, triggeredEvent(t))
 	fx := roomEffect(t, "role:test-author", "person:ana")
@@ -259,7 +274,19 @@ func TestRoomOpenPassesEffectKeyAsIdempotencyKeyAndTitleFromTracker(t *testing.T
 	req := k.chat.requests[0]
 	require.Equal(t, fx.Key, req.Key, "the effect key is the idempotency key of the room request")
 	require.Equal(t, ticket, req.ChangeID)
-	require.Equal(t, "Fix refunds on partial capture", req.Title)
+	require.Equal(t, "KAN-7 Fix refunds on partial capture", req.Title, "the title leads with the ticket key")
+}
+
+// Found live: KAN-9 and KAN-11 had the same summary, and OpenRoom adopts an open room by title, so both changes shared
+// one room and one Discord channel. The ticket key in the title keeps each change in its own room.
+func TestTwoTicketsWithTheSameSummaryGetDifferentRoomTitles(t *testing.T) {
+	first := newKit(t, triggeredEvent(t))
+	require.NoError(t, first.room.Execute(context.Background(), roomEffect(t, "person:ana")))
+	second := newKit(t, triggeredEvent(t))
+	second.tickets.ticket.Key = "KAN-8"
+	require.NoError(t, second.room.Execute(context.Background(), roomEffect(t, "person:ana")))
+	require.Equal(t, first.tickets.ticket.Title, second.tickets.ticket.Title, "same summary")
+	require.NotEqual(t, first.chat.requests[0].Title, second.chat.requests[0].Title)
 }
 
 func TestRoomOpenIngestsRoomOpenedCausedByTheTrigger(t *testing.T) {
@@ -395,11 +422,13 @@ func TestBranchWritesNameAtBaseAndIngestsBranchEnsured(t *testing.T) {
 	k := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
 	room := roomOpenedEvent(t)
 
-	require.NoError(t, k.branch.Execute(context.Background(), branchEffect(t, change.DefaultBranchTemplate)))
+	fx := branchEffect(t, change.DefaultBranchTemplate)
+	require.NoError(t, k.branch.Execute(context.Background(), fx))
 	require.Equal(t, 1, k.branches.calls)
 	require.Equal(t, repo, k.branches.repo)
 	require.Equal(t, base, k.branches.from)
 	require.Equal(t, "KAN-7-fix-refunds-on-partial-capture", k.branches.name)
+	require.Equal(t, string(fx.Key), k.branches.key, "the effect key travels to the branch write (A10 item 3)")
 
 	require.Equal(t, 1, k.ingest.calls)
 	require.Len(t, k.ingest.written, 1)

@@ -152,6 +152,9 @@ func tierRank(t Tier) int {
 	return 0
 }
 
+// Valid reports whether s is one of the four severities.
+func (s Severity) Valid() bool { return severityRank(s) > 0 }
+
 // AtLeast reports whether s is as severe as other. An invalid severity is never at least anything.
 func (s Severity) AtLeast(other Severity) bool {
 	a, b := severityRank(s), severityRank(other)

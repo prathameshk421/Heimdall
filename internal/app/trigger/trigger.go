@@ -1,7 +1,10 @@
 package trigger
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +13,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -23,10 +27,12 @@ const (
 	ReasonTicketNotFound  Reason = "ticket_not_found"
 	ReasonNotInProgress   Reason = "not_in_progress"
 	ReasonUnassigned      Reason = "unassigned"
+	ReasonAppAccount      Reason = "app_account"
 )
 
 // statusField is the changelog field a status move names.
 const statusField = "status"
+const fileField = "file"
 
 // statusInProgress is the Jira status that starts a change (TECH_SPEC 13).
 const statusInProgress = "In Progress"
@@ -62,6 +68,7 @@ type Config struct {
 	Starter  Starter
 	Cursors  CursorStore
 	Projects Projects
+	Blobs    ports.BlobStore
 	Clock    ports.Clock
 	IDs      ports.IDs
 }
@@ -73,6 +80,7 @@ type Poller struct {
 	starter  Starter
 	cursors  CursorStore
 	projects Projects
+	blobs    ports.BlobStore
 	clock    ports.Clock
 	ids      ports.IDs
 	pending  []ports.TicketChange
@@ -101,6 +109,9 @@ func New(cfg Config) (*Poller, error) {
 	if cfg.Projects == nil {
 		missing = append(missing, "Projects")
 	}
+	if cfg.Blobs == nil {
+		missing = append(missing, "Blobs")
+	}
 	if cfg.Clock == nil {
 		missing = append(missing, "Clock")
 	}
@@ -115,6 +126,7 @@ func New(cfg Config) (*Poller, error) {
 		starter:  cfg.Starter,
 		cursors:  cfg.Cursors,
 		projects: cfg.Projects,
+		blobs:    cfg.Blobs,
 		clock:    cfg.Clock,
 		ids:      cfg.IDs,
 	}, nil
@@ -165,8 +177,9 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 	if err := ch.Validate(); err != nil {
 		return err
 	}
-	if !slices.Contains(ch.Fields, statusField) {
-		res.Ignored[ReasonNoStatusChange]++
+	isFile := slices.Contains(ch.Fields, fileField)
+	if reason, ok := earlyIgnore(ch, isFile); ok {
+		res.Ignored[reason]++
 		return nil
 	}
 	repo, ok := p.projects.RepoFor(projectOf(ch.Key))
@@ -182,7 +195,7 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 	if err != nil {
 		return fmt.Errorf("read ticket: %w", err)
 	}
-	if tk.Status != statusInProgress {
+	if isFile && tk.Status != statusInProgress {
 		res.Ignored[ReasonNotInProgress]++
 		return nil
 	}
@@ -190,7 +203,11 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 		res.Ignored[ReasonUnassigned]++
 		return nil
 	}
-	started, err := p.startTriggered(ctx, ch.Key, repo, tk.Assignee)
+	if tk.AssigneeIsApp {
+		res.Ignored[ReasonAppAccount]++
+		return nil
+	}
+	started, err := p.startTicket(ctx, ch.Key, repo, tk, isFile)
 	if err != nil {
 		return err
 	}
@@ -202,11 +219,82 @@ func (p *Poller) handle(ctx context.Context, ch ports.TicketChange, res *PollRes
 	return nil
 }
 
+// earlyIgnore decides from the change alone. A status move is judged on the status it ended at (ToStatus); a file
+// change has no move, so the poll judges it on the ticket's current status later.
+func earlyIgnore(ch ports.TicketChange, isFile bool) (Reason, bool) {
+	if isFile {
+		return "", false
+	}
+	if !slices.Contains(ch.Fields, statusField) {
+		return ReasonNoStatusChange, true
+	}
+	if ch.ToStatus != statusInProgress {
+		return ReasonNotInProgress, true
+	}
+	return "", false
+}
+
+func (p *Poller) startTicket(ctx context.Context, key id.ChangeID, repo change.Repo, tk ports.Ticket, isFile bool) (bool, error) {
+	if err := tk.Validate(); err != nil {
+		return false, fmt.Errorf("validate ticket: %w", err)
+	}
+	criteria := make([]change.TicketCriterion, 0, len(tk.Criteria))
+	for _, c := range tk.Criteria {
+		ref, err := p.storeCriterion(ctx, c.Text, c.Hash)
+		if err != nil {
+			return false, fmt.Errorf("store acceptance criterion %s: %w", c.ID, err)
+		}
+		criteria = append(criteria, change.TicketCriterion{ID: c.ID, Text: c.Text, Hash: c.Hash, Ref: ref})
+	}
+	descRef, err := p.storeDescription(ctx, tk.Description)
+	if err != nil {
+		return false, fmt.Errorf("store ticket description: %w", err)
+	}
+	return p.startTriggered(ctx, key, repo, tk.Assignee, criteria, descRef, isFile)
+}
+
+// maxDescriptionBytes bounds the stored ticket text; a longer description is cut, never refused.
+const maxDescriptionBytes = 256 << 10
+
+// storeDescription writes the whole ticket text as it came from the tracker. An empty description stores nothing.
+func (p *Poller) storeDescription(ctx context.Context, text string) (workflow.BlobRef, error) {
+	if strings.TrimSpace(text) == "" {
+		return "", nil
+	}
+	if len(text) > maxDescriptionBytes {
+		text = strings.ToValidUTF8(text[:maxDescriptionBytes], "")
+	}
+	ref, err := p.blobs.Put(ctx, ports.BlobEvidence, bytes.NewReader([]byte(text)))
+	if err != nil {
+		return "", fmt.Errorf("write blob: %w", err)
+	}
+	return ref, nil
+}
+
+// storeCriterion writes ticket-authored text to durable content-addressed storage. Replay keeps the source text and
+// hash in change.triggered; the agent receives only the ref and reads the text through read_untrusted.
+func (p *Poller) storeCriterion(ctx context.Context, text, wantHash string) (workflow.BlobRef, error) {
+	sum := sha256.Sum256([]byte(text))
+	hash := hex.EncodeToString(sum[:])
+	if hash != wantHash {
+		return "", errors.New("hash does not match text")
+	}
+	wantRef := workflow.BlobRef("blob:sha256:" + hash)
+	gotRef, err := p.blobs.Put(ctx, ports.BlobEvidence, bytes.NewReader([]byte(text)))
+	if err != nil {
+		return "", fmt.Errorf("write blob: %w", err)
+	}
+	if gotRef != wantRef {
+		return "", fmt.Errorf("blob store returned %s, expected %s", gotRef, wantRef)
+	}
+	return wantRef, nil
+}
+
 // startTriggered starts the change with change.triggered. A change that already exists refuses the start with
 // ports.ErrVersionConflict, which is the durable dedupe (TECH_SPEC 2.4). It reports false in that case, and it does
 // not retry.
-func (p *Poller) startTriggered(ctx context.Context, key id.ChangeID, repo change.Repo, assignee change.ActorID) (bool, error) {
-	ev, err := p.triggeredEvent(key, repo, assignee)
+func (p *Poller) startTriggered(ctx context.Context, key id.ChangeID, repo change.Repo, assignee change.ActorID, criteria []change.TicketCriterion, descRef workflow.BlobRef, isFile bool) (bool, error) {
+	ev, err := p.triggeredEvent(key, repo, assignee, criteria, descRef, isFile)
 	if err != nil {
 		return false, err
 	}
@@ -222,8 +310,14 @@ func (p *Poller) startTriggered(ctx context.Context, key id.ChangeID, repo chang
 
 // triggeredEvent builds the change.triggered event of a ticket. The payload and the envelope are validated, and the
 // reducer must accept the event from the empty state, as internal/app/intake checks its events.
-func (p *Poller) triggeredEvent(key id.ChangeID, repo change.Repo, assignee change.ActorID) (change.Event, error) {
-	pl := change.Triggered{Ticket: key, Repo: repo, Assignee: assignee, Source: change.TriggerJira}
+func (p *Poller) triggeredEvent(key id.ChangeID, repo change.Repo, assignee change.ActorID, criteria []change.TicketCriterion, descRef workflow.BlobRef, isFile bool) (change.Event, error) {
+	source := change.TriggerJira
+	actor := change.Actor{Kind: change.ActorJira, ID: triggerActor}
+	if isFile {
+		source = change.TriggerFile
+		actor = change.Actor{Kind: change.ActorSystem, ID: "file"}
+	}
+	pl := change.Triggered{Ticket: key, Repo: repo, Assignee: assignee, Source: source, Criteria: criteria, DescriptionRef: descRef}
 	if err := pl.Validate(); err != nil {
 		return change.Event{}, fmt.Errorf("payload of change.triggered: %w", err)
 	}
@@ -232,14 +326,22 @@ func (p *Poller) triggeredEvent(key id.ChangeID, repo change.Repo, assignee chan
 		return change.Event{}, fmt.Errorf("encode change.triggered: %w", err)
 	}
 	eid := p.ids.NewEvent()
+	blobRefs := make([]workflow.BlobRef, 0, len(criteria))
+	for _, criterion := range criteria {
+		blobRefs = append(blobRefs, criterion.Ref)
+	}
+	if descRef != "" {
+		blobRefs = append(blobRefs, descRef)
+	}
 	ev := change.Event{
 		ID:            eid,
 		ChangeID:      key,
 		Version:       triggerVersion,
 		Type:          change.EventChangeTriggered,
-		Actor:         change.Actor{Kind: change.ActorJira, ID: triggerActor},
+		Actor:         actor,
 		OccurredAt:    p.clock.Now().UTC(),
 		CorrelationID: change.CorrelationID(eid.String()),
+		BlobRefs:      blobRefs,
 		Payload:       raw,
 	}
 	if err := ev.Validate(); err != nil {

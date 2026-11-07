@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,20 +12,32 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/blobfs"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/graphiti"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/profileyaml"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
+	appprofile "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/profile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
+	appreview "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/review"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/roomstream"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
 // Settings the slice reads from the config or names here. The config has no key for a poll interval or an outbox
@@ -35,35 +48,46 @@ const (
 	pollInterval = 15 * time.Second
 	// syncInterval is the wait between two pull request syncs.
 	syncInterval = 10 * time.Second
+	// reconcileInterval is the wait between two reconcile passes, which also run at boot (TECH_SPEC 2.2, D56).
+	reconcileInterval = 5 * time.Minute
 	// drainTick is the longest the outbox waits between two batches when no wake arrives.
 	drainTick = 2 * time.Second
+	// knowledgeRetentionInterval bounds how long expired approved knowledge remains available.
+	knowledgeRetentionInterval = 30 * time.Minute
 	// maxAttempts is the task budget of a retry (engine.Config.MaxAttempts). The slice has no retry, so it is a bound only.
 	maxAttempts = 3
 	// outboxBatch is how many effects one drain claims at once.
 	outboxBatch = 8
 	// effectTimeout bounds one executor call. The lease must exceed outboxBatch times this (outbox.New).
 	effectTimeout = 20 * time.Second
-	// outboxLease is how long a claimed effect stays leased to one drainer.
-	outboxLease = 3 * time.Minute
+	// testQualityTimeout bounds a test_quality effect: two sandbox jobs of up to 3 minutes each, plus the runner's
+	// margin. With the 20 s default the outbox cancelled the run and every retry started another container (KAN-9).
+	testQualityTimeout = 7 * time.Minute
+	// outboxLease is how long a claimed effect stays leased to one drainer. It must exceed outboxBatch times the longest
+	// effect timeout (outbox.New). An effect that was running when the server stopped is in doubt and is not re-run on
+	// lease expiry (T22), so a long lease does not delay recovery.
+	outboxLease = 60 * time.Minute
+	// blobStoreRoot is the on-disk blob store until heimdall.toml gains a blobs path key.
+	blobStoreRoot = ".heimdall/blobs"
 	// githubAPIRoot is the production GitHub API, which is not site-specific and so needs no config key.
 	githubAPIRoot = "https://api.github.com"
-	// cursorSourcePrefix names the Jira poll cursor: one source per tracker project.
-	cursorSourcePrefix = "jira:"
 )
 
 // deps is what build needs that differs between production and a test: the database, the adapter endpoints, the HTTP
 // client and the timing. Every field is required. openPool and migrate are injected so a test can prove the wiring
 // without a live Postgres; productionDeps fills them with the real pgxpool and migration functions.
 type deps struct {
-	databaseURL string
-	endpoints   endpoints
-	httpClient  *http.Client
-	logger      *slog.Logger
-	pollEvery   time.Duration
-	syncEvery   time.Duration
-	drainTick   time.Duration
-	openPool    func(ctx context.Context, url string) (*pgxpool.Pool, error)
-	migrate     func(ctx context.Context, pool *pgxpool.Pool) error
+	databaseURL    string
+	endpoints      endpoints
+	httpClient     *http.Client
+	logger         *slog.Logger
+	packIdentities packIdentityResolver
+	configuration  config.Config
+	pollEvery      time.Duration
+	syncEvery      time.Duration
+	drainTick      time.Duration
+	openPool       func(ctx context.Context, url string) (*pgxpool.Pool, error)
+	migrate        func(ctx context.Context, pool *pgxpool.Pool) error
 }
 
 // String implements fmt.Stringer, redacting the database URL.
@@ -144,15 +168,27 @@ type endpoints struct {
 
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
 type app struct {
-	pool      *pgxpool.Pool
-	poller    poller
-	drainer   drainer
-	syncer    syncer
-	logger    *slog.Logger
-	clock     ports.Clock
-	pollEvery time.Duration
-	syncEvery time.Duration
-	drainTick time.Duration
+	pool              *pgxpool.Pool
+	pollers           []poller
+	drainer           drainer
+	syncer            syncer
+	roomStream        roomStreamRunner
+	comments          commentPoller
+	mcpHandler        http.Handler
+	agentSetupHandler http.Handler
+	operatorAnswer    http.Handler
+	operatorReject    http.Handler
+	packUpload        http.Handler
+	commands          *commandRuntime
+	workflowMemory    *knowledge.WorkflowMemory
+	retention         knowledgeRetention
+	episodeWorker     episodeDrainer
+	blobs             io.Closer
+	logger            *slog.Logger
+	clock             ports.Clock
+	pollEvery         time.Duration
+	syncEvery         time.Duration
+	drainTick         time.Duration
 }
 
 // poller is the part of trigger.Poller the loop uses. A test supplies a fake one.
@@ -168,10 +204,27 @@ type drainer interface {
 // syncer is the part of prsync.Syncer the loop uses. A test supplies a fake one.
 type syncer interface {
 	SyncOnce(ctx context.Context) (prsync.Result, error)
+	Reconcile(ctx context.Context) (prsync.Result, error)
 }
 
-// close releases the database pool. Call it after the loops have stopped.
+type roomStreamRunner interface{ Run(context.Context) error }
+type commentPoller interface {
+	PollOnce(context.Context) (collaboration.CommentPollResult, error)
+}
+
+type knowledgeRetention interface {
+	Expire(context.Context) (int, error)
+}
+
+type episodeDrainer interface {
+	RunOnce(context.Context, int) (int, error)
+}
+
+// close releases the blob store and the database pool. Call it after the loops have stopped.
 func (a *app) close() {
+	if a.blobs != nil {
+		_ = a.blobs.Close()
+	}
 	a.pool.Close()
 }
 
@@ -221,9 +274,10 @@ func productionDeps(cfg config.Config, logger *slog.Logger) (deps, error) {
 		return deps{}, err
 	}
 	return deps{
-		databaseURL: databaseURL,
-		httpClient:  &http.Client{},
-		logger:      logger,
+		databaseURL:   databaseURL,
+		httpClient:    &http.Client{},
+		logger:        logger,
+		configuration: cfg,
 		endpoints: endpoints{
 			jiraBaseURL:     cfg.Jira.BaseURL,
 			githubAPI:       githubAPIRoot,
@@ -251,12 +305,20 @@ func missingConfigKeys(cfg config.Config) []string {
 		}
 	}
 	add("database.url_secret", cfg.Database.URLSecret)
-	add("jira.base_url", cfg.Jira.BaseURL)
-	if len(cfg.Jira.ProjectKeys) == 0 {
-		missing = append(missing, "jira.project_keys")
+	tracker, _ := cfg.Selection("tracker")
+	switch tracker {
+	case "jira":
+		add("jira.base_url", cfg.Jira.BaseURL)
+		if len(cfg.Jira.ProjectKeys) == 0 {
+			missing = append(missing, "jira.project_keys")
+		}
+		add("jira.email_secret", cfg.Jira.EmailSecret)
+		add("jira.api_token_secret", cfg.Jira.APITokenSecret)
+	case "file":
+		add("tracker.path", cfg.TrackerPath)
+	default:
+		missing = append(missing, "tracker.provider")
 	}
-	add("jira.email_secret", cfg.Jira.EmailSecret)
-	add("jira.api_token_secret", cfg.Jira.APITokenSecret)
 	add("switch.base_url", cfg.Switch.BaseURL)
 	add("switch.agent_id", cfg.Switch.AgentID)
 	add("switch.agent_name", cfg.Switch.AgentName)
@@ -266,21 +328,50 @@ func missingConfigKeys(cfg config.Config) []string {
 	add("github.app_id_secret", cfg.GitHub.AppIDSecret)
 	add("github.installation_id_secret", cfg.GitHub.InstallationIDSecret)
 	add("github.private_key_secret", cfg.GitHub.PrivateKeySecret)
+	// The MCP edge authenticates each agent; without [agents] it refuses every token, so the slice needs it.
+	add("agents.test_author", cfg.Agents.TestAuthor)
+	if len(cfg.Agents.Reviewers) == 0 {
+		missing = append(missing, "agents.reviewers")
+	}
+	add("agents.resolver", cfg.Agents.Resolver)
 	return missing
 }
 
-// checkProjectSelection requires one Jira project key and requires it to be the one project the slice maps. The
-// poller uses one cursor source and one repository mapping, so a mismatch or a second key would poll a project it
-// cannot start.
+// checkProjectSelection requires the Jira project keys and the mapped projects to be the same set, with no repeats. Each
+// listed project gets its own poller and cursor (A10 item 10). The file tracker still polls one project: its poll is
+// not scoped by project.
 func checkProjectSelection(cfg config.Config) error {
-	if len(cfg.Jira.ProjectKeys) != 1 {
-		return fmt.Errorf("jira.project_keys: the slice polls one tracker project, but heimdall.toml lists %d", len(cfg.Jira.ProjectKeys))
+	tracker, _ := cfg.Selection("tracker")
+	if tracker != "jira" {
+		if tracker == "file" && len(cfg.Projects) != 1 {
+			return fmt.Errorf("projects: the file tracker polls one project, but heimdall.toml maps %d", len(cfg.Projects))
+		}
+		return nil
 	}
-	if len(cfg.Projects) != 1 {
-		return fmt.Errorf("projects: the slice polls one tracker project, but heimdall.toml maps %d", len(cfg.Projects))
+	if len(cfg.Projects) == 0 {
+		return fmt.Errorf("projects: heimdall.toml maps no tracker project")
 	}
-	if cfg.Jira.ProjectKeys[0] != cfg.Projects[0].TrackerProject {
-		return fmt.Errorf("jira.project_keys: %q is not the project mapped by projects, which maps %q", cfg.Jira.ProjectKeys[0], cfg.Projects[0].TrackerProject)
+	listed := map[string]bool{}
+	for _, k := range cfg.Jira.ProjectKeys {
+		if listed[k] {
+			return fmt.Errorf("jira.project_keys: %q is listed twice", k)
+		}
+		listed[k] = true
+	}
+	mapped := map[string]bool{}
+	for _, p := range cfg.Projects {
+		if mapped[p.TrackerProject] {
+			return fmt.Errorf("projects: %q is mapped twice", p.TrackerProject)
+		}
+		mapped[p.TrackerProject] = true
+		if !listed[p.TrackerProject] {
+			return fmt.Errorf("projects: %q is mapped but not listed in jira.project_keys", p.TrackerProject)
+		}
+	}
+	for _, k := range cfg.Jira.ProjectKeys {
+		if !mapped[k] {
+			return fmt.Errorf("jira.project_keys: %q has no [[projects]] mapping", k)
+		}
 	}
 	return nil
 }
@@ -290,10 +381,11 @@ func checkProjectSelection(cfg config.Config) error {
 // value in the message. The adapters read the same files again when they are built.
 func checkAdapterSecrets(cfg config.Config) error {
 	single := []struct{ field, name string }{
-		{"jira.email_secret", cfg.Jira.EmailSecret},
-		{"jira.api_token_secret", cfg.Jira.APITokenSecret},
 		{"switch.api_key_secret", cfg.Switch.APIKeySecret},
 		{"switch.registration_token_secret", cfg.Switch.RegistrationTokenSecret},
+	}
+	if tracker, _ := cfg.Selection("tracker"); tracker == "jira" {
+		single = append(single, struct{ field, name string }{"jira.email_secret", cfg.Jira.EmailSecret}, struct{ field, name string }{"jira.api_token_secret", cfg.Jira.APITokenSecret})
 	}
 	for _, s := range single {
 		if _, err := cfg.Secret(s.name); err != nil {
@@ -354,7 +446,7 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 		return nil, err
 	}
 	clk := clock.System{}
-	ad, err := selectAdapters(cfg, d, clk)
+	ad, err := selectAdapters(cfg, d)
 	if err != nil {
 		return nil, err
 	}
@@ -371,6 +463,8 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 		pool.Close()
 		return nil, err
 	}
+	a.operatorAnswer = operatorAnswer{answer: a.commands.OperatorAnswer, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
+	a.operatorReject = operatorReject{reject: a.commands.OperatorReject, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
 	return a, nil
 }
 
@@ -380,58 +474,249 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
 	store := postgres.NewStore(pool)
+	var setupHandler http.Handler
+	if ad.agentSetupHandler != nil {
+		var err error
+		setupHandler, err = ad.agentSetupHandler(store)
+		if err != nil {
+			return nil, err
+		}
+	}
 	gen := ids.New()
-	wf, steps, err := sliceSteps()
+	wf, steps, err := sliceSteps(ad.agents, gen, clk)
 	if err != nil {
 		return nil, err
 	}
 	eng, err := engine.New(engine.Config{
 		Workflow: wf, Steps: steps, Store: store, Clock: clk, IDs: gen, MaxAttempts: maxAttempts,
+		Roles: sliceRoles(), Schemas: sliceSchemas(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build engine: %w", err)
 	}
-	execs, err := executors(ad, store, ingestor{eng: eng}, gen, clk)
+	blobStore, err := blobfs.New(blobStoreRoot)
+	if err != nil {
+		return nil, fmt.Errorf("open blob store: %w", err)
+	}
+	a, err := assembleWithBlobs(ctx, d, ad, store, pool, blobStore, eng, gen, clk, setupHandler)
+	if err != nil {
+		_ = blobStore.Close()
+		return nil, err
+	}
+	return a, nil
+}
+
+// newTicketPollers builds one ticket poller per listed project, each with its own cursor source provider:project
+// (A10 item 10).
+func newTicketPollers(ad adapters, store *postgres.Store, eng *engine.Engine, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock) ([]poller, error) {
+	pollers := make([]poller, 0, len(ad.projectKeys))
+	for _, key := range ad.projectKeys {
+		tp, err := trigger.New(trigger.Config{
+			Tickets:  ad.projectTickets[key],
+			Starter:  starter{eng: eng},
+			Cursors:  cursorStore{table: store, source: ad.trackerProvider + ":" + key},
+			Projects: ad.projects,
+			Blobs:    blobs,
+			Clock:    clk,
+			IDs:      gen,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("build ticket poller for %s: %w", key, err)
+		}
+		pollers = append(pollers, tp)
+	}
+	return pollers, nil
+}
+
+func assembleWithBlobs(
+	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
+	eng *engine.Engine, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
+) (*app, error) {
+	profileManager, err := assembleProfileLifecycle(ad, store, blobs, clk)
+	if err != nil {
+		return nil, err
+	}
+	recheck, err := newKnowledgeSearch(d, ad, clk, store)
+	if err != nil {
+		return nil, err
+	}
+	execs, err := executors(ctx, ad, store, store, blobs, ingestor{eng: eng}, gen, clk, recheck)
 	if err != nil {
 		return nil, err
 	}
 	box, err := outbox.New(outbox.Config{
 		Outbox: store, Executors: execs, Logger: d.logger,
 		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
+		KindTimeouts: map[change.EffectKind]time.Duration{change.EffectTestQuality: testQualityTimeout},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build outbox drainer: %w", err)
 	}
-	p, err := trigger.New(trigger.Config{
-		Tickets:  ad.tickets,
-		Starter:  starter{eng: eng},
-		Cursors:  cursorStore{table: store, source: cursorSourcePrefix + ad.project},
-		Projects: ad.projects,
-		Clock:    clk,
-		IDs:      gen,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build ticket poller: %w", err)
-	}
-	sync, err := assembleSyncer(ad, store, gen, clk)
+	// One poller per project, each with its own cursor source provider:project (A10 item 10).
+	pollers, err := newTicketPollers(ad, store, eng, blobs, gen, clk)
 	if err != nil {
 		return nil, err
 	}
+	sync, intakeCase, err := assembleSyncer(ad, store, gen, clk)
+	if err != nil {
+		return nil, err
+	}
+	roomConsumer, commentConsumer, runtime, err := assembleCollaboration(store, ad, eng, gen, clk, d.syncEvery, intakeCase, profileManager)
+	if err != nil {
+		return nil, err
+	}
+	files, episodeWorker, workflowMemory, err := assembleKnowledgeRetention(d, ad, store, blobs, clk)
+	if err != nil {
+		return nil, err
+	}
+	mcpH, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager)
+	if err != nil {
+		return nil, err
+	}
+	packUpload, err := newPackUploadHandler(d, ad.tokens, blobs, pool)
+	if err != nil {
+		return nil, fmt.Errorf("build pack upload handler: %w", err)
+	}
+	var closer io.Closer
+	if c, ok := blobs.(io.Closer); ok {
+		closer = c
+	}
 	return &app{
-		pool: pool, poller: p, drainer: box, syncer: sync, logger: d.logger, clock: clk,
+		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, retention: files, blobs: closer,
+		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
 }
 
+func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, refreshEvery time.Duration, intakeCase *intake.Intake, profiles mcp.Profiles) (roomStreamRunner, commentPoller, *commandRuntime, error) {
+	runtime, err := newCommandRuntime(store, ad, eng, gen, clk, prIntake{in: intakeCase}, profiles)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	stream, ok := ad.chat.(ports.ChatStream)
+	if !ok {
+		return nil, nil, nil, errors.New("selected chat adapter does not implement the Switch room stream")
+	}
+	roomConsumer, err := roomstream.New(roomstream.Config{Rooms: store, Cursors: store, Stream: stream, Handler: runtime.processor, RefreshEvery: refreshEvery, Wait: clock.Wait})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("build Switch room consumer: %w", err)
+	}
+	commentConsumer, err := collaboration.NewGitHubCommentPoller(collaboration.CommentPollConfig{Repos: ad.repos, PRs: ad.vcs, Comments: ad.vcs, Cursors: store, Handler: runtime, Clock: clk})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("build GitHub comment consumer: %w", err)
+	}
+	return roomConsumer, commentConsumer, runtime, nil
+}
+
+// mcpStore is the event store plus the durable episode-trust ledger that knowledge search reads.
+type mcpStore interface {
+	ports.EventStore
+	ports.EpisodeSourceTrust
+}
+
+// assembleMCP wires the task index, agent tools service, adapters, and MCP server.
+func assembleMCP(
+	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng *engine.Engine, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
+) (http.Handler, error) {
+	taskIndex := postgres.NewTaskIndex(pool)
+	asker := &chatAsker{chat: ad.chat, store: store, ids: gen}
+	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk, store)
+	if err != nil {
+		return nil, err
+	}
+	refs := reviewRefs{code: ad.vcs, memory: knowledgeSvc}
+	toolsSvc, err := agenttools.New(agenttools.Config{
+		Events:          store,
+		Index:           taskIndex,
+		Blobs:           blobs,
+		Clock:           clk,
+		IDs:             gen,
+		Asker:           asker,
+		ReviewRefs:      refs,
+		ReviewValidator: semanticReviewValidator{refs: refs},
+		// Review events go through the engine, so the verify step sees each finding and requests its verification.
+		Advance: func(ctx context.Context, cid id.ChangeID, evs []change.Event) error {
+			_, err := eng.Advance(ctx, cid, evs)
+			return err
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build agenttools: %w", err)
+	}
+
+	tokStore := ad.tokens
+	if tokStore == nil {
+		tokStore = &tokenStore{principals: make(map[string]mcp.Principal)}
+	}
+	tracker := &assignmentAgentTracker{agents: make(map[id.TaskID]id.AgentName)}
+	tasksAdp := &tasksAdapter{svc: toolsSvc, tracker: tracker, advanceTests: func(ctx context.Context, changeID id.ChangeID, event change.Event) error {
+		_, err := eng.Advance(ctx, changeID, []change.Event{event})
+		return err
+	}}
+	outputFilter, err := appreview.NewOutputFilter(nil, outputAudit{logger: d.logger})
+	if err != nil {
+		return nil, fmt.Errorf("build agent output filter: %w", err)
+	}
+	tasksAdp.filter = outputFilter
+	reviewsAdp := &mcpReviewsAdapter{svc: toolsSvc, tracker: tracker}
+	packReader, err := newPackReader(d, blobs, pool, clk, ad.vcs)
+	if err != nil {
+		return nil, err
+	}
+	mcpSrv, err := mcp.NewServer(mcp.Deps{
+		Logger: d.logger, Clock: clk, Tokens: tokStore, Tasks: tasksAdp,
+		Reviews: reviewsAdp, Code: ad.vcs, Blobs: blobs, Knowledge: knowledgeSvc,
+		Packs:    packReader,
+		Files:    newKnowledgeFileManager(files, ad.vcs),
+		Profiles: profiles,
+		// run_check runs its fixed static check through the runner, never in this process.
+		Sandbox: rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build mcp server: %w", err)
+	}
+	return mcpSrv.Handler(), nil
+}
+
+// newKnowledgeSearch builds the team-memory search service. The same service answers agent questions, checks the
+// memory references a review cites, and re-queries them when an E3 finding is verified.
+func newKnowledgeSearch(d deps, ad adapters, clk ports.Clock, trust ports.EpisodeSourceTrust) (*knowledge.SearchService, error) {
+	graphitiCaller, err := graphiti.NewHTTPCaller("http://graphiti:8000/mcp", d.httpClient)
+	if err != nil {
+		return nil, fmt.Errorf("build Graphiti caller: %w", err)
+	}
+	memory, err := graphiti.New(graphitiCaller)
+	if err != nil {
+		return nil, fmt.Errorf("build Graphiti adapter: %w", err)
+	}
+	svc, err := knowledge.NewSearchService(memory, knowledge.PolicyScopes{Code: ad.vcs, Decode: policyyaml.Decode}, knowledgeQueryAudit{logger: d.logger}, clk, trust)
+	if err != nil {
+		return nil, fmt.Errorf("build knowledge search service: %w", err)
+	}
+	return svc, nil
+}
+
+func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports.BlobStore, clk ports.Clock) (mcp.Profiles, error) {
+	client := rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}
+	service, err := appprofile.New(appprofile.Config{
+		Store: store, Parser: profileyaml.Parser{}, Policy: client, Trials: client, Syncer: client,
+		Warmer: client, Authorizer: profileAuthorizer{code: ad.vcs, repos: ad.vcs}, Clock: clk,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build sandbox profile lifecycle: %w", err)
+	}
+	return profileAPI{service: service}, nil
+}
+
 // assembleSyncer wires the policy decoder, gate source, evaluator, intake and PR syncer.
-func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, error) {
+func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, error) {
 	gateSrc, err := gateuse.NewSource(gateuse.SourceConfig{
 		PRs:    ad.vcs,
 		Code:   ad.vcs,
 		Decode: policyyaml.Decode,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build gate source: %w", err)
+		return nil, nil, fmt.Errorf("build gate source: %w", err)
 	}
 	gateEval, err := gateuse.New(gateuse.Config{
 		Events: store,
@@ -440,7 +725,7 @@ func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk port
 		IDs:    gen,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build gate evaluator: %w", err)
+		return nil, nil, fmt.Errorf("build gate evaluator: %w", err)
 	}
 	intakeCase, err := intake.New(intake.Config{
 		Events: store,
@@ -451,12 +736,13 @@ func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk port
 		Policy: policyyaml.Decode,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build intake: %w", err)
+		return nil, nil, fmt.Errorf("build intake: %w", err)
 	}
 	sync, err := prsync.New(prsync.Config{
 		Repos:   ad.repos,
 		PRs:     ad.vcs,
-		Intake:  prIntake{in: intakeCase},
+		Streams: store,
+		Intake:  syncIntake{in: intakeCase},
 		Reviews: reviewsAdapter{reader: ad.vcs},
 		Checks:  checksAdapter{reader: ad.vcs},
 		Gate:    prGate{eval: gateEval},
@@ -465,35 +751,97 @@ func assembleSyncer(ad adapters, store ports.EventStore, gen ports.IDs, clk port
 		IDs:     gen,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build pr syncer: %w", err)
+		return nil, nil, fmt.Errorf("build pr syncer: %w", err)
 	}
-	return sync, nil
+	return sync, intakeCase, nil
+}
+
+// workflowAgentNames lists the configured test author, reviewers and resolver, so a change room is made with them in it.
+func workflowAgentNames(a config.Agents) []string {
+	names := make([]string, 0, len(a.Reviewers)+2)
+	if a.TestAuthor != "" {
+		names = append(names, a.TestAuthor)
+	}
+	names = append(names, a.Reviewers...)
+	if a.Resolver != "" {
+		names = append(names, a.Resolver)
+	}
+	return names
+}
+
+// baseExecutors builds the room_open, github_branch, and github_check executors.
+func baseExecutors(
+	ad adapters, store ports.EventStore, in effects.Ingest, gen ports.IDs, clk ports.Clock,
+) (room effects.RoomOpen, branch effects.GitHubBranch, check effects.GitHubCheck, err error) {
+	room, err = effects.NewRoomOpen(effects.RoomOpenDeps{
+		Tickets: ad.tickets, Chat: ad.chat, Store: store, Ingest: in, IDs: gen, Clock: clk,
+		Agents: workflowAgentNames(ad.agents),
+	})
+	if err != nil {
+		return room, branch, check, fmt.Errorf("build room_open executor: %w", err)
+	}
+	branch, err = effects.NewGitHubBranch(effects.GitHubBranchDeps{
+		Tickets: ad.tickets, Base: ad.vcs, Branches: ad.vcs, Store: store, Ingest: in, IDs: gen, Clock: clk,
+	})
+	if err != nil {
+		return room, branch, check, fmt.Errorf("build github_branch executor: %w", err)
+	}
+	check, err = effects.NewGitHubCheck(effects.GitHubCheckDeps{
+		Checks: ad.vcs,
+	})
+	if err != nil {
+		return room, branch, check, fmt.Errorf("build github_check executor: %w", err)
+	}
+	return room, branch, check, nil
 }
 
 // executors maps each effect kind to its executor. Each executor checks the kind of the effect it receives, so a
 // swapped entry fails every effect it is given.
-func executors(ad adapters, store ports.EventStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
-	room, err := effects.NewRoomOpen(effects.RoomOpenDeps{
-		Tickets: ad.tickets, Chat: ad.chat, Store: store, Ingest: in, IDs: gen, Clock: clk,
-	})
+func executors(ctx context.Context, ad adapters, store ports.EventStore, profiles ports.ProfileStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock, recheck effects.MemoryRecheck) (map[change.EffectKind]outbox.Executor, error) {
+	room, branch, check, err := baseExecutors(ad, store, in, gen, clk)
 	if err != nil {
-		return nil, fmt.Errorf("build room_open executor: %w", err)
+		return nil, err
 	}
-	branch, err := effects.NewGitHubBranch(effects.GitHubBranchDeps{
-		Tickets: ad.tickets, Base: ad.vcs, Branches: ad.vcs, Store: store, Ingest: in, IDs: gen, Clock: clk,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build github_branch executor: %w", err)
+	inviter, ok := ad.chat.(ports.RoomInviter)
+	if !ok {
+		return nil, errors.New("build task_assign executor: the selected chat cannot invite agents into a room")
 	}
-	check, err := effects.NewGitHubCheck(effects.GitHubCheckDeps{
-		Checks: ad.vcs,
+	taskAssign, err := effects.NewTaskAssign(effects.TaskAssignDeps{
+		Blobs: blobs, Chat: ad.chat, Inviter: inviter,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build github_check executor: %w", err)
+		return nil, fmt.Errorf("build task_assign executor: %w", err)
+	}
+	commitTests, err := effects.NewCommitTests(effects.CommitTestsDeps{
+		Blobs: blobs, Branches: ad.vcs, Store: store, Ingest: in, IDs: gen, Clock: clk, Code: ad.vcs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build github_commit_tests executor: %w", err)
+	}
+	sandbox := profileSandbox{
+		Sandbox:  rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
+		Profiles: profiles,
+	}
+	testQuality, err := effects.NewTestQuality(effects.TestQualityDeps{
+		Blobs: blobs, Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Store: store, Ingest: in, IDs: gen, Clock: clk, Code: ad.vcs,
+		ForbiddenImports: testQualityForbiddenImports(), NeedsSignoff: testQualityNeedsSignoff(ctx, blobs, ad.vcs),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build test_quality executor: %w", err)
+	}
+	verifyEvidence, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
+		Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Memory: recheck, Store: store, Ingest: in, IDs: gen, Clock: clk,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build verify_evidence executor: %w", err)
 	}
 	return map[change.EffectKind]outbox.Executor{
-		change.EffectRoomOpen:     room,
-		change.EffectGitHubBranch: branch,
-		change.EffectGitHubCheck:  check,
+		change.EffectRoomOpen:          room,
+		change.EffectGitHubBranch:      branch,
+		change.EffectGitHubCheck:       check,
+		change.EffectTaskAssign:        taskAssign,
+		change.EffectGitHubCommitTests: commitTests,
+		change.EffectTestQuality:       testQuality,
+		change.EffectVerifyEvidence:    verifyEvidence,
 	}, nil
 }

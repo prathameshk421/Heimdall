@@ -37,11 +37,39 @@ func TestLoadAcceptsValidFileAndDefaultsListen(t *testing.T) {
 	require.False(t, ok, "an unmapped tracker project is not found")
 }
 
+func TestLoadAcceptsFileTrackerPath(t *testing.T) {
+	dir := t.TempDir()
+	trackerDir := t.TempDir()
+	cfg, err := Load(writeTOML(t, "secrets_dir = \""+dir+"\"\n[tracker]\nprovider = \"file\"\npath = \""+trackerDir+"\"\n"+goodProject))
+	require.NoError(t, err)
+	require.Equal(t, trackerDir, cfg.TrackerPath)
+}
+
+func TestLoadRequiresAbsoluteFileTrackerPath(t *testing.T) {
+	for _, tc := range []struct{ path, want string }{{"", "tracker.path"}, {"tickets", "absolute path"}} {
+		t.Run(tc.want, func(t *testing.T) {
+			body := "[tracker]\nprovider = \"file\"\n"
+			if tc.path != "" {
+				body += "path = \"" + tc.path + "\"\n"
+			}
+			_, err := Load(writeTOML(t, body+goodProject))
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
 func TestLoadDefaultsSecretsDirWhenAbsent(t *testing.T) {
 	cfg, err := Load(writeTOML(t, "listen = \":9000\"\n"+goodProject))
 	require.NoError(t, err)
 	require.Equal(t, "/etc/heimdall/secrets", cfg.SecretsDir, "secrets_dir defaults to /etc/heimdall/secrets (D89)")
 	require.Equal(t, ":9000", cfg.Listen)
+}
+
+func TestLoadMapsHumanKnowledgeTokensToNamedSecretFiles(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := Load(writeTOML(t, "secrets_dir = \""+dir+"\"\n"+goodProject+"\n[human_tokens]\nalice = \"alice_mcp_token\"\n"))
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"alice": "alice_mcp_token"}, cfg.HumanTokens)
 }
 
 func TestLoadRefusals(t *testing.T) {
@@ -53,6 +81,7 @@ func TestLoadRefusals(t *testing.T) {
 		wantErr string
 	}{
 		{"unknown top-level key", head + "bogus = 1\n", "bogus"},
+		{"human token with no secret name", head + goodProject + "\n[human_tokens]\nalice = \"\"\n", "human_tokens.alice"},
 		{"unknown key inside a project", head + "[[projects]]\ntracker_project = \"KAN\"\nrepo = \"a/b\"\nbase_branch = \"main\"\nextra = true\n", "extra"},
 		{"empty secrets_dir", "secrets_dir = \"\"\n" + goodProject, "secrets_dir"},
 		{"empty listen", head + "listen = \"\"\n" + goodProject, "listen"},
@@ -220,10 +249,10 @@ func TestLoadReadsProviderSelections(t *testing.T) {
 		"[vcs]\nprovider = \"github\"\n"+
 		"[tracker]\nprovider = \"jira\"\n"+
 		"[chat]\nbridge = \"mattermost\"\n"+
-		"[agent_runtime]\nprovider = \"opencode\"\n"+
+		"[agent_runtime]\nprovider = \"switchroom\"\nmachine = \"heimdall-vm\"\nmcp_endpoint = \"http://127.0.0.1:8080/mcp\"\n"+
 		"[memory]\nprovider = \"graphiti\"\n"))
 	require.NoError(t, err)
-	want := map[string]string{"vcs": "github", "tracker": "jira", "chat": "mattermost", "agent_runtime": "opencode", "memory": "graphiti"}
+	want := map[string]string{"vcs": "github", "tracker": "jira", "chat": "mattermost", "agent_runtime": "switchroom", "memory": "graphiti"}
 	for kind, name := range want {
 		got, ok := cfg.Selection(kind)
 		require.True(t, ok, kind)

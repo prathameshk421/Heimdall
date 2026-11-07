@@ -23,7 +23,8 @@ api_token_secret = "jira_api_token"
 
 [switch]
 # Switch gateway base URL: https, or http only for a loopback host.
-base_url = "https://switch.invalid"
+# Live laptop runs usually tunnel the VM Switch to http://127.0.0.1:8000.
+base_url = "http://127.0.0.1:8000"
 # The coordinator agent's Switch id, display name and bridge id.
 agent_id = "agent-placeholder-1"
 agent_name = "heimdall-placeholder"
@@ -38,7 +39,7 @@ app_id_secret = "github_app_id"
 installation_id_secret = "github_app_installation_id"
 private_key_secret = "github_app_private_key"
 
-# The adapters the server builds. A live run selects all three.
+# The adapters the server builds. A live run selects all three plus the optional Switch runtime.
 [vcs]
 provider = "github"
 
@@ -46,7 +47,20 @@ provider = "github"
 provider = "jira"
 
 [chat]
-bridge = "switch"
+bridge = "mattermost"
+
+# Optional Switch managed-agent enrollment and host config handoff.
+[agent_runtime]
+provider = "switchroom"
+machine = "heimdall-vm"
+mcp_endpoint = "http://127.0.0.1:8080/mcp"
+model = "openrouter/deepseek/deepseek-v4-flash"
+
+# MCP agent identities. Each name needs secrets_dir/agent_token_<name> (0600).
+[agents]
+test_author = "test-author"
+reviewers = ["reviewer-1", "reviewer-2", "reviewer-3"]
+resolver = "resolver"
 
 [[projects]]
 tracker_project = "KAN"

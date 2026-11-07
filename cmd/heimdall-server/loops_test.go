@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
@@ -50,6 +52,58 @@ type blockingDrainer struct {
 	finished atomic.Bool
 }
 
+type blockingRoomStream struct {
+	started chan struct{}
+	stopped atomic.Bool
+}
+
+func (s *blockingRoomStream) Run(ctx context.Context) error {
+	select {
+	case s.started <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	s.stopped.Store(true)
+	return ctx.Err()
+}
+
+type recordingCommentPoller struct{ started chan struct{} }
+
+func (p *recordingCommentPoller) PollOnce(context.Context) (collaboration.CommentPollResult, error) {
+	select {
+	case p.started <- struct{}{}:
+	default:
+	}
+	return collaboration.CommentPollResult{}, nil
+}
+
+func TestLoopsStartAndJoinRoomStreamAndGitHubCommentConsumers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	room := &blockingRoomStream{started: make(chan struct{}, 1)}
+	comments := &recordingCommentPoller{started: make(chan struct{}, 1)}
+	a := &app{pollers: []poller{&fakePoller{}}, drainer: &recordingDrainer{}, roomStream: room, comments: comments, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour}
+	done := make(chan struct{})
+	go func() { a.loops(ctx); close(done) }()
+	select {
+	case <-room.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("room stream was not started")
+	}
+	select {
+	case <-comments.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("GitHub comment poller was not started")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("loops did not join collaboration consumers")
+	}
+	require.True(t, room.stopped.Load(), "server shutdown must wait for the room stream")
+}
+
 func (d *blockingDrainer) Run(ctx context.Context, _ <-chan struct{}, _ <-chan time.Time) error {
 	<-ctx.Done()
 	<-d.release
@@ -57,14 +111,53 @@ func (d *blockingDrainer) Run(ctx context.Context, _ <-chan struct{}, _ <-chan t
 	return nil
 }
 
+type retentionSpy struct {
+	calls  int
+	cancel context.CancelFunc
+}
+
+type episodeDrainSpy struct {
+	calls  int
+	limit  int
+	cancel context.CancelFunc
+}
+
+func (e *episodeDrainSpy) RunOnce(_ context.Context, limit int) (int, error) {
+	e.calls++
+	e.limit = limit
+	e.cancel()
+	return 1, nil
+}
+
+func (r *retentionSpy) Expire(context.Context) (int, error) { r.calls++; r.cancel(); return 2, nil }
+
+func TestKnowledgeRetentionLoopSweepsImmediatelyAndStopsWithContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	retention := &retentionSpy{cancel: cancel}
+	a := &app{retention: retention, logger: discardLogger()}
+	a.knowledgeRetentionLoop(ctx)
+	require.Equal(t, 1, retention.calls)
+}
+
+func TestEpisodeDeliveryLoopRetriesOnTheSharedDrainCadence(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	drain := &episodeDrainSpy{cancel: cancel}
+	a := &app{episodeWorker: drain, logger: discardLogger()}
+	a.episodeDeliveryLoop(ctx)
+	require.Equal(t, 1, drain.calls)
+	require.Equal(t, 100, drain.limit)
+}
+
 // A poll error is logged and the next poll still runs. The loop ends only when its context is done.
 func TestPollLoopKeepsPollingAfterAPollError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	fp := &fakePoller{failFirst: 3, cancelAt: 5, cancel: cancel}
-	a := &app{poller: fp, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Millisecond}
+	a := &app{pollers: []poller{fp}, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Millisecond}
 
-	a.pollLoop(ctx, make(chan struct{}, 1))
+	a.pollLoop(ctx, fp, make(chan struct{}, 1))
 
 	require.Equal(t, 5, fp.calls, "three failed polls must not stop the loop")
 }
@@ -74,10 +167,10 @@ func TestPollLoopWakesTheDrainerAfterEachPoll(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	fp := &fakePoller{cancelAt: 1, cancel: cancel}
-	a := &app{poller: fp, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Hour}
+	a := &app{pollers: []poller{fp}, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Hour}
 	wake := make(chan struct{}, 1)
 
-	a.pollLoop(ctx, wake)
+	a.pollLoop(ctx, fp, wake)
 
 	require.Len(t, wake, 1, "the last poll left a wake for the drainer")
 }
@@ -88,7 +181,7 @@ func TestLoopsRunTheDrainer(t *testing.T) {
 	defer cancel()
 	d := &recordingDrainer{}
 	a := &app{
-		poller: &fakePoller{}, drainer: d, logger: discardLogger(), clock: clock.System{},
+		pollers: []poller{&fakePoller{}}, drainer: d, logger: discardLogger(), clock: clock.System{},
 		pollEvery: time.Hour, drainTick: time.Hour,
 	}
 	done := make(chan struct{})
@@ -109,7 +202,7 @@ func TestLoopsWaitForTheDrainerBeforeReturning(t *testing.T) {
 	defer cancel()
 	d := &blockingDrainer{release: make(chan struct{})}
 	a := &app{
-		poller: &fakePoller{}, drainer: d, logger: discardLogger(), clock: clock.System{},
+		pollers: []poller{&fakePoller{}}, drainer: d, logger: discardLogger(), clock: clock.System{},
 		pollEvery: time.Hour, drainTick: time.Hour,
 	}
 	returned := make(chan struct{})
@@ -149,6 +242,10 @@ type fakeSyncer struct {
 	ran       atomic.Bool
 }
 
+func (f *fakeSyncer) Reconcile(context.Context) (prsync.Result, error) {
+	return prsync.Result{}, nil
+}
+
 func (f *fakeSyncer) SyncOnce(_ context.Context) (prsync.Result, error) {
 	f.ran.Store(true)
 	f.calls++
@@ -166,6 +263,10 @@ type blockingSyncer struct {
 	started  chan struct{}
 	release  chan struct{}
 	finished atomic.Bool
+}
+
+func (s *blockingSyncer) Reconcile(context.Context) (prsync.Result, error) {
+	return prsync.Result{}, nil
 }
 
 func (s *blockingSyncer) SyncOnce(ctx context.Context) (prsync.Result, error) {
@@ -213,7 +314,7 @@ func TestLoopsRunTheSyncer(t *testing.T) {
 	fs := &fakeSyncer{}
 	d := &recordingDrainer{}
 	a := &app{
-		poller: &fakePoller{}, syncer: fs, drainer: d, logger: discardLogger(), clock: clock.System{},
+		pollers: []poller{&fakePoller{}}, syncer: fs, drainer: d, logger: discardLogger(), clock: clock.System{},
 		pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour,
 	}
 	done := make(chan struct{})
@@ -234,7 +335,7 @@ func TestLoopsWaitForTheSyncerBeforeReturning(t *testing.T) {
 	s := &blockingSyncer{started: make(chan struct{}, 1), release: make(chan struct{})}
 	d := &recordingDrainer{}
 	a := &app{
-		poller: &fakePoller{}, syncer: s, drainer: d, logger: discardLogger(), clock: clock.System{},
+		pollers: []poller{&fakePoller{}}, syncer: s, drainer: d, logger: discardLogger(), clock: clock.System{},
 		pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour,
 	}
 	returned := make(chan struct{})
@@ -265,4 +366,82 @@ func TestLoopsWaitForTheSyncerBeforeReturning(t *testing.T) {
 		}
 	}, 5*time.Second, time.Millisecond)
 	require.True(t, s.finished.Load())
+}
+
+// steppedClock is a clock the test moves. Each sync moves it forward by step.
+type steppedClock struct {
+	mu sync.Mutex
+	at time.Time
+}
+
+func (c *steppedClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.at
+}
+
+func (c *steppedClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(d)
+}
+
+// orderSyncer records the order of its reconcile and sync passes. Each sync moves the clock forward by step, and the
+// loop's context ends on sync number cancelAt.
+type orderSyncer struct {
+	order    []string
+	clk      *steppedClock
+	step     time.Duration
+	cancelAt int
+	cancel   context.CancelFunc
+}
+
+func (o *orderSyncer) Reconcile(context.Context) (prsync.Result, error) {
+	o.order = append(o.order, "reconcile")
+	return prsync.Result{}, nil
+}
+
+func (o *orderSyncer) SyncOnce(context.Context) (prsync.Result, error) {
+	o.order = append(o.order, "sync")
+	o.clk.advance(o.step)
+	if o.cancelAt > 0 && syncs(o.order) == o.cancelAt {
+		o.cancel()
+	}
+	return prsync.Result{Synced: 1}, nil
+}
+
+func syncs(order []string) int {
+	n := 0
+	for _, s := range order {
+		if s == "sync" {
+			n++
+		}
+	}
+	return n
+}
+
+// The boot pass runs before the first sync, so a stop during downtime is recovered before the next PR sync.
+func TestSyncLoopReconcilesAtBootBeforeTheFirstSync(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	clk := &steppedClock{at: time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)}
+	rec := &orderSyncer{clk: clk, step: time.Minute, cancelAt: 3, cancel: cancel}
+	a := &app{syncer: rec, logger: discardLogger(), clock: clk, syncEvery: time.Millisecond}
+
+	a.syncLoop(ctx, make(chan struct{}, 1))
+
+	require.Equal(t, []string{"reconcile", "sync", "sync", "sync"}, rec.order)
+}
+
+// The boot pass runs again once reconcileInterval has passed, and not before.
+func TestSyncLoopReconcilesAgainAfterTheInterval(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	clk := &steppedClock{at: time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)}
+	rec := &orderSyncer{clk: clk, step: reconcileInterval, cancelAt: 3, cancel: cancel}
+	a := &app{syncer: rec, logger: discardLogger(), clock: clk, syncEvery: time.Millisecond}
+
+	a.syncLoop(ctx, make(chan struct{}, 1))
+
+	require.Equal(t, []string{"reconcile", "sync", "reconcile", "sync", "reconcile", "sync"}, rec.order)
 }

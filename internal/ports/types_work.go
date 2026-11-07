@@ -49,11 +49,15 @@ type SandboxKind string
 
 // The sandbox jobs. Mutation is Later in the build and is listed so the enum matches the spec table.
 const (
-	SandboxRedFirst SandboxKind = "red_first"
-	SandboxRepro    SandboxKind = "repro"
-	SandboxStatic   SandboxKind = "static"
-	SandboxContract SandboxKind = "contract"
-	SandboxMutation SandboxKind = "mutation"
+	SandboxRedFirst     SandboxKind = "red_first"
+	SandboxRepro        SandboxKind = "repro"
+	SandboxStatic       SandboxKind = "static"
+	SandboxContract     SandboxKind = "contract"
+	SandboxMutation     SandboxKind = "mutation"
+	SandboxProfileTrial SandboxKind = "profile_trial"
+	// SandboxWarm is the read-only module-cache fetch job (TECH_SPEC 12.2, D153). It never runs
+	// repository code and its egress is allowlisted by the runner's fetch boundary.
+	SandboxWarm SandboxKind = "warm"
 )
 
 // maxSandboxTimeout is the longest any job may run (TECH_SPEC 12.2: 600 s for mutation, the largest limit).
@@ -66,20 +70,34 @@ type SandboxJob struct {
 	SHA     id.SHA        `json:"sha"`
 	Dir     string        `json:"dir"`
 	Timeout time.Duration `json:"timeout"`
+	Profile string        `json:"profile,omitempty"`
+	// Check names the fixed deterministic check a static job runs (CheckGoVet). It is empty for every other kind.
+	Check string `json:"check,omitempty"`
 }
+
+// CheckGoVet is the static check that runs go vet over the repository (TECH_SPEC 12.2, evidence tier E2).
+const CheckGoVet = "go_vet"
+
+// MaxCheckOutput bounds the text output a static check returns.
+const MaxCheckOutput = 64 << 10
 
 // Validate returns every problem with the job.
 func (j SandboxJob) Validate() error {
 	var v problems
 	switch j.Kind {
-	case SandboxRedFirst, SandboxRepro, SandboxStatic, SandboxContract, SandboxMutation:
+	case SandboxRedFirst, SandboxRepro, SandboxStatic, SandboxContract, SandboxMutation, SandboxProfileTrial, SandboxWarm:
 	default:
-		v.require("kind", false, "must be red_first, repro, static, contract or mutation")
+		v.require("kind", false, "must be a known sandbox job kind")
 	}
 	v.add("repo", checkRepo(j.Repo))
 	v.add("sha", checkSHA(j.SHA))
 	v.add("dir", checkRelPath(j.Dir))
 	v.require("timeout", j.Timeout > 0 && j.Timeout <= maxSandboxTimeout, "must be more than 0 and at most 10 minutes")
+	if j.Kind == SandboxStatic {
+		v.require("check", j.Check == CheckGoVet, "a static job must name a known check")
+	} else {
+		v.require("check", j.Check == "", "only a static job names a check")
+	}
 	return v.join()
 }
 
@@ -108,6 +126,8 @@ type SandboxResult struct {
 	Errored int              `json:"errored"`
 	Tests   []TestResult     `json:"tests"`
 	LogRef  workflow.BlobRef `json:"log_ref"`
+	// Output is the bounded text a static check printed. It is empty for test jobs.
+	Output string `json:"output,omitempty"`
 }
 
 // Validate returns every problem with the result.
@@ -116,6 +136,7 @@ func (r SandboxResult) Validate() error {
 	v.require("passed", r.Passed >= 0, "must not be negative")
 	v.require("failed", r.Failed >= 0, "must not be negative")
 	v.require("errored", r.Errored >= 0, "must not be negative")
+	v.require("output", len(r.Output) <= MaxCheckOutput, "must be at most 64 KiB")
 	for i, t := range r.Tests {
 		v.add("tests["+strconv.Itoa(i)+"].name", checkText(t.Name, 512))
 		switch t.Outcome {
@@ -206,11 +227,28 @@ func (l MemoryLabel) Valid() bool {
 // MemoryItem is one fact returned by a search. Only confirmed, non-superseded items are E3 evidence.
 type MemoryItem struct {
 	Ref       string      `json:"ref"`
+	SourceKey string      `json:"source_key,omitempty"`
 	Text      string      `json:"text"`
 	Label     MemoryLabel `json:"label"`
 	SourceURL string      `json:"source_url"`
 	ValidAt   time.Time   `json:"valid_at"`
 	InvalidAt *time.Time  `json:"invalid_at,omitempty"`
+}
+
+// KnowledgeFile records one safe, human-reviewed repository document and its retention metadata.
+type KnowledgeFile struct {
+	Ref        string
+	Repository change.Repo
+	Path       string
+	SHA        id.SHA
+	Group      string
+	SourceURL  string
+	Blob       workflow.BlobRef
+	Kind       string
+	State      string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	ApprovedBy string
 }
 
 // Validate returns every problem with the item.

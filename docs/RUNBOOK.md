@@ -105,13 +105,18 @@ A live run selects the real Jira, GitHub and Switch adapters, so the server need
 | `github_app_id` | the GitHub App id |
 | `github_app_installation_id` | the GitHub App installation id |
 | `github_app_private_key` | the GitHub App private key in PEM form |
-| `switch_api_key` | the Switch API key |
-| `switch_registration_token` | the Switch registration token |
+| `switch_api_key` | the Switch agent API key (from `/agents/register-known`, not a human login) |
+| `switch_registration_token` | Switch `AGENT_REGISTRATION_TOKEN` (registers the coordinator) |
+| `agent_token_test-author` | MCP bearer for the test-author agent |
+| `agent_token_reviewer-1` | MCP bearer for reviewer-1 |
+| `agent_token_reviewer-2` | MCP bearer for reviewer-2 |
+| `agent_token_reviewer-3` | MCP bearer for reviewer-3 |
+| `agent_token_resolver` | MCP bearer for the resolver agent |
 
-Write them under a directory you own, for example `~/heimdall/secrets/`. Check the modes with `ls -l`; every file must show `-rw-------`. Never print the contents.
+Write them under a directory you own, for example `~/heimdall/secrets/`. Check the modes with `ls -l`; every file must show `-rw-------`. Never print the contents. Human Gateway/Mattermost logins are separate from these agent files.
 
 
-**2. Make the config.** Copy `deploy/heimdall.example.toml` outside the repository (for example `~/heimdall/heimdall.toml`) and set `base_url`, the Switch ids, `project_keys` and the `[[projects]]` entry for the install. Keep `secrets_dir = "/run/secrets"`: inside the container the files above are mounted there. The example already selects `vcs.github`, `tracker.jira` and `chat.switch`.
+**2. Make the config.** Copy `deploy/heimdall.example.toml` outside the repository (for example `~/heimdall/heimdall.toml`) and set `base_url`, the Switch ids, `project_keys`, the `[agents]` names and the `[[projects]]` entry for the install. Keep `secrets_dir = "/run/secrets"`: inside the container the files above are mounted there. The example already selects `vcs.github`, `tracker.jira`, `chat.switch` and `[agents]`.
 
 **3. Start it.**
 
@@ -148,3 +153,16 @@ docker compose -f deploy/compose.yaml down
 ```
 
 `down -v` also removes the Postgres volume; use it only when the event log can be discarded.
+
+## Sandbox runner
+
+The server hands test jobs to `heimdall-runner` over `/run/heimdall-runner/runner.sock`; the runner runs them with rootless Podman under its own Unix identity. The VM needs the `crun` OCI runtime. There is no systemd user session for the runner, so Podman falls back to `cgroupfs`, and `runc` refuses to apply cgroup limits there (`rootless needs no limits ... permission denied`), which fails every job. Install it once with `apt-get install -y crun`; `deploy/deploy.sh` refuses to deploy without it. Check the service with:
+
+```bash
+ssh heimdall-vm 'systemctl status heimdall-runner --no-pager'
+```
+
+## Boot reconciliation (A5)
+
+After the server stops or crashes, nothing is replayed by hand. At boot the server starts the pull request sync and the ticket poll immediately (no wait before the first pass). The sync reads open pull requests, checks, and reviews from GitHub and appends what the event log lacks, through the normal ingest path. The room stream restarts from the durable per-room cursors. A second boot appends nothing, because every append is keyed by its source. Check after a restart: the server log shows `pull requests synced` with `appended` counts, and a repeated boot shows zero.
+

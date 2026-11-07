@@ -57,9 +57,12 @@ func TestDefaultRegistryDescribesPlannedEntries(t *testing.T) {
 	require.Equal(t, []registry.Description{
 		{Name: "github", Kind: registry.KindVCS, RequiredConfig: []string{"github_app_id", "github_app_installation_id", "github_app_private_key"}},
 		{Name: "file", Kind: registry.KindTracker},
-		{Name: "jira", Kind: registry.KindTracker, RequiredConfig: []string{"jira_api_token"}},
+		{Name: "jira", Kind: registry.KindTracker, RequiredConfig: []string{"jira_api_token", "jira_email"}},
 		{Name: "mattermost", Kind: registry.KindChat, RequiredConfig: []string{"mattermost_token"}},
+		{Name: "switch", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
 		{Name: "teams", Kind: registry.KindChat},
+		{Name: "switchroom", Kind: registry.KindAgentRuntime, RequiredConfig: []string{"openrouter_api_key"}},
+		{Name: "graphiti", Kind: registry.KindMemory},
 	}, reg.Describe())
 }
 
@@ -70,15 +73,16 @@ func TestDefaultRegistryChecksReportNeedsConfigAndNeverConnected(t *testing.T) {
 		files      map[string]string
 		wantDetail string
 	}{
-		{"github", registry.KindVCS, nil, "github_app_private_key"},
-		{"jira", registry.KindTracker, nil, "jira_api_token"},
+		{"github", registry.KindVCS, nil, "github_app_id"},
+		{"jira", registry.KindTracker, nil, "jira.base_url"},
+		{"switch", registry.KindChat, nil, "Switch coordinator configuration"},
 		{"mattermost", registry.KindChat, nil, "mattermost_token"},
 		{"teams", registry.KindChat, nil, "adapter not built yet"},
 		{"file", registry.KindTracker, nil, "adapter not built yet"},
 		{"github", registry.KindVCS, map[string]string{
 			"github_app_id": "1", "github_app_installation_id": "2", "github_app_private_key": plantedConnectSecret,
-		}, "adapter not built yet"},
-		{"jira", registry.KindTracker, map[string]string{"jira_api_token": plantedConnectSecret}, "adapter not built yet"},
+		}, "PEM format"},
+		{"jira", registry.KindTracker, map[string]string{"jira_email": "person", "jira_api_token": plantedConnectSecret}, "jira.base_url"},
 	}
 	reg, err := defaultRegistry()
 	require.NoError(t, err)
@@ -135,7 +139,7 @@ func TestConnectListPrintsEveryEntryWithSelection(t *testing.T) {
 	code := runConnect([]string{"--config", cfgPath, "list"}, strings.NewReader(""), &out, &errOut, testConnectDeps())
 	require.Equal(t, 0, code, errOut.String())
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	require.Len(t, lines, 6, out.String())
+	require.Len(t, lines, 9, out.String())
 	require.Equal(t, []string{"NAME", "KIND", "SELECTED", "STATUS"}, strings.Fields(lines[0])[:4])
 	rows := map[string][]string{}
 	for _, line := range lines[1:] {
@@ -147,6 +151,69 @@ func TestConnectListPrintsEveryEntryWithSelection(t *testing.T) {
 	require.Equal(t, []string{"github", "vcs", "no", "needs_config"}, rows["github"])
 }
 
+func TestConnectCheckIsNonInteractiveAndChecksEveryRegisteredIntegration(t *testing.T) {
+	_, cfgPath := connectFixture(t, "", nil)
+	var out, errOut bytes.Buffer
+	code := runConnect([]string{"--check", "--config", cfgPath}, strings.NewReader("must-not-prompt"), &out, &errOut, testConnectDeps())
+
+	require.Equal(t, 0, code, errOut.String())
+	require.Contains(t, out.String(), "github")
+	require.Contains(t, out.String(), "jira")
+	require.Contains(t, out.String(), "switchroom")
+	require.Contains(t, out.String(), "graphiti")
+	require.Empty(t, errOut.String())
+}
+
+func TestConnectPlansContainResumableCoreIntegrationHandoffs(t *testing.T) {
+	_, cfgPath := connectFixture(t, "", nil)
+	cfg := mustLoad(t, cfgPath)
+	reg, err := defaultRegistry()
+	require.NoError(t, err)
+	cases := []struct {
+		kind registry.Kind
+		name string
+		want string
+	}{
+		{registry.KindVCS, "github", "approve and install the GitHub App from its manifest"},
+		{registry.KindTracker, "jira", "jira.base_url and jira.project_keys"},
+		{registry.KindChat, "switch", "coordinator identity"},
+		{registry.KindAgentRuntime, "switchroom", "OpenCode 1.19.5"},
+		{registry.KindMemory, "graphiti", "Compose checks Graphiti health"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, err := PlanConnect(reg, cfg, tc.kind, tc.name, map[string]string{})
+			require.NoError(t, err)
+			require.Contains(t, strings.Join(plan.Instructions, "\n"), tc.want)
+			require.Contains(t, strings.Join(plan.Instructions, "\n"), "heimdall connect --check")
+		})
+	}
+}
+
+func TestDefaultRegistryEntriesDeclareGuidedSteps(t *testing.T) {
+	reg, err := defaultRegistry()
+	require.NoError(t, err)
+	for _, description := range reg.Describe() {
+		entry, err := reg.Select(description.Kind, description.Name)
+		require.NoError(t, err)
+		require.NotEmpty(t, entry.GuidedSteps, description.Name)
+		for _, step := range entry.GuidedSteps {
+			require.NotContains(t, strings.ToLower(step), "secret value")
+			require.NotContains(t, strings.ToLower(step), "token=")
+		}
+	}
+}
+
+func TestConnectListFlagMatchesListSubcommand(t *testing.T) {
+	_, cfgPath := connectFixture(t, "", nil)
+	var out, errOut bytes.Buffer
+	code := runConnect([]string{"--list", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, testConnectDeps())
+
+	require.Equal(t, 0, code, errOut.String())
+	require.Contains(t, out.String(), "NAME")
+	require.Contains(t, out.String(), "mattermost")
+}
+
 func TestConnectListJSONCarriesStatusAndRequiredNames(t *testing.T) {
 	_, cfgPath := connectFixture(t, "[tracker]\nprovider = \"jira\"\n", nil)
 	var out, errOut bytes.Buffer
@@ -154,7 +221,7 @@ func TestConnectListJSONCarriesStatusAndRequiredNames(t *testing.T) {
 	require.Equal(t, 0, code, errOut.String())
 	var rows []connectRow
 	require.NoError(t, json.Unmarshal(out.Bytes(), &rows))
-	require.Len(t, rows, 5)
+	require.Len(t, rows, 8)
 	byName := map[string]connectRow{}
 	for _, r := range rows {
 		byName[r.Name] = r
@@ -162,9 +229,9 @@ func TestConnectListJSONCarriesStatusAndRequiredNames(t *testing.T) {
 	require.True(t, byName["jira"].Selected)
 	require.False(t, byName["file"].Selected)
 	require.Equal(t, "needs_config", byName["jira"].Status)
-	require.Equal(t, []string{"jira_api_token"}, byName["jira"].RequiredConfig)
+	require.Equal(t, []string{"jira_api_token", "jira_email"}, byName["jira"].RequiredConfig)
 	require.Equal(t, "chat", byName["teams"].Kind)
-	require.Equal(t, "adapter not built yet", byName["teams"].Detail)
+	require.Contains(t, byName["teams"].Detail, "heimdall connect chat teams")
 }
 
 func TestConnectListNeverPrintsSecretValues(t *testing.T) {
@@ -216,15 +283,17 @@ func TestPlanConnectGitHubNamesSecretFilesAndSelection(t *testing.T) {
 }
 
 func TestPlanConnectMarksPresentSecretFile(t *testing.T) {
-	_, cfgPath := connectFixture(t, "", map[string]string{"jira_api_token": "value"})
+	_, cfgPath := connectFixture(t, "", map[string]string{"jira_email": "operator@example.invalid", "jira_api_token": "value"})
 	cfg := mustLoad(t, cfgPath)
 	reg, err := defaultRegistry()
 	require.NoError(t, err)
 	plan, err := PlanConnect(reg, cfg, registry.KindTracker, "jira", nil)
 	require.NoError(t, err)
-	require.Len(t, plan.SecretFiles, 1)
-	require.True(t, plan.SecretFiles[0].Present)
-	require.Empty(t, plan.SecretFiles[0].Problem)
+	require.Len(t, plan.SecretFiles, 2)
+	for _, file := range plan.SecretFiles {
+		require.True(t, file.Present)
+		require.Empty(t, file.Problem)
+	}
 }
 
 func TestPlanConnectNeverCarriesSecretValue(t *testing.T) {
@@ -314,7 +383,7 @@ func TestConnectSelectionFieldKeys(t *testing.T) {
 }
 
 func TestWriteSelectionRoundTripKeepsProjectsAndMode(t *testing.T) {
-	extra := "[tracker]\nprovider = \"file\"\n\n[[projects]]\ntracker_project = \"PAY\"\nrepo = \"acme/pay\"\nbase_branch = \"main\"\n"
+	extra := "[tracker]\nprovider = \"file\"\npath = \"/tmp/tickets\"\n\n[[projects]]\ntracker_project = \"PAY\"\nrepo = \"acme/pay\"\nbase_branch = \"main\"\n"
 	dir, cfgPath := connectFixture(t, extra, nil)
 	require.NoError(t, writeSelection(cfgPath, map[string]string{"tracker.provider": "jira"}))
 	cfg := mustLoad(t, cfgPath)
@@ -354,6 +423,50 @@ func TestWriteSelectionRefusesFileThatDoesNotLoad(t *testing.T) {
 	require.Equal(t, before, after, "a file that does not load strictly must not be rewritten")
 }
 
+// switchroomSelection is the agent_runtime section that config.Load accepts. The CLI must accept it too.
+const switchroomSelection = "[agent_runtime]\nprovider = \"switchroom\"\nmachine = \"heimdall-vm\"\nmcp_endpoint = \"http://127.0.0.1:8080/mcp\"\n"
+
+func TestSwitchroomAgentRuntimeSelectionIsAcceptedByConnect(t *testing.T) {
+	_, cfgPath := connectFixture(t, switchroomSelection, nil)
+
+	var out, errOut bytes.Buffer
+	code := runConnect([]string{"list", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, testConnectDeps())
+	require.Equal(t, 0, code, errOut.String())
+	require.NotContains(t, errOut.String(), "valid names are")
+	rows := map[string][]string{}
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n")[1:] {
+		f := strings.Fields(line)
+		rows[f[0]] = f[:4]
+	}
+	require.Equal(t, "yes", rows["switchroom"][2], out.String())
+
+	out.Reset()
+	errOut.Reset()
+	code = runConnect([]string{"--check", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, testConnectDeps())
+	require.Equal(t, 0, code, errOut.String())
+	require.NotContains(t, out.String()+errOut.String(), "valid names are")
+	require.Contains(t, out.String(), "switchroom")
+}
+
+func TestDoctorAcceptsSwitchroomAgentRuntimeSelection(t *testing.T) {
+	_, cfgPath := connectFixture(t, switchroomSelection, nil)
+	cfg := mustLoad(t, cfgPath)
+
+	rows := configuredIntegrationChecks(context.Background(), cfg, defaultRegistry, time.Second)
+	for _, row := range rows {
+		require.NotEqual(t, "integration.registry", row.Check, row.Detail)
+		require.NotContains(t, row.Detail, "valid names are")
+	}
+	var runtimeRow *checkResult
+	for i := range rows {
+		if rows[i].Check == "integration.agent_runtime.switchroom" {
+			runtimeRow = &rows[i]
+		}
+	}
+	require.NotNil(t, runtimeRow, "doctor must run the switchroom check")
+	require.Equal(t, statusMissing, runtimeRow.Status, "no OpenRouter secret is configured, so the check reports missing config")
+}
+
 func TestRunConnectKindWritesSelectionAndInstructions(t *testing.T) {
 	dir, cfgPath := connectFixture(t, "", nil)
 	var out, errOut bytes.Buffer
@@ -365,6 +478,46 @@ func TestRunConnectKindWritesSelectionAndInstructions(t *testing.T) {
 	name, ok := mustLoad(t, cfgPath).Selection("vcs")
 	require.True(t, ok)
 	require.Equal(t, "github", name)
+}
+
+func TestConnectProgressPersistsAndResumesManualSteps(t *testing.T) {
+	dir, cfgPath := connectFixture(t, "", nil)
+	status := registry.StatusNeedsConfig
+	reg, err := registry.Default([]registry.Entry{{
+		Name: "local-test", Kind: registry.KindTracker,
+		GuidedSteps: []string{"create the tracker project", "run the read-only tracker check"},
+		Factory:     func(config.Config) (any, error) { return struct{}{}, nil },
+		Check: func(context.Context, config.Config) registry.CheckResult {
+			return registry.CheckResult{Status: status, Detail: "finish tracker project setup"}
+		},
+	}})
+	require.NoError(t, err)
+	deps := connectDeps{
+		getenv:        func(string) string { return "" },
+		loadConfig:    config.Load,
+		registry:      func() (*registry.Registry, error) { return reg, nil },
+		checkDeadline: time.Second,
+	}
+	var out, errOut bytes.Buffer
+	require.Equal(t, 0, runConnect([]string{"--config", cfgPath, "tracker", "local-test"}, strings.NewReader(""), &out, &errOut, deps), errOut.String())
+	statePath := filepath.Join(dir, "heimdall-connect-progress.json")
+	info, err := os.Stat(statePath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	out.Reset()
+	require.Equal(t, 0, runConnect([]string{"progress", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, deps), errOut.String())
+	require.Contains(t, out.String(), "tracker/local-test")
+	require.Contains(t, out.String(), "needs_config")
+	require.Contains(t, out.String(), "[pending] create the tracker project")
+
+	status = registry.StatusConnected
+	out.Reset()
+	errOut.Reset()
+	require.Equal(t, 0, runConnect([]string{"--config", cfgPath, "tracker", "local-test"}, strings.NewReader(""), &out, &errOut, deps), errOut.String())
+	out.Reset()
+	require.Equal(t, 0, runConnect([]string{"progress", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, deps), errOut.String())
+	require.Contains(t, out.String(), "connected")
+	require.Contains(t, out.String(), "[complete] create the tracker project")
 }
 
 func TestRunConnectMattermostTakesPublicAddressFlag(t *testing.T) {

@@ -8,11 +8,12 @@
 //
 // Turn an agent's tool call into a checked request: authenticate the agent token, check the agent's role against
 // the tool, check the call against the agent's one active task, bound what goes back, and hand the rest to the
-// application. Tool table: TECH_SPEC 14.1. Tool names carry the heimdall_ prefix that the harness permits.
+// application. Tool table: TECH_SPEC 14.1. Wire tool names are bare: the server lists and accepts get_task, not
+// heimdall_get_task. OpenCode adds the heimdall_ prefix on the model side, from the server key heimdall.
 //
-// Tools built here: heimdall_get_task, heimdall_ack, heimdall_get_change, heimdall_read_untrusted,
-// heimdall_read_code, heimdall_submit_tests, heimdall_ask_humans, heimdall_report_progress. The rest of the table
-// (read_pack, ask_knowledge, run_check, submit_review, challenge, submit_verdict) belongs to later tasks.
+// Tools built here: get_task, ack, get_change, read_untrusted, read_code, submit_tests, submit_review,
+// submit_verdict, ask_humans, report_progress. The rest of the table (read_pack, ask_knowledge, run_check,
+// challenge) belongs to later tasks.
 //
 // # API
 //
@@ -23,6 +24,8 @@
 //   - Tasks: the application side of the agent's task. Current returns the agent's one active Assignment, or
 //     ErrNoTask. Ack, SubmitTests, AskHumans and Progress carry out the effects. The app package does not exist
 //     yet, so this interface is the contract it will satisfy (T23, T30).
+//   - Reviews: the application side of reviews and verdicts. SubmitReview and SubmitVerdict record the outputs.
+//     SubmitReceipt carries per-finding errors for invalid findings so the reviewer can correct them.
 //   - Code and Blobs: narrow read-side ports (ReadFile, Get) the edge needs, declared here as consumer interfaces.
 //   - Deps and NewServer(Deps): validates that every dependency is set. Server.Handler() returns the http.Handler
 //     for /mcp.
@@ -32,7 +35,9 @@
 // # Invariants
 //
 //   - Every call to /mcp carries a bearer token. The token is hashed before lookup and is never logged, returned,
-//     or put in an error. The logger sees the tool name, agent, role and outcome, never arguments.
+//     or put in an error. The logger sees one INFO "mcp request" line per /mcp request (method, tool, role, agent,
+//     status, duration_ms), one WARN per refused token (remote address, no token), the tool name, agent, role and
+//     outcome of each tool call, never arguments.
 //   - A tool is listed and callable only for the roles of TECH_SPEC 14.1. A call to a tool the role does not have
 //     gets the same answer as an unknown tool (JSON-RPC invalid params), so the list is not an oracle.
 //   - Every tool except the protocol methods works on the agent's own active task. The envelope's role must equal
@@ -46,6 +51,10 @@
 //     is accepted and changes nothing.
 //   - submit_tests validates with testset.Submission.Validate against the envelope's acceptance criteria and the
 //     tests directory tests/heimdall/<change id> (D150). A submission after the deadline is passed on as late.
+//   - submit_review validates with finding.Review.Validate, checks head_sha, and passes to Reviews.SubmitReview.
+//     Per-finding errors from SubmitReceipt are returned to the agent as a non-fatal refusal so it can fix them.
+//   - submit_verdict validates with deliberation.Verdict.Validate, checks that case_id matches the task, and passes
+//     to Reviews.SubmitVerdict. A submission after the deadline is passed on as late.
 //   - report_progress: at most 400 characters, at most one report per task every 2 minutes.
 //   - Every tool error the agent sees is either a refusal it can act on (validation, role, window) or the generic
 //     text "the server could not complete this call". The cause of a generic error is logged, not returned.

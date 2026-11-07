@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
@@ -95,32 +97,7 @@ bridge = "switch"
 	_, err := build(context.Background(), cfg, testDeps())
 	require.ErrorContains(t, err, "tracker.provider")
 	require.ErrorContains(t, err, `"linear"`)
-	require.ErrorContains(t, err, "valid names are jira")
-}
-
-func TestBuildRefusesMoreThanOneTrackerProject(t *testing.T) {
-	cfg := loadTestConfig(t, `
-[vcs]
-provider = "github"
-
-[tracker]
-provider = "jira"
-
-[chat]
-bridge = "switch"
-
-[[projects]]
-tracker_project = "KAN"
-repo = "aarush323/PBL_TOS_RISK_ANALYZER"
-base_branch = "heimdall-demo"
-
-[[projects]]
-tracker_project = "PAY"
-repo = "aarush323/heimdall-fixture-pay"
-base_branch = "main"
-`)
-	_, err := build(context.Background(), cfg, testDeps())
-	require.ErrorContains(t, err, "maps 2")
+	require.ErrorContains(t, err, "valid names are file, jira")
 }
 
 func TestBuildRefusesDepsThatCannotRun(t *testing.T) {
@@ -143,7 +120,7 @@ func TestProductionDepsNamesTheConfigKeysItLacks(t *testing.T) {
 	cfg := loadTestConfig(t, trackerProjectBody)
 	_, err := productionDeps(cfg, discardLogger())
 	require.ErrorContains(t, err, "database.url_secret")
-	require.ErrorContains(t, err, "jira.base_url")
+	require.ErrorContains(t, err, "tracker.provider")
 	require.ErrorContains(t, err, "switch.agent_id")
 	require.ErrorContains(t, err, "heimdall.toml")
 }
@@ -168,13 +145,17 @@ func (dummyChat) Post(context.Context, change.RoomID, change.EffectKey, string) 
 	return nil
 }
 
+func (dummyChat) InviteAgent(context.Context, change.RoomID, string) error {
+	return nil
+}
+
 func (dummyChat) Read(context.Context, change.RoomID, ports.Cursor) ([]ports.Message, ports.Cursor, error) {
 	return nil, "", nil
 }
 
 type dummyVCS struct{}
 
-func (dummyVCS) EnsureBranch(context.Context, change.Repo, id.SHA, string) error { return nil }
+func (dummyVCS) EnsureBranch(context.Context, change.Repo, id.SHA, string, string) error { return nil }
 func (dummyVCS) CommitFiles(context.Context, change.Repo, string, string, []ports.File) (id.SHA, error) {
 	return "", nil
 }
@@ -191,7 +172,7 @@ func (dummyVCS) TreeHash(context.Context, change.Repo, id.SHA, string) (id.SHA, 
 	return "", nil
 }
 func (dummyVCS) Tarball(context.Context, change.Repo, id.SHA) (io.ReadCloser, error) {
-	return nil, nil
+	return io.NopCloser(bytes.NewReader(nil)), nil
 }
 func (dummyVCS) PRReviews(context.Context, change.Repo, int) ([]ports.PRReview, error) {
 	return nil, nil
@@ -204,6 +185,10 @@ func (dummyVCS) Comment(context.Context, change.Repo, int, change.EffectKey, str
 	return nil
 }
 
+func (dummyVCS) IssueCommentsSince(context.Context, change.Repo, int, time.Time) ([]ports.IssueComment, error) {
+	return nil, nil
+}
+
 func TestExecutorsRegistersGitHubCheck(t *testing.T) {
 	store := newMemStore()
 	clk := clock.System{}
@@ -214,9 +199,21 @@ func TestExecutorsRegistersGitHubCheck(t *testing.T) {
 		vcs:     dummyVCS{},
 		chat:    dummyChat{},
 	}
-	execs, err := executors(ad, store, ingestor{eng: eng}, gen, clk)
+	blobs := newMemBlobStore()
+	execs, err := executors(context.Background(), ad, store, nil, blobs, ingestor{eng: eng}, gen, clk, nil)
 	require.NoError(t, err)
 	ch, ok := execs[change.EffectGitHubCheck]
 	require.True(t, ok, "github_check executor must be registered")
 	require.IsType(t, effects.GitHubCheck{}, ch)
+}
+
+func TestTestQualityWiringUsesTargetModuleSeam(t *testing.T) {
+	require.Equal(t, []string{"github.com/prathameshk421/flip_the_switch_hackathon/internal"}, testQualityForbiddenImports())
+}
+
+func TestNeedsTestSignoffMatchesExpectedPathsAgainstBasePolicy(t *testing.T) {
+	pol := policy.Policy{Tests: policy.Tests{Sensitive: []string{"backend/**/auth*", "*delete*"}}}
+	require.False(t, needsTestSignoff(pol, []string{"internal/refunds/refunds.go"}))
+	require.True(t, needsTestSignoff(pol, []string{"backend/api/authz.go"}))
+	require.True(t, needsTestSignoff(pol, []string{"db/delete_user.go"}))
 }

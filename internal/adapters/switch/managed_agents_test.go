@@ -1,0 +1,88 @@
+package switchchat
+
+import (
+	"context"
+	"net/http"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+)
+
+func TestCreateManagedAgentLeavesLaunchToSwitchAndDefersStartForHostConfig(t *testing.T) {
+	f := newFakeSwitch(t)
+	var got map[string]any
+	f.ops["create_agent"] = func(args map[string]any) (int, any) {
+		got = args
+		return http.StatusOK, map[string]any{"agent_id": "managed-1", "name": "test-author"}
+	}
+	c, _ := newTestClient(t, f)
+	spec := ports.ManagedAgentSpec{
+		Agent:       ports.AgentRef{Name: id.AgentName("test-author"), Role: workflow.RoleTestAuthor},
+		Description: "Heimdall test author", Machine: "machine-1", Provider: "opencode",
+		Model: "openrouter/deepseek/deepseek-v4-flash", Instructions: "Use Heimdall tools.",
+	}
+
+	gotAgent, err := c.CreateManagedAgent(context.Background(), spec)
+	require.NoError(t, err)
+	require.Equal(t, ports.ManagedAgent{ID: "managed-1", Name: "test-author"}, gotAgent)
+	require.Equal(t, "machine-1", got["machine"])
+	require.Equal(t, "opencode", got["provider"])
+	require.Equal(t, "openrouter/deepseek/deepseek-v4-flash", got["model"])
+	require.Equal(t, true, got["auto_mode"])
+	require.Equal(t, false, got["auto_approve"])
+	require.Equal(t, false, got["start"], "Switch should start the process only after host MCP configuration is installed")
+}
+
+func TestSetManagedAgentStateRequestsControllerStateAndChecksIdentity(t *testing.T) {
+	f := newFakeSwitch(t)
+	var got map[string]any
+	f.ops["update_agent_detail"] = func(args map[string]any) (int, any) {
+		got = args
+		return http.StatusOK, map[string]any{"id": "managed-1"}
+	}
+	c, _ := newTestClient(t, f)
+	err := c.SetManagedAgentState(context.Background(), "managed-1", ports.ManagedAgentRunning)
+	require.NoError(t, err)
+	require.Equal(t, "managed-1", got["agent_id"])
+	require.Equal(t, "running", got["desired_state"])
+}
+
+func TestCreateManagedAgentRejectsInvalidRoleBeforeCallingSwitch(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	_, err := c.CreateManagedAgent(context.Background(), ports.ManagedAgentSpec{
+		Agent:       ports.AgentRef{Name: id.AgentName("test-author"), Role: "wizard"},
+		Description: "agent", Machine: "machine-1", Provider: "opencode", Model: "model",
+	})
+	require.Error(t, err)
+	require.Empty(t, f.requests())
+}
+
+func TestCreateManagedAgentReplayAdoptsExistingMatchingControllerDefinition(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	spec := ports.ManagedAgentSpec{
+		Agent:       ports.AgentRef{Name: id.AgentName("test-author"), Role: workflow.RoleTestAuthor},
+		Description: "Heimdall test author", Machine: "machine-1", Provider: "opencode",
+		Model: "openrouter/deepseek/deepseek-v4-flash", Instructions: "Use Heimdall tools.",
+	}
+	f.ops["list_managed_agents"] = func(map[string]any) (int, any) {
+		return http.StatusOK, []any{map[string]any{
+			"agent_id": "managed-1", "name": "test-author", "description": "Heimdall test author",
+			"provider": "opencode", "model": "openrouter/deepseek/deepseek-v4-flash",
+			"auto_mode": true, "auto_approve": false, "machine": map[string]any{"id": "machine-1", "name": "VM"},
+			"desired_state": "stopped",
+		}}
+	}
+	f.ops["create_agent"] = func(map[string]any) (int, any) {
+		return http.StatusOK, map[string]any{"agent_id": "managed-1", "name": "test-author"}
+	}
+	got, err := c.CreateManagedAgent(context.Background(), spec)
+	require.NoError(t, err)
+	require.Equal(t, ports.ManagedAgent{ID: "managed-1", Name: "test-author"}, got)
+	require.Empty(t, f.opCalls("create_agent"), "replay must adopt the existing matching definition")
+}

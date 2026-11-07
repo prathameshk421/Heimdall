@@ -111,8 +111,8 @@ func TestTheTokenNeverAppearsInAnyAnswerOrLog(t *testing.T) {
 		r.post("Bearer nope", initBody),
 		r.post("Bearer "+testToken, `{not json`),
 		r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":2,"method":"no/such"}`),
-		r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"heimdall_get_task","arguments":{}}}`),
-		r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"heimdall_get_task","arguments":{}}}`),
+		r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_task","arguments":{}}}`),
+		r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_task","arguments":{}}}`),
 	}
 	for i, rep := range bodies {
 		require.NotContains(t, rep.body, testToken, "reply %d", i)
@@ -128,12 +128,59 @@ func TestTheTokenNeverAppearsInAnyAnswerOrLog(t *testing.T) {
 
 func TestLogsCarryToolAgentRoleAndOutcomeButNeverArguments(t *testing.T) {
 	r := newRig(t, workflow.RoleReviewer)
-	res := r.call("heimdall_report_progress", `{"text":"secret-argument-marker"}`)
+	res := r.call("report_progress", `{"text":"secret-argument-marker"}`)
 	require.False(t, res.IsError, res.text())
 	logs := r.logs.String()
-	require.Contains(t, logs, "heimdall_report_progress")
+	require.Contains(t, logs, "report_progress")
 	require.Contains(t, logs, string(testAgent))
 	require.Contains(t, logs, "reviewer")
 	require.Contains(t, logs, "outcome")
 	require.NotContains(t, logs, "secret-argument-marker")
+}
+
+// logLinesWith returns the log lines that contain every part.
+func logLinesWith(logs string, parts ...string) []string {
+	var out []string
+	for _, line := range strings.Split(logs, "\n") {
+		match := true
+		for _, part := range parts {
+			if !strings.Contains(line, part) {
+				match = false
+				break
+			}
+		}
+		if match {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func TestEachMCPRequestLogsItsMethodToolRoleAndStatusButNoSecrets(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	auth := "Bearer " + testToken
+	require.Equal(t, http.StatusOK, r.post(auth, initBody).status)
+	require.Equal(t, http.StatusOK, r.post(auth, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`).status)
+	require.Equal(t, http.StatusOK, r.post(auth, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_task","arguments":{"text":"secret-argument-marker"}}}`).status)
+
+	logs := r.logs.String()
+	for _, method := range []string{"initialize", "tools/list", "tools/call"} {
+		require.Len(t, logLinesWith(logs, `msg="mcp request"`, "method="+method, "status=200"), 1, "one request line for %s", method)
+	}
+	require.Len(t, logLinesWith(logs, `msg="mcp request"`, "method=tools/call", "tool=get_task", "role=reviewer", "status=200"), 1)
+	require.NotContains(t, logs, testToken)
+	require.NotContains(t, logs, "Authorization")
+	require.NotContains(t, logs, "secret-argument-marker")
+}
+
+func TestAFailedAuthenticationWarnsAndLogsARequestLineWithoutTheToken(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	const bad = "Bearer canary-bad-token-7731"
+	require.Equal(t, http.StatusUnauthorized, r.post(bad, initBody).status)
+
+	logs := r.logs.String()
+	require.Len(t, logLinesWith(logs, `msg="mcp request"`, "status=401", "outcome=unauthenticated", `role=""`), 1)
+	require.Len(t, logLinesWith(logs, "level=WARN", `msg="mcp authentication failed"`, "remote_addr=192.0.2.1"), 1)
+	require.NotContains(t, logs, "canary-bad-token-7731")
+	require.NotContains(t, logs, "Authorization")
 }
