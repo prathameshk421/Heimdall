@@ -10,7 +10,10 @@ install_root=$5
 secrets_root=$6
 release="$install_root/releases/$tag-$archive_hash"
 current="$install_root/current"
-previous_current=$(readlink -f "$current" 2>/dev/null || true)
+previous_current=
+if [ -L "$current" ]; then
+	previous_current=$(readlink -f "$current" 2>/dev/null || true)
+fi
 case "$previous_current" in
 	"$install_root"/releases/*) ;;
 	'') ;;
