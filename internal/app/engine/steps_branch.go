@@ -83,9 +83,10 @@ func (s EnsureBranch) OnEvent(_ context.Context, c ChangeView, e change.Event) (
 // OnTimeout returns nothing: the step has no deadline.
 func (EnsureBranch) OnTimeout(context.Context, ChangeView) (Result, error) { return Result{}, nil }
 
-// triggerOf returns the change.triggered payload of the view.
+// triggerOf returns the change.triggered payload of the change. It reads the whole change, because a step's view
+// after a retry starts at step.retried and no longer holds the trigger.
 func triggerOf(c ChangeView) (change.Triggered, error) {
-	for _, e := range c.Events {
+	for _, e := range c.history() {
 		if e.Type != change.EventChangeTriggered {
 			continue
 		}

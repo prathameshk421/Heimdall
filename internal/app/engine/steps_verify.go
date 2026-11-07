@@ -278,8 +278,9 @@ func extractReproTest(e change.Event) (testPath, testSource, testName string, ok
 }
 
 func headSHAOf(c ChangeView) id.SHA {
-	for i := len(c.Events) - 1; i >= 0; i-- {
-		e := c.Events[i]
+	evs := c.history()
+	for i := len(evs) - 1; i >= 0; i-- {
+		e := evs[i]
 		if e.Type == change.EventPRPushed {
 			if p, err := change.Decode(e); err == nil {
 				if pr, ok := p.(change.PRPushed); ok {
