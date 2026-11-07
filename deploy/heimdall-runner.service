@@ -38,7 +38,11 @@ IPAddressAllow=localhost
 LockPersonality=true
 MemoryDenyWriteExecute=false
 PrivateDevices=true
-ProtectKernelTunables=true
+# Rootless Podman writes namespaced sysctls (net.ipv4.ping_group_range) for each job. With ProtectKernelTunables=true
+# the pause process that the unit starts sees /proc/sys read-only, every job joins it, and every container create
+# failed with "ping_group_range: Read-only file system" after each restart (found live twice on Nov 7). The runner is
+# not root, so it still cannot change a host sysctl.
+ProtectKernelTunables=false
 ProtectKernelModules=true
 # Rootless Podman enforces the job limits (memory, cpus, pids) through cgroups, so the unit owns a delegated subtree
 # and must be able to write it.
