@@ -1,5 +1,15 @@
 # Heimdall progress
 
+## Review flow check on a buggy PR (Nov 7, 13:45 UTC on)
+
+- **Build:** the VM server hash equals a build of `f93cd64` with the deploy flags (`793205ff...`); `heimdall-build` matches origin.
+- **KAN-20** ("Add refunds to the pay API", money rules in the description) created for the demo through the owner's Terminal panel; trigger, room, branch and task at 13:48. The buggy refund code for it is drafted, not pushed: no ownership check, and each refund is compared to the payment amount alone.
+- **[fixture-pay#6](https://github.com/aarush323/heimdall-fixture-pay/pull/6) on KAN-17**, which already has committed tests: planted bugs are no merchant check on receipts, any `ref_*` id returns a receipt, and an unknown payment returns 200 with amount 0. Live: `pr.opened` and `slop.evaluated` pass at 13:51:08, `heimdall/acceptance` success at 13:51:58, gate red waiting for reviews and approval. The default reviewer pick is due about 14:06.
+- **BLOCKED: OpenRouter key limit, `$4.03 of $4.00 used; does not reset`.** First seen 13:28:06 (resolver, reviewer-2), then test-author from 13:49:24. KAN-20's test agent cannot make a model call, so it never acks. It also over-runs the $3 testing cap, so the owner decides the new limit.
+- **Correction to the KAN-19 notes below:** reviewer-2 and the resolver were hitting this limit from 13:28, so part of "stale session" and "timed out" may have been this. Not separated.
+- **`heimdall pick` trap:** the command resolves GitHub handles to `identity.Agent` (`bob-reviewer` and so on), which are not running agents. Use the default pick for now.
+- **Not verified:** reviewers finding the planted bugs, findings, resolver, gate after review, approval, merge.
+
 ## KAN-18 unstuck: stall nudge, lean prompts (Nov 7, 11:30 UTC on)
 
 - **Why KAN-18 stopped at 11:16.** The test agent wrote good tests, then called `submit_tests` with empty arguments three times. DeepSeek printed its own tool-call syntax (`<｜DSML｜tool_calls>`) as chat text instead, and repeated it until the session held about 1.4M input tokens (three text parts of 1.3 to 1.5M chars). The next turn failed with `ContextOverflowError`, and the context compaction call hung from 11:18:27. Nothing woke an agent that had already acked.

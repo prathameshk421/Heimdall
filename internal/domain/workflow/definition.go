@@ -54,7 +54,7 @@ func Default() Workflow {
 		{ID: "wait_pr", After: []string{"commit"}, Do: "wait",
 			With: json.RawMessage(`{"event":"pr.opened"}`)},
 		{ID: "slop", After: []string{"wait_pr"}, Do: "rule.slop", OnFail: &OnFail{Then: "reject"}},
-		{ID: "pick", After: []string{"slop"}, Do: "human.pick_reviewers", Timeout: 15 * time.Minute,
+		{ID: "pick", After: []string{"slop"}, Do: "human.pick_reviewers", Timeout: time.Minute,
 			With: json.RawMessage(`{"default":"suggest"}`)},
 		{ID: "review", After: []string{"pick"}, Do: "agent.fanout", Role: RoleReviewer,
 			Output: "Review@1", Timeout: 30 * time.Minute, With: json.RawMessage(`{"from":"review_requests"}`)},

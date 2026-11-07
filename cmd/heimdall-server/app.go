@@ -58,7 +58,9 @@ const (
 	// maxAttempts is the task budget of a retry (engine.Config.MaxAttempts). The slice has no retry, so it is a bound only.
 	maxAttempts = 3
 	// outboxBatch is how many effects one drain claims at once.
-	outboxBatch = 8
+	outboxBatch = 1
+	// drainWorkers is how many effects can run at once.
+	drainWorkers = 3
 	// effectTimeout bounds one executor call. The lease must exceed outboxBatch times this (outbox.New).
 	effectTimeout = 20 * time.Second
 	// testQualityTimeout bounds a test_quality effect: two sandbox jobs of up to 3 minutes each, plus the runner's
@@ -622,7 +624,10 @@ func assembleNarrator(d deps, ad adapters, store *postgres.Store) (*announce.Nar
 	for _, f := range d.configuration.Feeds {
 		feeds = append(feeds, announce.Feed{Room: change.RoomID(f.RoomID), Audience: announce.Audience(f.Audience)})
 	}
-	n, err := announce.New(announce.Config{History: store, Events: store, Cursors: store, Chat: ad.chat, Feeds: feeds, ReviewRoom: ad.reviewsRoom, TestsRoom: ad.testsRoom, Tickets: ad.tickets})
+	n, err := announce.New(announce.Config{History: store, Events: store, Cursors: store, Chat: ad.chat, Feeds: feeds, ReviewRoom: ad.reviewsRoom, TestsRoom: ad.testsRoom, Tickets: ad.tickets, Comments: ad.vcs, Inline: inlineOf(ad.vcs),
+		Warn: func(ctx context.Context, err error) {
+			slog.Default().ErrorContext(ctx, "pull request comment failed; the next event retries", "error", err)
+		}})
 	if err != nil {
 		return nil, fmt.Errorf("build narrator: %w", err)
 	}
@@ -679,6 +684,7 @@ func assembleMCP(
 		Asker:           asker,
 		ReviewRefs:      refs,
 		ReviewValidator: semanticReviewValidator{refs: refs},
+		PRFiles:         ad.vcs,
 		// Review events go through the engine, so the verify step sees each finding and requests its verification.
 		Advance: func(ctx context.Context, cid id.ChangeID, evs []change.Event) error {
 			_, err := eng.Advance(ctx, cid, evs)
@@ -894,4 +900,12 @@ func executors(ctx context.Context, ad adapters, store ports.EventStore, profile
 		change.EffectTestQuality:       testQuality,
 		change.EffectVerifyEvidence:    verifyEvidence,
 	}, nil
+}
+
+// inlineOf returns the line comment writer of the code host, when it has one.
+func inlineOf(vcs any) announce.InlineComments {
+	if w, ok := vcs.(announce.InlineComments); ok {
+		return w
+	}
+	return nil
 }

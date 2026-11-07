@@ -49,7 +49,7 @@ func TestDefaultCarriesTheSpecsOrderingAndDeadlines(t *testing.T) {
 	require.Equal(t, "TestSubmission@1", byID["write_tests"].Output)
 	require.Equal(t, 2*time.Hour, byID["write_tests"].Timeout)
 	require.Equal(t, 30*time.Minute, byID["review"].Timeout)
-	require.Equal(t, 15*time.Minute, byID["pick"].Timeout)
+	require.Equal(t, time.Minute, byID["pick"].Timeout)
 	require.Equal(t, "write_tests", byID["test_qa"].OnFail.Retry)
 	require.Equal(t, "reject", byID["slop"].OnFail.Then)
 	require.Equal(t, "any", byID["gate"].On)

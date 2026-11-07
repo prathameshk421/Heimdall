@@ -2,6 +2,8 @@ package change
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -87,6 +89,22 @@ type FindingRecord struct {
 	ToolResult *finding.ToolResult `json:"tool_result,omitempty"`
 	// MemoryRef is the memory reference of an E3 finding; the server re-queries it to verify the finding.
 	MemoryRef *string `json:"memory_ref,omitempty"`
+	// Claim, Category and Location are what people read about the finding. Only finding.filed sets them.
+	Claim    string            `json:"claim,omitempty"`
+	Category finding.Category  `json:"category,omitempty"`
+	Location *finding.Location `json:"location,omitempty"`
+}
+
+// checkReproContent checks the source of a repro test. It is a whole test file, so it has the limit of the test source
+// the sandbox accepts, not the limit of a short text field.
+func checkReproContent(content string) error {
+	switch {
+	case strings.TrimSpace(content) == "":
+		return errors.New("must not be blank")
+	case len(content) > MaxTestSourceBytes:
+		return fmt.Errorf("must be at most %d bytes", MaxTestSourceBytes)
+	}
+	return nil
 }
 
 // Validate returns every problem with the record.
@@ -112,7 +130,7 @@ func (p FindingRecord) Validate() error {
 	if p.ReproTest != nil {
 		v.add("repro_test.path", finding.CheckRepoPath(p.ReproTest.Path))
 		v.add("repro_test.name", checkText(p.ReproTest.Name))
-		v.add("repro_test.content", checkText(p.ReproTest.Content))
+		v.add("repro_test.content", checkReproContent(p.ReproTest.Content))
 	}
 	if p.MemoryRef != nil {
 		v.add("memory_ref", checkText(*p.MemoryRef))

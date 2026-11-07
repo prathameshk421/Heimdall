@@ -63,6 +63,8 @@ type ChangedFile struct {
 	Status    FileStatus `json:"status"`
 	Additions int        `json:"additions"`
 	Deletions int        `json:"deletions"`
+	// Patch is the unified diff of the file. It is empty for a binary or a very large file.
+	Patch string `json:"patch,omitempty"`
 }
 
 // Validate returns every problem with the entry.

@@ -69,7 +69,11 @@ func (s *Service) CurrentFor(ctx context.Context, agent id.AgentName, role workf
 		return Assignment{}, err
 	}
 
-	return buildAssignment(ref, latestTask, assignedAt, acked, events), nil
+	a := buildAssignment(ref, latestTask, assignedAt, acked, events)
+	if err := s.addPRInputs(ctx, &a, events); err != nil {
+		return Assignment{}, err
+	}
+	return a, nil
 }
 
 func findActiveTaskInEvents(events []change.Event, taskID id.TaskID) (*change.TaskAssigned, time.Time, bool) {

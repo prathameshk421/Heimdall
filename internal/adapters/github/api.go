@@ -66,6 +66,7 @@ type fileJSON struct {
 	Status    string `json:"status"`
 	Additions int    `json:"additions"`
 	Deletions int    `json:"deletions"`
+	Patch     string `json:"patch"`
 }
 
 // toFile maps one file. Filename is the new path, which is the path a rename lands on.
@@ -74,7 +75,7 @@ func (f fileJSON) toFile() (ports.ChangedFile, error) {
 	if err != nil {
 		return ports.ChangedFile{}, fmt.Errorf("github: file %q: %w", f.Filename, err)
 	}
-	cf := ports.ChangedFile{Path: f.Filename, Status: status, Additions: f.Additions, Deletions: f.Deletions}
+	cf := ports.ChangedFile{Path: f.Filename, Status: status, Additions: f.Additions, Deletions: f.Deletions, Patch: f.Patch}
 	if err := cf.Validate(); err != nil {
 		return ports.ChangedFile{}, fmt.Errorf("github: file %q: %w", f.Filename, err)
 	}

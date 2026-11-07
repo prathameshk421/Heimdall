@@ -78,11 +78,11 @@ func TestReviewLines(t *testing.T) {
 		{"pull request opened", nil, ev(t, change.EventPROpened, change.PROpened{Number: 5}),
 			"pull request #5 is open"},
 		{"ci passed", nil, ev(t, change.EventCIReported, change.CIReported{Check: "ci", SHA: "abcdef1234567", Conclusion: "success"}),
-			"CI is green on abcdef1"},
+			"passes on commit `abcdef1`"},
 		{"ci failed", nil, ev(t, change.EventCIReported, change.CIReported{Check: "ci", SHA: "abcdef1234567", Conclusion: "failure"}),
 			"CI failed on abcdef1 (check: ci)"},
 		{"reviewers picked", nil, ev(t, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"ana", "bob"}}),
-			"ana and bob will review it"},
+			"ana and bob will each read the change"},
 		{"review with findings", []change.Event{filed(1, "high"), filed(2, "low")},
 			ev(t, change.EventReviewSubmitted, change.ReviewSubmitted{Reviewer: "reviewer-1", FindingRefs: []id.FindingRef{1, 2}}),
 			"found 2 issues: F1 (high) and F2 (low)"},
@@ -95,11 +95,11 @@ func TestReviewLines(t *testing.T) {
 		{"approval", nil, ev(t, change.EventApprovalRecorded, change.ApprovalRecorded{Login: "rekdfr"}),
 			"rekdfr approved the pull request"},
 		{"gate passed", nil, ev(t, change.EventGateEvaluated, change.GateEvaluated{OK: true}),
-			"is ready to merge"},
+			"Ready to merge"},
 		{"gate blocked", nil, ev(t, change.EventGateEvaluated, change.GateEvaluated{OK: false, Reasons: []string{"1 upheld finding is open", "no approval on the latest commit"}}),
 			"• 1 upheld finding is open\n• no approval on the latest commit"},
 		{"merged", nil, ev(t, change.EventChangeMerged, struct{}{}),
-			"KAN-14 is merged"},
+			"Merged · KAN-14"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
