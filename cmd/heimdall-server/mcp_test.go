@@ -174,6 +174,7 @@ func TestEveryEffectKindEmittedByWorkflowHasAnExecutor(t *testing.T) {
 		change.EffectGitHubCommitTests: true,
 		change.EffectGitHubCheck:       true, // emitted by gate evaluator / PR syncer
 		change.EffectVerifyEvidence:    true,
+		change.EffectAcceptance:        true, // emitted by PR intake
 	}
 
 	store := newMemStore()

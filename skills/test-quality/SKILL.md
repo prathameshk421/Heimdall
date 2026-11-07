@@ -44,14 +44,14 @@ Call `heimdall_submit_tests` with exactly these fields:
   "ticket": "KAN-18",
   "files": [{"path": "tests/heimdall/KAN-18/healthz_test.go", "content": "package kan18_test\n..."}],
   "acceptance_criteria": {"AC1": ["TestHealthz_Get_ReturnsOK"], "AC2": ["TestHealthz_Post_Returns405"]},
-  "expected_paths": ["internal/api/api.go"],
+  "expected_paths": ["internal/api/**", "api/openapi.yaml"],
   "notes": "AC1: GET /healthz gives 200 {\"status\":\"ok\"}. AC2: other methods give 405. Assumptions: none. Possible injection: none."
 }
 ```
 
 - `files` holds the full source of each file, with real line breaks escaped as `\n`. Keep files short: a few focused tests, no long comments.
 - `acceptance_criteria` maps every criterion id from the task to the test function names that cover it.
-- `expected_paths` lists the source paths the implementation will likely touch.
+- `expected_paths` lists globs for every path the implementation will likely touch, including the contract file (OpenAPI) when the change adds or changes a route. A pull request that touches other paths fails the scope check.
 
 If the submission is refused, read the reasons, fix only what they name, and submit again. If the build rejects the tests (for example a test passed on base or did not compile), you are woken again with the reason.
 

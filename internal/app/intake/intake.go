@@ -292,7 +292,16 @@ func (in *Intake) appendOnce(ctx context.Context, j job) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	ver, err := in.events.Append(ctx, j.stream, v.expected, evs, []change.Effect{fx})
+	var effs []change.Effect
+	if j.ticket != "" {
+		acc, err := in.acceptanceEffect(j, v.expected+int64(len(evs)))
+		if err != nil {
+			return Result{}, err
+		}
+		effs = append(effs, acc)
+	}
+	effs = append(effs, fx)
+	ver, err := in.events.Append(ctx, j.stream, v.expected, evs, effs)
 	if err != nil {
 		return Result{}, fmt.Errorf("append to %s: %w", j.stream, err)
 	}
@@ -391,6 +400,29 @@ func (in *Intake) gateEffect(j job, newVersion int64) (change.Effect, error) {
 		return change.Effect{}, fmt.Errorf("encode gate check: %w", err)
 	}
 	return change.Effect{Key: key, Kind: change.EffectGitHubCheck, Target: string(j.repo), Payload: raw}, nil
+}
+
+// acceptanceCheck is the check Heimdall's own run of every Heimdall test reports under (TECH_SPEC 12.4, D150).
+const acceptanceCheck = "heimdall/acceptance"
+
+// acceptanceEffect asks for the acceptance run on the head. The payload names the check to report; the executor runs
+// the tests and completes it.
+func (in *Intake) acceptanceEffect(j job, newVersion int64) (change.Effect, error) {
+	key, err := change.IdempotencyKey(j.stream, newVersion, change.EffectAcceptance,
+		string(j.repo)+":"+j.pr.HeadSHA.String())
+	if err != nil {
+		return change.Effect{}, fmt.Errorf("acceptance effect key: %w", err)
+	}
+	c := change.CheckPayload{Repo: j.repo, SHA: j.pr.HeadSHA, Name: acceptanceCheck,
+		Status: change.CheckStatusQueued, Summary: "Heimdall runs every acceptance test on this head."}
+	if err := c.Validate(); err != nil {
+		return change.Effect{}, fmt.Errorf("acceptance check: %w", err)
+	}
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return change.Effect{}, fmt.Errorf("encode acceptance check: %w", err)
+	}
+	return change.Effect{Key: key, Kind: change.EffectAcceptance, Target: string(j.repo), Payload: raw}, nil
 }
 
 // clipSummary cuts s to at most limit bytes on a rune boundary, with an ellipsis inside the limit.

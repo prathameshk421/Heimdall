@@ -572,7 +572,7 @@ func assembleWithBlobs(
 	box, err := outbox.New(outbox.Config{
 		Outbox: store, Executors: execs, Logger: d.logger,
 		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
-		KindTimeouts: map[change.EffectKind]time.Duration{change.EffectTestQuality: testQualityTimeout},
+		KindTimeouts: map[change.EffectKind]time.Duration{change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build outbox drainer: %w", err)
@@ -875,7 +875,12 @@ func executors(ctx context.Context, ad adapters, store ports.EventStore, profile
 	if err != nil {
 		return nil, fmt.Errorf("build verify_evidence executor: %w", err)
 	}
+	acceptance, err := effects.NewAcceptance(effects.AcceptanceDeps{Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Checks: ad.vcs})
+	if err != nil {
+		return nil, fmt.Errorf("build acceptance executor: %w", err)
+	}
 	return map[change.EffectKind]outbox.Executor{
+		change.EffectAcceptance:        acceptance,
 		change.EffectRoomOpen:          room,
 		change.EffectGitHubBranch:      branch,
 		change.EffectGitHubCheck:       check,
