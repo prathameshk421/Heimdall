@@ -13,7 +13,7 @@ func boardEvent(t change.EventType) bool {
 	return slices.Contains([]change.EventType{
 		change.EventPROpened, change.EventPRPushed, change.EventCIReported, change.EventReviewersPicked,
 		change.EventFindingFiled, change.EventReviewSubmitted, change.EventReviewUnavailable, change.EventFindingVerified,
-		change.EventFindingStateChanged, change.EventApprovalRecorded, change.EventGateEvaluated, change.EventChangeMerged,
+		change.EventFindingStateChanged, change.EventApprovalRecorded, change.EventGateEvaluated, change.EventChangeMerged, change.EventPRClosed,
 	}, t)
 }
 
@@ -91,6 +91,17 @@ func boardFolds() map[change.EventType]func(*board, change.Event) {
 		change.EventApprovalRecorded:    (*board).foldApproval,
 		change.EventGateEvaluated:       (*board).foldGate,
 		change.EventChangeMerged:        func(b *board, _ change.Event) { b.merged = true },
+		change.EventPRClosed:            (*board).foldClosed,
+	}
+}
+
+// foldClosed marks a pull request merged on GitHub as merged; one closed without a merge changes nothing shown.
+func (b *board) foldClosed(ev change.Event) {
+	var p struct {
+		Merged bool `json:"merged"`
+	}
+	if decode(ev, &p) && p.Merged {
+		b.merged = true
 	}
 }
 

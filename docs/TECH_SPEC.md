@@ -305,7 +305,7 @@ TRIGGERED → ROOM_OPEN → WRITING_TESTS → VERIFYING_TESTS → (AWAITING_TEST
 BUILDING → PR_OPEN → SLOP_REJECTED (↺ on push) | PICKING_REVIEWERS → IN_REVIEW
 IN_REVIEW ⇄ DELIBERATING → ESCALATED → IN_REVIEW
 IN_REVIEW ⇄ FIXING → VERIFYING_FIX → IN_REVIEW
-IN_REVIEW → READY_FOR_APPROVAL → APPROVED → MERGED
+IN_REVIEW → READY_FOR_APPROVAL → APPROVED → MERGED;  READY_FOR_APPROVAL → MERGED on a merged pr.closed (a green gate holds an approval on head)
 any → REJECTED;  WRITING_TESTS..BUILDING → WRITING_TESTS on ticket.changed;  PR states → PR_OPEN on push
 UNLINKED_PR (no ticket, D146) → slop failure, stays red; pr.linked moves the PR to its ticket's change and closes this stream
 TRIGGERED..TESTS_READY + pr.opened → the PR attaches; the state keeps its place and the gate says "tests are not ready yet" until BUILDING

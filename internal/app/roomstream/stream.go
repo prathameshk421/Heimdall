@@ -38,7 +38,7 @@ type Config struct {
 	Stream  ports.ChatStream
 	Handler Handler
 	// Standing lists rooms that serve every open change besides the room it opened: the reviews channel, and the
-	// Telegram and Mattermost rooms. A command typed there names its ticket.
+	// Telegram, Mattermost and Slack rooms. A command typed there names its ticket.
 	Standing     []change.RoomID
 	RefreshEvery time.Duration
 	Wait         func(context.Context, time.Duration) error

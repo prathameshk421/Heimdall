@@ -162,6 +162,10 @@ func addMerge(t table) {
 	t.set(StateReadyForApproval, EventApprovalRecorded, to(StateApproved))
 	t.set(StateReadyForApproval, EventApprovalInvalidated, to(StateInReview))
 	t.set(StateReadyForApproval, EventGateEvaluated, when(gatePassed, to(StateReadyForApproval), to(StateInReview)))
+	// READY_FOR_APPROVAL is reached only by a green gate on the current head, and the gate is green only with a valid
+	// approval on that head (gate.checkApproval). An approval given before the gate turned green arrives in IN_REVIEW
+	// and moves nothing, so a merge from here is a merge of an approved head.
+	t.set(StateReadyForApproval, EventPRClosed, when(mergedPR, to(StateMerged), to(StateRejected)))
 
 	t.set(StateApproved, EventChangeMerged, to(StateMerged))
 	t.set(StateApproved, EventPRClosed, when(mergedPR, to(StateMerged), to(StateRejected)))

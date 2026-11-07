@@ -103,6 +103,7 @@ func narrators() map[change.EventType]narrator {
 		change.EventApprovalRecorded:    narrateApproval,
 		change.EventGateEvaluated:       narrateGate,
 		change.EventChangeMerged:        narrateMerged,
+		change.EventPRClosed:            narratePRMerged,
 	}
 }
 
@@ -266,6 +267,23 @@ func narrateApproval(_ []change.Event, ev change.Event, k string) (Line, bool) {
 
 func narrateMerged(_ []change.Event, _ change.Event, k string) (Line, bool) {
 	return review("🎉 **Merged · %s**\nThe change is in. Tests, reviews and a human approval all passed first.", k), true
+}
+
+// narratePRMerged announces a merge done on GitHub, which arrives as a pr.closed that merged. A merge Heimdall made
+// itself was already announced through change.merged, and a pull request closed without a merge is not a merge.
+func narratePRMerged(history []change.Event, ev change.Event, k string) (Line, bool) {
+	var p struct {
+		Merged bool `json:"merged"`
+	}
+	if !decode(ev, &p) || !p.Merged {
+		return Line{}, false
+	}
+	for _, e := range history {
+		if e.Type == change.EventChangeMerged {
+			return Line{}, false
+		}
+	}
+	return narrateMerged(history, ev, k)
 }
 
 func narrateReviewDone(history []change.Event, ev change.Event, k string) (Line, bool) {

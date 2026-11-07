@@ -20,7 +20,7 @@ const cursorSource = "announce:events"
 const batchSize = 100
 
 // Feed is a room that hears the stories of every change, besides the room of the change itself: the Telegram group,
-// a Mattermost channel. Audience picks which stories it gets.
+// a Mattermost or Slack channel. Audience picks which stories it gets.
 type Feed struct {
 	Room     change.RoomID
 	Audience Audience

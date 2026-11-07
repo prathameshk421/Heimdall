@@ -47,7 +47,7 @@ type Project struct {
 }
 
 // Feed is a chat room that hears the story of every change besides the room of the change itself, for example the
-// Telegram group or a Mattermost channel. Audience is "tests", "review" or "both".
+// Telegram group, a Mattermost channel or a Slack channel. Audience is "tests", "review" or "both".
 type Feed struct {
 	RoomID   string
 	Audience string
