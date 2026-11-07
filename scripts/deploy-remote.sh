@@ -146,6 +146,8 @@ fi
 secrets_changed=1
 rsync -a --delete --chmod=F600,D700 "$tmp-secrets/" "$secrets_root/"
 chmod 0600 "$secrets_root"/*
+# Compose mounts each file as it is on the host, and the server runs as 65532, so the files must be that user's.
+chown -R 65532:65532 "$secrets_root"
 ln -sfn "$release" "$current.new"
 mv -Tf "$current.new" "$current"
 cutover=1
