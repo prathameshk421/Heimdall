@@ -71,8 +71,11 @@ func (n *taskNudger) nudge(ctx context.Context, a nudgeAgent, ref ports.ActiveTa
 		return false, fmt.Errorf("nudge: load %s: %w", ref.ChangeID, err)
 	}
 	assignedAt, acked, room := taskFacts(events, string(ref.TaskID))
-	if acked || assignedAt.IsZero() {
+	if assignedAt.IsZero() {
 		return false, nil
+	}
+	if acked {
+		return n.nudgeStalled(ctx, a, ref, room, lastActivity(events, assignedAt))
 	}
 	room = n.roomFor(a, room)
 	if room == "" {
@@ -101,6 +104,66 @@ func (n *taskNudger) nudge(ctx context.Context, a nudgeAgent, ref ports.ActiveTa
 		return false, fmt.Errorf("nudge: remember the agent's ticket: %w", err)
 	}
 	return true, nil
+}
+
+// nudgeStalled mentions an agent whose acknowledged task has had no event for stallAfter. A model call can hang
+// inside the agent's session (seen live on KAN-18: a context compaction that never returned), and nothing else wakes
+// an agent that already acked.
+func (n *taskNudger) nudgeStalled(ctx context.Context, a nudgeAgent, ref ports.ActiveTaskRef, changeRoom change.RoomID, last time.Time) (bool, error) {
+	room := n.roomFor(a, changeRoom)
+	if room == "" {
+		return false, nil
+	}
+	source := "stall:" + string(ref.TaskID)
+	count, err := n.nudgeCount(ctx, source)
+	if err != nil {
+		return false, err
+	}
+	if !stallDue(n.clock.Now(), last, count) {
+		return false, nil
+	}
+	key, err := change.IdempotencyKey(ref.ChangeID, 1, change.EffectRoomPost, fmt.Sprintf("%s:%d", source, count))
+	if err != nil {
+		return false, fmt.Errorf("nudge: build stall key: %w", err)
+	}
+	text := fmt.Sprintf("@%s %s has had no update for a few minutes. Call heimdall_get_task to see where it stands, then continue and submit your work.", a.name, ref.ChangeID)
+	if err := n.chat.Post(ctx, room, key, text); err != nil {
+		return false, fmt.Errorf("nudge: post stall nudge to %s: %w", room, err)
+	}
+	if err := n.cursors.SetCursor(ctx, source, strconv.Itoa(count+1)); err != nil {
+		return false, fmt.Errorf("nudge: save stall count: %w", err)
+	}
+	if err := n.cursors.SetCursor(ctx, effects.FocusSource(a.name), string(ref.ChangeID)); err != nil {
+		return false, fmt.Errorf("nudge: remember the agent's ticket: %w", err)
+	}
+	return true, nil
+}
+
+// stallAfter is how long an acknowledged task may go without any event before its agent is mentioned again; stallMax
+// caps the stall nudges per task.
+const (
+	stallAfter = 5 * time.Minute
+	stallMax   = 4
+)
+
+// stallDue says whether a stall nudge is due: the change has been silent for stallAfter times one more than the
+// nudges already sent, and the cap is not reached.
+func stallDue(now, last time.Time, sent int) bool {
+	if last.IsZero() || sent >= stallMax {
+		return false
+	}
+	return now.Sub(last) >= stallAfter*time.Duration(sent+1)
+}
+
+// lastActivity is the time of the newest event on the change at or after the assignment.
+func lastActivity(events []change.Event, assignedAt time.Time) time.Time {
+	last := assignedAt
+	for _, ev := range events {
+		if ev.OccurredAt.After(last) {
+			last = ev.OccurredAt
+		}
+	}
+	return last
 }
 
 // roomFor is the room an agent is nudged in: the reviews channel for reviewers and the resolver, the change's own room
