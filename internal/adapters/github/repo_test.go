@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -155,5 +156,21 @@ func TestDefaultHeadErrorCarriesNoToken(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "ghs_") {
 		t.Errorf("error text carries a token: %v", err)
+	}
+}
+
+// A repository with a configured base branch is cut from that branch, not from the repository's default branch, and
+// the repository itself is not read to find a default (the owner's policy and approvers live on the base branch).
+func TestDefaultHeadReadsTheConfiguredBaseBranch(t *testing.T) {
+	env := newTestEnv(t, func(c *Config) { c.BaseBranches = map[change.Repo]string{testRepo: "heimdall-test/demo-base"} })
+	env.f.route("GET", repoRoot+"/commits/heimdall-test/demo-base", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"sha": shaHead})
+	})
+	got, err := env.a.DefaultHead(context.Background(), testRepo)
+	if err != nil || string(got) != shaHead {
+		t.Fatalf("DefaultHead = %q, %v; want %s", got, err, shaHead)
+	}
+	if n := env.f.count("GET", repoRoot); n != 0 {
+		t.Errorf("repository reads = %d, want 0 when a base branch is configured", n)
 	}
 }

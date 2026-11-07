@@ -218,6 +218,20 @@ func projectsOf(cfg config.Config) (projectRepos, []string, []change.Repo, error
 	return out, keys, repos, nil
 }
 
+// baseBranchesOf maps each project's repository to the base branch the project names, so a change is cut from that
+// branch and its policy is read there.
+func baseBranchesOf(cfg config.Config) map[change.Repo]string {
+	out := make(map[change.Repo]string, len(cfg.Projects))
+	for _, p := range cfg.Projects {
+		repo, err := change.ParseRepo(p.Repo)
+		if err != nil || p.BaseBranch == "" {
+			continue
+		}
+		out[repo] = p.BaseBranch
+	}
+	return out
+}
+
 // projectTicketReaders builds one tracker reader per project, so each project's poll queries only that project
 // (A10 item 10).
 func projectTicketReaders(cfg config.Config, f adapterFactory, keys []string) (map[string]ports.TicketReader, error) {
@@ -295,6 +309,8 @@ func (f adapterFactory) github(cfg config.Config) (any, error) {
 		HTTPClient: f.d.httpClient,
 		Clock:      f.clk,
 		Wait:       f.wait,
+
+		BaseBranches: baseBranchesOf(cfg),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("github adapter: %w", err)
