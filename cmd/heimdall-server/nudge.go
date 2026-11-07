@@ -18,12 +18,21 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
-// nudgeAfter is how long an assigned task may wait for its ack before the agent is mentioned again. Each further nudge
-// waits one more step, so a slow agent is not spammed.
+// nudgeAfter is how long an assigned task may wait for its ack before the agent is mentioned again. Each further gap
+// doubles (45 s, 90 s, 3 min, 6 min, 12 min), so a stuck agent is not spammed: the old fixed 45 s step posted three
+// reviewer nudges every 45 s on KAN-19.
 const (
 	nudgeAfter = 45 * time.Second
-	nudgeMax   = 12
+	nudgeMax   = 5
 )
+
+// ackNudgeDue says whether nudge number sent+1 is due: the k-th nudge waits 45 s * (2^k - 1) after the assignment.
+func ackNudgeDue(now, assignedAt time.Time, sent int) bool {
+	if sent >= nudgeMax {
+		return false
+	}
+	return now.Sub(assignedAt) >= nudgeAfter*time.Duration((1<<(sent+1))-1)
+}
 
 // nudgeAgent is a workflow agent whose open task can be nudged.
 type nudgeAgent struct {
@@ -86,7 +95,7 @@ func (n *taskNudger) nudge(ctx context.Context, a nudgeAgent, ref ports.ActiveTa
 	if err != nil {
 		return false, err
 	}
-	if count >= nudgeMax || n.clock.Now().Sub(assignedAt) < nudgeAfter*time.Duration(count+1) {
+	if !ackNudgeDue(n.clock.Now(), assignedAt, count) {
 		return false, nil
 	}
 	key, err := change.IdempotencyKey(ref.ChangeID, 1, change.EffectRoomPost, fmt.Sprintf("%s:%d", source, count))
