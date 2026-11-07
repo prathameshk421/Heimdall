@@ -73,7 +73,7 @@ func commandBody(in Input) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	text := strings.TrimLeftFunc(in.Text, unicode.IsSpace)
+	text := withoutLeadingMention(strings.TrimLeftFunc(in.Text, unicode.IsSpace))
 	if len(text) < len(prefix) || !strings.EqualFold(text[:len(prefix)], prefix) {
 		return "", false
 	}
@@ -85,6 +85,19 @@ func commandBody(in Input) (string, bool) {
 		}
 	}
 	return rest, true
+}
+
+// withoutLeadingMention drops one leading @mention. Mattermost and Telegram deliver a message to an agent only when it
+// mentions the agent, so a command arrives as "@heimdall-coord-main heimdall uphold F1".
+func withoutLeadingMention(text string) string {
+	if !strings.HasPrefix(text, "@") {
+		return text
+	}
+	_, rest, found := strings.Cut(text, " ")
+	if !found {
+		return text
+	}
+	return strings.TrimLeftFunc(rest, unicode.IsSpace)
 }
 
 // lookupPerson resolves the sender through the people map. An empty sender or
