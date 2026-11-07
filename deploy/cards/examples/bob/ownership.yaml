@@ -1,0 +1,6 @@
+owns:
+  - internal/payments/**
+  - internal/refunds/**
+trusts:
+  eli: ledger and the refund response schema
+  ana: authorization

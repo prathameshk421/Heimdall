@@ -1,110 +1,235 @@
-# Heimdall
+<p align="center">
+  <img src="docs/assets/banner.jpg" alt="Heimdall: nothing crosses without proof" width="100%">
+</p>
 
-**LGTM is not evidence.**
+<p align="center">
+  <img src="docs/assets/logo.png" alt="Heimdall logo" width="110">
+</p>
 
-Heimdall is a merge gate for teams that ship code with AI agents. It writes failing tests before the code, reviews each pull request, and sets a GitHub check that turns green only after a person approves.
+<h3 align="center">AI wrote the pull request. Who proved it works?</h3>
 
-This is an early build. Some parts ran on the real system. Most parts run on fakes or a local Postgres. The table in [What works today](#what-works-today) shows which is which.
+<p align="center">
+  Reviewers that carry what each developer knows.<br>
+  Red tests written from the ticket, before the code.<br>
+  A merge gate no model can talk its way past.
+</p>
 
-Heimdall is built for the Flip the Switch hackathon (Track 01, Best Business Workflow). It uses [Switch](https://github.com/sandbox-quantum/switch) for chat rooms and agents.
+<p align="center">
+  <img alt="Built with Go" src="https://img.shields.io/badge/Go-1.27-00ADD8?style=for-the-badge&logo=go&logoColor=white">
+  <img alt="Runs on Switch" src="https://img.shields.io/badge/Runs%20on-Switch-141413?style=for-the-badge">
+  <img alt="Agents in OpenCode" src="https://img.shields.io/badge/Agents-OpenCode-5e5d59?style=for-the-badge">
+  <img alt="Sandbox on Podman" src="https://img.shields.io/badge/Sandbox-Rootless%20Podman-892CA0?style=for-the-badge&logo=podman&logoColor=white">
+  <img alt="Memory on Graphiti" src="https://img.shields.io/badge/Memory-Graphiti-184f95?style=for-the-badge">
+</p>
 
-## The problem
+<p align="center">
+  <a href="#-see-it-work"><b>See it work</b></a> ·
+  <a href="#-how-it-works"><b>How it works</b></a> ·
+  <a href="#-why-switch"><b>Why Switch</b></a> ·
+  <a href="#-run-it"><b>Run it</b></a> ·
+  <a href="#-whats-live-today"><b>What's live</b></a>
+</p>
 
-Agents write code faster. Pull requests get bigger, and reviews get slower. A reviewer can click Approve after a quick read, and the merge button turns on. Nothing shows that the code works. LGTM is not a reason to merge.
+---
 
-## How it works
+## 🌈 The problem
 
-1. A person assigns a Jira ticket to a developer and moves it to In Progress. Heimdall starts a change for that ticket.
-2. Heimdall opens a chat room for the change and creates a branch named for the ticket.
-3. A test author writes tests that must fail on the base branch. The tests come before the code.
-4. The developer builds the change and opens a pull request.
-5. The slop check rejects a pull request that is too large or has no ticket. A reviewer does not read it.
-6. Reviewer agents, one for each team, read the diff and file findings in the room.
-7. Each finding names a file and a line. It gives evidence for its claim.
-8. A person decides in the room. An approver reviews the pull request on GitHub.
-9. The gate sets the `heimdall/gate` check. It turns green only when every rule holds on the approved commit.
+<p align="center">
+  <img src="docs/assets/hook.gif" alt="A real pull request of 77,460 lines gets an LGTM and a merge" width="88%">
+</p>
 
-## What works today
+Agents write most of our code now. Our own build PR was **+77,460 lines across 629 files**. Two things break at that size:
 
-### Proven on the real system
-
-All three results are on `aarush323/heimdall-fixture-pay` (pull requests #1 and #4).
-
-| What | How it ran | Result |
+| | What breaks | What Heimdall does |
 |---|---|---|
-| The server posts a real `heimdall/gate` check | `TestLiveGateOnFixturePR`, with the project's GitHub App, a real Postgres in Docker, and fake Jira and Switch | The check completed with conclusion `failure`. The slop rule failed on the real diff. The merge state became `BLOCKED`. |
-| A real non-author approval is read from GitHub | A second GitHub login approved the pull request. `TestLiveGateAfterApproval` read the review through the GitHub adapter. | One approval recorded on the head commit. The gate still lists open rules. |
-| The gate goes green on a real pull request | `TestLiveGateGreenPath` on PR #4 (one test under `tests/heimdall/PAY-200/`), with the project's GitHub App and a real Postgres. A second GitHub login approved the head commit. | `heimdall/gate` completed with conclusion `success` ("the merge rule passed"). GitHub shows the PR as clean and mergeable. **The test seeded** the room, task, test, reviewer, review and `heimdall/acceptance` events that agents and the sandbox will produce later. |
+| 👀 **Review** | Nobody can read it, so it gets a quick LGTM | Each reviewer carries one developer's context, and a finding comes with a failing test |
+| 🧪 **Testing** | Agents write tests that pass whether the code works or not | Tests come from the ticket, and they must fail first, for the right reason |
 
-### Built and tested on fakes or a local Postgres
+## 🎬 See it work
 
-These parts do not yet run against the live Jira, Switch or model services.
+These are real screens from our live runs, with names replaced.
 
-| Part | Evidence | Limit |
+<table>
+  <tr>
+    <td width="58%"><img src="docs/assets/tests-discord.png" alt="Heimdall posts test progress in Discord"></td>
+    <td width="42%" rowspan="2"><img src="docs/assets/finding-telegram.png" alt="A reviewer's findings in Telegram"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/switch-ecosystem.png" alt="Heimdall's agents in the Switch ecosystem view"></td>
+  </tr>
+</table>
+
+> **"Two refunds of 60 on a payment of 100 both succeed."**<br>
+> A real finding from a Heimdall reviewer, with the failing test it wrote as proof.
+
+## ⚡ How it works
+
+```mermaid
+flowchart LR
+  J["🎫 Jira ticket"] --> H
+  G["🐙 GitHub PR"] --> H
+  subgraph VM["One VM: AWS r6a.large, 2 vCPU, 16 GB"]
+    H["🛡️ Heimdall<br/>Go server"] --> A["🤖 OpenCode agents"]
+    A --> C["📦 Rootless container<br/>no network, no capabilities"]
+    C --> H
+  end
+  H --> R["🚦 heimdall/gate"]
+  H --> S["💬 Switch rooms"]
+  S --> D["Discord"]
+  S --> T["Telegram"]
+  S --> M["Mattermost"]
+```
+
+1. **A ticket moves to In Progress.** Heimdall opens a room, creates a branch and wakes the Test Agent.
+2. **Red tests first.** The agent writes tests from the ticket. A test that passes before the feature exists is rejected.
+3. **Tests are pinned.** Survivors are committed, pinned by tree hash, and run in CI on every pull request.
+4. **Independent reviews.** Reviewers can't see each other's work. Findings land on the exact line, on the PR and in chat.
+5. **Ten rules decide.** Plain Go, no model in the path. Only a person can approve, and only that exact commit.
+
+### Evidence, not opinion
+
+| Tier | Evidence | Blocks a merge? |
 |---|---|---|
-| Unit tests and lint | `make fast` exit 0, 3,179 tests, lint 0 issues | Unit level only |
-| Event store | Component tests on `postgres:16-alpine` in Docker | No test of a process killed during an append |
-| Ticket to room and branch | One room and one branch across a restart, on fakes | The fakes follow the adapter code. Real payloads are not checked. |
-| Merge gate on Postgres | `TestMergeGateEndToEnd`, with fakes | Does not reach a success result |
-| Jira poll that starts a change | 17 tests with an injected clock | No live Jira call |
-| Reviewer and resolver tools | 109 tests in `internal/transport` | No live agent call |
-| Scripted test agent | 35 test functions | Runs only against its own fake of the MCP server |
-| Local stack in Docker | `deploy/verify-compose.sh` ran to the end on Nov 4 | Graphiti with the OpenRouter embedder is not verified |
-| GitHub CI | A re-run of the push run passed on Nov 5 | Covers one commit (`81c098b`) |
+| 🧪 E1 | A test that fails on this commit | ✅ |
+| 🔧 E2 | A deterministic tool result | ✅ |
+| 🧠 E3 | A confirmed fact from team memory | ✅ |
+| 💭 E4 | Reasoning | ❌ Never alone |
 
-### Does not work yet
+### Each developer's context
 
-| Item | State |
+```mermaid
+flowchart LR
+  L["💻 Laptop<br/>docs, git history, coding sessions"] --> X["🔥 Redact secrets"] --> P["📜 Context pack"] --> O["✅ Developer approves"] --> E["🔐 Sign and encrypt"] --> V["🤖 That developer's reviewer"]
+```
+
+Raw transcripts never leave the laptop. Underneath, a **Graphiti** knowledge graph holds the team's decisions and incidents. This path is built and unit tested, and it is [not live yet](#-whats-live-today).
+
+## 🆚 What's different
+
+| A typical AI review bot | Heimdall |
 |---|---|
-| Live Jira calls | Not verified. The poll runs on fakes. |
-| Live Switch calls | Not verified. Field names come from the docs, not from the Switch source. |
-| Live branch writes (`EnsureBranch`, `CommitFiles`, `Comment`) | Not verified. |
-| Live model agents (test author, reviewers, resolver) | Not run. The free model tier ran out. Spend is $0.149 of the $3 cap, with no live model run since. |
-| Green gate from the product's own events | Reached once with seeded events (see above). The product does not yet produce the room, test, reviewer and acceptance events end to end. |
-| A push that voids an approval, CI from real checks, the `ana` sign-off, the merge | Not run live. |
-| Finding severity | Finding events carry no severity. Every finding counts as critical. Only the tier threshold lifts one out of the blocking set. |
-| Challenge and uphold commands | No record that they are built. |
-| Cost budget | Not enforced. Task T19 is open. |
-| Job queue | River is not added. The outbox drainer uses leases. |
+| Comments on a diff | Gives one developer's context to each reviewer |
+| States an opinion | Proves a finding with a failing test |
+| Arrives after the code | Writes red tests before the code |
+| Suggests a fix | Blocks the merge until the rules hold |
 
-The full status for each task is in `docs/PROGRESS.md`. The evidence for each finished task is in `docs/TRACKER.md`.
+## 🔌 Why Switch
 
-## Run the checks
+Heimdall stops working without Switch. It provides the rooms, agent identities, chat bridges and shared history.
+
+**Agents connected**, all in OpenCode, each as its own Unix user:
+
+| Agent | Job |
+|---|---|
+| 🛡️ **Heimdall Coordinator** | Posts progress, reads `heimdall` commands, wakes agents |
+| 🧪 **Test Agent** | Writes failing tests from the ticket, and asks people when a rule is unclear |
+| 🔎 **Code Reviewers 1 to 3** | Review independently, and file findings with evidence |
+| ⚖️ **Resolver** | Handles disputed findings |
+
+**How the channels are set up**
+
+- Each ticket gets a private Switch working room, so an agent keeps one session per ticket.
+- `heimdall-tests` and `heimdall-reviews` are public channels, bridged to Discord and Mattermost.
+- A Telegram group receives both stories.
+- Commands start with the plain word `heimdall`, for example `heimdall answer KAN-17 Q1 ...`. A command counts only if its sender is mapped in `heimdall.yaml`.
+
+Room and bridge settings live in `heimdall.toml`, under `[rooms]` and `[[feeds]]`. See [`deploy/heimdall.example.toml`](deploy/heimdall.example.toml).
+
+## 🏎️ Built small, on purpose
+
+| | |
+|---|---|
+| 🐹 **All Go** | The server, runner and CLI |
+| 🪶 **~42 MiB** | Server memory, idle |
+| 🪶 **~10 MB** | Sandbox runner memory, idle |
+| 📦 **Locked containers** | `--network=none --read-only --cap-drop=ALL`, with memory and process limits |
+| 🖥️ **One small VM** | 2 vCPU, 9 containers, 7 agent units |
+| 🚪 **No public ports** | Heimdall polls GitHub and Jira |
+| 🔗 **Event sourced** | Hash-chained events and a transactional outbox in Postgres |
+
+Measured on our VM on Nov 7, 2026.
+
+## 🚀 Run it
+
+You need Go 1.27 and Docker.
+
+```bash
+make tools
+```
 
 ```bash
 make fast
+```
+
+```bash
 make verify
 ```
 
-`make fast` formats the code, runs vet, checks the dependency rule, runs lint and runs the unit tests. `make verify` adds the race tests and the component tests. Those need Docker.
+The full system needs a Linux VM, a Switch server, a GitHub App and a Jira project:
 
-You need Go 1.27 and Docker. Pinned tools are in `tools.mod`. Run `make tools` to build them and to check Docker. On macOS with the newest SDK, the linter build can fail. The Mac lint note in `docs/PROGRESS.md` gives the fix.
+1. [`docs/RUNBOOK.md`](docs/RUNBOOK.md): Switch on the VM, secrets and the server's live run
+2. [`docs/COMPANY_SETUP.md`](docs/COMPANY_SETUP.md): connect your company's tools
+3. [`deploy/heimdall.example.toml`](deploy/heimdall.example.toml): server configuration
+4. [`deploy/agents/README.md`](deploy/agents/README.md): install the agents
 
-## Repository layout
+The test repository is [`heimdall-fixture-pay`](https://github.com/aarush323/heimdall-fixture-pay), base branch `heimdall-test/demo-base`.
+
+## ✅ What's live today
+
+We keep this list honest. Evidence is in [`docs/PROGRESS.md`](docs/PROGRESS.md).
+
+**Seen working on the real system**
+
+- ✅ Jira ticket to room, branch and agent: room in 0.3 to 2.4 s after pickup, agent acknowledged in 11.5 to 23 s
+- ✅ Tests from a ticket, judged red-first in the sandbox, then committed (KAN-14, 16, 17, 19, 20, 21)
+- ✅ The judge rejecting bad tests: `passed without the feature on base`
+- ✅ Reviewers filing findings with a failing test (KAN-20, KAN-21)
+- ✅ Line comments, the Heimdall Review comment, and cards in Discord and Telegram
+- ✅ `heimdall/acceptance`, and a red `heimdall/gate` from real events
+- ✅ A real human approval read from GitHub, and a Mattermost command recorded
+- ✅ GitHub Actions on the fixture
+
+<details>
+<summary><b>🚧 Built and tested, not yet seen live</b></summary>
+
+- 🚧 **Context packs:** code and unit tests exist in `internal/pack`. No pack ran on the live server, and the reviewer prompt does not call `read_pack` yet.
+- 🚧 **Graphiti memory:** Graphiti and FalkorDB run on the VM, but the graph is empty because delivery is blocked.
+- 🚧 **Different context per reviewer:** the three reviewers share one prompt today. The per-developer view is the design.
+- 🚧 **Three reviewers finishing one PR:** at most one has finished on a PR so far.
+- 🚧 **Heimdall re-running a reviewer's proof:** not seen live.
+- 🚧 **A gate red because of a finding, the resolver, a fix push, and a merge from agent events:** not seen live.
+- 🚧 **Discord and Telegram commands typed by a person:** not verified.
+
+**Known gaps:** a fake test that imports the product can still pass the judge. A new agent session can time out on first start, and restarting the unit clears it.
+
+</details>
+
+<details>
+<summary><b>🗺️ Repository layout</b></summary>
 
 | Path | What it holds |
 |---|---|
-| `cmd/heimdall-server` | The server. It wires adapters to use cases and starts the transports. |
-| `cmd/heimdall` | The command line: `connect`, `doctor` and people mapping. |
-| `cmd/archcheck` | Fails the build when the import graph breaks the dependency rule. |
-| `internal/domain` | Pure rules and types. Imports no other internal package. |
-| `internal/app` | Use cases. Imports `domain` and `ports`. |
-| `internal/ports` | The interfaces that the application needs. |
-| `internal/adapters` | Implementations of the ports for GitHub, Jira, Switch and Postgres. |
-| `internal/transport` | The webhook, MCP and web edges. They call `app`. |
-| `internal/platform` | Shared runtime parts: config, clock and ids. |
-| `skills/` | Agent skills for the reviewer, the resolver and test quality. |
-| `deploy/` | The Docker Compose stack, the server Dockerfile and an example config. |
-| `docs/` | Design, spec, test strategy, runbook and progress. |
+| `cmd/heimdall-server` | The server |
+| `cmd/heimdall-runner` | The sandbox runner |
+| `cmd/heimdall` | The CLI: `connect`, `doctor`, `pack`, people mapping |
+| `internal/domain` | Pure rules and types, including the gate |
+| `internal/app` | Use cases |
+| `internal/adapters` | GitHub, Jira, Switch, Postgres, Graphiti, runners |
+| `internal/transport` | MCP, dashboard, webhooks |
+| `internal/pack` | Context packs |
+| `skills/` | Prompts for the test author, reviewer and resolver |
+| `deploy/` | Compose stack, service units, config template |
+| `docs/` | Design, spec, runbook, progress |
+| `site/` | The landing page |
 
-Test code lives in `internal/testkit` and `cmd/heimdall-testagent`. No production binary depends on them.
+Coding agents start at [`CLAUDE.md`](CLAUDE.md). The design documents were written before the event opened.
 
-The design documents in `docs/` were written before the event opened.
+</details>
 
-## Run the server against your GitHub App
+---
 
-Follow `docs/RUNBOOK.md`, section "Live run of heimdall-server". It lists the secret files, the config file and the start command. Keep secret files outside the repository. The server refuses to start until every key it needs is set.
-
-## Rules for coding agents
-
-Coding agents start at `CLAUDE.md`. It holds the rules, R1 to R13, and the loop for one task. Each task ends with one commit.
+<p align="center">
+  <img src="docs/assets/logo.png" alt="" width="46"><br>
+  <b>Humans bring judgment. Agents bring proof.</b><br>
+  <sub>Built for Flip the Switch, Track 01: Best Business Workflow. Built on <a href="https://github.com/sandbox-quantum/switch">Switch</a>.</sub>
+</p>

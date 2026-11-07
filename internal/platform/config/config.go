@@ -62,8 +62,10 @@ type Rooms struct {
 
 // Config is the validated infrastructure configuration. Load is the only way to get a non-zero one.
 type Config struct {
-	SecretsDir     string
-	Listen         string
+	SecretsDir string
+	Listen     string
+	// CardsDir holds the personal context cards, <CardsDir>/<person>/<file>. Empty disables the read_card tool.
+	CardsDir       string
 	Projects       []Project
 	Feeds          []Feed
 	Rooms          Rooms
@@ -142,6 +144,7 @@ type GitHub struct {
 type fileConfig struct {
 	SecretsDir     *string                     `toml:"secrets_dir"`
 	Listen         *string                     `toml:"listen"`
+	CardsDir       *string                     `toml:"cards_dir"`
 	Projects       []fileProject               `toml:"projects"`
 	Feeds          []fileFeed                  `toml:"feeds"`
 	Rooms          *fileRooms                  `toml:"rooms"`
@@ -284,20 +287,7 @@ func build(raw fileConfig) (Config, error) {
 	errs = append(errs, addSelections(&cfg, raw)...)
 	errs = append(errs, addLiveSections(&cfg, raw)...)
 	errs = append(errs, addKnowledgeSecrets(&cfg, raw)...)
-	if raw.SecretsDir != nil {
-		if *raw.SecretsDir == "" {
-			errs = append(errs, errors.New("secrets_dir must not be empty"))
-		} else {
-			cfg.SecretsDir = *raw.SecretsDir
-		}
-	}
-	if raw.Listen != nil {
-		if _, _, err := net.SplitHostPort(*raw.Listen); err != nil {
-			errs = append(errs, fmt.Errorf("listen %q must be host:port: %w", *raw.Listen, err))
-		} else {
-			cfg.Listen = *raw.Listen
-		}
-	}
+	errs = append(errs, addPaths(&cfg, raw)...)
 	firstIndex := map[string]int{}
 	for i, p := range raw.Projects {
 		where := fmt.Sprintf("projects[%d]", i)
@@ -327,6 +317,29 @@ func build(raw fileConfig) (Config, error) {
 		return Config{}, errors.Join(errs...)
 	}
 	return cfg, nil
+}
+
+// addPaths sets the secrets directory, the cards directory and the listen address, each when given and valid.
+func addPaths(cfg *Config, raw fileConfig) []error {
+	var errs []error
+	if raw.SecretsDir != nil {
+		if *raw.SecretsDir == "" {
+			errs = append(errs, errors.New("secrets_dir must not be empty"))
+		} else {
+			cfg.SecretsDir = *raw.SecretsDir
+		}
+	}
+	cardsDir, cerrs := checkCardsDir(raw.CardsDir)
+	errs = append(errs, cerrs...)
+	cfg.CardsDir = cardsDir
+	if raw.Listen != nil {
+		if _, _, err := net.SplitHostPort(*raw.Listen); err != nil {
+			errs = append(errs, fmt.Errorf("listen %q must be host:port: %w", *raw.Listen, err))
+		} else {
+			cfg.Listen = *raw.Listen
+		}
+	}
+	return errs
 }
 
 // checkFeeds validates the feed rooms: each has a room and a known audience, and no room is listed twice.
@@ -508,6 +521,17 @@ func checkAgentRuntime(out *AgentRuntimeConfig, raw *fileAgentRuntime) []error {
 		}
 	}
 	return errs
+}
+
+// checkCardsDir validates cards_dir: absent means the read_card tool is off.
+func checkCardsDir(dir *string) (string, []error) {
+	if dir == nil {
+		return "", nil
+	}
+	if !strings.HasPrefix(*dir, "/") || len(*dir) > 1024 || strings.ContainsAny(*dir, "\x00\r\n") {
+		return "", []error{errors.New("cards_dir must be an absolute path of at most 1024 bytes")}
+	}
+	return *dir, nil
 }
 
 func validateAgentsDir(dir *string) []error {
