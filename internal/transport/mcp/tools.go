@@ -555,6 +555,10 @@ func (s *Server) readCode(ctx context.Context, p Principal, args json.RawMessage
 	if err := decodeArgs(args, &in); err != nil {
 		return "", err
 	}
+	if in.Path == "" || in.Path == "." || in.Path == "/" {
+		// Agents on KAN-18 and KAN-19 asked for the root and then guessed file names.
+		return "", refusal("Name a file or folder, for example internal/api. The diff from heimdall_read_untrusted names every changed file.")
+	}
 	if err := finding.CheckRepoPath(in.Path); err != nil {
 		return "", refusalf("The path is not valid: %v", err)
 	}

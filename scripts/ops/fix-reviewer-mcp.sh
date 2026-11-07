@@ -21,9 +21,14 @@ for agent in reviewer-1 reviewer-2 reviewer-3 resolver; do
   n=${slot[$agent]}
   cfg="$base/$n/$agent/opencode.json"
   tok="$secrets/agent_token_$agent"
-  if ! sudo test -f "$cfg"; then echo "$agent: no opencode.json at $cfg, skipped"; continue; fi
+  if ! sudo test -d "$base/$n/$agent"; then echo "$agent: no workspace at $base/$n/$agent, skipped"; continue; fi
   if ! sudo test -f "$tok"; then echo "$agent: no token file agent_token_$agent, skipped"; continue; fi
-  sudo cp -p "$cfg" "$cfg.bak-$stamp"
+  if sudo test -f "$cfg"; then
+    sudo cp -p "$cfg" "$cfg.bak-$stamp"
+  else
+    # No config yet (found live): start from the test-author's, with the same owner and mode.
+    sudo cp -p "$model" "$cfg"
+  fi
   sudo python3 - "$model" "$cfg" "$secrets/agent_token_test-author" "$tok" <<'PY'
 import copy, json, os, sys
 model_path, cfg_path, model_tok_path, tok_path = sys.argv[1:5]
