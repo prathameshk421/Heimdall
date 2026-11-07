@@ -1,5 +1,14 @@
 # Heimdall progress
 
+## KAN-18 unstuck: stall nudge, lean prompts (Nov 7, 11:30 UTC on)
+
+- **Why KAN-18 stopped at 11:16.** The test agent wrote good tests, then called `submit_tests` with empty arguments three times. DeepSeek printed its own tool-call syntax (`<｜DSML｜tool_calls>`) as chat text instead, and repeated it until the session held about 1.4M input tokens (three text parts of 1.3 to 1.5M chars). The next turn failed with `ContextOverflowError`, and the context compaction call hung from 11:18:27. Nothing woke an agent that had already acked.
+- **Stall nudge** (`cmd/heimdall-server/nudge.go`): an acked task with no event for 5 minutes gets one mention per silent window (counted from the later of the last event and the last stall nudge), at most 4 per task. Live: the first build sent 3 nudges in 30 s (window counted from the last event only); fixed and redeployed. The agent woke at 11:35:16, compacted, re-read and submitted at 11:39:29.
+- **Prompts.** The test-quality skill told the agent to send `tests: [...]` with `ac_ids`, but the server wants `files` and an `acceptance_criteria` map, so the model had to guess the shape. Rewritten to 4.3K chars (was 12.8K) with the exact submit shape and a rule never to write a tool call as chat text. Reviewer and resolver skills trimmed the same way.
+- **Loop safety checked:** engine retries are capped by `MaxAttempts` then escalate; ack nudges cap at 12, stall nudges at 4; effects dead-letter at 8 attempts; task deadline 2 h.
+- **Owner action:** CI `harness-check` fails because `AGENTS.md` (R1 relaxed) and `.golangci.yml` (`crypto/sha1`, treehash gosec exclusion) changed without their `docs/harness/` sources. The guard blocks agent writes there; the owner copies them (command in the session reply).
+- **Noticed:** OpenCode `glob` fails in the agent sandbox (`ripgrep execution failed`); `ask_knowledge` fails while Graphiti is `unavailable`; the agent's `write` into `tests/` is denied, so it drafts in `scratch/`.
+
 ## Demo build: channels, narrator, agent prompts, platforms (Nov 7, 2026, stopped at the usage limit)
 
 **State at the stop.** Everything below is merged to `main` and pushed. The VM runs the build from the commit before the last two small tweaks (progress line key trim, `RoleProfiler` lint case); those are in git but not deployed. `make fast` exit 0 (3978 tests, 0 lint issues). `make race` was not run after the channel work.

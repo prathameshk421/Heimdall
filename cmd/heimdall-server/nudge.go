@@ -119,12 +119,9 @@ func (n *taskNudger) nudgeStalled(ctx context.Context, a nudgeAgent, ref ports.A
 	if err != nil {
 		return false, err
 	}
-	if at, err := n.cursors.GetCursor(ctx, source+":at"); err == nil {
-		if prev, perr := time.Parse(time.RFC3339Nano, at); perr == nil && prev.After(last) {
-			last = prev
-		}
-	} else if !errors.Is(err, ports.ErrNotFound) {
-		return false, fmt.Errorf("nudge: read stall time: %w", err)
+	last, err = n.stallStart(ctx, source, last)
+	if err != nil {
+		return false, err
 	}
 	if !stallDue(n.clock.Now(), last, count) {
 		return false, nil
@@ -147,6 +144,21 @@ func (n *taskNudger) nudgeStalled(ctx context.Context, a nudgeAgent, ref ports.A
 		return false, fmt.Errorf("nudge: remember the agent's ticket: %w", err)
 	}
 	return true, nil
+}
+
+// stallStart is when the current silence began: the later of the last event and the last stall nudge.
+func (n *taskNudger) stallStart(ctx context.Context, source string, last time.Time) (time.Time, error) {
+	at, err := n.cursors.GetCursor(ctx, source+":at")
+	if errors.Is(err, ports.ErrNotFound) {
+		return last, nil
+	}
+	if err != nil {
+		return last, fmt.Errorf("nudge: read stall time: %w", err)
+	}
+	if prev, perr := time.Parse(time.RFC3339Nano, at); perr == nil && prev.After(last) {
+		return prev, nil
+	}
+	return last, nil
 }
 
 // stallAfter is how long an acknowledged task may go without any event before its agent is mentioned again; stallMax
