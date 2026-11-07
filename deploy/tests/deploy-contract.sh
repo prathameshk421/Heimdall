@@ -39,6 +39,7 @@ if [[ -z "$runner_line" || -z "$cd_line" || "$cd_line" -ge "$runner_line" ]]; th
 fi
 grep -q 'install -d -o root -g heimdall-runner-socket .*/etc/heimdall-runner/profiles' "$script" || { echo 'ASSERTION FAILED: deploy must create the approved profile directory the runner reads at start' >&2; exit 1; }
 grep -q 'runuser -u heimdall-runner -- env .*PATH=/usr/sbin' "$script" || { echo 'ASSERTION FAILED: runner podman pull must have /usr/sbin on PATH so podman finds runc' >&2; exit 1; }
+grep -q 'command -v crun' "$script" || { echo 'ASSERTION FAILED: deploy must require crun, the runtime that applies cgroup limits under cgroupfs' >&2; exit 1; }
 if grep -Eq '/opt/heimdall/(compose\.yaml|Dockerfile\.server)' "$script"; then
   echo 'ASSERTION FAILED: compose files must be installed under /opt/heimdall/deploy so the relative build context and dockerfile paths resolve' >&2
   exit 1

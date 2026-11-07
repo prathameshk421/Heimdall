@@ -30,6 +30,40 @@ func TestContainerArgsEnforceIsolationAndRejectUnapprovedImages(t *testing.T) {
 	require.ErrorIs(t, err, rootlessrunner.ErrImageNotAllowed)
 }
 
+// A GitHub tarball unpacks into one owner-repo-sha directory. The job must enter that directory
+// before it runs the acceptance command, and overlays are repository-relative so they land inside it.
+func TestContainerArgsEnterTheExtractedArchiveRoot(t *testing.T) {
+	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
+	args, err := policy.ContainerArgs("go", "/tmp/source", 30)
+	require.NoError(t, err)
+
+	script := args[len(args)-1]
+	require.Contains(t, script, "root='/work/src'", "the job resolves the extracted archive root")
+	require.Contains(t, script, `cd "$root" && go test -json`, "the acceptance command runs at the archive root")
+}
+
+func TestContainerArgsCopyOverlaysIntoTheArchiveRoot(t *testing.T) {
+	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
+	args, err := policy.ContainerArgsWithOverlays("go", "/tmp/source", "/tmp/overlays", "/tmp/module-cache", "tests/heimdall/KAN-1", 30)
+	require.NoError(t, err)
+
+	script := args[len(args)-1]
+	require.Contains(t, script, `cp -a /input/overlays/. "$root/"`, "overlays are repository-relative, so they copy into the archive root")
+}
+
+// A cold Go build writes hundreds of megabytes of build cache and temporary files. /tmp is only
+// 64 MiB, so both must live on the larger work tmpfs.
+func TestContainerArgsKeepTheGoBuildCacheOffTheSmallTmp(t *testing.T) {
+	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
+	args, err := policy.ContainerArgs("go", "/tmp/source", 30)
+	require.NoError(t, err)
+
+	script := args[len(args)-1]
+	require.Contains(t, script, "GOCACHE=/work/.gocache")
+	require.Contains(t, script, "GOTMPDIR=/work/.gotmp")
+	require.NotContains(t, script, "GOCACHE=/tmp/")
+}
+
 func TestContainerArgsRejectMountEscapeAndUnsafeTimeout(t *testing.T) {
 	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
 	_, err := policy.ContainerArgs("go", "/tmp/source,evil", 30)

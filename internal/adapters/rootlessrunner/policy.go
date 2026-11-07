@@ -118,7 +118,12 @@ func (p Policy) containerArgsWith(profile, sourceArchive, overlayDir, moduleCach
 	if timeoutSeconds < 1 || timeoutSeconds > 600 {
 		return nil, errors.New("sandbox timeout must be between 1 and 600 seconds")
 	}
-	command := "mkdir -p /work/src && tar -xzf /input/source.tgz -C /work/src --no-same-owner --no-same-permissions"
+	// A GitHub tarball unpacks into a single owner-repo-sha directory, while a flat archive leaves
+	// the module at /work/src. The job enters the module root before it copies repository-relative
+	// overlays or runs the acceptance command.
+	command := "mkdir -p /work/src /work/.gocache /work/.gotmp" +
+		" && tar -xzf /input/source.tgz -C /work/src --no-same-owner --no-same-permissions" +
+		" && " + sourceRootScript("/work/src")
 	args := []string{
 		"run", "--rm", "--pull=never", "--network=none", "--read-only", "--user=65532:65532",
 		"--group-add=keep-groups",
@@ -131,10 +136,28 @@ func (p Policy) containerArgsWith(profile, sourceArchive, overlayDir, moduleCach
 	}
 	if overlayDir != "" {
 		args = append(args, "--mount", "type=bind,src="+overlayDir+",dst=/input/overlays,ro=true")
-		command += " && cp -a /input/overlays/. /work/src/"
+		command += ` && cp -a /input/overlays/. "$root/"`
 	}
-	args = append(args, image, "/bin/sh", "-c", "export GOCACHE=/tmp/go-cache GOMODCACHE=/go/pkg/mod GOPROXY=off && "+command+" && cd /work/src && "+testCommand)
+	// The build cache and Go's temporary work directory go on the work tmpfs: a cold build writes
+	// hundreds of megabytes, while /tmp is deliberately small.
+	args = append(args, image, "/bin/sh", "-c",
+		"export GOCACHE=/work/.gocache GOTMPDIR=/work/.gotmp GOMODCACHE=/go/pkg/mod GOPROXY=off && "+
+			command+` && cd "$root" && `+testCommand)
 	return args, nil
+}
+
+// sourceRootScript sets $root to the extracted module root. It descends while the current root has
+// no go.mod and exactly one child directory, which is the GitHub tarball layout; a flat archive or a
+// deeper module layout keeps $root where it is. The depth bound keeps a hostile nested archive from
+// turning this into an unbounded walk.
+func sourceRootScript(root string) string {
+	return `{ root=` + shellQuote(root) + `; for _ in 1 2 3 4; do if [ -f "$root/go.mod" ]; then break; fi; ` +
+		`set -- "$root"/*/; if [ "$#" -ne 1 ] || [ ! -d "$1" ]; then break; fi; root=${1%/}; done; }`
+}
+
+// shellQuote renders a value as one single-quoted shell word.
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 // cleanRelDir validates the repository-relative directory an acceptance command names.

@@ -154,6 +154,14 @@ docker compose -f deploy/compose.yaml down
 
 `down -v` also removes the Postgres volume; use it only when the event log can be discarded.
 
+## Sandbox runner
+
+The server hands test jobs to `heimdall-runner` over `/run/heimdall-runner/runner.sock`; the runner runs them with rootless Podman under its own Unix identity. The VM needs the `crun` OCI runtime. There is no systemd user session for the runner, so Podman falls back to `cgroupfs`, and `runc` refuses to apply cgroup limits there (`rootless needs no limits ... permission denied`), which fails every job. Install it once with `apt-get install -y crun`; `deploy/deploy.sh` refuses to deploy without it. Check the service with:
+
+```bash
+ssh heimdall-vm 'systemctl status heimdall-runner --no-pager'
+```
+
 ## Boot reconciliation (A5)
 
 After the server stops or crashes, nothing is replayed by hand. At boot the server starts the pull request sync and the ticket poll immediately (no wait before the first pass). The sync reads open pull requests, checks, and reviews from GitHub and appends what the event log lacks, through the normal ingest path. The room stream restarts from the durable per-room cursors. A second boot appends nothing, because every append is keyed by its source. Check after a restart: the server log shows `pull requests synced` with `appended` counts, and a repeated boot shows zero.
