@@ -113,8 +113,15 @@ func (s AgentFanout) Start(_ context.Context, c ChangeView, _ json.RawMessage) (
 	}
 
 	unassigned, err := s.findUnassigned(c, rp.People)
-	if err != nil || len(unassigned) == 0 {
+	if err != nil {
 		return Result{}, err
+	}
+	if len(unassigned) == 0 {
+		// Everyone has a task: keep reporting the review deadline so the timer loop fires it after a restart.
+		if due, ok := latestTaskDeadline(ChangeView{ID: c.ID, Events: c.Events[reviewCycleStart(c.Events):]}, workflow.RoleReviewer); ok {
+			return Result{Timers: []Timer{{Step: s.spec.ID, Due: due}}}, nil
+		}
+		return Result{}, nil
 	}
 
 	bundleBytes, bundleRef, err := s.spec.Bundle(workflow.RoleReviewer, c.ID, c.Events)

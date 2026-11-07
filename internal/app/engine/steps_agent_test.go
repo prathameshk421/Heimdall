@@ -204,13 +204,14 @@ func TestAgentTaskStartAndDeadline(t *testing.T) {
 	require.Equal(t, "write-tests", res.Timers[0].Step)
 	require.Equal(t, expectedDeadline, res.Timers[0].Due)
 
-	// Idempotent: Start returns nothing once task.assigned is in the window
+	// Idempotent: no second assignment once task.assigned is in the window, but the deadline is still reported so a
+	// timer loop that recomputes deadlines after a restart can fire it
 	view.Events = append(view.Events, res.Events[0])
 	res2, err := step.Start(context.Background(), view, nil)
 	require.NoError(t, err)
 	require.Empty(t, res2.Events)
 	require.Empty(t, res2.Effects)
-	require.Empty(t, res2.Timers)
+	require.Equal(t, []engine.Timer{{Step: "write-tests", Due: expectedDeadline}}, res2.Timers)
 }
 
 func TestAgentTaskRetryGetsNewTaskID(t *testing.T) {

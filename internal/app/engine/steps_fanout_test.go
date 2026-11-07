@@ -176,12 +176,13 @@ func TestAgentFanoutAssignsEachReviewerExactlyOnceAcrossTwoRuns(t *testing.T) {
 	// Append run 1 events to view
 	view.Events = append(view.Events, res1.Events...)
 
-	// Run 2: Start returns nothing because both reviewers are already assigned
+	// Run 2: no second assignment because both reviewers are already assigned; the review deadline is still reported
 	res2, err := step.Start(context.Background(), view, nil)
 	require.NoError(t, err)
 	require.Empty(t, res2.Events)
 	require.Empty(t, res2.Effects)
-	require.Empty(t, res2.Timers)
+	require.Len(t, res2.Timers, 1)
+	require.Equal(t, res1.Timers[0], res2.Timers[0])
 
 	// Now add a second reviewers.picked with charlie added
 	pickEv2 := makeTestEvent(t, change.EventReviewersPicked, change.ReviewersPicked{

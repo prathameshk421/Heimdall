@@ -92,6 +92,11 @@ func (s AgentTask) Start(_ context.Context, c ChangeView, _ json.RawMessage) (Re
 		return Result{}, nil
 	}
 	if hasTaskForRole(c, s.spec.Role) {
+		// Keep reporting the open task's deadline, so a timer loop that recomputes deadlines after a restart still
+		// fires it (before this the deadline was reported only once, at assignment).
+		if due, ok := latestTaskDeadline(c, s.spec.Role); ok {
+			return Result{Timers: []Timer{{Step: s.spec.ID, Due: due}}}, nil
+		}
 		return Result{}, nil
 	}
 	agent, ok := s.spec.AgentFor(s.spec.Role)
@@ -270,4 +275,21 @@ func roomIDOf(c ChangeView) change.RoomID {
 		}
 	}
 	return change.RoomID(c.ID)
+}
+
+// latestTaskDeadline is the deadline of the newest task.assigned for the role in the view.
+func latestTaskDeadline(c ChangeView, role workflow.Role) (time.Time, bool) {
+	for i := len(c.Events) - 1; i >= 0; i-- {
+		if c.Events[i].Type != change.EventTaskAssigned {
+			continue
+		}
+		p, err := change.Decode(c.Events[i])
+		if err != nil {
+			continue
+		}
+		if ta, ok := p.(change.TaskAssigned); ok && ta.Role == role {
+			return ta.Deadline, true
+		}
+	}
+	return time.Time{}, false
 }
