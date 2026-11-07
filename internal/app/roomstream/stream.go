@@ -13,7 +13,11 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
-const cursorPrefix = "switch:room:"
+const (
+	cursorPrefix = "switch:room:"
+	// goneprefix marks a room Switch no longer serves (deleted or left), so the stream stops asking for it.
+	gonePrefix = "switch:room-gone:"
+)
 
 // Handler processes a message for the change whose room received it. It must be idempotent by Message.ID because a
 // process can stop after applying a message but before its cursor write becomes durable.
@@ -38,6 +42,9 @@ type Config struct {
 	Standing     []change.RoomID
 	RefreshEvery time.Duration
 	Wait         func(context.Context, time.Duration) error
+	// Probe reads one room. When Switch refuses the whole stream, the service probes each room, and a room the probe
+	// finds missing or refused is dropped, so one deleted room cannot stop every other room. Nil turns this off.
+	Probe func(ctx context.Context, room change.RoomID) error
 }
 
 // Service runs the coordinator stream. Call Run once; the Switch adapter reconnects dropped streams, while this
@@ -50,6 +57,7 @@ type Service struct {
 	standing     []change.RoomID
 	refreshEvery time.Duration
 	wait         func(context.Context, time.Duration) error
+	probe        func(ctx context.Context, room change.RoomID) error
 }
 
 // New validates dependencies and builds the stream service.
@@ -78,7 +86,7 @@ func New(cfg Config) (*Service, error) {
 	}
 	return &Service{
 		rooms: cfg.Rooms, cursors: cfg.Cursors, stream: cfg.Stream, handler: cfg.Handler, standing: cfg.Standing,
-		refreshEvery: cfg.RefreshEvery, wait: cfg.Wait,
+		refreshEvery: cfg.RefreshEvery, wait: cfg.Wait, probe: cfg.Probe,
 	}, nil
 }
 
@@ -109,6 +117,10 @@ func (s *Service) Cycle(ctx context.Context) error {
 		return fmt.Errorf("load active rooms: %w", err)
 	}
 	rooms = s.withStanding(rooms)
+	rooms, err = s.withoutGone(ctx, rooms)
+	if err != nil {
+		return err
+	}
 	byRoom, cursors, err := s.restoreRoomCursors(ctx, rooms)
 	if err != nil {
 		return err
@@ -116,8 +128,48 @@ func (s *Service) Cycle(ctx context.Context) error {
 	err = s.stream.StreamRooms(ctx, uniqueRooms(rooms), cursors, func(ctx context.Context, d ports.ChatDelivery) error {
 		return s.deliver(ctx, byRoom, d)
 	})
+	if errors.Is(err, ports.ErrUnauthorized) || errors.Is(err, ports.ErrNotFound) {
+		if perr := s.markGone(ctx, uniqueRooms(rooms)); perr != nil {
+			return errors.Join(fmt.Errorf("consume Switch stream: %w", err), perr)
+		}
+	}
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("consume Switch stream: %w", err)
+	}
+	return nil
+}
+
+// withoutGone drops the rooms marked gone.
+func (s *Service) withoutGone(ctx context.Context, rooms []ports.RoomBinding) ([]ports.RoomBinding, error) {
+	kept := rooms[:0:0]
+	for _, r := range rooms {
+		_, err := s.cursors.GetCursor(ctx, gonePrefix+string(r.RoomID))
+		if errors.Is(err, ports.ErrNotFound) {
+			kept = append(kept, r)
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read gone mark of room %s: %w", r.RoomID, err)
+		}
+	}
+	return kept, nil
+}
+
+// markGone probes each room after Switch refused the stream and marks the rooms it no longer serves. A room the probe
+// cannot judge (Switch unavailable) stays, so a passing outage never drops a room.
+func (s *Service) markGone(ctx context.Context, rooms []ports.RoomBinding) error {
+	if s.probe == nil {
+		return nil
+	}
+	for _, r := range rooms {
+		room := r.RoomID
+		err := s.probe(ctx, room)
+		if !errors.Is(err, ports.ErrUnauthorized) && !errors.Is(err, ports.ErrNotFound) {
+			continue
+		}
+		if err := s.cursors.SetCursor(ctx, gonePrefix+string(room), "1"); err != nil {
+			return fmt.Errorf("mark room %s gone: %w", room, err)
+		}
 	}
 	return nil
 }

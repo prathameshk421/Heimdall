@@ -637,7 +637,11 @@ func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engin
 	if !ok {
 		return nil, nil, nil, errors.New("selected chat adapter does not implement the Switch room stream")
 	}
-	roomConsumer, err := roomstream.New(roomstream.Config{Rooms: store, Cursors: store, Stream: stream, Handler: runtime.processor, Standing: ad.standingRooms, RefreshEvery: refreshEvery, Wait: clock.Wait})
+	roomConsumer, err := roomstream.New(roomstream.Config{Rooms: store, Cursors: store, Stream: stream, Handler: runtime.processor, Standing: ad.standingRooms, RefreshEvery: refreshEvery, Wait: clock.Wait,
+		Probe: func(ctx context.Context, room change.RoomID) error {
+			_, _, err := ad.chat.Read(ctx, room, "")
+			return err
+		}})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("build Switch room consumer: %w", err)
 	}
