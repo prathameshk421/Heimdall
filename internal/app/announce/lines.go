@@ -312,7 +312,7 @@ func narrateGate(history []change.Event, ev change.Event, k string) (Line, bool)
 		return Line{}, false
 	}
 	if p.OK {
-		return review("✅ %s: the merge check passed. This one is ready to merge.", k), true
+		return Line{Audience: AudienceReview, Text: mergeReport(history, k)}, true
 	}
 	waiting, blocked := gateItems(p.Reasons)
 	var b strings.Builder
@@ -328,6 +328,70 @@ func narrateGate(history []change.Event, ev change.Event, k string) (Line, bool)
 		fmt.Fprintf(&b, "⏳ %s: not ready to merge yet. Waiting for: %s.", k, strings.Join(waiting, ", "))
 	}
 	return Line{Audience: AudienceReview, Text: b.String()}, true
+}
+
+// mergeReport is the chat form of the merge report: a verdict line, then one short line per thing that passed.
+func mergeReport(history []change.Event, k string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "✅ %s is ready to merge. Every merge rule passes.", k)
+	if criteria := criteriaPhrase(history); criteria != "" && has(history, change.EventTestsVerified) {
+		fmt.Fprintf(&b, "\n• Tests: written before the code, verified red first, cover its %s", criteria)
+	}
+	if acceptancePassed(history) {
+		b.WriteString("\n• Acceptance: every Heimdall test passes on the head")
+	}
+	if reviewers, findings := reviewStats(history); reviewers > 0 {
+		fmt.Fprintf(&b, "\n• Reviews: %s, %s, none blocking", count(reviewers, "reviewer"), count(findings, "finding"))
+	}
+	if login := approver(history); login != "" {
+		fmt.Fprintf(&b, "\n• Approved by %s", login)
+	}
+	return b.String()
+}
+
+// acceptancePassed reports whether heimdall/acceptance passed on some head of the change.
+func acceptancePassed(history []change.Event) bool {
+	for _, h := range history {
+		var ci ciReported
+		if h.Type == change.EventCIReported && decode(h, &ci) && ci.Conclusion == "success" && ci.Check == "heimdall/acceptance" {
+			return true
+		}
+	}
+	return false
+}
+
+// reviewStats counts the submitted reviews and the findings they filed.
+func reviewStats(history []change.Event) (reviewers, findings int) {
+	for _, h := range history {
+		var r reviewSubmitted
+		if h.Type == change.EventReviewSubmitted && decode(h, &r) {
+			reviewers++
+			findings += len(r.FindingRefs)
+		}
+	}
+	return reviewers, findings
+}
+
+// approver is the login of the latest recorded approval.
+func approver(history []change.Event) string {
+	login := ""
+	for _, h := range history {
+		var a approvalRecorded
+		if h.Type == change.EventApprovalRecorded && decode(h, &a) {
+			login = a.Login
+		}
+	}
+	return login
+}
+
+// has reports whether the history holds an event of the type.
+func has(history []change.Event, t change.EventType) bool {
+	for _, h := range history {
+		if h.Type == t {
+			return true
+		}
+	}
+	return false
 }
 
 // previousGate is the gate verdict stored before ev, so an unchanged verdict on a new head is not posted again.

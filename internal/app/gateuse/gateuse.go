@@ -183,7 +183,7 @@ func (e *Evaluator) tryEvaluate(ctx context.Context, changeID id.ChangeID) (Resu
 		}, false, nil
 	}
 
-	summary := buildSummary(decision.OK, f.pending(), reasons)
+	summary := buildSummary(decision.OK, f.pending(), decision.Unmet)
 	expectedVersion := int64(len(events))
 	newVersion := expectedVersion + 1
 
@@ -234,15 +234,75 @@ func buildReasons(unmet []gate.Clause) []string {
 	return reasons
 }
 
-func buildSummary(ok bool, pending bool, reasons []string) string {
+// reportRows names the ten merge rules in the order TECH_SPEC 12.4 states them, in words a reviewer reads.
+type reportRow struct {
+	id    gate.ClauseID
+	label string
+}
+
+func reportRows() []reportRow {
+	return []reportRow{
+		{gate.ClauseTicketLinked, "Ticket linked"},
+		{gate.ClauseSlopPassed, "Scope and size"},
+		{gate.ClauseTestset, "Acceptance tests verified"},
+		{gate.ClauseTestTreePinned, "Tests unchanged since verified"},
+		{gate.ClauseTestDiffScoped, "No other ticket's tests touched"},
+		{gate.ClauseCI, "CI and heimdall/acceptance"},
+		{gate.ClauseReviews, "Code reviews"},
+		{gate.ClauseBlocking, "No blocking findings"},
+		{gate.ClauseApproval, "Approval from an approver"},
+		{gate.ClausePolicy, "Policy unchanged"},
+	}
+}
+
+// waitingClause says whether an unmet clause is a normal step still to come, not a problem.
+func waitingClause(u gate.Clause) bool {
+	if u.ID == gate.ClauseReviews || u.ID == gate.ClauseApproval {
+		return true
+	}
+	return u.ID == gate.ClauseCI && strings.Contains(u.Reason, "has not reported")
+}
+
+// buildSummary is the merge report on the pull request: a verdict line, then one row per merge rule.
+func buildSummary(ok bool, pending bool, unmet []gate.Clause) string {
+	byID := make(map[gate.ClauseID]gate.Clause, len(unmet))
+	blocked := false
+	for _, u := range unmet {
+		byID[u.ID] = u
+		if !waitingClause(u) {
+			blocked = true
+		}
+	}
+	var b strings.Builder
 	switch {
 	case ok:
-		return "the merge rule passed"
+		b.WriteString("### ✅ Ready to merge\nEvery merge rule passes on this commit.\n\n")
+	case blocked:
+		b.WriteString("### ⛔ Blocked\nFix the rows marked ❌, then push.\n\n")
 	case pending:
-		return "the merge rule is pending"
+		b.WriteString("### ⏳ Not ready yet\nThe rows marked ⏳ are still running or waiting for a person.\n\n")
 	default:
-		return clip(strings.Join(reasons, "\n"), 2000)
+		b.WriteString("### ⏳ Not ready yet\n\n")
 	}
+	b.WriteString("| Rule | Status |\n|---|---|\n")
+	for _, row := range reportRows() {
+		u, unmetRow := byID[row.id]
+		switch {
+		case !unmetRow:
+			fmt.Fprintf(&b, "| %s | ✅ |\n", row.label)
+		case waitingClause(u):
+			fmt.Fprintf(&b, "| %s | ⏳ %s |\n", row.label, tableText(u.Reason, 140))
+		default:
+			fmt.Fprintf(&b, "| %s | ❌ %s |\n", row.label, tableText(u.Reason, 140))
+		}
+	}
+	return clip(b.String(), change.MaxCheckSummary)
+}
+
+// tableText keeps a reason on one table row: no pipes or line breaks, at most limit bytes.
+func tableText(s string, limit int) string {
+	s = strings.NewReplacer("|", "/", "\n", " ").Replace(s)
+	return clip(s, limit)
 }
 
 func latestGateEvaluated(events []change.Event) *change.GateEvaluated {

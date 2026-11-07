@@ -95,7 +95,7 @@ func TestReviewLines(t *testing.T) {
 		{"approval", nil, ev(t, change.EventApprovalRecorded, change.ApprovalRecorded{Login: "rekdfr"}),
 			"rekdfr approved the pull request"},
 		{"gate passed", nil, ev(t, change.EventGateEvaluated, change.GateEvaluated{OK: true}),
-			"the merge check passed"},
+			"is ready to merge"},
 		{"gate blocked", nil, ev(t, change.EventGateEvaluated, change.GateEvaluated{OK: false, Reasons: []string{"1 upheld finding is open", "no approval on the latest commit"}}),
 			"• 1 upheld finding is open\n• no approval on the latest commit"},
 		{"merged", nil, ev(t, change.EventChangeMerged, struct{}{}),
