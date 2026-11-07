@@ -305,3 +305,24 @@ func TestLoadRefusesUnknownSelectionKeys(t *testing.T) {
 		})
 	}
 }
+
+// A feed is a room that hears the stories of every change, for example the Telegram group. Each needs a room and a
+// known audience; a typo is refused at load.
+func TestLoadReadsAndChecksFeeds(t *testing.T) {
+	dir := t.TempDir()
+	head := "secrets_dir = \"" + dir + "\"\n" + goodProject
+	cfg, err := Load(writeTOML(t, head+"[[feeds]]\nroom_id = \"59c21be9\"\naudience = \"both\"\n[[feeds]]\nroom_id = \"d13db0c0\"\naudience = \"tests\"\n"))
+	require.NoError(t, err)
+	require.Equal(t, []Feed{{RoomID: "59c21be9", Audience: "both"}, {RoomID: "d13db0c0", Audience: "tests"}}, cfg.Feeds)
+
+	for _, tc := range []struct{ name, body, want string }{
+		{"no room", "[[feeds]]\naudience = \"both\"\n", "room_id"},
+		{"unknown audience", "[[feeds]]\nroom_id = \"x\"\naudience = \"everyone\"\n", "audience"},
+		{"same room twice", "[[feeds]]\nroom_id = \"x\"\naudience = \"both\"\n[[feeds]]\nroom_id = \"x\"\naudience = \"tests\"\n", "twice"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeTOML(t, head+tc.body))
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}

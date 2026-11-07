@@ -91,6 +91,21 @@ func (a *app) episodeDeliveryLoop(ctx context.Context) {
 	}
 }
 
+// narratorLoop posts the milestone lines on the drain cadence. A failed post is retried on the next pass.
+func (a *app) narratorLoop(ctx context.Context) {
+	for {
+		said, err := a.narrator.RunOnce(ctx)
+		if err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "milestone announcement failed; it will be retried", "error", err)
+		} else if err == nil && said > 0 {
+			a.logger.InfoContext(ctx, "milestones announced", "count", said)
+		}
+		if err := clock.Wait(ctx, a.drainTick); err != nil {
+			return
+		}
+	}
+}
+
 func (a *app) roomStreamLoop(ctx context.Context) {
 	var delay time.Duration
 	for ctx.Err() == nil {
@@ -273,6 +288,9 @@ func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
 	}
 	if a.comments != nil {
 		runs = append(runs, func(ctx context.Context) { a.commentLoop(ctx, wake) })
+	}
+	if a.narrator != nil {
+		runs = append(runs, a.narratorLoop)
 	}
 	if a.episodeWorker != nil {
 		runs = append(runs, a.episodeDeliveryLoop)

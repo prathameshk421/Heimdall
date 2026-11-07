@@ -95,7 +95,7 @@ func TestHandleRefusesUnauthorizedCommandWithoutExecuting(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Zero(t, executor.calls)
-	require.Contains(t, replies.body, "not authorized")
+	require.Contains(t, replies.body, "not allowed")
 }
 
 func TestHandleIgnoresAgentsBotsEditedAndUnaddressedPosts(t *testing.T) {

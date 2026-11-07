@@ -118,6 +118,17 @@ func main() {
 	}
 }
 
+// mountOperator routes the operator endpoints that are wired: answer a question, close a change, make a channel.
+func mountOperator(mux *http.ServeMux, a *app) {
+	for path, h := range map[string]http.Handler{
+		"/admin/answer": a.operatorAnswer, "/admin/rooms": a.operatorRoom, "/admin/reject": a.operatorReject,
+	} {
+		if h != nil {
+			mux.Handle(path, h)
+		}
+	}
+}
+
 // mountHTTP returns the root HTTP handler. Exact paths are routed: /mcp only when the app built an MCP handler,
 // /admin/agents/ only when agent setup is wired, and everything else goes to the router (/healthz among them).
 // An exact-path mux keeps /mcp a 404 (not a subtree match) when no slice is selected.
@@ -130,11 +141,8 @@ func mountHTTP(router http.Handler, a *app) http.Handler {
 	if a != nil && a.agentSetupHandler != nil {
 		mux.Handle("/admin/agents/", a.agentSetupHandler)
 	}
-	if a != nil && a.operatorAnswer != nil {
-		mux.Handle("/admin/answer", a.operatorAnswer)
-	}
-	if a != nil && a.operatorReject != nil {
-		mux.Handle("/admin/reject", a.operatorReject)
+	if a != nil {
+		mountOperator(mux, a)
 	}
 	if a != nil && a.packUpload != nil {
 		mux.Handle("/packs/upload", a.packUpload)

@@ -19,6 +19,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/profileyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/announce"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
@@ -178,6 +179,8 @@ type app struct {
 	agentSetupHandler http.Handler
 	operatorAnswer    http.Handler
 	operatorReject    http.Handler
+	operatorRoom      http.Handler
+	narrator          *announce.Narrator
 	packUpload        http.Handler
 	commands          *commandRuntime
 	workflowMemory    *knowledge.WorkflowMemory
@@ -464,6 +467,11 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 		return nil, err
 	}
 	a.operatorAnswer = operatorAnswer{answer: a.commands.OperatorAnswer, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
+	if maker, ok := ad.chat.(interface {
+		CreateChannel(ctx context.Context, bridgeID, name, description string) (change.RoomID, error)
+	}); ok {
+		a.operatorRoom = operatorRoom{create: maker.CreateChannel, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
+	}
 	a.operatorReject = operatorReject{reject: a.commands.OperatorReject, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
 	return a, nil
 }
@@ -528,6 +536,14 @@ func newTicketPollers(ad adapters, store *postgres.Store, eng *engine.Engine, bl
 	return pollers, nil
 }
 
+// closerOf returns the blob store as a Closer when it is one.
+func closerOf(blobs ports.BlobStore) io.Closer {
+	if c, ok := blobs.(io.Closer); ok {
+		return c
+	}
+	return nil
+}
+
 func assembleWithBlobs(
 	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
 	eng *engine.Engine, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
@@ -577,15 +593,30 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, fmt.Errorf("build pack upload handler: %w", err)
 	}
-	var closer io.Closer
-	if c, ok := blobs.(io.Closer); ok {
-		closer = c
+	narrator, err := assembleNarrator(d, ad, store)
+	if err != nil {
+		return nil, err
 	}
 	return &app{
-		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, retention: files, blobs: closer,
+		narrator: narrator,
+		pool:     pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
+}
+
+// assembleNarrator builds the milestone narrator: one plain line per step of every change, in the change's room and in
+// the configured feed rooms (the Telegram group, the Mattermost and Discord test and review channels).
+func assembleNarrator(d deps, ad adapters, store *postgres.Store) (*announce.Narrator, error) {
+	feeds := make([]announce.Feed, 0, len(d.configuration.Feeds))
+	for _, f := range d.configuration.Feeds {
+		feeds = append(feeds, announce.Feed{Room: change.RoomID(f.RoomID), Audience: announce.Audience(f.Audience)})
+	}
+	n, err := announce.New(announce.Config{History: store, Events: store, Cursors: store, Chat: ad.chat, Feeds: feeds})
+	if err != nil {
+		return nil, fmt.Errorf("build narrator: %w", err)
+	}
+	return n, nil
 }
 
 func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, refreshEvery time.Duration, intakeCase *intake.Intake, profiles mcp.Profiles) (roomStreamRunner, commentPoller, *commandRuntime, error) {

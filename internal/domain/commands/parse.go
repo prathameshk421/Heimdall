@@ -16,8 +16,8 @@ type People interface {
 
 // unmappedReply tells a person how to get linked. It never shows the grammar,
 // so a sender with no person learns nothing about what it could do.
-const unmappedReply = "I do not know who you are yet, so this command was ignored. " +
-	"Ask an admin to link your account to a person in Heimdall's people list."
+const unmappedReply = "Sorry, I don't know who you are yet, so I ignored that. " +
+	"Ask an admin to link your account in Heimdall's people list."
 
 // errUnknownVerb marks a command word that Heimdall does not know. Parse
 // turns it into KindUnknown and the grammar reply.
@@ -150,14 +150,12 @@ func approveTests(p, args string) (Command, error) {
 // user sees `heimdall`.
 func grammar(src Source) string {
 	p, _ := prefixOf(src)
-	uses := []string{
-		useUphold, useDismiss, useReject, useOverride, useWaive, useReview,
-		useApprove, useApproveProfile, useApproveKnowledge, usePromoteProfile, useStart, useChallenge, useRemember, useForget, useSpec, useIncident, useResume, useAnswer,
+	var b strings.Builder
+	b.WriteString("I don't know that command. These are the ones people use most:")
+	for _, u := range []string{useUphold, useDismiss, useChallenge, useApprove, useAnswer, useRemember, useStart, useResume, useReject} {
+		b.WriteString("\n• " + p + " " + u)
 	}
-	for i, u := range uses {
-		uses[i] = p + " " + u
-	}
-	return "Not a command I know. Try: " + strings.Join(uses, "; ") + "."
+	return b.String()
 }
 
 // IsCommand reports whether the text starts with the source's command prefix. It needs no people lookup, so a

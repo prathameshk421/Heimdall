@@ -124,14 +124,14 @@ func (p *Processor) dispatch(ctx context.Context, in Input, src commands.Source,
 	}
 	person, err := p.identity.Authorize(ctx, in.Target, src, in.Command.Sender, parsed.Command)
 	if err != nil {
-		return p.replies.Reply(ctx, in.Target, src, in.SourceRef, "You are not authorized to run that command.")
+		return p.replies.Reply(ctx, in.Target, src, in.SourceRef, "Sorry, you are not allowed to run that command. Ask an approver for this repository.")
 	}
 	message, err := p.executor.Execute(ctx, in.Target, person, src, in.SourceRef, parsed.Command)
 	if err != nil {
 		return fmt.Errorf("execute %s command: %w", parsed.Verb, err)
 	}
 	if message == "" {
-		message = "Recorded."
+		message = "Done."
 	}
 	return p.replies.Reply(ctx, in.Target, src, in.SourceRef, message)
 }

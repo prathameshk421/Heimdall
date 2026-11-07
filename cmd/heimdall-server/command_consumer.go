@@ -690,7 +690,7 @@ func (r *commandRuntime) recordStartDecision(ctx context.Context, cid id.ChangeI
 		}
 		return "", fmt.Errorf("record start command: %w", err)
 	}
-	return "Started.", nil
+	return "On it. I'm starting this ticket.", nil
 }
 
 func hasDecisionSource(events []change.Event, source commands.Source, sourceRef string) bool {
@@ -808,19 +808,27 @@ func commandDefaultReason(cmd commands.Command) string {
 func actionReply(cmd commands.Command) string {
 	switch cmd.(type) {
 	case commands.Remember:
-		return "I recorded that for this change."
+		return "Noted. I'll remember that."
 	case commands.Challenge:
-		return "Challenge recorded."
+		return "Challenge recorded. A resolver will decide it."
 	case commands.Start:
-		return "Started."
+		return "On it. I'm starting this ticket."
 	case commands.Resume:
-		return "Released. The engine will offer that step again."
+		return "Done. I'm picking that step up again."
 	case commands.Answer:
-		return "Answer recorded for the agent."
+		return "Thanks. I passed your answer to the agent."
 	case commands.Review:
-		return "Reviewers picked."
+		return "Got it. The reviewers are picked."
+	case commands.Uphold:
+		return "Upheld. This finding must be fixed before merge."
+	case commands.Dismiss:
+		return "Dismissed. It will not block the merge."
+	case commands.ApproveTests:
+		return "Tests approved. I'm committing them now."
+	case commands.Reject:
+		return "Closed. I stopped work on this change."
 	}
-	return "Recorded."
+	return "Done."
 }
 
 func (r *commandRuntime) Reply(ctx context.Context, target collaboration.Target, source commands.Source, sourceRef, body string) error {
