@@ -1,5 +1,8 @@
 # Personal context cards
 
+A plain card tells a reviewer where to look and cannot block a merge. Run `heimdall cards confirm NAME` to stand behind a rule. It can then block merges in code you may approve, until you edit it, run `unconfirm`, or its findings are dismissed often enough to mute it.
+
+
 The folders under `examples/` are samples of the format, not data: copy the shape, write your own.
 
 Layout: `<cards_dir>/<person>/<file>`, where `<person>` is the key under `people:` in the repository's `heimdall.yaml`

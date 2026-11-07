@@ -47,7 +47,7 @@ func (s *Service) buildFindingFiledEvent(
 		Location:    &vf.input.Location,
 	}
 	payload.ReproTest, payload.ToolResult, payload.MemoryRef = proofsOf(vf)
-	payload.CardRefs = cardRefsOf(vf.input.ContextRefs)
+	payload.CardRefs = cardRefsOf(vf.input)
 	return s.buildEventWithID(eid, a.ChangeID, version, change.EventFindingFiled, a.Agent, corr, causation, payload, nil)
 }
 
@@ -67,12 +67,24 @@ func proofsOf(vf validFinding) (*finding.ReproTest, *finding.ToolResult, *string
 	return nil, nil, nil
 }
 
-// cardRefsOf returns the rule card file names in context_refs, without the "card:" prefix.
-func cardRefsOf(refs []string) []string {
+// cardRefsOf returns the rule card file names a finding used: in context_refs, or cited as its memory evidence.
+func cardRefsOf(input finding.Input) []string {
 	var out []string
-	for _, r := range refs {
-		if name, ok := finding.CardRef(r); ok && name != "" && !slices.Contains(out, name) {
+	add := func(name string) {
+		if name != "" && !slices.Contains(out, name) {
 			out = append(out, name)
+		}
+	}
+	for _, r := range input.ContextRefs {
+		if name, ok := finding.CardRef(r); ok {
+			add(name)
+		}
+	}
+	for _, e := range input.Evidence {
+		if e.Type == finding.EvidenceMemory && e.MemoryRef != nil {
+			if name, _, ok := finding.CardEvidence(*e.MemoryRef); ok {
+				add(name)
+			}
 		}
 	}
 	return out

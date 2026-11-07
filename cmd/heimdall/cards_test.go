@@ -248,3 +248,11 @@ func TestPreviewShowsTheCardsThatWakeAndTheChangeMap(t *testing.T) {
 	require.NotContains(t, text, "something else")
 	require.Contains(t, text, "run.sh:1")
 }
+
+func TestConfirmNeedsATypedYes(t *testing.T) {
+	var out bytes.Buffer
+	require.False(t, confirmedByOwner("rule", strings.NewReader("no\n"), &out))
+	require.False(t, confirmedByOwner("rule", strings.NewReader(""), &out))
+	require.True(t, confirmedByOwner("rule", strings.NewReader("yes\n"), &out))
+	require.Contains(t, out.String(), "can block a merge")
+}

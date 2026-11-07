@@ -186,6 +186,8 @@ func TestGraphViewUsesTheRealGraphAndIsolatesTheBase(t *testing.T) {
 
 type staleCards struct{}
 
+func (staleCards) Confirmed(string, string) bool { return false }
+
 func (staleCards) All(string) ([]rulecard.Card, error) {
 	return []rulecard.Card{{Name: "stale.md", Body: "b", Status: rulecard.StatusActive, AppliesTo: []string{"pay/**"}, Symbols: []string{"Vanished"}}}, nil
 }

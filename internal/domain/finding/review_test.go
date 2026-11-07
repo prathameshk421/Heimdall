@@ -85,3 +85,14 @@ func TestReviewCoversReportsWhetherAFileWasReviewed(t *testing.T) {
 	require.True(t, r.Reviewed("api/openapi.yaml"))
 	require.False(t, r.Reviewed("main.go"))
 }
+
+func TestCardEvidenceReadsTheCardAndTheFile(t *testing.T) {
+	name, file, ok := finding.CardEvidence("card:cap.md#internal/pay/refund.go")
+	require.True(t, ok)
+	require.Equal(t, "cap.md", name)
+	require.Equal(t, "internal/pay/refund.go", file)
+	for _, bad := range []string{"card:cap.md", "memory:abc#x.go", "card:#x.go", "card:cap.md#../x.go", "card:a/b.md#x.go", "card:cap.md#"} {
+		_, _, ok := finding.CardEvidence(bad)
+		require.False(t, ok, bad)
+	}
+}

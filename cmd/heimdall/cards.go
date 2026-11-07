@@ -46,15 +46,17 @@ func runCardsWith(args []string, env cardsEnv) int {
 		return 0
 	}
 	commands := map[string]func([]string, cardsEnv) int{
-		"scan":    runCardsScan,
-		"prompt":  runCardsPrompt,
-		"check":   runCardsCheck,
-		"preview": runCardsPreview,
-		"push":    runCardsPush,
-		"pull":    runCardsPull,
-		"inbox":   runCardsInbox,
-		"accept":  func(rest []string, env cardsEnv) int { return runCardsSetStatus(rest, env, "active") },
-		"reject":  func(rest []string, env cardsEnv) int { return runCardsSetStatus(rest, env, "rejected") },
+		"scan":      runCardsScan,
+		"prompt":    runCardsPrompt,
+		"check":     runCardsCheck,
+		"preview":   runCardsPreview,
+		"push":      runCardsPush,
+		"pull":      runCardsPull,
+		"inbox":     runCardsInbox,
+		"accept":    func(rest []string, env cardsEnv) int { return runCardsSetStatus(rest, env, "active") },
+		"reject":    func(rest []string, env cardsEnv) int { return runCardsSetStatus(rest, env, "rejected") },
+		"confirm":   runCardsConfirm,
+		"unconfirm": runCardsUnconfirm,
 	}
 	run, ok := commands[args[0]]
 	if !ok {
@@ -75,6 +77,8 @@ func writeCardsHelp(out io.Writer) {
 		"heimdall cards inbox --server URL --token-file F          list cards the learning loop proposed",
 		"heimdall cards accept NAME --server URL --token-file F    make a proposed card active",
 		"heimdall cards reject NAME --server URL --token-file F    mark a proposed card rejected",
+		"heimdall cards confirm NAME --server URL --token-file F [--yes]  let this card block merges in code you approve",
+		"heimdall cards unconfirm NAME --server URL --token-file F  take that force back",
 		"Nothing leaves this machine until push, accept or reject. Run scan and prompt, then your own agent writes the cards.",
 	} {
 		writeLine(out, line)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/cardsfs"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/rulecard"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/pack"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
@@ -43,6 +44,10 @@ func (h cardsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/cards"), "/")
+	if card, ok := strings.CutSuffix(name, confirmPath); ok && card != "" {
+		h.confirmation(w, r, person, card)
+		return
+	}
 	switch {
 	case r.Method == http.MethodGet && name == "":
 		h.list(w, person)
@@ -55,6 +60,53 @@ func (h cardsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "use GET /cards, GET /cards/<file>, PUT /cards/<file> or DELETE /cards/<file>", http.StatusMethodNotAllowed)
 	}
+}
+
+// confirmPath ends the address of a card's confirmation.
+const confirmPath = "/confirm"
+
+// confirmation lets a mapped human give their own card force, or take it back: POST /cards/<file>/confirm and DELETE
+// /cards/<file>/confirm. The token picks the person, as for every card route, so nobody can confirm another person's
+// card, and an agent token never reaches here. A proposed card must be accepted first.
+func (h cardsHandler) confirmation(w http.ResponseWriter, r *http.Request, person, name string) {
+	switch r.Method {
+	case http.MethodPost:
+		h.confirm(w, person, name)
+	case http.MethodDelete:
+		if err := h.store.Unconfirm(person, name); err != nil {
+			http.Error(w, "confirmation could not be ended", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "use POST or DELETE /cards/<file>/confirm", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h cardsHandler) confirm(w http.ResponseWriter, person, name string) {
+	text, err := h.store.Read(person, name)
+	if errors.Is(err, cardsfs.ErrNotFound) {
+		http.Error(w, "no such card", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "card could not be read", http.StatusBadRequest)
+		return
+	}
+	card, err := cardsfs.Parse(name, text)
+	if err != nil {
+		http.Error(w, "card front matter is invalid", http.StatusUnprocessableEntity)
+		return
+	}
+	if err := rulecard.Confirmable(card); err != nil {
+		http.Error(w, "card cannot be confirmed: "+err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	if err := h.store.Confirm(person, name); err != nil {
+		http.Error(w, "card could not be confirmed", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h cardsHandler) person(r *http.Request) (string, bool) {

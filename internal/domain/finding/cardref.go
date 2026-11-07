@@ -18,3 +18,18 @@ func CardRef(ref string) (name string, isCard bool) {
 	}
 	return rest, true
 }
+
+// CardEvidence parses a memory_ref that cites a confirmed rule card for one file: "card:<file name>#<repo path>". The
+// path is part of the ref because a card has force only for a file its owner may approve, and the check must hold for
+// the file the finding names. The bool is false when ref does not cite a card this way.
+func CardEvidence(ref string) (name, file string, ok bool) {
+	head, file, found := strings.Cut(ref, "#")
+	if !found || CheckRepoPath(file) != nil {
+		return "", "", false
+	}
+	name, isCard := CardRef(head)
+	if !isCard || name == "" {
+		return "", "", false
+	}
+	return name, file, true
+}

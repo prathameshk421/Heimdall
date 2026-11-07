@@ -47,6 +47,8 @@ type Request struct {
 // Cards returns every card of a person.
 type Cards interface {
 	All(person string) ([]rulecard.Card, error)
+	// Confirmed reports that the person confirmed the card exactly as it reads now.
+	Confirmed(person, name string) bool
 }
 
 // Impact is the view of the code graph result that a brief needs.

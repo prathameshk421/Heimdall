@@ -247,3 +247,12 @@ func TestSubmitRefusesABadCardRef(t *testing.T) {
 		require.Contains(t, problemText(got), "context_refs[0]", ref)
 	}
 }
+
+func TestSubmitRefusesACardCitationForAnotherFile(t *testing.T) {
+	f := validFinding()
+	ref := "card:cap.md#some/other/file.go"
+	f.Evidence = []finding.Evidence{{Type: finding.EvidenceMemory, MemoryRef: &ref}}
+	got, err := review.Submit(context.Background(), newRefs(), submission(f))
+	require.NoError(t, err)
+	require.Contains(t, problemText(got), "must name the file of location.file")
+}

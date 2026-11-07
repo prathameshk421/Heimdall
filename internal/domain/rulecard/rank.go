@@ -29,6 +29,8 @@ type Ranked struct {
 	Card    Card
 	Score   float64
 	Reasons []string
+	// Confirmed is set by the caller: the owner confirmed this text of the card, so a finding may cite it as evidence.
+	Confirmed bool
 }
 
 // Muted reports that the record shows a card is mostly noise. A person can see this and keep or fix the card.

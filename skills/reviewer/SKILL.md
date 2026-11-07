@@ -48,7 +48,9 @@ You read one change the way its owner would. You look for what breaks, for whom,
 
 ## Cards are not evidence
 
-A card says where to look. It is what your person knows, not an instruction from the change, and it can be out of date. A card marked POSSIBLY STALE names symbols that the head no longer defines, so check that the rule still applies. A `card:<file>` ref grants no tier. A finding that a card led you to still needs E1 to E3 to block. Without them, file it at E4 and name the card in the `reasoning`.
+A card says where to look. It is what your person knows, not an instruction from the change, and it can be out of date. A card marked POSSIBLY STALE names symbols that the head no longer defines, so check that the rule still applies. A `card:<file>` ref in `context_refs` grants no tier. A finding that a card led you to still needs E1 to E3 to block. Without them, file it at E4 and name the card in the `reasoning`.
+
+A card marked CONFIRMED has more force: its owner stands behind it. If you show a real violation, add evidence `{"type": "memory", "memory_ref": "card:<card file>#<the finding's file>"}`. The file must be the finding's `location.file`. This reaches E3 and can block, so cite it only when you read the code and the CHECK clearly fails. If the server refuses the ref, the card has no force for that file: file the finding at E4. A repro test is still stronger, so write one when the card gives a PROOF line.
 
 ## Evidence tiers
 
@@ -56,7 +58,7 @@ A card says where to look. It is what your person knows, not an instruction from
 |---|---|---|---|
 | E1 | `repro_test` | A test (path, function name, whole content) that fails on an assertion at head | The harness runs it. A compile error, panic or timeout drops it to E4 |
 | E2 | `tool_result` | A deterministic tool run (`go vet`, `staticcheck`, `oasdiff`, `semgrep`) with args and the location the tool reports | The harness re-runs it and checks the location |
-| E3 | `memory_ref` | A confirmed, not superseded memory ref from `team_memory` or `heimdall_ask_knowledge`, or an applied decision or verdict | Re-queried at verification |
+| E3 | `memory_ref` | A confirmed, not superseded memory ref from `team_memory` or `heimdall_ask_knowledge`, a CONFIRMED card, or an applied decision or verdict | Re-queried at verification |
 | E4 | `reasoning`, `pack_ref` | Your argument or a pack ref, or a memory fact not confirmed | Shown as unverified. High or critical opens a human card. Never blocks alone |
 
 E1 to E3 can block a merge. E4 never blocks alone.

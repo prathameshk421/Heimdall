@@ -115,6 +115,12 @@ func (c *cardsClient) get(ctx context.Context, name string) (string, error) {
 	return c.do(ctx, http.MethodGet, name, "")
 }
 
+// confirmation gives a card force (POST) or takes it back (DELETE).
+func (c *cardsClient) confirmation(ctx context.Context, method, name string) error {
+	_, err := c.do(ctx, method, name+"/confirm", "")
+	return err
+}
+
 func (c *cardsClient) put(ctx context.Context, name, text string) error {
 	_, err := c.do(ctx, http.MethodPut, name, text)
 	return err

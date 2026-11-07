@@ -65,6 +65,9 @@ func (c *Compiler) obligations(ctx context.Context, req Request, src sources) (s
 		records = src.history.CardRecords(req.Agent)
 	}
 	ranked := rulecard.Rank(cards, changeFacts(req, src.impact), records, obligationBytes)
+	for i := range ranked {
+		ranked[i].Confirmed = c.cfg.Cards.Confirmed(req.Person, ranked[i].Card.Name)
+	}
 	text, names := renderObligations(ranked, src.impact, obligationBytes)
 	return text, names, true
 }
@@ -143,6 +146,9 @@ func renderCard(item rulecard.Ranked, impact Impact) string {
 		fmt.Fprintf(&b, "CHECK: %s\n", orDefault(card.Check, "state what would violate this"))
 		if card.Proof != "" {
 			fmt.Fprintf(&b, "PROOF: %s\n", card.Proof)
+		}
+		if item.Confirmed {
+			fmt.Fprintf(&b, "CONFIRMED: if you show a violation in a file this card applies to, cite memory_ref card:%s#<that file>. It can block.\n", card.Name)
 		}
 	}
 	b.WriteString(card.Body + "\n\n")

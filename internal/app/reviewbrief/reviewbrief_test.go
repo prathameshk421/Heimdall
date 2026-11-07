@@ -21,11 +21,13 @@ import (
 var errDown = errors.New("source is down")
 
 type fakeCards struct {
-	cards []rulecard.Card
-	err   error
+	confirmed string
+	cards     []rulecard.Card
+	err       error
 }
 
 func (f fakeCards) All(string) ([]rulecard.Card, error) { return f.cards, f.err }
+func (f fakeCards) Confirmed(_, name string) bool       { return name == f.confirmed }
 
 type fakeImpact struct {
 	symbols, dependents []string
@@ -400,4 +402,19 @@ func TestRecordNamesNoisyCategories(t *testing.T) {
 	require.Contains(t, text, "4 useful, 2 dismissed, 1 ignored, 50% resolved")
 	require.Contains(t, text, "style, ops. Be stricter before filing these.")
 	require.Len(t, strings.Split(render(reviewbrief.Calibration{Useful: 1}), "\n"), 2)
+}
+
+func TestAConfirmedCardTellsTheReviewerHowToCiteIt(t *testing.T) {
+	cards := fakeCards{confirmed: "cap.md", cards: []rulecard.Card{
+		{Name: "cap.md", Body: "rule", Kind: rulecard.KindInvariant, Status: rulecard.StatusActive, AppliesTo: []string{"**"}, Check: "Holds?"},
+		{Name: "other.md", Body: "rule", Kind: rulecard.KindInvariant, Status: rulecard.StatusActive, AppliesTo: []string{"**"}, Check: "Holds?"},
+	}}
+	compiler, err := reviewbrief.New(reviewbrief.Config{Logger: slog.New(slog.DiscardHandler), Cards: cards})
+	require.NoError(t, err)
+	var task workflow.TaskEnvelope
+	task.Role = workflow.RoleReviewer
+	task.Inputs.FilesChanged = []string{"a.go"}
+	b := compiler.Compile(context.Background(), reviewbrief.Request{Person: "bob", Agent: "x", Task: task})
+	require.Contains(t, b.Obligations, "cite memory_ref card:cap.md#<that file>")
+	require.NotContains(t, b.Obligations, "card:other.md#")
 }

@@ -69,7 +69,19 @@ A card now names `applies_to`, `symbols`, `triggers`, the one `check` that settl
 
 The ranker (`internal/domain/rulecard`) scores by path specificity, dependent files from the graph, symbols, text in added lines, kind, and past outcomes. A card too large for the budget is skipped, and smaller cards still get in. A card that names only symbols missing at head is flagged as possibly stale.
 
-**A card never grants a tier.** It says where to look. A finding that a card led to still needs E1 to E3 to block. The gate is unchanged.
+**A plain card grants no tier.** It says where to look. A finding that a card led to needs E1 to E3 to block. The gate is unchanged.
+
+**A confirmed card can reach E3 (owner decision, Nov 8).** `heimdall cards confirm NAME` lets a person stand behind a rule. A finding then cites `memory_ref: card:<file>#<path>`, and the same E3 re-query that checks team memory decides. It holds only when all of these are true:
+
+- The card is active, has `applies_to` and a `check`, and is an invariant, incident or judgement.
+- The text is exactly what the owner confirmed. Any edit ends the confirmation.
+- The path is inside `applies_to`. A trigger wakes a card but does not widen its force.
+- The owner is an approver of that path in the policy at the **merge base**, by the same rule the gate uses for a GitHub approval. A PR cannot edit its way out, and a card gives nobody power over code they do not own.
+- Its record has not muted it, so a rule that keeps being dismissed stops blocking by itself.
+
+Every failure leaves the finding at E4, which never blocks. It is re-checked on every push. People can still `dismiss` or `challenge` the finding, and the policy's consensus and severity rules still apply. Only a human token can confirm, and `accept` does not confirm.
+
+The risk that stays: a weak model can misread the code and cite a card that does not apply. It then holds a merge until a person dismisses it, as with any E3 finding. Each dismissal counts against the card, so repeat errors mute it.
 
 ### Code graph
 
@@ -136,16 +148,15 @@ Severity moved too. Arm A rated the flag break low or medium, as "any script mig
 
 ## 5. What I suggest next
 
-Ordered by value for effort. Item 1 needs your decision, because it changes what can block a merge.
+Ordered by value for effort.
 
-1. **Let an owner-confirmed card block, through E3.** Today a card can never block alone. When a person runs `accept`, or upholds a card-led finding, record a confirmed decision, so that the rule becomes citable E3 memory. Personal knowledge then has teeth, and it stays human-gated.
-2. **Author intent from the PC.** Claude transcripts hold `pr-link` records, so the CLI can tie a session to its PR and summarize what the author corrected, rejected and did not test. No hosted reviewer can see this. It can land first as a section in the PR body, which reviewers already read.
-3. **Run the bench on real history.** Take fix commits from real repos, replay the diff that introduced each bug, and use only cards dated before it. This removes my authorship bias, and it is the gate for any skill change.
-4. **Prompt self-improvement.** Feed `reviewlearn` misses to a reflection step that proposes a skill edit. Keep it only if it beats the current skill on a held-out bench, as GEPA does with its train and validation split. Add caps on length and cost, because GEPA has none built in.
-5. **Show resolution rate.** `Snapshot.Report()` has it per reviewer. Put it on the dashboard, since it is the number the market uses.
-6. **Owner judgement beyond one reviewer.** Priya's card stopped only her own reviewer. Let a judgement card from a path's owner reach the other reviewers on that path, as a note.
-7. **Different lenses.** Reviewers with no cards review the same way. Give each one a lens (correctness, security, contracts) so that consensus means more.
-8. **Tree-sitter.** Non-Go languages use line patterns. Tree-sitter would improve them, at the cost of native code in a `CGO_ENABLED=0` build.
+1. **Author intent from the PC.** Claude transcripts hold `pr-link` records, so the CLI can tie a session to its PR and summarize what the author corrected, rejected and did not test. No hosted reviewer can see this. It can land first as a section in the PR body, which reviewers already read.
+2. **Run the bench on real history.** Take fix commits from real repos, replay the diff that introduced each bug, and use only cards dated before it. This removes my authorship bias, and it is the gate for any skill change.
+3. **Prompt self-improvement.** Feed `reviewlearn` misses to a reflection step that proposes a skill edit. Keep it only if it beats the current skill on a held-out bench, as GEPA does with its train and validation split. Add caps on length and cost, because GEPA has none built in.
+4. **Show resolution rate.** `Snapshot.Report()` has it per reviewer. Put it on the dashboard, since it is the number the market uses.
+5. **Owner judgement beyond one reviewer.** Priya's card stopped only her own reviewer. Let a judgement card from a path's owner reach the other reviewers on that path, as a note.
+6. **Different lenses.** Reviewers with no cards review the same way. Give each one a lens (correctness, security, contracts) so that consensus means more.
+7. **Tree-sitter.** Non-Go languages use line patterns. Tree-sitter would improve them, at the cost of native code in a `CGO_ENABLED=0` build.
 
 ## 6. Sources
 

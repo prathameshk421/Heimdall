@@ -579,11 +579,11 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	recheck, err := newKnowledgeSearch(d, ad, clk, store)
+	evidence, err := newEvidenceRecheck(d, ad, store, clk)
 	if err != nil {
 		return nil, err
 	}
-	execs, err := executors(ctx, ad, store, store, blobs, ingestor{eng: eng}, gen, clk, recheck)
+	execs, err := executors(ctx, ad, store, store, blobs, ingestor{eng: eng}, gen, clk, evidence)
 	if err != nil {
 		return nil, err
 	}
@@ -726,7 +726,11 @@ func assembleMCP(
 	if err != nil {
 		return nil, nil, err
 	}
-	toolsSvc, err := newAgentTools(ad, store, pool, blobs, eng, gen, clk, reviewRefs{code: ad.vcs, memory: knowledgeSvc})
+	evidence, err := newCardEvidence(d, ad, store, clk, knowledgeSvc)
+	if err != nil {
+		return nil, nil, err
+	}
+	toolsSvc, err := newAgentTools(ad, store, pool, blobs, eng, gen, clk, reviewRefs{code: ad.vcs, memory: evidence})
 	if err != nil {
 		return nil, nil, err
 	}
