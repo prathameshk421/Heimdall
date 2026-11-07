@@ -13,7 +13,8 @@
 
 ## Noticed (Nov 7, t48 merge)
 
-- **Edit guard fails open on macOS without GNU coreutils.** `.claude/hooks/pre-edit-guard.sh` calls `realpath -m`; BSD `realpath` rejects `-m`, the hook exits 0 and allows every edit, `.env` included. It works only when `/opt/homebrew/opt/coreutils/libexec/gnubin` is on PATH. Fix needs the owner's yes (harness file, R2): fall back to `grealpath`, and deny when path resolution fails.
+- **Fixed (owner yes, applied by the owner's terminal): edit guard failed open on macOS without GNU coreutils.** `pre-edit-guard.sh` called `realpath -m`; BSD `realpath` rejects `-m`, so the hook exited 0 and allowed every edit, `.env` included. It now tries GNU `realpath`, then `grealpath`, then Python, and denies when no resolver works. Four new hook cases run the guard with a BSD-style `realpath` stub and with no resolver at all. Red first: the old hook failed 4 of 5 of these cases in a scratch run; the new one passes. `make harness-test`: 133 cases, 2 failed (the known docker-mount cases), with and without GNU coreutils on PATH.
+- **`harness-install CHECK=1` needs GNU `stat -c`.** Without GNU coreutils it stops with `.golangci.yml has mode , want 644` (it fails closed, not open). With them it passes.
 - **gitleaks scans every local ref.** 67 `refs/t3/orchestration-v2/*` checkpoint refs and the two `refs/backup/pre-trailer-strip*` refs carry old fixture values whose fingerprints no longer match `.gitleaksignore` (220 of its 235 entries name commits that no longer exist after the trailer rewrite). Deleting those local refs is the owner's call.
 - **4 deploy-script cases fail on the pre-merge commit** (rollback restores prior release; recovery verifies Graphiti, health and MCP; recovery stops on unhealthy Graphiti; recovery resumes an interrupted rollback). Not investigated.
 

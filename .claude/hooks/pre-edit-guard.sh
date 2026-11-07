@@ -6,8 +6,21 @@ in=$(cat)
 f=$(jq -r '.tool_input.file_path // empty' <<<"$in")
 [ -z "$f" ] && exit 0
 # Normalise first: ./ and ../ segments must not step around the patterns below.
-f=$(realpath -m -- "$f")
-rel=${f#"$(realpath -m -- "$CLAUDE_PROJECT_DIR")"/}
+# BSD realpath (macOS) has no -m, so try GNU realpath, then grealpath, then Python.
+# If no resolver works, deny: a guard that cannot read the path must not allow the edit.
+resolve() {
+  if realpath -m -- / >/dev/null 2>&1; then realpath -m -- "$1"
+  elif command -v grealpath >/dev/null 2>&1; then grealpath -m -- "$1"
+  elif command -v python3 >/dev/null 2>&1; then python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1"
+  else return 1
+  fi
+}
+if ! abs=$(resolve "$f") || [ -z "$abs" ] || ! root=$(resolve "$CLAUDE_PROJECT_DIR") || [ -z "$root" ]; then
+  echo "blocked by AGENTS.md R2: cannot resolve $f, so the edit guard cannot check it" >&2
+  exit 2
+fi
+f=$abs
+rel=${f#"$root"/}
 
 case "$rel" in
   .claude/*|docs/harness/*|.git/*|secrets/*|.env|.env.*|/etc/*|"$HOME"/.ssh/*)

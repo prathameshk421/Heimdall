@@ -135,6 +135,26 @@ edit internal/app/review/review.go "$leak"; [ "$code" -eq 2 ]; check "edit-guard
 edit internal/app/review/review_test.go "$leak"; [ "$code" -eq 0 ]; check "edit-guard allows a _test.go importing the test kit" $?
 edit cmd/heimdall-testagent/main.go "$leak"; [ "$code" -eq 0 ]; check "edit-guard allows the test agent importing the test kit" $?
 
+# The guard must not depend on GNU realpath, and must fail closed when no resolver works.
+# bsd_bin has a realpath that rejects -m (like macOS); bare_bin also has no Python and no grealpath.
+bsd_bin="$work/bsd-bin"; bare_bin="$work/bare-bin"
+mkdir -p "$bsd_bin" "$bare_bin"
+for b in bash env jq cat grep; do
+  ln -sf "$(command -v "$b")" "$bsd_bin/$b"; ln -sf "$(command -v "$b")" "$bare_bin/$b"
+done
+ln -sf "$(command -v python3)" "$bsd_bin/python3"
+printf '#!/bin/sh\necho "realpath: illegal option -- m" >&2\nexit 1\n' > "$bsd_bin/realpath"
+cp "$bsd_bin/realpath" "$bare_bin/realpath"
+chmod +x "$bsd_bin/realpath" "$bare_bin/realpath"
+edit_on() { # edit_on <bin dir> <path> -> sets code and out, with only that bin dir on PATH
+  out=$(jq -n --arg p "$proj/$2" '{tool_input: {file_path: $p, content: ""}}' | PATH="$1" CLAUDE_PROJECT_DIR="$proj" "$1/bash" "$edit_hook" 2>/dev/null)
+  code=$?
+}
+edit_on "$bsd_bin" .env; [ "$code" -eq 2 ]; check "edit-guard denies .env when realpath has no -m" $?
+edit_on "$bsd_bin" internal/../.claude/settings.json; [ "$code" -eq 2 ]; check "edit-guard resolves ../ when realpath has no -m" $?
+edit_on "$bsd_bin" internal/app/review/review.go; [ "$code" -eq 0 ] && [ -z "$out" ]; check "edit-guard allows ordinary code when realpath has no -m" $?
+edit_on "$bare_bin" internal/app/review/review.go; [ "$code" -eq 2 ]; check "edit-guard fails closed when no path resolver works" $?
+
 # --- post-edit: format and vet the package just edited
 go_proj="$work/goproj"
 mkdir -p "$go_proj/pkg"
