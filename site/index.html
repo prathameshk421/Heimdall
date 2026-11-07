@@ -440,7 +440,7 @@ p { margin: 0; text-wrap: pretty; }
       <a href="#questions">Questions</a>
     </div>
     <div class="nav-act">
-      <a class="icon-btn" href="https://github.com/prathameshk421/flip_the_switch_hackathon" aria-label="Heimdall on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a>
+      <a class="icon-btn" href="https://github.com/prathameshk421/Heimdall" aria-label="Heimdall on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a>
       <button class="btn btn-ink btn-nav" type="button" data-copy>Copy setup prompt</button>
     </div>
     <span class="thread" id="thread" aria-hidden="true"></span>
@@ -669,7 +669,7 @@ p { margin: 0; text-wrap: pretty; }
     <div class="rules" id="rules" role="group" aria-label="The ten merge rules. Press a rule to change it."></div>
     <div class="verdict" aria-live="polite">
       <div><div class="v-title" id="vTitle">Merge <em>blocked</em></div><p class="v-sub" id="vSub">a person approves commit 26058a1, or nothing merges</p></div>
-      <a class="linkish" href="https://github.com/prathameshk421/flip_the_switch_hackathon/blob/main/internal/domain/gate/gate.go">Read gate.go<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      <a class="linkish" href="https://github.com/prathameshk421/Heimdall/blob/main/internal/domain/gate/gate.go">Read gate.go<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
     </div>
   </div>
 </section>
@@ -710,7 +710,7 @@ p { margin: 0; text-wrap: pretty; }
       <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span><span>your coding agent · setup-prompt.txt</span><button class="btn btn-night" type="button" data-copy><svg aria-hidden="true"><use href="#i-copy"/></svg>Copy</button></div>
 <pre id="setupPrompt">Set up Heimdall for this repository.
 
-<span class="n">1.</span> Clone https://github.com/prathameshk421/flip_the_switch_hackathon and read the README.
+<span class="n">1.</span> Clone https://github.com/prathameshk421/Heimdall and read the README.
 <span class="n">2.</span> Install the Heimdall skills from the skills/ folder.
 <span class="n">3.</span> Connect to Switch.
 <span class="n">4.</span> Draft my context pack. Show it to me. Do not save it before I approve it.
@@ -733,7 +733,7 @@ p { margin: 0; text-wrap: pretty; }
       <div class="q open"><button type="button" aria-expanded="true">Is this another AI code reviewer?<span class="plus" aria-hidden="true"></span></button><div class="a"><div><p>No. An AI reviewer comments on a diff. Heimdall starts at the ticket and has tests written first. Reviewers must bring proof, and a required GitHub check stays red until plain code says that all ten rules are met.</p></div></div></div>
       <div class="q"><button type="button" aria-expanded="false">Can an agent approve a merge?<span class="plus" aria-hidden="true"></span></button><div class="a"><div><p>No. Agents find problems and fix them. An approval counts only from a person who is not the author, and only on the head commit. There is no model in the decision path.</p></div></div></div>
       <div class="q"><button type="button" aria-expanded="false">Why must tests fail first?<span class="plus" aria-hidden="true"></span></button><div class="a"><div><p>A test that passes without the feature proves nothing. Heimdall runs each new test on the base commit in a locked container. If it passes there, Heimdall rejects it. The tests that survive are pinned by hash.</p></div></div></div>
-      <div class="q"><button type="button" aria-expanded="false">What runs live today?<span class="plus" aria-hidden="true"></span></button><div class="a"><div><p>The whole story ran on Slack: ticket, tests, three reviews, two real findings, the fix, a human approval, a green gate and the merge. Context packs and Graphiti memory are built and tested, but have not run on the live server. The <a href="https://github.com/prathameshk421/flip_the_switch_hackathon#readme">README</a> keeps the full list.</p></div></div></div>
+      <div class="q"><button type="button" aria-expanded="false">What runs live today?<span class="plus" aria-hidden="true"></span></button><div class="a"><div><p>The whole story ran on Slack: ticket, tests, three reviews, two real findings, the fix, a human approval, a green gate and the merge. Context packs and Graphiti memory are built and tested, but have not run on the live server. The <a href="https://github.com/prathameshk421/Heimdall#readme">README</a> keeps the full list.</p></div></div></div>
       <div class="q"><button type="button" aria-expanded="false">Does a green check mean the code is safe?<span class="plus" aria-hidden="true"></span></button><div class="a"><div><p>It means that the change has evidence and a person approved it. Heimdall makes merges safer. It does not replace your CI or your security checks, and it does not promise code without bugs.</p></div></div></div>
     </div>
   </div>
@@ -746,7 +746,7 @@ p { margin: 0; text-wrap: pretty; }
     <h2 id="endTitle" data-split>Humans bring judgment. <em>Agents bring proof.</em></h2>
     <div class="cta" data-rv style="justify-content:center">
       <button class="btn btn-ink" type="button" data-copy><svg aria-hidden="true"><use href="#i-copy"/></svg>Copy the setup prompt</button>
-      <a class="btn btn-pearl" href="https://github.com/prathameshk421/flip_the_switch_hackathon"><svg aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
+      <a class="btn btn-pearl" href="https://github.com/prathameshk421/Heimdall"><svg aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
     </div>
   </div>
 </section>
@@ -755,7 +755,7 @@ p { margin: 0; text-wrap: pretty; }
   <div class="foot-top">
     <div><b>Heimdall</b><p>Nothing merges without proof. Built on Switch for teams that build with agents.</p></div>
     <div><b>Product</b><a href="#run">Watch it run</a><a href="#context">Context</a><a href="#gate">The gate</a></div>
-    <div><b>Start</b><a href="#setup">Set up</a><a href="#questions">Questions</a><a href="https://github.com/prathameshk421/flip_the_switch_hackathon">GitHub</a></div>
+    <div><b>Start</b><a href="#setup">Set up</a><a href="#questions">Questions</a><a href="https://github.com/prathameshk421/Heimdall">GitHub</a></div>
   </div>
   <div class="wordmark" aria-hidden="true">Heimdall</div>
   <div class="foot-base"><span>Made for Flip the Switch, 2026</span><span class="runes" aria-label="Heimdall in runes">ᚺᛖᛁᛗᛞᚨᛚᛚ</span><span>Open source</span></div>
