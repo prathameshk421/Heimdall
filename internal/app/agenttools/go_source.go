@@ -46,6 +46,11 @@ func declaredFuncs(files []testset.File) (map[string]bool, []error, bool) {
 		sawGo = true
 		parsed, err := parser.ParseFile(token.NewFileSet(), f.Path, f.Content, parser.SkipObjectResolution)
 		if err != nil {
+			if !strings.Contains(f.Content, "\n") {
+				// Found live on KAN-9: a file sent on one line reads as one long comment, and the parse error alone did
+				// not tell the agent why.
+				err = fmt.Errorf("%w (the file has no line breaks: send the whole file with real newline characters, one Go line per line)", err)
+			}
 			errs = append(errs, fmt.Errorf("files[%d].content is not valid Go: %w", i, err))
 			continue
 		}

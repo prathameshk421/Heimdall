@@ -44,3 +44,12 @@ func TestValidGoAndNonGoFilesPass(t *testing.T) {
 	sub.Files = append(sub.Files, testset.File{Path: "tests/heimdall/KAN-9/testdata/refund.json", Content: `{"amount": 10}`})
 	require.NoError(t, validateSubmissionExpect("KAN-9", kan9Inputs, sub))
 }
+
+// Found live on KAN-9: the agent sent the whole file on one line (newlines turned into spaces), so it read as one long
+// comment. "expected 'package'" did not tell it why; the refusal names the missing line breaks.
+func TestAOneLineGoFileIsRefusedWithAHintAboutLineBreaks(t *testing.T) {
+	flat := `// Ticket: KAN-9 header. package heimdall_test import "testing" func TestRefundIsCreated(t *testing.T) {}`
+	err := validateSubmissionExpect("KAN-9", kan9Inputs, goSubmission(flat, "TestRefundIsCreated"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "has no line breaks")
+}
