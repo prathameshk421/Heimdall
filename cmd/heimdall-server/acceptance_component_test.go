@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,11 +142,11 @@ func TestSliceOpensOneRoomAndOneBranchAcrossARestart(t *testing.T) {
 	require.Eventually(t, func() bool { return len(sw.invitedAgents()) == 1 },
 		acceptanceWaitFor, acceptancePollTick, "the test-author is invited into the change room before its task is posted")
 	require.Equal(t, []string{"test-author"}, sw.invitedAgents(), "the invite names the agent")
-	require.Eventually(t, func() bool { return len(sw.postBodies()) == 1 },
+	require.Eventually(t, func() bool { return len(sw.postBodies()) == 2 },
 		acceptanceWaitFor, acceptancePollTick, "the test-author assignment must be posted to the room")
 	posts := sw.postBodies()
-	require.Len(t, posts, 1, "one room message: the test-author assignment")
-	require.Contains(t, posts[0], "@test-author")
+	require.Len(t, posts, 2, "two room messages: the test-author assignment and the narrator's line")
+	require.Contains(t, strings.Join(posts, "\n"), "@test-author")
 	require.Equal(t, []string{string(acceptanceChange) + " " + acceptanceTitle}, sw.createCallTitles(), "Switch saw one open-room call for KAN-1")
 	require.Zero(t, sw.badAuth, "every Switch call carried the API key")
 	refs := gh.refCalls()
@@ -176,7 +177,7 @@ func TestSliceOpensOneRoomAndOneBranchAcrossARestart(t *testing.T) {
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventBranchEnsured), "a restart does not make another branch")
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventTaskAssigned), "a restart does not assign the task again")
 	require.Equal(t, change.StateWritingTests, s.stateOf(acceptanceChange))
-	require.Len(t, sw.postBodies(), 1, "still one room message after the restart")
+	require.Len(t, sw.postBodies(), 2, "still the same two room messages after the restart")
 	require.Equal(t, []string{string(acceptanceChange) + " " + acceptanceTitle}, sw.createCallTitles(), "still one open-room call after the restart")
 	require.Len(t, gh.refCalls(), 1, "still one create-ref call after the restart")
 }
