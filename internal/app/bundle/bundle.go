@@ -19,6 +19,7 @@ type Request struct {
 	Role               workflow.Role           `json:"role"`
 	CaseID             string                  `json:"case_id,omitempty"`
 	Change             string                  `json:"change"`
+	Repo               string                  `json:"repo"`
 	BaseSHA            string                  `json:"base_sha"`
 	HeadSHA            string                  `json:"head_sha"`
 	Diff               string                  `json:"diff,omitempty"`
@@ -60,6 +61,7 @@ type document struct {
 
 type changeContext struct {
 	ID      string `json:"id"`
+	Repo    string `json:"repo"`
 	BaseSHA string `json:"base_sha"`
 	HeadSHA string `json:"head_sha"`
 }
@@ -85,7 +87,7 @@ func Build(req Request) (Bundle, error) {
 	}
 	content := document{
 		Skill: skillFor(req.Role), CaseID: req.CaseID, RoleRules: rulesFor(req.Role),
-		Change: changeContext{ID: req.Change, BaseSHA: req.BaseSHA, HeadSHA: req.HeadSHA},
+		Change: changeContext{ID: req.Change, Repo: req.Repo, BaseSHA: req.BaseSHA, HeadSHA: req.HeadSHA},
 		Diff:   req.Diff, FilesChanged: sortedCopy(req.FilesChanged), Criteria: sortedCopy(req.Criteria),
 		AcceptanceCriteria: sortedCriterionRefs(req.AcceptanceCriteria),
 		CI:                 sortedCopy(req.CI), Pack: req.Pack, Memory: req.Memory, Untrusted: sortedRefs(req.Untrusted),
