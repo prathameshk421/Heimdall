@@ -3,6 +3,7 @@ package rootlessrunner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -18,6 +19,25 @@ type apiTestExecutor struct{ calls int }
 func (e *apiTestExecutor) Execute(_ context.Context, _ []string, _ string) ([]byte, error) {
 	e.calls++
 	return []byte("{\"Action\":\"pass\",\"Package\":\"fixture\",\"Test\":\"TestSafe\"}\n"), nil
+}
+
+type failingExecutor struct{}
+
+func (failingExecutor) Execute(context.Context, []string, string) ([]byte, error) {
+	return []byte("Error: runc: runc create failed: unable to apply cgroup configuration\n"), errors.New("podman job: exit status 125")
+}
+
+// A job that never produced test output must report the runtime's own cause instead of hiding it
+// behind a generic message the operator cannot act on.
+func TestHandlerReportsTheSandboxCause(t *testing.T) {
+	runner := Runner{Policy: Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}, Executor: failingExecutor{}, Root: t.TempDir()}
+	in := request{Profile: "go", Job: ports.SandboxJob{Kind: ports.SandboxRedFirst, Repo: "acme/pay", SHA: id.SHA(strings.Repeat("a", 40)), Dir: "tests/heimdall/PAY-1", Timeout: time.Minute}, Archive: []byte("archive")}
+	body, err := json.Marshal(in)
+	require.NoError(t, err)
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/run", strings.NewReader(string(body)))
+	out, status := runner.handleRun(req)
+	require.Equal(t, 422, status)
+	require.Contains(t, out.Error, "runc create failed", "the underlying runtime cause is surfaced")
 }
 
 func TestHandlerRejectsTooManyOverlaysBeforeExecution(t *testing.T) {

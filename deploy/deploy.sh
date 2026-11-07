@@ -93,6 +93,7 @@ REMOTE
 ssh "$host" 'sudo sh -s' <<'REMOTE'
 set -eu
 command -v podman >/dev/null || { echo 'deploy: rootless Podman must be installed on the VM' >&2; exit 1; }
+command -v crun >/dev/null || { echo 'deploy: the crun OCI runtime is required: under cgroupfs rootless Podman cannot apply cgroup limits with runc' >&2; exit 1; }
 getent group heimdall-runner-socket >/dev/null || groupadd --system heimdall-runner-socket
 id heimdall-runner >/dev/null 2>&1 || useradd --system --create-home --home-dir /var/lib/heimdall-runner --shell /usr/sbin/nologin heimdall-runner
 if ! grep -q '^heimdall-runner:' /etc/subuid 2>/dev/null || ! grep -q '^heimdall-runner:' /etc/subgid 2>/dev/null; then

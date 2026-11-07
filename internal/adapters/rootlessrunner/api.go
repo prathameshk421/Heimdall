@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/testevents"
@@ -154,9 +155,27 @@ func (r *Runner) handleRun(req *http.Request) (response, int) {
 		return response{Output: out}, http.StatusOK
 	}
 	if runErr != nil {
-		return response{Error: "sandbox execution failed"}, http.StatusUnprocessableEntity
+		return response{Error: sandboxCause(out, runErr)}, http.StatusUnprocessableEntity
 	}
 	return response{Error: "runner produced no test results"}, http.StatusUnprocessableEntity
+}
+
+// maxFailureCause bounds the runtime detail carried back to the server. The job output is the only
+// place the underlying cause appears (Podman writes it there), so a bounded tail keeps the failure
+// actionable without letting an untrusted job inflate the error response.
+const maxFailureCause = 2 << 10
+
+// sandboxCause reports why a job produced no test output. It prefers the job output tail, which
+// carries the runtime's own explanation, and falls back to the executor error when it is empty.
+func sandboxCause(out []byte, err error) string {
+	detail := strings.TrimSpace(string(out))
+	if len(detail) > maxFailureCause {
+		detail = detail[len(detail)-maxFailureCause:]
+	}
+	if detail == "" {
+		detail = err.Error()
+	}
+	return "sandbox execution failed: " + detail
 }
 
 // runScope validates the profile scope of a run request and, for a trial, returns the proposed
