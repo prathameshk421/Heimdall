@@ -565,6 +565,34 @@ func TestSubmitTestsHappyPathAndIdempotent(t *testing.T) {
 	require.Len(t, evs2, 4)
 }
 
+// A submission for a change the operator already closed is refused before anything is stored, so the log never holds
+// an event the reducer refuses (the live KAN-9 and KAN-11 streams did, and room discovery stopped on them).
+func TestPrepareTestsSubmissionRefusesAClosedChange(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	makeBaseStream(t, h, workflow.RoleTestAuthor, testAgent)
+	rejected, err := json.Marshal(change.Rejected{Reason: "closed by the operator"})
+	require.NoError(t, err)
+	_, err = h.events.Append(context.Background(), testChangeID, 3, []change.Event{{
+		ID: h.ids.NewEvent(), ChangeID: testChangeID, Version: 4, Type: change.EventChangeRejected,
+		Actor: change.Actor{Kind: change.ActorHuman, ID: "operator"}, OccurredAt: t0.Add(5 * time.Second),
+		CorrelationID: "corr-1", Payload: rejected,
+	}}, nil)
+	require.NoError(t, err)
+
+	assign := agenttools.Assignment{
+		ChangeID: testChangeID, TaskID: testTaskID, Agent: testAgent, Role: workflow.RoleTestAuthor,
+		Deadline: t0.Add(30 * time.Minute), AssignedAt: t0.Add(2 * time.Second),
+		Task: workflow.TaskEnvelope{
+			Change: workflow.ChangeRef{ID: testChangeID, BaseSHA: testBaseSHA, HeadSHA: testHeadSHA},
+			Inputs: workflow.Inputs{AcceptanceCriteria: []workflow.CriterionRef{{ID: "AC1", Ref: testBundleRef}}},
+		},
+	}
+	_, prepared, _, err := h.svc.PrepareTestsSubmission(context.Background(), assign, validSubmission(), false)
+	require.ErrorIs(t, err, agenttools.ErrReducerRefusal)
+	require.False(t, prepared)
+}
+
 func TestSubmitTestsLateSemantics(t *testing.T) {
 	t.Parallel()
 	h := newTestHarness(t)

@@ -477,3 +477,53 @@ func TestTaskAssignmentAckTimeoutReassignAndFailureReplayAfterRestart(t *testing
 	_, err = restartedIndex.ActiveTask(ctx, alice, workflow.RoleReviewer)
 	require.ErrorIs(t, err, ports.ErrNotFound, "failure revokes the active assignment")
 }
+
+// A task on a change that was rejected (by an operator decision or a change.rejected event) is not open: the agent
+// must never be handed it, and a later open task must still be served.
+func TestActiveTaskSkipsRejectedChanges(t *testing.T) {
+	ctx := context.Background()
+	srv := startServer(t)
+	db := srv.database(ctx, t)
+	s := NewStore(db.pool)
+	idx := NewTaskIndex(db.pool)
+	author := id.AgentName("test-author")
+
+	decisionPayload, err := json.Marshal(change.DecisionRecorded{Kind: change.DecisionReject, Target: "team", Login: "operator", Reason: "old base", SourceRef: "operator:reject:PAY-201"})
+	require.NoError(t, err)
+	byDecision := id.ChangeID("PAY-201")
+	_, err = s.Append(ctx, byDecision, 0, []change.Event{
+		roomEvent(byDecision, 1, "room-201"),
+		taskAssignedEvent(byDecision, 2, "tsk_01HZX3K9QW7M2P5R8T0V4YB6D1", author, workflow.RoleTestAuthor, base.Add(2*time.Second)),
+		{
+			ID: newEventID(), ChangeID: byDecision, Version: 3, Type: change.EventDecisionRecorded,
+			Actor: change.Actor{Kind: change.ActorHuman, ID: "operator"}, OccurredAt: base.Add(3 * time.Second),
+			CorrelationID: "corr-1", Payload: decisionPayload,
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	byEvent := id.ChangeID("PAY-202")
+	_, err = s.Append(ctx, byEvent, 0, []change.Event{
+		roomEvent(byEvent, 1, "room-202"),
+		taskAssignedEvent(byEvent, 2, "tsk_01HZX3K9QW7M2P5R8T0V4YB6D2", author, workflow.RoleTestAuthor, base.Add(4*time.Second)),
+		{
+			ID: newEventID(), ChangeID: byEvent, Version: 3, Type: change.EventChangeRejected,
+			Actor: change.Actor{Kind: change.ActorSystem, ID: "engine"}, OccurredAt: base.Add(5 * time.Second),
+			CorrelationID: "corr-1", Payload: json.RawMessage(`{"reason":"closed"}`),
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	_, err = idx.ActiveTask(ctx, author, workflow.RoleTestAuthor)
+	require.ErrorIs(t, err, ports.ErrNotFound, "rejected changes hold no open task")
+
+	open := id.ChangeID("PAY-203")
+	_, err = s.Append(ctx, open, 0, []change.Event{
+		roomEvent(open, 1, "room-203"),
+		taskAssignedEvent(open, 2, "tsk_01HZX3K9QW7M2P5R8T0V4YB6D3", author, workflow.RoleTestAuthor, base.Add(6*time.Second)),
+	}, nil)
+	require.NoError(t, err)
+	ref, err := idx.ActiveTask(ctx, author, workflow.RoleTestAuthor)
+	require.NoError(t, err)
+	require.Equal(t, open, ref.ChangeID)
+}

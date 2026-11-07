@@ -56,6 +56,34 @@ func TestOpenRooms(t *testing.T) {
 	require.Error(t, err, "an inconsistent persisted history must fail discovery")
 }
 
+// A change that was rejected and then received an event the reducer refuses (the agent submitted tests after the
+// operator closed it) is closed: its refused tail must not stop room discovery for every other change.
+func TestOpenRoomsTreatsATerminalChangeWithARefusedTailAsClosed(t *testing.T) {
+	ctx := context.Background()
+	srv := startServer(t)
+	s := NewStore(srv.database(ctx, t).pool)
+
+	live := id.ChangeID("PAY-150")
+	_, err := s.Append(ctx, live, 0, []change.Event{
+		discoveryEvent(live, 1, change.EventChangeTriggered, `{"ticket":"PAY-150","repo":"acme/pay-demo","assignee":"engine","source":"manual"}`),
+		discoveryEvent(live, 2, change.EventRoomOpened, `{"room_id":"room_01HZX3K9QW7M2P5R8T0V4YB6CF"}`),
+	}, nil)
+	require.NoError(t, err)
+
+	closed := id.ChangeID("PAY-151")
+	_, err = s.Append(ctx, closed, 0, []change.Event{
+		discoveryEvent(closed, 1, change.EventChangeTriggered, `{"ticket":"PAY-151","repo":"acme/pay-demo","assignee":"engine","source":"manual"}`),
+		discoveryEvent(closed, 2, change.EventRoomOpened, `{"room_id":"room_01HZX3K9QW7M2P5R8T0V4YB6CG"}`),
+		discoveryEvent(closed, 3, change.EventChangeRejected, `{"reason":"closed"}`),
+		discoveryEvent(closed, 4, change.EventTestsSubmitted, `{"refs":["tests/heimdall/PAY-151/a_test.go"],"ac_map":{"AC1":["TestA"]},"sha":"abcdef1","tree_hash":"abcdef1"}`),
+	}, nil)
+	require.NoError(t, err)
+
+	got, err := s.OpenRooms(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []OpenRoom{{ChangeID: live, RoomID: "room_01HZX3K9QW7M2P5R8T0V4YB6CF"}}, got)
+}
+
 func discoveryEvent(cid id.ChangeID, version int64, typ change.EventType, payload string) change.Event {
 	return change.Event{
 		ID: newEventID(), ChangeID: cid, Version: version, Type: typ,

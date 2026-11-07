@@ -361,13 +361,33 @@ func (s *Service) PrepareTestsSubmission(ctx context.Context, a Assignment, sub 
 		if err != nil {
 			return change.Event{}, false, false, err
 		}
+		if err := reducerAccepts(existing, ev); err != nil {
+			return change.Event{}, false, false, err
+		}
 		return ev, true, true, nil
 	}
 	ev, err := s.buildTestsSubmittedEvent(a, sub, blobRef, existing)
 	if err != nil {
 		return change.Event{}, false, false, err
 	}
+	if err := reducerAccepts(existing, ev); err != nil {
+		return change.Event{}, false, false, err
+	}
 	return ev, true, false, nil
+}
+
+// reducerAccepts checks that the change, as it stands, can take ev. The engine stores what it is given, so without
+// this check an agent could write to a change that is already closed, and the log would then hold an event the
+// reducer refuses.
+func reducerAccepts(existing []change.Event, ev change.Event) error {
+	state, err := change.Replay(existing)
+	if err != nil {
+		return fmt.Errorf("stream %s does not replay: %w", ev.ChangeID, err)
+	}
+	if _, err := change.Reduce(state, ev); err != nil {
+		return fmt.Errorf("%w: %s refused by reducer in state %s: %w", ErrReducerRefusal, ev.Type, state, err)
+	}
+	return nil
 }
 
 type askedItem struct {

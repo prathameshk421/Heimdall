@@ -42,6 +42,12 @@ WITH latest_assigned AS (
 SELECT a.change_id, a.task_id
 FROM latest_assigned a
 WHERE NOT EXISTS (
+	-- A rejected change is closed: it holds no open task, whichever way it was rejected.
+	SELECT 1 FROM event r
+	WHERE r.change_id = a.change_id
+	  AND (r.type = 'change.rejected' OR (r.type = 'decision.recorded' AND r.payload->>'kind' = 'reject'))
+)
+AND NOT EXISTS (
 	SELECT 1 FROM event e
 	WHERE e.change_id = a.change_id
 	  AND e.version > a.version
@@ -70,7 +76,7 @@ LIMIT 1;
 // If the agent has more than one open task, ActiveTask returns the oldest one (by occurred_at, seq) and
 // lets the caller finish it first, except that a task waiting on an unanswered human question comes after any
 // task that is not waiting.
-// If no open task exists, it returns ports.ErrNotFound.
+// A change that was rejected holds no open task. If no open task exists, it returns ports.ErrNotFound.
 func (idx *TaskIndex) ActiveTask(ctx context.Context, agent id.AgentName, role workflow.Role) (ports.ActiveTaskRef, error) {
 	var cid, tid string
 	err := idx.pool.QueryRow(ctx, activeTaskQuery, string(agent), string(role)).Scan(&cid, &tid)
