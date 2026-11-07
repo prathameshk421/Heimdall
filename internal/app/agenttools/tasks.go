@@ -20,7 +20,32 @@ import (
 
 // Current finds the active task through the index and rebuilds the assignment from the latest task.assigned.
 func (s *Service) Current(ctx context.Context, agent id.AgentName, role workflow.Role) (Assignment, error) {
+	return s.CurrentFor(ctx, agent, role, "")
+}
+
+// ticketIndex is a task index that can find an agent's open task on one named ticket.
+type ticketIndex interface {
+	ActiveTaskFor(ctx context.Context, agent id.AgentName, role workflow.Role, ticket id.ChangeID) (ports.ActiveTaskRef, error)
+}
+
+// activeRef finds the open task: the one on the named ticket, or the agent's oldest when no ticket is named.
+func (s *Service) activeRef(ctx context.Context, agent id.AgentName, role workflow.Role, ticket id.ChangeID) (ports.ActiveTaskRef, error) {
+	if ticket == "" {
+		return s.index.ActiveTask(ctx, agent, role)
+	}
+	if byTicket, ok := s.index.(ticketIndex); ok {
+		return byTicket.ActiveTaskFor(ctx, agent, role, ticket)
+	}
 	ref, err := s.index.ActiveTask(ctx, agent, role)
+	if err == nil && ref.ChangeID != ticket {
+		return ports.ActiveTaskRef{}, ports.ErrNotFound
+	}
+	return ref, err
+}
+
+// CurrentFor is Current for one named ticket. An empty ticket means the agent's oldest open task.
+func (s *Service) CurrentFor(ctx context.Context, agent id.AgentName, role workflow.Role, ticket id.ChangeID) (Assignment, error) {
+	ref, err := s.activeRef(ctx, agent, role, ticket)
 	if err != nil {
 		if errors.Is(err, ports.ErrNotFound) {
 			return Assignment{}, fmt.Errorf("%w: %w", ErrNoTask, ports.ErrNotFound)

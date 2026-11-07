@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -91,6 +92,24 @@ func (idx *TaskIndex) ActiveTask(ctx context.Context, agent id.AgentName, role w
 		ChangeID: id.ChangeID(cid),
 		TaskID:   id.TaskID(tid),
 	}
+	if err := ref.Validate(); err != nil {
+		return ports.ActiveTaskRef{}, fmt.Errorf("active task ref: %w", err)
+	}
+	return ref, nil
+}
+
+// ActiveTaskFor is ActiveTask for one named ticket: the agent's open task on that change, if it has one.
+func (idx *TaskIndex) ActiveTaskFor(ctx context.Context, agent id.AgentName, role workflow.Role, ticket id.ChangeID) (ports.ActiveTaskRef, error) {
+	query := strings.Replace(activeTaskQuery, "FROM latest_assigned a\nWHERE NOT EXISTS (", "FROM latest_assigned a\nWHERE a.change_id = $3 AND NOT EXISTS (", 1)
+	var cid, tid string
+	err := idx.pool.QueryRow(ctx, query, string(agent), string(role), string(ticket)).Scan(&cid, &tid)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ports.ActiveTaskRef{}, ports.ErrNotFound
+		}
+		return ports.ActiveTaskRef{}, fmt.Errorf("lookup active task for agent %q role %q ticket %q: %w", agent, role, ticket, err)
+	}
+	ref := ports.ActiveTaskRef{ChangeID: id.ChangeID(cid), TaskID: id.TaskID(tid)}
 	if err := ref.Validate(); err != nil {
 		return ports.ActiveTaskRef{}, fmt.Errorf("active task ref: %w", err)
 	}

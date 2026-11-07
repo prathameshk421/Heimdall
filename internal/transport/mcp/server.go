@@ -333,7 +333,11 @@ func (s *Server) callTool(ctx context.Context, p Principal, params json.RawMessa
 	if !ok {
 		return nil, invalidParams()
 	}
-	text, err := t.handle(ctx, p, call.Arguments)
+	p, args, err := withTicket(p, call.Arguments)
+	if err != nil {
+		return s.toolOutcome(ctx, p, t.name, "", err), nil
+	}
+	text, err := t.handle(ctx, p, args)
 	return s.toolOutcome(ctx, p, t.name, text, err), nil
 }
 

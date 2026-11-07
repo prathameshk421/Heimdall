@@ -27,6 +27,8 @@ type Principal struct {
 	Role   workflow.Role
 	Person string
 	Human  bool
+	// Ticket is the ticket the call names, when the agent passed one. Empty means the agent's oldest open task.
+	Ticket id.ChangeID
 }
 
 // Assignment is the one active task of an agent. AssignedAt starts the 60 s ack window (TECH_SPEC 6.2).

@@ -83,7 +83,7 @@ func (s *Server) buildTools() ([]tool, error) {
 		return nil, fmt.Errorf("schema of submit_verdict: %w", err)
 	}
 	tools := []tool{
-		{name: "get_task", description: "Return your one active task: role, change, inputs and deadline.",
+		{name: "get_task", description: "Return your active task for a ticket: your instructions, the ticket, its inputs, its history and the deadline. Pass the ticket named in the message that woke you.",
 			schema: noArgsSchema(), roles: llmRoles(), handle: s.getTask},
 		{name: "ack", description: "Acknowledge your task within 60 seconds of its assignment.",
 			schema: noArgsSchema(), roles: llmRoles(), handle: s.ack},
@@ -107,6 +107,13 @@ func (s *Server) buildTools() ([]tool, error) {
 			schema: reportProgressSchema(), roles: llmRoles(), handle: s.reportProgress},
 	}
 	tools = append(tools, s.optionalTools()...)
+	for i := range tools {
+		withTicket, err := withTicketProperty(tools[i].schema)
+		if err != nil {
+			return nil, fmt.Errorf("schema of %s: %w", tools[i].name, err)
+		}
+		tools[i].schema = withTicket
+	}
 	return tools, nil
 }
 

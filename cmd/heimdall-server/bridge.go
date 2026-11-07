@@ -399,7 +399,7 @@ type tasksAdapter struct {
 }
 
 func (t *tasksAdapter) Current(ctx context.Context, p mcp.Principal) (mcp.Assignment, error) {
-	assign, err := t.svc.Current(ctx, p.Agent, p.Role)
+	assign, err := t.svc.CurrentFor(ctx, p.Agent, p.Role, p.Ticket)
 	if err != nil {
 		if errors.Is(err, agenttools.ErrNoTask) {
 			return mcp.Assignment{}, mcp.ErrNoTask
