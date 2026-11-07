@@ -356,24 +356,28 @@ func (s *Service) PrepareTestsSubmission(ctx context.Context, a Assignment, sub 
 		return change.Event{}, false, false, nil
 	}
 	isLate := late || s.clock.Now().After(a.Deadline)
-	if isLate {
-		ev, err := s.buildTimedOutEvent(a, blobRef, existing)
-		if err != nil {
-			return change.Event{}, false, false, err
-		}
-		if err := reducerAccepts(existing, ev); err != nil {
-			return change.Event{}, false, false, err
-		}
-		return ev, true, true, nil
-	}
-	ev, err := s.buildTestsSubmittedEvent(a, sub, blobRef, existing)
+	ev, err := s.submissionEvent(a, sub, blobRef, existing, isLate)
 	if err != nil {
 		return change.Event{}, false, false, err
 	}
-	if err := reducerAccepts(existing, ev); err != nil {
-		return change.Event{}, false, false, err
+	return ev, true, isLate, nil
+}
+
+// submissionEvent builds the event a submission stores (task.timed_out when late, tests.submitted otherwise) and checks
+// that the change can take it.
+func (s *Service) submissionEvent(a Assignment, sub testset.Submission, blobRef workflow.BlobRef, existing []change.Event, isLate bool) (change.Event, error) {
+	build := func() (change.Event, error) { return s.buildTestsSubmittedEvent(a, sub, blobRef, existing) }
+	if isLate {
+		build = func() (change.Event, error) { return s.buildTimedOutEvent(a, blobRef, existing) }
 	}
-	return ev, true, false, nil
+	ev, err := build()
+	if err != nil {
+		return change.Event{}, err
+	}
+	if err := reducerAccepts(existing, ev); err != nil {
+		return change.Event{}, err
+	}
+	return ev, nil
 }
 
 // reducerAccepts checks that the change, as it stands, can take ev. The engine stores what it is given, so without
