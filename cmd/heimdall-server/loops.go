@@ -92,14 +92,35 @@ func (a *app) episodeDeliveryLoop(ctx context.Context) {
 }
 
 func (a *app) roomStreamLoop(ctx context.Context) {
+	var delay time.Duration
 	for ctx.Err() == nil {
+		started := time.Now()
 		if err := a.roomStream.Run(ctx); err != nil && ctx.Err() == nil {
-			a.logger.ErrorContext(ctx, "Switch room stream stopped; durable cursors will resume it", "error", err)
-			if waitErr := clock.Wait(ctx, time.Second); waitErr != nil {
+			delay = nextStreamDelay(delay, time.Since(started))
+			a.logger.ErrorContext(ctx, "Switch room stream stopped; durable cursors will resume it", "error", err, "retry_in", delay)
+			if waitErr := clock.Wait(ctx, delay); waitErr != nil {
 				return
 			}
 		}
 	}
+}
+
+// Room stream retry bounds: the first retry waits streamRetryFirst, each quick failure doubles it up to
+// streamRetryCap, and a run that lasted streamHealthyRun or more counts as healthy and resets it.
+const (
+	streamRetryFirst = time.Second
+	streamRetryCap   = time.Minute
+	streamHealthyRun = 2 * time.Minute
+)
+
+// nextStreamDelay returns the wait before the next stream attempt, given the previous wait and how long the
+// failed attempt ran. A message that fails every time (for example while GitHub is rate limited) then costs one
+// attempt a minute, not one a second.
+func nextStreamDelay(prev, ranFor time.Duration) time.Duration {
+	if prev == 0 || ranFor >= streamHealthyRun {
+		return streamRetryFirst
+	}
+	return min(prev*2, streamRetryCap)
 }
 
 func (a *app) commentLoop(ctx context.Context, wake chan<- struct{}) {

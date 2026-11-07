@@ -87,6 +87,11 @@ func (p *Processor) Handle(ctx context.Context, in Input) error {
 	if in.Edited || in.Bot || in.SourceRef == "" {
 		return nil
 	}
+	// Most room traffic is agent and human chatter. Decide that from the text alone, before any identity read,
+	// so plain chat never spends a GitHub policy lookup.
+	if !commands.IsCommand(in.Command) {
+		return nil
+	}
 	src := in.Command.Source
 	return p.handleHuman(ctx, in, src)
 }

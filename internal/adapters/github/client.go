@@ -27,6 +27,9 @@ const (
 	maxBody         = 8 << 20
 	breakerLimit    = 5
 	breakerCooldown = 30 * time.Second
+	// maxCachedGets and maxCachedBody bound the conditional-GET cache: about 256 replies of at most 256 KiB each.
+	maxCachedGets = 256
+	maxCachedBody = 256 << 10
 )
 
 // RateLimitError says GitHub refused for rate-limit reasons and the adapter will not hold the call any longer. It
@@ -80,8 +83,9 @@ type client struct {
 	wait    func(ctx context.Context, d time.Duration) error
 	breaker breaker
 
-	cacheMu sync.Mutex
-	prCache map[string]cachedPRs
+	cacheMu  sync.Mutex
+	prCache  map[string]cachedPRs
+	getCache map[string]*response
 }
 
 // target builds the URL of a path with its query.
@@ -93,8 +97,60 @@ func (c *client) target(path string, query url.Values) string {
 	return u
 }
 
-// call sends one request with a deadline and returns the whole reply. The circuit breaker guards it.
+// call sends one request and returns the whole reply. A plain GET goes through the conditional-GET cache.
 func (c *client) call(ctx context.Context, r request) (*response, error) {
+	if r.method != http.MethodGet || r.etag != "" {
+		return c.callOnce(ctx, r)
+	}
+	return c.conditionalGet(ctx, r)
+}
+
+// conditionalGet sends a GET with the ETag of the last reply for the same URL and type. GitHub does not count a 304
+// against the rate limit, and a 304 is served from the cached reply. A list call that sets its own ETag keeps
+// its own cache (listAll), so this path never stacks two ETags on one request.
+func (c *client) conditionalGet(ctx context.Context, r request) (*response, error) {
+	if r.target == "" {
+		r.target = c.target(r.path, r.query)
+	}
+	key := r.accept + " " + r.target
+	cached := c.cachedGet(key)
+	if cached != nil {
+		r.etag = cached.header.Get("ETag")
+	}
+	out, err := c.callOnce(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	if out.status == http.StatusNotModified && cached != nil {
+		return cached, nil
+	}
+	if out.status == http.StatusOK && out.header.Get("ETag") != "" && len(out.body) <= maxCachedBody {
+		c.storeGet(key, out)
+	}
+	return out, nil
+}
+
+// cachedGet and storeGet guard the conditional-GET cache. A full cache keeps its entries and stores no new one.
+func (c *client) cachedGet(key string) *response {
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+	return c.getCache[key]
+}
+
+func (c *client) storeGet(key string, v *response) {
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+	if c.getCache == nil {
+		c.getCache = map[string]*response{}
+	}
+	if _, ok := c.getCache[key]; !ok && len(c.getCache) >= maxCachedGets {
+		return
+	}
+	c.getCache[key] = v
+}
+
+// callOnce sends one request with a deadline and returns the whole reply. The circuit breaker guards it.
+func (c *client) callOnce(ctx context.Context, r request) (*response, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 	var out *response

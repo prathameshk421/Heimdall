@@ -159,3 +159,10 @@ func grammar(src Source) string {
 	}
 	return "Not a command I know. Try: " + strings.Join(uses, "; ") + "."
 }
+
+// IsCommand reports whether the text starts with the source's command prefix. It needs no people lookup, so a
+// caller can skip the identity and policy reads for every message that cannot be a command.
+func IsCommand(in Input) bool {
+	_, ok := commandBody(in)
+	return ok
+}
