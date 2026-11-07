@@ -31,6 +31,21 @@ func TestAskKnowledgeRefusesUnlabeledMemoryResults(t *testing.T) {
 	require.ErrorContains(t, err, "memory result 0 is invalid")
 }
 
+func TestAskKnowledgeTrustLabelsComeFromDurableSourceLedger(t *testing.T) {
+	mem := &memorySpy{items: []ports.MemoryItem{{Ref: "memory:source", SourceKey: "workflow:event:payments", Label: ports.LabelConfirmed}}}
+	ledger := sourceTrustSpy{status: ports.EpisodeObserved}
+	service, err := NewSearchService(mem, scopeSpy{"payments"}, &auditSpy{}, knowledgeClock{time.Now()}, &ledger)
+	require.NoError(t, err)
+	items, err := service.Ask(context.Background(), "reviewer", "task", "acme/pay", "a01b2c3", ports.MemoryQuery{Question: "question"})
+	require.NoError(t, err)
+	require.Equal(t, ports.LabelObserved, items[0].Label, "stored source trust overrides a Graphiti label")
+	ledger.status, ledger.invalidated = ports.EpisodeConfirmed, true
+	service.cache = map[string]cachedSearch{}
+	items, err = service.Ask(context.Background(), "reviewer", "task", "acme/pay", "a01b2c3", ports.MemoryQuery{Question: "another question"})
+	require.NoError(t, err)
+	require.Equal(t, ports.LabelSuperseded, items[0].Label, "a tombstoned source cannot remain confirmed")
+}
+
 func TestAskKnowledgeCachesForSixtySecondsButAuditsEachCallerQuery(t *testing.T) {
 	clock := knowledgeClock{time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	mem := &memorySpy{items: []ports.MemoryItem{{Ref: "memory:x", Text: "fact", Label: ports.LabelObserved}}}
@@ -84,3 +99,12 @@ func (a *auditSpy) RecordKnowledgeQuery(_ context.Context, _ id.TaskID, _ id.Age
 type knowledgeClock struct{ now time.Time }
 
 func (c knowledgeClock) Now() time.Time { return c.now }
+
+type sourceTrustSpy struct {
+	status      ports.EpisodeStatus
+	invalidated bool
+}
+
+func (s *sourceTrustSpy) EpisodeTrust(context.Context, change.EffectKey) (ports.EpisodeStatus, bool, error) {
+	return s.status, s.invalidated, nil
+}

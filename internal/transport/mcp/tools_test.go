@@ -144,11 +144,16 @@ func TestKnowledgeFileStageIsTaskScopedAndApprovalUsesMappedPerson(t *testing.T)
 	require.Equal(t, "payments", r.files.group)
 	require.Contains(t, stage.text(), "knowledge:pending")
 
-	unmapped := r.call("approve_knowledge", `{"ref":"knowledge:pending"}`)
-	require.True(t, unmapped.IsError)
+	unmapped := r.rpc("tools/call", `{"name":"approve_knowledge","arguments":{"ref":"knowledge:pending"}}`)
+	require.NotNil(t, unmapped.Error)
 	require.Empty(t, r.files.approvePrincipal.Person, "caller cannot pass a person identity in tool arguments")
 
 	r.tokens.byHash[HashToken(testToken)] = Principal{Agent: testAgent, Role: workflow.RoleReviewer, Person: "alice"}
+	agentPrincipal := r.rpc("tools/call", `{"name":"approve_knowledge","arguments":{"ref":"knowledge:pending"}}`)
+	require.NotNil(t, agentPrincipal.Error, "an agent credential cannot become human approval by carrying a Person field")
+	require.Empty(t, r.files.approvePrincipal.Person)
+
+	r.tokens.byHash[HashToken(testToken)] = Principal{Person: "alice", Human: true}
 	approved := r.call("approve_knowledge", `{"ref":"knowledge:pending"}`)
 	require.False(t, approved.IsError, approved.text())
 	require.Equal(t, "alice", r.files.approvePrincipal.Person)

@@ -33,6 +33,7 @@ type SearchService struct {
 	scopes Scopes
 	audit  SearchAudit
 	clock  ports.Clock
+	trust  ports.EpisodeSourceTrust
 	mu     sync.Mutex
 	cache  map[string]cachedSearch
 }
@@ -43,11 +44,18 @@ type cachedSearch struct {
 }
 
 // NewSearchService requires all collaborators so a result cannot bypass scope or audit.
-func NewSearchService(memory ports.Memory, scopes Scopes, audit SearchAudit, clock ports.Clock) (*SearchService, error) {
+func NewSearchService(memory ports.Memory, scopes Scopes, audit SearchAudit, clock ports.Clock, ledgers ...ports.EpisodeSourceTrust) (*SearchService, error) {
 	if memory == nil || scopes == nil || audit == nil || clock == nil {
 		return nil, errors.New("knowledge search dependencies must not be nil")
 	}
-	return &SearchService{memory: memory, scopes: scopes, audit: audit, clock: clock, cache: make(map[string]cachedSearch)}, nil
+	service := &SearchService{memory: memory, scopes: scopes, audit: audit, clock: clock, cache: make(map[string]cachedSearch)}
+	if len(ledgers) > 1 {
+		return nil, errors.New("knowledge search accepts at most one source trust ledger")
+	}
+	if len(ledgers) == 1 {
+		service.trust = ledgers[0]
+	}
+	return service, nil
 }
 
 // Ask queries memory for the assignment owner. Groups from query are discarded and rebuilt from policy.
@@ -101,6 +109,21 @@ func (s *SearchService) search(ctx context.Context, key string, query ports.Memo
 	for i, item := range items {
 		if err := item.Validate(); err != nil {
 			return nil, fmt.Errorf("memory result %d is invalid: %w", i, err)
+		}
+		if s.trust != nil && item.SourceKey != "" {
+			status, invalidated, err := s.trust.EpisodeTrust(ctx, change.EffectKey(item.SourceKey))
+			if err != nil && !errors.Is(err, ports.ErrNotFound) {
+				return nil, fmt.Errorf("read durable memory source trust: %w", err)
+			}
+			switch {
+			case err != nil || invalidated:
+				item.Label = ports.LabelSuperseded
+			case status == ports.EpisodeConfirmed:
+				item.Label = ports.LabelConfirmed
+			default:
+				item.Label = ports.LabelObserved
+			}
+			items[i] = item
 		}
 	}
 	s.remember(key, items)

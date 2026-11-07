@@ -181,14 +181,17 @@ func decodeItems(raw json.RawMessage) ([]ports.MemoryItem, error) {
 	items := make([]ports.MemoryItem, 0, len(facts))
 	for _, rawFact := range facts {
 		var fact struct {
-			UUID      string            `json:"uuid"`
-			Fact      string            `json:"fact"`
-			Name      string            `json:"name"`
-			SourceURL string            `json:"source_url"`
-			Source    string            `json:"source"`
-			Label     ports.MemoryLabel `json:"label"`
-			ValidAt   time.Time         `json:"valid_at"`
-			InvalidAt *time.Time        `json:"invalid_at"`
+			UUID      string              `json:"uuid"`
+			Fact      string              `json:"fact"`
+			Name      string              `json:"name"`
+			SourceURL string              `json:"source_url"`
+			Source    string              `json:"source"`
+			SourceKey string              `json:"heimdall_key"`
+			Trust     ports.EpisodeStatus `json:"heimdall_status"`
+			AltKey    string              `json:"source_key"`
+			Label     ports.MemoryLabel   `json:"label"`
+			ValidAt   time.Time           `json:"valid_at"`
+			InvalidAt *time.Time          `json:"invalid_at"`
 		}
 		if err := json.Unmarshal(rawFact, &fact); err != nil {
 			return nil, fmt.Errorf("decode Graphiti fact: %w", err)
@@ -202,10 +205,19 @@ func decodeItems(raw json.RawMessage) ([]ports.MemoryItem, error) {
 			ref = "memory:" + url.PathEscape(ref)
 		}
 		label := fact.Label
+		if fact.Trust == ports.EpisodeConfirmed {
+			label = ports.LabelConfirmed
+		}
+		if fact.Trust == ports.EpisodeObserved {
+			label = ports.LabelObserved
+		}
 		if !label.Valid() {
 			label = ports.LabelObserved
 		}
-		items = append(items, ports.MemoryItem{Ref: ref, Text: text, Label: label, SourceURL: fact.SourceURL, ValidAt: fact.ValidAt, InvalidAt: fact.InvalidAt})
+		if fact.SourceKey == "" {
+			fact.SourceKey = fact.AltKey
+		}
+		items = append(items, ports.MemoryItem{Ref: ref, SourceKey: fact.SourceKey, Text: text, Label: label, SourceURL: fact.SourceURL, ValidAt: fact.ValidAt, InvalidAt: fact.InvalidAt})
 	}
 	return normalize(items), nil
 }

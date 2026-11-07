@@ -26,6 +26,7 @@ type Principal struct {
 	Agent  id.AgentName
 	Role   workflow.Role
 	Person string
+	Human  bool
 }
 
 // Assignment is the one active task of an agent. AssignedAt starts the 60 s ack window (TECH_SPEC 6.2).
@@ -97,7 +98,7 @@ type Knowledge interface {
 // PackReader loads only the pack owned by the authenticated principal. It must resolve the person's identity and
 // verification/decryption keys server-side; tool arguments never name an owner.
 type PackReader interface {
-	Read(context.Context, Principal, string) (string, error)
+	Read(context.Context, Principal, Assignment, string) (string, error)
 }
 
 // PackPublisher stages an owner-visible redacted review and publishes exactly the reviewed content.

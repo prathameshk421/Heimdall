@@ -133,5 +133,8 @@ func mountHTTP(router http.Handler, a *app) http.Handler {
 	if a != nil && a.operatorAnswer != nil {
 		mux.Handle("/admin/answer", a.operatorAnswer)
 	}
+	if a != nil && a.packUpload != nil {
+		mux.Handle("/packs/upload", a.packUpload)
+	}
 	return mux
 }

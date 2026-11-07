@@ -54,3 +54,8 @@ type Chat interface {
 type RoomInviter interface {
 	InviteAgent(ctx context.Context, room change.RoomID, agentName string) error
 }
+
+// RoomSummarizer extracts an observed change-room digest from already redacted Switch messages.
+type RoomSummarizer interface {
+	SummarizeRoom(context.Context, string, []Message) (string, error)
+}

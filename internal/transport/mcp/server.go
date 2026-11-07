@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -245,7 +244,7 @@ func (s *Server) dispatch(ctx context.Context, p Principal, msg rpcMessage) (any
 	case "ping":
 		return struct{}{}, nil
 	case "tools/list":
-		return s.listTools(p.Role), nil
+		return s.listPrincipalTools(p), nil
 	case "tools/call":
 		return s.callTool(ctx, p, msg.Params)
 	default:
@@ -305,10 +304,12 @@ type toolDescriptor struct {
 }
 
 // listTools returns the tools the role may call. A tool the role lacks is not listed at all.
-func (s *Server) listTools(role workflow.Role) toolListing {
+func (s *Server) listPrincipalTools(p Principal) toolListing {
 	out := toolListing{Tools: []toolDescriptor{}}
 	for _, t := range s.tools {
-		if t.allows(role) {
+		if t.humanOnly && p.Human && p.Person != "" && p.Agent == "" {
+			out.Tools = append(out.Tools, toolDescriptor{Name: t.name, Description: t.description, InputSchema: t.schema})
+		} else if !t.humanOnly && t.allows(p.Role) {
 			out.Tools = append(out.Tools, toolDescriptor{Name: t.name, Description: t.description, InputSchema: t.schema})
 		}
 	}
@@ -328,7 +329,7 @@ func (s *Server) callTool(ctx context.Context, p Principal, params json.RawMessa
 	if err := json.Unmarshal(params, &call); err != nil || call.Name == "" {
 		return nil, invalidParams()
 	}
-	t, ok := s.toolFor(call.Name, p.Role)
+	t, ok := s.toolFor(call.Name, p)
 	if !ok {
 		return nil, invalidParams()
 	}
@@ -337,9 +338,15 @@ func (s *Server) callTool(ctx context.Context, p Principal, params json.RawMessa
 }
 
 // toolFor returns the named tool when the role may call it.
-func (s *Server) toolFor(name string, role workflow.Role) (tool, bool) {
+func (s *Server) toolFor(name string, p Principal) (tool, bool) {
 	for _, t := range s.tools {
-		if t.name == name && t.allows(role) {
+		if t.name != name {
+			continue
+		}
+		if t.humanOnly && p.Human && p.Person != "" && p.Agent == "" {
+			return t, true
+		}
+		if !t.humanOnly && t.allows(p.Role) {
 			return t, true
 		}
 	}

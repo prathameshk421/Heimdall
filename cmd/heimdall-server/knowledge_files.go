@@ -22,13 +22,13 @@ func assembleKnowledgeRetention(d deps, ad adapters, store knowledgeStore, blobs
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("knowledge blob store does not support deletion")
 	}
-	caller, err := graphiti.NewHTTPCaller("http://graphiti:8000/mcp", d.httpClient)
+	memory, err := knowledgeGraphiti(d)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build knowledge Graphiti caller: %w", err)
+		return nil, nil, nil, err
 	}
-	memory, err := graphiti.New(caller)
+	scanner, err := pack.NewSecretScanner()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build knowledge Graphiti adapter: %w", err)
+		return nil, nil, nil, fmt.Errorf("build knowledge file scanner: %w", err)
 	}
 	worker, err := knowledge.NewEpisodeWorker(store, memory, clk)
 	if err != nil {
@@ -39,19 +39,31 @@ func assembleKnowledgeRetention(d deps, ad adapters, store knowledgeStore, blobs
 		return nil, nil, nil, fmt.Errorf("build memory episode lifecycle: %w", err)
 	}
 	workflowMemory, err := knowledge.NewWorkflowMemory(worker, store,
-		knowledge.PolicyEventTeams{Code: ad.vcs, Decode: policyyaml.Decode}, knowledgeScanner{}, clk, ad.chat)
+		knowledge.PolicyEventTeams{Code: ad.vcs, Decode: policyyaml.Decode}, knowledgeScanner{scanner: scanner}, clk, ad.chat)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("build workflow memory projection: %w", err)
 	}
-	// Root pack keeps the fail-closed Redact API; T48's Gitleaks SecretScanner is a deferred
-	// cross-subsystem contract until pack APIs are unified.
+	// The Gitleaks SecretScanner (T48) redacts knowledge files and workflow payloads and reports what it removed.
 	service, err := knowledge.NewFileService(ad.vcs, ad.vcs, blobs, deleter, store,
 		knowledge.PolicyFileApproval{Code: ad.vcs, Decode: policyyaml.Decode}, worker, lifecycle,
-		knowledgeScanner{}, clk)
+		knowledgeScanner{scanner: scanner}, clk)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("build knowledge file service: %w", err)
 	}
 	return service, worker, workflowMemory, nil
+}
+
+// knowledgeGraphiti builds the Graphiti adapter that receives knowledge and workflow memory episodes.
+func knowledgeGraphiti(d deps) (*graphiti.Adapter, error) {
+	caller, err := graphiti.NewHTTPCaller("http://graphiti:8000/mcp", d.httpClient)
+	if err != nil {
+		return nil, fmt.Errorf("build knowledge Graphiti caller: %w", err)
+	}
+	memory, err := graphiti.New(caller)
+	if err != nil {
+		return nil, fmt.Errorf("build knowledge Graphiti adapter: %w", err)
+	}
+	return memory, nil
 }
 
 type knowledgeStore interface {
@@ -60,20 +72,26 @@ type knowledgeStore interface {
 	knowledge.WorkflowHistory
 }
 
-type knowledgeScanner struct{}
+type knowledgeScanner struct{ scanner *pack.SecretScanner }
 
-func (knowledgeScanner) Scan(raw string) (string, []knowledge.RedactionSummary, error) {
-	clean, err := pack.Redact(raw)
+func (s knowledgeScanner) Scan(raw string) (string, []knowledge.RedactionSummary, error) {
+	clean, hits, err := s.scanner.Scan(raw)
 	if err != nil {
 		return "", nil, err
 	}
-	return clean, nil, nil
+	result := make([]knowledge.RedactionSummary, 0, len(hits))
+	for _, hit := range hits {
+		result = append(result, knowledge.RedactionSummary{Kind: hit.Kind, Count: hit.Count})
+	}
+	return clean, result, nil
 }
 
-func (scanner knowledgeScanner) Redact(raw string) (string, error) {
-	clean, _, err := scanner.Scan(raw)
+func (s knowledgeScanner) Redact(raw string) (string, error) {
+	clean, _, err := s.Scan(raw)
 	return clean, err
 }
+
+var _ knowledgeRetention = (*knowledge.FileService)(nil)
 
 type knowledgeFileAPI struct {
 	files  *knowledge.FileService
@@ -104,14 +122,14 @@ func (a knowledgeFileAPI) Stage(ctx context.Context, p mcp.Principal, assignment
 }
 
 func (a knowledgeFileAPI) Approve(ctx context.Context, p mcp.Principal, ref string) error {
-	if p.Person == "" {
+	if !p.Human || p.Person == "" || p.Agent != "" {
 		return fmt.Errorf("mapped human principal is required")
 	}
 	return a.files.Approve(ctx, p.Person, ref)
 }
 
 func (a knowledgeFileAPI) Forget(ctx context.Context, p mcp.Principal, ref string) error {
-	if p.Person == "" {
+	if !p.Human || p.Person == "" || p.Agent != "" {
 		return fmt.Errorf("mapped human principal is required")
 	}
 	return a.files.Forget(ctx, p.Person, ref)

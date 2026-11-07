@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
 type sourceVCS struct {
@@ -114,6 +116,24 @@ func TestCursorStoreSaveWritesUnderItsSource(t *testing.T) {
 	c := cursorStore{table: table, source: "jira:KAN"}
 	require.NoError(t, c.Save(context.Background(), ports.Cursor("2026-11-05T10:05:00Z")))
 	require.Equal(t, []string{"jira:KAN=2026-11-05T10:05:00Z"}, table.saved)
+}
+
+func TestHumanTokenStoreReturnsOnlyPolicyPersonIdentity(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "alice_token"), []byte("mapped-human-credential\n"), 0o600))
+	store, err := newTokenStore(config.Config{SecretsDir: dir, HumanTokens: map[string]string{"alice": "alice_token"}})
+	require.NoError(t, err)
+	principal, err := store.Resolve(context.Background(), mcp.HashToken("mapped-human-credential"))
+	require.NoError(t, err)
+	require.Equal(t, mcp.Principal{Person: "alice", Human: true}, principal)
+}
+
+func TestHumanTokenStoreRefusesCredentialCollisionAcrossIdentities(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "alice_token"), []byte("shared-credential\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bob_token"), []byte("shared-credential\n"), 0o600))
+	_, err := newTokenStore(config.Config{SecretsDir: dir, HumanTokens: map[string]string{"alice": "alice_token", "bob": "bob_token"}})
+	require.ErrorContains(t, err, "already assigned to another principal")
 }
 
 // memStore is an in-memory ports.EventStore with the optimistic version check of the Postgres adapter.

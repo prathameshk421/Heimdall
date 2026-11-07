@@ -25,8 +25,8 @@ var (
 	ErrPackTooLarge = errors.New("pack: size limit exceeded")
 )
 
-// Manifest fields are structs/sorted JSON maps, giving encoding/json canonical bytes.
-type Manifest struct {
+// SignedManifest fields are structs/sorted JSON maps, giving encoding/json canonical bytes.
+type SignedManifest struct {
 	Version   int               `json:"version"`
 	Owner     string            `json:"owner"`
 	CreatedAt string            `json:"created_at,omitempty"`
@@ -34,7 +34,7 @@ type Manifest struct {
 }
 
 // CanonicalManifest returns the JSON encoding used for manifest signatures and hashes.
-func CanonicalManifest(m Manifest) ([]byte, error) {
+func CanonicalManifest(m SignedManifest) ([]byte, error) {
 	b, err := json.Marshal(m)
 	if err != nil {
 		return nil, fmt.Errorf("canonicalize pack manifest: %w", err)
@@ -43,7 +43,7 @@ func CanonicalManifest(m Manifest) ([]byte, error) {
 }
 
 // ManifestHash returns the SHA-256 digest of a canonical manifest.
-func ManifestHash(m Manifest) (string, error) {
+func ManifestHash(m SignedManifest) (string, error) {
 	b, err := CanonicalManifest(m)
 	if err != nil {
 		return "", err
@@ -53,7 +53,7 @@ func ManifestHash(m Manifest) (string, error) {
 }
 
 // SignManifest signs a canonical manifest with an Ed25519 private key.
-func SignManifest(m Manifest, key ed25519.PrivateKey) ([]byte, error) {
+func SignManifest(m SignedManifest, key ed25519.PrivateKey) ([]byte, error) {
 	if len(key) != ed25519.PrivateKeySize {
 		return nil, ErrInvalidSigningKey
 	}
@@ -65,7 +65,7 @@ func SignManifest(m Manifest, key ed25519.PrivateKey) ([]byte, error) {
 }
 
 // VerifyManifest verifies the signature of a canonical manifest.
-func VerifyManifest(m Manifest, key ed25519.PublicKey, sig []byte) error {
+func VerifyManifest(m SignedManifest, key ed25519.PublicKey, sig []byte) error {
 	if len(key) != ed25519.PublicKeySize || len(sig) != ed25519.SignatureSize {
 		return ErrInvalidSignature
 	}

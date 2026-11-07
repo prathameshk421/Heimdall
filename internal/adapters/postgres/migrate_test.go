@@ -13,9 +13,9 @@ func TestMigrate(t *testing.T) {
 	ctx := context.Background()
 	srv := startServer(t)
 
-	t.Run("migrations create the four tables and the dead-letter view", func(t *testing.T) {
+	t.Run("migrations create the event and knowledge tables and dead-letter view", func(t *testing.T) {
 		db := srv.database(ctx, t)
-		for _, name := range []string{"event", "outbox", "webhook_delivery", "cursor", "outbox_dead"} {
+		for _, name := range []string{"event", "outbox", "webhook_delivery", "cursor", "knowledge_file", "review_pack", "memory_episode_queue", "outbox_dead"} {
 			require.Equal(t, int64(1), countRows(ctx, t, db.pool,
 				"SELECT count(*) FROM pg_class WHERE relname = $1", name), name)
 		}

@@ -12,6 +12,7 @@ import (
 )
 
 var _ ports.EpisodeQueue = (*Store)(nil)
+var _ ports.EpisodeSourceTrust = (*Store)(nil)
 
 // EnqueueEpisode stores source status before Graphiti delivery and deduplicates exact source versions.
 func (s *Store) EnqueueEpisode(ctx context.Context, episode ports.Episode) error {
@@ -101,4 +102,21 @@ func (s *Store) EpisodeDeliveryTime(ctx context.Context, key change.EffectKey) (
 		return time.Time{}, fmt.Errorf("read memory episode delivery: %w", err)
 	}
 	return delivered, nil
+}
+
+// EpisodeTrust reads source trust from the durable ledger, never from a model-generated Graphiti label.
+func (s *Store) EpisodeTrust(ctx context.Context, key change.EffectKey) (ports.EpisodeStatus, bool, error) {
+	if key == "" {
+		return "", false, errors.New("memory source key is required")
+	}
+	var status string
+	var invalidated bool
+	err := s.pool.QueryRow(ctx, `SELECT status, invalidated_at IS NOT NULL FROM memory_episode_queue WHERE episode_key=$1`, string(key)).Scan(&status, &invalidated)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, fmt.Errorf("memory source %q: %w", key, ports.ErrNotFound)
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("read memory source trust: %w", err)
+	}
+	return ports.EpisodeStatus(status), invalidated, nil
 }

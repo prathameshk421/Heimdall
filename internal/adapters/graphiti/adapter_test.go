@@ -23,6 +23,20 @@ func TestSearchPassesServerGroupsAndMapsGraphitiFacts(t *testing.T) {
 	require.Equal(t, "https://example.test/adr/4", items[0].SourceURL)
 }
 
+func TestSearchPreservesHeimdallSourceKeyAndTrustMetadata(t *testing.T) {
+	caller := &callerSpy{replies: map[string]json.RawMessage{
+		"search_memory_facts": json.RawMessage(`{"facts":[{"uuid":"f-2","fact":"reviewed decision","heimdall_key":"workflow:evt:payments","heimdall_status":"confirmed"}]}`),
+		"search_nodes":        json.RawMessage(`{"nodes":[]}`),
+	}}
+	adapter, err := New(caller)
+	require.NoError(t, err)
+	items, err := adapter.Search(context.Background(), ports.MemoryQuery{Question: "decision", Groups: []string{"payments"}, Limit: 20})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "workflow:evt:payments", items[0].SourceKey)
+	require.Equal(t, ports.LabelConfirmed, items[0].Label)
+}
+
 func TestAddEpisodeCarriesStableSourceAndNeverExpandsGroup(t *testing.T) {
 	caller := &callerSpy{replies: map[string]json.RawMessage{"add_memory": json.RawMessage(`{}`)}}
 	adapter, err := New(caller)

@@ -32,11 +32,23 @@ func expectedTools(role workflow.Role) []string {
 	case workflow.RoleResolver:
 		return append(all, "ask_humans", "submit_verdict")
 	case workflow.RoleReviewer:
-		return append(all, "submit_review", "read_pack", "stage_knowledge", "approve_knowledge", "forget_knowledge")
+		return append(all, "submit_review", "read_pack", "stage_knowledge")
 	case workflow.RoleProfiler:
 		return all
 	}
 	return nil
+}
+
+func TestKnowledgeLifecycleToolsAreListedOnlyForAuthenticatedHumanPrincipals(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	r.tokens.byHash[HashToken(testToken)] = Principal{Person: "alice", Human: true}
+	require.ElementsMatch(t, []string{"approve_knowledge", "forget_knowledge"}, toolNames(listTools(t, r)))
+	approved := r.call("approve_knowledge", `{"ref":"knowledge:pending"}`)
+	require.False(t, approved.IsError, approved.text())
+
+	r.tokens.byHash[HashToken(testToken)] = Principal{Agent: testAgent, Role: workflow.RoleReviewer, Person: "alice", Human: true}
+	forged := r.rpc("tools/call", `{"name":"approve_knowledge","arguments":{"ref":"knowledge:pending"}}`)
+	require.NotNil(t, forged.Error, "a human flag cannot be combined with an agent principal")
 }
 
 func allLLMRoles() []workflow.Role {

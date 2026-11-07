@@ -14,3 +14,8 @@ type EpisodeQueue interface {
 	MarkEpisodeDelivered(context.Context, change.EffectKey, time.Time) error
 	InvalidateEpisode(context.Context, change.EffectKey, time.Time) error
 }
+
+// EpisodeSourceTrust returns the durable status and tombstone state for one Graphiti source key.
+type EpisodeSourceTrust interface {
+	EpisodeTrust(context.Context, change.EffectKey) (EpisodeStatus, bool, error)
+}

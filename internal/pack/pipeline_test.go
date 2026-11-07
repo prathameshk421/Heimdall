@@ -223,10 +223,10 @@ func TestReadRejectsMissingManifestFileAndHashMismatch(t *testing.T) {
 func TestReadRejectsUnsupportedManifestVersionAndOwnerMismatch(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		mutate func(*Manifest)
+		mutate func(*SignedManifest)
 	}{
-		{name: "unsupported version", mutate: func(m *Manifest) { m.Version = 2 }},
-		{name: "owner mismatch", mutate: func(m *Manifest) { m.Owner = "mallory" }},
+		{name: "unsupported version", mutate: func(m *SignedManifest) { m.Version = 2 }},
+		{name: "owner mismatch", mutate: func(m *SignedManifest) { m.Owner = "mallory" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pub, priv, _ := ed25519.GenerateKey(rand.Reader)

@@ -19,6 +19,11 @@ type EventStore interface {
 	Load(ctx context.Context, changeID id.ChangeID) ([]change.Event, error)
 }
 
+// WorkflowHistory reads the append-only global event order for replayable consumers.
+type WorkflowHistory interface {
+	EventsAfter(context.Context, int64, int) ([]change.Event, int64, error)
+}
+
 // Outbox drains the effects that Append committed (TECH_SPEC 2.4). Consumer: the outbox drainer in internal/app.
 // Adapter: internal/adapters/postgres (task T20, drainer T22).
 type Outbox interface {

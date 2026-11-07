@@ -317,7 +317,7 @@ func (f *fakePackPublisher) Publish(_ context.Context, p Principal, repo, review
 	return "pack-id", nil
 }
 
-func (f *fakePacks) Read(_ context.Context, p Principal, section string) (string, error) {
+func (f *fakePacks) Read(_ context.Context, p Principal, _ Assignment, section string) (string, error) {
 	f.principal, f.section = p, section
 	if f.content == "" {
 		f.content = "project conventions [PRIVATE PACK CANARY]"

@@ -54,6 +54,7 @@ type tool struct {
 	description string
 	schema      json.RawMessage
 	roles       []workflow.Role
+	humanOnly   bool
 	handle      toolHandler
 }
 
@@ -126,8 +127,8 @@ func (s *Server) optionalTools() []tool {
 	if s.deps.Files != nil {
 		tools = append(tools,
 			tool{name: "stage_knowledge", description: "Stage a markdown document from the active change for redaction and human review; staging never ingests it into memory.", schema: stageKnowledgeSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.stageKnowledge},
-			tool{name: "approve_knowledge", description: "Approve a staged knowledge source as the mapped policy owner or group approver.", schema: knowledgeRefSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.approveKnowledge},
-			tool{name: "forget_knowledge", description: "Forget an approved knowledge source and tombstone its memory episode.", schema: knowledgeRefSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.forgetKnowledge},
+			tool{name: "approve_knowledge", description: "Approve a staged knowledge source as the mapped policy owner or group approver.", schema: knowledgeRefSchema(), humanOnly: true, handle: s.approveKnowledge},
+			tool{name: "forget_knowledge", description: "Forget an approved knowledge source and tombstone its memory episode.", schema: knowledgeRefSchema(), humanOnly: true, handle: s.forgetKnowledge},
 		)
 	}
 	if s.deps.Profiles != nil {
@@ -585,7 +586,7 @@ func (s *Server) readPack(ctx context.Context, p Principal, args json.RawMessage
 	if assignment.Task.Role != workflow.RoleReviewer || p.Role != workflow.RoleReviewer {
 		return "", refusal("Only the assigned reviewer can read a context pack.")
 	}
-	content, err := s.deps.Packs.Read(ctx, p, input.Section)
+	content, err := s.deps.Packs.Read(ctx, p, assignment, input.Section)
 	if err != nil {
 		return "", fmt.Errorf("read reviewer context pack: %w", err)
 	}
@@ -666,7 +667,7 @@ func (s *Server) approveKnowledge(ctx context.Context, p Principal, args json.Ra
 	if err := decodeArgs(args, &input); err != nil {
 		return "", err
 	}
-	if p.Person == "" {
+	if !p.Human || p.Person == "" || p.Agent != "" {
 		return "", refusal("Knowledge approval requires a mapped human principal.")
 	}
 	if err := s.deps.Files.Approve(ctx, p, input.Ref); err != nil {
@@ -682,7 +683,7 @@ func (s *Server) forgetKnowledge(ctx context.Context, p Principal, args json.Raw
 	if err := decodeArgs(args, &input); err != nil {
 		return "", err
 	}
-	if p.Person == "" {
+	if !p.Human || p.Person == "" || p.Agent != "" {
 		return "", refusal("Knowledge deletion requires a mapped human principal.")
 	}
 	if err := s.deps.Files.Forget(ctx, p, input.Ref); err != nil {

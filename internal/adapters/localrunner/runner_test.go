@@ -4,9 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -286,15 +288,28 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 	_, statErr := os.Stat(runDir)
 	require.True(t, os.IsNotExist(statErr), "temp dir must be removed")
 
-	// Verify the spawned child process sleep 30 was terminated with the process group
+	// A killed grandchild can remain briefly as a zombie until init reaps it. It is dead for this
+	// contract because it cannot execute; treating a zombie PID as a live child made this test racy.
 	_ = pidFile
-	// ESRCH means process does not exist
-	var killErr error
-	require.Eventually(t, func() bool {
-		killErr = syscall.Kill(pid, 0)
-		return killErr == syscall.ESRCH
-	}, 2*time.Second, 10*time.Millisecond, "spawned child process must be dead")
-	require.Equal(t, syscall.ESRCH, killErr, "spawned child process must be dead")
+	require.Eventually(t, func() bool { return !processIsRunning(pid) }, 2*time.Second, 10*time.Millisecond,
+		"spawned child process must not still be running")
+}
+
+func processIsRunning(pid int) bool {
+	if runtime.GOOS == "linux" {
+		stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+		if os.IsNotExist(err) {
+			return false
+		}
+		if err != nil {
+			return true
+		}
+		// comm is parenthesized and may itself contain spaces or parentheses; state follows the final ')'.
+		stateFields := strings.Fields(string(stat[strings.LastIndex(string(stat), ")")+1:]))
+		return len(stateFields) == 0 || (stateFields[0] != "Z" && stateFields[0] != "X")
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || !errors.Is(err, syscall.ESRCH)
 }
 
 func TestParentEnvNotLeaked(t *testing.T) {

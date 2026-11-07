@@ -72,3 +72,25 @@ func (s PolicyScopes) GroupsForAgent(ctx context.Context, agent id.AgentName, re
 	// An agent no person owns has no team memory: it sees only the shared group, which every caller adds.
 	return nil, nil
 }
+
+// PersonForAgent resolves the policy person bound to an agent at the trusted base SHA.
+// Unlike GroupsForAgent it fails closed: approval and forget need a real person.
+func (s PolicyScopes) PersonForAgent(ctx context.Context, agent id.AgentName, repo change.Repo, base id.SHA) (string, policy.Policy, error) {
+	if s.Code == nil || s.Decode == nil {
+		return "", policy.Policy{}, errors.New("knowledge policy reader is not configured")
+	}
+	raw, err := s.Code.ReadFile(ctx, repo, base, "heimdall.yaml")
+	if err != nil {
+		return "", policy.Policy{}, fmt.Errorf("read memory policy at base: %w", err)
+	}
+	p, err := s.Decode(raw)
+	if err != nil {
+		return "", policy.Policy{}, fmt.Errorf("decode memory policy at base: %w", err)
+	}
+	for name, person := range p.People {
+		if person.Agent == string(agent) {
+			return name, p, nil
+		}
+	}
+	return "", policy.Policy{}, fmt.Errorf("agent %q has no person mapping in base policy", agent)
+}

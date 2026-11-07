@@ -111,6 +111,45 @@ func (d *blockingDrainer) Run(ctx context.Context, _ <-chan struct{}, _ <-chan t
 	return nil
 }
 
+type retentionSpy struct {
+	calls  int
+	cancel context.CancelFunc
+}
+
+type episodeDrainSpy struct {
+	calls  int
+	limit  int
+	cancel context.CancelFunc
+}
+
+func (e *episodeDrainSpy) RunOnce(_ context.Context, limit int) (int, error) {
+	e.calls++
+	e.limit = limit
+	e.cancel()
+	return 1, nil
+}
+
+func (r *retentionSpy) Expire(context.Context) (int, error) { r.calls++; r.cancel(); return 2, nil }
+
+func TestKnowledgeRetentionLoopSweepsImmediatelyAndStopsWithContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	retention := &retentionSpy{cancel: cancel}
+	a := &app{retention: retention, logger: discardLogger()}
+	a.knowledgeRetentionLoop(ctx)
+	require.Equal(t, 1, retention.calls)
+}
+
+func TestEpisodeDeliveryLoopRetriesOnTheSharedDrainCadence(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	drain := &episodeDrainSpy{cancel: cancel}
+	a := &app{episodeWorker: drain, logger: discardLogger()}
+	a.episodeDeliveryLoop(ctx)
+	require.Equal(t, 1, drain.calls)
+	require.Equal(t, 100, drain.limit)
+}
+
 // A poll error is logged and the next poll still runs. The loop ends only when its context is done.
 func TestPollLoopKeepsPollingAfterAPollError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

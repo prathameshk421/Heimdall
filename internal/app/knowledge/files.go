@@ -189,7 +189,7 @@ func (s *FileService) Approve(ctx context.Context, actor, ref string) error {
 	}
 	for _, episode := range episodes {
 		if err := s.episodes.Enqueue(ctx, episode); err != nil {
-			return fmt.Errorf("ingest approved knowledge file: %w", err)
+			return fmt.Errorf("queue approved knowledge file: %w", err)
 		}
 	}
 	doc.State = string(FileApproved)

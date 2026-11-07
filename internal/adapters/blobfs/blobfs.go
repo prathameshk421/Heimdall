@@ -109,11 +109,7 @@ func (s *Store) Get(ctx context.Context, ref workflow.BlobRef) (io.ReadCloser, e
 	return nil, ports.ErrNotFound
 }
 
-func classes() [6]ports.BlobClass {
-	return [6]ports.BlobClass{ports.BlobLog, ports.BlobDiff, ports.BlobBundle, ports.BlobPack, ports.BlobEvidence, ports.BlobKnowledge}
-}
-
-// Delete removes a blob after the owning metadata store has proved no live references remain.
+// Delete removes a blob from its class after the owner has proved no live references remain.
 func (s *Store) Delete(ctx context.Context, class ports.BlobClass, ref workflow.BlobRef) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("delete blob: %w", err)
@@ -132,6 +128,10 @@ func (s *Store) Delete(ctx context.Context, class ports.BlobClass, ref workflow.
 		return fmt.Errorf("delete blob: %w", err)
 	}
 	return nil
+}
+
+func classes() [6]ports.BlobClass {
+	return [6]ports.BlobClass{ports.BlobLog, ports.BlobDiff, ports.BlobBundle, ports.BlobPack, ports.BlobEvidence, ports.BlobKnowledge}
 }
 
 var _ ports.BlobDeleter = (*Store)(nil)

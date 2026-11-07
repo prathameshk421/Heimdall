@@ -48,21 +48,9 @@ func (a *app) loops(ctx context.Context) {
 			a.syncLoop(ctx, wake)
 		}()
 	}
-	if a.roomStream != nil {
+	for _, run := range a.backgroundLoops(wake) {
 		wg.Add(1)
-		go func() { defer wg.Done(); a.roomStreamLoop(ctx) }()
-	}
-	if a.comments != nil {
-		wg.Add(1)
-		go func() { defer wg.Done(); a.commentLoop(ctx, wake) }()
-	}
-	if a.episodeWorker != nil {
-		wg.Add(1)
-		go func() { defer wg.Done(); a.episodeLoop(ctx) }()
-	}
-	if a.workflowMemory != nil {
-		wg.Add(1)
-		go func() { defer wg.Done(); a.workflowMemoryLoop(ctx) }()
+		go func() { defer wg.Done(); run(ctx) }()
 	}
 	go func() {
 		defer wg.Done()
@@ -88,12 +76,16 @@ func (a *app) workflowMemoryLoop(ctx context.Context) {
 	}
 }
 
-func (a *app) episodeLoop(ctx context.Context) {
-	for ctx.Err() == nil {
-		if _, err := a.episodeWorker.RunOnce(ctx, 32); err != nil && ctx.Err() == nil {
-			a.logger.ErrorContext(ctx, "Graphiti knowledge delivery failed; queued episodes remain retryable", "error", err)
+// episodeDeliveryLoop delivers queued memory episodes to Graphiti on the drain cadence. Failed episodes stay queued.
+func (a *app) episodeDeliveryLoop(ctx context.Context) {
+	for {
+		delivered, err := a.episodeWorker.RunOnce(ctx, 100)
+		if err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "memory episode delivery failed; pending episodes will retry", "error", err)
+		} else if err == nil && delivered > 0 {
+			a.logger.InfoContext(ctx, "memory episodes delivered", "count", delivered)
 		}
-		if err := clock.Wait(ctx, a.syncEvery); err != nil {
+		if err := clock.Wait(ctx, a.drainTick); err != nil {
 			return
 		}
 	}
@@ -233,4 +225,42 @@ func (a *app) drainLoop(ctx context.Context, wake <-chan struct{}, ticks <-chan 
 	if err := a.drainer.Run(ctx, wake, ticks); err != nil {
 		a.logger.ErrorContext(ctx, "outbox drainer stopped", "error", err)
 	}
+}
+
+// knowledgeRetentionLoop expires staged and approved files and deletes their memory episodes and blobs. It runs once
+// at startup and then every knowledgeRetentionInterval; errors are logged and retried on the next pass.
+func (a *app) knowledgeRetentionLoop(ctx context.Context) {
+	for {
+		removed, err := a.retention.Expire(ctx)
+		if err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "knowledge retention sweep failed; the next sweep retries", "error", err)
+		} else if err == nil && removed > 0 {
+			a.logger.InfoContext(ctx, "expired knowledge files removed", "count", removed)
+		}
+		if err := clock.Wait(ctx, knowledgeRetentionInterval); err != nil {
+			return
+		}
+	}
+}
+
+// backgroundLoops returns the optional loops whose dependency is wired: the room stream, GitHub comments, Graphiti
+// episode delivery, knowledge retention and the workflow memory projection.
+func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
+	var runs []func(context.Context)
+	if a.roomStream != nil {
+		runs = append(runs, a.roomStreamLoop)
+	}
+	if a.comments != nil {
+		runs = append(runs, func(ctx context.Context) { a.commentLoop(ctx, wake) })
+	}
+	if a.episodeWorker != nil {
+		runs = append(runs, a.episodeDeliveryLoop)
+	}
+	if a.retention != nil {
+		runs = append(runs, a.knowledgeRetentionLoop)
+	}
+	if a.workflowMemory != nil {
+		runs = append(runs, a.workflowMemoryLoop)
+	}
+	return runs
 }

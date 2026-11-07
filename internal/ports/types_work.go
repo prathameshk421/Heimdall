@@ -227,6 +227,7 @@ func (l MemoryLabel) Valid() bool {
 // MemoryItem is one fact returned by a search. Only confirmed, non-superseded items are E3 evidence.
 type MemoryItem struct {
 	Ref       string      `json:"ref"`
+	SourceKey string      `json:"source_key,omitempty"`
 	Text      string      `json:"text"`
 	Label     MemoryLabel `json:"label"`
 	SourceURL string      `json:"source_url"`

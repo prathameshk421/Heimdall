@@ -71,7 +71,7 @@ type MetadataStore interface {
 // Metadata describes a published pack and its signed manifest.
 type Metadata struct {
 	ID, Owner, Reviewer, ReplayKey, BlobKey, InputDigest string
-	Manifest                                             Manifest
+	Manifest                                             SignedManifest
 	Signature                                            []byte
 }
 
@@ -275,7 +275,7 @@ func (s *Service) createPack(ctx context.Context, in PublishInput, digest string
 	if filesSize(files) > s.MaxBytes || int64(len(payload)) > s.MaxBytes {
 		return Metadata{}, ErrPackTooLarge
 	}
-	manifest := Manifest{Version: 1, Owner: in.Owner, CreatedAt: in.CreatedAt.UTC().Format(time.RFC3339Nano), Files: hashes}
+	manifest := SignedManifest{Version: 1, Owner: in.Owner, CreatedAt: in.CreatedAt.UTC().Format(time.RFC3339Nano), Files: hashes}
 	sig, err := SignManifest(manifest, s.SigningKey)
 	if err != nil {
 		return Metadata{}, err

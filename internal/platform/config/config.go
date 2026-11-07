@@ -48,18 +48,26 @@ type Project struct {
 
 // Config is the validated infrastructure configuration. Load is the only way to get a non-zero one.
 type Config struct {
-	SecretsDir   string
-	Listen       string
-	Projects     []Project
-	Database     Database
-	Jira         Jira
-	TrackerPath  string
-	Switch       Switch
-	GitHub       GitHub
-	Agents       Agents
-	AgentRuntime AgentRuntimeConfig
-	byTracker    map[string]Project
-	selections   map[string]string
+	SecretsDir     string
+	Listen         string
+	Projects       []Project
+	HumanTokens    map[string]string
+	PackIdentities map[string]PackIdentitySecrets
+	Database       Database
+	Jira           Jira
+	TrackerPath    string
+	Switch         Switch
+	GitHub         GitHub
+	Agents         Agents
+	AgentRuntime   AgentRuntimeConfig
+	byTracker      map[string]Project
+	selections     map[string]string
+}
+
+// PackIdentitySecrets names the server-side verification and age decryption files for one policy person.
+type PackIdentitySecrets struct {
+	SigningPublicKey string
+	AgeIdentity      string
 }
 
 // AgentRuntimeConfig holds the Switch controller placement and per-agent MCP endpoint.
@@ -116,19 +124,26 @@ type GitHub struct {
 
 // fileConfig mirrors heimdall.toml. Pointers tell an absent key (use the default) from an empty one (refuse).
 type fileConfig struct {
-	SecretsDir   *string           `toml:"secrets_dir"`
-	Listen       *string           `toml:"listen"`
-	Projects     []fileProject     `toml:"projects"`
-	Database     *fileDatabase     `toml:"database"`
-	Jira         *fileJira         `toml:"jira"`
-	Switch       *fileSwitch       `toml:"switch"`
-	GitHub       *fileGitHub       `toml:"github"`
-	Agents       *fileAgents       `toml:"agents"`
-	VCS          *fileProvider     `toml:"vcs"`
-	Tracker      *fileTracker      `toml:"tracker"`
-	Chat         *fileChat         `toml:"chat"`
-	AgentRuntime *fileAgentRuntime `toml:"agent_runtime"`
-	Memory       *fileProvider     `toml:"memory"`
+	SecretsDir     *string                     `toml:"secrets_dir"`
+	Listen         *string                     `toml:"listen"`
+	Projects       []fileProject               `toml:"projects"`
+	HumanTokens    map[string]string           `toml:"human_tokens"`
+	PackIdentities map[string]filePackIdentity `toml:"pack_identities"`
+	Database       *fileDatabase               `toml:"database"`
+	Jira           *fileJira                   `toml:"jira"`
+	Switch         *fileSwitch                 `toml:"switch"`
+	GitHub         *fileGitHub                 `toml:"github"`
+	Agents         *fileAgents                 `toml:"agents"`
+	VCS            *fileProvider               `toml:"vcs"`
+	Tracker        *fileTracker                `toml:"tracker"`
+	Chat           *fileChat                   `toml:"chat"`
+	AgentRuntime   *fileAgentRuntime           `toml:"agent_runtime"`
+	Memory         *fileProvider               `toml:"memory"`
+}
+
+type filePackIdentity struct {
+	SigningPublicKey *string `toml:"signing_public_key_secret"`
+	AgeIdentity      *string `toml:"age_identity_secret"`
 }
 
 // fileAgents is [agents]. Each key is validated by build.
@@ -240,6 +255,7 @@ func build(raw fileConfig) (Config, error) {
 	var errs []error
 	errs = append(errs, addSelections(&cfg, raw)...)
 	errs = append(errs, addLiveSections(&cfg, raw)...)
+	errs = append(errs, addKnowledgeSecrets(&cfg, raw)...)
 	if raw.SecretsDir != nil {
 		if *raw.SecretsDir == "" {
 			errs = append(errs, errors.New("secrets_dir must not be empty"))
@@ -274,6 +290,52 @@ func build(raw fileConfig) (Config, error) {
 		return Config{}, errors.Join(errs...)
 	}
 	return cfg, nil
+}
+
+func addKnowledgeSecrets(cfg *Config, raw fileConfig) []error {
+	return append(addHumanTokens(cfg, raw.HumanTokens), addPackIdentities(cfg, raw.PackIdentities)...)
+}
+
+func addHumanTokens(cfg *Config, tokens map[string]string) []error {
+	var errs []error
+	if len(tokens) > 0 {
+		cfg.HumanTokens = make(map[string]string, len(tokens))
+		for person, secret := range tokens {
+			if person == "" || len(person) > 64 || strings.ContainsAny(person, " /\\\t\r\n") {
+				errs = append(errs, fmt.Errorf("human_tokens.%s: person key must be a non-empty policy person name of at most 64 characters", person))
+				continue
+			}
+			if err := checkSecretName(secret); err != nil {
+				errs = append(errs, fmt.Errorf("human_tokens.%s: secret name: %w", person, err))
+				continue
+			}
+			cfg.HumanTokens[person] = secret
+		}
+	}
+	return errs
+}
+
+func addPackIdentities(cfg *Config, identities map[string]filePackIdentity) []error {
+	var errs []error
+	if len(identities) > 0 {
+		cfg.PackIdentities = make(map[string]PackIdentitySecrets, len(identities))
+		for person, rawIdentity := range identities {
+			if person == "" || len(person) > 64 || strings.ContainsAny(person, " /\\\t\r\n") {
+				errs = append(errs, fmt.Errorf("pack_identities.%s: person key must be a non-empty policy person name of at most 64 characters", person))
+				continue
+			}
+			if err := checkSecretKey("pack_identities."+person+".signing_public_key_secret", rawIdentity.SigningPublicKey); err != nil {
+				errs = append(errs, err)
+			}
+			if err := checkSecretKey("pack_identities."+person+".age_identity_secret", rawIdentity.AgeIdentity); err != nil {
+				errs = append(errs, err)
+			}
+			if rawIdentity.SigningPublicKey != nil && rawIdentity.AgeIdentity != nil {
+				cfg.PackIdentities[person] = PackIdentitySecrets{SigningPublicKey: *rawIdentity.SigningPublicKey, AgeIdentity: *rawIdentity.AgeIdentity}
+			}
+		}
+	}
+	return errs
 }
 
 // addSelections records each provider selection that is present. An absent section or key means unset;

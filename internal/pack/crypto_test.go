@@ -14,7 +14,7 @@ func TestSignedManifestDetectsMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := Manifest{Version: 1, Owner: "alice", Files: map[string]string{"notes.md": "abc"}}
+	m := SignedManifest{Version: 1, Owner: "alice", Files: map[string]string{"notes.md": "abc"}}
 	sig, err := SignManifest(m, priv)
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestSignedManifestDetectsMutation(t *testing.T) {
 }
 
 func TestManifestKeyAndSignatureRejection(t *testing.T) {
-	m := Manifest{Version: 1, Owner: "alice"}
+	m := SignedManifest{Version: 1, Owner: "alice"}
 	if _, err := SignManifest(m, make([]byte, 3)); !errors.Is(err, ErrInvalidSigningKey) {
 		t.Fatalf("bad private key: %v", err)
 	}
