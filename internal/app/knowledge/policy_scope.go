@@ -51,6 +51,7 @@ func (a PolicyFileApproval) ApproveKnowledgeFile(ctx context.Context, actor stri
 }
 
 // GroupsForAgent resolves team groups in the policy at the merge base and fails closed on any missing or invalid file.
+// An agent with no person in the policy gets no team groups.
 func (s PolicyScopes) GroupsForAgent(ctx context.Context, agent id.AgentName, repo change.Repo, base id.SHA) ([]string, error) {
 	if s.Code == nil || s.Decode == nil {
 		return nil, errors.New("knowledge policy reader is not configured")
@@ -68,5 +69,6 @@ func (s PolicyScopes) GroupsForAgent(ctx context.Context, agent id.AgentName, re
 			return append([]string(nil), person.Teams...), nil
 		}
 	}
-	return nil, fmt.Errorf("agent %q has no person mapping in base policy", agent)
+	// An agent no person owns has no team memory: it sees only the shared group, which every caller adds.
+	return nil, nil
 }

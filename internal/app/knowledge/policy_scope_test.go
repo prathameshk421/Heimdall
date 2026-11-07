@@ -21,10 +21,12 @@ func TestPolicyScopesReadsBasePolicyAndReturnsMappedTeams(t *testing.T) {
 	require.Equal(t, []string{"acme/pay", "base123", "heimdall.yaml"}, reader.args)
 }
 
-func TestPolicyScopesFailsClosedWhenAgentIsNotMapped(t *testing.T) {
+// An agent that no person in the policy owns is not an error: it has no team memory and sees only the shared group.
+func TestPolicyScopesGivesAnUnmappedAgentNoTeamGroups(t *testing.T) {
 	scopes := PolicyScopes{Code: &codeSpy{body: []byte("policy")}, Decode: func([]byte) (policy.Policy, error) { return policy.Policy{People: map[string]policy.Person{}}, nil }}
-	_, err := scopes.GroupsForAgent(context.Background(), "unmapped", "acme/pay", "base123")
-	require.ErrorContains(t, err, "no person mapping")
+	groups, err := scopes.GroupsForAgent(context.Background(), "unmapped", "acme/pay", "base123")
+	require.NoError(t, err)
+	require.Empty(t, groups)
 }
 
 func TestPolicyFileApprovalRequiresCapturedPolicyOwnerOrGroupApprover(t *testing.T) {
