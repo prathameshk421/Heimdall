@@ -29,7 +29,12 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/run/heimdall-runner /run/heimdall-podman /var/lib/heimdall-runner
-RestrictAddressFamilies=AF_UNIX AF_NETLINK
+# Jobs inherit the address families of the unit. Acceptance tests start local HTTP servers (httptest.NewServer), so
+# without AF_INET and AF_INET6 every such test failed as a setup error (found live on KAN-18, Nov 7). Each job still
+# runs with --network=none, so it has only its own loopback, and the unit itself may reach only localhost.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
 LockPersonality=true
 MemoryDenyWriteExecute=false
 PrivateDevices=true

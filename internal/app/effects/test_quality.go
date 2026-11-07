@@ -237,7 +237,7 @@ func (t TestQuality) checkRedFirst(ctx context.Context, repo change.Repo, ticket
 	for _, c := range beforeRep.Cases() {
 		switch c.Status {
 		case verify.StatusError:
-			reasons = append(reasons, fmt.Sprintf("%s failed with compile or setup error on base", c.Name))
+			reasons = append(reasons, fmt.Sprintf("%s failed with compile or setup error on base: %s", c.Name, verify.ErrorDetail(c)))
 		case verify.StatusPass:
 			reasons = append(reasons, fmt.Sprintf("%s passed without the feature on base", c.Name))
 		case verify.StatusFail, verify.StatusSkipped:

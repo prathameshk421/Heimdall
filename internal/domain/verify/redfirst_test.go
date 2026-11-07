@@ -153,3 +153,14 @@ func TestJudgeTreatsADuplicateNameConservatively(t *testing.T) {
 	require.Empty(t, v.Accepted)
 	require.Equal(t, "TestA passes without the feature", v.Rejected[0].Reason)
 }
+
+func TestErrorDetailNamesTheLineWithTheCause(t *testing.T) {
+	c := verify.Case{Name: "TestX", Status: verify.StatusError, Text: "=== RUN   TestX\n--- FAIL: TestX (0.00s)\npanic: httptest: failed to listen on a port: listen tcp6 [::1]:0\n\ngoroutine 7 [running]:"}
+	if got := verify.ErrorDetail(c); got != "panic: httptest: failed to listen on a port: listen tcp6 [::1]:0" {
+		t.Fatalf("ErrorDetail = %q", got)
+	}
+	c = verify.Case{Name: "TestY", Status: verify.StatusError, Text: "./a_test.go:9:2: undefined: refunds.New"}
+	if got := verify.ErrorDetail(c); got != "./a_test.go:9:2: undefined: refunds.New" {
+		t.Fatalf("ErrorDetail = %q", got)
+	}
+}
