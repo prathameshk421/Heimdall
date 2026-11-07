@@ -21,11 +21,12 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/schema"
+	"github.com/prathameshk421/flip_the_switch_hackathon/skills"
 )
 
 // Limits the tools enforce. The schemas of the tools repeat them, and the schema tests check that they agree.
 const (
-	ackWindow        = 60 * time.Second
+	ackWindow        = 10 * time.Minute
 	progressWindow   = 2 * time.Minute
 	maxProgressChars = 400
 	maxQuestions     = 3
@@ -353,7 +354,36 @@ func (s *Server) getTask(ctx context.Context, p Principal, args json.RawMessage)
 	if err != nil {
 		return "", err
 	}
-	return marshalText(a.Task)
+	return taskWithInstructions(a.Task, p.Role, a.History)
+}
+
+// taskWithInstructions returns the task envelope with the role's full instructions in front. The agents cannot read
+// files, so this is where their instructions arrive, fresh for every ticket, headed by the ticket they are for.
+func taskWithInstructions(task workflow.TaskEnvelope, role workflow.Role, history []string) (string, error) {
+	raw, err := json.Marshal(task)
+	if err != nil {
+		return "", fmt.Errorf("encode task: %w", err)
+	}
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return "", fmt.Errorf("read task fields: %w", err)
+	}
+	ticket := string(task.Change.ID)
+	head := "This task is for ticket " + ticket + ". Work only on " + ticket + ": earlier tickets are finished, so ignore what you remember about them. " +
+		"Start your messages in the channel with " + ticket + ".\n\n"
+	text, err := json.Marshal(head + skills.For(role))
+	if err != nil {
+		return "", fmt.Errorf("encode instructions: %w", err)
+	}
+	fields["instructions"] = text
+	if len(history) > 0 {
+		story, err := json.Marshal(history)
+		if err != nil {
+			return "", fmt.Errorf("encode history: %w", err)
+		}
+		fields["history_of_this_ticket"] = story
+	}
+	return marshalText(fields)
 }
 
 // ack records the acknowledgement once, inside the window. A repeat is accepted and changes nothing.
@@ -370,7 +400,7 @@ func (s *Server) ack(ctx context.Context, p Principal, args json.RawMessage) (st
 	}
 	now := s.deps.Clock.Now()
 	if now.Sub(a.AssignedAt) > ackWindow {
-		return "", refusal("The 60 second acknowledgement window has passed.")
+		return "", refusal("The acknowledgement window has passed.")
 	}
 	if err := s.deps.Tasks.Ack(ctx, a, now); err != nil {
 		return "", fmt.Errorf("ack task %s: %w", a.Task.TaskID, err)

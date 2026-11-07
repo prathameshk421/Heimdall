@@ -34,6 +34,7 @@ type Assignment struct {
 	Task       workflow.TaskEnvelope
 	AssignedAt time.Time
 	Acked      bool
+	History    []string
 }
 
 // ErrInvalidSubmission marks a problem the application found in what the agent submitted. Its message names only the

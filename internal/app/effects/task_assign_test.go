@@ -174,13 +174,13 @@ func TestTaskAssignSuccess(t *testing.T) {
 	require.Equal(t, change.RoomID("room_142"), chat.posts[0].room)
 	require.Equal(t, fx.Key, chat.posts[0].key)
 	// The room is read by people too (Discord, Telegram): the line says what the agent will do, then the agent's cue.
-	require.Equal(t, "@bob-reviewer PAY-142 is yours: review the pull request. Start with heimdall_get_task.", chat.posts[0].text)
+	require.Equal(t, "@bob-reviewer PAY-142 is yours: review the pull request. Start with heimdall_get_task, it has your full instructions.", chat.posts[0].text)
 }
 
 func TestTaskAssignLineNamesTheWorkOfEachRole(t *testing.T) {
-	require.Equal(t, "@test-author PAY-142 is yours: write failing tests for the acceptance criteria. Start with heimdall_get_task.",
+	require.Equal(t, "@test-author PAY-142 is yours: write failing tests for the acceptance criteria. Start with heimdall_get_task, it has your full instructions.",
 		effects.TaskAssignText("test-author", "PAY-142", workflow.RoleTestAuthor))
-	require.Equal(t, "@resolver PAY-142 is yours: settle the challenged findings. Start with heimdall_get_task.",
+	require.Equal(t, "@resolver PAY-142 is yours: settle the challenged findings. Start with heimdall_get_task, it has your full instructions.",
 		effects.TaskAssignText("resolver", "PAY-142", workflow.RoleResolver))
 }
 

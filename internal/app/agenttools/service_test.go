@@ -469,8 +469,8 @@ func TestAckLateRefusal(t *testing.T) {
 		Deadline:   t0.Add(30 * time.Minute),
 	}
 
-	// Ack after 61 seconds from AssignedAt
-	lateAckTime := assign.AssignedAt.Add(61 * time.Second)
+	// Ack after the 10 minute window from AssignedAt
+	lateAckTime := assign.AssignedAt.Add(agenttools.AckWindow + time.Second)
 	err := h.svc.Ack(context.Background(), assign, lateAckTime)
 	require.ErrorIs(t, err, agenttools.ErrAckWindowExpired)
 }

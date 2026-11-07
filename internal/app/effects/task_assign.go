@@ -88,7 +88,7 @@ func (t TaskAssign) Execute(ctx context.Context, fx change.Effect) error {
 // TaskAssignText is the room line that wakes an agent. People read the room too (Discord, Telegram), so it says what
 // the agent will do before the cue the agent acts on.
 func TaskAssignText(agent, ticket string, role workflow.Role) string {
-	return fmt.Sprintf("@%s %s is yours: %s. Start with heimdall_get_task.", agent, ticket, roleWork(role))
+	return fmt.Sprintf("@%s %s is yours: %s. Start with heimdall_get_task, it has your full instructions.", agent, ticket, roleWork(role))
 }
 
 // roleWork names the work of a role in a few plain words.

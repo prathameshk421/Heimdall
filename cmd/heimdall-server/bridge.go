@@ -485,6 +485,7 @@ func toMCPAssignment(a agenttools.Assignment) mcp.Assignment {
 		Task:       a.Task,
 		AssignedAt: a.AssignedAt,
 		Acked:      a.Acked,
+		History:    a.History,
 	}
 }
 

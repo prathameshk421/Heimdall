@@ -17,7 +17,7 @@ import (
 
 // Constants governing agent tool operations.
 const (
-	AckWindow  = 60 * time.Second
+	AckWindow  = 10 * time.Minute
 	MaxRetries = 5
 )
 
@@ -43,7 +43,9 @@ type Assignment struct {
 	BundleRef  workflow.BlobRef
 	AssignedAt time.Time
 	Acked      bool
-	Task       workflow.TaskEnvelope
+	// History is this ticket's story so far, in plain lines; the agent reads it with get_task.
+	History []string
+	Task    workflow.TaskEnvelope
 }
 
 // FindingError reports a validation failure for one finding in a review.

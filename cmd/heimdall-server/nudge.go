@@ -89,7 +89,7 @@ func (n *taskNudger) nudge(ctx context.Context, a nudgeAgent, ref ports.ActiveTa
 	if err != nil {
 		return false, fmt.Errorf("nudge: build key: %w", err)
 	}
-	text := fmt.Sprintf("@%s %s is waiting for you. Call heimdall_get_task, then heimdall_ack.", a.name, ref.ChangeID)
+	text := fmt.Sprintf("@%s %s is waiting for you. Call heimdall_get_task, it has your full instructions, then heimdall_ack.", a.name, ref.ChangeID)
 	if err := n.chat.Post(ctx, room, key, text); err != nil {
 		return false, fmt.Errorf("nudge: post to %s: %w", room, err)
 	}

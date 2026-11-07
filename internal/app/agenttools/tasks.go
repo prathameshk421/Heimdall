@@ -119,6 +119,7 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 		BundleRef:  latest.BundleRef,
 		AssignedAt: assignedAt,
 		Acked:      acked,
+		History:    ticketHistory(events),
 		Task: workflow.TaskEnvelope{
 			TaskID:   latest.TaskID,
 			CaseID:   latest.CaseID,
