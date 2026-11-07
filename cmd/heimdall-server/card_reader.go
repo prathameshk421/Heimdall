@@ -75,3 +75,33 @@ func (r cardReader) Read(ctx context.Context, p mcp.Principal, a mcp.Assignment,
 	}
 	return content, nil
 }
+
+// cardBudget caps the card text put into one task, so the cards never crowd out the diff.
+const cardBudget = 12 * 1024
+
+// ForTask returns the reviewer's cards that apply to the files the change touches, most specific first.
+func (r cardReader) ForTask(ctx context.Context, p mcp.Principal, a mcp.Assignment) (string, error) {
+	if p.Agent == "" || p.Role != workflow.RoleReviewer || a.Task.Role != workflow.RoleReviewer {
+		return "", errors.New("personal cards are available only to an authenticated reviewer")
+	}
+	person, _, err := r.scopes.PersonForAgent(ctx, p.Agent, change.Repo(a.Task.Change.Repo), a.Task.Change.BaseSHA)
+	if err != nil {
+		return "", fmt.Errorf("resolve reviewer person from base policy: %w", err)
+	}
+	cards, err := r.store.Relevant(person, a.Task.Inputs.FilesChanged, cardBudget)
+	if err != nil {
+		return "", fmt.Errorf("select cards: %w", err)
+	}
+	var b strings.Builder
+	for _, card := range cards {
+		fmt.Fprintf(&b, "## %s", card.Name)
+		if card.Kind != "" {
+			fmt.Fprintf(&b, " (%s)", card.Kind)
+		}
+		if card.Source != "" {
+			fmt.Fprintf(&b, " [from: %s]", card.Source)
+		}
+		b.WriteString("\n" + card.Body + "\n\n")
+	}
+	return strings.TrimSpace(b.String()), nil
+}

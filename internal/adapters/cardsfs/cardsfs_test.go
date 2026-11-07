@@ -78,3 +78,50 @@ func TestAnOversizedCardIsRefused(t *testing.T) {
 	_, err = s.Read("bob", "big.md")
 	require.Error(t, err)
 }
+
+func TestWriteCreatesReplacesAndDeletesACardInsideThePersonsFolder(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+	require.NoError(t, s.Write("bob", "rules.md", []byte("v1")))
+	require.NoError(t, s.Write("bob", "rules.md", []byte("v2")))
+	got, err := s.Read("bob", "rules.md")
+	require.NoError(t, err)
+	require.Equal(t, "v2", got)
+	require.NoError(t, s.Delete("bob", "rules.md"))
+	_, err = s.Read("bob", "rules.md")
+	require.ErrorIs(t, err, ErrNotFound)
+	require.ErrorIs(t, s.Delete("bob", "rules.md"), ErrNotFound)
+}
+
+func TestWriteRefusesUnsafeNamesPeopleAndSizes(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+	for _, name := range []string{"../x.md", "a/b.md", "x.sh", "", ".md.exe"} {
+		require.Error(t, s.Write("bob", name, []byte("x")), name)
+	}
+	for _, person := range []string{"..", "a/b", "", "."} {
+		require.Error(t, s.Write(person, "x.md", []byte("x")), person)
+	}
+	require.Error(t, s.Write("bob", "big.md", make([]byte, MaxCardBytes+1)))
+	_, statErr := os.Stat(filepath.Join(dir, "x.md"))
+	require.Error(t, statErr, "nothing may be written outside the person's folder")
+}
+
+func TestWriteDoesNotFollowASymlinkOutOfTheFolder(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "target.md")
+	require.NoError(t, os.WriteFile(outside, []byte("ORIGINAL"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "bob"), 0o700))
+	require.NoError(t, os.Symlink(outside, filepath.Join(dir, "bob", "link.md")))
+	s, err := Open(dir)
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+	_ = s.Write("bob", "link.md", []byte("OVERWRITTEN"))
+	got, err := os.ReadFile(outside)
+	require.NoError(t, err)
+	require.Equal(t, "ORIGINAL", string(got))
+}

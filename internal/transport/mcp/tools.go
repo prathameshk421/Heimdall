@@ -368,12 +368,34 @@ func (s *Server) getTask(ctx context.Context, p Principal, args json.RawMessage)
 	if err != nil {
 		return "", err
 	}
-	return taskWithInstructions(a.Task, p.Role, a.History)
+	return taskWithInstructions(a.Task, p.Role, a.History, s.personalContext(ctx, p, a))
+}
+
+// personalContext returns the reviewer's own cards that apply to this change, wrapped as untrusted text, or "" when
+// there are none, the caller is not a reviewer, or the cards cannot be read. A card problem never costs the reviewer
+// its task: the failure is logged and the review goes ahead without them.
+func (s *Server) personalContext(ctx context.Context, p Principal, a Assignment) string {
+	if s.deps.Cards == nil || p.Role != workflow.RoleReviewer || a.Task.Role != workflow.RoleReviewer {
+		return ""
+	}
+	text, err := s.deps.Cards.ForTask(ctx, p, a)
+	if err != nil {
+		s.deps.Logger.WarnContext(ctx, "personal cards unavailable for task", "agent", string(p.Agent), "error", err)
+		return ""
+	}
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	wrapped, err := wrapUntrusted("the reviewer's own personal context cards for the files this change touches", []byte(text))
+	if err != nil {
+		return ""
+	}
+	return wrapped
 }
 
 // taskWithInstructions returns the task envelope with the role's full instructions in front. The agents cannot read
 // files, so this is where their instructions arrive, fresh for every ticket, headed by the ticket they are for.
-func taskWithInstructions(task workflow.TaskEnvelope, role workflow.Role, history []string) (string, error) {
+func taskWithInstructions(task workflow.TaskEnvelope, role workflow.Role, history []string, personal string) (string, error) {
 	raw, err := json.Marshal(task)
 	if err != nil {
 		return "", fmt.Errorf("encode task: %w", err)
@@ -390,6 +412,13 @@ func taskWithInstructions(task workflow.TaskEnvelope, role workflow.Role, histor
 		return "", fmt.Errorf("encode instructions: %w", err)
 	}
 	fields["instructions"] = text
+	if personal != "" {
+		card, err := json.Marshal(personal)
+		if err != nil {
+			return "", fmt.Errorf("encode personal context: %w", err)
+		}
+		fields["personal_context"] = card
+	}
 	if len(history) > 0 {
 		story, err := json.Marshal(history)
 		if err != nil {

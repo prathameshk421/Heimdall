@@ -147,5 +147,9 @@ func mountHTTP(router http.Handler, a *app) http.Handler {
 	if a != nil && a.packUpload != nil {
 		mux.Handle("/packs/upload", a.packUpload)
 	}
+	if a != nil && a.cardsUpload != nil {
+		mux.Handle("/cards", a.cardsUpload)
+		mux.Handle("/cards/", a.cardsUpload)
+	}
 	return mux
 }

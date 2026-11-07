@@ -115,6 +115,8 @@ var ErrCardNotFound = errors.New("card not found")
 // agent and its assignment; an empty file lists the card names.
 type Cards interface {
 	Read(ctx context.Context, p Principal, a Assignment, file string) (string, error)
+	// ForTask returns the text of the caller's cards that apply to the files this task changes, or "" when none do.
+	ForTask(ctx context.Context, p Principal, a Assignment) (string, error)
 }
 
 // PackPublisher stages an owner-visible redacted review and publishes exactly the reviewed content.

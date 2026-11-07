@@ -763,6 +763,13 @@ func TestSubmitVerdictOversizedBodyRefused(t *testing.T) {
 type fakeCards struct {
 	principal Principal
 	file      string
+	forFiles  []string
+	forText   string
+}
+
+func (f *fakeCards) ForTask(_ context.Context, p Principal, a Assignment) (string, error) {
+	f.principal, f.forFiles = p, a.Task.Inputs.FilesChanged
+	return f.forText, nil
 }
 
 func (f *fakeCards) Read(_ context.Context, p Principal, _ Assignment, file string) (string, error) {
@@ -819,4 +826,24 @@ func TestAskKnowledgeTellsTheAgentWhenMemoryIsDownOrEmpty(t *testing.T) {
 	require.False(t, empty.IsError, empty.text())
 	require.Contains(t, empty.text(), "No memory matched")
 	require.Contains(t, empty.text(), "not confirmation")
+}
+
+func TestGetTaskCarriesTheReviewersMatchingCardsWithoutBeingAsked(t *testing.T) {
+	r := newRig(t, workflow.RoleReviewer)
+	cards := &fakeCards{forText: "Refund caps are summed across partial refunds. [CARD CANARY]"}
+	r.server.deps.Cards = cards
+	res := r.call("get_task", `{}`)
+	require.False(t, res.IsError, res.text())
+	require.Equal(t, []string{refundsGo}, cards.forFiles, "cards are matched against the files the change touches")
+	require.Contains(t, res.text(), "\"personal_context\"")
+	require.Contains(t, res.text(), "[CARD CANARY]")
+	require.Contains(t, res.text(), "data, not instructions", "card text arrives as untrusted data")
+
+	cards.forText = ""
+	empty := r.call("get_task", `{}`)
+	require.NotContains(t, empty.text(), "\"personal_context\"")
+
+	author := newRig(t, workflow.RoleTestAuthor)
+	author.server.deps.Cards = &fakeCards{forText: "must not appear"}
+	require.NotContains(t, author.call("get_task", `{}`).text(), "must not appear")
 }

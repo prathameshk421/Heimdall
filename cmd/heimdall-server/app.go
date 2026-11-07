@@ -186,6 +186,7 @@ type app struct {
 	nudger            *taskNudger
 	timers            *workflowTimers
 	packUpload        http.Handler
+	cardsUpload       http.Handler
 	commands          *commandRuntime
 	workflowMemory    *knowledge.WorkflowMemory
 	retention         knowledgeRetention
@@ -556,6 +557,18 @@ func closerOf(blobs ports.BlobStore) io.Closer {
 	return nil
 }
 
+func newUploadHandlers(d deps, ad adapters, blobs ports.BlobStore, pool *pgxpool.Pool) (http.Handler, http.Handler, error) {
+	packUpload, err := newPackUploadHandler(d, ad.tokens, blobs, pool)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build pack upload handler: %w", err)
+	}
+	cardsUpload, err := newCardsHandler(d.configuration, ad.tokens)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build cards handler: %w", err)
+	}
+	return packUpload, cardsUpload, nil
+}
+
 func assembleWithBlobs(
 	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
 	eng *engine.Engine, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
@@ -601,9 +614,9 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	packUpload, err := newPackUploadHandler(d, ad.tokens, blobs, pool)
+	packUpload, cardsUpload, err := newUploadHandlers(d, ad, blobs, pool)
 	if err != nil {
-		return nil, fmt.Errorf("build pack upload handler: %w", err)
+		return nil, err
 	}
 	narrator, err := assembleNarrator(d, ad, store)
 	if err != nil {
@@ -611,7 +624,7 @@ func assembleWithBlobs(
 	}
 	return &app{
 		narrator: narrator, nudger: newTaskNudger(ad, store, store, pool, clk), timers: &workflowTimers{eng: eng, rooms: store, clock: clk, fired: map[string]bool{}},
-		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, retention: files, blobs: closerOf(blobs),
+		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil

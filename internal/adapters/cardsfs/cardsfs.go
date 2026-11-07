@@ -1,6 +1,8 @@
 package cardsfs
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -129,4 +131,76 @@ func (s *Store) Read(person, name string) (string, error) {
 		return "", fmt.Errorf("card %q is over %d bytes", name, MaxCardBytes)
 	}
 	return string(data), nil
+}
+
+// Write stores one card of person, creating the person's folder when needed. The content goes to a temporary file
+// in that folder and is renamed over the card, so a reader never sees half a card, and a symlink at the card's name
+// is replaced rather than followed.
+func (s *Store) validateWrite(person, name string, content []byte) error {
+	if !safeName(name) || !isCard(name) {
+		return fmt.Errorf("card name %q is not a card file", name)
+	}
+	if !safeName(person) {
+		return fmt.Errorf("card owner %q is not a plain name", person)
+	}
+	if len(content) > MaxCardBytes {
+		return fmt.Errorf("card %q is over %d bytes", name, MaxCardBytes)
+	}
+	if err := s.root.Mkdir(person, 0o750); err != nil && !errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("create cards folder of %q: %w", person, err)
+	}
+	return nil
+}
+
+func (s *Store) Write(person, name string, content []byte) error {
+	if err := s.validateWrite(person, name, content); err != nil {
+		return err
+	}
+	sub, err := s.personRoot(person)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sub.Close() }()
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return fmt.Errorf("name temporary card: %w", err)
+	}
+	temp := ".tmp-" + hex.EncodeToString(suffix[:])
+	f, err := sub.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
+	if err != nil {
+		return fmt.Errorf("create temporary card: %w", err)
+	}
+	if _, err := f.Write(content); err != nil {
+		_ = f.Close()
+		_ = sub.Remove(temp)
+		return fmt.Errorf("write card %q: %w", name, err)
+	}
+	if err := f.Close(); err != nil {
+		_ = sub.Remove(temp)
+		return fmt.Errorf("close card %q: %w", name, err)
+	}
+	if err := sub.Rename(temp, name); err != nil {
+		_ = sub.Remove(temp)
+		return fmt.Errorf("store card %q: %w", name, err)
+	}
+	return nil
+}
+
+// Delete removes one card of person. A card that is not there is ErrNotFound.
+func (s *Store) Delete(person, name string) error {
+	if !safeName(name) || !isCard(name) {
+		return fmt.Errorf("card name %q is not a card file", name)
+	}
+	sub, err := s.personRoot(person)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sub.Close() }()
+	if err := sub.Remove(name); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("delete card %q: %w", name, err)
+	}
+	return nil
 }
