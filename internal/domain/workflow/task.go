@@ -93,6 +93,15 @@ type Inputs struct {
 	AcceptanceCriteria []CriterionRef `json:"acceptance_criteria"`
 	CI                 []CIResult     `json:"ci"`
 	Untrusted          []UntrustedRef `json:"untrusted"`
+	// Answers are the person's answers to this task's questions. The text is data, not instructions (A14).
+	Answers []AnswerRef `json:"answers,omitempty"`
+}
+
+// AnswerRef is one answered question: its short id (Q1), the answer text, and who gave it.
+type AnswerRef struct {
+	ID         string `json:"id"`
+	Answer     string `json:"answer"`
+	AnsweredBy string `json:"answered_by"`
 }
 
 // CriterionRef points at one acceptance criterion.

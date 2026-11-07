@@ -116,7 +116,7 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 			Role:     latest.Role,
 			Deadline: latest.Deadline,
 			Change:   workflow.ChangeRef{ID: ref.ChangeID},
-			Inputs:   workflow.Inputs{AcceptanceCriteria: criteria},
+			Inputs:   workflow.Inputs{AcceptanceCriteria: criteria, Answers: collectAnswers(events)},
 		},
 	}
 }
@@ -505,4 +505,36 @@ func (s *Service) buildProgressEvent(a Assignment, text string, at time.Time, ex
 	}
 	ev.OccurredAt = at.UTC()
 	return ev, nil
+}
+
+// collectAnswers pairs each question the change asked with its recorded answer, in the order asked. A question with no
+// answer yet is left out (A14).
+func collectAnswers(events []change.Event) []workflow.AnswerRef {
+	refs := map[change.QuestionID]string{}
+	var order []change.QuestionID
+	answers := map[change.QuestionID]change.QuestionAnswered{}
+	for _, ev := range events {
+		p, err := change.Decode(ev)
+		if err != nil {
+			continue
+		}
+		switch v := p.(type) {
+		case change.QuestionAsked:
+			if len(v.Refs) > 0 {
+				refs[v.QuestionID] = v.Refs[0]
+				order = append(order, v.QuestionID)
+			}
+		case change.QuestionAnswered:
+			answers[v.QuestionID] = v
+		}
+	}
+	var out []workflow.AnswerRef
+	for _, qid := range order {
+		a, ok := answers[qid]
+		if !ok {
+			continue
+		}
+		out = append(out, workflow.AnswerRef{ID: refs[qid], Answer: a.Answer, AnsweredBy: string(a.Sender)})
+	}
+	return out
 }
