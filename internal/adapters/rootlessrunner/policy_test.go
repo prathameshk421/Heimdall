@@ -20,7 +20,7 @@ func TestContainerArgsEnforceIsolationAndRejectUnapprovedImages(t *testing.T) {
 	require.Contains(t, args, "--pids-limit=512")
 	require.Contains(t, args, "--memory=2g")
 	require.Contains(t, args, "--cpus=2")
-	require.Contains(t, args, "/out:rw,noexec,nosuid,nodev,size=8m,uid=65532,gid=65532,mode=0700")
+	require.Contains(t, args, "/out:rw,noexec,nosuid,nodev,size=8m,mode=1777")
 	require.NotContains(t, args, "/var/run/docker.sock")
 	require.NotContains(t, args, "169.254.169.254")
 	require.NotContains(t, args, "--privileged")

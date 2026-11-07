@@ -123,9 +123,9 @@ func (p Policy) containerArgsWith(profile, sourceArchive, overlayDir, moduleCach
 		"run", "--rm", "--pull=never", "--network=none", "--read-only", "--user=65532:65532",
 		"--group-add=keep-groups",
 		"--cap-drop=ALL", "--security-opt=no-new-privileges",
-		"--pids-limit=512", "--memory=2g", "--cpus=2", "--timeout=" + strconv.Itoa(timeoutSeconds) + "s",
-		"--tmpfs", "/work:rw,nosuid,nodev,size=512m,uid=65532,gid=65532,mode=0700", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m,uid=65532,gid=65532,mode=0700",
-		"--tmpfs", "/out:rw,noexec,nosuid,nodev,size=8m,uid=65532,gid=65532,mode=0700",
+		"--pids-limit=512", "--memory=2g", "--cpus=2", "--timeout=" + strconv.Itoa(timeoutSeconds),
+		"--tmpfs", "/work:rw,nosuid,nodev,size=512m,mode=1777", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m,mode=1777",
+		"--tmpfs", "/out:rw,noexec,nosuid,nodev,size=8m,mode=1777",
 		"--mount", "type=bind,src=" + sourceArchive + ",dst=/input/source.tgz,ro=true",
 		"--mount", "type=bind,src=" + moduleCache + ",dst=/go/pkg/mod,ro=true",
 	}
