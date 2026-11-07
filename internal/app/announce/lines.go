@@ -73,6 +73,8 @@ type (
 const (
 	maxReasonChars = 160
 	maxGateReasons = 5
+	// maxProgressChars bounds an agent's progress line.
+	maxProgressChars = 300
 )
 
 // narrator turns one event into its line.
@@ -83,6 +85,7 @@ type narrator func(history []change.Event, ev change.Event, k string) (Line, boo
 func narrators() map[change.EventType]narrator {
 	return map[change.EventType]narrator{
 		change.EventTaskAssigned:        narrateAssigned,
+		change.EventTaskProgress:        narrateProgress,
 		change.EventTestsSubmitted:      narrateSubmitted,
 		change.EventTestsRejected:       narrateRejected,
 		change.EventTestsVerified:       narrateVerified,
@@ -109,6 +112,38 @@ func Narrate(history []change.Event, ev change.Event) (Line, bool) {
 	return write(history, ev, string(ev.ChangeID))
 }
 
+// narrateProgress shows what an agent says it is doing, so people can follow the work without opening its room.
+func narrateProgress(_ []change.Event, ev change.Event, k string) (Line, bool) {
+	var p struct {
+		Text string `json:"text"`
+		Role string `json:"role"`
+	}
+	if !decode(ev, &p) || strings.TrimSpace(p.Text) == "" {
+		return Line{}, false
+	}
+	text := strings.TrimSpace(p.Text)
+	if len(text) > maxProgressChars {
+		text = text[:maxProgressChars] + "..."
+	}
+	who := friendlyRole(p.Role)
+	if workflow.Role(p.Role) == workflow.RoleTestAuthor {
+		return tests("🛠 %s: %s says: %s", k, who, text), true
+	}
+	return review("🛠 %s: %s says: %s", k, who, text), true
+}
+
+func friendlyRole(role string) string {
+	switch workflow.Role(role) {
+	case workflow.RoleTestAuthor:
+		return "the Test Agent"
+	case workflow.RoleResolver:
+		return "the Resolver"
+	case workflow.RoleReviewer:
+		return "a Code Reviewer"
+	}
+	return "an agent"
+}
+
 func narrateSubmitted(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	var p testsSubmitted
 	if !decode(ev, &p) {
@@ -123,7 +158,7 @@ func narrateRejected(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return tests("↩️ %s: I sent the tests back. %s The Test Agent is fixing them now.", k, humanReasons(p.Reasons)), true
+	return tests("🔁 %s: I sent the tests back. %s The Test Agent is fixing them now.", k, humanReasons(p.Reasons)), true
 }
 
 func narrateVerified(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -132,7 +167,7 @@ func narrateVerified(_ []change.Event, ev change.Event, k string) (Line, bool) {
 		return Line{}, false
 	}
 	if p.NeedsSignoff {
-		return tests("⏸ %s: the tests hold up, and a person has to approve them before I commit. Reply: heimdall approve-tests", k), true
+		return tests("🔔 %s: the tests hold up, and a person has to approve them before I commit. Reply: heimdall approve-tests", k), true
 	}
 	return tests("✅ %s: the tests hold up. They fail on the current code, as they should, and gave the same result on every run.", k), true
 }
@@ -172,7 +207,7 @@ func narrateAssigned(history []change.Event, ev change.Event, k string) (Line, b
 	lines := map[string]Line{
 		string(workflow.RoleTestAuthor): tests("🧪 %s is with the Heimdall Test Agent, which will write failing tests for its %s. It takes one ticket at a time.", k, criteriaPhrase(history)),
 		string(workflow.RoleReviewer):   review("🔍 %s: %s is reading the pull request now.", k, friendly(p.Agent)),
-		string(workflow.RoleResolver):   review("⚖️ %s: %s is weighing a challenged finding.", k, friendly(p.Agent)),
+		string(workflow.RoleResolver):   review("📝 %s: %s is weighing a challenged finding.", k, friendly(p.Agent)),
 	}
 	line, ok := lines[p.Role]
 	return line, ok
@@ -252,10 +287,10 @@ func narrateFindingState(_ []change.Event, ev change.Event, k string) (Line, boo
 		return Line{}, false
 	}
 	if finding.State(p.State) == finding.StateUpheld {
-		return review("⚖️ %s: %s stands. %s upheld it, so it must be fixed before merge.", k, p.Ref, p.By), true
+		return review("📝 %s: %s stands. %s upheld it, so it must be fixed before merge.", k, p.Ref, p.By), true
 	}
 	if finding.State(p.State) == finding.StateDismissed {
-		return review("⚖️ %s: %s is dismissed. %s decided it does not block the merge.", k, p.Ref, p.By), true
+		return review("📝 %s: %s is dismissed. %s decided it does not block the merge.", k, p.Ref, p.By), true
 	}
 	return Line{}, false
 }
