@@ -89,7 +89,7 @@
         "slop"
       ],
       "do": "human.pick_reviewers",
-      "timeout_ns": 900000000000,
+      "timeout_ns": 60000000000,
       "with": {
         "default": "suggest"
       }

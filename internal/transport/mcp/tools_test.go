@@ -187,12 +187,18 @@ func TestAckInsideTheWindowIsRecordedWithItsTime(t *testing.T) {
 	require.Equal(t, []time.Time{t0.Add(60 * time.Second)}, r.tasks.acks, "exactly 60 s after assignment is still in the window")
 }
 
-func TestAckAfterTheWindowIsRefused(t *testing.T) {
+func TestALateAckIsAcceptedUntilTheTaskDeadline(t *testing.T) {
 	r := newRig(t, workflow.RoleReviewer)
 	r.clock.now = t0.Add(11 * time.Minute)
 	res := r.call("ack", `{}`)
+	require.False(t, res.IsError, res.text())
+	require.Len(t, r.tasks.acks, 1)
+
+	r = newRig(t, workflow.RoleReviewer)
+	r.clock.now = testEnvelope(workflow.RoleReviewer).Deadline.Add(time.Second)
+	res = r.call("ack", `{}`)
 	require.True(t, res.IsError)
-	require.Contains(t, res.text(), "acknowledgement window")
+	require.Contains(t, res.text(), "deadline has passed")
 	require.Empty(t, r.tasks.acks)
 }
 

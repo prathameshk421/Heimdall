@@ -56,10 +56,14 @@ func (a *app) loops(ctx context.Context) {
 		defer wg.Done()
 		a.tickLoop(ctx, ticks)
 	}()
-	go func() {
-		defer wg.Done()
-		a.drainLoop(ctx, wake, ticks)
-	}()
+	// A sandbox run takes minutes. Each worker claims one effect, so a slow one never holds up a reviewer's task.
+	wg.Add(drainWorkers - 1)
+	for range drainWorkers {
+		go func() {
+			defer wg.Done()
+			a.drainLoop(ctx, wake, ticks)
+		}()
+	}
 	wg.Wait()
 }
 
@@ -309,6 +313,9 @@ func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
 	}
 	if a.nudger != nil {
 		runs = append(runs, a.nudgeLoop)
+	}
+	if a.timers != nil {
+		runs = append(runs, a.timerLoop)
 	}
 	if a.episodeWorker != nil {
 		runs = append(runs, a.episodeDeliveryLoop)

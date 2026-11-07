@@ -406,8 +406,10 @@ func (s *Server) ack(ctx context.Context, p Principal, args json.RawMessage) (st
 		return "The task is acknowledged.", nil
 	}
 	now := s.deps.Clock.Now()
-	if now.Sub(a.AssignedAt) > ackWindow {
-		return "", refusal("The acknowledgement window has passed.")
+	// A late ack is accepted while the task is still open: an agent that recovers after a hang (KAN-19's reviewers
+	// had no MCP server for 13 minutes) can still do the work, and nothing else would ever reassign the task.
+	if !a.Task.Deadline.IsZero() && now.After(a.Task.Deadline) {
+		return "", refusal("The task deadline has passed.")
 	}
 	if err := s.deps.Tasks.Ack(ctx, a, now); err != nil {
 		return "", fmt.Errorf("ack task %s: %w", a.Task.TaskID, err)
@@ -552,6 +554,10 @@ func (s *Server) readCode(ctx context.Context, p Principal, args json.RawMessage
 	}
 	if err := decodeArgs(args, &in); err != nil {
 		return "", err
+	}
+	if in.Path == "" || in.Path == "." || in.Path == "/" {
+		// Agents on KAN-18 and KAN-19 asked for the root and then guessed file names.
+		return "", refusal("Name a file or folder, for example internal/api. The diff from heimdall_read_untrusted names every changed file.")
 	}
 	if err := finding.CheckRepoPath(in.Path); err != nil {
 		return "", refusalf("The path is not valid: %v", err)

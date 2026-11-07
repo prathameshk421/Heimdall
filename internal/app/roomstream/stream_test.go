@@ -107,3 +107,44 @@ func TestNewRefusesMissingDependencies(t *testing.T) {
 	require.ErrorContains(t, err, "Stream")
 	require.ErrorContains(t, err, "Handler")
 }
+
+type refusingStream struct {
+	calls [][]change.RoomID
+	gone  change.RoomID
+}
+
+func (f *refusingStream) StreamRooms(_ context.Context, rooms []ports.RoomBinding, _ map[change.RoomID]ports.Cursor, _ func(context.Context, ports.ChatDelivery) error) error {
+	var ids []change.RoomID
+	for _, r := range rooms {
+		ids = append(ids, r.RoomID)
+	}
+	f.calls = append(f.calls, ids)
+	for _, id := range ids {
+		if id == f.gone {
+			return ports.ErrUnauthorized
+		}
+	}
+	return context.DeadlineExceeded
+}
+
+// TestADeletedRoomIsDroppedSoTheOtherRoomsKeepStreaming is the live failure after old Discord rooms were deleted:
+// Switch refused the whole stream (403) because one declared room was gone, and no room got messages.
+func TestADeletedRoomIsDroppedSoTheOtherRoomsKeepStreaming(t *testing.T) {
+	live := ports.RoomBinding{ChangeID: "KAN-19", RoomID: "room-live"}
+	deleted := ports.RoomBinding{ChangeID: "KAN-12", RoomID: "room-deleted"}
+	stream := &refusingStream{gone: deleted.RoomID}
+	svc, err := New(Config{
+		Rooms: roomIndexFake{rooms: []ports.RoomBinding{live, deleted}}, Cursors: &cursorFake{}, Stream: stream,
+		Handler: &handlerFake{}, RefreshEvery: time.Minute, Wait: func(context.Context, time.Duration) error { return nil },
+		Probe: func(_ context.Context, room change.RoomID) error {
+			if room == deleted.RoomID {
+				return ports.ErrNotFound
+			}
+			return nil
+		},
+	})
+	require.NoError(t, err)
+	require.ErrorIs(t, svc.Cycle(context.Background()), ports.ErrUnauthorized)
+	require.NoError(t, svc.Cycle(context.Background()))
+	require.Equal(t, []change.RoomID{live.RoomID}, stream.calls[1])
+}

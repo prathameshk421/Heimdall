@@ -193,3 +193,21 @@ func shortDetail(s string, limit int) string {
 	}
 	return s
 }
+
+// ErrorDetail is the line of an errored case that names its cause, for the author: the first line with a panic or a
+// setup marker, else the case's short detail. A bare "setup error" sent a live agent to fix the wrong thing (KAN-18:
+// the cause was "panic: httptest: failed to listen on a port").
+func ErrorDetail(c Case) string {
+	for _, line := range strings.Split(c.Message+"\n"+c.Text, "\n") {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "panic:") {
+			return shortDetail(strings.TrimSpace(line), 200)
+		}
+		for _, marker := range setupErrorMarkers() {
+			if strings.Contains(lower, marker) {
+				return shortDetail(strings.TrimSpace(line), 200)
+			}
+		}
+	}
+	return reasonDetail(c)
+}

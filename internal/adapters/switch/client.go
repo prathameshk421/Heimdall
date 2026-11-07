@@ -257,6 +257,9 @@ func statusError(path string, code int) error {
 		cause = ports.ErrUnauthorized
 	case code == http.StatusNotFound:
 		cause = ports.ErrNotFound
+	case code == http.StatusBadRequest:
+		// Switch answers a call on a deleted room with 400 "Room not found".
+		cause = ports.ErrInvalidRequest
 	case code == http.StatusTooManyRequests || code >= 500:
 		cause = ports.ErrUnavailable
 	}

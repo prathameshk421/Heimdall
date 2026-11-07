@@ -469,10 +469,10 @@ func TestAckLateRefusal(t *testing.T) {
 		Deadline:   t0.Add(30 * time.Minute),
 	}
 
-	// Ack after the 10 minute window from AssignedAt
-	lateAckTime := assign.AssignedAt.Add(agenttools.AckWindow + time.Second)
-	err := h.svc.Ack(context.Background(), assign, lateAckTime)
+	// An ack after the deadline is refused; a late ack before it is accepted (a recovered agent can still work).
+	err := h.svc.Ack(context.Background(), assign, assign.Deadline.Add(time.Second))
 	require.ErrorIs(t, err, agenttools.ErrAckWindowExpired)
+	require.NoError(t, h.svc.Ack(context.Background(), assign, assign.AssignedAt.Add(agenttools.AckWindow+time.Second)))
 }
 
 func TestTimedOutAssignmentIsUnavailableEvenWhenTaskIndexIsStale(t *testing.T) {

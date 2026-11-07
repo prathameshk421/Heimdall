@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"strings"
 	"time"
 
@@ -135,6 +137,7 @@ func (t TestQuality) runChecks(ctx context.Context, p change.TestQualityPayload,
 		return nil, nil, failf(err, "test_quality %s: seam imports check", p.Ticket)
 	}
 	allReasons = append(allReasons, seamReasons...)
+	allReasons = append(allReasons, placeholderReasons(sub)...)
 
 	flakeReports, flakeRunIDs, flakeReasons, err := t.checkFlake(ctx, p.Repo, p.Ticket, baseSHA, sub)
 	if err != nil {
@@ -152,6 +155,28 @@ func (t TestQuality) runChecks(ctx context.Context, p change.TestQualityPayload,
 	runIDs = append(runIDs, flakeRunIDs...)
 	runIDs = append(runIDs, redFirstRunIDs...)
 	return allReasons, runIDs, nil
+}
+
+// placeholderReasons refuses a test file that imports nothing but the test package and the standard library's test
+// helpers. It cannot reach the product, so it can only fail for a made-up reason, and red-first alone would pass it.
+func placeholderReasons(sub testset.Submission) []string {
+	var reasons []string
+	for _, f := range sub.Files {
+		parsed, err := parser.ParseFile(token.NewFileSet(), f.Path, f.Content, parser.ImportsOnly)
+		if err != nil {
+			continue // submit_tests already refuses Go that does not parse
+		}
+		reaches := false
+		for _, imp := range parsed.Imports {
+			if strings.Contains(strings.Trim(imp.Path.Value, `"`), ".") {
+				reaches = true
+			}
+		}
+		if !reaches && len(parsed.Imports) > 0 {
+			reasons = append(reasons, f.Path+" never imports the product, so it cannot test it. Call the service through its test seam.")
+		}
+	}
+	return reasons
 }
 
 func (t TestQuality) checkSeam(sub testset.Submission) ([]string, error) {
@@ -237,7 +262,7 @@ func (t TestQuality) checkRedFirst(ctx context.Context, repo change.Repo, ticket
 	for _, c := range beforeRep.Cases() {
 		switch c.Status {
 		case verify.StatusError:
-			reasons = append(reasons, fmt.Sprintf("%s failed with compile or setup error on base", c.Name))
+			reasons = append(reasons, fmt.Sprintf("%s failed with compile or setup error on base: %s", c.Name, verify.ErrorDetail(c)))
 		case verify.StatusPass:
 			reasons = append(reasons, fmt.Sprintf("%s passed without the feature on base", c.Name))
 		case verify.StatusFail, verify.StatusSkipped:

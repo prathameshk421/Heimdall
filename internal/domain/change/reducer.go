@@ -132,6 +132,8 @@ func addPRStates(t table) {
 func addReview(t table) {
 	t.set(StatePROpen, EventSlopEvaluated, when(passedSlop, to(StatePickingReviewers), to(StateSlopRejected)))
 	t.set(StatePickingReviewers, EventReviewersPicked, to(StateInReview))
+	// A push to a pull request already in review asks the same reviewers again, with no new pick.
+	t.set(StatePickingReviewers, EventTaskAssigned, to(StateInReview))
 
 	stays(t, StateInReview, EventReviewSubmitted, EventReviewUnavailable, EventReviewWaived, EventFindingFiled,
 		EventFindingVerified, EventChallengeFiled, EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed, EventTaskProgress)

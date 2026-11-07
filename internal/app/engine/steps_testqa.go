@@ -114,8 +114,9 @@ func (TestQA) OnTimeout(context.Context, ChangeView) (Result, error) {
 
 // branchOf returns the branch name from the newest branch.ensured event in the view.
 func branchOf(c ChangeView) (string, error) {
-	for i := len(c.Events) - 1; i >= 0; i-- {
-		e := c.Events[i]
+	evs := c.history()
+	for i := len(evs) - 1; i >= 0; i-- {
+		e := evs[i]
 		if e.Type != change.EventBranchEnsured {
 			continue
 		}

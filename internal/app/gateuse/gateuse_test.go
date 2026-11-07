@@ -85,7 +85,8 @@ func TestEvaluateAllClausesPass(t *testing.T) {
 	require.Equal(t, "heimdall/gate", c.Name)
 	require.Equal(t, ports.CheckCompleted, c.Status)
 	require.Equal(t, change.CISuccess, c.Conclusion)
-	require.Equal(t, "the merge rule passed", c.Summary)
+	require.Contains(t, c.Summary, "### ✅ Ready to merge")
+	require.Contains(t, c.Summary, "| Approval from an approver | ✅ |")
 	require.LessOrEqual(t, len(c.Summary), 2000)
 }
 

@@ -44,10 +44,13 @@ type (
 	testsVerified struct {
 		NeedsSignoff bool `json:"needs_signoff"`
 	}
-	testsCommitted  struct{ SHA string }
-	stepEscalated   struct{ Step, Reason string }
-	branchEnsured   struct{ Branch string }
-	prOpened        struct{ Number int }
+	testsCommitted struct{ SHA string }
+	stepEscalated  struct{ Step, Reason string }
+	branchEnsured  struct{ Branch string }
+	prOpened       struct {
+		Number int
+		Repo   string
+	}
 	ciReported      struct{ Check, SHA, Conclusion string }
 	reviewersPicked struct{ People []string }
 	reviewSubmitted struct {
@@ -72,7 +75,6 @@ type (
 
 const (
 	maxReasonChars = 160
-	maxGateReasons = 5
 	// maxProgressChars bounds an agent's progress line.
 	maxProgressChars = 300
 )
@@ -96,6 +98,7 @@ func narrators() map[change.EventType]narrator {
 		change.EventCIReported:          narrateCI,
 		change.EventReviewersPicked:     narratePicked,
 		change.EventReviewSubmitted:     narrateReviewDone,
+		change.EventFindingVerified:     narrateFindingVerified,
 		change.EventFindingStateChanged: narrateFindingState,
 		change.EventApprovalRecorded:    narrateApproval,
 		change.EventGateEvaluated:       narrateGate,
@@ -221,7 +224,10 @@ func narratePROpened(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return review("📬 %s: pull request #%d is open. CI and the code reviewers are next.", k, p.Number), true
+	if p.Repo != "" {
+		return review("📬 **Pull request opened · %s**\nPull request #%d is open.\n**Next:** Heimdall runs the acceptance tests on it, then 3 independent AI reviewers read the code.\n🔗 https://github.com/%s/pull/%d", k, p.Number, p.Repo, p.Number), true
+	}
+	return review("📬 %s: pull request #%d is open. Heimdall runs the acceptance tests, then the code reviewers start.", k, p.Number), true
 }
 
 func narrateCI(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -230,7 +236,7 @@ func narrateCI(_ []change.Event, ev change.Event, k string) (Line, bool) {
 		return Line{}, false
 	}
 	if p.Conclusion == "success" {
-		return review("✅ %s: CI is green on %s.", k, short(p.SHA)), true
+		return review("✅ **Acceptance tests passed · %s**\nEvery Heimdall test passes on commit `%s`. Passing tests are not enough to merge: the reviewers come next.", k, short(p.SHA)), true
 	}
 	if p.Conclusion == "failure" {
 		return review("❌ %s: CI failed on %s (check: %s).", k, short(p.SHA), p.Check), true
@@ -243,7 +249,11 @@ func narratePicked(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) || len(p.People) == 0 {
 		return Line{}, false
 	}
-	return review("🔍 %s: %s will review it.", k, joinNames(p.People)), true
+	names := make([]string, 0, len(p.People))
+	for _, person := range p.People {
+		names = append(names, friendly(person))
+	}
+	return review("🤖 **AI code review started · %s**\n%s will each read the change on their own, without seeing each other's work.", k, joinNames(names)), true
 }
 
 func narrateApproval(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -251,11 +261,11 @@ func narrateApproval(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return review("✅ %s: %s approved the pull request.", k, p.Login), true
+	return review("✅ **Approved · %s**\n%s approved the pull request on GitHub.", k, p.Login), true
 }
 
 func narrateMerged(_ []change.Event, _ change.Event, k string) (Line, bool) {
-	return review("🎉 %s is merged.", k), true
+	return review("🎉 **Merged · %s**\nThe change is in. Tests, reviews and a human approval all passed first.", k), true
 }
 
 func narrateReviewDone(history []change.Event, ev change.Event, k string) (Line, bool) {
@@ -265,6 +275,13 @@ func narrateReviewDone(history []change.Event, ev change.Event, k string) (Line,
 	}
 	if len(p.FindingRefs) == 0 {
 		return review("🔍 %s: %s finished and found no issues.", k, friendly(p.Reviewer)), true
+	}
+	if bullets := findingBullets(history, p.FindingRefs); len(bullets) > 0 {
+		text := fmt.Sprintf("🔍 **Code review result · %s**\n%s found **%s** in this pull request.\n%s", k, friendly(p.Reviewer), count(len(p.FindingRefs), "issue"), strings.Join(bullets, "\n"))
+		if link := prLink(history); link != "" {
+			text += "\n\n🔗 **Full report on GitHub:** " + link
+		}
+		return Line{Audience: AudienceReview, Text: text}, true
 	}
 	severities := map[string]string{}
 	for _, h := range history {
@@ -284,6 +301,20 @@ func narrateReviewDone(history []change.Event, ev change.Event, k string) (Line,
 	return review("🔍 %s: %s finished and found %s: %s.", k, friendly(p.Reviewer), count(len(items), "issue"), joinNames(items)), true
 }
 
+func narrateFindingVerified(history []change.Event, ev change.Event, k string) (Line, bool) {
+	var p struct {
+		Ref string `json:"ref"`
+	}
+	if !decode(ev, &p) {
+		return Line{}, false
+	}
+	title := ""
+	if f, ok := foldBoard(history).byRef[p.Ref]; ok && f.Claim != "" {
+		title = "\n> " + findingTitle(f)
+	}
+	return review("🔬 **Bug confirmed · %s · Finding %s**\nHeimdall ran the reviewer's test itself in the sandbox, and it fails on this commit. The bug is real.%s", k, p.Ref, title), true
+}
+
 func narrateFindingState(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	var p findingState
 	if !decode(ev, &p) {
@@ -298,24 +329,149 @@ func narrateFindingState(_ []change.Event, ev change.Event, k string) (Line, boo
 	return Line{}, false
 }
 
-func narrateGate(_ []change.Event, ev change.Event, k string) (Line, bool) {
+func narrateGate(history []change.Event, ev change.Event, k string) (Line, bool) {
 	var p gateEvaluated
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	if p.OK {
-		return review("✅ %s: the merge check passed. This one is ready to merge.", k), true
+	if prev, ok := previousGate(history, ev); ok && prev.OK == p.OK && slices.Equal(prev.Reasons, p.Reasons) {
+		return Line{}, false
 	}
+	if p.OK {
+		return Line{Audience: AudienceReview, Text: mergeReport(history, k)}, true
+	}
+	waiting, blocked := gateItems(p.Reasons)
 	var b strings.Builder
-	fmt.Fprintf(&b, "⛔ %s: the merge check is blocked.", k)
-	for i, reason := range p.Reasons {
-		if i == maxGateReasons {
-			fmt.Fprintf(&b, "\n• and %d more", len(p.Reasons)-maxGateReasons)
-			break
+	if len(blocked) > 0 {
+		fmt.Fprintf(&b, "⛔ **Merge blocked · %s**\nThis pull request cannot merge until these are fixed:", k)
+		for _, item := range blocked {
+			fmt.Fprintf(&b, "\n• %s", item)
 		}
-		fmt.Fprintf(&b, "\n• %s", reason)
+		if len(waiting) > 0 {
+			fmt.Fprintf(&b, "\n⏳ Also waiting for: %s.", strings.Join(waiting, ", "))
+		}
+	} else {
+		fmt.Fprintf(&b, "⏳ **Not ready to merge · %s**\nWaiting for: %s.", k, strings.Join(waiting, ", "))
 	}
 	return Line{Audience: AudienceReview, Text: b.String()}, true
+}
+
+// mergeReport is the chat form of the merge report: a verdict line, then one short line per thing that passed.
+func mergeReport(history []change.Event, k string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "✅ **Ready to merge · %s**\nEvery merge rule passes.", k)
+	if criteria := criteriaPhrase(history); criteria != "" && has(history, change.EventTestsVerified) {
+		fmt.Fprintf(&b, "\n• Tests: written before the code, verified red first, cover its %s", criteria)
+	}
+	if acceptancePassed(history) {
+		b.WriteString("\n• Acceptance: every Heimdall test passes on the head")
+	}
+	if reviewers, findings := reviewStats(history); reviewers > 0 {
+		fmt.Fprintf(&b, "\n• Reviews: %s, %s, none blocking", count(reviewers, "reviewer"), count(findings, "finding"))
+	}
+	if login := approver(history); login != "" {
+		fmt.Fprintf(&b, "\n• Approved by %s", login)
+	}
+	return b.String()
+}
+
+// acceptancePassed reports whether heimdall/acceptance passed on some head of the change.
+func acceptancePassed(history []change.Event) bool {
+	for _, h := range history {
+		var ci ciReported
+		if h.Type == change.EventCIReported && decode(h, &ci) && ci.Conclusion == "success" && ci.Check == "heimdall/acceptance" {
+			return true
+		}
+	}
+	return false
+}
+
+// reviewStats counts the submitted reviews and the findings they filed.
+func reviewStats(history []change.Event) (reviewers, findings int) {
+	for _, h := range history {
+		var r reviewSubmitted
+		if h.Type == change.EventReviewSubmitted && decode(h, &r) {
+			reviewers++
+			findings += len(r.FindingRefs)
+		}
+	}
+	return reviewers, findings
+}
+
+// approver is the login of the latest recorded approval.
+func approver(history []change.Event) string {
+	login := ""
+	for _, h := range history {
+		var a approvalRecorded
+		if h.Type == change.EventApprovalRecorded && decode(h, &a) {
+			login = a.Login
+		}
+	}
+	return login
+}
+
+// has reports whether the history holds an event of the type.
+func has(history []change.Event, t change.EventType) bool {
+	for _, h := range history {
+		if h.Type == t {
+			return true
+		}
+	}
+	return false
+}
+
+// previousGate is the gate verdict stored before ev, so an unchanged verdict on a new head is not posted again.
+func previousGate(history []change.Event, ev change.Event) (gateEvaluated, bool) {
+	var prev gateEvaluated
+	found := false
+	for _, h := range history {
+		if h.ID == ev.ID {
+			break
+		}
+		if h.Type == change.EventGateEvaluated && decode(h, &prev) {
+			found = true
+		}
+	}
+	return prev, found
+}
+
+// gateItems splits the gate's reasons into the normal steps still to come (waiting) and real problems (blocked), in
+// plain words. A reason starts with its clause id ("ci: ..."); an unknown clause keeps its own text as a problem.
+func gateItems(reasons []string) (waiting, blocked []string) {
+	pending := map[string]string{
+		"reviews":  "the code reviews",
+		"approval": "an approval from an approver",
+	}
+	problems := map[string]string{
+		"ticket_linked":    "the pull request does not name its ticket",
+		"slop_passed":      "the pull request touches files outside the ticket's scope, or is too large",
+		"testset":          "the acceptance tests are not verified yet",
+		"test_tree_pinned": "the Heimdall tests on the branch differ from the verified ones",
+		"test_diff_scoped": "the pull request changes another ticket's Heimdall tests",
+		"blocking":         "a review finding must be fixed or dismissed",
+		"policy":           "the policy file changed and needs its owner's approval",
+	}
+	add := func(list *[]string, s string) {
+		if !slices.Contains(*list, s) {
+			*list = append(*list, s)
+		}
+	}
+	for _, r := range reasons {
+		clause, detail, _ := strings.Cut(r, ":")
+		switch {
+		case clause == "ci" && strings.Contains(detail, "has not reported"):
+			add(&waiting, "the acceptance tests to finish")
+		case clause == "ci":
+			add(&blocked, "a required check failed:"+detail)
+		case pending[clause] != "":
+			add(&waiting, pending[clause])
+		case problems[clause] != "":
+			add(&blocked, problems[clause])
+		default:
+			add(&blocked, r)
+		}
+	}
+	return waiting, blocked
 }
 
 // humanReasons turns the check's reasons into sentences a developer reads without knowing the internals.

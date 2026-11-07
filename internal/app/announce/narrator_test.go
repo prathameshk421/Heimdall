@@ -134,7 +134,7 @@ func TestNarratorPostsToTheTicketRoomAndTheMatchingFeeds(t *testing.T) {
 	require.Len(t, rooms["mm-tests"], 1)
 	require.Contains(t, rooms["mm-tests"][0], "tests hold up")
 	require.Len(t, rooms["mm-review"], 1)
-	require.Contains(t, rooms["mm-review"][0], "merge check passed")
+	require.Contains(t, rooms["mm-review"][0], "Ready to merge")
 
 	// A second run has nothing new and posts nothing again.
 	posted, err = n.RunOnce(context.Background())

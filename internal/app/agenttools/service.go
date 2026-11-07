@@ -116,6 +116,9 @@ type Config struct {
 	// store, so the workflow engine stores them and offers them to its steps. The verify step needs this to see the
 	// findings it must verify (A2).
 	Advance func(context.Context, id.ChangeID, []change.Event) error
+	// PRFiles is optional. When set, a reviewer's and a resolver's task names the diff and the changed files of the
+	// pull request, so they know what to read and a finding on a changed file counts as inside the diff.
+	PRFiles PRFiles
 }
 
 // Service implements application logic for agent tools.
@@ -129,6 +132,9 @@ type Service struct {
 	review ReviewValidator
 
 	advance func(context.Context, id.ChangeID, []change.Event) error
+
+	prFiles PRFiles
+	prCache prInputCache
 }
 
 // New validates dependencies and constructs a Service.
@@ -171,6 +177,7 @@ func New(cfg Config) (*Service, error) {
 		review: cfg.ReviewValidator,
 
 		advance: cfg.Advance,
+		prFiles: cfg.PRFiles,
 	}, nil
 }
 

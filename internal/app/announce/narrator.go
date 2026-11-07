@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -41,6 +42,17 @@ type Config struct {
 	TestsRoom change.RoomID
 	// Tickets, when set, gives the first line about a ticket its title: "KAN-16 (Add refund reasons to the Pay API)".
 	Tickets ports.TicketReader
+	// Comments, when set, keeps one live comment on the change's pull request: the verdict, the checks and each finding.
+	Comments ports.PRComments
+	// Inline, when set, also puts each finding on its line in the pull request's Files tab.
+	Inline InlineComments
+	// Warn receives a failed comment write. The story in chat goes on, and the next event writes the comment again.
+	Warn func(context.Context, error)
+}
+
+// InlineComments writes a comment on one line of a pull request's diff.
+type InlineComments interface {
+	InlineComment(ctx context.Context, repo change.Repo, n int, sha id.SHA, path string, line int, key change.EffectKey, body string) error
 }
 
 // Narrator posts one plain line per milestone of every change to the change's room and to the feeds.
@@ -162,6 +174,7 @@ func (n *Narrator) announce(ctx context.Context, ev change.Event) (bool, error) 
 			before = append(before, h)
 		}
 	}
+	n.updateBoard(ctx, ev, before)
 	line, ok := Narrate(before, ev)
 	if !ok {
 		return false, nil
@@ -177,6 +190,52 @@ func (n *Narrator) announce(ctx context.Context, ev change.Event) (bool, error) 
 		}
 	}
 	return true, nil
+}
+
+// updateBoard rewrites the pull request comment when ev changes what it shows, and puts a new finding on its line.
+func (n *Narrator) updateBoard(ctx context.Context, ev change.Event, before []change.Event) {
+	if n.cfg.Comments == nil || !boardEvent(ev.Type) {
+		return
+	}
+	upTo := slices.Concat(before, []change.Event{ev})
+	n.commentOnLine(ctx, ev, upTo)
+	body, ok := RenderBoard(string(ev.ChangeID), upTo)
+	if !ok {
+		return
+	}
+	b := foldBoard(upTo)
+	key, err := change.IdempotencyKey(ev.ChangeID, 1, change.EffectGitHubComment, "review-board")
+	if err == nil {
+		err = n.cfg.Comments.Comment(ctx, change.Repo(b.repo), b.number, key, body)
+	}
+	n.warn(ctx, err, "update the pull request comment", ev)
+}
+
+func (n *Narrator) commentOnLine(ctx context.Context, ev change.Event, upTo []change.Event) {
+	if n.cfg.Inline == nil || ev.Type != change.EventFindingFiled {
+		return
+	}
+	var p struct {
+		Ref string `json:"ref"`
+	}
+	if !decode(ev, &p) {
+		return
+	}
+	in, ok := RenderInline(upTo, p.Ref)
+	if !ok {
+		return
+	}
+	key, err := change.IdempotencyKey(ev.ChangeID, 1, change.EffectGitHubComment, "finding-line:"+p.Ref)
+	if err == nil {
+		err = n.cfg.Inline.InlineComment(ctx, change.Repo(in.Repo), in.Number, id.SHA(in.Head), in.Path, in.Line, key, in.Body)
+	}
+	n.warn(ctx, err, "comment on the finding's line", ev)
+}
+
+func (n *Narrator) warn(ctx context.Context, err error, what string, ev change.Event) {
+	if err != nil && n.cfg.Warn != nil {
+		n.cfg.Warn(ctx, fmt.Errorf("%s of %s: %w", what, ev.ChangeID, err))
+	}
 }
 
 // rooms lists where a line goes: the room of the change when it exists, then each feed that wants the audience.

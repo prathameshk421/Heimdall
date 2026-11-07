@@ -41,6 +41,9 @@ func (s *Service) buildFindingFiledEvent(
 		By:          change.ActorID(a.Agent),
 		Fingerprint: findingFingerprint(vf.input),
 		Confidence:  vf.input.Confidence,
+		Claim:       vf.input.Claim,
+		Category:    vf.input.Category,
+		Location:    &vf.input.Location,
 	}
 	payload.ReproTest, payload.ToolResult, payload.MemoryRef = proofsOf(vf)
 	return s.buildEventWithID(eid, a.ChangeID, version, change.EventFindingFiled, a.Agent, corr, causation, payload, nil)

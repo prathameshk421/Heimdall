@@ -390,7 +390,7 @@ workflow:
     - { id: commit,      after: [test_qa, signoff], do: github.commit_tests, with: { dir: "tests/heimdall/{ticket}" } }
     - { id: wait_pr,     after: commit,      do: wait, with: { event: pr.opened } }
     - { id: slop,        after: wait_pr,     do: rule.slop, on_fail: reject }
-    - { id: pick,        after: slop,        do: human.pick_reviewers, with: { default: suggest, timeout: 15m } }
+    - { id: pick,        after: slop,        do: human.pick_reviewers, with: { default: suggest, timeout: 1m } }
     - { id: review,      after: pick,        do: agent.fanout, with: { role: reviewer, from: review_requests, output: Review@1, deadline: 30m } }
     - { id: verify,      after: review,      do: sandbox.verify_evidence }
     - { id: signoff,     after: test_qa,     do: human.approve_tests, when: sensitive_domain }   # D33
@@ -638,7 +638,7 @@ sequenceDiagram
     P->>R: reason; Jira ticket if policy
   else pass
     P->>G: gate = in_progress
-    P->>R: @author pick reviewers (default in 15m)
+    P->>R: @author pick reviewers (default in 1m)
     A->>P: pick (/heimdall review on the PR, heimdall review in the room)
     P->>RV: tasks (ack 60s, else unavailable)
     par

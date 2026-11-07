@@ -222,6 +222,7 @@ var wantNext = map[change.State]map[change.EventType]change.State{
 		change.EventStepResumed:         change.StatePickingReviewers,
 		change.EventStepEscalated:       change.StatePickingReviewers,
 		change.EventReviewersPicked:     change.StateInReview,
+		change.EventTaskAssigned:        change.StateInReview,
 		change.EventPRPushed:            change.StatePROpen,
 		change.EventPRClosed:            change.StateRejected,
 		change.EventCIReported:          change.StatePickingReviewers,

@@ -95,3 +95,31 @@ func TestTestQAStepContract(t *testing.T) {
 	})
 	require.True(t, qaStep.Done(view))
 }
+
+// TestTestQAReadsTheTriggerAndBranchFromTheWholeChangeAfterARetry is the KAN-18 failure: after a rejection the step's
+// view starts at step.retried, so change.triggered and branch.ensured are only in History, and the second submission
+// never reached the sandbox ("no change.triggered in the view").
+func TestTestQAReadsTheTriggerAndBranchFromTheWholeChangeAfterARetry(t *testing.T) {
+	qaStep, err := engine.NewTestQA(json.RawMessage(`{"checks":["red_first","flake"]}`))
+	require.NoError(t, err)
+	ticket := id.ChangeID("KAN-18")
+	trig := change.Event{ID: "ev-1", Version: 1, ChangeID: ticket, Type: change.EventChangeTriggered,
+		Payload: json.RawMessage(`{"ticket":"KAN-18","repo":"acme/pay-demo","assignee":"ana","source":"jira"}`)}
+	branch := change.Event{ID: "ev-2", Version: 2, ChangeID: ticket, Type: change.EventBranchEnsured,
+		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"KAN-18-healthz","base_sha":"0123456789abcdef0123456789abcdef01234567"}`)}
+	retried := change.Event{ID: "ev-3", Version: 3, ChangeID: ticket, Type: change.EventStepRetried,
+		Payload: json.RawMessage(`{"step":"write_tests","attempt":2,"reasons":["x"]}`)}
+	submitted := change.Event{ID: "ev-4", Version: 4, ChangeID: ticket, Type: change.EventTestsSubmitted,
+		BlobRefs: []workflow.BlobRef{"blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		Payload:  json.RawMessage(`{"refs":["tests/a_test.go"],"ac_map":{"AC1":["TestA"]},"sha":"0123456789abcdef0123456789abcdef01234567","tree_hash":"0123456789abcdef0123456789abcdef01234567"}`)}
+	window := engine.ChangeView{ID: ticket, Events: []change.Event{retried, submitted},
+		History: []change.Event{trig, branch, retried, submitted}}
+
+	res, err := qaStep.OnEvent(context.Background(), window, submitted)
+	require.NoError(t, err)
+	require.Len(t, res.Effects, 1)
+	var p change.TestQualityPayload
+	require.NoError(t, json.Unmarshal(res.Effects[0].Payload, &p))
+	require.Equal(t, "KAN-18-healthz", p.Branch)
+	require.Equal(t, "acme/pay-demo", string(p.Repo))
+}
