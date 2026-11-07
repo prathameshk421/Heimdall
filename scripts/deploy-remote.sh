@@ -139,6 +139,10 @@ if [ "$previous_hash" != "$archive_hash" ]; then
 	tar -xzf "$tmp.tgz" -C "$release"
 	printf '%s\n' "$archive_hash" > "$release/.artifact.sha256"
 fi
+# Compose reads its variables (the runner socket group id) from deploy/.env, which the host keeps at the install root.
+if [ -f "$install_root/.env" ] && [ ! -f "$release/deploy/.env" ]; then
+	install -m 0600 "$install_root/.env" "$release/deploy/.env"
+fi
 secrets_changed=1
 rsync -a --delete --chmod=F600,D700 "$tmp-secrets/" "$secrets_root/"
 chmod 0600 "$secrets_root"/*
