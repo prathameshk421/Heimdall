@@ -18,6 +18,9 @@ type TaskAssignDeps struct {
 	Blobs   ports.BlobStore
 	Chat    ports.Chat
 	Inviter ports.RoomInviter
+	// RoleRooms sends the assignment of a role to a standing channel (the reviews channel for reviewers and resolvers)
+	// instead of the room the change opened. A role not listed uses the change's room.
+	RoleRooms map[workflow.Role]change.RoomID
 }
 
 // TaskAssign performs task_assign effects: stores the bundle blob and posts a room notification.
@@ -61,12 +64,20 @@ func (t TaskAssign) Execute(ctx context.Context, fx change.Effect) error {
 		return failf(err, "task_assign %s: store bundle", fx.Key)
 	}
 
-	if err := t.deps.Inviter.InviteAgent(ctx, p.RoomID, string(p.Agent)); err != nil {
+	room := p.RoomID
+	if standing, ok := t.deps.RoleRooms[p.Role]; ok {
+		room = standing
+	}
+	if err := t.deps.Inviter.InviteAgent(ctx, room, string(p.Agent)); err != nil {
 		return failf(err, "task_assign %s: invite %s into the room", fx.Key, p.Agent)
 	}
 
-	text := TaskAssignText(string(p.Agent), p.Role)
-	err = t.deps.Chat.Post(ctx, p.RoomID, fx.Key, text)
+	ticket, err := ticketFromKey(fx.Key)
+	if err != nil {
+		return failf(err, "task_assign %s: read the ticket from the effect key", fx.Key)
+	}
+	text := TaskAssignText(string(p.Agent), string(ticket), p.Role)
+	err = t.deps.Chat.Post(ctx, room, fx.Key, text)
 	if err != nil {
 		return failf(err, "task_assign %s: post room message", fx.Key)
 	}
@@ -76,8 +87,8 @@ func (t TaskAssign) Execute(ctx context.Context, fx change.Effect) error {
 
 // TaskAssignText is the room line that wakes an agent. People read the room too (Discord, Telegram), so it says what
 // the agent will do before the cue the agent acts on.
-func TaskAssignText(agent string, role workflow.Role) string {
-	return fmt.Sprintf("@%s New ticket for you: %s. Start with heimdall_get_task.", agent, roleWork(role))
+func TaskAssignText(agent, ticket string, role workflow.Role) string {
+	return fmt.Sprintf("@%s %s is yours: %s. Start with heimdall_get_task.", agent, ticket, roleWork(role))
 }
 
 // roleWork names the work of a role in a few plain words.

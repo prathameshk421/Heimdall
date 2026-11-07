@@ -67,7 +67,7 @@ func TestAnswerWakeNamesTheLatestTaskAgentInTheRoom(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, id.AgentName("reviewer-2"), agent)
 	require.Equal(t, change.RoomID("room-7"), room)
-	require.Equal(t, "@reviewer-2 Q2 was answered. Call heimdall_get_task.", wakeText(agent, "Q2"))
+	require.Equal(t, "@reviewer-2 KAN-7: Q2 has an answer. Call heimdall_get_task to read it.", wakeText(agent, "KAN-7", "Q2"))
 
 	_, _, ok = answerWake([]change.Event{roomOpenedEvent(t, "room-7")})
 	require.False(t, ok, "no task, nobody to wake")

@@ -85,6 +85,9 @@ func (c *Client) OpenRoom(ctx context.Context, r ports.RoomRequest) (change.Room
 	if err := r.Validate(); err != nil {
 		return "", fmt.Errorf("switch open room: %w", err)
 	}
+	if c.sharedRoom != "" {
+		return c.sharedRoom, nil
+	}
 	var room change.RoomID
 	err := c.guarded(ctx, "open room", func(ctx context.Context) error {
 		id, found, err := c.findRoom(ctx, r.Title)

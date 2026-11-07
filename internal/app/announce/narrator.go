@@ -32,6 +32,9 @@ type Config struct {
 	Cursors ports.CursorTable
 	Chat    ports.Chat
 	Feeds   []Feed
+	// ReviewRoom, when set, is the standing channel for the review story. Without it the review lines go to the room
+	// of the change, like the test lines.
+	ReviewRoom change.RoomID
 }
 
 // Narrator posts one plain line per milestone of every change to the change's room and to the feeds.
@@ -171,7 +174,19 @@ func (n *Narrator) announce(ctx context.Context, ev change.Event) (bool, error) 
 // rooms lists where a line goes: the room of the change when it exists, then each feed that wants the audience.
 func (n *Narrator) rooms(history []change.Event, a Audience) []change.RoomID {
 	var out []change.RoomID
-	if room := roomOf(history); room != "" {
+	room := roomOf(history)
+	if n.cfg.ReviewRoom != "" {
+		switch a {
+		case AudienceReview:
+			room = n.cfg.ReviewRoom
+		case AudienceBoth:
+			if room != n.cfg.ReviewRoom {
+				out = append(out, n.cfg.ReviewRoom)
+			}
+		case AudienceTests:
+		}
+	}
+	if room != "" {
 		out = append(out, room)
 	}
 	for _, f := range n.cfg.Feeds {

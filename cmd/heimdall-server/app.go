@@ -34,6 +34,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
@@ -612,7 +613,7 @@ func assembleNarrator(d deps, ad adapters, store *postgres.Store) (*announce.Nar
 	for _, f := range d.configuration.Feeds {
 		feeds = append(feeds, announce.Feed{Room: change.RoomID(f.RoomID), Audience: announce.Audience(f.Audience)})
 	}
-	n, err := announce.New(announce.Config{History: store, Events: store, Cursors: store, Chat: ad.chat, Feeds: feeds})
+	n, err := announce.New(announce.Config{History: store, Events: store, Cursors: store, Chat: ad.chat, Feeds: feeds, ReviewRoom: ad.reviewsRoom})
 	if err != nil {
 		return nil, fmt.Errorf("build narrator: %w", err)
 	}
@@ -628,7 +629,7 @@ func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engin
 	if !ok {
 		return nil, nil, nil, errors.New("selected chat adapter does not implement the Switch room stream")
 	}
-	roomConsumer, err := roomstream.New(roomstream.Config{Rooms: store, Cursors: store, Stream: stream, Handler: runtime.processor, RefreshEvery: refreshEvery, Wait: clock.Wait})
+	roomConsumer, err := roomstream.New(roomstream.Config{Rooms: store, Cursors: store, Stream: stream, Handler: runtime.processor, Standing: ad.standingRooms, RefreshEvery: refreshEvery, Wait: clock.Wait})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("build Switch room consumer: %w", err)
 	}
@@ -837,8 +838,13 @@ func executors(ctx context.Context, ad adapters, store ports.EventStore, profile
 	if !ok {
 		return nil, errors.New("build task_assign executor: the selected chat cannot invite agents into a room")
 	}
+	roleRooms := map[workflow.Role]change.RoomID{}
+	if ad.reviewsRoom != "" {
+		roleRooms[workflow.RoleReviewer] = ad.reviewsRoom
+		roleRooms[workflow.RoleResolver] = ad.reviewsRoom
+	}
 	taskAssign, err := effects.NewTaskAssign(effects.TaskAssignDeps{
-		Blobs: blobs, Chat: ad.chat, Inviter: inviter,
+		Blobs: blobs, Chat: ad.chat, Inviter: inviter, RoleRooms: roleRooms,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build task_assign executor: %w", err)

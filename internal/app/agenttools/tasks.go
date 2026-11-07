@@ -417,9 +417,21 @@ func validateQuestions(questions []string) error {
 }
 
 func (s *Service) postQuestions(ctx context.Context, cid id.ChangeID, questions []string) ([]askedItem, error) {
+	existing, err := s.events.Load(ctx, cid)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", cid, err)
+	}
+	numbered := 0
+	for _, ev := range existing {
+		if ev.Type == change.EventQuestionAsked {
+			numbered++
+		}
+	}
 	var asked []askedItem
-	for _, q := range questions {
-		qID, senderID, msgID, err := s.asker.Ask(ctx, cid, q)
+	for i, q := range questions {
+		n := numbered + i + 1
+		text := fmt.Sprintf("❓ %s needs an answer (Q%d)\n%s\nReply: heimdall answer %s Q%d <your answer>", cid, n, q, cid, n)
+		qID, senderID, msgID, err := s.asker.Ask(ctx, cid, text)
 		if err != nil {
 			return nil, fmt.Errorf("asker: %w", err)
 		}

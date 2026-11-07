@@ -28,10 +28,13 @@ type Secrets interface {
 // every call, so a rotated key file is picked up without a restart. HTTPClient must not set a Timeout: the event
 // stream is long-lived, and every other call has its own 10 s deadline (TECH_SPEC 2.5).
 type Config struct {
-	BaseURL            string
-	AgentID            string
-	AgentName          string
-	BridgeID           string
+	BaseURL   string
+	AgentID   string
+	AgentName string
+	BridgeID  string
+	// SharedRoom, when set, is the one standing channel every change opens into: OpenRoom returns it instead of making
+	// a room per change.
+	SharedRoom         change.RoomID
 	Secrets            Secrets
 	APIKeySecret       string
 	RegistrationSecret string
@@ -57,6 +60,7 @@ type Client struct {
 	agentID      string
 	agentName    string
 	bridgeID     string
+	sharedRoom   change.RoomID
 	secrets      Secrets
 	apiKeySecret string
 	regSecret    string
@@ -107,6 +111,7 @@ func New(cfg Config) (*Client, error) {
 		agentID:      cfg.AgentID,
 		agentName:    cfg.AgentName,
 		bridgeID:     cfg.BridgeID,
+		sharedRoom:   cfg.SharedRoom,
 		secrets:      cfg.Secrets,
 		apiKeySecret: cfg.APIKeySecret,
 		regSecret:    cfg.RegistrationSecret,

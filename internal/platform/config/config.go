@@ -53,12 +53,20 @@ type Feed struct {
 	Audience string
 }
 
+// Rooms names the two standing channels every change uses: one for the tests, one for the reviews. Empty means a room
+// per change.
+type Rooms struct {
+	Tests   string
+	Reviews string
+}
+
 // Config is the validated infrastructure configuration. Load is the only way to get a non-zero one.
 type Config struct {
 	SecretsDir     string
 	Listen         string
 	Projects       []Project
 	Feeds          []Feed
+	Rooms          Rooms
 	HumanTokens    map[string]string
 	PackIdentities map[string]PackIdentitySecrets
 	Database       Database
@@ -136,6 +144,7 @@ type fileConfig struct {
 	Listen         *string                     `toml:"listen"`
 	Projects       []fileProject               `toml:"projects"`
 	Feeds          []fileFeed                  `toml:"feeds"`
+	Rooms          *fileRooms                  `toml:"rooms"`
 	HumanTokens    map[string]string           `toml:"human_tokens"`
 	PackIdentities map[string]filePackIdentity `toml:"pack_identities"`
 	Database       *fileDatabase               `toml:"database"`
@@ -213,6 +222,11 @@ type fileAgentRuntime struct {
 // fileChat is [chat]. Its key is bridge, the Switch connection that carries chat (D79).
 type fileChat struct {
 	Bridge *string `toml:"bridge"`
+}
+
+type fileRooms struct {
+	Tests   string `toml:"tests"`
+	Reviews string `toml:"reviews"`
 }
 
 type fileFeed struct {
@@ -299,6 +313,12 @@ func build(raw fileConfig) (Config, error) {
 		proj := Project(p)
 		cfg.Projects = append(cfg.Projects, proj)
 		cfg.byTracker[p.TrackerProject] = proj
+	}
+	if raw.Rooms != nil {
+		cfg.Rooms = Rooms{Tests: raw.Rooms.Tests, Reviews: raw.Rooms.Reviews}
+		if (cfg.Rooms.Tests == "") != (cfg.Rooms.Reviews == "") {
+			errs = append(errs, errors.New("rooms: tests and reviews must both be set, or neither"))
+		}
 	}
 	feeds, feedErrs := checkFeeds(raw.Feeds)
 	cfg.Feeds = feeds
