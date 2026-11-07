@@ -4,8 +4,6 @@
 
 Heimdall is a merge gate for teams that ship code with AI agents. It writes failing tests before the code, reviews each pull request, and sets a GitHub check that turns green only after a person approves.
 
-This is an early build. Some parts ran on the real system. Most parts run on fakes or a local Postgres. The table in [What works today](#what-works-today) shows which is which.
-
 Heimdall is built for the Flip the Switch hackathon (Track 01, Best Business Workflow). It uses [Switch](https://github.com/sandbox-quantum/switch) for chat rooms and agents.
 
 ## The problem
