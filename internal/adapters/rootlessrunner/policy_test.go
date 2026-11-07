@@ -71,3 +71,22 @@ func TestContainerArgsRejectMountEscapeAndUnsafeTimeout(t *testing.T) {
 	_, err = policy.ContainerArgs("go", "/tmp/source", 601)
 	require.Error(t, err)
 }
+
+// Found live on KAN-9: the built-in Go profile ran ./... whatever directory the job named, so the repository's own
+// passing tests were judged as red-first tests "passed without the feature on base". A job that names its test
+// directory runs only that directory; a job without one still runs the whole module.
+func TestTheBuiltInGoProfileRunsOnlyTheJobTestDirectory(t *testing.T) {
+	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
+	args, err := policy.ContainerArgsWithOverlays("go", "/tmp/source", "/tmp/overlays", "/tmp/module-cache", "tests/heimdall/KAN-9", 30)
+	require.NoError(t, err)
+	script := args[len(args)-1]
+	require.Contains(t, script, `go test -json -count=1 ./tests/heimdall/KAN-9/...`)
+	require.NotContains(t, script, `go test -json -count=1 ./... `)
+
+	args, err = policy.ContainerArgs("go", "/tmp/source", 30)
+	require.NoError(t, err)
+	require.Contains(t, args[len(args)-1], `go test -json -count=1 ./...`)
+
+	_, err = policy.ContainerArgsWithOverlays("go", "/tmp/source", "/tmp/overlays", "/tmp/module-cache", "../escape", 30)
+	require.Error(t, err, "a directory that climbs out of the module is refused")
+}

@@ -91,20 +91,38 @@ func (p Policy) containerArgs(profile, sourceArchive, overlayDir, moduleCache, d
 	return p.containerArgsWith(profile, sourceArchive, overlayDir, moduleCache, dir, timeoutSeconds, "")
 }
 
-func (p Policy) containerArgsWith(profile, sourceArchive, overlayDir, moduleCache, dir string, timeoutSeconds int, commandOverride string) ([]string, error) {
+// imageAndCommand returns the image and acceptance command of a profile. The built-in Go profile runs the job's test
+// directory when it names one: the repository's own tests are not red-first tests (found live on KAN-9). An approved
+// profile substitutes the directory, or its own tests path, into its acceptance command.
+func (p Policy) imageAndCommand(profile, dir string) (string, bool, string, error) {
 	image, ok := p.Images[profile]
 	testCommand := "go test -json -count=1 ./..."
-	if approved, exists := p.Profiles[profile]; exists {
-		image, ok = approved.Image, true
-		subst := dir
-		if subst == "" {
-			subst = approved.Paths.Tests
-		}
-		rel, err := cleanRelDir(subst)
+	if dir != "" {
+		rel, err := cleanRelDir(dir)
 		if err != nil {
-			return nil, err
+			return "", false, "", err
 		}
-		testCommand = strings.ReplaceAll(approved.Acceptance, "{dir}", "./"+rel)
+		testCommand = "go test -json -count=1 ./" + rel + "/..."
+	}
+	approved, exists := p.Profiles[profile]
+	if !exists {
+		return image, ok, testCommand, nil
+	}
+	subst := dir
+	if subst == "" {
+		subst = approved.Paths.Tests
+	}
+	rel, err := cleanRelDir(subst)
+	if err != nil {
+		return "", false, "", err
+	}
+	return approved.Image, true, strings.ReplaceAll(approved.Acceptance, "{dir}", "./"+rel), nil
+}
+
+func (p Policy) containerArgsWith(profile, sourceArchive, overlayDir, moduleCache, dir string, timeoutSeconds int, commandOverride string) ([]string, error) {
+	image, ok, testCommand, err := p.imageAndCommand(profile, dir)
+	if err != nil {
+		return nil, err
 	}
 	if commandOverride != "" {
 		testCommand = commandOverride

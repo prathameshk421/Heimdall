@@ -123,7 +123,7 @@ func (s AgentFanout) Start(_ context.Context, c ChangeView, _ json.RawMessage) (
 	}
 
 	deadline := s.spec.Clock.Now().Add(s.spec.Timeout)
-	commitVersion := int64(len(c.Events)) + int64(len(unassigned))
+	commitVersion := int64(len(c.history())) + int64(len(unassigned))
 
 	var evs []change.Event
 	var fxs []change.Effect

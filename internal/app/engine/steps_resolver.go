@@ -82,7 +82,7 @@ func (s ResolverFanout) assign(c ChangeView) (Result, error) {
 		if err != nil {
 			return Result{}, fmt.Errorf("deliberation.run: encode task effect: %w", err)
 		}
-		key, err := change.IdempotencyKey(c.ID, int64(len(c.Events)+len(result.Events)+1), change.EffectTaskAssign, string(task))
+		key, err := change.IdempotencyKey(c.ID, int64(len(c.history())+len(result.Events)+1), change.EffectTaskAssign, string(task))
 		if err != nil {
 			return Result{}, err
 		}

@@ -169,7 +169,7 @@ func (s AgentTask) buildEffect(c ChangeView, agent id.AgentName, taskID id.TaskI
 	if err != nil {
 		return change.Effect{}, fmt.Errorf("agent.task %s: encode task_assign payload: %w", s.spec.ID, err)
 	}
-	version := int64(len(c.Events)) + 1
+	version := int64(len(c.history())) + 1
 	key, err := change.IdempotencyKey(c.ID, version, change.EffectTaskAssign, string(taskID))
 	if err != nil {
 		return change.Effect{}, fmt.Errorf("agent.task %s: %w", s.spec.ID, err)
@@ -258,8 +258,9 @@ func lastCorrelationID(c ChangeView) change.CorrelationID {
 	return c.Events[len(c.Events)-1].CorrelationID
 }
 
+// roomIDOf returns the change's room from its whole history, because a retried step's window starts after room.opened.
 func roomIDOf(c ChangeView) change.RoomID {
-	for _, e := range c.Events {
+	for _, e := range c.history() {
 		if e.Type == change.EventRoomOpened {
 			if p, err := change.Decode(e); err == nil {
 				if ro, ok := p.(change.RoomOpened); ok && ro.RoomID != "" {

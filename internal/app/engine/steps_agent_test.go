@@ -334,3 +334,27 @@ func TestAgentTaskOnTimeout(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, resDone.Events)
 }
+
+// The reassignment after a retry posts to the change's room, which was opened before the retry window.
+func TestAgentTaskRetryAssignsIntoTheRoomOpenedBeforeTheRetry(t *testing.T) {
+	spec := engine.AgentTaskSpec{
+		ID: "write-tests", Role: workflow.RoleTestAuthor, Timeout: 15 * time.Minute, Output: change.EventTestsSubmitted,
+		Clock: stepFakeClock{now: time.Date(2026, 11, 5, 14, 0, 0, 0, time.UTC)}, IDs: &stepFakeIDs{}, Bundle: testBundle,
+		AgentFor: func(workflow.Role) (id.AgentName, bool) { return "test-author", true },
+	}
+	step, err := engine.NewAgentTask(spec)
+	require.NoError(t, err)
+	ticket := id.ChangeID("KAN-9")
+	triggered := makeTestEvent(t, change.EventChangeTriggered, change.Triggered{Ticket: ticket, Repo: "acme/pay-demo", Assignee: "ana", Source: change.TriggerFile})
+	room := makeTestEvent(t, change.EventRoomOpened, change.RoomOpened{RoomID: "b674ce26-aecf-4bc4-afe1-07d012985d8b"})
+	retry := makeTestEvent(t, change.EventStepRetried, change.StepRetried{Step: "write-tests", Attempt: 2, Reasons: []string{"no package clause"}})
+	view := engine.ChangeView{ID: ticket, Events: []change.Event{retry}, History: []change.Event{triggered, room, retry}}
+
+	res, err := step.Start(context.Background(), view, nil)
+	require.NoError(t, err)
+	require.Len(t, res.Effects, 1)
+	var payload change.TaskAssignPayload
+	require.NoError(t, json.Unmarshal(res.Effects[0].Payload, &payload))
+	require.Equal(t, change.RoomID("b674ce26-aecf-4bc4-afe1-07d012985d8b"), payload.RoomID)
+	require.Contains(t, string(res.Effects[0].Key), "KAN-9:4:", "the key's version counts the whole change, not the window")
+}

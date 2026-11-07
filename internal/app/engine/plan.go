@@ -39,7 +39,7 @@ func (e *Engine) newPlan(v ChangeView) (*plan, error) {
 				cut = r.at
 			}
 		}
-		p.windows[ws.ID] = ChangeView{ID: v.ID, Events: v.Events[max(cut, 0):]}
+		p.windows[ws.ID] = ChangeView{ID: v.ID, Events: v.Events[max(cut, 0):], History: v.history()}
 		p.held[ws.ID] = escalatedAndNotResumed(ws.ID, scope, retries, escalations)
 	}
 	return p, nil

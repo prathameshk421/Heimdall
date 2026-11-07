@@ -394,3 +394,22 @@ func replaceStep(steps []engine.Step, repl engine.Step) {
 		}
 	}
 }
+
+// Found live on KAN-9: after a retry the test-author's view starts at step.retried, so the reassignment no longer saw
+// room.opened and posted the task to a room named after the change ("Room not found: KAN-9"). The window still decides
+// what the step has done, but the view carries the change's full history for facts like the room.
+func TestARetriedStepStillSeesTheWholeChangeHistory(t *testing.T) {
+	h := newHarness(t)
+	h.qaRejections = 1
+	e := h.build(h.defaultConfig(h.defaultSteps()))
+	ctx := context.Background()
+
+	_, err := e.Advance(ctx, ticket, h.triggered())
+	require.NoError(t, err)
+	_, err = e.Advance(ctx, ticket, submission(h))
+	require.NoError(t, err)
+	require.NotEmpty(t, h.retryHistoryHasRoom, "the test-author's step was called after the retry")
+	for _, hasRoom := range h.retryHistoryHasRoom {
+		require.True(t, hasRoom, "the room opened before the retry is in the view's history")
+	}
+}
