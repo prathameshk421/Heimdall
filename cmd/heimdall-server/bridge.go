@@ -14,6 +14,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
@@ -393,13 +394,15 @@ type tasksAdapter struct {
 	svc          *agenttools.Service
 	tracker      *assignmentAgentTracker
 	advanceTests func(context.Context, id.ChangeID, change.Event) error
-	filter       interface {
+	// focus remembers the ticket each agent was last woken for.
+	focus  ports.CursorTable
+	filter interface {
 		Filter(context.Context, string) (string, error)
 	}
 }
 
 func (t *tasksAdapter) Current(ctx context.Context, p mcp.Principal) (mcp.Assignment, error) {
-	assign, err := t.svc.CurrentFor(ctx, p.Agent, p.Role, p.Ticket)
+	assign, err := t.currentFor(ctx, p)
 	if err != nil {
 		if errors.Is(err, agenttools.ErrNoTask) {
 			return mcp.Assignment{}, mcp.ErrNoTask
@@ -408,6 +411,22 @@ func (t *tasksAdapter) Current(ctx context.Context, p mcp.Principal) (mcp.Assign
 	}
 	t.tracker.record(assign.TaskID, p.Agent)
 	return toMCPAssignment(assign), nil
+}
+
+// currentFor finds the agent's task: the ticket it named, else the ticket it was last woken for, else its oldest open
+// task. The wake-up names the ticket, and an agent that does not pass it is still pointed at the right one.
+func (t *tasksAdapter) currentFor(ctx context.Context, p mcp.Principal) (agenttools.Assignment, error) {
+	ticket := p.Ticket
+	if ticket == "" && t.focus != nil {
+		if v, err := t.focus.GetCursor(ctx, effects.FocusSource(string(p.Agent))); err == nil {
+			ticket = id.ChangeID(v)
+		}
+	}
+	assign, err := t.svc.CurrentFor(ctx, p.Agent, p.Role, ticket)
+	if errors.Is(err, agenttools.ErrNoTask) && ticket != "" && p.Ticket == "" {
+		return t.svc.Current(ctx, p.Agent, p.Role)
+	}
+	return assign, err
 }
 
 func (t *tasksAdapter) Ack(ctx context.Context, a mcp.Assignment, at time.Time) error {

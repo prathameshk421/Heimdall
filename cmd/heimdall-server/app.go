@@ -538,6 +538,14 @@ func newTicketPollers(ad adapters, store *postgres.Store, eng *engine.Engine, bl
 	return pollers, nil
 }
 
+// cursorsOf returns the store as a cursor table when it is one.
+func cursorsOf(store ports.EventStore) ports.CursorTable {
+	if c, ok := store.(ports.CursorTable); ok {
+		return c
+	}
+	return nil
+}
+
 // closerOf returns the blob store as a Closer when it is one.
 func closerOf(blobs ports.BlobStore) io.Closer {
 	if c, ok := blobs.(io.Closer); ok {
@@ -682,7 +690,7 @@ func assembleMCP(
 		tokStore = &tokenStore{principals: make(map[string]mcp.Principal)}
 	}
 	tracker := &assignmentAgentTracker{agents: make(map[id.TaskID]id.AgentName)}
-	tasksAdp := &tasksAdapter{svc: toolsSvc, tracker: tracker, advanceTests: func(ctx context.Context, changeID id.ChangeID, event change.Event) error {
+	tasksAdp := &tasksAdapter{svc: toolsSvc, tracker: tracker, focus: cursorsOf(store), advanceTests: func(ctx context.Context, changeID id.ChangeID, event change.Event) error {
 		_, err := eng.Advance(ctx, changeID, []change.Event{event})
 		return err
 	}}
@@ -845,7 +853,7 @@ func executors(ctx context.Context, ad adapters, store ports.EventStore, profile
 		roleRooms[workflow.RoleResolver] = ad.reviewsRoom
 	}
 	taskAssign, err := effects.NewTaskAssign(effects.TaskAssignDeps{
-		Blobs: blobs, Chat: ad.chat, Inviter: inviter, RoleRooms: roleRooms,
+		Blobs: blobs, Chat: ad.chat, Inviter: inviter, RoleRooms: roleRooms, Focus: cursorsOf(store),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build task_assign executor: %w", err)

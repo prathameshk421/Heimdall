@@ -21,6 +21,8 @@ type TaskAssignDeps struct {
 	// RoleRooms sends the assignment of a role to a standing channel (the reviews channel for reviewers and resolvers)
 	// instead of the room the change opened. A role not listed uses the change's room.
 	RoleRooms map[workflow.Role]change.RoomID
+	// Focus, when set, remembers which ticket each agent was last woken for, so get_task without a ticket returns it.
+	Focus ports.CursorTable
 }
 
 // TaskAssign performs task_assign effects: stores the bundle blob and posts a room notification.
@@ -81,9 +83,17 @@ func (t TaskAssign) Execute(ctx context.Context, fx change.Effect) error {
 	if err != nil {
 		return failf(err, "task_assign %s: post room message", fx.Key)
 	}
+	if t.deps.Focus != nil {
+		if err := t.deps.Focus.SetCursor(ctx, FocusSource(string(p.Agent)), string(ticket)); err != nil {
+			return failf(err, "task_assign %s: remember the agent's ticket", fx.Key)
+		}
+	}
 
 	return nil
 }
+
+// FocusSource names where the ticket an agent was last woken for is kept.
+func FocusSource(agent string) string { return "focus:" + agent }
 
 // TaskAssignText is the room line that wakes an agent. People read the room too (Discord, Telegram), so it says what
 // the agent will do before the cue the agent acts on.

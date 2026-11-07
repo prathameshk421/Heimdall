@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -95,6 +96,9 @@ func (n *taskNudger) nudge(ctx context.Context, a nudgeAgent, ref ports.ActiveTa
 	}
 	if err := n.cursors.SetCursor(ctx, source, strconv.Itoa(count+1)); err != nil {
 		return false, fmt.Errorf("nudge: save count: %w", err)
+	}
+	if err := n.cursors.SetCursor(ctx, effects.FocusSource(a.name), string(ref.ChangeID)); err != nil {
+		return false, fmt.Errorf("nudge: remember the agent's ticket: %w", err)
 	}
 	return true, nil
 }
