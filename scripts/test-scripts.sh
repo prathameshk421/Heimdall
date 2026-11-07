@@ -96,7 +96,7 @@ signature_file="$release_output/v1.0.0.tgz.sig"
 SSH_CAPTURE="$work/ssh-input" COSIGN_CAPTURE="$work/cosign-args" PATH="$work/bin:$PATH" DEPLOY_HOST=stub-host DEPLOY_TAG=v1.0.0 DEPLOY_OUTPUT_DIR="$release_output" DEPLOY_SECRETS_DIR="$deploy_secrets" DEPLOY_CONFIG="$root/deploy/heimdall.example.toml" DEPLOY_VERIFY_KEY="$work/release.pub" DEPLOY_SIGNATURE_FILE="$signature_file" bash "$root/scripts/deploy.sh" > "$work/deploy-output" 2>&1; code=$?
 if [ "$code" -ne 0 ]; then cat "$work/deploy-output"; fi
 [ "$code" -eq 0 ] && grep -q 'stub-host' "$work/ssh-input" && grep -q 'docker compose.*up -d --wait --timeout 30' "$work/ssh-input" && grep -q 'Authorization: Bearer' "$work/ssh-input" && grep -q 'release v1.0.0 is healthy' "$work/deploy-output" && grep -q 'verify-blob.*--key' "$work/cosign-args"; check "tagged deploy verifies the configured signature, then stages and probes through SSH" $?
-[ -f "$work/ssh-input" ] && grep -q 'previous_hash.*archive_hash' "$work/ssh-input" && grep -q 'build --no-cache heimdall-server' "$work/ssh-input"; check "deploy skips release extraction and image build when artifact hash is unchanged" $?
+[ -f "$work/ssh-input" ] && grep -q 'previous_hash.*archive_hash' "$work/ssh-input" && grep -q 'build heimdall-server' "$work/ssh-input"; check "deploy skips release extraction and image build when artifact hash is unchanged" $?
 [ -f "$work/ssh-input" ] && grep -q 'restoring the previous release' "$work/ssh-input" && grep -q 'previous_current' "$work/ssh-input" && grep -q 'docker compose.*up -d --wait --timeout 30' "$work/ssh-input"; check "deploy restores the previous release when new health or MCP probes fail" $?
 COSIGN_CAPTURE="$work/cosign-fail-args" SSH_CAPTURE="$work/ssh-fail-input" COSIGN_FAIL=1 PATH="$work/bin:$PATH" DEPLOY_HOST=stub-host DEPLOY_TAG=v1.0.0 DEPLOY_OUTPUT_DIR="$release_output" DEPLOY_SECRETS_DIR="$deploy_secrets" DEPLOY_CONFIG="$root/deploy/heimdall.example.toml" DEPLOY_VERIFY_KEY="$work/release.pub" DEPLOY_SIGNATURE_FILE="$signature_file" bash "$root/scripts/deploy.sh" > "$work/deploy-fail-output" 2>&1; code=$?
 [ "$code" -eq 1 ] && grep -q 'signature verification failed' "$work/deploy-fail-output" && [ ! -f "$work/ssh-fail-input" ]; check "deploy refuses a failed signature before contacting the host" $?
@@ -120,7 +120,7 @@ cp -a "$source_path". "$destination"
 SH
 cat > "$work/remote-bin/docker" <<'SH'
 #!/usr/bin/env bash
-printf '%s|%s\n' "$(pwd -P)" "$*" >> "$REMOTE_DOCKER_CAPTURE"
+printf '%s|%s|cwd=%s\n' "$(pwd -P)" "$*" "$PWD" >> "$REMOTE_DOCKER_CAPTURE"
 SH
 cat > "$work/remote-bin/curl" <<'SH'
 #!/usr/bin/env bash
@@ -151,7 +151,7 @@ mkdir -p "$remote_success_root"
 cp "$work/remote-release.tgz" "$work/remote-success-stage.tgz"
 cp -a "$work/staged-secrets" "$work/remote-success-stage-secrets"
 REMOTE_CHOWN_CAPTURE="$work/remote-success-chown" REMOTE_DOCKER_CAPTURE="$work/remote-success-docker" REMOTE_CURL_CAPTURE="$work/remote-success-curl" PATH="$work/remote-bin:$PATH" sh "$root/scripts/deploy-remote.sh" v2.0.0 "$work/remote-success-stage" "$(id -un)" "$remote_hash" "$remote_success_root/install" "$remote_success_root/secrets" >/dev/null 2>&1; code=$?
-[ "$code" -eq 0 ] && [ "$(readlink "$remote_success_root/install/current")" = "$remote_success_root/install/releases/v2.0.0-$remote_hash" ] && [ ! -e "$work/remote-success-stage.tgz" ] && grep -q '/healthz' "$work/remote-success-curl" && grep -q '/mcp' "$work/remote-success-curl" && ! grep -q 'test-only-token' "$work/remote-success-curl" && grep -qx -- "-R 65532:65532 $remote_success_root/secrets" "$work/remote-success-chown" && grep -q 'build --no-cache heimdall-server' "$work/remote-success-docker"; check "remote activation advances after health and MCP using a private curl config file" $?
+[ "$code" -eq 0 ] && [ "$(readlink "$remote_success_root/install/current")" = "$remote_success_root/install/releases/v2.0.0-$remote_hash" ] && [ ! -e "$work/remote-success-stage.tgz" ] && grep -q '/healthz' "$work/remote-success-curl" && grep -q '/mcp' "$work/remote-success-curl" && ! grep -q 'test-only-token' "$work/remote-success-curl" && grep -qx -- "-R 65532:65532 $remote_success_root/secrets" "$work/remote-success-chown" && grep -q "build heimdall-server|cwd=$remote_success_root/install/releases/v2.0.0-$remote_hash$" "$work/remote-success-docker"; check "remote activation advances after health and MCP using a private curl config file" $?
 remote_rollback_root="$work/remote-rollback"
 mkdir -p "$remote_rollback_root/install/releases/v1.0.0/deploy" "$remote_rollback_root/install/releases/v1.0.0/deploy" "$remote_rollback_root/secrets"
 : > "$remote_rollback_root/install/releases/v1.0.0/deploy/compose.yaml"

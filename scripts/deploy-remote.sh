@@ -156,8 +156,10 @@ export HEIMDALL_CONFIG="$current/deploy/heimdall.toml"
 export HEIMDALL_SECRETS_DIR=$secrets_root
 export HEIMDALL_RELEASE=$tag
 if [ "$previous_hash" != "$archive_hash" ]; then
-	# No build cache: a cached copy layer once put the previous release's binary into this release's image.
-	docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml build --no-cache heimdall-server
+	# Build from the release's own path, never through the current symlink. BuildKit remembers a build context by its
+	# path and treats a file with the same size and mtime as unchanged, and every release binary has both (the archive
+	# fixes the mtime), so building through the symlink put the previous release's binary into the new image.
+	(cd "$release" && docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml build heimdall-server)
 fi
 # The Switch sidecar joins the server's network namespace, so the server must be running before compose creates it.
 docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml up -d --wait --timeout 60 heimdall-server
