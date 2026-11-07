@@ -156,7 +156,8 @@ export HEIMDALL_CONFIG="$current/deploy/heimdall.toml"
 export HEIMDALL_SECRETS_DIR=$secrets_root
 export HEIMDALL_RELEASE=$tag
 if [ "$previous_hash" != "$archive_hash" ]; then
-	docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml build heimdall-server
+	# No build cache: a cached copy layer once put the previous release's binary into this release's image.
+	docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml build --no-cache heimdall-server
 fi
 # The Switch sidecar joins the server's network namespace, so the server must be running before compose creates it.
 docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml up -d --wait --timeout 60 heimdall-server

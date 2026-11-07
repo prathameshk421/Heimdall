@@ -2,6 +2,7 @@ package switchchat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -158,6 +159,19 @@ func TestStreamSendsAClientGeneratedConnectionIDAndReusesItOnReconnect(t *testin
 	_, err := uuid.Parse(first)
 	require.NoError(t, err, "the client generates a UUID")
 	require.Equal(t, first, connectionIDOf(t, opens[1].Query), "the reconnect reuses the id")
+}
+
+// Switch 0.31.0 sends the heartbeat interval as a JSON float ("2.0"), not an integer, so connection_state must decode it.
+func TestStreamAcceptsAFloatHeartbeatInterval(t *testing.T) {
+	f, c, _ := streamTest(t)
+	setStream(f, func(w http.ResponseWriter, _ *http.Request, _ int) {
+		state := connectionState(connA, 8589936915, testRoomUUID)
+		state["heartbeat_interval_seconds"] = json.RawMessage("2.0")
+		frame(w, 0, "connection_state", state)
+		frame(w, 0, "evicted", map[string]any{})
+	})
+	var got deliveryLog
+	require.ErrorIs(t, c.Stream(streamCtx(t), []change.RoomID{roomID(t, testRoomUUID)}, nil, got.deliver), ErrEvicted)
 }
 
 func connectionIDOf(t *testing.T, rawQuery string) string {
