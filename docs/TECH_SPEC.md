@@ -986,6 +986,7 @@ Wire names are bare. The server lists and accepts `get_task`, not `heimdall_get_
 | `read_untrusted(ref)` | all |
 | `read_code(path, sha, range?)` | all (test-author: base SHA only) |
 | `read_pack(section?)` | reviewer (own pack only, D156) |
+| `read_card(file?)` | reviewer (own cards only) |
 | `ask_knowledge(question, entities?, as_of?)` | all |
 | `run_check(kind, args)` | reviewer, resolver (counts toward budget) |
 | `submit_tests` | test-author |
@@ -995,6 +996,8 @@ Wire names are bare. The server lists and accepts `get_task`, not `heimdall_get_
 | `claim_fix(finding, sha, evidence)` (Later, D160) | author |
 | `submit_verdict` | resolver |
 | `report_progress(text)` | all |
+
+`read_card` serves personal context cards: `cards_dir` in `heimdall.toml`, files `<cards_dir>/<person>/*.md|yaml|yml|txt` (64 KiB each, `deploy/cards/README.md`). The person is resolved from the authenticated agent through the base-policy agent mapping, never from an argument. No file lists the names. Content reaches the model as untrusted text, and only `reasoning` (E4) evidence may cite it.
 
 Schemas are generated from Go structs and versioned (`Review@1`). The previous version stays accepted for one release.
 

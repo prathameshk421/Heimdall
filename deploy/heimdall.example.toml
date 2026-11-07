@@ -8,6 +8,9 @@ listen = "0.0.0.0:8080"
 # Docker secrets are mounted here inside the container (D89).
 secrets_dir = "/run/secrets"
 
+# Personal context cards, <cards_dir>/<person>/<file> (deploy/cards/README.md). Omit to turn read_card off.
+cards_dir = "/var/lib/heimdall/cards"
+
 [database]
 # Secret file name whose contents are the Postgres URL; the URL itself is never written here.
 url_secret = "database_url"

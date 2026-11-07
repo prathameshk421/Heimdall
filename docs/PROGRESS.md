@@ -1,5 +1,20 @@
 # Heimdall progress
 
+## Personal context cards, end to end (Nov 7)
+
+- **What:** a reviewer reads its own personal cards (what it owns, rules that must hold, incidents, conventions) through a new `read_card` MCP tool. Cards are plain files, `<cards_dir>/<person>/*.md|yaml|yml|txt`, 64 KiB each, set by `cards_dir` in `heimdall.toml` (absent turns the tool off). The reviewer skill now lists and reads them first (step 2). Format and loading: `deploy/cards/README.md`, samples in `deploy/cards/examples/`.
+- **Safety:** `internal/adapters/cardsfs` opens everything through `os.Root` (no `..`, no separators, no symlink out, one folder level, size cap). The person comes from the base-policy agent mapping (`PersonForAgent`), never from an argument; an unmapped reviewer gets a generic failure and the skill says to carry on. Card text reaches the model wrapped as untrusted data and may be cited only as E4 `reasoning`.
+- **Evidence:** red first for `cardsfs` (compile error, then green: traversal, symlink, oversize, other person) and a reviewer-only role-gate test in `internal/transport/mcp`; `make fast` exit 0, 3995 tests, 0 lint issues. `TECH_SPEC.md` 14.1 documents the tool.
+- **Not verified:** a live reviewer calling `read_card` on the VM (needs `cards_dir` in `/etc/heimdall/heimdall.toml` and the cards copied in); `make verify`. The agents' `opencode.json` allows `heimdall_*`, so no permission change is needed.
+- **Noticed:** `pack_ref` evidence is still always refused (`reviewRefs.PackExists` returns false), so cards cannot be cited as `pack_ref`. Left as is on purpose.
+
+## Lint fixes on the uncommitted card work (Nov 7, blog session)
+
+- The stop hook found `make fast` red on another session's uncommitted `read_card` work. Fixed with no behavior change: `assembleMCP` was too long, so `newTasksAdapter` now builds the task adapter (`cmd/heimdall-server/app.go`); `config.build` was too complex, so `addPaths` now sets the secrets dir, cards dir and listen address (`internal/platform/config/config.go`); the global `cardExtensions` in `cardsfs` was already a function, fixed by the other writer. The TECH_SPEC 14.1 `read_card` row held `\|` inside a table cell, so the schema test lost its role; the row now lists the extensions in words.
+- **Evidence:** lint 0 issues; `go test ./internal/schema` ok. One full `make fast` run had 2 tests time out at 50 s (`domain/change`, `testkit/fixtures`) while another session ran tests on the same machine; the fixtures case passed alone in 7 s.
+- **Not verified:** a clean full `make fast` after the TECH_SPEC fix; nothing committed. Another writer edits the same files at the same time; check `git diff` before a commit.
+- **Measured for the blog (VM, `ps` RSS):** `heimdall-server` 63.9 MiB under load, `heimdall-runner` 10.7 MiB; VM 2 vCPU, 15.6 GB, 4.6 GB in use.
+
 ## Review flow check on a buggy PR (Nov 7, 13:45 UTC on)
 
 - **Build:** the VM server hash equals a build of `f93cd64` with the deploy flags (`793205ff...`); `heimdall-build` matches origin.

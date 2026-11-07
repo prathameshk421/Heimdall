@@ -664,6 +664,18 @@ type mcpStore interface {
 	ports.EpisodeSourceTrust
 }
 
+// newTasksAdapter builds the MCP task adapter: test submissions advance the engine, and agent output is filtered.
+func newTasksAdapter(d deps, toolsSvc *agenttools.Service, tracker *assignmentAgentTracker, store mcpStore, eng *engine.Engine) (*tasksAdapter, error) {
+	outputFilter, err := appreview.NewOutputFilter(nil, outputAudit{logger: d.logger})
+	if err != nil {
+		return nil, fmt.Errorf("build agent output filter: %w", err)
+	}
+	return &tasksAdapter{svc: toolsSvc, tracker: tracker, focus: cursorsOf(store), filter: outputFilter, advanceTests: func(ctx context.Context, changeID id.ChangeID, event change.Event) error {
+		_, err := eng.Advance(ctx, changeID, []change.Event{event})
+		return err
+	}}, nil
+}
+
 // assembleMCP wires the task index, agent tools service, adapters, and MCP server.
 func assembleMCP(
 	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng *engine.Engine, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
@@ -700,17 +712,12 @@ func assembleMCP(
 		tokStore = &tokenStore{principals: make(map[string]mcp.Principal)}
 	}
 	tracker := &assignmentAgentTracker{agents: make(map[id.TaskID]id.AgentName)}
-	tasksAdp := &tasksAdapter{svc: toolsSvc, tracker: tracker, focus: cursorsOf(store), advanceTests: func(ctx context.Context, changeID id.ChangeID, event change.Event) error {
-		_, err := eng.Advance(ctx, changeID, []change.Event{event})
-		return err
-	}}
-	outputFilter, err := appreview.NewOutputFilter(nil, outputAudit{logger: d.logger})
+	tasksAdp, err := newTasksAdapter(d, toolsSvc, tracker, store, eng)
 	if err != nil {
-		return nil, fmt.Errorf("build agent output filter: %w", err)
+		return nil, err
 	}
-	tasksAdp.filter = outputFilter
 	reviewsAdp := &mcpReviewsAdapter{svc: toolsSvc, tracker: tracker}
-	packReader, err := newPackReader(d, blobs, pool, clk, ad.vcs)
+	packReader, cards, err := newReviewerReaders(d, blobs, pool, clk, ad.vcs)
 	if err != nil {
 		return nil, err
 	}
@@ -718,6 +725,7 @@ func assembleMCP(
 		Logger: d.logger, Clock: clk, Tokens: tokStore, Tasks: tasksAdp,
 		Reviews: reviewsAdp, Code: ad.vcs, Blobs: blobs, Knowledge: knowledgeSvc,
 		Packs:    packReader,
+		Cards:    cards,
 		Files:    newKnowledgeFileManager(files, ad.vcs),
 		Profiles: profiles,
 		// run_check runs its fixed static check through the runner, never in this process.

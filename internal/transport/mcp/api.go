@@ -108,6 +108,15 @@ type PackReader interface {
 	Read(context.Context, Principal, Assignment, string) (string, error)
 }
 
+// ErrCardNotFound is returned by Cards.Read for a card the caller does not have.
+var ErrCardNotFound = errors.New("card not found")
+
+// Cards serves the caller's own personal context cards. The owner is resolved server-side from the authenticated
+// agent and its assignment; an empty file lists the card names.
+type Cards interface {
+	Read(ctx context.Context, p Principal, a Assignment, file string) (string, error)
+}
+
 // PackPublisher stages an owner-visible redacted review and publishes exactly the reviewed content.
 type PackPublisher interface {
 	Review(context.Context, Principal, string, string, map[string][]byte) (string, error)
@@ -152,6 +161,7 @@ type Deps struct {
 	Blobs         Blobs
 	Knowledge     Knowledge
 	Packs         PackReader
+	Cards         Cards
 	PackPublisher PackPublisher
 	Files         KnowledgeFiles
 	Profiles      Profiles

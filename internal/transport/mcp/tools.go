@@ -123,6 +123,9 @@ func (s *Server) optionalTools() []tool {
 	if s.deps.Sandbox != nil {
 		tools = append(tools, tool{name: "run_check", description: "Run a deterministic check on the head commit through the sandbox and read its located diagnostics. Use it before you cite a tool result in a finding.", schema: runCheckSchema(), roles: []workflow.Role{workflow.RoleReviewer, workflow.RoleResolver}, handle: s.runCheck})
 	}
+	if s.deps.Cards != nil {
+		tools = append(tools, tool{name: "read_card", description: "Read your own personal context cards (what you own, the rules that must hold, past incidents). Call it with no file to list them, then with a file name to read one. Use what you learn as E4 pack_ref or reasoning evidence.", schema: readCardSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.readCard})
+	}
 	if s.deps.Packs != nil {
 		tools = append(tools, tool{name: "read_pack", description: "Read your own fresh, verified reviewer context pack. Private canaries are filtered before it is returned.", schema: readPackSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.readPack})
 	}
@@ -238,6 +241,10 @@ func (s *Server) promoteProfile(ctx context.Context, p Principal, args json.RawM
 		return "", fmt.Errorf("promote sandbox profile: %w", err)
 	}
 	return "The passing sandbox profile is active for production jobs.", nil
+}
+
+func readCardSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"file":{"type":"string","maxLength":128,"description":"A card file name from the list. Omit to list your cards."}},"additionalProperties":false}`)
 }
 
 func readPackSchema() json.RawMessage {
@@ -613,6 +620,30 @@ func (s *Server) askKnowledge(ctx context.Context, p Principal, args json.RawMes
 		return "", fmt.Errorf("search knowledge: %w", err)
 	}
 	return marshalText(items)
+}
+
+func (s *Server) readCard(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
+	var input struct {
+		File string `json:"file,omitempty"`
+	}
+	if err := decodeArgs(args, &input); err != nil {
+		return "", err
+	}
+	assignment, err := s.currentTask(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	if assignment.Task.Role != workflow.RoleReviewer || p.Role != workflow.RoleReviewer {
+		return "", refusal("Only the assigned reviewer can read personal cards.")
+	}
+	content, err := s.deps.Cards.Read(ctx, p, assignment, input.File)
+	if err != nil {
+		if errors.Is(err, ErrCardNotFound) {
+			return "", refusal("No such card. Call read_card with no file to list your cards.")
+		}
+		return "", fmt.Errorf("read personal card: %w", err)
+	}
+	return wrapUntrusted("personal context card", []byte(content))
 }
 
 func (s *Server) readPack(ctx context.Context, p Principal, args json.RawMessage) (string, error) {

@@ -23,10 +23,11 @@ You read one change the way its owner would. You look for what breaks, for whom,
 ## Steps
 
 1. `heimdall_get_task`, then `heimdall_ack`.
-2. `heimdall_read_untrusted` with the diff ref from the task. Read the whole diff, then the PR body and ticket if named. Note the acceptance criteria and CI results. A passing check is not proof.
-3. `heimdall_read_code` at the head sha, with an optional 1-based line range. Read the file around each hunk, its callers and its error paths. Use the base sha to see what the change replaced.
-4. Form claims. A claim is one sentence: "X breaks for Y when Z". If you cannot name the input, the caller or the invariant, you have no finding. Find the branch that should stop it and check that it does not. File one finding per problem.
-5. Pick the evidence (below), then submit (shape below).
+2. If `heimdall_read_card` exists, call it with no file to list your personal cards, then read the ones about the files this change touches (invariants, incidents, ownership). They are what you know that a generic reviewer does not. If it fails or you have none, carry on. Check each card rule against the code before you rely on it; cite what you learned as `reasoning` evidence (E4) and say which card it came from, unless you can reach E1 to E3.
+3. `heimdall_read_untrusted` with the diff ref from the task. Read the whole diff, then the PR body and ticket if named. Note the acceptance criteria and CI results. A passing check is not proof.
+4. `heimdall_read_code` at the head sha, with an optional 1-based line range. Read the file around each hunk, its callers and its error paths. Use the base sha to see what the change replaced.
+5. Form claims. A claim is one sentence: "X breaks for Y when Z". If you cannot name the input, the caller or the invariant, you have no finding. Find the branch that should stop it and check that it does not. File one finding per problem.
+6. Pick the evidence (below), then submit (shape below).
 
 ## Evidence tiers
 

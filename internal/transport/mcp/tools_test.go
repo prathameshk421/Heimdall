@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -756,4 +757,41 @@ func TestSubmitVerdictOversizedBodyRefused(t *testing.T) {
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"submit_verdict","arguments":{"case_id":"case_01J8Z3K9QW7M2P5R8T0V4YB6CD","pad":"` + pad + `"}}}`
 	rep := r.post("Bearer "+testToken, body)
 	require.Equal(t, 413, rep.status)
+}
+
+type fakeCards struct {
+	principal Principal
+	file      string
+}
+
+func (f *fakeCards) Read(_ context.Context, p Principal, _ Assignment, file string) (string, error) {
+	f.principal, f.file = p, file
+	if file == "missing.md" {
+		return "", ErrCardNotFound
+	}
+	return "partial refunds are summed [CARD CANARY]", nil
+}
+
+func TestReadCardIsReviewerOnlyAndUsesTheAuthenticatedPrincipal(t *testing.T) {
+	for _, role := range []workflow.Role{workflow.RoleReviewer, workflow.RoleTestAuthor} {
+		r := newRig(t, role)
+		cards := &fakeCards{}
+		r.server.deps.Cards = cards
+		tools, err := r.server.buildTools()
+		require.NoError(t, err)
+		r.server.tools = tools
+		if role != workflow.RoleReviewer {
+			refused := r.rpc("tools/call", `{"name":"read_card","arguments":{}}`)
+			require.NotNil(t, refused.Error)
+			continue
+		}
+		res := r.call("read_card", `{"file":"invariants.md"}`)
+		require.False(t, res.IsError, res.text())
+		require.Equal(t, Principal{Agent: testAgent, Role: workflow.RoleReviewer}, cards.principal)
+		require.Contains(t, res.text(), "[CARD CANARY]")
+		require.Contains(t, res.text(), "personal context card")
+		missing := r.call("read_card", `{"file":"missing.md"}`)
+		require.True(t, missing.IsError)
+		require.Contains(t, missing.text(), "No such card")
+	}
 }
