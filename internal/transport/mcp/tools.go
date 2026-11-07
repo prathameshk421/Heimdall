@@ -709,6 +709,9 @@ func (s *Server) submitTests(ctx context.Context, p Principal, args json.RawMess
 	}
 	late := s.deps.Clock.Now().After(a.Task.Deadline)
 	if err := s.deps.Tasks.SubmitTests(ctx, a, sub, late); err != nil {
+		if errors.Is(err, ErrInvalidSubmission) {
+			return "", refusalf("The submission is not valid. Fix these problems and submit again:\n%v", err)
+		}
 		return "", fmt.Errorf("record test submission of task %s: %w", a.Task.TaskID, err)
 	}
 	if late {

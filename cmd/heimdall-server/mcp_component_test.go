@@ -237,8 +237,17 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 
 	// A test-author submission must advance the workflow atomically with its event and quality effect. If advancement
 	// fails before append, retrying the same submission must still give the engine another chance without duplication.
+	// A file that does not parse comes back to the agent with the parse error, not the generic failure (KAN-9).
+	broken := map[string]any{
+		"files":               []map[string]string{{"path": "tests/heimdall/KAN-1/refund_test.go", "content": "// a header comment and nothing else"}},
+		"acceptance_criteria": map[string][]string{"AC1": {"TestRefund"}},
+	}
+	brokenSubmit := callComponentMCPTool(t, ts, authorToken, 90, "submit_tests", broken)
+	require.True(t, brokenSubmit.IsError)
+	require.Contains(t, brokenSubmit.Text, "is not valid Go", "the agent sees what to fix")
+
 	submission := map[string]any{
-		"files":               []map[string]string{{"path": "tests/heimdall/KAN-1/refund_test.go", "content": "package tests"}},
+		"files":               []map[string]string{{"path": "tests/heimdall/KAN-1/refund_test.go", "content": "package tests\n\nimport \"testing\"\n\nfunc TestRefund(t *testing.T) { t.Fatal(\"no refund endpoint\") }\n"}},
 		"acceptance_criteria": map[string][]string{"AC1": {"TestRefund"}},
 	}
 	firstSubmit := callComponentMCPTool(t, ts, authorToken, 2, "submit_tests", submission)

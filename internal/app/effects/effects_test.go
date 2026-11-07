@@ -274,7 +274,19 @@ func TestRoomOpenPassesEffectKeyAsIdempotencyKeyAndTitleFromTracker(t *testing.T
 	req := k.chat.requests[0]
 	require.Equal(t, fx.Key, req.Key, "the effect key is the idempotency key of the room request")
 	require.Equal(t, ticket, req.ChangeID)
-	require.Equal(t, "Fix refunds on partial capture", req.Title)
+	require.Equal(t, "KAN-7 Fix refunds on partial capture", req.Title, "the title leads with the ticket key")
+}
+
+// Found live: KAN-9 and KAN-11 had the same summary, and OpenRoom adopts an open room by title, so both changes shared
+// one room and one Discord channel. The ticket key in the title keeps each change in its own room.
+func TestTwoTicketsWithTheSameSummaryGetDifferentRoomTitles(t *testing.T) {
+	first := newKit(t, triggeredEvent(t))
+	require.NoError(t, first.room.Execute(context.Background(), roomEffect(t, "person:ana")))
+	second := newKit(t, triggeredEvent(t))
+	second.tickets.ticket.Key = "KAN-8"
+	require.NoError(t, second.room.Execute(context.Background(), roomEffect(t, "person:ana")))
+	require.Equal(t, first.tickets.ticket.Title, second.tickets.ticket.Title, "same summary")
+	require.NotEqual(t, first.chat.requests[0].Title, second.chat.requests[0].Title)
 }
 
 func TestRoomOpenIngestsRoomOpenedCausedByTheTrigger(t *testing.T) {

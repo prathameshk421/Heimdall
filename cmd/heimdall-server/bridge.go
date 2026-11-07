@@ -417,6 +417,10 @@ func (t *tasksAdapter) Ack(ctx context.Context, a mcp.Assignment, at time.Time) 
 func (t *tasksAdapter) SubmitTests(ctx context.Context, a mcp.Assignment, sub testset.Submission, late bool) error {
 	assignment := t.tracker.toAgenttools(a)
 	ev, prepared, isLate, err := t.svc.PrepareTestsSubmission(ctx, assignment, sub, late)
+	if errors.Is(err, agenttools.ErrValidation) {
+		// The problems name only the agent's own files, so the agent sees them and can fix the submission.
+		return fmt.Errorf("%w: %w", mcp.ErrInvalidSubmission, err)
+	}
 	if err != nil {
 		return err
 	}

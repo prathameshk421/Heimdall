@@ -36,6 +36,10 @@ type Assignment struct {
 	Acked      bool
 }
 
+// ErrInvalidSubmission marks a problem the application found in what the agent submitted. Its message names only the
+// agent's own input, so the tool shows it to the agent as a refusal; every other failure stays generic.
+var ErrInvalidSubmission = errors.New("invalid submission")
+
 // ErrNoTask says the agent has no active task. The tool answers it as a refusal, not a protocol error.
 var ErrNoTask = errors.New("no active task")
 
