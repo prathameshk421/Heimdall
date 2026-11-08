@@ -169,3 +169,11 @@ Ordered by value for effort.
 - [GEPA in DSPy](https://dspy.ai/api/optimizers/GEPA)
 - [Aider-style repo map with personalized PageRank](https://openoxide.pages.dev/features/searching/repo-mapping)
 - [retro](https://github.com/craftwork-design/retro) and [session-recall](https://github.com/buildingopen/session-recall): community tools that mine sessions into rules with approval
+
+## 7. Review report page (prototype, Nov 8)
+
+`/changes/<id>/report` answers one question for a person: why can this change merge, or why can it not? It shows the gate's own reasons with `F1` in place of finding ids, the findings that hold the merge, what stands behind each one (a failing test, a tool, a confirmed rule and its owner, or reasoning only), the human decisions with their reasons, and every personal rule each reviewer answered.
+
+It uses [json-render](https://github.com/vercel-labs/json-render) in a narrow way. The server builds the spec from the event log, so no model writes UI. The page accepts only six components and refuses any other spec. The bundle (380 KB, 117 KB gzip) is embedded in the binary, so the server needs no Node. It runs under the dashboard's existing policy, which allows script and style from the same origin only.
+
+Checked in a browser against the real dashboard handler with sample events: a blocked change, a passed change, an unknown change (404), phone width with no sideways scroll, light and dark themes, and hostile claim text (`<img onerror>`, `<script>`, `{"$state": ...}`), which shows as plain text and changes nothing. **Not verified:** no real change log from the VM, and no live server. Not used: `@json-render/chat` (Heimdall posts through Switch) and model-written specs.

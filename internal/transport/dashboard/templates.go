@@ -36,6 +36,23 @@ const listHTML = `<!doctype html>
 </html>
 `
 
+// reportHTML is the review report page. It holds no data: the script reads report.json next to this page and shows every
+// value as text.
+const reportHTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review report · Heimdall</title>
+<link rel="stylesheet" href="/assets/report.css">
+</head>
+<body>
+<div id="report"><p class="report-loading">Loading the report.</p></div>
+<script type="module" src="/assets/report.js"></script>
+</body>
+</html>
+`
+
 // detailHTML is the change page. The live part reads /sse/changes/{id} and adds rows; the script is in /assets.
 const detailHTML = `<!doctype html>
 <html lang="en">
@@ -47,7 +64,7 @@ const detailHTML = `<!doctype html>
 </head>
 <body>
 <header>
-<p><a href="/">All changes</a></p>
+<p><a href="/">All changes</a> · <a href="/changes/{{.D.ID}}/report">Review report</a></p>
 <h1>{{.D.Ticket}}</h1>
 <dl class="facts">
 <dt>Repository</dt><dd>{{.D.Repo}}</dd>
