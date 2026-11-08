@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,15 +48,41 @@ func TestAddEpisodeCarriesStableSourceAndNeverExpandsGroup(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "add_memory", caller.names[0])
 	require.Equal(t, "payments", caller.args["group_id"])
+	require.Equal(t, "episode:adr:4:1", caller.args["name"], "the name carries the stable key")
 	require.Contains(t, caller.args["episode_body"], "episode:adr:4:1")
-	firstUUID := caller.args["uuid"]
-	require.NotEmpty(t, firstUUID)
-	require.NoError(t, adapter.AddEpisode(context.Background(), ports.Episode{Key: "episode:adr:4:1", Source: "adr", Status: ports.EpisodeConfirmed, GroupID: "payments", Body: `{"claim":"refund ids are stable"}`}))
-	require.Equal(t, firstUUID, caller.args["uuid"], "retries must use the same Graphiti episode UUID")
+	require.NotContains(t, caller.args, "uuid", "Graphiti reads a uuid as an update of an existing episode, which fails for a new one")
+}
+
+func TestForgetFindsTheEpisodeByNameThenDeletesItsGraphitiUUID(t *testing.T) {
+	caller := &callerSpy{replies: map[string]json.RawMessage{
+		"get_episodes":   json.RawMessage(`{"episodes":[{"uuid":"g-other","name":"episode:other"},{"uuid":"g-7","name":"episode:adr:4:1"}]}`),
+		"delete_episode": json.RawMessage(`{}`),
+	}}
+	adapter, err := New(caller)
+	require.NoError(t, err)
 	require.NoError(t, adapter.ForgetEpisode(context.Background(), "episode:adr:4:1", "payments"))
-	require.Equal(t, "delete_episode", caller.names[len(caller.names)-1])
+	require.Equal(t, []string{"get_episodes", "delete_episode"}, caller.names)
+	require.Equal(t, "g-7", caller.args["uuid"])
 	require.Equal(t, "payments", caller.args["group_id"])
-	require.Equal(t, firstUUID, caller.args["uuid"])
+}
+
+func TestForgetOfAnEpisodeThatIsNotThereDeletesNothing(t *testing.T) {
+	caller := &callerSpy{replies: map[string]json.RawMessage{"get_episodes": json.RawMessage(`{"episodes":[]}`)}}
+	adapter, err := New(caller)
+	require.NoError(t, err)
+	require.NoError(t, adapter.ForgetEpisode(context.Background(), "episode:gone", "payments"))
+	require.Equal(t, []string{"get_episodes"}, caller.names)
+}
+
+func TestForgetFailsWhenTheScanIsFullAndTheEpisodeIsNotInIt(t *testing.T) {
+	var episodes []string
+	for i := range maxEpisodeScan {
+		episodes = append(episodes, fmt.Sprintf(`{"uuid":"g-%d","name":"episode:%d"}`, i, i))
+	}
+	caller := &callerSpy{replies: map[string]json.RawMessage{"get_episodes": json.RawMessage(`{"episodes":[` + strings.Join(episodes, ",") + `]}`)}}
+	adapter, err := New(caller)
+	require.NoError(t, err)
+	require.Error(t, adapter.ForgetEpisode(context.Background(), "episode:older", "payments"), "an older episode must not be reported as forgotten")
 }
 
 func TestSearchRefusesEmptyGroupScope(t *testing.T) {
