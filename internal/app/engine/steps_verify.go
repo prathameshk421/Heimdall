@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -27,10 +28,10 @@ func NewVerifyEvidence(_ json.RawMessage) (VerifyEvidence, error) {
 // Type returns the do name of the step.
 func (VerifyEvidence) Type() string { return "sandbox.verify_evidence" }
 
-// Done reports whether no E1 finding in the window is waiting for verification.
+// Done reports whether no finding in the window is waiting for verification: no open provable finding unverified on
+// the head, and no recheck without a result.
 func (VerifyEvidence) Done(c ChangeView) bool {
-	waiting := waitingProvableFindings(c)
-	return len(waiting) == 0
+	return len(waitingProvableFindings(c)) == 0 && len(pendingRechecks(c.Events)) == 0
 }
 
 // Start returns nothing: evidence verification is requested via OnEvent.
@@ -51,7 +52,89 @@ func (s VerifyEvidence) OnEvent(_ context.Context, c ChangeView, e change.Event)
 	if e.Type == change.EventReviewSubmitted {
 		return s.onReviewSubmitted(c, e)
 	}
+	if e.Type == change.EventFindingRecheckRequested {
+		return s.onRecheckRequested(c, e)
+	}
 	return Result{}, nil
+}
+
+// onRecheckRequested repeats the evidence of one finding on the current head, whatever its state: a person asked,
+// because an earlier run gave a wrong answer. The proof comes from the finding as filed. A finding the server cannot
+// repeat (filed as E4, or not filed at all) is refused.
+func (VerifyEvidence) onRecheckRequested(c ChangeView, e change.Event) (Result, error) {
+	var req change.FindingRecheckRequested
+	if err := json.Unmarshal(e.Payload, &req); err != nil {
+		return Result{}, fmt.Errorf("sandbox.verify_evidence: read %s: %w", e.Type, err)
+	}
+	filed, rec, ok := filedFinding(c.history(), req.FindingID)
+	if !ok || !provableTier(rec.Tier) {
+		return Result{}, fmt.Errorf("sandbox.verify_evidence: %s is not a finding whose evidence the server can repeat", req.Ref)
+	}
+	trig, err := triggerOf(c)
+	if err != nil {
+		return Result{}, fmt.Errorf("sandbox.verify_evidence: %w", err)
+	}
+	headSHA := headSHAOf(c)
+	if headSHA == "" {
+		return Result{}, errors.New("sandbox.verify_evidence: no head SHA in the view")
+	}
+	payload := change.VerifyEvidencePayload{
+		Repo:       trig.Repo,
+		Ticket:     c.ID,
+		FindingID:  rec.FindingID,
+		FindingRef: rec.Ref,
+		Severity:   rec.Severity,
+		HeadSHA:    headSHA,
+	}
+	if err := attachProof(&payload, filed); err != nil {
+		return Result{}, fmt.Errorf("sandbox.verify_evidence: finding %s (%s): %w", rec.FindingID, rec.Ref, err)
+	}
+	fx, err := buildVerifyEffect(c.ID, e.Version, payload)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Effects: []change.Effect{fx}}, nil
+}
+
+// filedFinding returns the finding.filed event of a finding and its record.
+func filedFinding(events []change.Event, fndID id.FindingID) (change.Event, change.FindingRecord, bool) {
+	for _, e := range events {
+		if e.Type != change.EventFindingFiled {
+			continue
+		}
+		if rec, err := parseFindingRecord(e); err == nil && rec.FindingID == fndID {
+			return e, rec, true
+		}
+	}
+	return change.Event{}, change.FindingRecord{}, false
+}
+
+// pendingRechecks lists the findings with a recheck request and no verification result after it.
+func pendingRechecks(events []change.Event) []id.FindingID {
+	var pending []id.FindingID
+	for i, e := range events {
+		if e.Type != change.EventFindingRecheckRequested {
+			continue
+		}
+		var req change.FindingRecheckRequested
+		if err := json.Unmarshal(e.Payload, &req); err != nil {
+			continue
+		}
+		answered := false
+		for _, later := range events[i+1:] {
+			if later.Type != change.EventFindingVerified && later.Type != change.EventFindingStateChanged {
+				continue
+			}
+			if rec, err := parseFindingRecord(later); err == nil && rec.FindingID == req.FindingID {
+				answered = true
+				break
+			}
+		}
+		if !answered && !slices.Contains(pending, req.FindingID) {
+			pending = append(pending, req.FindingID)
+		}
+	}
+	return pending
 }
 
 // onReviewSubmitted requests verification for every open finding that is not yet verified. The step opens after the

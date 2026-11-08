@@ -210,11 +210,13 @@ func (v VerifyEvidence) ingestUnverified(ctx context.Context, ticket id.ChangeID
 	return nil
 }
 
+// isAlreadyEvaluated reports whether the finding has a verification result since the last push and since its last
+// recheck request. A recheck asks for a new result on the same head, so a result from before it does not count.
 func isAlreadyEvaluated(l loadedChange, fndID id.FindingID) bool {
 	lastPushIdx := -1
 	for i := len(l.events) - 1; i >= 0; i-- {
 		e := l.events[i]
-		if e.Type == change.EventPRPushed {
+		if e.Type == change.EventPRPushed || isRecheckOf(e, fndID) {
 			lastPushIdx = i
 			break
 		}
@@ -233,6 +235,15 @@ func isAlreadyEvaluated(l loadedChange, fndID id.FindingID) bool {
 		}
 	}
 	return false
+}
+
+// isRecheckOf reports whether e is a recheck request for the finding.
+func isRecheckOf(e change.Event, fndID id.FindingID) bool {
+	if e.Type != change.EventFindingRecheckRequested {
+		return false
+	}
+	var req change.FindingRecheckRequested
+	return json.Unmarshal(e.Payload, &req) == nil && req.FindingID == fndID
 }
 
 func findCauseEvent(l loadedChange, fndID id.FindingID) *change.Event {

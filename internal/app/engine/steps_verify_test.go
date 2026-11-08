@@ -418,3 +418,71 @@ func TestVerifyEvidenceOnReviewSubmittedSkipsVerifiedFindings(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, res.Effects)
 }
+
+func recheckEvent(fndID id.FindingID, ref string, version int64) change.Event {
+	return change.Event{
+		ID:       change.EventID("ev-recheck-" + string(fndID)),
+		ChangeID: testTicket,
+		Version:  version,
+		Type:     change.EventFindingRecheckRequested,
+		Payload:  json.RawMessage(`{"finding_id":"` + string(fndID) + `","ref":"` + ref + `","reason":"the runner was busy","by":"operator"}`),
+	}
+}
+
+func unverifiedEvent(fndID id.FindingID, ref string, version int64) change.Event {
+	return change.Event{
+		ID:       change.EventID("ev-unverified-" + string(fndID)),
+		ChangeID: testTicket,
+		Version:  version,
+		Type:     change.EventFindingStateChanged,
+		Payload:  json.RawMessage(`{"finding_id":"` + string(fndID) + `","ref":"` + ref + `","tier":"E4","severity":"high","state":"unverified","by":"heimdall"}`),
+	}
+}
+
+func TestVerifyEvidenceRecheckRepeatsTheEvidenceOfAFindingDroppedToE4(t *testing.T) {
+	step, err := engine.NewVerifyEvidence(nil)
+	require.NoError(t, err)
+
+	filed := sampleFindingFiledEvent(testFnd1, "F4", finding.TierE1, 3)
+	evs := append(sampleBaseEvents(), filed, unverifiedEvent(testFnd1, "F4", 4))
+	view := engine.ChangeView{ID: testTicket, Events: evs}
+	require.True(t, step.Done(view), "an unverified finding waits for nothing")
+
+	recheck := recheckEvent(testFnd1, "F4", 5)
+	view.Events = append(view.Events, recheck)
+	require.False(t, step.Done(view), "a recheck with no result yet keeps the step open")
+
+	res, err := step.OnEvent(context.Background(), view, recheck)
+	require.NoError(t, err)
+	require.Len(t, res.Effects, 1)
+	p, err := change.DecodeVerifyEvidencePayload(res.Effects[0].Payload)
+	require.NoError(t, err)
+	require.Equal(t, testFnd1, p.FindingID)
+	require.Equal(t, testHead, p.HeadSHA, "the evidence is repeated on the current head")
+	require.Equal(t, "TestRepro", p.TestName, "the repro test comes from the finding as filed")
+
+	first, err := step.OnEvent(context.Background(), engine.ChangeView{ID: testTicket, Events: append(sampleBaseEvents(), filed)}, filed)
+	require.NoError(t, err)
+	require.NotEqual(t, first.Effects[0].Key, res.Effects[0].Key, "a recheck is a new effect, not the first one again")
+
+	view.Events = append(view.Events, change.Event{
+		ID: "ev-ver-recheck", ChangeID: testTicket, Version: 6, Type: change.EventFindingVerified,
+		Payload: json.RawMessage(`{"finding_id":"` + string(testFnd1) + `","ref":"F4","tier":"E1","severity":"high","state":"open","by":"heimdall"}`),
+	})
+	require.True(t, step.Done(view), "the recheck's result ends the wait")
+}
+
+func TestVerifyEvidenceRecheckRefusesAFindingTheServerCannotRepeat(t *testing.T) {
+	step, err := engine.NewVerifyEvidence(nil)
+	require.NoError(t, err)
+
+	recheck := recheckEvent(testFnd2, "F2", 4)
+	evs := append(sampleBaseEvents(), sampleFindingFiledEvent(testFnd2, "F2", finding.TierE4, 3), recheck)
+	_, err = step.OnEvent(context.Background(), engine.ChangeView{ID: testTicket, Events: evs}, recheck)
+	require.ErrorContains(t, err, "F2")
+
+	unknown := recheckEvent(testFnd1, "F9", 4)
+	evs = append(sampleBaseEvents(), unknown)
+	_, err = step.OnEvent(context.Background(), engine.ChangeView{ID: testTicket, Events: evs}, unknown)
+	require.ErrorContains(t, err, "F9")
+}

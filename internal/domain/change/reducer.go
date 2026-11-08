@@ -148,6 +148,12 @@ func addReview(t table) {
 
 	stays(t, StateEscalated, EventChallengeFiled, EventFindingFiled, EventFindingVerified, EventFindingStateChanged)
 
+	// A recheck repeats a finding's evidence and changes no state by itself; the verification it starts does. It is
+	// legal only where that finding.verified is legal.
+	for _, s := range []State{StateInReview, StateDeliberating, StateEscalated, StateFixing, StateVerifyingFix} {
+		stays(t, s, EventFindingRecheckRequested)
+	}
+
 	stays(t, StateFixing, EventFindingFiled, EventFindingVerified)
 	t.set(StateFixing, EventFindingStateChanged, when(verifyingFinding, to(StateVerifyingFix),
 		when(openFinding, to(StateInReview), refuse("a fix in FIXING can only be verified or retracted"))))

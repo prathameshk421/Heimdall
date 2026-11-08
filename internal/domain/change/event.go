@@ -45,18 +45,21 @@ const (
 	EventFindingFiled        EventType = "finding.filed"
 	EventFindingVerified     EventType = "finding.verified"
 	EventFindingStateChanged EventType = "finding.state_changed"
-	EventChallengeFiled      EventType = "challenge.filed"
-	EventCaseOpened          EventType = "case.opened"
-	EventVerdictSubmitted    EventType = "verdict.submitted"
-	EventVerdictApplied      EventType = "verdict.applied"
-	EventVerdictEscalated    EventType = "verdict.escalated"
-	EventDecisionRecorded    EventType = "decision.recorded"
-	EventApprovalRecorded    EventType = "approval.recorded"
-	EventApprovalInvalidated EventType = "approval.invalidated"
-	EventCIReported          EventType = "ci.reported"
-	EventGateEvaluated       EventType = "gate.evaluated"
-	EventChangeRejected      EventType = "change.rejected"
-	EventChangeMerged        EventType = "change.merged"
+	// EventFindingRecheckRequested asks the server to repeat a finding's evidence on the current head, after a run that
+	// gave a wrong answer (for example, a runner fault that dropped a true finding to E4).
+	EventFindingRecheckRequested EventType = "finding.recheck_requested"
+	EventChallengeFiled          EventType = "challenge.filed"
+	EventCaseOpened              EventType = "case.opened"
+	EventVerdictSubmitted        EventType = "verdict.submitted"
+	EventVerdictApplied          EventType = "verdict.applied"
+	EventVerdictEscalated        EventType = "verdict.escalated"
+	EventDecisionRecorded        EventType = "decision.recorded"
+	EventApprovalRecorded        EventType = "approval.recorded"
+	EventApprovalInvalidated     EventType = "approval.invalidated"
+	EventCIReported              EventType = "ci.reported"
+	EventGateEvaluated           EventType = "gate.evaluated"
+	EventChangeRejected          EventType = "change.rejected"
+	EventChangeMerged            EventType = "change.merged"
 )
 
 // All returns every event type in catalog order. It returns a fresh slice, because package-level mutable state is
@@ -73,7 +76,7 @@ func All() []EventType {
 		EventSlopEvaluated,
 		EventReviewersPicked,
 		EventReviewSubmitted, EventReviewUnavailable, EventReviewWaived,
-		EventFindingFiled, EventFindingVerified, EventFindingStateChanged,
+		EventFindingFiled, EventFindingVerified, EventFindingStateChanged, EventFindingRecheckRequested,
 		EventChallengeFiled,
 		EventCaseOpened, EventVerdictSubmitted, EventVerdictApplied, EventVerdictEscalated,
 		EventDecisionRecorded,

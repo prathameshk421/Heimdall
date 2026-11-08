@@ -231,7 +231,7 @@ func TestServerCommandRuntimeSelectsReviewersForFanout(t *testing.T) {
 			change.EventTestsApproved, change.EventTicketChanged, change.EventPROpened, change.EventPRPushed,
 			change.EventPRLinked, change.EventPRClosed, change.EventSlopEvaluated, change.EventReviewSubmitted,
 			change.EventReviewUnavailable, change.EventReviewWaived, change.EventFindingFiled, change.EventFindingVerified,
-			change.EventFindingStateChanged, change.EventChallengeFiled, change.EventCaseOpened,
+			change.EventFindingStateChanged, change.EventFindingRecheckRequested, change.EventChallengeFiled, change.EventCaseOpened,
 			change.EventVerdictSubmitted, change.EventVerdictApplied, change.EventVerdictEscalated,
 			change.EventDecisionRecorded, change.EventApprovalRecorded, change.EventApprovalInvalidated,
 			change.EventCIReported, change.EventGateEvaluated, change.EventChangeRejected, change.EventChangeMerged:

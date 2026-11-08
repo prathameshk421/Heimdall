@@ -190,23 +190,25 @@ type app struct {
 	agentSync      func(context.Context) error
 	operatorAnswer http.Handler
 	operatorReject http.Handler
-	operatorRoom   http.Handler
-	narrator       *announce.Narrator
-	nudger         *taskNudger
-	timers         *workflowTimers
-	packUpload     http.Handler
-	cardsUpload    http.Handler
-	commands       *commandRuntime
-	workflowMemory *knowledge.WorkflowMemory
-	proposer       *cardProposer
-	retention      knowledgeRetention
-	episodeWorker  episodeDrainer
-	blobs          io.Closer
-	logger         *slog.Logger
-	clock          ports.Clock
-	pollEvery      time.Duration
-	syncEvery      time.Duration
-	drainTick      time.Duration
+	// operatorRecheck repeats one finding's evidence on the current head after a run that gave a wrong answer.
+	operatorRecheck http.Handler
+	operatorRoom    http.Handler
+	narrator        *announce.Narrator
+	nudger          *taskNudger
+	timers          *workflowTimers
+	packUpload      http.Handler
+	cardsUpload     http.Handler
+	commands        *commandRuntime
+	workflowMemory  *knowledge.WorkflowMemory
+	proposer        *cardProposer
+	retention       knowledgeRetention
+	episodeWorker   episodeDrainer
+	blobs           io.Closer
+	logger          *slog.Logger
+	clock           ports.Clock
+	pollEvery       time.Duration
+	syncEvery       time.Duration
+	drainTick       time.Duration
 }
 
 // poller is the part of trigger.Poller the loop uses. A test supplies a fake one.
@@ -488,6 +490,7 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 		a.operatorRoom = operatorRoom{create: maker.CreateChannel, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
 	}
 	a.operatorReject = operatorReject{reject: a.commands.OperatorReject, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
+	a.operatorRecheck = operatorRecheck{recheck: a.commands.OperatorRecheck, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
 	return a, nil
 }
 

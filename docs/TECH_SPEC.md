@@ -288,6 +288,7 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 | `reviewers.picked` | people, by, method (dashboard, command, default) | Dashboard, command, timer |
 | `review.submitted` / `review.unavailable` / `review.waived` | reviewer, finding refs, pack date / reason / approver | Agent, engine, decision |
 | `finding.filed` / `finding.verified` / `finding.state_changed` | id, tier, severity, state, by (severity is required on every finding event, so the gate can apply `blocking.min_severity`; a missing or unknown severity blocks) | Agents, sandbox, rules |
+| `finding.recheck_requested` | id, ref, reason, by: repeat one finding's evidence on the current head; the next result replaces the earlier one (a runner fault had dropped true findings to E4) | Operator |
 | `challenge.filed` | finding, round, evidence | Agents |
 | `case.opened` / `verdict.submitted` / `verdict.applied` / `verdict.escalated` | case, verdict, citations, checks | Engine, resolver |
 | `decision.recorded` | kind, target, login, reason, source ref | GitHub comment or room command (D47) |
