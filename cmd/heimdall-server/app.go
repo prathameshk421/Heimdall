@@ -67,6 +67,10 @@ const (
 	// testQualityTimeout bounds a test_quality effect: two sandbox jobs of up to 3 minutes each, plus the runner's
 	// margin. With the 20 s default the outbox cancelled the run and every retry started another container (KAN-9).
 	testQualityTimeout = 7 * time.Minute
+	// verifyEvidenceTimeout bounds a verify_evidence effect: a source fetch, one sandbox job of up to 3 minutes, and the
+	// event ingest after it. With the 20 s default the run was cut and the ingest after it timed out on every retry, so
+	// E1 findings dropped to E4 or never settled (KAN-23, Nov 8).
+	verifyEvidenceTimeout = 5 * time.Minute
 	// outboxLease is how long a claimed effect stays leased to one drainer. It must exceed outboxBatch times the longest
 	// effect timeout (outbox.New). An effect that was running when the server stopped is in doubt and is not re-run on
 	// lease expiry (T22), so a long lease does not delay recovery.
@@ -594,7 +598,10 @@ func assembleWithBlobs(
 	box, err := outbox.New(outbox.Config{
 		Outbox: store, Executors: execs, Logger: d.logger,
 		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
-		KindTimeouts: map[change.EffectKind]time.Duration{change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout},
+		KindTimeouts: map[change.EffectKind]time.Duration{
+			change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout,
+			change.EffectVerifyEvidence: verifyEvidenceTimeout,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build outbox drainer: %w", err)
