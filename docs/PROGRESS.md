@@ -659,7 +659,7 @@ Found and fixed live: (1) the memory backfill stopped at the first change with n
 
 Cards for `bob` (3), `eli` (1) and `ana` (2) were copied into the card folder (the admin path in `deploy/cards/README.md`). None is confirmed.
 
-**Blocking the Slack test:** the live reviewer agents are `reviewer-1` to `reviewer-3`, but `heimdall.yaml` on `aarush323/heimdall-fixture-pay@heimdall-test/demo-base` maps people to `bob-reviewer`, `eli-reviewer` and `ana-reviewer`. No live reviewer resolves to a person, so reviewers get no cards, no personal brief and no team memory groups. This has been true for every earlier live run. Fix: map the agents in that file (owner decision, it is a shared repository).
+**Blocking the Slack test:** the live reviewer agents are `reviewer-1` to `reviewer-3`, but `heimdall.yaml` on `aarush323/heimdall-fixture-pay@heimdall-test/demo-base` maps people to `bob-reviewer`, `eli-reviewer` and `ana-reviewer`. No live reviewer resolves to a person, so reviewers get no cards, no personal brief and no team memory groups. This has been true for every earlier live run. Fix: map the agents in that file (owner decision, it is a shared repository). **Done (owner yes, Nov 8):** commit `9b49652` on `heimdall-test/demo-base` maps `bob`, `eli` and `ana` to `reviewer-1`, `reviewer-2` and `reviewer-3`; the file passes `policyyaml.Decode` and `Validate`. Policy is read at each change's base, so only tickets started after this commit use it.
 
 **Not wired:** human tokens. `compose.yaml` passes a fixed list of secret files into the container, so a `[human_tokens]` entry makes the server refuse to start (seen live, restored within two minutes). `heimdall cards push` and `confirm` need that wiring before a person can use them on the VM.
 
