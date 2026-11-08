@@ -46,8 +46,6 @@ graphiti:
       description: "A failure that happened, with its cause and the component it hit"
     - name: "Decision"
       description: "A choice a person made, such as upholding or dismissing a finding, with the reason they gave"
-    - name: "Person"
-      description: "A developer, reviewer, or approver, named by their login or chat name"
     - name: "Requirement"
       description: "A need from a ticket or spec that the change must meet"
     - name: "Procedure"
