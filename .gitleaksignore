@@ -251,8 +251,10 @@ dddfe2b6ae3a88c46d39c91df1dd4a3887266504:internal/pack/redact_test.go:generic-ap
 # Fake fixture credentials in the T48 branch history (internal/pack/pack_test.go), never on heimdall-build. Owner approved (Nov 6).
 96b86c8aae7743e3d4b0ebff354cf5c87130d738:internal/pack/pack_test.go:generic-api-key:16
 96b86c8aae7743e3d4b0ebff354cf5c87130d738:internal/pack/pack_test.go:generic-api-key:49
-# The same fake fixtures carried by later commits and merges, plus the made-up AWS key AKIAABCDEFGHIJKLMNOP in the card
-# upload test, which checks that a card holding a key is refused. Owner approved (Nov 8).
+# The same fake fixtures carried by later commits and merges, plus the made-up AWS key (AKIA and the letters A to P) in
+# the card upload test, which checks that a card holding a key is refused. Owner approved (Nov 8). The last entry is
+# this comment's first version, which quoted that fake key in full.
+f6354c8b033fc0188d31b2181b4cda721dc66b45:.gitleaksignore:aws-access-token:254
 095b4802e84198283c76bb2bd2b4d9241add3037:internal/app/agenttools/service_test.go:generic-api-key:1053
 1215359fa930c7f2be2c5353883a9d5245aa8665:internal/adapters/tracker/jira/jira_test.go:generic-api-key:27
 1215359fa930c7f2be2c5353883a9d5245aa8665:internal/pack/redact_test.go:generic-api-key:44
