@@ -8,3 +8,4 @@ opencode.json
 .switch/
 .heimdall/
 node_modules/
+/heimdall-server
