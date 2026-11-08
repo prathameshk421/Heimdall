@@ -118,13 +118,35 @@ func findingProblems(ctx context.Context, refs Refs, sub Submission, index int, 
 	}
 	problems = append(problems, contextProblems...)
 	problems = append(problems, diffScopeProblems(sub, prefix, input)...)
+	problems = append(problems, cardEvidenceProblems(prefix, input)...)
 	return problems, nil
+}
+
+// cardEvidenceProblems refuses a card citation for another file than the finding names. The server checks the card's
+// force against the file in the ref, so a reviewer must not cite one file and blame another.
+func cardEvidenceProblems(prefix string, input finding.Input) []Problem {
+	var problems []Problem
+	for i, evidence := range input.Evidence {
+		if evidence.Type != finding.EvidenceMemory || evidence.MemoryRef == nil {
+			continue
+		}
+		if _, file, ok := finding.CardEvidence(*evidence.MemoryRef); ok && file != input.Location.File {
+			problems = append(problems, Problem{Message: fmt.Sprintf("%s.evidence[%d].memory_ref must name the file of location.file", prefix, i)})
+		}
+	}
+	return problems
 }
 
 func checkContextRefs(ctx context.Context, refs Refs, sub Submission, prefix string, contextRefs []string) ([]Problem, error) {
 	var problems []Problem
 	for refIndex, ref := range contextRefs {
 		at := fmt.Sprintf("%s.context_refs[%d]", prefix, refIndex)
+		if name, isCard := finding.CardRef(ref); isCard {
+			if name == "" {
+				problems = append(problems, Problem{Message: at + " must be card: followed by a plain file name"})
+			}
+			continue
+		}
 		memory, err := refs.MemoryExists(ctx, sub.Change, sub.Caller, ref)
 		if err != nil {
 			return nil, fmt.Errorf("look up %s: %w", at, err)

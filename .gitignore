@@ -7,3 +7,4 @@ opencode.json
 *.key
 .switch/
 .heimdall/
+node_modules/

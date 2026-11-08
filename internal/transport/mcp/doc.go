@@ -2,7 +2,8 @@
 // stdio bridge (`heimdall mcp`) that relays one client's stdio to that endpoint.
 //
 // Layout and dependency rule: docs/TECH_SPEC.md section 2.2, enforced by internal/archcheck. This package imports
-// domain, ports and internal/schema; it never imports adapters.
+// domain, ports, internal/schema, and the app packages codegraph and reviewbrief for their result types; it never
+// imports adapters.
 //
 // # Purpose
 //
@@ -14,6 +15,13 @@
 // Tools built here: get_task, ack, get_change, read_untrusted, read_code, submit_tests, submit_review,
 // submit_verdict, ask_humans, report_progress. The rest of the table (read_pack, ask_knowledge, run_check,
 // challenge) belongs to later tasks.
+//
+// When their dependency is set, the server also has search_code and find_symbol (Deps.Graph), for a reviewer or a
+// resolver, always at the head commit of the assignment. get_task adds the brief (Deps.Briefs): personal_context,
+// change_map, prior_findings, team_memory and your_record. Each section comes inside its own untrusted wrapper, and a
+// failed section or brief never costs the task. A test author gets no brief and no code tools, because it reads only
+// the base commit. submit_review names the obligation cards that rule_checks left out. This is a nudge and never a
+// refusal. The last brief of a task is held in memory, and a partial one is compiled again on the next get_task.
 //
 // # API
 //
@@ -97,5 +105,6 @@
 //
 // server_test.go covers the protocol surface and the role table; tools_test.go each tool's checks against the
 // envelope; untrusted_test.go the wrapper; http_test.go authentication, body limit and token hygiene; bridge_test.go
-// the stdio relay against a real httptest server. All run with fakes for the ports (no network, fixed clock).
+// the stdio relay against a real httptest server; code_tools_test.go the code tools, the brief fields and the nudge.
+// All run with fakes for the ports (no network, fixed clock).
 package mcp

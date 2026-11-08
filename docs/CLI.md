@@ -35,6 +35,7 @@ Every command that reads config takes `--config PATH`. Without it, Heimdall uses
 | [`switch-register`](#switch-register) | Register the coordinator agent in Switch |
 | [`controller enroll`](#controller-enroll) | Enroll this machine as a Switch agent controller |
 | [`pack refresh` / `pack review`](#pack) | Build, approve and upload a developer's encrypted context pack |
+| [`cards`](#cards) | Mine your own sessions and git for review rules, check them, and sync them with the server |
 | [`cost`](#cost) | Remaining LLM budget per purpose |
 | [`budget-check` / `budget-run`](#budget-check-and-budget-run) | Gate a live model run on the budget ledger |
 
@@ -156,6 +157,33 @@ heimdall pack review  [--profile .heimdall/pack.toml]
 | `review` | Shows the redacted draft. On your approval it encrypts it with age and uploads only the ciphertext |
 
 Raw text never leaves the laptop. Exit `2` means the draft is waiting for your approval.
+
+### `cards`
+
+```bash
+heimdall cards scan   [--repo .] [--days 180] [--out dir]
+heimdall cards prompt [--person P] [--interview]
+heimdall cards check  [--dir .heimdall/cards/files]
+heimdall cards push   --server URL --token-file F [--yes]
+heimdall cards pull   --server URL --token-file F [--force]
+heimdall cards inbox  --server URL --token-file F
+heimdall cards accept NAME --server URL --token-file F
+heimdall cards reject NAME --server URL --token-file F
+```
+
+| Step | What it does |
+|---|---|
+| `scan` | Reads your Claude and Codex sessions for this repository, and your git history. Writes `.heimdall/cards/signals.md` |
+| `prompt` | Writes `.heimdall/cards/PROMPT.md`. Prints the one-line command for each agent found on PATH. It does not run them |
+| `check` | Parses every card, looks for credentials and personal data, warns on vague cards. Exit `1` on a problem |
+| `push` | Checks, lists the files, asks you to type `yes` (or pass `--yes`), then uploads |
+| `pull` | Downloads your cards. A local file that differs stays unless you pass `--force` |
+| `inbox` | Shows server cards with `status: proposed` |
+| `accept` / `reject` | Sets the status to `active` or `rejected` and uploads the card |
+
+`scan` and `prompt` send nothing. Add `.heimdall/` to `.gitignore`, because `signals.md` holds text from your sessions.
+The credential file is read and never printed. The server URL must use https, except for localhost.
+See [`deploy/cards/README.md`](../deploy/cards/README.md) for the flow and the card format.
 
 ### `cost`
 

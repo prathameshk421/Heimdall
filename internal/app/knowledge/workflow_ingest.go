@@ -21,6 +21,14 @@ type WorkflowIngestor struct {
 	scopes     WorkflowScopes
 	scanner    FileScanner
 	processors []WorkflowProcessor
+	loader     ChangeLoader
+}
+
+// WithHistory sets the reader of stored changes. The ingestor then finds the claim of a finding that is not in the
+// events it receives, so the summary of a decision can name the finding. It returns the ingestor for chaining.
+func (i *WorkflowIngestor) WithHistory(loader ChangeLoader) *WorkflowIngestor {
+	i.loader = loader
+	return i
 }
 
 // WorkflowCursor stores the last globally sequenced event whose memory projection was queued.
@@ -51,7 +59,7 @@ func (i *WorkflowIngestor) Backfill(ctx context.Context, history ports.WorkflowH
 		if len(events) == 0 {
 			return queued, nil
 		}
-		count, err := i.Record(ctx, events)
+		count, err := i.recordPage(ctx, history, events)
 		if err != nil {
 			return queued, err
 		}
@@ -64,6 +72,16 @@ func (i *WorkflowIngestor) Backfill(ctx context.Context, history ports.WorkflowH
 			return queued, nil
 		}
 	}
+}
+
+// recordPage records one backfill page. When the history can also load whole changes, it is used to find claims that
+// the page does not hold, so the summary equals the one written when the live stream was recorded.
+func (i *WorkflowIngestor) recordPage(ctx context.Context, history ports.WorkflowHistory, events []change.Event) (int, error) {
+	loader := i.loader
+	if loader == nil {
+		loader, _ = history.(ChangeLoader)
+	}
+	return i.record(ctx, events, loader)
 }
 
 func validateBackfill(history ports.WorkflowHistory, cursor WorkflowCursor, batch int) error {
@@ -101,12 +119,17 @@ func NewWorkflowIngestor(queue ports.EpisodeQueue, scopes WorkflowScopes, scanne
 // Record persists eligible episodes before any worker sends them to Graphiti. Replaying an event is safe because
 // each event/group pair has a stable key and the catalog rejects changed source content under that key.
 func (i *WorkflowIngestor) Record(ctx context.Context, events []change.Event) (int, error) {
+	return i.record(ctx, events, i.loader)
+}
+
+func (i *WorkflowIngestor) record(ctx context.Context, events []change.Event, loader ChangeLoader) (int, error) {
 	queued := 0
+	book := newFactBook(events, loader)
 	for _, event := range events {
 		if err := ctx.Err(); err != nil {
 			return queued, err
 		}
-		count, err := i.recordEvent(ctx, event)
+		count, err := i.recordEvent(ctx, event, book)
 		queued += count
 		if err != nil {
 			return queued, err
@@ -117,7 +140,7 @@ func (i *WorkflowIngestor) Record(ctx context.Context, events []change.Event) (i
 
 // recordEvent queues the event's memory episodes and then runs the other processors. The returned count is the
 // number of episodes queued before any error.
-func (i *WorkflowIngestor) recordEvent(ctx context.Context, event change.Event) (int, error) {
+func (i *WorkflowIngestor) recordEvent(ctx context.Context, event change.Event, book *factBook) (int, error) {
 	status, eligible, err := workflowTrust(event)
 	if err != nil {
 		return 0, fmt.Errorf("classify workflow memory event %s: %w", event.ID, err)
@@ -129,7 +152,8 @@ func (i *WorkflowIngestor) recordEvent(ctx context.Context, event change.Event) 
 	if err != nil {
 		return 0, err
 	}
-	queued, err := i.queueEpisodes(ctx, event, status, groups)
+	summary := Narrate(event, book.factsFor(ctx, event))
+	queued, err := i.queueEpisodes(ctx, event, status, groups, summary)
 	if err != nil {
 		return queued, err
 	}
@@ -152,10 +176,10 @@ func (i *WorkflowIngestor) eventGroups(ctx context.Context, event change.Event, 
 	return groups, nil
 }
 
-func (i *WorkflowIngestor) queueEpisodes(ctx context.Context, event change.Event, status ports.EpisodeStatus, groups []string) (int, error) {
+func (i *WorkflowIngestor) queueEpisodes(ctx context.Context, event change.Event, status ports.EpisodeStatus, groups []string, summary string) (int, error) {
 	queued := 0
 	for _, group := range groups {
-		episode, err := buildWorkflowEpisode(event, status, group, i.scanner)
+		episode, err := buildWorkflowEpisode(event, status, group, summary, i.scanner)
 		if err != nil {
 			return queued, fmt.Errorf("build memory episode for event %s: %w", event.ID, err)
 		}
@@ -208,8 +232,9 @@ func workflowTrust(event change.Event) (ports.EpisodeStatus, bool, error) {
 	return ports.EpisodeObserved, false, nil
 }
 
-func buildWorkflowEpisode(event change.Event, status ports.EpisodeStatus, group string, scanner FileScanner) (ports.Episode, error) {
+func buildWorkflowEpisode(event change.Event, status ports.EpisodeStatus, group, summary string, scanner FileScanner) (ports.Episode, error) {
 	payload, err := json.Marshal(struct {
+		Summary    string          `json:"summary"`
 		SourceRef  string          `json:"source_ref"`
 		EventType  string          `json:"event_type"`
 		ChangeID   string          `json:"change_id"`
@@ -217,6 +242,7 @@ func buildWorkflowEpisode(event change.Event, status ports.EpisodeStatus, group 
 		Actor      change.Actor    `json:"actor"`
 		Payload    json.RawMessage `json:"payload"`
 	}{
+		Summary:    summary,
 		SourceRef:  "heimdall:event:" + string(event.ID),
 		EventType:  string(event.Type),
 		ChangeID:   string(event.ChangeID),
@@ -231,7 +257,7 @@ func buildWorkflowEpisode(event change.Event, status ports.EpisodeStatus, group 
 	if err != nil {
 		return ports.Episode{}, fmt.Errorf("redact workflow memory source: %w", err)
 	}
-	key := change.EffectKey("workflow:" + string(event.ID) + ":" + group)
+	key := change.EffectKey("workflow:v2:" + string(event.ID) + ":" + group)
 	episode := ports.Episode{Key: key, Source: string(event.Type), Status: status, GroupID: group, Body: clean}
 	if err := episode.Validate(); err != nil {
 		return ports.Episode{}, fmt.Errorf("validate workflow memory episode: %w", err)

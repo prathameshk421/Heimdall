@@ -3,38 +3,37 @@ package cardsfs
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/rulecard"
 )
 
-// Card is one parsed personal context card. A card without applies_to is general and applies to every change.
-type Card struct {
-	Name      string
-	Body      string
-	AppliesTo []string
-	Kind      string
-	Source    string
-}
+// Card is one parsed personal context card. See rulecard for the fields. A card without scope is general.
+type Card = rulecard.Card
 
 type frontMatter struct {
 	AppliesTo []string `yaml:"applies_to"`
+	Symbols   []string `yaml:"symbols"`
+	Triggers  []string `yaml:"triggers"`
+	Check     string   `yaml:"check"`
+	Proof     string   `yaml:"proof"`
 	Kind      string   `yaml:"kind"`
 	Source    string   `yaml:"source"`
+	Status    string   `yaml:"status"`
 }
 
 // Parse reads a card file. A markdown card may open with a "---" YAML block naming the paths it applies to
 // (repository-root globs, as in heimdall.yaml), its kind and where the knowledge came from. Without that block the
 // whole text is the body of a general card. A block that does not parse, or a glob the policy rules refuse, is an error.
 func Parse(name, text string) (Card, error) {
-	card := Card{Name: name}
+	card := Card{Name: name, Status: rulecard.StatusActive}
 	rest, ok := strings.CutPrefix(text, "---\n")
 	if !ok {
 		card.Body = strings.TrimSpace(text)
-		return card, nil
+		return card, card.Validate()
 	}
 	block, body, found := strings.Cut(rest, "\n---\n")
 	if !found {
@@ -55,27 +54,24 @@ func Parse(name, text string) (Card, error) {
 		}
 	}
 	card.Body, card.AppliesTo, card.Kind, card.Source = strings.TrimSpace(body), fm.AppliesTo, fm.Kind, fm.Source
+	card.Symbols, card.Triggers, card.Check, card.Proof = fm.Symbols, fm.Triggers, fm.Check, fm.Proof
+	if fm.Status != "" {
+		card.Status = rulecard.Status(fm.Status)
+	}
+	if err := card.Validate(); err != nil {
+		return Card{}, fmt.Errorf("card %s: %w", name, err)
+	}
 	return card, nil
 }
 
-func (c Card) matches(files []string) bool {
-	for _, glob := range c.AppliesTo {
-		if slices.ContainsFunc(files, func(file string) bool { return policy.MatchGlob(glob, file) }) {
-			return true
-		}
-	}
-	return false
-}
-
-// Relevant returns the person's cards for a change that touches files: cards whose applies_to matches first, then
-// general cards, each group in name order, stopping before the body bytes would pass budget. A card that does not
-// parse is skipped, so one bad file never costs a reviewer the rest.
-func (s *Store) Relevant(person string, files []string, budget int) ([]Card, error) {
+// All returns every card of the person that reads and parses and has a body, in name order. A bad file is skipped,
+// so one broken card never costs a reviewer the rest.
+func (s *Store) All(person string) ([]Card, error) {
 	names, err := s.List(person)
 	if err != nil {
 		return nil, err
 	}
-	var specific, general []Card
+	var out []Card
 	for _, name := range names {
 		text, err := s.Read(person, name)
 		if err != nil {
@@ -85,21 +81,22 @@ func (s *Store) Relevant(person string, files []string, budget int) ([]Card, err
 		if err != nil || card.Body == "" {
 			continue
 		}
-		switch {
-		case len(card.AppliesTo) == 0:
-			general = append(general, card)
-		case card.matches(files):
-			specific = append(specific, card)
-		}
-	}
-	var out []Card
-	used := 0
-	for _, card := range append(specific, general...) {
-		if used+len(card.Body) > budget {
-			break
-		}
-		used += len(card.Body)
 		out = append(out, card)
+	}
+	return out, nil
+}
+
+// Relevant returns the person's active cards ranked for a change that touches files, inside budget bytes of body
+// text. Cards that name symbols or triggers need the code graph, so the caller that has it uses All with rulecard.Rank.
+func (s *Store) Relevant(person string, files []string, budget int) ([]Card, error) {
+	cards, err := s.All(person)
+	if err != nil {
+		return nil, err
+	}
+	ranked := rulecard.Rank(cards, rulecard.ChangeFacts{Files: files}, nil, budget)
+	out := make([]Card, 0, len(ranked))
+	for _, r := range ranked {
+		out = append(out, r.Card)
 	}
 	return out, nil
 }

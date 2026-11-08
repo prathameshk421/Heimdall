@@ -86,7 +86,7 @@ func (r reviewRefs) MemoryExists(ctx context.Context, ref workflow.ChangeRef, ca
 	if r.memory == nil {
 		return false, nil
 	}
-	state, err := r.memory.Recheck(ctx, caller, change.Repo(ref.Repo), ref.HeadSHA, memoryRef)
+	state, err := r.memory.Recheck(ctx, caller, change.Repo(ref.Repo), ref.BaseSHA, memoryRef)
 	if err != nil {
 		return false, fmt.Errorf("look up memory reference %s: %w", memoryRef, err)
 	}

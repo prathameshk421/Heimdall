@@ -347,7 +347,11 @@ func (v VerifyEvidence) executeMemory(ctx context.Context, l loadedChange, p cha
 	if v.deps.Memory == nil {
 		return failf(nil, "verify_evidence %s: the memory re-query is not configured", p.Ticket)
 	}
-	state, err := v.deps.Memory.Recheck(ctx, id.AgentName(p.Memory.Agent), p.Repo, p.HeadSHA, p.Memory.Ref)
+	base := baseSHAOf(l)
+	if base == "" {
+		return failf(nil, "verify_evidence %s: the change has no base commit, so its policy cannot be read", p.Ticket)
+	}
+	state, err := v.deps.Memory.Recheck(ctx, id.AgentName(p.Memory.Agent), p.Repo, base, p.Memory.Ref)
 	if err != nil {
 		return failf(err, "verify_evidence %s: re-query memory", p.Ticket)
 	}

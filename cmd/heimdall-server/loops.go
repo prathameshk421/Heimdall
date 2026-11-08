@@ -298,8 +298,26 @@ func (a *app) knowledgeRetentionLoop(ctx context.Context) {
 	}
 }
 
+// cardProposalInterval is how often human decisions are turned into proposed rule cards.
+const cardProposalInterval = 5 * time.Minute
+
+// cardProposalLoop writes the rule cards that human decisions suggest. A failed pass is logged and the next pass retries.
+func (a *app) cardProposalLoop(ctx context.Context) {
+	for {
+		written, err := a.proposer.RunOnce(ctx)
+		if err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "card proposal pass failed; the next pass retries", "error", err)
+		} else if err == nil && written > 0 {
+			a.logger.InfoContext(ctx, "rule cards proposed", "count", written)
+		}
+		if err := clock.Wait(ctx, cardProposalInterval); err != nil {
+			return
+		}
+	}
+}
+
 // backgroundLoops returns the optional loops whose dependency is wired: the room stream, GitHub comments, Graphiti
-// episode delivery, knowledge retention and the workflow memory projection.
+// episode delivery, knowledge retention, the workflow memory projection and the card proposals.
 func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
 	var runs []func(context.Context)
 	if a.roomStream != nil {
@@ -325,6 +343,9 @@ func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
 	}
 	if a.workflowMemory != nil {
 		runs = append(runs, a.workflowMemoryLoop)
+	}
+	if a.proposer != nil {
+		runs = append(runs, a.cardProposalLoop)
 	}
 	return runs
 }

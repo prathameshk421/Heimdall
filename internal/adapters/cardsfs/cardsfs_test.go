@@ -125,3 +125,32 @@ func TestWriteDoesNotFollowASymlinkOutOfTheFolder(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "ORIGINAL", string(got))
 }
+
+func TestConfirmationHoldsOnlyForTheExactText(t *testing.T) {
+	s, err := Open(t.TempDir())
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+	require.NoError(t, s.Write("bob", "cap.md", []byte("rule one")))
+	require.False(t, s.Confirmed("bob", "cap.md"))
+
+	require.NoError(t, s.Confirm("bob", "cap.md"))
+	require.True(t, s.Confirmed("bob", "cap.md"))
+	require.False(t, s.Confirmed("ana", "cap.md"), "a confirmation belongs to one person")
+
+	require.NoError(t, s.Write("bob", "cap.md", []byte("rule two")))
+	require.False(t, s.Confirmed("bob", "cap.md"), "an edit ends the confirmation")
+
+	require.NoError(t, s.Confirm("bob", "cap.md"))
+	require.NoError(t, s.Unconfirm("bob", "cap.md"))
+	require.False(t, s.Confirmed("bob", "cap.md"))
+
+	require.NoError(t, s.Confirm("bob", "cap.md"))
+	require.NoError(t, s.Delete("bob", "cap.md"))
+	require.NoError(t, s.Write("bob", "cap.md", []byte("rule two")))
+	require.False(t, s.Confirmed("bob", "cap.md"), "a deleted card leaves no confirmation behind")
+
+	names, err := s.List("bob")
+	require.NoError(t, err)
+	require.Equal(t, []string{"cap.md"}, names)
+	require.Error(t, s.Write("bob", "cap.md.confirmed", []byte("forged")), "the upload path cannot write a confirmation")
+}

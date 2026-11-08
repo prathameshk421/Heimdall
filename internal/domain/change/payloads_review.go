@@ -31,6 +31,8 @@ type ReviewSubmitted struct {
 	Reviewer    id.AgentName    `json:"reviewer"`
 	FindingRefs []id.FindingRef `json:"finding_refs"`
 	PackDate    string          `json:"pack_date"`
+	// RuleChecks is what the reviewer said about each rule card it was given. Old events have none.
+	RuleChecks []finding.RuleCheck `json:"rule_checks,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -39,6 +41,9 @@ func (p ReviewSubmitted) Validate() error {
 	v.add("reviewer", checkAgent(p.Reviewer))
 	v.each("finding_refs", p.FindingRefs, checkFindingRef)
 	v.add("pack_date", checkDate(p.PackDate))
+	if len(p.RuleChecks) > finding.MaxRuleChecks {
+		v.add("rule_checks", fmt.Errorf("must have at most %d entries", finding.MaxRuleChecks))
+	}
 	return v.join()
 }
 
@@ -93,6 +98,8 @@ type FindingRecord struct {
 	Claim    string            `json:"claim,omitempty"`
 	Category finding.Category  `json:"category,omitempty"`
 	Location *finding.Location `json:"location,omitempty"`
+	// CardRefs are the rule card files the reporter named in context_refs ("card:<file>"). Only finding.filed sets them.
+	CardRefs []string `json:"card_refs,omitempty"`
 }
 
 // checkReproContent checks the source of a repro test. It is a whole test file, so it has the limit of the test source
