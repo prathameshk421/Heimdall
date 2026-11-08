@@ -674,3 +674,10 @@ Cause found live: KAN-23's test author stalled because every model call went to 
 PR fixture-pay#11 with two planted bugs: a renamed wire field (`merchant_id` to `merchant` while `api/openapi.yaml`, outside the diff, still requires it) and a refund cap race (check and record under separate locks; the test author's acceptance tests pass). All three reviewers ran on Deploy, used their own person's cards (`rule_checks` name exactly the mapped cards) and each found both bugs (F1, F5, F8 and F3, F6, F10). Card-only findings: Bob's idempotency rule (F9, ADR-004) and Eli's `refund_ref` contract (F4, INC-031). `search_code` was used six times by reviewer-1.
 
 Bugs found and fixed: (1) `verify_evidence` ran under the 20 s default effect timeout although it runs a sandbox job of up to 3 minutes, so F1's ingest timed out on every retry; it now gets 5 minutes. (2) A sandbox error (runner busy, socket down) dropped an E1 finding to E4, as if the test did not fail: F4, F5, F8 and F9 fell this way when three verifications met a busy runner. An error now fails the effect so the outbox retries it; a test that errors or panics is still a result and still drops to E4. **Not recovered:** F4, F5, F8 and F9 keep their E4 state on this head; the verifier treats an existing verdict as final. **Noticed:** reviewer-1 marked `refund-cap.md` "holds" while filing the race against it; the gate still says "review requests are not known" until the next push (known).
+
+### Gate refresher (Nov 8)
+
+- Problem: the gate was evaluated only after PR events. KAN-23 kept "the review requests are not known" after all three reviews.
+- Fix: `gateuse.Refresher` reads the global event log every 5 s (cursor `gate:refresh`). It evaluates each change with a review, finding, verdict, decision, approval, CI or tests event.
+- Evidence: `make fast` green (4195 tests). Deployed to the VM; log `gate re-evaluated changes=1`. `/changes/KAN-23/report.json` verdict is `blocked` with reasons "1 blocking finding(s) are open: F1" and "no approval has been recorded". The stale reason is gone.
+- Not verified: a gate move after a fresh Slack decision on a new change.
