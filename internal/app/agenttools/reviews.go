@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -46,6 +47,7 @@ func (s *Service) buildFindingFiledEvent(
 		Location:    &vf.input.Location,
 	}
 	payload.ReproTest, payload.ToolResult, payload.MemoryRef = proofsOf(vf)
+	payload.CardRefs = cardRefsOf(vf.input)
 	return s.buildEventWithID(eid, a.ChangeID, version, change.EventFindingFiled, a.Agent, corr, causation, payload, nil)
 }
 
@@ -65,6 +67,29 @@ func proofsOf(vf validFinding) (*finding.ReproTest, *finding.ToolResult, *string
 	return nil, nil, nil
 }
 
+// cardRefsOf returns the rule card file names a finding used: in context_refs, or cited as its memory evidence.
+func cardRefsOf(input finding.Input) []string {
+	var out []string
+	add := func(name string) {
+		if name != "" && !slices.Contains(out, name) {
+			out = append(out, name)
+		}
+	}
+	for _, r := range input.ContextRefs {
+		if name, ok := finding.CardRef(r); ok {
+			add(name)
+		}
+	}
+	for _, e := range input.Evidence {
+		if e.Type == finding.EvidenceMemory && e.MemoryRef != nil {
+			if name, _, ok := finding.CardEvidence(*e.MemoryRef); ok {
+				add(name)
+			}
+		}
+	}
+	return out
+}
+
 func findingFingerprint(input finding.Input) string {
 	location := strings.ToLower(strings.TrimSpace(input.Location.File))
 	claim := strings.ToLower(strings.Join(strings.Fields(input.Claim), " "))
@@ -76,6 +101,7 @@ func (s *Service) buildReviewEvents(
 	a Assignment,
 	existing []change.Event,
 	valids []validFinding,
+	ruleChecks []finding.RuleCheck,
 ) ([]change.Event, error) {
 	findingCount := 0
 	for _, ev := range existing {
@@ -115,6 +141,7 @@ func (s *Service) buildReviewEvents(
 		Reviewer:    a.Agent,
 		FindingRefs: filedRefs,
 		PackDate:    s.clock.Now().UTC().Format("2006-01-02"),
+		RuleChecks:  ruleChecks,
 	}
 	revEv, err := s.buildEventWithID(s.ids.NewEvent(), a.ChangeID, baseVer+int64(len(evs)+1), change.EventReviewSubmitted, a.Agent, corr, causation, reviewPayload, nil)
 	if err != nil {
@@ -145,7 +172,7 @@ func (s *Service) SubmitReview(ctx context.Context, a Assignment, r finding.Revi
 		if reviewAlreadySubmittedForTask(existing, a.TaskID, a.Agent) {
 			return nil, nil
 		}
-		return s.buildReviewEvents(a, existing, valids)
+		return s.buildReviewEvents(a, existing, valids, r.RuleChecks)
 	}, s.advance)
 	if err != nil {
 		return Receipt{}, err

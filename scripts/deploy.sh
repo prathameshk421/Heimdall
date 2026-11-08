@@ -151,7 +151,7 @@ if ! cosign verify-blob --key "$DEPLOY_VERIFY_KEY" --signature "$DEPLOY_SIGNATUR
 	exit 1
 fi
 secret_names=(
-	database_url postgres_password openrouter_api_key jira_email jira_api_token
+	database_url postgres_password deploy_api_key jira_email jira_api_token
 	github_app_id github_app_installation_id github_app_private_key
 	switch_api_key switch_registration_token
 	agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2

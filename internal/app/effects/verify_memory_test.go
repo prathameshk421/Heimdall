@@ -3,6 +3,7 @@ package effects_test
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,13 +19,14 @@ type fakeRecheck struct {
 	state verify.MemoryState
 	err   error
 	agent id.AgentName
+	sha   id.SHA
 	ref   string
 	calls int
 }
 
-func (f *fakeRecheck) Recheck(_ context.Context, agent id.AgentName, _ change.Repo, _ id.SHA, ref string) (verify.MemoryState, error) {
+func (f *fakeRecheck) Recheck(_ context.Context, agent id.AgentName, _ change.Repo, sha id.SHA, ref string) (verify.MemoryState, error) {
 	f.calls++
-	f.agent, f.ref = agent, ref
+	f.agent, f.sha, f.ref = agent, sha, ref
 	return f.state, f.err
 }
 
@@ -46,10 +48,30 @@ func runMemory(t *testing.T, recheck effects.MemoryRecheck, events []change.Even
 	t.Helper()
 	ingest := &fakeIngest{}
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: &overlaySandboxFake{}, Memory: recheck, Store: &fakeStore{events: events}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Source: &fakeSource{}, Sandbox: &overlaySandboxFake{}, Memory: recheck, Store: &fakeStore{events: withBranch(events)}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
 	return ingest, exec.Execute(context.Background(), memoryEffect(t))
+}
+
+// memoryBase is the merge base of the change in these tests. It differs from veHead on purpose.
+const memoryBase = id.SHA("1234567")
+
+func withBranch(events []change.Event) []change.Event {
+	branch := change.Event{
+		ID: "ev-branch", ChangeID: veTicket, Version: 100, Type: change.EventBranchEnsured,
+		Payload: json.RawMessage(`{"repo":"` + string(veRepo) + `","branch":"PAY-142","base_sha":"` + string(memoryBase) + `"}`),
+	}
+	return append(slices.Clone(events), branch)
+}
+
+// The policy behind a re-query comes from the merge base, so a change cannot edit its way to more evidence or less.
+func TestVerifyMemoryReadsPolicyAtTheMergeBase(t *testing.T) {
+	rc := &fakeRecheck{state: verify.MemoryState{Found: true, Confirmed: true}}
+	_, err := runMemory(t, rc, verifyCheckEvents())
+	require.NoError(t, err)
+	require.Equal(t, memoryBase, rc.sha)
+	require.NotEqual(t, veHead, rc.sha)
 }
 
 // A confirmed, current memory reference verifies the E3 finding, looked up with the filing reviewer's scopes.

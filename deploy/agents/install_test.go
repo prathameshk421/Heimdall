@@ -41,7 +41,7 @@ func TestInstallDryRunPlansEveryManifestAgentWithoutReadingTokens(t *testing.T) 
 	if strings.Contains(text, "dry-run-secret") {
 		t.Fatal("dry-run output leaked a token")
 	}
-	if !strings.Contains(text, "model=openrouter/deepseek/deepseek-v4-flash") {
+	if !strings.Contains(text, "model=deploy/deepseek-ai/deepseek-v4.1-flash-1017") {
 		t.Fatal("dry-run output did not report the pinned model")
 	}
 }

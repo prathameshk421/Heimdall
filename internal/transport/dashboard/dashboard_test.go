@@ -363,3 +363,29 @@ func TestLiveStreamRefusesABadVersion(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, resp.Status, path)
 	}
 }
+
+func TestReportPageAndSpecAreServedUnderTheStrictPolicy(t *testing.T) {
+	ts, _ := serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{})
+
+	page := get(t, ts, "/changes/PAY-7/report")
+	require.Equal(t, http.StatusOK, page.Status)
+	require.Contains(t, page.Body, `src="/assets/report.js"`)
+	require.Contains(t, page.Header.Get("Content-Security-Policy"), "script-src 'self'")
+	require.NotContains(t, page.Body, "<script>", "the page holds no inline script")
+
+	spec := get(t, ts, "/changes/PAY-7/report.json")
+	require.Equal(t, http.StatusOK, spec.Status)
+	require.Equal(t, "application/json", spec.Header.Get("Content-Type"))
+	var decoded struct {
+		Root     string                     `json:"root"`
+		Elements map[string]json.RawMessage `json:"elements"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(spec.Body), &decoded))
+	require.Contains(t, decoded.Elements, decoded.Root)
+
+	require.Equal(t, http.StatusNotFound, get(t, ts, "/changes/PAY-404/report").Status)
+	require.Equal(t, http.StatusNotFound, get(t, ts, "/changes/PAY-404/report.json").Status)
+	for _, asset := range []string{"report.js", "report.css"} {
+		require.Equal(t, http.StatusOK, get(t, ts, "/assets/"+asset).Status, asset)
+	}
+}

@@ -634,3 +634,50 @@ Reason: OpenCode 1.19.5 shows an MCP tool to the model as `<server key>_<tool>`.
 Changed: `internal/transport/mcp/tools.go`, `doc.go`, `docs/TECH_SPEC.md` section 14.1, the MCP and testagent tests, and the skill-example test helpers. TECH_SPEC lines 442 to 444 and 474 keep `heimdall_get_task`, because they say what the model calls. The old names are not kept as aliases.
 
 Red: the test edits failed with `invalid params` on unknown tool names, and `TestSkillsNameOnlyToolsTheServerOffersTheirRole` failed on the prefix check. Green: `CGO_ENABLED=0 make fast` exits 0 with 3,740 tests. `go test -tags component -run MCP ./cmd/heimdall-server` passes. **Not verified:** a live OpenCode 1.19.5 run with the bare names, and the `live` smoke test against a running server (it compiles with `go vet -tags live`).
+
+## Review moat (Nov 8, 2026, branch `heimdall-moat`)
+
+Design, measurements and next steps: `docs/REVIEW_MOAT.md`. Built: rule cards v2 and ranker (`internal/domain/rulecard`), code graph with reversed PageRank, removed-symbol and contract-string checks (`internal/app/codegraph`), reviewer tools `search_code` and `find_symbol`, the review brief (`internal/app/reviewbrief`), `rule_checks` and `card:` refs on Review@1 (optional, grants no tier), outcome learning and human-gated proposals (`internal/app/reviewlearn`), narrated graph episodes under `v2` keys, the review ontology in `deploy/graphiti/config.yaml`, the `heimdall cards` CLI and session miner, and the rewritten reviewer skill.
+
+Bench `testdata/reviewbench/settle`, Haiku, 3 reviewers per arm, one synthetic PR: the two out-of-diff bugs went from 0 concrete finds (today's reviewer, with or without cards) to 3/3 with the change map; the person-only bug was found by its card holder only; the card holder filed no noise on the clean PR. Limits are in the doc.
+
+**Not verified:** nothing ran on the VM. No live DeepSeek or OpenCode run. `search_code` and `find_symbol` were not measured, because the eval agents had no Grep. `heimdall cards push`, `pull`, `inbox`, `accept` and `reject` ran against test servers only. The proposal worker and Graphiti narration ran in unit tests only. Graphiti delivery is still unconfirmed live. Old `workflow:` episodes stay in Graphiti, and events replay once under `v2` keys, which costs extraction tokens on the first backfill.
+
+**Noticed:** the worktree under `.claude/worktrees/` cannot be edited, because the edit guard compares paths with the main checkout and every file matches `.claude/*`. This branch lives in a sibling folder. The post-edit hook also prints a harmless vet path error outside the main checkout, so run vet by hand there.
+
+**Failing tests, not from this work:** `make verify` stops at `race` with 7 of 4,257 tests failing: `TestOutboxLease`, `TestOutboxStart` (each with one subtest), `TestOutboxDeadLetter`, `TestMergeGateEndToEnd` and `TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex`. All five top-level tests fail the same way on the untouched base commit `581986b` (run on this Mac, Nov 8), so the cause is older than this branch. Cause not investigated. No test was changed.
+
+**Confirmed cards (owner yes, Nov 8):** a card its owner confirmed can stand as E3 through `memory_ref: card:<file>#<path>` (`rulecard.CanBlock`, `cmd/heimdall-server/card_evidence.go`). The gate did not change. Also fixed: both E3 re-queries read policy at the PR head, which broke invariant 5, so a PR could change its reviewer's memory groups. They now read the merge base. **Not verified:** no confirmed card has blocked a real PR; the flow is covered by unit tests of the recheck and the routes, not by an end-to-end gate test.
+
+**Review report page (prototype, Nov 8):** `GET /changes/<id>/report` and `report.json` in the dashboard. The spec builder is in `internal/app/dashboard/report.go`, the page is in `web/review-report`, and the built bundle is embedded. Checked in a browser against the real handler with sample events (details in `docs/REVIEW_MOAT.md` section 7). **Not verified:** a real log from the VM. **Noticed:** `.claude/launch.json` cannot be edited from a session (settings deny it), so the browser check used a scratch server started from the shell. Add a `report-demo` entry if you want `preview_start` to run it.
+
+## Live deploy of the moat (Nov 8, 2026)
+
+`heimdall-build` at `cf712d8` runs on `heimdall-vm`, healthy. `cards_dir = "/var/lib/heimdall/cards"` is on. The image before today is tagged `heimdall-server:pre-moat` for rollback. Old images, release folders, caches and logs were removed: disk 59% to 52%.
+
+Found and fixed live: (1) the memory backfill stopped at the first change with no policy (KAN-1 to KAN-3 point at a repo with no `heimdall.yaml`), so no later change reached memory; (2) the Graphiti adapter sent an episode `uuid`, which graphiti_core 0.31 reads as "update this episode", so every episode failed with "node not found" and the graph had never filled; (3) the custom `Person` entity type refused extractions with no description. After the fixes the `payments` graph holds 5 narrated episodes, 18 entities and 11 facts, such as "Refund endpoints need the X-Merchant-ID header". Graphiti extraction cost was a few cents of DeepSeek Flash.
+
+Cards for `bob` (3), `eli` (1) and `ana` (2) were copied into the card folder (the admin path in `deploy/cards/README.md`). None is confirmed.
+
+**Blocking the Slack test:** the live reviewer agents are `reviewer-1` to `reviewer-3`, but `heimdall.yaml` on `aarush323/heimdall-fixture-pay@heimdall-test/demo-base` maps people to `bob-reviewer`, `eli-reviewer` and `ana-reviewer`. No live reviewer resolves to a person, so reviewers get no cards, no personal brief and no team memory groups. This has been true for every earlier live run. Fix: map the agents in that file (owner decision, it is a shared repository). **Done (owner yes, Nov 8):** commit `9b49652` on `heimdall-test/demo-base` maps `bob`, `eli` and `ana` to `reviewer-1`, `reviewer-2` and `reviewer-3`; the file passes `policyyaml.Decode` and `Validate`. Policy is read at each change's base, so only tickets started after this commit use it.
+
+**Not wired:** human tokens. `compose.yaml` passes a fixed list of secret files into the container, so a `[human_tokens]` entry makes the server refuse to start (seen live, restored within two minutes). `heimdall cards push` and `confirm` need that wiring before a person can use them on the VM.
+
+**Noticed:** SSH to the VM stalls in key exchange and on large transfers; `-o KexAlgorithms=curve25519-sha256 -o IPQoS=none` works. The memory backfill logs one error per pass for KAN-1 to KAN-3 (repository without a policy).
+
+## Provider switch to Deploy (Nov 8, 2026, D163)
+
+Cause found live: KAN-23's test author stalled because every model call went to OpenRouter, whose key was out of its limit. The agents' own `opencode.json` already named Deploy (changed on the VM on Nov 7), but Switch pins each agent's stored model (`openrouter/deepseek/deepseek-v4-flash`) on every session, so the change never applied. Now: the server syncs each agent's Switch model from `agent_runtime.model` at startup; Graphiti extraction uses Deploy; embeddings run in a local TEI service with `bge-small-en-v1.5`; the install scripts, templates and release scripts use `deploy_api_key`. `make fast` exit 0 (4,190 tests); script tests show the same 4 failures as the base commit `6bea502`. **Not verified yet:** the live switch (needs the key file and a deploy), Deploy's handling of Graphiti's JSON requests, and TEI's RAM use on the VM.
+
+## KAN-23 live review on Deploy (Nov 8, 2026)
+
+PR fixture-pay#11 with two planted bugs: a renamed wire field (`merchant_id` to `merchant` while `api/openapi.yaml`, outside the diff, still requires it) and a refund cap race (check and record under separate locks; the test author's acceptance tests pass). All three reviewers ran on Deploy, used their own person's cards (`rule_checks` name exactly the mapped cards) and each found both bugs (F1, F5, F8 and F3, F6, F10). Card-only findings: Bob's idempotency rule (F9, ADR-004) and Eli's `refund_ref` contract (F4, INC-031). `search_code` was used six times by reviewer-1.
+
+Bugs found and fixed: (1) `verify_evidence` ran under the 20 s default effect timeout although it runs a sandbox job of up to 3 minutes, so F1's ingest timed out on every retry; it now gets 5 minutes. (2) A sandbox error (runner busy, socket down) dropped an E1 finding to E4, as if the test did not fail: F4, F5, F8 and F9 fell this way when three verifications met a busy runner. An error now fails the effect so the outbox retries it; a test that errors or panics is still a result and still drops to E4. **Not recovered:** F4, F5, F8 and F9 keep their E4 state on this head; the verifier treats an existing verdict as final. **Noticed:** reviewer-1 marked `refund-cap.md` "holds" while filing the race against it; the gate still says "review requests are not known" until the next push (known).
+
+### Gate refresher (Nov 8)
+
+- Problem: the gate was evaluated only after PR events. KAN-23 kept "the review requests are not known" after all three reviews.
+- Fix: `gateuse.Refresher` reads the global event log every 5 s (cursor `gate:refresh`). It evaluates each change with a review, finding, verdict, decision, approval, CI or tests event.
+- Evidence: `make fast` green (4195 tests). Deployed to the VM; log `gate re-evaluated changes=1`. `/changes/KAN-23/report.json` verdict is `blocked` with reasons "1 blocking finding(s) are open: F1" and "no approval has been recorded". The stale reason is gone.
+- Not verified: a gate move after a fresh Slack decision on a new change.

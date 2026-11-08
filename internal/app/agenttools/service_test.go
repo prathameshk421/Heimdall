@@ -1302,6 +1302,36 @@ func TestSubmitReviewCarriesTheMemoryRefInTheFindingEvent(t *testing.T) {
 	require.Equal(t, ref, *rec.MemoryRef)
 }
 
+func TestSubmitReviewCarriesRuleChecksAndCardRefsInTheEvents(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	makeReviewStream(t, h)
+	assign := agenttools.Assignment{
+		ChangeID: testChangeID, TaskID: testTaskID, Agent: testAgent, Role: workflow.RoleReviewer,
+		Deadline: t0.Add(30 * time.Minute),
+		Task: workflow.TaskEnvelope{
+			Change: workflow.ChangeRef{ID: testChangeID, HeadSHA: testHeadSHA},
+			Inputs: workflow.Inputs{FilesChanged: []string{"internal/refunds/refunds.go"}},
+		},
+	}
+	review := validReview()
+	review.Findings[0].ContextRefs = []string{"card:refund-cap.md", "card:refund-cap.md"}
+	review.RuleChecks = []finding.RuleCheck{{Card: "refund-cap.md", Verdict: finding.RuleViolated, Note: "The cap ignores earlier refunds."}}
+
+	receipt, err := h.svc.SubmitReview(context.Background(), assign, review, false)
+	require.NoError(t, err)
+	require.True(t, receipt.Accepted, "%+v", receipt.FindingErrors)
+
+	evs, err := h.events.Load(context.Background(), testChangeID)
+	require.NoError(t, err)
+	filed, err := change.Decode(evs[10])
+	require.NoError(t, err)
+	require.Equal(t, []string{"refund-cap.md"}, filed.(change.FindingFiled).CardRefs)
+	submitted, err := change.Decode(evs[len(evs)-1])
+	require.NoError(t, err)
+	require.Equal(t, review.RuleChecks, submitted.(change.ReviewSubmitted).RuleChecks)
+}
+
 // With an Advance hook, a review goes to the workflow engine instead of straight into the store, so the steps see the
 // findings and can start verifying them (A2). The service stores nothing itself then.
 func TestSubmitReviewHandsItsEventsToTheAdvanceHook(t *testing.T) {

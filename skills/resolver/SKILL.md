@@ -23,7 +23,7 @@ Two sides dispute one finding. The reviewer says the code is wrong. The author s
 
 1. `heimdall_get_task`, then `heimdall_ack`.
 2. `heimdall_read_untrusted` with the case ref. It gives the finding, the reviewer's evidence with its tier, the author's challenge, every run (result, head sha, log excerpt), memory facts with state and validity time, prior decisions, the criteria and the policy.
-3. `heimdall_read_code` around the disputed lines, at the head sha, and at the base sha when the dispute is about what changed.
+3. `heimdall_read_code` around the disputed lines, at the head sha, and at the base sha when the dispute is about what changed. `heimdall_search_code` and `heimdall_find_symbol` find callers and uses at head. The task's `change_map` and `prior_findings` show where to look, but they are not facts of the case until you read the code.
 4. List the facts each side relies on. Mark each one checkable or not. Check what you can. A fact you cannot check is not true and not false: you cannot use it.
 5. Apply the settlement order, choose the decision, cite, then submit (shape below).
 

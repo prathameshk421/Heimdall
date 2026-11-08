@@ -245,7 +245,7 @@ We keep this list honest. Evidence is in [`docs/PROGRESS.md`](docs/PROGRESS.md).
 - 🚧 **Different context per reviewer:** the three reviewers share one prompt today. The per-developer view is the design.
 - 🚧 **Heimdall re-running a reviewer's proof:** not seen live.
 - 🚧 **The resolver settling a disputed finding:** not seen live.
-- 🚧 **Personal context cards read by a live reviewer:** `read_card` is built and tested, not yet called on the VM.
+- 🚧 **Personal context cards read by a live reviewer:** `heimdall cards`, the ranked brief and the code graph are built and tested on a local bench ([results and limits](docs/REVIEW_MOAT.md)), not yet run on the VM.
 - 🚧 **Discord and Telegram commands typed by a person:** not verified. Slack and Mattermost are.
 
 **Known gaps:** a fake test that imports the product can still pass the judge. A new agent session can time out on first start, and restarting the unit clears it.

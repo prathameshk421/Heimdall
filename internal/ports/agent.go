@@ -23,6 +23,10 @@ type AgentRuntime interface {
 type AgentProvisioner interface {
 	EnsureManagedAgent(ctx context.Context, spec ManagedAgentSpec) (ManagedAgent, error)
 	SetManagedAgentState(ctx context.Context, agentID string, state ManagedAgentState) error
+	// SetManagedAgentModel moves the managed agent named in spec to spec.Model. It changes nothing else, and it finds
+	// the agent by name, provider and machine only, so it also reaches an agent made by hand. ErrNotFound when there
+	// is no such agent.
+	SetManagedAgentModel(ctx context.Context, spec ManagedAgentSpec) error
 }
 
 // AgentReceiptLedger records accepted host setup receipts by content fingerprint only.

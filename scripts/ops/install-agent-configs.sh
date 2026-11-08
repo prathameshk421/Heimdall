@@ -37,7 +37,21 @@ cfg = {
     "share": "disabled",
     "auto_mode": True,
     "auto_approve": False,
-    "model": "openrouter/deepseek/deepseek-v4-flash",
+    "model": "deploy/deepseek-ai/deepseek-v4.1-flash-1017",
+    "provider": {
+        "deploy": {
+            "name": "Deploy",
+            "npm": "@ai-sdk/openai-compatible",
+            "options": {"baseURL": "https://api.deploy.com/api/v1", "apiKey": "{env:DEPLOY_API_KEY}"},
+            "models": {
+                "deepseek-ai/deepseek-v4.1-flash-1017": {
+                    "name": "DeepSeek V4.1 Flash",
+                    "tool_call": True,
+                    "limit": {"context": 200000, "output": 8000},
+                }
+            },
+        }
+    },
     "permission": {
         "*": "deny",
         "bash": "deny",

@@ -30,6 +30,7 @@ import (
 	appprofile "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/profile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	appreview "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/review"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reviewlearn"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/roomstream"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -66,6 +67,10 @@ const (
 	// testQualityTimeout bounds a test_quality effect: two sandbox jobs of up to 3 minutes each, plus the runner's
 	// margin. With the 20 s default the outbox cancelled the run and every retry started another container (KAN-9).
 	testQualityTimeout = 7 * time.Minute
+	// verifyEvidenceTimeout bounds a verify_evidence effect: a source fetch, one sandbox job of up to 3 minutes, and the
+	// event ingest after it. With the 20 s default the run was cut and the ingest after it timed out on every retry, so
+	// E1 findings dropped to E4 or never settled (KAN-23, Nov 8).
+	verifyEvidenceTimeout = 5 * time.Minute
 	// outboxLease is how long a claimed effect stays leased to one drainer. It must exceed outboxBatch times the longest
 	// effect timeout (outbox.New). An effect that was running when the server stopped is in doubt and is not re-run on
 	// lease expiry (T22), so a long lease does not delay recovery.
@@ -171,32 +176,37 @@ type endpoints struct {
 
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
 type app struct {
-	pool              *pgxpool.Pool
-	pollers           []poller
-	drainer           drainer
-	syncer            syncer
+	pool    *pgxpool.Pool
+	pollers []poller
+	drainer drainer
+	syncer  syncer
+	// gateRefresher re-evaluates the gate after reviews, findings, verdicts, decisions and approvals.
+	gateRefresher     *gateuse.Refresher
 	roomStream        roomStreamRunner
 	comments          commentPoller
 	mcpHandler        http.Handler
 	agentSetupHandler http.Handler
-	operatorAnswer    http.Handler
-	operatorReject    http.Handler
-	operatorRoom      http.Handler
-	narrator          *announce.Narrator
-	nudger            *taskNudger
-	timers            *workflowTimers
-	packUpload        http.Handler
-	cardsUpload       http.Handler
-	commands          *commandRuntime
-	workflowMemory    *knowledge.WorkflowMemory
-	retention         knowledgeRetention
-	episodeWorker     episodeDrainer
-	blobs             io.Closer
-	logger            *slog.Logger
-	clock             ports.Clock
-	pollEvery         time.Duration
-	syncEvery         time.Duration
-	drainTick         time.Duration
+	// agentSync moves the role agents in Switch to the configured model. It is nil without an agent runtime.
+	agentSync      func(context.Context) error
+	operatorAnswer http.Handler
+	operatorReject http.Handler
+	operatorRoom   http.Handler
+	narrator       *announce.Narrator
+	nudger         *taskNudger
+	timers         *workflowTimers
+	packUpload     http.Handler
+	cardsUpload    http.Handler
+	commands       *commandRuntime
+	workflowMemory *knowledge.WorkflowMemory
+	proposer       *cardProposer
+	retention      knowledgeRetention
+	episodeWorker  episodeDrainer
+	blobs          io.Closer
+	logger         *slog.Logger
+	clock          ports.Clock
+	pollEvery      time.Duration
+	syncEvery      time.Duration
+	drainTick      time.Duration
 }
 
 // poller is the part of trigger.Poller the loop uses. A test supplies a fake one.
@@ -488,9 +498,10 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	}
 	store := postgres.NewStore(pool)
 	var setupHandler http.Handler
+	var syncAgents func(context.Context) error
 	if ad.agentSetupHandler != nil {
 		var err error
-		setupHandler, err = ad.agentSetupHandler(store)
+		setupHandler, syncAgents, err = ad.agentSetupHandler(store)
 		if err != nil {
 			return nil, err
 		}
@@ -516,6 +527,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 		_ = blobStore.Close()
 		return nil, err
 	}
+	a.agentSync = syncAgents
 	return a, nil
 }
 
@@ -577,18 +589,21 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	recheck, err := newKnowledgeSearch(d, ad, clk, store)
+	evidence, err := newEvidenceRecheck(d, ad, store, clk)
 	if err != nil {
 		return nil, err
 	}
-	execs, err := executors(ctx, ad, store, store, blobs, ingestor{eng: eng}, gen, clk, recheck)
+	execs, err := executors(ctx, ad, store, store, blobs, ingestor{eng: eng}, gen, clk, evidence)
 	if err != nil {
 		return nil, err
 	}
 	box, err := outbox.New(outbox.Config{
 		Outbox: store, Executors: execs, Logger: d.logger,
 		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
-		KindTimeouts: map[change.EffectKind]time.Duration{change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout},
+		KindTimeouts: map[change.EffectKind]time.Duration{
+			change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout,
+			change.EffectVerifyEvidence: verifyEvidenceTimeout,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build outbox drainer: %w", err)
@@ -598,7 +613,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	sync, intakeCase, err := assembleSyncer(ad, store, gen, clk)
+	sync, intakeCase, gateRefresher, err := assembleSyncer(ad, store, gen, clk)
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +625,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	mcpH, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager)
+	mcpH, proposer, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager)
 	if err != nil {
 		return nil, err
 	}
@@ -624,7 +639,7 @@ func assembleWithBlobs(
 	}
 	return &app{
 		narrator: narrator, nudger: newTaskNudger(ad, store, store, pool, clk), timers: &workflowTimers{eng: eng, rooms: store, clock: clk, fired: map[string]bool{}},
-		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, retention: files, blobs: closerOf(blobs),
+		pool: pool, pollers: pollers, drainer: box, syncer: sync, gateRefresher: gateRefresher, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
@@ -671,10 +686,12 @@ func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engin
 	return roomConsumer, commentConsumer, runtime, nil
 }
 
-// mcpStore is the event store plus the durable episode-trust ledger that knowledge search reads.
+// mcpStore is the event store, the durable episode-trust ledger that knowledge search reads, and the history that the
+// reviewer brief learns from.
 type mcpStore interface {
 	ports.EventStore
 	ports.EpisodeSourceTrust
+	reviewlearn.History
 }
 
 // newTasksAdapter builds the MCP task adapter: test submissions advance the engine, and agent output is filtered.
@@ -689,24 +706,15 @@ func newTasksAdapter(d deps, toolsSvc *agenttools.Service, tracker *assignmentAg
 	}}, nil
 }
 
-// assembleMCP wires the task index, agent tools service, adapters, and MCP server.
-func assembleMCP(
-	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng *engine.Engine, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
-) (http.Handler, error) {
-	taskIndex := postgres.NewTaskIndex(pool)
-	asker := &chatAsker{chat: ad.chat, store: store, ids: gen, public: ad.testsRoom}
-	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk, store)
-	if err != nil {
-		return nil, err
-	}
-	refs := reviewRefs{code: ad.vcs, memory: knowledgeSvc}
+// newAgentTools builds the service behind the agents' tools.
+func newAgentTools(ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng *engine.Engine, gen ports.IDs, clk ports.Clock, refs reviewRefs) (*agenttools.Service, error) {
 	toolsSvc, err := agenttools.New(agenttools.Config{
 		Events:          store,
-		Index:           taskIndex,
+		Index:           postgres.NewTaskIndex(pool),
 		Blobs:           blobs,
 		Clock:           clk,
 		IDs:             gen,
-		Asker:           asker,
+		Asker:           &chatAsker{chat: ad.chat, store: store, ids: gen, public: ad.testsRoom},
 		ReviewRefs:      refs,
 		ReviewValidator: semanticReviewValidator{refs: refs},
 		PRFiles:         ad.vcs,
@@ -719,7 +727,26 @@ func assembleMCP(
 	if err != nil {
 		return nil, fmt.Errorf("build agenttools: %w", err)
 	}
+	return toolsSvc, nil
+}
 
+// assembleMCP wires the agent tools service, adapters, the reviewer brief and the MCP server. It also returns the card
+// proposal worker, which is nil when no cards directory is configured.
+func assembleMCP(
+	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng *engine.Engine, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
+) (http.Handler, *cardProposer, error) {
+	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk, store)
+	if err != nil {
+		return nil, nil, err
+	}
+	evidence, err := newCardEvidence(d, ad, store, clk, knowledgeSvc)
+	if err != nil {
+		return nil, nil, err
+	}
+	toolsSvc, err := newAgentTools(ad, store, pool, blobs, eng, gen, clk, reviewRefs{code: ad.vcs, memory: evidence})
+	if err != nil {
+		return nil, nil, err
+	}
 	tokStore := ad.tokens
 	if tokStore == nil {
 		tokStore = &tokenStore{principals: make(map[string]mcp.Principal)}
@@ -727,12 +754,16 @@ func assembleMCP(
 	tracker := &assignmentAgentTracker{agents: make(map[id.TaskID]id.AgentName)}
 	tasksAdp, err := newTasksAdapter(d, toolsSvc, tracker, store, eng)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	reviewsAdp := &mcpReviewsAdapter{svc: toolsSvc, tracker: tracker}
 	packReader, cards, err := newReviewerReaders(d, blobs, pool, clk, ad.vcs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	moat, err := newReviewMoat(d, ad, store, blobs, knowledgeSvc, clk)
+	if err != nil {
+		return nil, nil, err
 	}
 	mcpSrv, err := mcp.NewServer(mcp.Deps{
 		Logger: d.logger, Clock: clk, Tokens: tokStore, Tasks: tasksAdp,
@@ -743,11 +774,13 @@ func assembleMCP(
 		Profiles: profiles,
 		// run_check runs its fixed static check through the runner, never in this process.
 		Sandbox: rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
+		Briefs:  moat.briefs,
+		Graph:   moat.graph,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build mcp server: %w", err)
+		return nil, nil, fmt.Errorf("build mcp server: %w", err)
 	}
-	return mcpSrv.Handler(), nil
+	return mcpSrv.Handler(), moat.proposer, nil
 }
 
 // newKnowledgeSearch builds the team-memory search service. The same service answers agent questions, checks the
@@ -781,14 +814,14 @@ func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports
 }
 
 // assembleSyncer wires the policy decoder, gate source, evaluator, intake and PR syncer.
-func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, error) {
+func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, *gateuse.Refresher, error) {
 	gateSrc, err := gateuse.NewSource(gateuse.SourceConfig{
 		PRs:    ad.vcs,
 		Code:   ad.vcs,
 		Decode: policyyaml.Decode,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build gate source: %w", err)
+		return nil, nil, nil, fmt.Errorf("build gate source: %w", err)
 	}
 	gateEval, err := gateuse.New(gateuse.Config{
 		Events: store,
@@ -797,7 +830,7 @@ func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports
 		IDs:    gen,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build gate evaluator: %w", err)
+		return nil, nil, nil, fmt.Errorf("build gate evaluator: %w", err)
 	}
 	intakeCase, err := intake.New(intake.Config{
 		Events: store,
@@ -808,7 +841,7 @@ func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports
 		Policy: policyyaml.Decode,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build intake: %w", err)
+		return nil, nil, nil, fmt.Errorf("build intake: %w", err)
 	}
 	sync, err := prsync.New(prsync.Config{
 		Repos:   ad.repos,
@@ -823,9 +856,13 @@ func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports
 		IDs:     gen,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build pr syncer: %w", err)
+		return nil, nil, nil, fmt.Errorf("build pr syncer: %w", err)
 	}
-	return sync, intakeCase, nil
+	refresher, err := gateuse.NewRefresher(store, gateRefreshCursor{table: store}, gateEval)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("build gate refresher: %w", err)
+	}
+	return sync, intakeCase, refresher, nil
 }
 
 // workflowAgentNames lists the configured test author, reviewers and resolver, so a change room is made with them in it.

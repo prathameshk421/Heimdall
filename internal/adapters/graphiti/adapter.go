@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -44,27 +43,60 @@ func (a *Adapter) AddEpisode(ctx context.Context, episode ports.Episode) error {
 	if err != nil {
 		return fmt.Errorf("encode memory episode: %w", err)
 	}
-	args := map[string]any{"name": string(episode.Key), "episode_body": string(body), "source_description": episode.Source, "group_id": episode.GroupID, "uuid": episodeUUIDKey(string(episode.Key), episode.GroupID)}
+	// No uuid argument: Graphiti reads a uuid as "update this existing episode" and fails when it does not exist
+	// (graphiti_core 0.31, Graphiti.add_episode). The episode name carries the stable key instead, and the durable
+	// queue sends each key once.
+	args := map[string]any{"name": string(episode.Key), "episode_body": string(body), "source_description": episode.Source, "group_id": episode.GroupID}
 	if _, err := a.caller.Call(ctx, "add_memory", args); err != nil {
 		return fmt.Errorf("add Graphiti episode: %w", mapUnavailable(err))
 	}
 	return nil
 }
 
-// ForgetEpisode removes the stable source episode and its uniquely sourced facts from one group.
+// ForgetEpisode removes the episode named by key, and its uniquely sourced facts, from one group. Graphiti gives an
+// episode its own uuid, so the episode is found by its name first. An episode that is not there is already forgotten.
 func (a *Adapter) ForgetEpisode(ctx context.Context, key, group string) error {
 	if key == "" || group == "" {
 		return errors.New("graphiti episode key and group are required")
 	}
-	_, err := a.caller.Call(ctx, "delete_episode", map[string]any{"uuid": episodeUUIDKey(key, group), "group_id": group})
-	if err != nil {
+	uuid, err := a.episodeUUID(ctx, key, group)
+	if err != nil || uuid == "" {
+		return err
+	}
+	if _, err := a.caller.Call(ctx, "delete_episode", map[string]any{"uuid": uuid, "group_id": group}); err != nil {
 		return fmt.Errorf("delete Graphiti episode: %w", mapUnavailable(err))
 	}
 	return nil
 }
 
-func episodeUUIDKey(key, group string) string {
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("heimdall:episode:"+group+":"+key)).String()
+// maxEpisodeScan is how many recent episodes of a group a forget looks through. A group with more episodes than this
+// makes a forget fail rather than report an episode as gone when it may only be older.
+const maxEpisodeScan = 2000
+
+// episodeUUID returns the uuid Graphiti gave the episode named key, or "" when the group holds no such episode.
+func (a *Adapter) episodeUUID(ctx context.Context, key, group string) (string, error) {
+	raw, err := a.caller.Call(ctx, "get_episodes", map[string]any{"group_ids": []string{group}, "max_episodes": maxEpisodeScan})
+	if err != nil {
+		return "", fmt.Errorf("list Graphiti episodes: %w", mapUnavailable(err))
+	}
+	var listed struct {
+		Episodes []struct {
+			UUID string `json:"uuid"`
+			Name string `json:"name"`
+		} `json:"episodes"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		return "", fmt.Errorf("decode Graphiti episodes: %w", err)
+	}
+	for _, episode := range listed.Episodes {
+		if episode.Name == key && episode.UUID != "" {
+			return episode.UUID, nil
+		}
+	}
+	if len(listed.Episodes) >= maxEpisodeScan {
+		return "", fmt.Errorf("graphiti group %q holds more than %d episodes, so episode %q may be older than the scan", group, maxEpisodeScan, key)
+	}
+	return "", nil
 }
 
 // overFetch is how many facts are requested per wanted item when results are filtered by time afterwards.

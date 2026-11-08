@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -112,46 +113,69 @@ func NewWorkflowMemory(queue EpisodeEnqueuer, history WorkflowHistory, scope Eve
 }
 
 // Backfill replays all persisted histories. Stable event/team keys make repeated and concurrent passes idempotent.
+// Each change is projected on its own: a change whose policy cannot be read is reported and skipped, so one old change
+// can never keep every later change out of memory. The returned error joins every change that failed.
 func (s *WorkflowMemory) Backfill(ctx context.Context) (WorkflowMemoryStats, error) {
 	ids, err := s.history.ChangeIDs(ctx)
 	if err != nil {
 		return WorkflowMemoryStats{}, fmt.Errorf("list workflow histories for memory backfill: %w", err)
 	}
 	stats := WorkflowMemoryStats{Changes: len(ids)}
+	var failed []error
 	for _, changeID := range ids {
-		events, err := s.history.Load(ctx, changeID)
-		if err != nil {
-			return stats, fmt.Errorf("load workflow history %s for memory backfill: %w", changeID, err)
+		if err := ctx.Err(); err != nil {
+			return stats, err
 		}
-		repo, base := eventRepositoryAndBase(events)
-		relatedActors := eventCandidateActors(events)
-		for _, event := range events {
-			queued, err := s.Ingest(ctx, event, repo, base, relatedActors)
-			if err != nil {
-				return stats, fmt.Errorf("project workflow event %s to memory: %w", event.ID, err)
-			}
-			stats.Events++
-			if queued {
-				stats.Queued++
-			}
-		}
-		if terminal := terminalEvent(events); terminal != nil {
-			if roomID := eventRoomID(events); roomID != "" {
-				queued, err := s.digest(ctx, *terminal, roomID, repo, base, relatedActors)
-				if err != nil {
-					return stats, fmt.Errorf("digest completed change %s: %w", changeID, err)
-				}
-				if queued {
-					stats.Queued++
-				}
-			}
+		if err := s.backfillChange(ctx, changeID, &stats); err != nil {
+			failed = append(failed, fmt.Errorf("change %s: %w", changeID, err))
 		}
 	}
-	return stats, nil
+	return stats, errors.Join(failed...)
+}
+
+func (s *WorkflowMemory) backfillChange(ctx context.Context, changeID id.ChangeID, stats *WorkflowMemoryStats) error {
+	events, err := s.history.Load(ctx, changeID)
+	if err != nil {
+		return fmt.Errorf("load workflow history for memory backfill: %w", err)
+	}
+	repo, base := eventRepositoryAndBase(events)
+	relatedActors := eventCandidateActors(events)
+	facts := FactsFromEvents(changeID, events)
+	for _, event := range events {
+		queued, err := s.ingest(ctx, event, repo, base, relatedActors, facts)
+		if err != nil {
+			return fmt.Errorf("project workflow event %s to memory: %w", event.ID, err)
+		}
+		stats.Events++
+		if queued {
+			stats.Queued++
+		}
+	}
+	terminal := terminalEvent(events)
+	if terminal == nil {
+		return nil
+	}
+	roomID := eventRoomID(events)
+	if roomID == "" {
+		return nil
+	}
+	queued, err := s.digest(ctx, *terminal, roomID, repo, base, relatedActors)
+	if err != nil {
+		return fmt.Errorf("digest completed change: %w", err)
+	}
+	if queued {
+		stats.Queued++
+	}
+	return nil
 }
 
 // Ingest projects a single event when it carries a durable human decision or an applied resolver verdict.
 func (s *WorkflowMemory) Ingest(ctx context.Context, event change.Event, repo change.Repo, base id.SHA, relatedActors []string) (bool, error) {
+	return s.ingest(ctx, event, repo, base, relatedActors, nil)
+}
+
+// ingest is Ingest with the facts of the change's findings, which the summary of the episode names.
+func (s *WorkflowMemory) ingest(ctx context.Context, event change.Event, repo change.Repo, base id.SHA, relatedActors []string, facts FindingFacts) (bool, error) {
 	status, ok := workflowMemoryStatus(event)
 	if !ok {
 		return false, nil
@@ -168,13 +192,18 @@ func (s *WorkflowMemory) Ingest(ctx context.Context, event change.Event, repo ch
 	if err != nil {
 		return false, fmt.Errorf("redact workflow memory payload: %w", err)
 	}
+	summary, err := s.redact.Redact(Narrate(event, facts))
+	if err != nil {
+		return false, fmt.Errorf("redact workflow memory summary: %w", err)
+	}
 	body, err := json.Marshal(struct {
+		Summary    string           `json:"summary"`
 		ChangeID   id.ChangeID      `json:"change_id"`
 		EventID    change.EventID   `json:"event_id"`
 		EventType  change.EventType `json:"event_type"`
 		OccurredAt time.Time        `json:"occurred_at"`
 		Payload    json.RawMessage  `json:"payload"`
-	}{event.ChangeID, event.ID, event.Type, event.OccurredAt.UTC(), json.RawMessage(payload)})
+	}{summary, event.ChangeID, event.ID, event.Type, event.OccurredAt.UTC(), json.RawMessage(payload)})
 	if err != nil {
 		return false, fmt.Errorf("encode workflow memory episode: %w", err)
 	}
@@ -183,7 +212,7 @@ func (s *WorkflowMemory) Ingest(ctx context.Context, event change.Event, repo ch
 		if team == "" {
 			return false, errors.New("workflow memory scope returned an empty team")
 		}
-		episode := ports.Episode{Key: change.EffectKey(fmt.Sprintf("memory:workflow:%s:%s", event.ID, team)), Source: string(event.Type), Status: status, GroupID: team, Body: string(body)}
+		episode := ports.Episode{Key: change.EffectKey(fmt.Sprintf("memory:workflow:v2:%s:%s", event.ID, team)), Source: string(event.Type), Status: status, GroupID: team, Body: string(body)}
 		if err := episode.Validate(); err != nil {
 			return false, fmt.Errorf("validate workflow memory episode: %w", err)
 		}
@@ -305,32 +334,13 @@ func eventRepositoryAndBase(events []change.Event) (change.Repo, id.SHA) {
 func workflowMemoryStatus(event change.Event) (ports.EpisodeStatus, bool) {
 	switch event.Type {
 	case change.EventDecisionRecorded:
-		if event.Actor.Kind != change.ActorHuman {
-			return "", false
-		}
-		payload, err := change.Decode(event)
-		if err != nil {
-			return "", false
-		}
-		decision, ok := payload.(change.DecisionRecorded)
-		if !ok || decision.Kind == change.DecisionForget {
-			return "", false
-		}
-		switch decision.Kind {
-		case change.DecisionRemember, change.DecisionIncident, change.DecisionChallenge:
-			return ports.EpisodeObserved, true
-		case change.DecisionReview, change.DecisionUphold, change.DecisionDismiss,
-			change.DecisionSpecChange, change.DecisionOverride, change.DecisionWaiveReviewer,
-			change.DecisionReject, change.DecisionApproveTests, change.DecisionStart, change.DecisionForget, change.DecisionAnswer,
-			change.DecisionResume:
-			return ports.EpisodeConfirmed, true
-		default:
-			return ports.EpisodeConfirmed, true
-		}
+		return decisionMemoryStatus(event)
 	case change.EventVerdictApplied:
 		if _, err := change.Decode(event); err == nil {
 			return ports.EpisodeConfirmed, true
 		}
+	case change.EventFindingStateChanged:
+		return findingStateMemoryStatus(event)
 	// Remaining event kinds carry no workflow memory signal.
 	case change.EventChangeTriggered, change.EventRoomOpened, change.EventBranchEnsured,
 		change.EventTaskAssigned, change.EventTaskAcked, change.EventTaskTimedOut,
@@ -341,10 +351,42 @@ func workflowMemoryStatus(event change.Event) (ports.EpisodeStatus, bool) {
 		change.EventPROpened, change.EventPRPushed, change.EventPRLinked, change.EventPRClosed,
 		change.EventSlopEvaluated, change.EventReviewersPicked, change.EventReviewSubmitted,
 		change.EventReviewUnavailable, change.EventReviewWaived, change.EventFindingFiled,
-		change.EventFindingVerified, change.EventFindingStateChanged, change.EventChallengeFiled,
+		change.EventFindingVerified, change.EventChallengeFiled,
 		change.EventCaseOpened, change.EventVerdictSubmitted, change.EventVerdictEscalated,
 		change.EventApprovalRecorded, change.EventApprovalInvalidated, change.EventCIReported,
 		change.EventGateEvaluated, change.EventChangeRejected, change.EventChangeMerged:
+	}
+	return "", false
+}
+
+// decisionMemoryStatus covers a decision a person made. Notes and challenges are observed, other decisions are confirmed.
+func decisionMemoryStatus(event change.Event) (ports.EpisodeStatus, bool) {
+	if event.Actor.Kind != change.ActorHuman {
+		return "", false
+	}
+	payload, err := change.Decode(event)
+	if err != nil {
+		return "", false
+	}
+	decision, ok := payload.(change.DecisionRecorded)
+	if !ok || decision.Kind == change.DecisionForget {
+		return "", false
+	}
+	if slices.Contains([]change.DecisionKind{change.DecisionRemember, change.DecisionIncident, change.DecisionChallenge}, decision.Kind) {
+		return ports.EpisodeObserved, true
+	}
+	return ports.EpisodeConfirmed, true
+}
+
+// findingStateMemoryStatus: a finding that people upheld or that was resolved is durable knowledge; other states are noise.
+func findingStateMemoryStatus(event change.Event) (ports.EpisodeStatus, bool) {
+	payload, err := change.Decode(event)
+	if err != nil {
+		return "", false
+	}
+	value, ok := payload.(change.FindingStateChanged)
+	if ok && (value.State == finding.StateUpheld || value.State == finding.StateResolved) {
+		return ports.EpisodeObserved, true
 	}
 	return "", false
 }

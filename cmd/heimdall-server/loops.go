@@ -298,8 +298,26 @@ func (a *app) knowledgeRetentionLoop(ctx context.Context) {
 	}
 }
 
+// cardProposalInterval is how often human decisions are turned into proposed rule cards.
+const cardProposalInterval = 5 * time.Minute
+
+// cardProposalLoop writes the rule cards that human decisions suggest. A failed pass is logged and the next pass retries.
+func (a *app) cardProposalLoop(ctx context.Context) {
+	for {
+		written, err := a.proposer.RunOnce(ctx)
+		if err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "card proposal pass failed; the next pass retries", "error", err)
+		} else if err == nil && written > 0 {
+			a.logger.InfoContext(ctx, "rule cards proposed", "count", written)
+		}
+		if err := clock.Wait(ctx, cardProposalInterval); err != nil {
+			return
+		}
+	}
+}
+
 // backgroundLoops returns the optional loops whose dependency is wired: the room stream, GitHub comments, Graphiti
-// episode delivery, knowledge retention and the workflow memory projection.
+// episode delivery, knowledge retention, the workflow memory projection and the card proposals.
 func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
 	var runs []func(context.Context)
 	if a.roomStream != nil {
@@ -326,5 +344,63 @@ func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
 	if a.workflowMemory != nil {
 		runs = append(runs, a.workflowMemoryLoop)
 	}
+	if a.agentSync != nil {
+		runs = append(runs, a.agentSyncLoop)
+	}
+	if a.gateRefresher != nil {
+		runs = append(runs, a.gateRefreshLoop)
+	}
+	if a.proposer != nil {
+		runs = append(runs, a.cardProposalLoop)
+	}
 	return runs
+}
+
+const (
+	// agentSyncEvery is the wait between attempts to sync agent definitions. Switch is often not reachable for the
+	// first seconds after a restart, because its port forward starts with the server.
+	agentSyncEvery = 10 * time.Second
+	// agentSyncAttempts bounds the retries, so a lasting Switch fault ends in one clear error instead of a stream.
+	agentSyncAttempts = 30
+	// agentSyncTimeout bounds one attempt.
+	agentSyncTimeout = 30 * time.Second
+)
+
+// agentSyncLoop moves the role agents in Switch to the configured model once after startup, retrying while Switch is
+// unreachable. Until it succeeds the agents keep their old model; the server works either way.
+func (a *app) agentSyncLoop(ctx context.Context) {
+	var err error
+	for attempt := 1; attempt <= agentSyncAttempts && ctx.Err() == nil; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, agentSyncTimeout)
+		err = a.agentSync(attemptCtx)
+		cancel()
+		if err == nil {
+			a.logger.InfoContext(ctx, "agent definitions synced with Switch", "attempt", attempt)
+			return
+		}
+		if waitErr := clock.Wait(ctx, agentSyncEvery); waitErr != nil {
+			return
+		}
+	}
+	if ctx.Err() == nil {
+		a.logger.ErrorContext(ctx, "agent definitions not synced with Switch; agents keep their current model", "attempts", agentSyncAttempts, "error", err)
+	}
+}
+
+// gateRefreshEvery is how often the gate is re-evaluated for changes with new reviews, findings or decisions.
+const gateRefreshEvery = 5 * time.Second
+
+// gateRefreshLoop keeps each open change's gate in step with its reviews, findings, verdicts, decisions and approvals,
+// which the PR syncer does not see.
+func (a *app) gateRefreshLoop(ctx context.Context) {
+	for ctx.Err() == nil {
+		if n, err := a.gateRefresher.RunOnce(ctx); err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "gate refresh failed for some changes; the next event retries them", "error", err)
+		} else if err == nil && n > 0 {
+			a.logger.InfoContext(ctx, "gate re-evaluated", "changes", n)
+		}
+		if err := clock.Wait(ctx, gateRefreshEvery); err != nil {
+			return
+		}
+	}
 }

@@ -11,7 +11,7 @@
 #  - Secrets are Docker secrets, read from files in HEIMDALL_SECRETS_DIR. No secret value is written in this
 #    file or in an environment entry (D89). The variables above name a directory, not a secret.
 #  - Image tags are pinned below. Digest pinning (D98) is applied at release.
-#  - Ollama is not started unless the local-embed profile is asked for (D87).
+#  - Embeddings run in the embeddings service, on the memory network only (D163).
 
 name: heimdall
 
@@ -117,15 +117,15 @@ services:
     # Official standalone image of the Graphiti MCP server, pinned to graphiti-core 0.31.2 (zepai/knowledge-graph-mcp,
     # MCP server 1.1.3). It takes an external FalkorDB and reads ./graphiti/config.yaml through CONFIG_PATH.
     # The image's config reads keys from environment variables only, so the command below loads OPENAI_API_KEY from
-    # the openrouter_api_key secret file just before it starts the server. The key is not in this file.
+    # the deploy_api_key secret file just before it starts the server. The key is not in this file.
     image: zepai/knowledge-graph-mcp:1.1.3-graphiti-0.31.2-standalone
     command:
       - sh
       - -c
-      - 'OPENAI_API_KEY="$$(cat /run/secrets/openrouter_api_key)" && export OPENAI_API_KEY && exec uv run --no-sync main.py'
+      - 'OPENAI_API_KEY="$$(cat /run/secrets/deploy_api_key)" && export OPENAI_API_KEY && exec uv run --no-sync main.py'
     environment:
       CONFIG_PATH: /app/mcp/config/config.yaml
-    secrets: [openrouter_api_key]
+    secrets: [deploy_api_key]
     volumes:
       - type: bind
         source: ./graphiti/config.yaml
@@ -135,6 +135,8 @@ services:
     depends_on:
       falkordb:
         condition: service_healthy
+      embeddings:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -143,13 +145,16 @@ services:
       start_period: 20s
     restart: unless-stopped
 
-  ollama:
-    # Offline embeddings only (D87). Off by default: start it with --profile local-embed. The Graphiti config above
-    # uses hosted embeddings; switching to this service means changing that config and rebuilding the Graphiti index.
-    image: ollama/ollama:0.40.14
-    profiles: ["local-embed"]
+  embeddings:
+    # Graphiti's embeddings (D163): the model provider has no embedding model. Text Embeddings Inference on CPU with
+    # BAAI/bge-small-en-v1.5 (33M parameters, 384 dimensions) is about 240 MB of image, 130 MB of model and well under
+    # 1 GB of RAM. It downloads the model once into its volume. Only the memory network can reach it.
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8@sha256:8de25e75ce39617f17f2f6c77d60a4f75b65e779ed5005420eb1400072a15c1c
+    command: ["--model-id", "BAAI/bge-small-en-v1.5", "--port", "80"]
+    environment:
+      RAYON_NUM_THREADS: "2"
     volumes:
-      - ollama_data:/root/.ollama
+      - embeddings_data:/data
     networks: [memory]
     restart: unless-stopped
 
@@ -164,13 +169,13 @@ volumes:
   heimdall_data:
   postgres_data:
   falkordb_data:
-  ollama_data:
+  embeddings_data:
 
 secrets:
   postgres_password:
     file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds postgres_password}/postgres_password
-  openrouter_api_key:
-    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds openrouter_api_key}/openrouter_api_key
+  deploy_api_key:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds deploy_api_key}/deploy_api_key
   database_url:
     file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds database_url}/database_url
   jira_email:

@@ -146,12 +146,7 @@ func (s *Service) Prepare(ctx context.Context) ([]Handoff, error) {
 	out := make([]Handoff, 0, len(prepared))
 	for _, preparedAgent := range prepared {
 		a := preparedAgent.agent
-		spec := ports.ManagedAgentSpec{
-			Agent: ports.AgentRef{Name: a.Name, Role: a.Role}, Description: a.Description,
-			Machine: s.cfg.Machine, Provider: "opencode", Model: s.cfg.Model,
-			Instructions: a.Instructions, Directory: s.directoryOf(a.Name),
-		}
-		managed, err := s.cfg.Provisioner.EnsureManagedAgent(ctx, spec)
+		managed, err := s.cfg.Provisioner.EnsureManagedAgent(ctx, s.specOf(a))
 		if err != nil {
 			return nil, fmt.Errorf("agent provision %q: reconcile Switch definition: %w", a.Name, err)
 		}
@@ -215,6 +210,29 @@ func (s *Service) Activate(ctx context.Context, receipt Receipt) error {
 		return fmt.Errorf("agent provision %q: persist setup receipt fingerprint: %w", agent.Name, err)
 	}
 	return nil
+}
+
+// SyncDefinitions moves every configured agent that already exists in Switch to the configured model. It creates no
+// agent, changes nothing but the model, reads no token and starts nothing. The server runs it at startup, so a model
+// change in heimdall.toml reaches the agents. An agent that is not in Switch yet is left to the setup handoff.
+func (s *Service) SyncDefinitions(ctx context.Context) error {
+	var errs []error
+	for _, a := range s.cfg.Agents {
+		err := s.cfg.Provisioner.SetManagedAgentModel(ctx, s.specOf(a))
+		if err != nil && !errors.Is(err, ports.ErrNotFound) {
+			errs = append(errs, fmt.Errorf("agent %q: %w", a.Name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// specOf is the Switch definition of one configured agent.
+func (s *Service) specOf(a Agent) ports.ManagedAgentSpec {
+	return ports.ManagedAgentSpec{
+		Agent: ports.AgentRef{Name: a.Name, Role: a.Role}, Description: a.Description,
+		Machine: s.cfg.Machine, Provider: "opencode", Model: s.cfg.Model,
+		Instructions: a.Instructions, Directory: s.directoryOf(a.Name),
+	}
 }
 
 // directoryOf is the directory the host installer fills for the agent, or empty when Switch picks it.

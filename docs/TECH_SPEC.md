@@ -785,7 +785,7 @@ Every rule or fact line has provenance (`[git:3f2a1c]`, `[pr:#88]`, `[transcript
 |---|---|---|
 | E1 | `repro_test` | Run on head in the sandbox; JUnit `<failure>` required; `<error>` gives E4 |
 | E2 | `tool_result`: `oasdiff`, `go vet`, `staticcheck`, `semgrep`, mutation survivors (per-language list in policy) | Tool re-run; location must match |
-| E3 | `memory_ref` confirmed and not superseded, or a prior applied verdict or decision | Re-queried at verification |
+| E3 | `memory_ref` confirmed and not superseded, a prior applied verdict or decision, or a rule card its owner confirmed (`card:<file>#<path>`) | Re-queried at verification. A card counts only when it is active, scoped and checkable, its text is the confirmed text, the path is inside `applies_to`, its owner is an approver of the path in the policy at the merge base, and its record has not muted it |
 | E4 | `reasoning`, `pack_ref`, observed memory | None; shown as unverified |
 
 The blocking set is findings in `open | disputed | escalated | upheld | fix_claimed | verifying` that are either at tier E1 to E3 with severity ≥ `blocking.min_severity`, or **consensus-blocking** (11.2b). Any other high or critical E4 finding opens a human card without blocking.
@@ -989,6 +989,7 @@ Wire names are bare. The server lists and accepts `get_task`, not `heimdall_get_
 | `read_card(file?)` | reviewer (own cards only) |
 | `ask_knowledge(question, entities?, as_of?)` | all |
 | `run_check(kind, args)` | reviewer, resolver (counts toward budget) |
+| `search_code(pattern, path_glob?)`, `find_symbol(name)` | reviewer, resolver (head commit only) |
 | `submit_tests` | test-author |
 | `ask_humans(questions ≤3)` | test-author, resolver |
 | `submit_review` | reviewer |

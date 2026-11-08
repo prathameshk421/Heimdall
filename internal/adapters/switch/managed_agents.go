@@ -2,6 +2,7 @@ package switchchat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -104,6 +105,11 @@ func (c *Client) findManagedAgent(ctx context.Context, spec ports.ManagedAgentSp
 		if current.ID == "" {
 			return ports.ManagedAgent{}, false, errors.New("switch list_managed_agents: matching agent has no id")
 		}
+		if current.Model != spec.Model {
+			if err := c.setManagedAgentModel(ctx, current.ID, spec.Model); err != nil {
+				return ports.ManagedAgent{}, false, err
+			}
+		}
 		return ports.ManagedAgent{ID: current.ID, Name: current.Name}, true, nil
 	}
 	return ports.ManagedAgent{}, false, nil
@@ -113,7 +119,9 @@ func matchesManagedAgent(spec ports.ManagedAgentSpec, current managedAgentSummar
 	if current.Machine.ID != spec.Machine && current.Machine.Name != spec.Machine {
 		return false
 	}
-	if current.Description != spec.Description || current.Provider != spec.Provider || current.Model != spec.Model {
+	// The model may differ: Heimdall moves an existing agent to the configured model instead of refusing it, so a
+	// model or provider change in heimdall.toml reaches agents that already exist.
+	if current.Description != spec.Description || current.Provider != spec.Provider {
 		return false
 	}
 	if !current.AutoMode || current.AutoApprove || current.Directory != spec.Directory {
@@ -152,4 +160,45 @@ func nilIfEmpty(value string) any {
 		return nil
 	}
 	return value
+}
+
+// setManagedAgentModel moves an existing managed agent to model. Switch stores the model with the agent and pins it on
+// every session it starts, so the agent's own OpenCode config cannot change it.
+func (c *Client) setManagedAgentModel(ctx context.Context, agentID, model string) error {
+	if agentID == "" || model == "" {
+		return errors.New("switch update_agent_detail: agent id and model are required")
+	}
+	var reply json.RawMessage
+	if err := c.operation(ctx, "update_agent_detail", map[string]any{"agent_id": agentID, "model": model}, &reply); err != nil {
+		return fmt.Errorf("switch update_agent_detail %s: %w", agentID, err)
+	}
+	return nil
+}
+
+// SetManagedAgentModel moves an existing managed agent to spec.Model when its model differs. The agent must have the
+// spec's name, provider and machine; its other settings may differ, because people make and edit agents by hand.
+func (c *Client) SetManagedAgentModel(ctx context.Context, spec ports.ManagedAgentSpec) error {
+	if err := spec.Agent.Validate(); err != nil {
+		return fmt.Errorf("switch set managed agent model: %w", err)
+	}
+	if spec.Model == "" {
+		return errors.New("switch set managed agent model: model is required")
+	}
+	var agents []managedAgentSummary
+	if err := c.operation(ctx, "list_managed_agents", map[string]any{}, &agents); err != nil {
+		return err
+	}
+	for _, current := range agents {
+		if current.Name != string(spec.Agent.Name) {
+			continue
+		}
+		if current.Provider != spec.Provider || (current.Machine.ID != spec.Machine && current.Machine.Name != spec.Machine) {
+			return fmt.Errorf("switch managed agent %q runs another provider or machine: %w", current.Name, ports.ErrConflict)
+		}
+		if current.Model == spec.Model {
+			return nil
+		}
+		return c.setManagedAgentModel(ctx, current.ID, spec.Model)
+	}
+	return fmt.Errorf("switch managed agent %q: %w", spec.Agent.Name, ports.ErrNotFound)
 }

@@ -16,8 +16,10 @@ import (
 )
 
 type fakeProvisioner struct {
-	ensures []ports.ManagedAgentSpec
-	states  []struct {
+	models   []ports.ManagedAgentSpec
+	modelErr error
+	ensures  []ports.ManagedAgentSpec
+	states   []struct {
 		id    string
 		state ports.ManagedAgentState
 	}
@@ -30,6 +32,11 @@ func (f *fakeProvisioner) EnsureManagedAgent(_ context.Context, spec ports.Manag
 		return ports.ManagedAgent{}, f.err
 	}
 	return ports.ManagedAgent{ID: "switch-" + string(spec.Agent.Name), Name: string(spec.Agent.Name)}, nil
+}
+
+func (f *fakeProvisioner) SetManagedAgentModel(_ context.Context, spec ports.ManagedAgentSpec) error {
+	f.models = append(f.models, spec)
+	return f.modelErr
 }
 
 func (f *fakeProvisioner) SetManagedAgentState(_ context.Context, agentID string, state ports.ManagedAgentState) error {
@@ -251,4 +258,21 @@ func TestActivationRecordsDurableReceiptOnlyAfterSwitchAcceptsStart(t *testing.T
 	require.Equal(t, receiptFingerprint(receipt), stored.Fingerprint)
 	require.NoError(t, svc.Activate(context.Background(), receipt), "the same receipt can safely reconcile after a restart")
 	require.Equal(t, 1, ledger.count, "an exact replay adds no second local receipt")
+}
+
+func TestSyncDefinitionsMovesEveryAgentToTheConfiguredModelAndCreatesNone(t *testing.T) {
+	p := &fakeProvisioner{}
+	svc := newService(t, p)
+	require.NoError(t, svc.SyncDefinitions(context.Background()))
+	require.Len(t, p.models, len(svc.cfg.Agents))
+	for _, spec := range p.models {
+		require.Equal(t, svc.cfg.Model, spec.Model)
+	}
+	require.Empty(t, p.ensures, "a sync never creates an agent")
+	require.Empty(t, p.states, "a sync never starts an agent")
+}
+
+func TestSyncDefinitionsLeavesAnAgentThatIsNotInSwitchYet(t *testing.T) {
+	p := &fakeProvisioner{modelErr: ports.ErrNotFound}
+	require.NoError(t, newService(t, p).SyncDefinitions(context.Background()))
 }

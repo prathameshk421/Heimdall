@@ -212,35 +212,35 @@ func TestVerifyEvidenceCompileErrorNeverVerifies(t *testing.T) {
 	require.Equal(t, finding.StateUnverified, sc.State)
 }
 
-func TestVerifyEvidenceTimeoutOrPanicNeverVerifies(t *testing.T) {
-	ctx := context.Background()
-	// Sandbox error (timeout / panic) -> state_changed to E4 unverified
-	sandbox := &overlaySandboxFake{
-		err: errors.New("timeout running repro test"),
-	}
-	store := &fakeStore{events: sampleChangeEvents()}
+func TestVerifyEvidenceRetriesWhenTheSandboxGivesNoResult(t *testing.T) {
+	// No result at all (runner busy, socket down, effect out of time) says nothing about the claim: the effect fails,
+	// so the outbox retries it, and the finding keeps its tier.
+	sandbox := &overlaySandboxFake{err: errors.New("runner rejected job: runner is busy")}
 	ingest := &fakeIngest{}
-	source := &fakeSource{}
-
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source:  source,
-		Sandbox: sandbox,
-		Store:   store,
-		Ingest:  ingest,
-		IDs:     &fakeIDs{},
-		Clock:   fixedClock{},
+		Source: &fakeSource{}, Sandbox: sandbox, Store: &fakeStore{events: sampleChangeEvents()}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
 
-	err = exec.Execute(ctx, sampleReproEffect())
+	require.Error(t, exec.Execute(context.Background(), sampleReproEffect()))
+	require.Empty(t, ingest.written, "no state change without a result")
+}
+
+func TestVerifyEvidenceTestThatErrorsInsteadOfFailingNeverVerifies(t *testing.T) {
+	// A repro that panics, does not compile or times out inside the job is a result: it did not fail on an assertion,
+	// so the finding drops to E4 unverified.
+	sandbox := &overlaySandboxFake{res: ports.SandboxResult{Errored: 1, Tests: []ports.TestResult{{Name: "TestReproErrors", Outcome: ports.OutcomeError}}}}
+	ingest := &fakeIngest{}
+	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
+		Source: &fakeSource{}, Sandbox: sandbox, Store: &fakeStore{events: sampleChangeEvents()}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+	})
 	require.NoError(t, err)
 
+	require.NoError(t, exec.Execute(context.Background(), sampleReproEffect()))
 	require.Len(t, ingest.written, 1)
 	require.Equal(t, change.EventFindingStateChanged, ingest.written[0].Type)
-
 	var sc change.FindingStateChanged
 	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &sc))
-	require.Equal(t, veFndID, sc.FindingID)
 	require.Equal(t, finding.TierE4, sc.Tier)
 	require.Equal(t, finding.StateUnverified, sc.State)
 }

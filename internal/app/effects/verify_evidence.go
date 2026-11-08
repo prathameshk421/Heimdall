@@ -124,11 +124,15 @@ func (v VerifyEvidence) executeRepro(ctx context.Context, l loadedChange, p chan
 		Timeout: 3 * time.Minute,
 	}
 
+	// A test that does not compile, panics or runs out of time still gives a result, and that result drops the finding
+	// to E4. An error means there is no result at all (the runner is busy or unreachable, or the effect ran out of
+	// time), which says nothing about the claim, so the outbox tries again. Before, such an error dropped the finding
+	// to E4: on KAN-23 four E1 findings fell because their runs found the runner busy.
 	res, err := v.runSandbox(ctx, job, []ports.File{overlay})
-	claimHolds := false
-	if err == nil {
-		claimHolds = judgesClaimHolds(res, p.TestName)
+	if err != nil {
+		return failf(err, "verify_evidence %s: run repro test %s", p.Ticket, p.TestName)
 	}
+	claimHolds := judgesClaimHolds(res, p.TestName)
 
 	cause := findCauseEvent(l, p.FindingID)
 	if cause == nil {
@@ -347,7 +351,11 @@ func (v VerifyEvidence) executeMemory(ctx context.Context, l loadedChange, p cha
 	if v.deps.Memory == nil {
 		return failf(nil, "verify_evidence %s: the memory re-query is not configured", p.Ticket)
 	}
-	state, err := v.deps.Memory.Recheck(ctx, id.AgentName(p.Memory.Agent), p.Repo, p.HeadSHA, p.Memory.Ref)
+	base := baseSHAOf(l)
+	if base == "" {
+		return failf(nil, "verify_evidence %s: the change has no base commit, so its policy cannot be read", p.Ticket)
+	}
+	state, err := v.deps.Memory.Recheck(ctx, id.AgentName(p.Memory.Agent), p.Repo, base, p.Memory.Ref)
 	if err != nil {
 		return failf(err, "verify_evidence %s: re-query memory", p.Ticket)
 	}

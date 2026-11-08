@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/codegraph"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reviewbrief"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -119,6 +121,17 @@ type Cards interface {
 	ForTask(ctx context.Context, p Principal, a Assignment) (string, error)
 }
 
+// Briefs compiles what a reviewer or a resolver knows before it reads the diff. The person is resolved server-side from
+// the authenticated agent and its assignment. A failed section is a note inside the brief, not an error.
+type Briefs interface {
+	Brief(ctx context.Context, p Principal, a Assignment) (reviewbrief.Brief, error)
+}
+
+// CodeGraph returns the code index of one commit. The tools ask only for the head commit of the caller's assignment.
+type CodeGraph interface {
+	Index(ctx context.Context, repo change.Repo, sha id.SHA) (*codegraph.Index, error)
+}
+
 // PackPublisher stages an owner-visible redacted review and publishes exactly the reviewed content.
 type PackPublisher interface {
 	Review(context.Context, Principal, string, string, map[string][]byte) (string, error)
@@ -169,6 +182,10 @@ type Deps struct {
 	Profiles      Profiles
 	// Sandbox runs the fixed static checks of heimdall_run_check through the runner. The tool exists only when it is set.
 	Sandbox ports.Sandbox
+	// Briefs adds the compiled brief to get_task. Without it, get_task falls to Cards.ForTask for personal_context.
+	Briefs Briefs
+	// Graph backs search_code and find_symbol. The tools exist only when it is set.
+	Graph CodeGraph
 }
 
 // Server answers MCP requests for the agents' tools.
@@ -185,6 +202,11 @@ type Server struct {
 	// job, so a task gets maxChecksPerTask of them (TECH_SPEC 14.1, "counts toward budget").
 	checkMu   sync.Mutex
 	checkRuns map[id.TaskID]int
+
+	// briefMu guards briefs, the last brief of each task. A cheap model can call get_task many times, and submit_review
+	// reads the obligation names from here. It is held in memory, so a restart only compiles again.
+	briefMu sync.Mutex
+	briefs  map[id.TaskID]heldBrief
 }
 
 // NewServer validates the dependencies and returns the server. A nil dependency is refused.
@@ -207,7 +229,7 @@ func NewServer(d Deps) (*Server, error) {
 	case d.Knowledge == nil:
 		return nil, errors.New("mcp server knowledge service must not be nil")
 	}
-	s := &Server{deps: d, progressLast: map[id.TaskID]time.Time{}, checkRuns: map[id.TaskID]int{}}
+	s := &Server{deps: d, progressLast: map[id.TaskID]time.Time{}, checkRuns: map[id.TaskID]int{}, briefs: map[id.TaskID]heldBrief{}}
 	tools, err := s.buildTools()
 	if err != nil {
 		return nil, fmt.Errorf("build mcp tools: %w", err)

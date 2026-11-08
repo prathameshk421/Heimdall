@@ -6,10 +6,13 @@
 //
 //   - GET /: the list of changes.
 //   - GET /changes/{id}: one change, with its gate, findings, reviewers, open questions and timeline.
+//   - GET /changes/{id}/report: the review report page, which says why the change can merge or not.
+//   - GET /changes/{id}/report.json: the json-render spec of that page, built from the log with no model.
 //   - GET /sse/changes/{id}: a server-sent event per new log event. The stream starts after the version named by
 //     the after query parameter or the Last-Event-ID header, whichever is higher. Without either it starts at
 //     version 1.
-//   - GET /assets/{name}: the embedded dashboard.css and dashboard.js.
+//   - GET /assets/{name}: the embedded dashboard.css and dashboard.js, and report.css and report.js, which
+//     web/review-report builds.
 //
 // # Invariants
 //
@@ -67,6 +70,10 @@ func staticFile(name string) (file, contentType string, ok bool) {
 		return "assets/dashboard.css", "text/css; charset=utf-8", true
 	case "dashboard.js":
 		return "assets/dashboard.js", "text/javascript; charset=utf-8", true
+	case "report.css":
+		return "assets/report.css", "text/css; charset=utf-8", true
+	case "report.js":
+		return "assets/report.js", "text/javascript; charset=utf-8", true
 	}
 	return "", "", false
 }
@@ -117,6 +124,8 @@ func Mount(next http.Handler, history appdashboard.History, logger *slog.Logger,
 	routes := http.NewServeMux()
 	routes.HandleFunc("GET /{$}", e.listChanges)
 	routes.HandleFunc("GET /changes/{id}", e.changeDetail)
+	routes.HandleFunc("GET /changes/{id}/report", e.reportPage)
+	routes.HandleFunc("GET /changes/{id}/report.json", e.reportSpec)
 	routes.HandleFunc("GET /sse/changes/{id}", e.stream)
 	routes.HandleFunc("GET /assets/{name}", e.asset)
 	return &mounted{routes: routes, next: next}, nil
@@ -219,6 +228,51 @@ func (e *edge) changeDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e.render(w, r, e.detail, newDetailView(d))
+}
+
+// reportPage serves the empty page that the report script fills. It reads the change first, so an unknown change is 404.
+func (e *edge) reportPage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := e.report(w, r); !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// A failed write means the client has gone away; there is no one left to tell.
+	_, _ = io.WriteString(w, reportHTML)
+}
+
+// reportSpec serves the json-render spec of the review report.
+func (e *edge) reportSpec(w http.ResponseWriter, r *http.Request) {
+	spec, ok := e.report(w, r)
+	if !ok {
+		return
+	}
+	raw, err := appdashboard.MarshalReport(spec)
+	if err != nil {
+		e.fail(w, r, "encode report", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeContent(w, r, "report.json", time.Time{}, bytes.NewReader(raw))
+}
+
+// report reads the report of the requested change, or answers the request itself.
+func (e *edge) report(w http.ResponseWriter, r *http.Request) (appdashboard.Spec, bool) {
+	cid, ok := changeID(r)
+	if !ok {
+		http.NotFound(w, r)
+		return appdashboard.Spec{}, false
+	}
+	spec, found, err := e.svc.Report(r.Context(), cid)
+	if err != nil {
+		e.fail(w, r, "read report", err)
+		return appdashboard.Spec{}, false
+	}
+	if !found {
+		http.NotFound(w, r)
+		return appdashboard.Spec{}, false
+	}
+	return spec, true
 }
 
 // stream sends one event for each log event after the resume version, and then one for each new event until the

@@ -22,7 +22,7 @@ trap cleanup EXIT
 mkdir -p "$work/secrets"
 chmod 700 "$work/secrets"
 printf '%s' 'test-only-postgres-password' >"$work/secrets/postgres_password"
-printf '%s' 'test-only-not-a-real-key' >"$work/secrets/openrouter_api_key"
+printf '%s' 'test-only-not-a-real-key' >"$work/secrets/deploy_api_key"
 chmod 600 "$work/secrets/"*
 cp "$here/heimdall.example.toml" "$work/heimdall.toml"
 

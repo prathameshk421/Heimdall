@@ -43,6 +43,18 @@ func TestReviewValidateRefusesWhatCannotBeJudged(t *testing.T) {
 		{"a duplicate file", "review.golden.json", func(r *finding.Review) { r.FilesReviewed = []string{"a.go", "a.go"} }, "files_reviewed[1]"},
 		{"no head sha", "review.golden.json", func(r *finding.Review) { r.HeadSHA = "" }, "head_sha"},
 		{"a bad finding", "review.golden.json", func(r *finding.Review) { r.Findings[0].Claim = "x" }, "findings[0].claim"},
+		{"a bad rule verdict", "review.golden.json", func(r *finding.Review) {
+			r.RuleChecks = []finding.RuleCheck{{Card: "refunds.md", Verdict: "maybe"}}
+		}, "rule_checks[0]"},
+		{"a blank rule card", "review.golden.json", func(r *finding.Review) {
+			r.RuleChecks = []finding.RuleCheck{{Card: " ", Verdict: finding.RuleHolds}}
+		}, "rule_checks[0].card"},
+		{"too many rule checks", "review.golden.json", func(r *finding.Review) {
+			r.RuleChecks = make([]finding.RuleCheck, 13)
+			for i := range r.RuleChecks {
+				r.RuleChecks[i] = finding.RuleCheck{Card: "a.md", Verdict: finding.RuleHolds}
+			}
+		}, "rule_checks has 13 entries, at most 12"},
 		{"too many findings", "review.golden.json", func(r *finding.Review) {
 			r.Findings = make([]finding.Input, 51)
 			for i := range r.Findings {
@@ -72,4 +84,15 @@ func TestReviewCoversReportsWhetherAFileWasReviewed(t *testing.T) {
 	r := goldenReview(t, "review.golden.json")
 	require.True(t, r.Reviewed("api/openapi.yaml"))
 	require.False(t, r.Reviewed("main.go"))
+}
+
+func TestCardEvidenceReadsTheCardAndTheFile(t *testing.T) {
+	name, file, ok := finding.CardEvidence("card:cap.md#internal/pay/refund.go")
+	require.True(t, ok)
+	require.Equal(t, "cap.md", name)
+	require.Equal(t, "internal/pay/refund.go", file)
+	for _, bad := range []string{"card:cap.md", "memory:abc#x.go", "card:#x.go", "card:cap.md#../x.go", "card:a/b.md#x.go", "card:cap.md#"} {
+		_, _, ok := finding.CardEvidence(bad)
+		require.False(t, ok, bad)
+	}
 }
