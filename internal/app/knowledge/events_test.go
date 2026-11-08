@@ -3,6 +3,7 @@ package knowledge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -156,4 +157,33 @@ func (redactingMemory) Redact(text string) (string, error) {
 
 func (m *memoryEpisodeQueue) DeferEpisode(context.Context, change.EffectKey, time.Time) error {
 	return nil
+}
+
+// failingTeams cannot read the policy of one change, as when its repository has no heimdall.yaml.
+type failingTeams struct{ broken id.ChangeID }
+
+func (f failingTeams) TeamsForEvent(_ context.Context, event change.Event, _ change.Repo, _ id.SHA, _ []string) ([]string, error) {
+	if event.ChangeID == f.broken {
+		return nil, errors.New("read workflow memory policy at base: not found")
+	}
+	return []string{"payments"}, nil
+}
+
+func TestBackfillOfOneBrokenChangeDoesNotKeepTheOthersOutOfMemory(t *testing.T) {
+	good := eventForMemory(t, change.EventDecisionRecorded, change.ActorHuman, `{"kind":"uphold","target":"F1","login":"alice","reason":"verified","source_ref":"PR-3"}`)
+	bad := good
+	bad.ID, bad.ChangeID = "11111111-1111-4111-8111-111111111111", "OLD-1"
+	store := &memoryHistory{events: map[id.ChangeID][]change.Event{"PAY-3": {good}, "OLD-1": {bad}}}
+	queue := &memoryEpisodeQueue{}
+	service, err := NewWorkflowMemory(queue, store, failingTeams{broken: "OLD-1"}, redactMemory{}, memoryClock{time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)}, emptyRooms{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := service.Backfill(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "OLD-1") {
+		t.Fatalf("the broken change must still be reported, got %v", err)
+	}
+	if stats.Queued != 1 || len(queue.episodes) != 1 || queue.episodes[0].GroupID != "payments" {
+		t.Fatalf("the healthy change must still be queued: %#v %#v", stats, queue.episodes)
+	}
 }

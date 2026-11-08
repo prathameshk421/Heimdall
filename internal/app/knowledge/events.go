@@ -113,43 +113,60 @@ func NewWorkflowMemory(queue EpisodeEnqueuer, history WorkflowHistory, scope Eve
 }
 
 // Backfill replays all persisted histories. Stable event/team keys make repeated and concurrent passes idempotent.
+// Each change is projected on its own: a change whose policy cannot be read is reported and skipped, so one old change
+// can never keep every later change out of memory. The returned error joins every change that failed.
 func (s *WorkflowMemory) Backfill(ctx context.Context) (WorkflowMemoryStats, error) {
 	ids, err := s.history.ChangeIDs(ctx)
 	if err != nil {
 		return WorkflowMemoryStats{}, fmt.Errorf("list workflow histories for memory backfill: %w", err)
 	}
 	stats := WorkflowMemoryStats{Changes: len(ids)}
+	var failed []error
 	for _, changeID := range ids {
-		events, err := s.history.Load(ctx, changeID)
-		if err != nil {
-			return stats, fmt.Errorf("load workflow history %s for memory backfill: %w", changeID, err)
+		if err := ctx.Err(); err != nil {
+			return stats, err
 		}
-		repo, base := eventRepositoryAndBase(events)
-		relatedActors := eventCandidateActors(events)
-		facts := FactsFromEvents(changeID, events)
-		for _, event := range events {
-			queued, err := s.ingest(ctx, event, repo, base, relatedActors, facts)
-			if err != nil {
-				return stats, fmt.Errorf("project workflow event %s to memory: %w", event.ID, err)
-			}
-			stats.Events++
-			if queued {
-				stats.Queued++
-			}
-		}
-		if terminal := terminalEvent(events); terminal != nil {
-			if roomID := eventRoomID(events); roomID != "" {
-				queued, err := s.digest(ctx, *terminal, roomID, repo, base, relatedActors)
-				if err != nil {
-					return stats, fmt.Errorf("digest completed change %s: %w", changeID, err)
-				}
-				if queued {
-					stats.Queued++
-				}
-			}
+		if err := s.backfillChange(ctx, changeID, &stats); err != nil {
+			failed = append(failed, fmt.Errorf("change %s: %w", changeID, err))
 		}
 	}
-	return stats, nil
+	return stats, errors.Join(failed...)
+}
+
+func (s *WorkflowMemory) backfillChange(ctx context.Context, changeID id.ChangeID, stats *WorkflowMemoryStats) error {
+	events, err := s.history.Load(ctx, changeID)
+	if err != nil {
+		return fmt.Errorf("load workflow history for memory backfill: %w", err)
+	}
+	repo, base := eventRepositoryAndBase(events)
+	relatedActors := eventCandidateActors(events)
+	facts := FactsFromEvents(changeID, events)
+	for _, event := range events {
+		queued, err := s.ingest(ctx, event, repo, base, relatedActors, facts)
+		if err != nil {
+			return fmt.Errorf("project workflow event %s to memory: %w", event.ID, err)
+		}
+		stats.Events++
+		if queued {
+			stats.Queued++
+		}
+	}
+	terminal := terminalEvent(events)
+	if terminal == nil {
+		return nil
+	}
+	roomID := eventRoomID(events)
+	if roomID == "" {
+		return nil
+	}
+	queued, err := s.digest(ctx, *terminal, roomID, repo, base, relatedActors)
+	if err != nil {
+		return fmt.Errorf("digest completed change: %w", err)
+	}
+	if queued {
+		stats.Queued++
+	}
+	return nil
 }
 
 // Ingest projects a single event when it carries a durable human decision or an applied resolver verdict.
