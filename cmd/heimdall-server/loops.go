@@ -344,8 +344,42 @@ func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
 	if a.workflowMemory != nil {
 		runs = append(runs, a.workflowMemoryLoop)
 	}
+	if a.agentSync != nil {
+		runs = append(runs, a.agentSyncLoop)
+	}
 	if a.proposer != nil {
 		runs = append(runs, a.cardProposalLoop)
 	}
 	return runs
+}
+
+const (
+	// agentSyncEvery is the wait between attempts to sync agent definitions. Switch is often not reachable for the
+	// first seconds after a restart, because its port forward starts with the server.
+	agentSyncEvery = 10 * time.Second
+	// agentSyncAttempts bounds the retries, so a lasting Switch fault ends in one clear error instead of a stream.
+	agentSyncAttempts = 30
+	// agentSyncTimeout bounds one attempt.
+	agentSyncTimeout = 30 * time.Second
+)
+
+// agentSyncLoop moves the role agents in Switch to the configured model once after startup, retrying while Switch is
+// unreachable. Until it succeeds the agents keep their old model; the server works either way.
+func (a *app) agentSyncLoop(ctx context.Context) {
+	var err error
+	for attempt := 1; attempt <= agentSyncAttempts && ctx.Err() == nil; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, agentSyncTimeout)
+		err = a.agentSync(attemptCtx)
+		cancel()
+		if err == nil {
+			a.logger.InfoContext(ctx, "agent definitions synced with Switch", "attempt", attempt)
+			return
+		}
+		if waitErr := clock.Wait(ctx, agentSyncEvery); waitErr != nil {
+			return
+		}
+	}
+	if ctx.Err() == nil {
+		a.logger.ErrorContext(ctx, "agent definitions not synced with Switch; agents keep their current model", "attempts", agentSyncAttempts, "error", err)
+	}
 }

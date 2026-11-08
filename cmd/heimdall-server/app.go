@@ -180,25 +180,27 @@ type app struct {
 	comments          commentPoller
 	mcpHandler        http.Handler
 	agentSetupHandler http.Handler
-	operatorAnswer    http.Handler
-	operatorReject    http.Handler
-	operatorRoom      http.Handler
-	narrator          *announce.Narrator
-	nudger            *taskNudger
-	timers            *workflowTimers
-	packUpload        http.Handler
-	cardsUpload       http.Handler
-	commands          *commandRuntime
-	workflowMemory    *knowledge.WorkflowMemory
-	proposer          *cardProposer
-	retention         knowledgeRetention
-	episodeWorker     episodeDrainer
-	blobs             io.Closer
-	logger            *slog.Logger
-	clock             ports.Clock
-	pollEvery         time.Duration
-	syncEvery         time.Duration
-	drainTick         time.Duration
+	// agentSync moves the role agents in Switch to the configured model. It is nil without an agent runtime.
+	agentSync      func(context.Context) error
+	operatorAnswer http.Handler
+	operatorReject http.Handler
+	operatorRoom   http.Handler
+	narrator       *announce.Narrator
+	nudger         *taskNudger
+	timers         *workflowTimers
+	packUpload     http.Handler
+	cardsUpload    http.Handler
+	commands       *commandRuntime
+	workflowMemory *knowledge.WorkflowMemory
+	proposer       *cardProposer
+	retention      knowledgeRetention
+	episodeWorker  episodeDrainer
+	blobs          io.Closer
+	logger         *slog.Logger
+	clock          ports.Clock
+	pollEvery      time.Duration
+	syncEvery      time.Duration
+	drainTick      time.Duration
 }
 
 // poller is the part of trigger.Poller the loop uses. A test supplies a fake one.
@@ -490,14 +492,13 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	}
 	store := postgres.NewStore(pool)
 	var setupHandler http.Handler
+	var syncAgents func(context.Context) error
 	if ad.agentSetupHandler != nil {
-		var syncAgents func(context.Context) error
 		var err error
 		setupHandler, syncAgents, err = ad.agentSetupHandler(store)
 		if err != nil {
 			return nil, err
 		}
-		syncAgentDefinitions(ctx, d.logger, syncAgents)
 	}
 	gen := ids.New()
 	wf, steps, err := sliceSteps(ad.agents, gen, clk)
@@ -520,6 +521,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 		_ = blobStore.Close()
 		return nil, err
 	}
+	a.agentSync = syncAgents
 	return a, nil
 }
 
@@ -951,19 +953,4 @@ func inlineOf(vcs any) announce.InlineComments {
 		return w
 	}
 	return nil
-}
-
-// agentSyncTimeout bounds the startup sync of agent definitions, so a slow Switch cannot hold the server back.
-const agentSyncTimeout = 30 * time.Second
-
-// syncAgentDefinitions moves the role agents in Switch to the configured model at startup. A failure is logged and the
-// server starts anyway: the agents keep their old model until the next start.
-func syncAgentDefinitions(ctx context.Context, logger *slog.Logger, sync func(context.Context) error) {
-	ctx, cancel := context.WithTimeout(ctx, agentSyncTimeout)
-	defer cancel()
-	if err := sync(ctx); err != nil {
-		logger.ErrorContext(ctx, "agent definitions not synced with Switch; agents keep their current model", "error", err)
-		return
-	}
-	logger.InfoContext(ctx, "agent definitions synced with Switch")
 }
