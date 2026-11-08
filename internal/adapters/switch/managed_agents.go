@@ -174,3 +174,31 @@ func (c *Client) setManagedAgentModel(ctx context.Context, agentID, model string
 	}
 	return nil
 }
+
+// SetManagedAgentModel moves an existing managed agent to spec.Model when its model differs. The agent must have the
+// spec's name, provider and machine; its other settings may differ, because people make and edit agents by hand.
+func (c *Client) SetManagedAgentModel(ctx context.Context, spec ports.ManagedAgentSpec) error {
+	if err := spec.Agent.Validate(); err != nil {
+		return fmt.Errorf("switch set managed agent model: %w", err)
+	}
+	if spec.Model == "" {
+		return errors.New("switch set managed agent model: model is required")
+	}
+	var agents []managedAgentSummary
+	if err := c.operation(ctx, "list_managed_agents", map[string]any{}, &agents); err != nil {
+		return err
+	}
+	for _, current := range agents {
+		if current.Name != string(spec.Agent.Name) {
+			continue
+		}
+		if current.Provider != spec.Provider || (current.Machine.ID != spec.Machine && current.Machine.Name != spec.Machine) {
+			return fmt.Errorf("switch managed agent %q runs another provider or machine: %w", current.Name, ports.ErrConflict)
+		}
+		if current.Model == spec.Model {
+			return nil
+		}
+		return c.setManagedAgentModel(ctx, current.ID, spec.Model)
+	}
+	return fmt.Errorf("switch managed agent %q: %w", spec.Agent.Name, ports.ErrNotFound)
+}

@@ -132,3 +132,29 @@ func TestEnsureDoesNotTouchTheModelWhenItAlreadyMatches(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, f.opCalls("update_agent_detail"))
 }
+
+func TestSetModelReachesAnAgentMadeByHandAndChangesOnlyItsModel(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	f.ops["list_managed_agents"] = func(map[string]any) (int, any) {
+		return http.StatusOK, []any{map[string]any{
+			"agent_id": "managed-9", "name": "reviewer-1", "description": "made by hand", "directory": "/somewhere",
+			"provider": "opencode", "model": "openrouter/deepseek/deepseek-v4-flash",
+			"auto_mode": true, "auto_approve": false, "machine": map[string]any{"id": "machine-1", "name": "VM"},
+		}}
+	}
+	f.ops["update_agent_detail"] = func(map[string]any) (int, any) { return http.StatusOK, map[string]any{} }
+	spec := ports.ManagedAgentSpec{
+		Agent: ports.AgentRef{Name: id.AgentName("reviewer-1"), Role: workflow.RoleReviewer}, Description: "Heimdall reviewer-1",
+		Machine: "machine-1", Provider: "opencode", Model: "deploy/deepseek-ai/deepseek-v4.1-flash-1017",
+	}
+	require.NoError(t, c.SetManagedAgentModel(context.Background(), spec))
+	calls := f.opCalls("update_agent_detail")
+	require.Len(t, calls, 1)
+	require.Equal(t, map[string]any{"agent_id": "managed-9", "model": "deploy/deepseek-ai/deepseek-v4.1-flash-1017"}, calls[0])
+
+	spec.Machine = "other-machine"
+	require.ErrorIs(t, c.SetManagedAgentModel(context.Background(), spec), ports.ErrConflict, "never move an agent on another machine")
+	spec.Agent.Name = "reviewer-9"
+	require.ErrorIs(t, c.SetManagedAgentModel(context.Background(), spec), ports.ErrNotFound)
+}

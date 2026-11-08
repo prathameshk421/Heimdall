@@ -212,13 +212,14 @@ func (s *Service) Activate(ctx context.Context, receipt Receipt) error {
 	return nil
 }
 
-// SyncDefinitions brings the Switch definition of every configured agent in line with the config, such as a new
-// model, and creates none that the setup handoff has not created. It reads no token and starts no agent. The server runs
-// it at startup, so a model change in heimdall.toml reaches agents that already exist.
+// SyncDefinitions moves every configured agent that already exists in Switch to the configured model. It creates no
+// agent, changes nothing but the model, reads no token and starts nothing. The server runs it at startup, so a model
+// change in heimdall.toml reaches the agents. An agent that is not in Switch yet is left to the setup handoff.
 func (s *Service) SyncDefinitions(ctx context.Context) error {
 	var errs []error
 	for _, a := range s.cfg.Agents {
-		if _, err := s.cfg.Provisioner.EnsureManagedAgent(ctx, s.specOf(a)); err != nil {
+		err := s.cfg.Provisioner.SetManagedAgentModel(ctx, s.specOf(a))
+		if err != nil && !errors.Is(err, ports.ErrNotFound) {
 			errs = append(errs, fmt.Errorf("agent %q: %w", a.Name, err))
 		}
 	}
