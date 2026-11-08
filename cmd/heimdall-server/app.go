@@ -176,10 +176,12 @@ type endpoints struct {
 
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
 type app struct {
-	pool              *pgxpool.Pool
-	pollers           []poller
-	drainer           drainer
-	syncer            syncer
+	pool    *pgxpool.Pool
+	pollers []poller
+	drainer drainer
+	syncer  syncer
+	// gateRefresher re-evaluates the gate after reviews, findings, verdicts, decisions and approvals.
+	gateRefresher     *gateuse.Refresher
 	roomStream        roomStreamRunner
 	comments          commentPoller
 	mcpHandler        http.Handler
@@ -611,7 +613,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	sync, intakeCase, err := assembleSyncer(ad, store, gen, clk)
+	sync, intakeCase, gateRefresher, err := assembleSyncer(ad, store, gen, clk)
 	if err != nil {
 		return nil, err
 	}
@@ -637,7 +639,7 @@ func assembleWithBlobs(
 	}
 	return &app{
 		narrator: narrator, nudger: newTaskNudger(ad, store, store, pool, clk), timers: &workflowTimers{eng: eng, rooms: store, clock: clk, fired: map[string]bool{}},
-		pool: pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
+		pool: pool, pollers: pollers, drainer: box, syncer: sync, gateRefresher: gateRefresher, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
@@ -812,14 +814,14 @@ func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports
 }
 
 // assembleSyncer wires the policy decoder, gate source, evaluator, intake and PR syncer.
-func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, error) {
+func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, *gateuse.Refresher, error) {
 	gateSrc, err := gateuse.NewSource(gateuse.SourceConfig{
 		PRs:    ad.vcs,
 		Code:   ad.vcs,
 		Decode: policyyaml.Decode,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build gate source: %w", err)
+		return nil, nil, nil, fmt.Errorf("build gate source: %w", err)
 	}
 	gateEval, err := gateuse.New(gateuse.Config{
 		Events: store,
@@ -828,7 +830,7 @@ func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports
 		IDs:    gen,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build gate evaluator: %w", err)
+		return nil, nil, nil, fmt.Errorf("build gate evaluator: %w", err)
 	}
 	intakeCase, err := intake.New(intake.Config{
 		Events: store,
@@ -839,7 +841,7 @@ func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports
 		Policy: policyyaml.Decode,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build intake: %w", err)
+		return nil, nil, nil, fmt.Errorf("build intake: %w", err)
 	}
 	sync, err := prsync.New(prsync.Config{
 		Repos:   ad.repos,
@@ -854,9 +856,13 @@ func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports
 		IDs:     gen,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build pr syncer: %w", err)
+		return nil, nil, nil, fmt.Errorf("build pr syncer: %w", err)
 	}
-	return sync, intakeCase, nil
+	refresher, err := gateuse.NewRefresher(store, gateRefreshCursor{table: store}, gateEval)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("build gate refresher: %w", err)
+	}
+	return sync, intakeCase, refresher, nil
 }
 
 // workflowAgentNames lists the configured test author, reviewers and resolver, so a change room is made with them in it.

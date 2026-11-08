@@ -178,3 +178,31 @@ func (c workflowCursor) SaveWorkflowCursor(ctx context.Context, sequence int64) 
 var _ knowledge.WorkflowScopes = workflowScopeResolver{}
 var _ knowledge.WorkflowModelResolver = workflowScopeResolver{}
 var _ knowledge.WorkflowCursor = workflowCursor{}
+
+// gateRefreshCursor stores how far the gate refresher has read the global event log.
+type gateRefreshCursor struct{ table cursorTable }
+
+// gateRefreshSource is the cursor key of the gate refresher.
+const gateRefreshSource = "gate:refresh"
+
+func (c gateRefreshCursor) LoadRefreshCursor(ctx context.Context) (int64, error) {
+	value, err := c.table.GetCursor(ctx, gateRefreshSource)
+	if err != nil && !errors.Is(err, ports.ErrNotFound) {
+		return 0, fmt.Errorf("load gate refresh sequence: %w", err)
+	}
+	if value == "" {
+		return 0, nil
+	}
+	var seq int64
+	if _, err := fmt.Sscan(value, &seq); err != nil || seq < 0 {
+		return 0, fmt.Errorf("gate refresh sequence %q is invalid", value)
+	}
+	return seq, nil
+}
+
+func (c gateRefreshCursor) SaveRefreshCursor(ctx context.Context, sequence int64) error {
+	if err := c.table.SetCursor(ctx, gateRefreshSource, fmt.Sprint(sequence)); err != nil {
+		return fmt.Errorf("save gate refresh sequence: %w", err)
+	}
+	return nil
+}

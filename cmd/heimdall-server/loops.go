@@ -347,6 +347,9 @@ func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
 	if a.agentSync != nil {
 		runs = append(runs, a.agentSyncLoop)
 	}
+	if a.gateRefresher != nil {
+		runs = append(runs, a.gateRefreshLoop)
+	}
 	if a.proposer != nil {
 		runs = append(runs, a.cardProposalLoop)
 	}
@@ -381,5 +384,23 @@ func (a *app) agentSyncLoop(ctx context.Context) {
 	}
 	if ctx.Err() == nil {
 		a.logger.ErrorContext(ctx, "agent definitions not synced with Switch; agents keep their current model", "attempts", agentSyncAttempts, "error", err)
+	}
+}
+
+// gateRefreshEvery is how often the gate is re-evaluated for changes with new reviews, findings or decisions.
+const gateRefreshEvery = 5 * time.Second
+
+// gateRefreshLoop keeps each open change's gate in step with its reviews, findings, verdicts, decisions and approvals,
+// which the PR syncer does not see.
+func (a *app) gateRefreshLoop(ctx context.Context) {
+	for ctx.Err() == nil {
+		if n, err := a.gateRefresher.RunOnce(ctx); err != nil && ctx.Err() == nil {
+			a.logger.ErrorContext(ctx, "gate refresh failed for some changes; the next event retries them", "error", err)
+		} else if err == nil && n > 0 {
+			a.logger.InfoContext(ctx, "gate re-evaluated", "changes", n)
+		}
+		if err := clock.Wait(ctx, gateRefreshEvery); err != nil {
+			return
+		}
 	}
 }
