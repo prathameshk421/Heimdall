@@ -322,6 +322,7 @@ func eventRepositoryAndBase(events []change.Event) (change.Repo, id.SHA) {
 			change.EventPRClosed, change.EventSlopEvaluated, change.EventReviewersPicked,
 			change.EventReviewSubmitted, change.EventReviewUnavailable, change.EventReviewWaived,
 			change.EventFindingFiled, change.EventFindingVerified, change.EventFindingStateChanged,
+			change.EventFindingRecheckRequested,
 			change.EventChallengeFiled, change.EventCaseOpened, change.EventVerdictSubmitted,
 			change.EventVerdictApplied, change.EventVerdictEscalated, change.EventDecisionRecorded,
 			change.EventApprovalRecorded, change.EventApprovalInvalidated, change.EventCIReported,
@@ -351,7 +352,7 @@ func workflowMemoryStatus(event change.Event) (ports.EpisodeStatus, bool) {
 		change.EventPROpened, change.EventPRPushed, change.EventPRLinked, change.EventPRClosed,
 		change.EventSlopEvaluated, change.EventReviewersPicked, change.EventReviewSubmitted,
 		change.EventReviewUnavailable, change.EventReviewWaived, change.EventFindingFiled,
-		change.EventFindingVerified, change.EventChallengeFiled,
+		change.EventFindingVerified, change.EventFindingRecheckRequested, change.EventChallengeFiled,
 		change.EventCaseOpened, change.EventVerdictSubmitted, change.EventVerdictEscalated,
 		change.EventApprovalRecorded, change.EventApprovalInvalidated, change.EventCIReported,
 		change.EventGateEvaluated, change.EventChangeRejected, change.EventChangeMerged:

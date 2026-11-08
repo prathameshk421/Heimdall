@@ -222,7 +222,8 @@ func workflowTrust(event change.Event) (ports.EpisodeStatus, bool, error) {
 		change.EventTestsRejected, change.EventTestsCommitted, change.EventTestsApproved, change.EventPROpened,
 		change.EventPRPushed, change.EventPRLinked, change.EventPRClosed, change.EventSlopEvaluated,
 		change.EventReviewersPicked, change.EventReviewSubmitted, change.EventReviewUnavailable, change.EventReviewWaived,
-		change.EventFindingFiled, change.EventFindingVerified, change.EventChallengeFiled, change.EventCaseOpened,
+		change.EventFindingFiled, change.EventFindingVerified, change.EventFindingRecheckRequested,
+		change.EventChallengeFiled, change.EventCaseOpened,
 		change.EventVerdictSubmitted, change.EventVerdictEscalated, change.EventApprovalRecorded,
 		change.EventApprovalInvalidated, change.EventCIReported, change.EventGateEvaluated, change.EventTaskProgress,
 		change.EventStepResumed:

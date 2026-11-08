@@ -281,3 +281,31 @@ func TestVerifyEvidenceMissingDepsRefused(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing")
 }
+
+func TestVerifyEvidenceRunsAgainAfterARecheckAndSkipsOnceTheRecheckHasAResult(t *testing.T) {
+	ctx := context.Background()
+	unverified := change.Event{
+		ID: "ev-unv", ChangeID: veTicket, Version: 4, Type: change.EventFindingStateChanged,
+		Payload: json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","tier":"E4","severity":"high","state":"unverified","by":"heimdall"}`),
+	}
+	recheck := change.Event{
+		ID: "ev-recheck", ChangeID: veTicket, Version: 5, Type: change.EventFindingRecheckRequested,
+		Payload: json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","reason":"the runner was busy","by":"operator"}`),
+	}
+	sandbox := &overlaySandboxFake{res: ports.SandboxResult{Failed: 1, Tests: []ports.TestResult{{Name: veTestName, Outcome: ports.OutcomeFailure}}}}
+	ingest := &fakeIngest{}
+	store := &fakeStore{events: append(sampleChangeEvents(), unverified, recheck)}
+	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
+		Source: &fakeSource{}, Sandbox: sandbox, Store: store, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, exec.Execute(ctx, sampleReproEffect()))
+	require.Len(t, sandbox.runs, 1, "a recheck lifts the earlier result on the same head")
+	require.Len(t, ingest.written, 1)
+	require.Equal(t, change.EventFindingVerified, ingest.written[0].Type, "the repro fails on an assertion, so the finding is E1 again")
+
+	store.events = append(store.events, ingest.written[0])
+	require.NoError(t, exec.Execute(ctx, sampleReproEffect()))
+	require.Len(t, sandbox.runs, 1, "a replay after the recheck's result runs nothing")
+}

@@ -247,7 +247,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	require.Contains(t, brokenSubmit.Text, "is not valid Go", "the agent sees what to fix")
 
 	submission := map[string]any{
-		"files":               []map[string]string{{"path": "tests/heimdall/KAN-1/refund_test.go", "content": "package tests\n\nimport \"testing\"\n\nfunc TestRefund(t *testing.T) { t.Fatal(\"no refund endpoint\") }\n"}},
+		"files":               []map[string]string{{"path": "tests/heimdall/KAN-1/refund_test.go", "content": refundSeamTest}},
 		"acceptance_criteria": map[string][]string{"AC1": {"TestRefund"}},
 	}
 	firstSubmit := callComponentMCPTool(t, ts, authorToken, 2, "submit_tests", submission)
@@ -407,6 +407,23 @@ func eventTypeCount(events []change.Event, typ change.EventType) int {
 	}
 	return count
 }
+
+// refundSeamTest reaches the product, so the placeholder rule (a test that imports only the standard library cannot
+// test the product) lets it through to the red-first runs.
+const refundSeamTest = `package tests
+
+import (
+	"testing"
+
+	"github.com/aarush323/heimdall-fixture-pay/internal/refunds"
+)
+
+func TestRefund(t *testing.T) {
+	if _, err := refunds.Refund("ch_1", 500); err != nil {
+		t.Fatal(err)
+	}
+}
+`
 
 type jiraJourneySource struct{}
 

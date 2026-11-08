@@ -681,3 +681,13 @@ Bugs found and fixed: (1) `verify_evidence` ran under the 20 s default effect ti
 - Fix: `gateuse.Refresher` reads the global event log every 5 s (cursor `gate:refresh`). It evaluates each change with a review, finding, verdict, decision, approval, CI or tests event.
 - Evidence: `make fast` green (4195 tests). Deployed to the VM; log `gate re-evaluated changes=1`. `/changes/KAN-23/report.json` verdict is `blocked` with reasons "1 blocking finding(s) are open: F1" and "no approval has been recorded". The stale reason is gone.
 - Not verified: a gate move after a fresh Slack decision on a new change.
+
+### Open items closed (Nov 8)
+
+- **Outbox backoff:** `Fail` now caps the delay at 10 min with plus or minus 20 percent jitter (TECH_SPEC 2.4). The 3 outbox component tests check the delay instead of expecting a claim at once.
+- **Server component tests:** `TestMergeGateEndToEnd` matches the gate table rows (check (b) passed on any summary before). The MCP journey fixture imports the product, so the placeholder rule lets it through.
+- **Script tests:** the temp folder is resolved (`/var` is `/private/var` on macOS), and the recovery cases fake `rsync` (macOS openrsync has no `--chmod`). 63 of 63 pass.
+- **Recheck:** `finding.recheck_requested` and `POST /admin/recheck` (coordinator key) repeat one finding's evidence on the head. The executor counts only results after the request. Deployed; the route answers 401 without the key.
+- **Evidence:** `make fast` 4223 tests, 0 lint issues. `make race` 4321 tests, 0 failures. `scripts-test` 63/63. `lint-selftest`, `harness-check`, `vuln` pass.
+- **Not done, needs the owner (R2):** (1) `harness-test` 2 of 133: the docker mount rule in `pre-bash-guard.sh` uses `(^|...)?`, which BSD grep never matches, so `-v /:/host` passes on macOS. Proposed pattern: `(-v|--volume|--mount)[[:space:]=]+([^[:space:]]*[=,])?(/[:,]|/$|/[[:space:]]|~|\$HOME|/home/|/root|/Users/|[^[:space:]]*\.ssh)`. (2) `secrets`: 53 gitleaks hits, all fake values in `_test.go` files; their fingerprints need to go into `.gitleaksignore`.
+- **Not verified:** the KAN-23 rechecks of F4, F5, F8 and F9. They need the coordinator key, which an agent does not read (R8).

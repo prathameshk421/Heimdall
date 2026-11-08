@@ -122,6 +122,7 @@ func main() {
 func mountOperator(mux *http.ServeMux, a *app) {
 	for path, h := range map[string]http.Handler{
 		"/admin/answer": a.operatorAnswer, "/admin/rooms": a.operatorRoom, "/admin/reject": a.operatorReject,
+		"/admin/recheck": a.operatorRecheck,
 	} {
 		if h != nil {
 			mux.Handle(path, h)

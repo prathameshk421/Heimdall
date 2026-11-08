@@ -168,6 +168,26 @@ type FindingStateChanged FindingRecord
 // Validate returns every problem with the payload.
 func (p FindingStateChanged) Validate() error { return FindingRecord(p).Validate() }
 
+// FindingRecheckRequested is the payload of finding.recheck_requested: a person asked the server to repeat the
+// evidence of one finding on the current head. The next verification result replaces the earlier one.
+type FindingRecheckRequested struct {
+	FindingID id.FindingID  `json:"finding_id"`
+	Ref       id.FindingRef `json:"ref"`
+	Reason    string        `json:"reason"`
+	By        ActorID       `json:"by"`
+}
+
+// Validate returns every problem with the payload.
+func (p FindingRecheckRequested) Validate() error {
+	var v problems
+	_, err := id.ParseFindingID(string(p.FindingID))
+	v.add("finding_id", err)
+	v.add("ref", checkFindingRef(p.Ref))
+	v.add("reason", checkText(p.Reason))
+	v.add("by", checkActor(p.By))
+	return v.join()
+}
+
 // checkFindingRef requires a finding name such as F3 (a number from 1).
 func checkFindingRef(r id.FindingRef) error {
 	_, err := id.ParseFindingRef(r.String())
