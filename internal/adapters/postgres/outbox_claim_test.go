@@ -175,7 +175,7 @@ func TestOutboxLease(t *testing.T) {
 		require.Empty(t, got)
 	})
 
-	t.Run("fail clears the lease, keeps the row pending, and the row is claimable at once", func(t *testing.T) {
+	t.Run("fail keeps the row pending and holds it back about 5 s, then it is claimable", func(t *testing.T) {
 		db := srv.database(ctx, t)
 		s := NewStore(db.pool)
 		fx := appendOne(ctx, t, s, 1, "fail")
@@ -184,11 +184,18 @@ func TestOutboxLease(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, s.Fail(ctx, fx.Key, "upstream 503"))
 		require.Equal(t, int64(1), countRows(ctx, t, db.pool,
-			"SELECT count(*) FROM outbox WHERE effect_key = $1 AND claimed_until IS NULL", string(fx.Key)))
+			`SELECT count(*) FROM outbox WHERE effect_key = $1
+				AND claimed_until BETWEEN now() + interval '3900 milliseconds' AND now() + interval '6100 milliseconds'`,
+			string(fx.Key)), "the first retry waits 5 s, plus or minus 20 percent")
 
+		early, err := s.Claim(ctx, 1, claimLong)
+		require.NoError(t, err)
+		require.Empty(t, early, "a failed effect is not retried before its delay")
+
+		expireLease(ctx, t, db.pool, fx.Key)
 		got, err := s.Claim(ctx, 1, claimLong)
 		require.NoError(t, err)
-		require.Equal(t, []change.EffectKey{fx.Key}, keysOf(got), "a failed effect is retried without waiting for the lease")
+		require.Equal(t, []change.EffectKey{fx.Key}, keysOf(got), "a failed effect is retried once its delay has passed")
 		require.Equal(t, int64(1), countRows(ctx, t, db.pool, "SELECT attempts FROM outbox WHERE effect_key = $1", string(fx.Key)))
 	})
 
@@ -210,6 +217,36 @@ func TestOutboxLease(t *testing.T) {
 		got, err := s.Claim(bounded, 10, claimLong)
 		require.NoError(t, err, "the claim waited on the locked row")
 		require.Equal(t, []change.EffectKey{free.Key}, keysOf(got))
+	})
+
+	t.Run("the retry delay doubles and never passes 10 minutes", func(t *testing.T) {
+		db := srv.database(ctx, t)
+		s := NewStore(db.pool)
+		fx := appendOne(ctx, t, s, 1, "cap")
+
+		_, err := db.pool.Exec(ctx, "UPDATE outbox SET attempts = 2 WHERE effect_key = $1", string(fx.Key))
+		require.NoError(t, err)
+		require.NoError(t, s.Fail(ctx, fx.Key, "third failure"))
+		require.Equal(t, int64(1), countRows(ctx, t, db.pool,
+			`SELECT count(*) FROM outbox WHERE effect_key = $1
+				AND claimed_until BETWEEN now() + interval '15900 milliseconds' AND now() + interval '24100 milliseconds'`,
+			string(fx.Key)), "after two earlier failures the delay is 20 s, plus or minus 20 percent")
+
+		_, err = db.pool.Exec(ctx, "UPDATE outbox SET attempts = 6 WHERE effect_key = $1", string(fx.Key))
+		require.NoError(t, err)
+		require.NoError(t, s.Fail(ctx, fx.Key, "seventh failure"))
+		require.Equal(t, int64(1), countRows(ctx, t, db.pool,
+			`SELECT count(*) FROM outbox WHERE effect_key = $1
+				AND claimed_until BETWEEN now() + interval '256 seconds' AND now() + interval '10 minutes'`,
+			string(fx.Key)), "5 s doubled six times is 320 s, plus or minus 20 percent, under the cap")
+
+		_, err = db.pool.Exec(ctx, "UPDATE outbox SET attempts = 20 WHERE effect_key = $1", string(fx.Key))
+		require.NoError(t, err)
+		require.NoError(t, s.Fail(ctx, fx.Key, "late failure"))
+		require.Equal(t, int64(1), countRows(ctx, t, db.pool,
+			`SELECT count(*) FROM outbox WHERE effect_key = $1
+				AND claimed_until BETWEEN now() + interval '599 seconds' AND now() + interval '10 minutes'`,
+			string(fx.Key)), "the delay stops at 10 minutes")
 	})
 
 	t.Run("a failure for an unknown effect is not found", func(t *testing.T) {
@@ -285,7 +322,7 @@ func TestOutboxStart(t *testing.T) {
 		require.ErrorIs(t, s.Start(ctx, "no:such:effect"), ports.ErrNotFound)
 	})
 
-	t.Run("fail after start clears the mark, so the effect is claimable at once", func(t *testing.T) {
+	t.Run("fail after start clears the mark, so the effect is claimable once its delay passes", func(t *testing.T) {
 		db := srv.database(ctx, t)
 		s := NewStore(db.pool)
 		fx := appendOne(ctx, t, s, 1, "retry")
@@ -297,6 +334,7 @@ func TestOutboxStart(t *testing.T) {
 		require.Equal(t, int64(0), countRows(ctx, t, db.pool, "SELECT count(*) FROM outbox_in_doubt"),
 			"a reported failure is not in doubt")
 
+		expireLease(ctx, t, db.pool, fx.Key)
 		got, err := s.Claim(ctx, 1, claimLong)
 		require.NoError(t, err)
 		require.Equal(t, []change.EffectKey{fx.Key}, keysOf(got))
@@ -325,8 +363,11 @@ func TestOutboxDeadLetter(t *testing.T) {
 	s := NewStore(db.pool)
 	fx := appendOne(ctx, t, s, 1, "dead")
 
-	// Seven failed claims: each attempt is still claimable, and the effect stays pending.
+	// Seven failed claims: each attempt is claimable once its delay passes, and the effect stays pending.
 	for i := 1; i <= 7; i++ {
+		if i > 1 {
+			expireLease(ctx, t, db.pool, fx.Key)
+		}
 		got, err := s.Claim(ctx, 1, claimLong)
 		require.NoError(t, err)
 		require.Equal(t, []change.EffectKey{fx.Key}, keysOf(got), "attempt %d is still claimable", i)
@@ -335,6 +376,7 @@ func TestOutboxDeadLetter(t *testing.T) {
 	require.Len(t, pendingOf(ctx, t, s), 1, "seven failures leave the effect pending")
 
 	// The eighth failure dead-letters it, and Claim never returns it again.
+	expireLease(ctx, t, db.pool, fx.Key)
 	got, err := s.Claim(ctx, 1, claimLong)
 	require.NoError(t, err)
 	require.Equal(t, []change.EffectKey{fx.Key}, keysOf(got))

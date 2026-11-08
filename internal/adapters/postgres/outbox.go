@@ -86,14 +86,17 @@ func (s *Store) Done(ctx context.Context, key change.EffectKey) error {
 	return nil
 }
 
-// Fail records one failed attempt, its reason, and releases the lease, so the effect is claimable again at once. It
+// Fail records one failed attempt and its reason, and holds the effect back before its next try (TECH_SPEC 2.4): the
+// delay is 5 s doubled for each earlier failure, with jitter of plus or minus 20 percent, and never more than 10 min.
+// Without the delay, eight attempts went in seconds during an upstream outage and the effect dead-lettered. It
 // also clears the start mark: a reported failure means the action did not happen, so the retry is not in doubt.
 // A failure reported after the effect is done is refused, because it would contradict a performed effect; the
 // drainer must not report both.
 func (s *Store) Fail(ctx context.Context, key change.EffectKey, reason string) error {
 	tag, err := s.pool.Exec(ctx,
 		`UPDATE outbox SET attempts = attempts + 1, last_error = $2, started_at = NULL,
-			claimed_until = now() + interval '5 seconds' * power(2, attempts)
+			claimed_until = now() + LEAST(interval '10 minutes',
+				interval '5 seconds' * power(2, attempts) * (0.8 + 0.4 * random()))
 		WHERE effect_key = $1 AND done_at IS NULL`,
 		string(key), reason)
 	if err != nil {
