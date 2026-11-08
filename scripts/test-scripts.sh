@@ -6,7 +6,8 @@ export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"
 fail=0; total=0
 check() { total=$((total + 1)); if [ "$2" -ne 0 ]; then echo "FAIL: $1"; fail=$((fail + 1)); fi; }
 
-work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+# Resolve symlinks (macOS /var is /private/var): the scripts under test compare paths after pwd -P.
+work=$(cd "$(mktemp -d)" && pwd -P); trap 'rm -rf "$work"' EXIT
 
 # --- deploy guard and dry-run plan: repeatable and never contacts a host
 out=$(cd "$root" && DEPLOY_DRY_RUN=1 bash scripts/deploy.sh 2>&1); code=$?
@@ -209,7 +210,9 @@ cat > "$work/ops-bin/sudo" <<'SH'
 if [[ "${1:-}" == -u ]]; then shift 2; fi
 exec "$@"
 SH
-chmod +x "$work/ops-bin/docker" "$work/ops-bin/systemctl" "$work/ops-bin/curl" "$work/ops-bin/sudo"
+# The host rsync may be openrsync (macOS), which has no --chmod; the deploy tests above fake it the same way.
+cp "$work/remote-bin/rsync" "$work/ops-bin/rsync"
+chmod +x "$work/ops-bin/docker" "$work/ops-bin/systemctl" "$work/ops-bin/curl" "$work/ops-bin/sudo" "$work/ops-bin/rsync"
 OPS_DOCKER_CAPTURE="$work/ops-docker" OPS_SYSTEMCTL_CAPTURE="$work/ops-systemctl" OPS_CURL_CAPTURE="$work/ops-curl" OPS_CONTROLLER_ACTIVE="$work/controller-active" PATH="$work/ops-bin:$PATH" sh "$root/scripts/operate-remote.sh" recover "$(id -un)" 1000 "$work/ops-root/install" "$work/ops-root/secrets" > "$work/ops-output" 2>&1; code=$?
 [ "$code" -eq 0 ] && grep -q 'recover completed' "$work/ops-output" && grep -q 'start switch-agent-controller-1000.service' "$work/ops-systemctl" && grep -q '/healthz' "$work/ops-curl" && grep -q '/mcp' "$work/ops-curl" && ! grep -q 'test-only-ops-token' "$work/ops-output"; check "recovery starts controller and verifies Graphiti, health, authenticated MCP without printing token" $?
 OPS_DOCKER_CAPTURE="$work/ops-docker-bad" OPS_SYSTEMCTL_CAPTURE="$work/ops-systemctl-bad" OPS_CURL_CAPTURE="$work/ops-curl-bad" OPS_CONTROLLER_ACTIVE="$work/controller-active" OPS_GRAPHITI_UNHEALTHY=1 PATH="$work/ops-bin:$PATH" sh "$root/scripts/operate-remote.sh" recover "$(id -un)" 1000 "$work/ops-root/install" "$work/ops-root/secrets" > "$work/ops-graphiti-output" 2>&1; code=$?

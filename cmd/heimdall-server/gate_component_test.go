@@ -514,6 +514,12 @@ func seedPinnedChange(t *testing.T, store *postgres.Store) {
 	require.NoError(t, err)
 }
 
+// gateMissingApprovalRow is the approval row of the heimdall/gate check summary when no approver has approved.
+const gateMissingApprovalRow = "| Approval from an approver | ⏳ no approval has been recorded from an approver of the changed domains |"
+
+// gateApprovedRow is the approval row once an approver of the changed domains has approved the head.
+const gateApprovedRow = "| Approval from an approver | ✅ |"
+
 func TestMergeGateEndToEnd(t *testing.T) {
 	// Parse and validate the policy YAML using real policyyaml decoder
 	pol, err := policyyaml.Decode([]byte(gateTestPolicyYAML))
@@ -580,7 +586,7 @@ func TestMergeGateEndToEnd(t *testing.T) {
 			return false
 		}
 		return c.Conclusion != "success" &&
-			strings.Contains(c.Summary, "approval: no approval has been recorded from an approver of the changed domains")
+			strings.Contains(c.Summary, gateMissingApprovalRow)
 	}, gateTestWaitFor, gateTestPollTick, "(a) check on H1 must name missing approval")
 
 	// (b) After the fake GitHub shows an APPROVED review by bob on H1:
@@ -600,7 +606,7 @@ func TestMergeGateEndToEnd(t *testing.T) {
 		if !ok || c.SHA != string(gateTestHead1) {
 			return false
 		}
-		return !strings.Contains(c.Summary, "approval: no approval has been recorded")
+		return strings.Contains(c.Summary, gateApprovedRow)
 	}, gateTestWaitFor, gateTestPollTick, "(b) approval by bob on H1 must clear missing approval reason")
 
 	// (c) After the fake GitHub moves the PR head to H2 (a push), the next check on H2 is not a success again
@@ -612,7 +618,7 @@ func TestMergeGateEndToEnd(t *testing.T) {
 			return false
 		}
 		return c.Conclusion != "success" &&
-			strings.Contains(c.Summary, "approval: no approval has been recorded from an approver of the changed domains")
+			strings.Contains(c.Summary, gateMissingApprovalRow)
 	}, gateTestWaitFor, gateTestPollTick, "(c) check on H2 must name missing approval again")
 
 	// (d) The same review turning DISMISSED (same review id, new state) makes approval impossible.
@@ -632,7 +638,7 @@ func TestMergeGateEndToEnd(t *testing.T) {
 			return false
 		}
 		return c.Conclusion != "success" &&
-			strings.Contains(c.Summary, "approval: no approval has been recorded from an approver of the changed domains")
+			strings.Contains(c.Summary, gateMissingApprovalRow)
 	}, gateTestWaitFor, gateTestPollTick, "(d) dismissed review must invalidate approval on H1")
 
 	// (e) A restart of the app on the same database does not post a duplicate check for an unchanged verdict.

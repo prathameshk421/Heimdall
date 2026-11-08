@@ -116,7 +116,7 @@ fi
 systemctl is-active --quiet "$controller_service" || { echo "operation: $controller_service did not become active" >&2; exit 1; }
 graphiti_id=$(docker compose -f deploy/compose.yaml -f deploy/compose.release.yaml ps -q graphiti)
 if [ -z "$graphiti_id" ] || [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$graphiti_id")" != healthy ]; then
-	echo 'operation: Graphiti is not healthy; inspect docker compose logs graphiti and verify OpenRouter configuration' >&2
+	echo 'operation: Graphiti is not healthy; inspect docker compose logs graphiti and verify the Deploy key and the embeddings service' >&2
 	exit 1
 fi
 if ! curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null; then
