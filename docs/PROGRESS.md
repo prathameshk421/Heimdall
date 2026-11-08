@@ -650,3 +650,17 @@ Bench `testdata/reviewbench/settle`, Haiku, 3 reviewers per arm, one synthetic P
 **Confirmed cards (owner yes, Nov 8):** a card its owner confirmed can stand as E3 through `memory_ref: card:<file>#<path>` (`rulecard.CanBlock`, `cmd/heimdall-server/card_evidence.go`). The gate did not change. Also fixed: both E3 re-queries read policy at the PR head, which broke invariant 5, so a PR could change its reviewer's memory groups. They now read the merge base. **Not verified:** no confirmed card has blocked a real PR; the flow is covered by unit tests of the recheck and the routes, not by an end-to-end gate test.
 
 **Review report page (prototype, Nov 8):** `GET /changes/<id>/report` and `report.json` in the dashboard. The spec builder is in `internal/app/dashboard/report.go`, the page is in `web/review-report`, and the built bundle is embedded. Checked in a browser against the real handler with sample events (details in `docs/REVIEW_MOAT.md` section 7). **Not verified:** a real log from the VM. **Noticed:** `.claude/launch.json` cannot be edited from a session (settings deny it), so the browser check used a scratch server started from the shell. Add a `report-demo` entry if you want `preview_start` to run it.
+
+## Live deploy of the moat (Nov 8, 2026)
+
+`heimdall-build` at `cf712d8` runs on `heimdall-vm`, healthy. `cards_dir = "/var/lib/heimdall/cards"` is on. The image before today is tagged `heimdall-server:pre-moat` for rollback. Old images, release folders, caches and logs were removed: disk 59% to 52%.
+
+Found and fixed live: (1) the memory backfill stopped at the first change with no policy (KAN-1 to KAN-3 point at a repo with no `heimdall.yaml`), so no later change reached memory; (2) the Graphiti adapter sent an episode `uuid`, which graphiti_core 0.31 reads as "update this episode", so every episode failed with "node not found" and the graph had never filled; (3) the custom `Person` entity type refused extractions with no description. After the fixes the `payments` graph holds 5 narrated episodes, 18 entities and 11 facts, such as "Refund endpoints need the X-Merchant-ID header". Graphiti extraction cost was a few cents of DeepSeek Flash.
+
+Cards for `bob` (3), `eli` (1) and `ana` (2) were copied into the card folder (the admin path in `deploy/cards/README.md`). None is confirmed.
+
+**Blocking the Slack test:** the live reviewer agents are `reviewer-1` to `reviewer-3`, but `heimdall.yaml` on `aarush323/heimdall-fixture-pay@heimdall-test/demo-base` maps people to `bob-reviewer`, `eli-reviewer` and `ana-reviewer`. No live reviewer resolves to a person, so reviewers get no cards, no personal brief and no team memory groups. This has been true for every earlier live run. Fix: map the agents in that file (owner decision, it is a shared repository).
+
+**Not wired:** human tokens. `compose.yaml` passes a fixed list of secret files into the container, so a `[human_tokens]` entry makes the server refuse to start (seen live, restored within two minutes). `heimdall cards push` and `confirm` need that wiring before a person can use them on the VM.
+
+**Noticed:** SSH to the VM stalls in key exchange and on large transfers; `-o KexAlgorithms=curve25519-sha256 -o IPQoS=none` works. The memory backfill logs one error per pass for KAN-1 to KAN-3 (repository without a policy).
