@@ -491,11 +491,13 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	store := postgres.NewStore(pool)
 	var setupHandler http.Handler
 	if ad.agentSetupHandler != nil {
+		var syncAgents func(context.Context) error
 		var err error
-		setupHandler, err = ad.agentSetupHandler(store)
+		setupHandler, syncAgents, err = ad.agentSetupHandler(store)
 		if err != nil {
 			return nil, err
 		}
+		syncAgentDefinitions(ctx, d.logger, syncAgents)
 	}
 	gen := ids.New()
 	wf, steps, err := sliceSteps(ad.agents, gen, clk)
@@ -949,4 +951,19 @@ func inlineOf(vcs any) announce.InlineComments {
 		return w
 	}
 	return nil
+}
+
+// agentSyncTimeout bounds the startup sync of agent definitions, so a slow Switch cannot hold the server back.
+const agentSyncTimeout = 30 * time.Second
+
+// syncAgentDefinitions moves the role agents in Switch to the configured model at startup. A failure is logged and the
+// server starts anyway: the agents keep their old model until the next start.
+func syncAgentDefinitions(ctx context.Context, logger *slog.Logger, sync func(context.Context) error) {
+	ctx, cancel := context.WithTimeout(ctx, agentSyncTimeout)
+	defer cancel()
+	if err := sync(ctx); err != nil {
+		logger.ErrorContext(ctx, "agent definitions not synced with Switch; agents keep their current model", "error", err)
+		return
+	}
+	logger.InfoContext(ctx, "agent definitions synced with Switch")
 }

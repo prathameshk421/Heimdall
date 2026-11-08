@@ -664,3 +664,7 @@ Cards for `bob` (3), `eli` (1) and `ana` (2) were copied into the card folder (t
 **Not wired:** human tokens. `compose.yaml` passes a fixed list of secret files into the container, so a `[human_tokens]` entry makes the server refuse to start (seen live, restored within two minutes). `heimdall cards push` and `confirm` need that wiring before a person can use them on the VM.
 
 **Noticed:** SSH to the VM stalls in key exchange and on large transfers; `-o KexAlgorithms=curve25519-sha256 -o IPQoS=none` works. The memory backfill logs one error per pass for KAN-1 to KAN-3 (repository without a policy).
+
+## Provider switch to Deploy (Nov 8, 2026, D163)
+
+Cause found live: KAN-23's test author stalled because every model call went to OpenRouter, whose key was out of its limit. The agents' own `opencode.json` already named Deploy (changed on the VM on Nov 7), but Switch pins each agent's stored model (`openrouter/deepseek/deepseek-v4-flash`) on every session, so the change never applied. Now: the server syncs each agent's Switch model from `agent_runtime.model` at startup; Graphiti extraction uses Deploy; embeddings run in a local TEI service with `bge-small-en-v1.5`; the install scripts, templates and release scripts use `deploy_api_key`. `make fast` exit 0 (4,190 tests); script tests show the same 4 failures as the base commit `6bea502`. **Not verified yet:** the live switch (needs the key file and a deploy), Deploy's handling of Graphiti's JSON requests, and TEI's RAM use on the VM.

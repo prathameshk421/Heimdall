@@ -87,7 +87,7 @@ COSIGN_CAPTURE="$work/sign-args" PATH="$work/bin:$PATH" RELEASE_ARCHIVE="$releas
 [ "$code" -eq 0 ] && grep -q 'sign-blob.*--key' "$work/sign-args" && [ -s "$release_output/v1.0.0.tgz.sig" ]; check "release signer invokes cosign on the built artifact using the key reference" $?
 deploy_secrets="$work/deploy-secrets"
 mkdir -p "$deploy_secrets"
-for name in database_url postgres_password openrouter_api_key jira_email jira_api_token github_app_id github_app_installation_id github_app_private_key switch_api_key switch_registration_token agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver; do
+for name in database_url postgres_password deploy_api_key jira_email jira_api_token github_app_id github_app_installation_id github_app_private_key switch_api_key switch_registration_token agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver; do
 	: > "$deploy_secrets/$name"
 	chmod 0600 "$deploy_secrets/$name"
 done
@@ -249,8 +249,8 @@ SH
 chmod +x "$work/bin/node" "$work/bin/opencode" "$work/bin/switch-agent-controller" "$work/bin/systemctl"
 controller_secrets="$work/controller-secrets"
 mkdir -m 0700 "$controller_secrets"
-: > "$controller_secrets/openrouter_api_key"
-chmod 0600 "$controller_secrets/openrouter_api_key"
+: > "$controller_secrets/deploy_api_key"
+chmod 0600 "$controller_secrets/deploy_api_key"
 out=$(PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --dry-run --controller-user "$(id -un)" --controller-data-dir "$work/controller-state" --secrets-dir "$controller_secrets" --agents-dir "$work/agents" --env-file "$work/agents.env" 2>&1); code=$?
 [ "$code" -eq 0 ] && grep -q "service=switch-agent-controller-$(id -u "$(id -un)").service" <<<"$out" && grep -q "data_dir=$work/controller-state" <<<"$out" && grep -q 'dry-run: no files or services changed' <<<"$out" && [ ! -e "$work/agents.env" ]; check "controller dry-run reports service configuration without writing or enrolling" $?
 cat > "$work/bin/node" <<'SH'
@@ -284,10 +284,10 @@ cat > "$work/bin/switch-agent-controller" <<'SH'
 if [[ "${1:-}" == --version ]]; then echo 0.31.0; fi
 SH
 out=$(PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --dry-run --controller-user "$(id -un)" --secrets-dir "$work" --agents-dir "$work/agents" --env-file "$work/agents.env" 2>&1); code=$?
-[ "$code" -eq 1 ] && grep -q 'private regular secret file is required' <<<"$out"; check "controller installer fails closed when OpenRouter secret file is absent" $?
+[ "$code" -eq 1 ] && grep -q 'private regular secret file is required' <<<"$out"; check "controller installer fails closed when the Deploy secret file is absent" $?
 
 # Full local controller flow with disposable credentials and fake Switch/systemd commands.
-for name in openrouter_api_key agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver; do
+for name in deploy_api_key agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver; do
 	printf 'stub-%s\n' "$name" > "$controller_secrets/$name"
 	chmod 0600 "$controller_secrets/$name"
 done

@@ -30,7 +30,7 @@ go_image=${HEIMDALL_GO_IMAGE:-}
 
 [[ -n "$config" && -f "$config" ]] || { echo 'deploy: --config must name an existing heimdall.toml' >&2; exit 2; }
 [[ -n "$secrets_dir" && -d "$secrets_dir" ]] || { echo 'deploy: --secrets-dir must name an existing directory' >&2; exit 2; }
-required_secrets=(database_url postgres_password openrouter_api_key jira_email jira_api_token github_app_id github_app_installation_id github_app_private_key switch_api_key switch_registration_token agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver)
+required_secrets=(database_url postgres_password deploy_api_key jira_email jira_api_token github_app_id github_app_installation_id github_app_private_key switch_api_key switch_registration_token agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver)
 for name in "${required_secrets[@]}"; do
 	[[ -f "$secrets_dir/$name" && ! -L "$secrets_dir/$name" ]] || { printf 'deploy: required regular secret file is missing: %s\n' "$name" >&2; exit 2; }
 done

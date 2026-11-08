@@ -59,15 +59,15 @@ if [[ "$switch_version" != 0.31.0 ]]; then
 	echo 'controller install: switch-agent-controller 0.31.0 is required; install the pinned verified release first' >&2
 	exit 1
 fi
-if [[ ! -r "$secrets_dir/openrouter_api_key" || ! -f "$secrets_dir/openrouter_api_key" || -L "$secrets_dir/openrouter_api_key" ]]; then
-  echo "controller install: private regular secret file is required: $secrets_dir/openrouter_api_key" >&2
+if [[ ! -r "$secrets_dir/deploy_api_key" || ! -f "$secrets_dir/deploy_api_key" || -L "$secrets_dir/deploy_api_key" ]]; then
+  echo "controller install: private regular secret file is required: $secrets_dir/deploy_api_key" >&2
   exit 1
 fi
-mode=$(stat -c '%a' "$secrets_dir/openrouter_api_key")
-if (( (8#$mode & 077) != 0 )); then echo 'controller install: OpenRouter key file must be private (mode 0600 or stricter)' >&2; exit 1; fi
+mode=$(stat -c '%a' "$secrets_dir/deploy_api_key")
+if (( (8#$mode & 077) != 0 )); then echo 'controller install: Deploy key file must be private (mode 0600 or stricter)' >&2; exit 1; fi
 if $dry_run; then
 	printf 'plan controller user=%s uid=%s data_dir=%s agents_dir=%s env_file=%s agent_users=%s service=switch-agent-controller-%s.service\n' "$controller_user" "$controller_uid" "$controller_data_dir" "$agents_dir" "$env_file" "$agent_users" "$controller_uid"
-  echo 'plan shared env contains OpenRouter key from a private file and SWITCH_CONTROLLER_SELF_UPDATE=off'
+  echo 'plan shared env contains Deploy key from a private file and SWITCH_CONTROLLER_SELF_UPDATE=off'
   echo 'dry-run: no files or services changed'
   exit 0
 fi
@@ -76,7 +76,7 @@ install -d -m 0750 "$(dirname "$env_file")" "$agents_dir"
 tmp_env=$(mktemp "$(dirname "$env_file")/.agents.env.XXXXXX")
 trap 'rm -f "$tmp_env"' EXIT
 # Python copies one validated line into the env file without sending its contents to stdout or argv.
-python3 - "$secrets_dir/openrouter_api_key" "$tmp_env" <<'PY'
+python3 - "$secrets_dir/deploy_api_key" "$tmp_env" <<'PY'
 import json
 import os
 import sys
@@ -84,9 +84,9 @@ source, destination = sys.argv[1:]
 with open(source, "r", encoding="utf-8") as handle:
     value = handle.read().strip()
 if not value or any(char in value for char in "\r\n\0"):
-    raise SystemExit("controller install: OpenRouter key file must contain one non-empty line")
+    raise SystemExit("controller install: Deploy key file must contain one non-empty line")
 with open(destination, "w", encoding="utf-8") as handle:
-    handle.write("OPENROUTER_API_KEY=" + json.dumps(value) + "\n")
+    handle.write("DEPLOY_API_KEY=" + json.dumps(value) + "\n")
     handle.write("SWITCH_CONTROLLER_SELF_UPDATE=off\n")
 os.chmod(destination, 0o600)
 PY

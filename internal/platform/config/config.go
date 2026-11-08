@@ -98,7 +98,7 @@ type AgentRuntimeConfig struct {
 	AgentsDir string
 }
 
-const defaultAgentModel = "openrouter/deepseek/deepseek-v4-flash"
+const defaultAgentModel = "deploy/deepseek-ai/deepseek-v4.1-flash-1017"
 
 // Agents is [agents]. TestAuthor, Reviewers and Resolver name the agents participating in the workflow.
 type Agents struct {

@@ -57,7 +57,7 @@ bridge = "mattermost"
 provider = "switchroom"
 machine = "heimdall-vm"
 mcp_endpoint = "http://127.0.0.1:8080/mcp"
-model = "openrouter/deepseek/deepseek-v4-flash"
+model = "deploy/deepseek-ai/deepseek-v4.1-flash-1017"
 
 # MCP agent identities. Each name needs secrets_dir/agent_token_<name> (0600).
 [agents]

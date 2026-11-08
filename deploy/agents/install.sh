@@ -41,13 +41,14 @@ while IFS=$'\t' read -r name template skill; do
 	[[ -f "$template_path" ]] || { echo "install agents: template unavailable for $name" >&2; exit 1; }
 	[[ -f "$skill_path" ]] || { echo "install agents: skill unavailable for $name" >&2; exit 1; }
 	[[ -f "$token_path" && -r "$token_path" ]] || { echo "install agents: missing token file for $name" >&2; exit 1; }
-	grep -Fq '"model": "openrouter/deepseek/deepseek-v4-flash"' "$template_path" || { echo "install agents: wrong model for $name" >&2; exit 1; }
+	grep -Fq '"model": "deploy/deepseek-ai/deepseek-v4.1-flash-1017"' "$template_path" || { echo "install agents: wrong model for $name" >&2; exit 1; }
+	grep -Fq '"apiKey": "{env:DEPLOY_API_KEY}"' "$template_path" || { echo "install agents: the model key must come from DEPLOY_API_KEY for $name" >&2; exit 1; }
 	grep -Fq '"auto_mode": true' "$template_path" || { echo "install agents: auto_mode is not enabled for $name" >&2; exit 1; }
 	grep -Fq '"auto_approve": false' "$template_path" || { echo "install agents: auto_approve is enabled for $name" >&2; exit 1; }
 	grep -Fq "{{file:secrets/agent_token_$name}}" "$template_path" || { echo "install agents: token reference missing for $name" >&2; exit 1; }
 
 	if $dry_run; then
-		echo "plan $name dir=$destination model=openrouter/deepseek/deepseek-v4-flash skill=$skill"
+		echo "plan $name dir=$destination model=deploy/deepseek-ai/deepseek-v4.1-flash-1017 skill=$skill"
 		continue
 	fi
 

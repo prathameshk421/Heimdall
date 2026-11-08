@@ -86,3 +86,49 @@ func TestCreateManagedAgentReplayAdoptsExistingMatchingControllerDefinition(t *t
 	require.Equal(t, ports.ManagedAgent{ID: "managed-1", Name: "test-author"}, got)
 	require.Empty(t, f.opCalls("create_agent"), "replay must adopt the existing matching definition")
 }
+
+func TestEnsureMovesAnExistingAgentToTheConfiguredModel(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	spec := ports.ManagedAgentSpec{
+		Agent:       ports.AgentRef{Name: id.AgentName("test-author"), Role: workflow.RoleTestAuthor},
+		Description: "Heimdall test author", Machine: "machine-1", Provider: "opencode",
+		Model: "deploy/deepseek-ai/deepseek-v4.1-flash-1017", Instructions: "Use Heimdall tools.",
+	}
+	f.ops["list_managed_agents"] = func(map[string]any) (int, any) {
+		return http.StatusOK, []any{map[string]any{
+			"agent_id": "managed-1", "name": "test-author", "description": "Heimdall test author",
+			"provider": "opencode", "model": "openrouter/deepseek/deepseek-v4-flash",
+			"auto_mode": true, "auto_approve": false, "machine": map[string]any{"id": "machine-1", "name": "VM"},
+		}}
+	}
+	f.ops["update_agent_detail"] = func(map[string]any) (int, any) { return http.StatusOK, map[string]any{} }
+	got, err := c.CreateManagedAgent(context.Background(), spec)
+	require.NoError(t, err)
+	require.Equal(t, ports.ManagedAgent{ID: "managed-1", Name: "test-author"}, got)
+	calls := f.opCalls("update_agent_detail")
+	require.Len(t, calls, 1)
+	require.Equal(t, "managed-1", calls[0]["agent_id"])
+	require.Equal(t, "deploy/deepseek-ai/deepseek-v4.1-flash-1017", calls[0]["model"])
+	require.Empty(t, f.opCalls("create_agent"))
+}
+
+func TestEnsureDoesNotTouchTheModelWhenItAlreadyMatches(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	spec := ports.ManagedAgentSpec{
+		Agent:       ports.AgentRef{Name: id.AgentName("test-author"), Role: workflow.RoleTestAuthor},
+		Description: "Heimdall test author", Machine: "machine-1", Provider: "opencode",
+		Model: "deploy/deepseek-ai/deepseek-v4.1-flash-1017", Instructions: "Use Heimdall tools.",
+	}
+	f.ops["list_managed_agents"] = func(map[string]any) (int, any) {
+		return http.StatusOK, []any{map[string]any{
+			"agent_id": "managed-1", "name": "test-author", "description": "Heimdall test author",
+			"provider": "opencode", "model": "deploy/deepseek-ai/deepseek-v4.1-flash-1017",
+			"auto_mode": true, "auto_approve": false, "machine": map[string]any{"id": "machine-1", "name": "VM"},
+		}}
+	}
+	_, err := c.CreateManagedAgent(context.Background(), spec)
+	require.NoError(t, err)
+	require.Empty(t, f.opCalls("update_agent_detail"))
+}

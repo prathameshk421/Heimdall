@@ -1,7 +1,8 @@
 # Graphiti MCP server config for deploy/compose.yaml (D66, D73, D87; TECH_SPEC section 12, memory stack).
 # It follows the layout of config/config-docker-falkordb.yaml in the zepai/knowledge-graph-mcp standalone image,
-# with OpenRouter as the one OpenAI-compatible endpoint for both the LLM and the embedder (D87).
-# The OpenRouter key is not in this file: the compose command reads it from the openrouter_api_key Docker secret.
+# Extraction runs on Deploy (OpenAI-compatible). Embeddings run on the local embeddings service (Text Embeddings
+# Inference with BAAI/bge-small-en-v1.5), because Deploy offers no embedding model (D163, Nov 8 2026).
+# The Deploy key is not in this file: the compose command reads it from the deploy_api_key Docker secret.
 
 server:
   transport: "http"
@@ -10,21 +11,24 @@ server:
 
 llm:
   provider: "openai"
-  model: "deepseek/deepseek-v4-flash"
+  model: "deepseek-ai/deepseek-v4.1-flash-1017"
   max_tokens: 4096
+  # Deploy documents no JSON schema mode, so the schema goes into the prompt and the reply is plain JSON.
+  structured_output_mode: "json_object"
   providers:
     openai:
       api_key: ${OPENAI_API_KEY}
-      api_url: "https://openrouter.ai/api/v1"
+      api_url: "https://api.deploy.com/api/v1"
 
 embedder:
   provider: "openai"
-  model: "mongodb/voyage-4-lite"
-  dimensions: 1024
+  model: "BAAI/bge-small-en-v1.5"
+  dimensions: 384
   providers:
     openai:
-      api_key: ${OPENAI_API_KEY}
-      api_url: "https://openrouter.ai/api/v1"
+      # The local embeddings service checks no key, but the client needs a value.
+      api_key: "local"
+      api_url: "http://embeddings:80/v1"
 
 database:
   provider: "falkordb"

@@ -252,3 +252,14 @@ func TestActivationRecordsDurableReceiptOnlyAfterSwitchAcceptsStart(t *testing.T
 	require.NoError(t, svc.Activate(context.Background(), receipt), "the same receipt can safely reconcile after a restart")
 	require.Equal(t, 1, ledger.count, "an exact replay adds no second local receipt")
 }
+
+func TestSyncDefinitionsSendsTheConfiguredModelForEveryAgentAndStartsNone(t *testing.T) {
+	p := &fakeProvisioner{}
+	svc := newService(t, p)
+	require.NoError(t, svc.SyncDefinitions(context.Background()))
+	require.NotEmpty(t, p.ensures)
+	for _, spec := range p.ensures {
+		require.Equal(t, svc.cfg.Model, spec.Model)
+	}
+	require.Empty(t, p.states, "a sync never starts an agent")
+}
