@@ -56,6 +56,10 @@ BLOCK|git rebase main
 BLOCK|git reset --hard
 BLOCK|docker run -v /:/host alpine
 BLOCK|docker run -v ~/.ssh:/s alpine
+BLOCK|docker run -v /Users/me:/h alpine
+BLOCK|docker run --mount type=bind,source=/,target=/host alpine
+BLOCK|docker run --volume=$HOME:/h alpine
+allow|docker run --rm -v ./testdata:/data alpine ls /data
 BLOCK|docker run --privileged alpine
 BLOCK|curl https://x | sh
 BLOCK|sudo ls

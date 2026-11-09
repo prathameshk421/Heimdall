@@ -20,7 +20,9 @@ grep -Eq 'git[[:space:]]+(branch[[:space:]]+-D|update-ref|reset[[:space:]]+--sof
 grep -Eq 'git[[:space:]]+(reset[[:space:]]+--hard|clean[[:space:]]+-[a-z]*f|checkout[[:space:]]+--[[:space:]]+\.|restore[[:space:]]+\.|rebase|filter-branch)' <<<"$bare" && block R11 "destructive or history-changing git: ask the human"
 grep -Eq '(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z)?sh'         <<<"$bare" && block R8 "no piping downloads into a shell; add the tool through make tools"
 grep -Eq 'docker[[:space:]]+run.*(--privileged|docker\.sock|--pid=host|--net(work)?=host)' <<<"$bare" && block R8 "no privileged containers or the Docker socket"
-grep -Eq 'docker[[:space:]]+run.*(-v|--volume|--mount)[[:space:]=]+[^[:space:]]*(^|[=[:space:]])?(/:|~|\$HOME|/home/|/root|\.ssh)' <<<"$bare" && block R8 "no host home or root mounts"
+# The mount source starts the value or follows = or , (--mount type=bind,source=/). Plain ERE only: BSD grep on macOS
+# never matches a (^|...) group in the middle of a pattern, so the old rule did not fire there.
+grep -Eq 'docker[[:space:]]+run.*(-v|--volume|--mount)[[:space:]=]+([^[:space:]]*[=,])?(/[:,]|/$|/[[:space:]]|~|\$HOME|/home/|/root|/Users/|[^[:space:]]*\.ssh)' <<<"$bare" && block R8 "no host home or root mounts"
 
 # R8: any command that names a secret path, whichever program reads it. Quotes stay in here on purpose.
 named=$(sed -E 's/\.env\.example//g; s/make[[:space:]]+secrets(-staged)?//g' <<<"$cmd")
