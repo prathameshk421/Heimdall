@@ -5,14 +5,15 @@ package rootlessrunner
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/profileyaml"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 var digestImage = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$`)
@@ -60,31 +61,53 @@ func (p Policy) WithProfile(name string, spec RepoProfile) (Policy, error) {
 	return Policy{Images: p.Images, Profiles: profiles, ModuleCache: p.ModuleCache}, nil
 }
 
-// checkMarker ends the output of a static check; the exit status of the tool follows it.
-const checkMarker = "heimdall-check-exit="
-
-// ContainerArgsCheck returns the Podman arguments for one fixed static check on the built-in Go profile. The command
-// is chosen by the runner from the check name, never from the request.
-func (p Policy) ContainerArgsCheck(check, sourceArchive, moduleCache string, timeoutSeconds int) ([]string, error) {
-	command, ok := checkCommand(check)
+// resolveJob turns a check or test job into a jobSpec from the promoted profile it runs under. The command and the
+// image come only from that profile; the request supplies only a check id or a test kind name, and a name the
+// profile does not hold is refused.
+func (p Policy) resolveJob(profile, checkID, testKind, dir string) (jobSpec, error) {
+	spec, ok := p.Profiles[profile]
 	if !ok {
-		return nil, ErrUnknownCheck
+		return jobSpec{}, ErrImageNotAllowed
 	}
-	if moduleCache == "" {
-		moduleCache = p.moduleCache()
+	switch {
+	case checkID != "" && testKind == "":
+		for _, c := range spec.Checks {
+			if c.ID == checkID {
+				image, err := p.resolveImage(c.Image, spec)
+				return jobSpec{Image: image, Run: c.Run, ResultFile: resultSARIF}, err
+			}
+		}
+		return jobSpec{}, ErrUnknownCheck
+	case testKind != "" && checkID == "":
+		kind, found := spec.Tests.Kinds[testKind]
+		if !found {
+			return jobSpec{}, ErrUnknownTestKind
+		}
+		rel, err := resolveDir(dir, spec.Paths.Tests)
+		if err != nil {
+			return jobSpec{}, err
+		}
+		name := kind.Image
+		if name == "" {
+			name = spec.Image
+		}
+		image, err := p.resolveImage(name, spec)
+		return jobSpec{Image: image, Run: strings.ReplaceAll(kind.Run, "{dir}", "./"+rel), ResultFile: resultJUnit}, err
+	default:
+		return jobSpec{}, errors.New("a job names exactly one of a check and a test kind")
 	}
-	if err := absoluteCleanPath(moduleCache); err != nil {
-		return nil, fmt.Errorf("module cache path: %w", err)
-	}
-	return p.containerArgsWith("go", sourceArchive, "", moduleCache, "", timeoutSeconds, command)
 }
 
-// checkCommand maps a check name to its fixed shell command. It prints the tool's exit status after checkMarker.
-func checkCommand(check string) (string, bool) {
-	if check == ports.CheckGoVet {
-		return "go vet ./... 2>&1; echo " + checkMarker + "$?", true
+// resolveImage turns the image a profile row names into the digest reference to run. A bare name resolves through the
+// runner's own image table; a reference must be one the runner holds (its table or the profile's own reviewed image).
+func (p Policy) resolveImage(name string, spec RepoProfile) (string, error) {
+	if ref, ok := p.Images[name]; ok && digestImage.MatchString(ref) {
+		return ref, nil
 	}
-	return "", false
+	if digestImage.MatchString(name) && (name == spec.Image || slices.Contains(slices.Collect(maps.Values(p.Images)), name)) {
+		return name, nil
+	}
+	return "", fmt.Errorf("%w: %q", ErrImageNotAllowed, name)
 }
 
 func (p Policy) containerArgs(profile, sourceArchive, overlayDir, moduleCache, dir string, timeoutSeconds int) ([]string, error) {
@@ -142,16 +165,12 @@ func (p Policy) containerArgsWith(profile, sourceArchive, overlayDir, moduleCach
 	command := "mkdir -p /work/src /work/.gocache /work/.gotmp" +
 		" && tar -xzf /input/source.tgz -C /work/src --no-same-owner --no-same-permissions" +
 		" && " + sourceRootScript("/work/src")
-	args := []string{
-		"run", "--rm", "--pull=never", "--network=none", "--read-only", "--user=65532:65532",
-		"--group-add=keep-groups",
-		"--cap-drop=ALL", "--security-opt=no-new-privileges",
-		"--pids-limit=512", "--memory=2g", "--cpus=2", "--timeout=" + strconv.Itoa(timeoutSeconds),
-		"--tmpfs", "/work:rw,nosuid,nodev,size=512m,mode=1777", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m,mode=1777",
-		"--tmpfs", "/out:rw,noexec,nosuid,nodev,size=8m,mode=1777",
-		"--mount", "type=bind,src=" + sourceArchive + ",dst=/input/source.tgz,ro=true",
-		"--mount", "type=bind,src=" + moduleCache + ",dst=/go/pkg/mod,ro=true",
-	}
+	args := hardenedArgs(timeoutSeconds)
+	args = append(args,
+		"--tmpfs", "/work:rw,nosuid,nodev,size=512m,mode=1777",
+		"--mount", "type=bind,src="+sourceArchive+",dst=/input/source.tgz,ro=true",
+		"--mount", "type=bind,src="+moduleCache+",dst=/go/pkg/mod,ro=true",
+	)
 	if overlayDir != "" {
 		args = append(args, "--mount", "type=bind,src="+overlayDir+",dst=/input/overlays,ro=true")
 		command += ` && cp -a /input/overlays/. "$root/"`
@@ -199,4 +218,18 @@ func absoluteCleanPath(value string) error {
 		return errors.New("must be an absolute, clean filesystem path")
 	}
 	return nil
+}
+
+// hardenedArgs are the isolation flags every job carries, whatever it runs: no network, a read-only root, no
+// capabilities, no new privileges, bounded processes, memory and CPU, a non-root user, and small tmpfs scratch and
+// result directories. Nothing in a profile or a request can change them.
+func hardenedArgs(timeoutSeconds int) []string {
+	return []string{
+		"run", "--rm", "--pull=never", "--network=none", "--read-only", "--user=65532:65532",
+		"--group-add=keep-groups",
+		"--cap-drop=ALL", "--security-opt=no-new-privileges",
+		"--pids-limit=512", "--memory=2g", "--cpus=2", "--timeout=" + strconv.Itoa(timeoutSeconds),
+		"--tmpfs", "/tmp:rw,nosuid,nodev,size=64m,mode=1777",
+		"--tmpfs", "/out:rw,noexec,nosuid,nodev,size=8m,mode=1777",
+	}
 }

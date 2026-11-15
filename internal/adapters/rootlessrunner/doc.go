@@ -8,6 +8,12 @@
 // caller cannot select a command; archives and overlays are bounded; the container has no network, runtime socket,
 // secrets, writable host mount, or elevated capabilities; logs are capped at 5 MiB; jobs time out at 10 minutes.
 //
+// Checks and test kinds share one job shape: the head tree at /work, an optional base tree at /base, the command of a
+// row of the promoted profile run through `sh -c` with its text passed as an environment variable (never spliced into
+// the constant wrapper script), and the result file (SARIF or JUnit) read from /out between fixed markers, bounded.
+// A request names only a check id or a test kind; a name the profile does not hold, an image the runner does not hold
+// and a directory with shell characters are refused before any container starts.
+//
 // Failure modes: invalid jobs, images, paths, oversized payloads, unavailable runner sockets, runtime failures,
 // timeouts, and absent test events fail closed. Rootless Podman and subordinate UID/GID mappings are OS prerequisites.
 //
