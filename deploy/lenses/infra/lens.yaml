@@ -1,0 +1,17 @@
+id: infra
+name: Infrastructure
+description: The images, the pipelines and the steps that put the change into the world.
+when:
+  - "**/Dockerfile*"
+  - "**/*.dockerfile"
+  - "**/compose*.y*ml"
+  - "**/.github/workflows/**"
+  - "**/deploy/**"
+  - "**/charts/**"
+  - "**/helm/**"
+  - "**/k8s/**"
+  - "**/kubernetes/**"
+  - "**/*.tf"
+  - "**/*.tfvars"
+  - "**/scripts/**"
+  - "**/*.sh"
