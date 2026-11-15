@@ -1,0 +1,27 @@
+{
+  "plan": {
+    "title": "TestPlan@1",
+    "ticket": "KAN-31",
+    "behaviours": [
+      {
+        "id": "B1",
+        "ac": "AC1",
+        "kind": "exploit",
+        "case": "negative",
+        "given": "payload",
+        "when": "send",
+        "then": "blocked",
+        "oracle": "exact"
+      }
+    ],
+    "ui_handles": [],
+    "expected_paths": [
+      "internal/refunds/**",
+      "api/openapi.yaml"
+    ],
+    "assumptions": [
+      "Refunds are in the payment's currency."
+    ]
+  },
+  "expected_refusal": "behaviours[0].kind: 'exploit' is not declared in repository profile [api, property, contract, ui]"
+}

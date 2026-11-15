@@ -1,0 +1,46 @@
+{
+  "trigger": {
+    "ticket": "KAN-22",
+    "repo": "aarush323/heimdall-fixture-pay",
+    "assignee": "prathameshk421",
+    "source": "jira"
+  },
+  "room": "room-kan-22",
+  "branch": {
+    "repo": "aarush323/heimdall-fixture-pay",
+    "branch": "KAN-22-tests",
+    "base_sha": "4a0f699"
+  },
+  "plan": null,
+  "tests": {
+    "sha": "1c22a02",
+    "tree_hash": "7e22a01",
+    "refs": [
+      "tests/heimdall/KAN-22/health_test.go"
+    ],
+    "ac_map": {
+      "AC1": [
+        "TestHealthzReturnsOK"
+      ],
+      "AC2": [
+        "TestHealthzRefusesOtherMethods"
+      ]
+    },
+    "verified": true,
+    "needs_signoff": false
+  },
+  "pr": null,
+  "tasks": {
+    "tsk_01KANTA0000000000000000001": {
+      "agent": "test-author",
+      "role": "test-author",
+      "status": "progress",
+      "progress_text": "writing tests for GET /healthz"
+    }
+  },
+  "reviews": {},
+  "findings": {},
+  "decisions": [],
+  "approvals": [],
+  "closed": null
+}

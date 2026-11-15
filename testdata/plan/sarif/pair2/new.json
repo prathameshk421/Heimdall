@@ -1,0 +1,15 @@
+[
+  {
+    "check": "contracts",
+    "lens": "contract",
+    "rule": "oasdiff:removed-endpoint",
+    "level": "error",
+    "file": "api/openapi.yaml",
+    "lines": [
+      12,
+      18
+    ],
+    "message": "endpoint /healthz was removed from api/openapi.yaml",
+    "finger": "oasdiff:removed-endpoint:api/openapi.yaml:3333333333333333333333333333333333333333333333333333333333333333"
+  }
+]

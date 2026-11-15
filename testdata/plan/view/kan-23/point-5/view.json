@@ -1,0 +1,157 @@
+{
+  "trigger": {
+    "ticket": "KAN-23",
+    "repo": "aarush323/heimdall-fixture-pay",
+    "assignee": "prathameshk421",
+    "source": "jira"
+  },
+  "room": "room-kan-23",
+  "branch": {
+    "repo": "aarush323/heimdall-fixture-pay",
+    "branch": "KAN-23-tests",
+    "base_sha": "9b49652"
+  },
+  "plan": null,
+  "tests": {
+    "sha": "2c23b02",
+    "tree_hash": "8e23b01",
+    "refs": [
+      "tests/heimdall/KAN-23/refund_cap_test.go"
+    ],
+    "ac_map": {
+      "AC1": [
+        "TestRefundOverCapIsRefused"
+      ],
+      "AC2": [
+        "TestRefundResponseNamesMerchant"
+      ]
+    },
+    "verified": true,
+    "needs_signoff": false
+  },
+  "pr": {
+    "number": 11,
+    "head_sha": "b11b001",
+    "author": "prathameshk421",
+    "ticket": "KAN-23",
+    "slop_pass": true,
+    "failing_rules": [],
+    "ci": {
+      "heimdall/acceptance": "success"
+    },
+    "gate_ok": false,
+    "gate_reasons": [
+      "blocking",
+      "approval"
+    ]
+  },
+  "tasks": {
+    "tsk_01KANTB0000000000000000001": {
+      "agent": "test-author",
+      "role": "test-author",
+      "status": "completed"
+    },
+    "tsk_01KANRW0000000000000000001": {
+      "agent": "reviewer-1",
+      "role": "reviewer",
+      "status": "submitted"
+    },
+    "tsk_01KANRW0000000000000000002": {
+      "agent": "reviewer-2",
+      "role": "reviewer",
+      "status": "submitted"
+    },
+    "tsk_01KANRW0000000000000000003": {
+      "agent": "reviewer-3",
+      "role": "reviewer",
+      "status": "submitted"
+    }
+  },
+  "reviews": {
+    "reviewer-1": {
+      "finding_refs": [
+        "F1",
+        "F3",
+        "F9"
+      ],
+      "clean": false
+    },
+    "reviewer-2": {
+      "finding_refs": [
+        "F4",
+        "F5",
+        "F6"
+      ],
+      "clean": false
+    },
+    "reviewer-3": {
+      "finding_refs": [
+        "F8",
+        "F10"
+      ],
+      "clean": false
+    }
+  },
+  "findings": {
+    "F1": {
+      "id": "fnd_01KANFE0000000000000000001",
+      "tier": "E1",
+      "severity": "high",
+      "state": "open",
+      "by": "sandbox",
+      "claim": "the wire field merchant_id is renamed to merchant while api/openapi.yaml still requires merchant_id"
+    },
+    "F3": {
+      "id": "fnd_01KANFE0000000000000000003",
+      "tier": "E4",
+      "severity": "high",
+      "state": "unverified",
+      "by": "sandbox"
+    },
+    "F4": {
+      "id": "fnd_01KANFE0000000000000000004",
+      "tier": "E4",
+      "severity": "medium",
+      "state": "unverified",
+      "by": "sandbox"
+    },
+    "F5": {
+      "id": "fnd_01KANFE0000000000000000005",
+      "tier": "E4",
+      "severity": "high",
+      "state": "unverified",
+      "by": "sandbox"
+    },
+    "F6": {
+      "id": "fnd_01KANFE0000000000000000006",
+      "tier": "E4",
+      "severity": "high",
+      "state": "unverified",
+      "by": "sandbox"
+    },
+    "F8": {
+      "id": "fnd_01KANFE0000000000000000008",
+      "tier": "E4",
+      "severity": "high",
+      "state": "unverified",
+      "by": "sandbox"
+    },
+    "F9": {
+      "id": "fnd_01KANFE0000000000000000009",
+      "tier": "E4",
+      "severity": "medium",
+      "state": "unverified",
+      "by": "sandbox"
+    },
+    "F10": {
+      "id": "fnd_01KANFE0000000000000000010",
+      "tier": "E4",
+      "severity": "high",
+      "state": "unverified",
+      "by": "sandbox"
+    }
+  },
+  "decisions": [],
+  "approvals": [],
+  "closed": null
+}

@@ -1,0 +1,9 @@
+[
+  {
+    "antecedent": "migrations/0012_backoff.sql",
+    "consequent": "internal/adapters/postgres/schema.sql",
+    "support": 6,
+    "total_antecedent": 7,
+    "confidence": 0.8571428571428571
+  }
+]

@@ -1,0 +1,6 @@
+KAN-23 · Refund cap enforcement                                    waiting for pull request
+Tests      ✅ 2 behaviours, committed 2c23b02
+PR         none
+Reviews    none
+Findings   none
+Next       open a pull request for KAN-23

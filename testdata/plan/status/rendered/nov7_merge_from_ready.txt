@@ -1,0 +1,6 @@
+KAN-22 · Health endpoint                                           merged (via direct GitHub merge from READY_FOR_APPROVAL)
+Tests      ✅ 1 behaviour, committed 1c22a02
+PR         #10 by prathamesh · merged
+Reviews    Reviewer 2 ✅ clean
+Findings   none
+Next       merged

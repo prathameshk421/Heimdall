@@ -1,0 +1,8 @@
+[
+  {
+    "step": "wait_pr",
+    "role": "",
+    "description": "pull request opened",
+    "kind": ""
+  }
+]

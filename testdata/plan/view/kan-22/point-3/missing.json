@@ -1,0 +1,14 @@
+[
+  {
+    "step": "gate",
+    "role": "",
+    "description": "fix open finding F1",
+    "kind": ""
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "description": "approval on head commit",
+    "kind": ""
+  }
+]

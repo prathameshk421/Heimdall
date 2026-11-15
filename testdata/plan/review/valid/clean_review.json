@@ -1,0 +1,29 @@
+{
+  "title": "Review@2",
+  "head_sha": "59effae",
+  "files_reviewed": [
+    "internal/api/health.go",
+    "api/openapi.yaml"
+  ],
+  "clean": true,
+  "findings": [],
+  "rule_checks": [
+    {
+      "card": "authz-new-route.md",
+      "verdict": "holds",
+      "note": "public health endpoint explicitly bypasses auth per spec"
+    },
+    {
+      "card": "secrets-in-logs.md",
+      "verdict": "holds",
+      "note": "only status code logged"
+    }
+  ],
+  "lead_checks": [
+    {
+      "lead_id": "lead-sec-01",
+      "verdict": "dropped",
+      "reason": "pre-existing baseline alert outside modified scope"
+    }
+  ]
+}

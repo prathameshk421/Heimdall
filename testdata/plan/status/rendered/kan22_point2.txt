@@ -1,0 +1,6 @@
+KAN-22 · Health endpoint                                           slop check failed: scope
+Tests      ✅ 2 behaviours, committed 1c22a02
+PR         #10 by prathamesh · slop ❌ scope · acceptance ✅ on a10a001
+Reviews    none
+Findings   none
+Next       push a commit that satisfies slop rules

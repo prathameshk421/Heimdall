@@ -1,0 +1,6 @@
+KAN-22 · Health endpoint                                           blocked: 2 findings, waiting for approval
+Tests      ✅ 2 behaviours, committed 1c22a02
+PR         #10 by prathamesh · acceptance ✅ on a10a002
+Reviews    Reviewer 1 ❌ 1 finding · Reviewer 2 ✅ clean · Reviewer 3 ❌ 1 finding
+Findings   F1 medium (upheld) · F2 medium (open)
+Next       fix F1, F2 or refute

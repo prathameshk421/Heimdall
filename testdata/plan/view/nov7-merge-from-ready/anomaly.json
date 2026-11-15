@@ -1,0 +1,7 @@
+[
+  {
+    "code": "approval_arrived_before_gate",
+    "event_index": 10,
+    "description": "approval was recorded on 59effae before gate passed; change sat in READY_FOR_APPROVAL until direct GitHub merge"
+  }
+]

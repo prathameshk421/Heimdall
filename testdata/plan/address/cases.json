@@ -1,0 +1,80 @@
+[
+  {
+    "id": "thread_implicit_ticket",
+    "input": {
+      "channel": "heimdall-tests",
+      "thread_root_ticket": "KAN-22",
+      "sender": "U0456_priya",
+      "text": "@test-author which fixture covers the negative refund test?"
+    },
+    "expected": {
+      "ticket": "KAN-22",
+      "source": "thread_root",
+      "addressee": "test-author",
+      "is_role": false,
+      "resolved_seat": "test-author",
+      "command": null
+    }
+  },
+  {
+    "id": "top_level_explicit_ticket",
+    "input": {
+      "channel": "heimdall-reviews",
+      "thread_root_ticket": "",
+      "sender": "U0123_prathamesh",
+      "text": "heimdall uphold KAN-22 F1"
+    },
+    "expected": {
+      "ticket": "KAN-22",
+      "source": "text_body",
+      "addressee": "heimdall",
+      "is_role": false,
+      "resolved_seat": "lead",
+      "command": {
+        "verb": "uphold",
+        "class": "deciding",
+        "target": "F1",
+        "requires_confirmation": true
+      }
+    }
+  },
+  {
+    "id": "role_mention_security",
+    "input": {
+      "channel": "working-room-kan-23",
+      "thread_root_ticket": "KAN-23",
+      "sender": "reviewer-1",
+      "text": "@security is the refund cap checked under a transaction?"
+    },
+    "expected": {
+      "ticket": "KAN-23",
+      "source": "thread_root",
+      "addressee": "security",
+      "is_role": true,
+      "resolved_seat": "reviewer-2",
+      "command": null
+    }
+  },
+  {
+    "id": "slack_raw_mention_stripped",
+    "input": {
+      "channel": "heimdall-tests",
+      "thread_root_ticket": "KAN-22",
+      "sender": "U0789_slack_owner",
+      "text": "<@U0CFX056ZRA> heimdall remember KAN-22 the health check must not touch the database"
+    },
+    "expected": {
+      "ticket": "KAN-22",
+      "source": "text_body",
+      "addressee": "heimdall",
+      "is_role": false,
+      "resolved_seat": "lead",
+      "command": {
+        "verb": "remember",
+        "class": "light",
+        "target": "KAN-22",
+        "requires_confirmation": false
+      }
+    }
+  }
+]

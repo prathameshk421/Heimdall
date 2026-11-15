@@ -1,0 +1,27 @@
+{
+  "plan": {
+    "title": "TestPlan@1",
+    "ticket": "KAN-31",
+    "behaviours": [
+      {
+        "id": "B1",
+        "ac": "AC1",
+        "kind": "api",
+        "case": "negative",
+        "given": "invalid",
+        "when": "call",
+        "then": "fail",
+        "oracle": "fuzzy"
+      }
+    ],
+    "ui_handles": [],
+    "expected_paths": [
+      "internal/refunds/**",
+      "api/openapi.yaml"
+    ],
+    "assumptions": [
+      "Refunds are in the payment's currency."
+    ]
+  },
+  "expected_refusal": "behaviours[0].oracle: 'fuzzy' is not one of [exact, property, metamorphic, differential, regression_seed]"
+}

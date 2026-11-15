@@ -1,0 +1,121 @@
+{
+  "trigger": {
+    "ticket": "KAN-22",
+    "repo": "aarush323/heimdall-fixture-pay",
+    "assignee": "prathameshk421",
+    "source": "jira"
+  },
+  "room": "room-kan-22",
+  "branch": {
+    "repo": "aarush323/heimdall-fixture-pay",
+    "branch": "KAN-22-tests",
+    "base_sha": "4a0f699"
+  },
+  "plan": null,
+  "tests": {
+    "sha": "1c22a02",
+    "tree_hash": "7e22a01",
+    "refs": [
+      "tests/heimdall/KAN-22/health_test.go"
+    ],
+    "ac_map": {
+      "AC1": [
+        "TestHealthzReturnsOK"
+      ],
+      "AC2": [
+        "TestHealthzRefusesOtherMethods"
+      ]
+    },
+    "verified": true,
+    "needs_signoff": false
+  },
+  "pr": {
+    "number": 10,
+    "head_sha": "59effae",
+    "author": "prathameshk421",
+    "ticket": "KAN-22",
+    "slop_pass": true,
+    "failing_rules": [],
+    "ci": {
+      "heimdall/acceptance": "success",
+      "go test": "success"
+    },
+    "gate_ok": true,
+    "gate_reasons": []
+  },
+  "tasks": {
+    "tsk_01KANTA0000000000000000001": {
+      "agent": "test-author",
+      "role": "test-author",
+      "status": "completed"
+    },
+    "tsk_01KANRV0000000000000000001": {
+      "agent": "reviewer-1",
+      "role": "reviewer",
+      "status": "submitted"
+    },
+    "tsk_01KANRV0000000000000000002": {
+      "agent": "reviewer-2",
+      "role": "reviewer",
+      "status": "submitted"
+    },
+    "tsk_01KANRV0000000000000000003": {
+      "agent": "reviewer-3",
+      "role": "reviewer",
+      "status": "submitted"
+    }
+  },
+  "reviews": {
+    "reviewer-1": {
+      "finding_refs": [],
+      "clean": true
+    },
+    "reviewer-2": {
+      "finding_refs": [],
+      "clean": true
+    },
+    "reviewer-3": {
+      "finding_refs": [],
+      "clean": true
+    }
+  },
+  "findings": {
+    "F1": {
+      "id": "fnd_01KANFD0000000000000000001",
+      "tier": "E2",
+      "severity": "medium",
+      "state": "resolved",
+      "by": "sandbox",
+      "claim": "the handler drifts from the ticket: api/openapi.yaml does not declare /healthz"
+    },
+    "F2": {
+      "id": "fnd_01KANFD0000000000000000002",
+      "tier": "E4",
+      "severity": "medium",
+      "state": "resolved",
+      "by": "sandbox",
+      "claim": "the OpenAPI spec has no /healthz path"
+    }
+  },
+  "decisions": [
+    {
+      "kind": "remember",
+      "target": "KAN-22",
+      "actor": "slack_owner",
+      "reason": "the health check must not touch the database"
+    },
+    {
+      "kind": "uphold",
+      "target": "F1",
+      "actor": "slack_owner",
+      "reason": "upheld from Slack"
+    }
+  ],
+  "approvals": [
+    {
+      "login": "temporaryhameshakagroup-alt",
+      "commit_sha": "59effae"
+    }
+  ],
+  "closed": null
+}

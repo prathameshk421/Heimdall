@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "heimdall-checks",
+          "version": "1.0.0"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "gitleaks:generic-api-key",
+          "level": "error",
+          "message": {
+            "text": "hardcoded fake secret detected"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/legacy/token.go"
+                },
+                "region": {
+                  "startLine": 12,
+                  "endLine": 12
+                }
+              }
+            }
+          ],
+          "properties": {
+            "fingerprint": "gitleaks:generic-api-key:internal/legacy/token.go:1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        },
+        {
+          "ruleId": "semgrep:sql-concat",
+          "level": "error",
+          "message": {
+            "text": "query formatted with string concatenation rather than parameterized query"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/api/refunds.go"
+                },
+                "region": {
+                  "startLine": 45,
+                  "endLine": 47
+                }
+              }
+            }
+          ],
+          "properties": {
+            "fingerprint": "semgrep:sql-concat:internal/api/refunds.go:2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "plan": {
+    "title": "TestPlan@1",
+    "ticket": "KAN-31",
+    "behaviours": [
+      {
+        "id": "B1",
+        "ac": "AC1",
+        "kind": "api",
+        "case": "positive",
+        "given": "a payment",
+        "when": "POST /refunds",
+        "then": "201",
+        "oracle": "exact"
+      }
+    ],
+    "ui_handles": [],
+    "expected_paths": [
+      "internal/**"
+    ],
+    "assumptions": []
+  },
+  "expected_refusal": "plan must include at least one negative or boundary behaviour"
+}

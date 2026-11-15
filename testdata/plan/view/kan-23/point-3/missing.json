@@ -1,0 +1,20 @@
+[
+  {
+    "step": "review",
+    "role": "reviewer",
+    "description": "review by reviewer-1",
+    "kind": "review"
+  },
+  {
+    "step": "review",
+    "role": "reviewer",
+    "description": "review by reviewer-2",
+    "kind": "review"
+  },
+  {
+    "step": "review",
+    "role": "reviewer",
+    "description": "review by reviewer-3",
+    "kind": "review"
+  }
+]

@@ -1,0 +1,15 @@
+[
+  {
+    "check": "patterns",
+    "lens": "security",
+    "rule": "semgrep:sql-concat",
+    "level": "error",
+    "file": "internal/api/refunds.go",
+    "lines": [
+      45,
+      47
+    ],
+    "message": "query formatted with string concatenation rather than parameterized query",
+    "finger": "semgrep:sql-concat:internal/api/refunds.go:2222222222222222222222222222222222222222222222222222222222222222"
+  }
+]

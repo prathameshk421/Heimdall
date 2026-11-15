@@ -1,0 +1,8 @@
+[
+  {
+    "step": "verify",
+    "role": "",
+    "description": "verify proposed finding evidence in sandbox",
+    "kind": ""
+  }
+]

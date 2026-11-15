@@ -1,0 +1,14 @@
+[
+  {
+    "step": "slop",
+    "role": "",
+    "description": "pass slop evaluation on head commit",
+    "kind": ""
+  },
+  {
+    "step": "pick",
+    "role": "",
+    "description": "pick reviewers after slop passes",
+    "kind": ""
+  }
+]

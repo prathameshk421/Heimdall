@@ -1,0 +1,27 @@
+{
+  "submission": {
+    "title": "Review@2",
+    "head_sha": "59effae",
+    "files_reviewed": [
+      "internal/api/health.go",
+      "api/openapi.yaml"
+    ],
+    "clean": true,
+    "findings": [],
+    "rule_checks": [
+      {
+        "card": "authz-new-route.md",
+        "verdict": "holds",
+        "note": "ok"
+      }
+    ],
+    "lead_checks": [
+      {
+        "lead_id": "lead-sec-01",
+        "verdict": "dropped",
+        "reason": "pre-existing baseline alert outside modified scope"
+      }
+    ]
+  },
+  "expected_refusal": "missing obligation check: secrets-in-logs.md must be answered"
+}
