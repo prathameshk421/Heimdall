@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -38,6 +39,10 @@ func (p Podman) Execute(ctx context.Context, args []string, dir string) ([]byte,
 	// #nosec G204 -- args come only from Policy.containerArgs; profile commands and image refs are fixed/validated.
 	cmd := exec.CommandContext(ctx, "podman", args...)
 	cmd.Dir = dir
+	// A cancelled job (superseded or timed out) gets SIGTERM, which podman forwards to the container and cleans up
+	// after; only a job that ignores it for ten seconds is killed.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = 10 * time.Second
 	home := p.Home
 	if home == "" {
 		home = "/var/lib/heimdall-runner"

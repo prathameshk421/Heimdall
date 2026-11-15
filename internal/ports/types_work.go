@@ -84,8 +84,50 @@ type SandboxJob struct {
 	CheckID string `json:"check_id,omitempty"`
 	// TestKind names the profile test kind a test job runs; empty for every other kind.
 	TestKind string `json:"test_kind,omitempty"`
+	// OnDemand marks a check job a person or agent asked for (run_check) rather than one the pipeline ran by itself.
+	OnDemand bool `json:"on_demand,omitempty"`
+	// Change is the ticket or pull request this job serves. Only a job with a Change can be superseded by a new head.
+	Change id.ChangeID `json:"change,omitempty"`
+	// Head is the pull-request head this job serves, when it differs from SHA (a baseline run of a check at the merge
+	// base serves the head it will be compared with). Empty means SHA is the head.
+	Head id.SHA `json:"head,omitempty"`
 	// Check names the fixed deterministic check of the old static job (CheckGoVet). It is empty for every other kind.
 	Check string `json:"check,omitempty"`
+}
+
+// Priority orders the runner's queue (TEST_AGENT_ARCH 8): a lower value runs first. It is data on the job kind.
+type Priority int
+
+// The priorities, highest first. A preview is the lowest: it is a running process a person is waiting on only
+// while an agent explores, never a gate.
+const (
+	PriorityGate       Priority = iota // acceptance, red-first, evidence verification, profile trials
+	PriorityOnDemand                   // a check an agent or person asked for, a cache warm
+	PriorityBackground                 // checks and mutants the pipeline runs by itself
+	PriorityPreview
+)
+
+// Priority returns where the job waits in the runner's queue.
+func (j SandboxJob) Priority() Priority {
+	switch j.Kind {
+	case SandboxRedFirst, SandboxRepro, SandboxTest, SandboxProfileTrial, SandboxStatic:
+		return PriorityGate
+	case SandboxWarm:
+		return PriorityOnDemand
+	case SandboxCheck:
+		if j.OnDemand {
+			return PriorityOnDemand
+		}
+	}
+	return PriorityBackground
+}
+
+// HeadSHA returns the pull-request head the job serves.
+func (j SandboxJob) HeadSHA() id.SHA {
+	if j.Head != "" {
+		return j.Head
+	}
+	return j.SHA
 }
 
 // CheckGoVet is the old static check that ran go vet. See SandboxStatic: it goes with its last callers.
@@ -110,6 +152,13 @@ func (j SandboxJob) Validate() error {
 	v.add("dir", j.validateDir())
 	v.require("timeout", j.Timeout > 0 && j.Timeout <= maxSandboxTimeout, "must be more than 0 and at most 10 minutes")
 	v.add("base_sha", j.validateBase())
+	if j.Head != "" {
+		v.add("head", checkSHA(j.Head))
+	}
+	if j.Change != "" {
+		v.add("change", func() error { _, err := id.ParseChangeID(string(j.Change)); return err }())
+	}
+	v.require("on_demand", !j.OnDemand || j.Kind == SandboxCheck, "only a check job is asked for on demand")
 	v.add("check_id", j.validateName(j.CheckID, SandboxCheck))
 	v.add("test_kind", j.validateName(j.TestKind, SandboxTest))
 	if j.Kind == SandboxStatic {

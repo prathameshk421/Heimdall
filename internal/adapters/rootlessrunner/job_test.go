@@ -279,7 +279,9 @@ func jobRequest(t *testing.T, job ports.SandboxJob, mutate func(*request)) *http
 	}
 	body, err := json.Marshal(in)
 	require.NoError(t, err)
-	return httptest.NewRequestWithContext(context.Background(), "POST", "/v1/run", strings.NewReader(string(body)))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/run", strings.NewReader(string(body)))
+	setQueueHeaders(req, in.Job)
+	return req
 }
 
 const sarifOut = "\nheimdall-log-begin\nscan done\n\nheimdall-result-begin\n{\"version\":\"2.1.0\",\"runs\":[]}\n\nheimdall-result-end\nheimdall-exit=1\n"

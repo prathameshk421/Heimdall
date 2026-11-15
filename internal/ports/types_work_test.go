@@ -51,3 +51,32 @@ func TestSandboxResultBoundsTheSarif(t *testing.T) {
 	res := SandboxResult{LogRef: workflow.BlobRef("blob:sha256:" + strings.Repeat("a", 64)), Sarif: make([]byte, MaxJobResult+1)}
 	require.ErrorContains(t, res.Validate(), "sarif")
 }
+
+func TestTheQueuePriorityIsDataOnTheJobKind(t *testing.T) {
+	tests := []struct {
+		name string
+		job  SandboxJob
+		want Priority
+	}{
+		{"red-first", SandboxJob{Kind: SandboxRedFirst}, PriorityGate},
+		{"repro", SandboxJob{Kind: SandboxRepro}, PriorityGate},
+		{"a test kind", SandboxJob{Kind: SandboxTest}, PriorityGate},
+		{"a profile trial", SandboxJob{Kind: SandboxProfileTrial}, PriorityGate},
+		{"a cache warm", SandboxJob{Kind: SandboxWarm}, PriorityOnDemand},
+		{"a pipeline check", SandboxJob{Kind: SandboxCheck}, PriorityBackground},
+		{"a check asked for on demand", SandboxJob{Kind: SandboxCheck, OnDemand: true}, PriorityOnDemand},
+	}
+	for _, tt := range tests {
+		require.Equal(t, tt.want, tt.job.Priority(), tt.name)
+	}
+	require.Less(t, PriorityGate, PriorityOnDemand)
+	require.Less(t, PriorityOnDemand, PriorityBackground)
+	require.Less(t, PriorityBackground, PriorityPreview)
+
+	sha := id.SHA(strings.Repeat("a", 40))
+	require.Equal(t, sha, SandboxJob{SHA: sha}.HeadSHA())
+	require.Equal(t, id.SHA(strings.Repeat("b", 40)), SandboxJob{SHA: sha, Head: id.SHA(strings.Repeat("b", 40))}.HeadSHA())
+
+	job := SandboxJob{Kind: SandboxTest, Repo: "acme/pay", SHA: sha, Dir: "tests", TestKind: "api", Timeout: time.Minute, OnDemand: true}
+	require.ErrorContains(t, job.Validate(), "on_demand", "only a check job is asked for on demand")
+}

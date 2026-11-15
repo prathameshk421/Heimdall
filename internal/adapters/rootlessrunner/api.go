@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,23 +64,15 @@ type policyView struct {
 }
 
 // Handler exposes the narrow job API to the Unix socket only: isolated runs, proposed-profile
-// trials, durable profile promotion, the policy allowlist and warm jobs.
+// trials, durable profile promotion, the policy allowlist, warm jobs and supersession of stale jobs.
+//
+// One job runs at a time: run, promotion and warm all stage files in the same module cache and job directory scope,
+// so the queue serializes the durable-state touches too. A caller that arrives while another job runs waits for its
+// turn, in priority order, for as long as its own request lives (TEST_AGENT_ARCH 8); it is never refused for being busy.
 func (r *Runner) Handler() http.Handler {
 	mux := http.NewServeMux()
-	slot := make(chan struct{}, 1)
-	// One job at a time: run, promotion and warm all stage files in the same module cache and job
-	// directory scope, so the slot serializes the durable-state touches too.
-	bounded := func(mutate func(w http.ResponseWriter, req *http.Request)) http.HandlerFunc {
-		return func(w http.ResponseWriter, req *http.Request) {
-			if !acquireSlot(slot) {
-				writeResponse(w, http.StatusServiceUnavailable, response{Error: "runner is busy"})
-				return
-			}
-			defer func() { <-slot }()
-			mutate(w, req)
-		}
-	}
-	mux.Handle("POST /v1/run", bounded(func(w http.ResponseWriter, req *http.Request) {
+	queue := &jobQueue{}
+	mux.Handle("POST /v1/run", queued(queue, runKey, func(w http.ResponseWriter, req *http.Request) {
 		out, status := r.handleRun(req)
 		writeResponse(w, status, out)
 	}))
@@ -89,24 +82,117 @@ func (r *Runner) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/policy", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, policyView{Images: r.AllowedImages()})
 	})
-	mux.Handle("POST /v1/profiles", bounded(func(w http.ResponseWriter, req *http.Request) {
+	mux.Handle("POST /v1/profiles", queued(queue, fixedKey(ports.PriorityGate), func(w http.ResponseWriter, req *http.Request) {
 		out, status := r.handleProfilesPush(req)
 		writeResponse(w, status, out)
 	}))
-	mux.Handle("POST /v1/warm", bounded(func(w http.ResponseWriter, req *http.Request) {
+	mux.Handle("POST /v1/warm", queued(queue, fixedKey(ports.PriorityOnDemand), func(w http.ResponseWriter, req *http.Request) {
 		out, status := r.handleWarm(req)
 		writeResponse(w, status, out)
 	}))
+	mux.HandleFunc("POST /v1/supersede", func(w http.ResponseWriter, req *http.Request) {
+		out, status := handleSupersede(queue, req)
+		writeResponse(w, status, out)
+	})
 	return mux
 }
 
-func acquireSlot(slot chan struct{}) bool {
-	select {
-	case slot <- struct{}{}:
-		return true
-	default:
-		return false
+// Request headers that tell the queue where a job waits, so a waiting caller holds no request body in memory. The
+// run handler checks them against the decoded job and refuses a request whose headers claim a better place.
+const (
+	headerPriority = "X-Heimdall-Priority"
+	headerRepo     = "X-Heimdall-Repo"
+	headerChange   = "X-Heimdall-Change"
+	headerHead     = "X-Heimdall-Head"
+)
+
+// queued admits a request through the queue before its handler reads the body.
+func queued(q *jobQueue, keyOf func(*http.Request) (jobKey, error), handle http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		key, err := keyOf(req)
+		if err != nil {
+			writeResponse(w, http.StatusBadRequest, response{Error: "invalid queue headers"})
+			return
+		}
+		ctx, release, err := q.Acquire(req.Context(), key)
+		if err != nil {
+			status := http.StatusServiceUnavailable
+			if errors.Is(err, ErrSuperseded) {
+				status = http.StatusConflict
+			}
+			writeResponse(w, status, response{Error: err.Error()})
+			return
+		}
+		defer release()
+		handle(w, req.WithContext(ctx))
 	}
+}
+
+func fixedKey(p ports.Priority) func(*http.Request) (jobKey, error) {
+	return func(*http.Request) (jobKey, error) { return jobKey{Priority: p}, nil }
+}
+
+// runKey reads the queue headers of a run request.
+func runKey(req *http.Request) (jobKey, error) {
+	p, err := strconv.Atoi(req.Header.Get(headerPriority))
+	if err != nil || p < int(ports.PriorityGate) || p > int(ports.PriorityPreview) {
+		return jobKey{}, errors.New("priority header is missing or out of range")
+	}
+	key := jobKey{Priority: ports.Priority(p)}
+	if raw := req.Header.Get(headerRepo); raw != "" {
+		repo, err := change.ParseRepo(raw)
+		if err != nil {
+			return jobKey{}, fmt.Errorf("repo header: %w", err)
+		}
+		key.Repo = repo
+	}
+	if raw := req.Header.Get(headerChange); raw != "" {
+		ch, err := id.ParseChangeID(raw)
+		if err != nil {
+			return jobKey{}, fmt.Errorf("change header: %w", err)
+		}
+		key.Change = ch
+	}
+	if raw := req.Header.Get(headerHead); raw != "" {
+		sha, err := id.ParseSHA(raw)
+		if err != nil {
+			return jobKey{}, fmt.Errorf("head header: %w", err)
+		}
+		key.Head = sha
+	}
+	return key, nil
+}
+
+// jobKeyOf is the key a decoded job really has. The headers must not claim a better place than this.
+func jobKeyOf(job ports.SandboxJob) jobKey {
+	return jobKey{Priority: job.Priority(), Repo: job.Repo, Change: job.Change, Head: job.HeadSHA()}
+}
+
+type supersedeRequest struct {
+	Repo   change.Repo `json:"repo"`
+	Change id.ChangeID `json:"change"`
+	Head   id.SHA      `json:"head"`
+}
+
+// handleSupersede cancels the background jobs of a change that served an older head. It never waits in the queue:
+// it must be able to cancel the very job that is holding it.
+func handleSupersede(q *jobQueue, req *http.Request) (response, int) {
+	body, err := io.ReadAll(io.LimitReader(req.Body, 4<<10))
+	var in supersedeRequest
+	if err != nil || json.Unmarshal(body, &in) != nil || in.Change == "" {
+		return response{Error: "invalid supersede request"}, http.StatusBadRequest
+	}
+	if _, err := id.ParseChangeID(string(in.Change)); err != nil {
+		return response{Error: "invalid supersede request"}, http.StatusBadRequest
+	}
+	if _, err := id.ParseSHA(string(in.Head)); err != nil {
+		return response{Error: "invalid supersede request"}, http.StatusBadRequest
+	}
+	if _, err := change.ParseRepo(string(in.Repo)); err != nil {
+		return response{Error: "invalid supersede request"}, http.StatusBadRequest
+	}
+	q.Supersede(in.Repo, in.Change, in.Head)
+	return response{}, http.StatusOK
 }
 
 func (r *Runner) decodeBody(req *http.Request, limit int64) ([]byte, error) {
@@ -148,6 +234,14 @@ func (r *Runner) handleRun(req *http.Request) (response, int) {
 	if status, err := checkJobKind(in); err != nil {
 		return response{Error: err.Error()}, status
 	}
+	if claimed, err := runKey(req); err != nil || claimed != jobKeyOf(in.Job) {
+		return response{Error: "queue headers do not match the job"}, http.StatusBadRequest
+	}
+	return r.runRequest(req.Context(), in, spec)
+}
+
+// runRequest runs a validated request and shapes its answer.
+func (r *Runner) runRequest(ctx context.Context, in request, spec *RepoProfile) (response, int) {
 	job := JobInput{
 		Profile: in.Profile, Spec: spec, Archive: bytes.NewReader(in.Archive),
 		Overlays: in.Overlays, Dir: in.Job.Dir, CheckID: in.Job.CheckID, TestKind: in.Job.TestKind, Timeout: in.Job.Timeout,
@@ -155,7 +249,7 @@ func (r *Runner) handleRun(req *http.Request) (response, int) {
 	if len(in.BaseArchive) > 0 {
 		job.BaseArchive = bytes.NewReader(in.BaseArchive)
 	}
-	out, runErr := r.Run(req.Context(), job)
+	out, runErr := r.Run(ctx, job)
 	if isProfileCommandJob(in.Job.Kind) {
 		return profileJobResponse(in.Job.Kind, out, runErr)
 	}
@@ -372,6 +466,7 @@ var (
 	_ ports.ProfilePolicySource = Client{}
 	_ ports.ProfileSyncer       = Client{}
 	_ ports.ProfileWarmer       = Client{}
+	_ ports.SandboxSuperseder   = Client{}
 )
 
 // Run submits one commit archive through the protected Unix socket and stores its bounded log as a blob.
@@ -402,7 +497,7 @@ func (c Client) RunOverlay(ctx context.Context, job ports.SandboxJob, overlays [
 	if err != nil {
 		return ports.SandboxResult{}, fmt.Errorf("encode runner request: %w", err)
 	}
-	resp, err := c.post(ctx, "/v1/run", job.Timeout, body)
+	resp, err := c.postRun(ctx, job, body)
 	if err != nil {
 		return ports.SandboxResult{}, err
 	}
@@ -438,7 +533,7 @@ func (c Client) Trial(ctx context.Context, j ports.ProfileTrialJob) (ports.Sandb
 	if err != nil {
 		return ports.SandboxResult{}, fmt.Errorf("encode trial request: %w", err)
 	}
-	resp, err := c.post(ctx, "/v1/run", job.Timeout, body)
+	resp, err := c.postRun(ctx, job, body)
 	if err != nil {
 		return ports.SandboxResult{}, err
 	}
@@ -622,7 +717,26 @@ func validateOverlays(overlays []ports.File) error {
 	return nil
 }
 
+// maxQueueWait bounds how long a caller's connection may wait for its turn before the job even starts. The caller's own
+// context is the deadline that matters; this only keeps the HTTP client from giving up first.
+const maxQueueWait = 30 * time.Minute
+
 func (c Client) post(ctx context.Context, path string, timeout time.Duration, body []byte) (*http.Response, error) {
+	return c.send(ctx, path, timeout, body, nil)
+}
+
+// postRun posts one job and tells the runner's queue where it waits. The runner checks the headers against the job.
+func (c Client) postRun(ctx context.Context, job ports.SandboxJob, body []byte) (*http.Response, error) {
+	key := jobKeyOf(job)
+	return c.send(ctx, "/v1/run", job.Timeout+maxQueueWait, body, map[string]string{
+		headerPriority: strconv.Itoa(int(key.Priority)),
+		headerRepo:     string(key.Repo),
+		headerChange:   string(key.Change),
+		headerHead:     string(key.Head),
+	})
+}
+
+func (c Client) send(ctx context.Context, path string, timeout time.Duration, body []byte, headers map[string]string) (*http.Response, error) {
 	transport := &http.Transport{DialContext: c.dial()}
 	client := &http.Client{Transport: transport, Timeout: timeout + 10*time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://runner"+path, bytes.NewReader(body))
@@ -631,6 +745,11 @@ func (c Client) post(ctx context.Context, path string, timeout time.Duration, bo
 		return nil, fmt.Errorf("create runner request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for name, value := range headers {
+		if value != "" {
+			req.Header.Set(name, value)
+		}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		transport.CloseIdleConnections()
@@ -682,4 +801,25 @@ func (c Client) profileJobResult(ctx context.Context, job ports.SandboxJob, outp
 	res := testevents.ReportToSandboxResult(report, workflow.BlobRef(logRef))
 	res.Exit = parsed.Exit
 	return res, nil
+}
+
+// Supersede tells the runner that a change has a new head, so it cancels the queued and running background jobs that
+// served an older one (TEST_AGENT_ARCH 8, rule 3).
+func (c Client) Supersede(ctx context.Context, repo change.Repo, ch id.ChangeID, head id.SHA) error {
+	if c.Socket == "" {
+		return errors.New("runner socket path is required")
+	}
+	body, err := json.Marshal(supersedeRequest{Repo: repo, Change: ch, Head: head})
+	if err != nil {
+		return fmt.Errorf("encode supersede request: %w", err)
+	}
+	resp, err := c.post(ctx, "/v1/supersede", 30*time.Second, body)
+	if err != nil {
+		return fmt.Errorf("supersede runner jobs: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("runner refused supersede: status %d", resp.StatusCode)
+	}
+	return nil
 }
