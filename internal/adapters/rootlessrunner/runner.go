@@ -141,7 +141,7 @@ func (r *Runner) Activate(name string, artifact []byte) (RepoProfile, error) {
 	if !validProfileName(name) {
 		return RepoProfile{}, errors.New("profile name must be 1 to 64 lowercase name characters")
 	}
-	spec, err := ParseApprovedProfile(artifact, r.imageAllowlist())
+	spec, err := ParseApprovedProfile(artifact, r.AllowedImages())
 	if err != nil {
 		return RepoProfile{}, fmt.Errorf("validate promoted profile %q: %w", name, err)
 	}
@@ -153,28 +153,6 @@ func (r *Runner) Activate(name string, artifact []byte) (RepoProfile, error) {
 	r.active[name] = spec
 	r.mu.Unlock()
 	return spec, nil
-}
-
-func (r *Runner) imageAllowlist() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	allowed := make(map[string]struct{}, len(r.allowlist)+len(r.Policy.Images)+len(r.active))
-	for _, image := range r.allowlist {
-		allowed[image] = struct{}{}
-	}
-	for _, image := range r.Policy.Images {
-		allowed[image] = struct{}{}
-	}
-	for name, image := range r.active {
-		if name != "" && image.Image != "" {
-			allowed[image.Image] = struct{}{}
-		}
-	}
-	out := make([]string, 0, len(allowed))
-	for image := range allowed {
-		out = append(out, image)
-	}
-	return out
 }
 
 // persistProfile writes the artifact into the durable promoted directory atomically. Idempotent:
@@ -252,16 +230,18 @@ func (r *Runner) Names() []string {
 	return names
 }
 
-// AllowedImages returns the distinct image allowlist the runner validates proposals against.
+// AllowedImages returns the distinct image allowlist the runner validates proposals against: every digest-pinned
+// reference it may run and every image name a profile may use for a check, a test kind or a service. A name resolves
+// to its reference only here, at job time, so rotating an image's digest edits no repository profile.
 func (r *Runner) AllowedImages() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	allowed := make(map[string]struct{}, len(r.allowlist)+len(r.Policy.Images)+len(r.active))
+	allowed := make(map[string]struct{}, len(r.allowlist)+2*len(r.Policy.Images)+len(r.active))
 	for _, image := range r.allowlist {
 		allowed[image] = struct{}{}
 	}
-	for _, image := range r.Policy.Images {
-		allowed[image] = struct{}{}
+	for name, image := range r.Policy.Images {
+		allowed[name], allowed[image] = struct{}{}, struct{}{}
 	}
 	for _, spec := range r.active {
 		if spec.Image != "" {

@@ -14,6 +14,13 @@
 // profile names the file cannot echo and leaves setup/test inert, so an artifact that appears to
 // name extra commands never runs anything.
 //
+// The checks, tests.kinds, tests.runs and services sections follow the same rules. Their shape (a
+// kind's run carries exactly one {dir}, a ready URL is loopback, globs stay inside the repository,
+// every list is bounded) lives in ports.ProfileSpec.ValidateExtensions, called from here; this package
+// adds the rule only it can apply: every image they name is on the allowlist the caller holds, either
+// as a digest reference or as a bare name the runner resolves at job time. Unknown keys are refused at
+// every level.
+//
 // Failure modes: every violation fails closed with an error naming the category, and no error says
 // or ships any secret.
 //
@@ -27,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"path"
@@ -58,12 +66,48 @@ type RepoProfile struct {
 	Paths      struct {
 		Tests string `yaml:"tests" json:"tests"`
 	} `yaml:"paths" json:"paths"`
+	// Checks are the tool checks of REVIEW_ARCH 4.1; Tests holds the test kinds of TEST_AGENT_ARCH 5.1 and the
+	// number of times a gate run repeats; Services are the throwaway containers a job may reach.
+	Checks   []Check   `yaml:"checks,omitempty" json:"checks,omitempty"`
+	Tests    Tests     `yaml:"tests,omitempty" json:"tests,omitempty"`
+	Services []Service `yaml:"services,omitempty" json:"services,omitempty"`
+}
+
+// Check is one row of the profile's checks list.
+type Check struct {
+	ID       string   `yaml:"id" json:"id"`
+	Lens     string   `yaml:"lens" json:"lens"`
+	When     []string `yaml:"when" json:"when"`
+	Image    string   `yaml:"image" json:"image"`
+	Run      string   `yaml:"run" json:"run"`
+	Baseline bool     `yaml:"baseline" json:"baseline"`
+}
+
+// Tests is the profile's tests section.
+type Tests struct {
+	Runs  int             `yaml:"runs,omitempty" json:"runs,omitempty"`
+	Kinds map[string]Kind `yaml:"kinds,omitempty" json:"kinds,omitempty"`
+}
+
+// Kind is one test kind: how to run tests of that kind, and what app it needs running first.
+type Kind struct {
+	Image string `yaml:"image,omitempty" json:"image,omitempty"`
+	Run   string `yaml:"run" json:"run"`
+	Serve string `yaml:"serve,omitempty" json:"serve,omitempty"`
+	Ready string `yaml:"ready,omitempty" json:"ready,omitempty"`
+}
+
+// Service is one throwaway container of the profile.
+type Service struct {
+	Name  string            `yaml:"name" json:"name"`
+	Image string            `yaml:"image" json:"image"`
+	Env   map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 // Spec converts the artifact into the port-level contract, dropping fields this build does not
 // execute. The conversion is total: every validated artifact maps to a valid ProfileSpec.
 func Spec(p RepoProfile) ports.ProfileSpec {
-	return ports.ProfileSpec{
+	spec := ports.ProfileSpec{
 		Languages:  p.Languages,
 		Image:      p.Image,
 		Acceptance: p.Acceptance,
@@ -71,7 +115,19 @@ func Spec(p RepoProfile) ports.ProfileSpec {
 		ACTag:      p.ACTag,
 		FetchHosts: p.FetchHosts,
 		TestsDir:   p.Paths.Tests,
+		Runs:       p.Tests.Runs,
 	}
+	for _, c := range p.Checks {
+		spec.Checks = append(spec.Checks, ports.ProfileCheck{ID: c.ID, Lens: c.Lens, When: c.When, Image: c.Image, Run: c.Run, Baseline: c.Baseline})
+	}
+	for _, name := range slices.Sorted(maps.Keys(p.Tests.Kinds)) {
+		k := p.Tests.Kinds[name]
+		spec.Kinds = append(spec.Kinds, ports.ProfileKind{Name: name, Image: k.Image, Run: k.Run, Serve: k.Serve, Ready: k.Ready})
+	}
+	for _, svc := range p.Services {
+		spec.Services = append(spec.Services, ports.ProfileService{Name: svc.Name, Image: svc.Image, Env: svc.Env})
+	}
+	return spec
 }
 
 // ProfileName matches the normalized profile names the runner persists.
@@ -180,7 +236,36 @@ func ParseApprovedProfile(data []byte, allowlistedImages []string) (RepoProfile,
 	if err := validateProfileHosts(p.FetchHosts); err != nil {
 		return RepoProfile{}, err
 	}
+	if err := validateExtensions(p, allowlistedImages); err != nil {
+		return RepoProfile{}, err
+	}
 	return p, nil
+}
+
+// validateExtensions applies the shape rules of the checks, test kinds, runs and services (owned by ports) and the
+// one rule only this package can apply: every image they name is on the allowlist the caller holds.
+func validateExtensions(p RepoProfile, allowlist []string) error {
+	if err := Spec(p).ValidateExtensions(); err != nil {
+		return fmt.Errorf("profile extensions: %w", err)
+	}
+	var images []string
+	for _, c := range p.Checks {
+		images = append(images, c.Image)
+	}
+	for _, k := range p.Tests.Kinds {
+		if k.Image != "" {
+			images = append(images, k.Image)
+		}
+	}
+	for _, svc := range p.Services {
+		images = append(images, svc.Image)
+	}
+	for _, image := range images {
+		if !slices.Contains(allowlist, image) {
+			return fmt.Errorf("%w: %q", ErrImageNotAllowed, image)
+		}
+	}
+	return nil
 }
 
 func profileSingleDocument(decoder *yaml.Decoder) error {
