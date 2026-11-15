@@ -1,0 +1,12 @@
+[
+  {
+    "id": "M1",
+    "description": "rounding to 4 decimal places skipped",
+    "killed_by": "B2"
+  },
+  {
+    "id": "M2",
+    "description": "unsupported currency returns 0 instead of 400",
+    "killed_by": "B3"
+  }
+]

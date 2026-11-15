@@ -1,0 +1,12 @@
+[
+  {
+    "id": "M1",
+    "description": "idempotency cache lookup ignored, duplicate payout inserted",
+    "killed_by": "B2"
+  },
+  {
+    "id": "M2",
+    "description": "missing idempotency key generates random key instead of 400",
+    "killed_by": "B3"
+  }
+]

@@ -1,0 +1,34 @@
+{
+  "title": "TestPlan@1",
+  "ticket": "KAN-23",
+  "behaviours": [
+    {
+      "id": "B1",
+      "ac": "AC1",
+      "kind": "api",
+      "case": "negative",
+      "given": "captured payment of 100",
+      "when": "POST /refunds amount=150",
+      "then": "400 Bad Request",
+      "oracle": "exact"
+    },
+    {
+      "id": "B2",
+      "ac": "AC2",
+      "kind": "api",
+      "case": "positive",
+      "given": "captured payment of 100",
+      "when": "POST /refunds amount=40",
+      "then": "201 Created and body contains merchant_id",
+      "oracle": "exact"
+    }
+  ],
+  "ui_handles": [],
+  "expected_paths": [
+    "internal/api/refunds.go",
+    "api/openapi.yaml"
+  ],
+  "assumptions": [
+    "Currency matches payment currency."
+  ]
+}

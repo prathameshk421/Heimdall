@@ -1,0 +1,12 @@
+[
+  {
+    "id": "M1",
+    "description": "refund cap check removed",
+    "killed_by": "B1"
+  },
+  {
+    "id": "M2",
+    "description": "merchant_id renamed to merchant in response body",
+    "killed_by": "B2"
+  }
+]

@@ -1,0 +1,60 @@
+diff -ruN testdata/reviewbench/heldout/base/cmd/notifier/main.go testdata/reviewbench/heldout/clean/cmd/notifier/main.go
+--- testdata/reviewbench/heldout/base/cmd/notifier/main.go	2026-11-15 16:54:50.297102068 +0530
++++ testdata/reviewbench/heldout/clean/cmd/notifier/main.go	2026-11-15 16:54:50.297467602 +0530
+@@ -7,6 +7,7 @@
+ )
+ 
+ func main() {
++	// standard timeout configuration
+ 	timeout := flag.Int("timeout", 30, "request timeout in seconds")
+ 	flag.Parse()
+ 	slog.Info("starting webhook notifier", "timeout", *timeout)
+diff -ruN testdata/reviewbench/heldout/base/internal/delivery/sender.go testdata/reviewbench/heldout/clean/internal/delivery/sender.go
+--- testdata/reviewbench/heldout/base/internal/delivery/sender.go	2026-11-15 16:54:50.297155832 +0530
++++ testdata/reviewbench/heldout/clean/internal/delivery/sender.go	1970-01-01 05:30:00.000000000 +0530
+@@ -1,20 +0,0 @@
+-package delivery
+-
+-import (
+-	"bytes"
+-	"fmt"
+-	"io"
+-	"log/slog"
+-	"net/http"
+-)
+-
+-func SendWebhook(client *http.Client, url string, payload []byte) error {
+-	resp, err := client.Post(url, "application/json", bytes.NewReader(payload))
+-	if err != nil {
+-		return fmt.Errorf("post: %w", err)
+-	}
+-	defer resp.Body.Close()
+-	_, _ = io.Copy(io.Discard, resp.Body)
+-	slog.Info("delivered webhook", "url", url, "status", resp.StatusCode)
+-	return nil
+-}
+diff -ruN testdata/reviewbench/heldout/base/internal/signer/hmac.go testdata/reviewbench/heldout/clean/internal/signer/hmac.go
+--- testdata/reviewbench/heldout/base/internal/signer/hmac.go	2026-11-15 16:54:50.297205100 +0530
++++ testdata/reviewbench/heldout/clean/internal/signer/hmac.go	1970-01-01 05:30:00.000000000 +0530
+@@ -1,13 +0,0 @@
+-package signer
+-
+-import (
+-	"crypto/hmac"
+-	"crypto/sha256"
+-	"encoding/hex"
+-)
+-
+-func SignPayload(secret, payload []byte) string {
+-	mac := hmac.New(sha256.New, secret)
+-	mac.Write(payload)
+-	return hex.EncodeToString(mac.Sum(nil))
+-}
+diff -ruN testdata/reviewbench/heldout/base/scripts/drain.sh testdata/reviewbench/heldout/clean/scripts/drain.sh
+--- testdata/reviewbench/heldout/base/scripts/drain.sh	2026-11-15 16:54:50.297249850 +0530
++++ testdata/reviewbench/heldout/clean/scripts/drain.sh	1970-01-01 05:30:00.000000000 +0530
+@@ -1,4 +0,0 @@
+-#!/usr/bin/env bash
+-set -euo pipefail
+-# drain sends any queued events before maintenance
+-notifier --timeout 10
