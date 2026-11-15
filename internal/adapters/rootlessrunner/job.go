@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 // The one job shape of checks and test kinds (REVIEW_ARCH 4.1, TEST_AGENT_ARCH 5.1): the head tree is extracted at
@@ -25,6 +27,11 @@ const (
 	markExit        = "heimdall-exit="
 )
 
+// A kind that serves an app starts it in the background inside the same container, then waits up to 60 seconds for its
+// loopback ready URL (curl or wget must exist in the image); a failed wait ends the job with exit 98 and the app's own
+// log. Nothing outside the container is ever probed: the ready URL is validated as loopback twice, at the profile
+// parser and again when the job is built.
+//
 // profileJobScript is constant. The log tail is 256 KiB and the result file 2 MiB (ports.MaxJobResult); the full log
 // never leaves the container. It extracts the trees, runs the command with its output sent to a file, then prints
 // the log tail, the result file and the exit status between fixed markers. The command's own output cannot reach the
@@ -41,8 +48,24 @@ extract /input/head.tgz /work || exit 97
 if [ -f /input/base.tgz ]; then extract /input/base.tgz /base || exit 97; fi
 if [ -d /input/overlays ]; then cp -a /input/overlays/. /work/; fi
 cd /work
-sh -c "$HEIMDALL_RUN" >/tmp/job.log 2>&1 </dev/null
-code=$?
+probe() { curl -fsS -o /dev/null --max-time 2 "$1" 2>/dev/null || wget -q -T 2 -O /dev/null "$1" 2>/dev/null; }
+ready=1
+if [ -n "${HEIMDALL_SERVE:-}" ]; then
+  sh -c "$HEIMDALL_SERVE" >/tmp/serve.log 2>&1 </dev/null &
+  n=0
+  until probe "$HEIMDALL_READY"; do
+    n=$((n+1))
+    if [ "$n" -ge 60 ]; then ready=0; break; fi
+    sleep 1
+  done
+fi
+if [ "$ready" = 1 ]; then
+  sh -c "$HEIMDALL_RUN" >/tmp/job.log 2>&1 </dev/null
+  code=$?
+else
+  cp /tmp/serve.log /tmp/job.log
+  code=98
+fi
 printf '\n` + markLogBegin + `\n'
 tail -c 262144 /tmp/job.log
 printf '\n` + markResultBegin + `\n'
@@ -60,6 +83,8 @@ type jobSpec struct {
 	OverlayDir  string
 	ModuleCache string
 	Timeout     int
+	Serve       string // command that starts the app under test; empty for none
+	Ready       string // loopback URL to wait on; set exactly when Serve is
 }
 
 // profileJobArgs returns the Podman arguments of one profile-command job. Every input is checked again here, so a
@@ -75,6 +100,9 @@ func (p Policy) profileJobArgs(j jobSpec) ([]string, error) {
 		return nil, errors.New("job result file is not a known result file")
 	}
 	if err := j.checkPaths(); err != nil {
+		return nil, err
+	}
+	if err := j.checkServe(); err != nil {
 		return nil, err
 	}
 	if j.Timeout < 1 || j.Timeout > 600 {
@@ -93,9 +121,11 @@ func (p Policy) profileJobArgs(j jobSpec) ([]string, error) {
 	if j.OverlayDir != "" {
 		args = append(args, "--mount", "type=bind,src="+j.OverlayDir+",dst=/input/overlays,ro=true")
 	}
-	args = append(args, "--env", "HEIMDALL_RUN="+j.Run, "--env", "HEIMDALL_RESULT="+j.ResultFile,
-		j.Image, "/bin/sh", "-c", profileJobScript)
-	return args, nil
+	args = append(args, "--env", "HEIMDALL_RUN="+j.Run, "--env", "HEIMDALL_RESULT="+j.ResultFile)
+	if j.Serve != "" {
+		args = append(args, "--env", "HEIMDALL_SERVE="+j.Serve, "--env", "HEIMDALL_READY="+j.Ready)
+	}
+	return append(args, j.Image, "/bin/sh", "-c", profileJobScript), nil
 }
 
 // checkPaths requires every host path of the job to be absolute and clean with no character that could add a mount option.
@@ -114,6 +144,23 @@ func (j jobSpec) checkPaths() error {
 		if err := absoluteCleanPath(path); err != nil {
 			return fmt.Errorf("%s path: %w", name, err)
 		}
+	}
+	return nil
+}
+
+// checkServe requires serve and ready together, each a bounded line, the URL loopback.
+func (j jobSpec) checkServe() error {
+	if (j.Serve == "") != (j.Ready == "") {
+		return errors.New("serve and ready must be set together")
+	}
+	if j.Serve == "" {
+		return nil
+	}
+	if err := checkJobCommand(j.Serve); err != nil {
+		return fmt.Errorf("serve command: %w", err)
+	}
+	if err := ports.CheckLoopbackURL(j.Ready); err != nil {
+		return fmt.Errorf("ready URL: %w", err)
 	}
 	return nil
 }

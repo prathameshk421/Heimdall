@@ -291,7 +291,7 @@ func profileJobResponse(kind ports.SandboxKind, out []byte, runErr error) (respo
 	case !ok:
 		return response{Error: "runner produced no job result"}, http.StatusUnprocessableEntity
 	case len(bytes.TrimSpace(parsed.Result)) == 0:
-		return response{Error: "job wrote no result file"}, http.StatusUnprocessableEntity
+		return response{Error: "job wrote no result file (exit " + strconv.Itoa(parsed.Exit) + ")"}, http.StatusUnprocessableEntity
 	case kind == ports.SandboxCheck && !json.Valid(parsed.Result):
 		return response{Error: "check result is not valid JSON"}, http.StatusUnprocessableEntity
 	}

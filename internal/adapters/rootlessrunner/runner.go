@@ -276,12 +276,20 @@ func (r *Runner) RunOverlay(ctx context.Context, profile string, archive io.Read
 	return r.runJob(ctx, JobInput{Profile: profile, Archive: archive, Overlays: overlays, Timeout: timeout})
 }
 
-func (r *Runner) runJob(ctx context.Context, in JobInput) ([]byte, error) {
+// checkRunnable refuses a job the runner cannot or may not start.
+func (r *Runner) checkRunnable(in JobInput) error {
 	if r.Executor == nil {
-		return nil, errors.New("rootless runner executor is required")
+		return errors.New("rootless runner executor is required")
 	}
 	if in.Timeout <= 0 || in.Timeout > 10*time.Minute {
-		return nil, errors.New("sandbox timeout must be between 1 second and 10 minutes")
+		return errors.New("sandbox timeout must be between 1 second and 10 minutes")
+	}
+	return nil
+}
+
+func (r *Runner) runJob(ctx context.Context, in JobInput) ([]byte, error) {
+	if err := r.checkRunnable(in); err != nil {
+		return nil, err
 	}
 	policy, err := r.effectivePolicy(in)
 	if err != nil {
@@ -304,8 +312,17 @@ func (r *Runner) runJob(ctx context.Context, in JobInput) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	services, err := policy.resolveServices(in.Profile, in)
+	if err != nil {
+		return nil, err
+	}
 	jobCtx, cancel := context.WithTimeout(ctx, in.Timeout+5*time.Second)
 	defer cancel()
+	args, stop, err := r.startServices(jobCtx, services, filepath.Base(dir), args, dir, in.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	defer stop()
 	output, runErr := r.Executor.Execute(jobCtx, args, dir)
 	if runErr != nil && len(output) == 0 {
 		return nil, runErr

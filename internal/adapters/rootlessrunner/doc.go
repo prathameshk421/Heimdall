@@ -14,6 +14,11 @@
 // A request names only a check id or a test kind; a name the profile does not hold, an image the runner does not hold
 // and a directory with shell characters are refused before any container starts.
 //
+// Services: a profile's services run as throwaway containers on a private `--internal` network created for one job and
+// shared with nobody else, so the job keeps no egress. They run non-root with no capabilities, are removed when the job
+// ends whatever its outcome, and carry their own timeout. A kind with serve and ready starts its app inside the job and
+// waits on a loopback URL; the image needs curl or wget. A check job never gets services.
+//
 // Failure modes: invalid jobs, images, paths, oversized payloads, unavailable runner sockets, runtime failures,
 // timeouts, and absent test events fail closed. Rootless Podman and subordinate UID/GID mappings are OS prerequisites.
 //

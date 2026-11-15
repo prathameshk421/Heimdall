@@ -92,7 +92,10 @@ func (p Policy) resolveJob(profile, checkID, testKind, dir string) (jobSpec, err
 			name = spec.Image
 		}
 		image, err := p.resolveImage(name, spec)
-		return jobSpec{Image: image, Run: strings.ReplaceAll(kind.Run, "{dir}", "./"+rel), ResultFile: resultJUnit}, err
+		return jobSpec{
+			Image: image, Run: strings.ReplaceAll(kind.Run, "{dir}", "./"+rel), ResultFile: resultJUnit,
+			Serve: kind.Serve, Ready: kind.Ready,
+		}, err
 	default:
 		return jobSpec{}, errors.New("a job names exactly one of a check and a test kind")
 	}
@@ -220,12 +223,16 @@ func absoluteCleanPath(value string) error {
 	return nil
 }
 
+// noNetwork is the flag every job starts with. Only a job with services has it replaced, by the private network of
+// its own services (see useServiceNetwork).
+const noNetwork = "--network=none"
+
 // hardenedArgs are the isolation flags every job carries, whatever it runs: no network, a read-only root, no
 // capabilities, no new privileges, bounded processes, memory and CPU, a non-root user, and small tmpfs scratch and
 // result directories. Nothing in a profile or a request can change them.
 func hardenedArgs(timeoutSeconds int) []string {
 	return []string{
-		"run", "--rm", "--pull=never", "--network=none", "--read-only", "--user=65532:65532",
+		"run", "--rm", "--pull=never", noNetwork, "--read-only", "--user=65532:65532",
 		"--group-add=keep-groups",
 		"--cap-drop=ALL", "--security-opt=no-new-privileges",
 		"--pids-limit=512", "--memory=2g", "--cpus=2", "--timeout=" + strconv.Itoa(timeoutSeconds),

@@ -147,7 +147,7 @@ func (k ProfileKind) validate(seen map[string]bool) error {
 	v.require("serve", (k.Serve == "") == (k.Ready == ""), "serve and ready must be set together")
 	if k.Serve != "" {
 		v.add("serve", checkRunCommand(k.Serve))
-		v.add("ready", checkLoopbackURL(k.Ready))
+		v.add("ready", CheckLoopbackURL(k.Ready))
 	}
 	return v.join()
 }
@@ -209,9 +209,9 @@ func checkGlob(g string) error {
 	return nil
 }
 
-// checkLoopbackURL requires an http URL that names a loopback address and a port, so a ready probe can only ever
-// reach the app started inside the job.
-func checkLoopbackURL(raw string) error {
+// CheckLoopbackURL requires an http URL that names a loopback address and a port, so a ready probe can only ever
+// reach the app started inside the job. The profile parser and the runner both apply it.
+func CheckLoopbackURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Port() == "" {
 		return fmt.Errorf("%q must be an http URL with a loopback host and a port", raw)
