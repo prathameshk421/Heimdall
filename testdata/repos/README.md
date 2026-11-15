@@ -55,3 +55,25 @@ run gofmt and vet on the materialised trees.
 `make fixtures-push` (written later, not in this change) will publish each materialised repository to its GitHub
 repository (`aarush323/heimdall-fixture-pay`), as branches under `heimdall-test/<run-id>` with base `heimdall-demo`.
 It will read `PR_BODY.md` for the pull request body. Nothing in this directory touches the network.
+
+## Multi-Language and UI Fixture Repositories (M6 Step 3b)
+
+In addition to the Go fixtures above, two non-Go fixtures prove language-neutral runner execution and UI test support:
+
+### `python-service`
+- **Purpose**: Python database service requiring a database dependency.
+- **Base Tree**: Python service with SQLite/Postgres-compatible schema and account transfer methods.
+- **Profile**: `.heimdall/profile.yaml` specifying Python 3.11 runtime, `python3 -m unittest` runner, and `postgres:16-alpine` service dependency.
+- **Tests**:
+  - Known Green: `tests/test_service.py` (verifies balance lookups and successful transfers).
+  - Known Red: `tests/test_red.py` (fails on base because negative amounts and overdrafts are unchecked).
+- **Branch `fix-overdraft`**: Resolves the bug by checking balance and asserting positive transfer amounts, turning `test_red.py` green.
+
+### `web-form`
+- **Purpose**: Lightweight single-page web app with one HTML form.
+- **Base Tree**: HTML form at `/` with fields for name, email, and message; Python HTTP server handling submissions at `/submit`.
+- **Profile**: `.heimdall/profile.yaml` specifying `api` tests and `ui` test kind with Playwright browser runner.
+- **Tests**:
+  - Known Green: `tests/test_web.py` (verifies HTML form rendering and valid submission).
+  - Known Red: `tests/test_red.py` (fails on base because invalid email addresses are accepted with 200).
+- **Branch `form-validation`**: Validates email format on submission, returning 400 Bad Request on invalid input, turning `test_red.py` green.
