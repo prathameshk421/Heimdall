@@ -1,0 +1,15 @@
+rules:
+  - id: go-no-sleep
+    languages: [go]
+    severity: WARNING
+    message: >-
+      The test waits on the clock. It passes on a fast machine and fails on a slow one. Wait for the thing instead.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?m)\btime\.Sleep\('
+    metadata:
+      category: tests
+      technology: [go]
+      confidence: HIGH

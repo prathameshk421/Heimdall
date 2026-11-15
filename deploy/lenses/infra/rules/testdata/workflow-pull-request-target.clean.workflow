@@ -1,0 +1,8 @@
+name: label
+on:
+  pull_request:
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo labelling

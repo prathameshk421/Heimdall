@@ -1,0 +1,16 @@
+rules:
+  - id: python-no-outside-network
+    languages: [python]
+    severity: WARNING
+    message: >-
+      The test calls a host that is not the app under test. The test then depends on the outside world and fails when
+      it is down. Point it at the app the harness serves.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?i)https?://(?!(localhost|127\.0\.0\.1|\[::1\]))[a-z0-9.-]+'
+    metadata:
+      category: tests
+      technology: [python]
+      confidence: MEDIUM

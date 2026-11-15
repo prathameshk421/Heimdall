@@ -1,0 +1,21 @@
+rules:
+  - id: workflow-action-not-pinned
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      This action is referenced by a name that can move. Pin it to the commit it came from, so the pipeline runs the
+      code that was reviewed.
+    paths:
+      # The fixture of this rule cannot end in .yml: the engine loads every YAML file in the rule folder as a rule
+      # file, and the fixture would shadow itself. It ends in .workflow instead, which is why that glob is here.
+      include:
+        - "**/.github/workflows/**"
+        - "**/*.workflow"
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?im)^\s*(?:-\s*)?uses:\s*["'']?[^\s"''#]+@(?!sha256:[0-9a-f]{40}\b)[^\s"''#]+'
+    metadata:
+      category: infra
+      technology: [github-actions]
+      confidence: HIGH

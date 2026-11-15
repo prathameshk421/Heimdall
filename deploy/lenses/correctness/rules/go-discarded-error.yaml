@@ -1,0 +1,15 @@
+rules:
+  - id: go-discarded-error
+    languages: [go]
+    severity: WARNING
+    message: >-
+      A result was thrown away here. Return the error to the caller, or say in a comment why it is safe to ignore.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?m)^[ \t]*_([ \t]*,[ \t]*_)*[ \t]*=[ \t]*[A-Za-z_][A-Za-z0-9_.]*\(.*\)$'
+    metadata:
+      category: correctness
+      technology: [go]
+      confidence: MEDIUM

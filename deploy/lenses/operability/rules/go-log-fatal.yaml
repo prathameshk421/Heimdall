@@ -1,0 +1,17 @@
+rules:
+  - id: go-log-fatal
+    languages: [go]
+    severity: WARNING
+    message: >-
+      This call ends the process. A library must not take the whole service down; return the error and let the caller
+      decide.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+        - "**/*_test.go"
+    patterns:
+      - pattern-regex: '(?m)log\.(Fatal|Fatalf|Fatalln)\('
+    metadata:
+      category: operability
+      technology: [go]
+      confidence: MEDIUM

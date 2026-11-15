@@ -1,0 +1,13 @@
+openapi: 3.1.0
+info:
+  title: payments
+  version: 1.0.0
+paths:
+  /healthz:
+    get:
+      # ruleid: openapi-public-endpoint
+      security:
+        - {}
+      responses:
+        "200":
+          description: healthy

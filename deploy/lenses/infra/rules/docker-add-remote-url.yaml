@@ -1,0 +1,19 @@
+rules:
+  - id: docker-add-remote-url
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      ADD fetches a remote file whose content is not part of the build. Copy a file that is in the repository, or pin
+      the download by its checksum.
+    paths:
+      include:
+        - "**/Dockerfile*"
+        - "**/*.dockerfile"
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?im)^\s*ADD\s+https?://'
+    metadata:
+      category: infra
+      technology: [docker]
+      confidence: HIGH

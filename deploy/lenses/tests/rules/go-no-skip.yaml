@@ -1,0 +1,15 @@
+rules:
+  - id: go-no-skip
+    languages: [go]
+    severity: WARNING
+    message: >-
+      A skipped test never runs and never fails. It is a test that says nothing. Delete it, or make it fail.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?m)\bt\.Skip(f|Now)?\('
+    metadata:
+      category: tests
+      technology: [go]
+      confidence: HIGH

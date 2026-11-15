@@ -1,0 +1,18 @@
+rules:
+  - id: destructive-sql-statement
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      This statement drops or rewrites data that is already there. Say what happens to the old rows, and run it only
+      when the code that still writes the old shape is gone.
+    paths:
+      include:
+        - "**/*.sql"
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?i)\b(drop\s+(table|column|index)|truncate\s+table|delete\s+from)\b'
+    metadata:
+      category: data
+      technology: [sql]
+      confidence: MEDIUM

@@ -1,0 +1,17 @@
+rules:
+  - id: python-named-cases
+    languages: [python]
+    severity: WARNING
+    message: >-
+      These cases have no name, so a failure says which test failed and not which case. Name them with ids, or give
+      each case a name of its own.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?s)@pytest\.mark\.parametrize\([^\)]*\)'
+      - pattern-not-regex: '(?s)ids[ \t]*=|\[[ \t]*\{'
+    metadata:
+      category: tests
+      technology: [python]
+      confidence: MEDIUM

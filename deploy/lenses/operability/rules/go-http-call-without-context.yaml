@@ -1,0 +1,17 @@
+rules:
+  - id: go-http-call-without-context
+    languages: [go]
+    severity: WARNING
+    message: >-
+      This call has no context and no timeout. It waits until the other side gives up, which may be never. Use the
+      request's context with a deadline.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+        - "**/*_test.go"
+    patterns:
+      - pattern-regex: '(?m)http\.(Get|Post|Head)\('
+    metadata:
+      category: operability
+      technology: [go]
+      confidence: HIGH

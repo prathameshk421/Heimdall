@@ -1,0 +1,17 @@
+rules:
+  - id: go-panic-in-request-path
+    languages: [go]
+    severity: WARNING
+    message: >-
+      This panic ends the request and, in most servers, the process. Return the error instead, and let the middleware
+      that owns the recovery decide what happens.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+        - "**/*_test.go"
+    patterns:
+      - pattern-regex: '(?m)^[ \t]*panic\('
+    metadata:
+      category: operability
+      technology: [go]
+      confidence: MEDIUM
