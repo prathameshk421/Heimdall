@@ -83,6 +83,8 @@ type jobSpec struct {
 	OverlayDir  string
 	ModuleCache string
 	Timeout     int
+	History     bool   // the check reads the history mirror
+	HistoryDir  string // host path of the mirror, mounted read-only at /history
 	Serve       string // command that starts the app under test; empty for none
 	Ready       string // loopback URL to wait on; set exactly when Serve is
 }
@@ -108,18 +110,18 @@ func (p Policy) profileJobArgs(j jobSpec) ([]string, error) {
 	if j.Timeout < 1 || j.Timeout > 600 {
 		return nil, errors.New("sandbox timeout must be between 1 and 600 seconds")
 	}
-	args := hardenedArgs(j.Timeout)
-	args = append(args,
+	args := append(hardenedArgs(j.Timeout),
 		"--tmpfs", "/work:rw,nosuid,nodev,size=512m,mode=1777",
 		"--tmpfs", "/base:rw,nosuid,nodev,size=256m,mode=1777",
 		"--mount", "type=bind,src="+j.Archive+",dst=/input/head.tgz,ro=true",
 		"--mount", "type=bind,src="+j.ModuleCache+",dst=/go/pkg/mod,ro=true",
 	)
-	if j.BaseArchive != "" {
-		args = append(args, "--mount", "type=bind,src="+j.BaseArchive+",dst=/input/base.tgz,ro=true")
-	}
-	if j.OverlayDir != "" {
-		args = append(args, "--mount", "type=bind,src="+j.OverlayDir+",dst=/input/overlays,ro=true")
+	for _, m := range []struct{ src, dst string }{
+		{j.BaseArchive, "/input/base.tgz"}, {j.OverlayDir, "/input/overlays"}, {j.HistoryDir, "/history"},
+	} {
+		if m.src != "" {
+			args = append(args, "--mount", "type=bind,src="+m.src+",dst="+m.dst+",ro=true")
+		}
 	}
 	args = append(args, "--env", "HEIMDALL_RUN="+j.Run, "--env", "HEIMDALL_RESULT="+j.ResultFile)
 	if j.Serve != "" {
@@ -131,7 +133,7 @@ func (p Policy) profileJobArgs(j jobSpec) ([]string, error) {
 // checkPaths requires every host path of the job to be absolute and clean with no character that could add a mount option.
 func (j jobSpec) checkPaths() error {
 	required := map[string]string{"source archive": j.Archive, "module cache": j.ModuleCache}
-	optional := map[string]string{"base archive": j.BaseArchive, "overlay": j.OverlayDir}
+	optional := map[string]string{"base archive": j.BaseArchive, "overlay": j.OverlayDir, "history mirror": j.HistoryDir}
 	for name, path := range required {
 		if err := absoluteCleanPath(path); err != nil {
 			return fmt.Errorf("%s path: %w", name, err)
@@ -150,6 +152,9 @@ func (j jobSpec) checkPaths() error {
 
 // checkServe requires serve and ready together, each a bounded line, the URL loopback.
 func (j jobSpec) checkServe() error {
+	if j.History != (j.HistoryDir != "") {
+		return errors.New("a check that reads history needs its mirror, and no other job gets one")
+	}
 	if (j.Serve == "") != (j.Ready == "") {
 		return errors.New("serve and ready must be set together")
 	}

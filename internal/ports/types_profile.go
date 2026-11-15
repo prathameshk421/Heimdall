@@ -74,6 +74,9 @@ type ProfileCheck struct {
 	Image    string   // a name on the runner's image allowlist, or a digest-pinned reference on it
 	Run      string
 	Baseline bool // also run on base and keep only what is new
+	// History mounts the repository's history mirror read-only at /history for this check (REVIEW_ARCH 4.6). The mirror
+	// is fetched only by the warm job; a check can read it and never change it.
+	History bool
 }
 
 // ProfileKind is one test kind of the profile's `tests.kinds:` map.
@@ -454,6 +457,18 @@ func (r ProfileWarmRequest) Validate() error {
 		v.require("profile", false, "must be an empty profile name or one to 64 lowercase name characters")
 	}
 	return v.join()
+}
+
+// ProfileHistoryResult is the bounded outcome of one history-mirror update.
+type ProfileHistoryResult struct {
+	Bytes int64 // size of the mirror after the update
+	Fresh bool  // the mirror did not exist before this update
+}
+
+// ProfileHistoryWarmer keeps the blobless history mirror of a repository (commits and trees only). Adapter: the runner
+// client; the runner owns the egress boundary, and the warm job is the only job that fetches.
+type ProfileHistoryWarmer interface {
+	WarmHistory(ctx context.Context, req ProfileWarmRequest) (ProfileHistoryResult, error)
 }
 
 // ProfileWarmResult is the bounded outcome of one warm job.

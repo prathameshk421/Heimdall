@@ -81,6 +81,7 @@ type Check struct {
 	Image    string   `yaml:"image" json:"image"`
 	Run      string   `yaml:"run" json:"run"`
 	Baseline bool     `yaml:"baseline" json:"baseline"`
+	History  bool     `yaml:"history,omitempty" json:"history,omitempty"`
 }
 
 // Tests is the profile's tests section.
@@ -118,7 +119,7 @@ func Spec(p RepoProfile) ports.ProfileSpec {
 		Runs:       p.Tests.Runs,
 	}
 	for _, c := range p.Checks {
-		spec.Checks = append(spec.Checks, ports.ProfileCheck{ID: c.ID, Lens: c.Lens, When: c.When, Image: c.Image, Run: c.Run, Baseline: c.Baseline})
+		spec.Checks = append(spec.Checks, ports.ProfileCheck{ID: c.ID, Lens: c.Lens, When: c.When, Image: c.Image, Run: c.Run, Baseline: c.Baseline, History: c.History})
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Tests.Kinds)) {
 		k := p.Tests.Kinds[name]

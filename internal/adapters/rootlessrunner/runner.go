@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -71,6 +72,8 @@ type JobInput struct {
 	// profile's acceptance command (red-first, repro and trial jobs).
 	CheckID  string
 	TestKind string
+	// Repo is the repository the job runs for; a check that reads the history mirror finds it by this name.
+	Repo change.Repo
 	// BaseArchive is the tree of the base commit, present at /base for a check or test job that compares trees.
 	BaseArchive io.Reader
 	Timeout     time.Duration
@@ -83,6 +86,8 @@ type Runner struct {
 	Policy   Policy
 	Executor Executor
 	Root     string
+	// Git runs the history mirror's git commands; nil means the real git binary.
+	Git GitRunner
 
 	// profilesDir is the durable directory of promoted profiles; empty means no promotions are
 	// persisted for this runner instance (unit tests).
@@ -491,6 +496,11 @@ func containerArgsFor(policy Policy, in JobInput, archivePath, baseArchive, over
 		}
 		spec.Archive, spec.BaseArchive, spec.OverlayDir = archivePath, baseArchive, overlayDir
 		spec.ModuleCache, spec.Timeout = moduleCache, int(in.Timeout.Seconds())
+		if spec.History {
+			if spec.HistoryDir, err = policy.historyMount(in.Repo); err != nil {
+				return nil, err
+			}
+		}
 		return policy.profileJobArgs(spec)
 	}
 	return policy.ContainerArgsWithOverlays(in.Profile, archivePath, overlayDir, moduleCache, in.Dir, int(in.Timeout.Seconds()))

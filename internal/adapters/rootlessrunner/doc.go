@@ -19,6 +19,12 @@
 // ends whatever its outcome, and carry their own timeout. A kind with serve and ready starts its app inside the job and
 // waits on a loopback URL; the image needs curl or wget. A check job never gets services.
 //
+// History mirror: the warm job also keeps a blobless bare mirror of a repository (commits and trees only), fetched with
+// git through a loopback CONNECT proxy that reaches only the exact fetch hosts on port 443 and only public addresses.
+// The profile must list github.com in fetch_hosts. A check whose row says `history: true` gets the mirror read-only at
+// /history; no other job sees it, and a check never fetches. The runner holds no credential, so only a repository the
+// forge serves without one can be mirrored.
+//
 // Failure modes: invalid jobs, images, paths, oversized payloads, unavailable runner sockets, runtime failures,
 // timeouts, and absent test events fail closed. Rootless Podman and subordinate UID/GID mappings are OS prerequisites.
 //

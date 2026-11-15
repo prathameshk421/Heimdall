@@ -74,7 +74,7 @@ func (p Policy) resolveJob(profile, checkID, testKind, dir string) (jobSpec, err
 		for _, c := range spec.Checks {
 			if c.ID == checkID {
 				image, err := p.resolveImage(c.Image, spec)
-				return jobSpec{Image: image, Run: c.Run, ResultFile: resultSARIF}, err
+				return jobSpec{Image: image, Run: c.Run, ResultFile: resultSARIF, History: c.History}, err
 			}
 		}
 		return jobSpec{}, ErrUnknownCheck

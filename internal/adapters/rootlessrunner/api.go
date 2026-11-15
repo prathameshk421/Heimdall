@@ -48,9 +48,10 @@ type request struct {
 
 // WarmSummary is the bounded result of one warm job: the staged modules and the fetched totals.
 type response struct {
-	Output  []byte       `json:"output,omitempty"`
-	Summary *WarmSummary `json:"summary,omitempty"`
-	Error   string       `json:"error,omitempty"`
+	Output  []byte                      `json:"output,omitempty"`
+	Summary *WarmSummary                `json:"summary,omitempty"`
+	History *ports.ProfileHistoryResult `json:"history,omitempty"`
+	Error   string                      `json:"error,omitempty"`
 }
 
 // profileView is the GET /v1/profiles body.
@@ -88,6 +89,10 @@ func (r *Runner) Handler() http.Handler {
 	}))
 	mux.Handle("POST /v1/warm", queued(queue, fixedKey(ports.PriorityOnDemand), func(w http.ResponseWriter, req *http.Request) {
 		out, status := r.handleWarm(req)
+		writeResponse(w, status, out)
+	}))
+	mux.Handle("POST /v1/history", queued(queue, fixedKey(ports.PriorityOnDemand), func(w http.ResponseWriter, req *http.Request) {
+		out, status := r.handleHistory(req)
 		writeResponse(w, status, out)
 	}))
 	mux.HandleFunc("POST /v1/supersede", func(w http.ResponseWriter, req *http.Request) {
@@ -244,7 +249,7 @@ func (r *Runner) handleRun(req *http.Request) (response, int) {
 func (r *Runner) runRequest(ctx context.Context, in request, spec *RepoProfile) (response, int) {
 	job := JobInput{
 		Profile: in.Profile, Spec: spec, Archive: bytes.NewReader(in.Archive),
-		Overlays: in.Overlays, Dir: in.Job.Dir, CheckID: in.Job.CheckID, TestKind: in.Job.TestKind, Timeout: in.Job.Timeout,
+		Overlays: in.Overlays, Dir: in.Job.Dir, Repo: in.Job.Repo, CheckID: in.Job.CheckID, TestKind: in.Job.TestKind, Timeout: in.Job.Timeout,
 	}
 	if len(in.BaseArchive) > 0 {
 		job.BaseArchive = bytes.NewReader(in.BaseArchive)
@@ -461,12 +466,13 @@ type Client struct {
 }
 
 var (
-	_ ports.Sandbox             = Client{}
-	_ ports.ProfileTrialRunner  = Client{}
-	_ ports.ProfilePolicySource = Client{}
-	_ ports.ProfileSyncer       = Client{}
-	_ ports.ProfileWarmer       = Client{}
-	_ ports.SandboxSuperseder   = Client{}
+	_ ports.Sandbox              = Client{}
+	_ ports.ProfileTrialRunner   = Client{}
+	_ ports.ProfilePolicySource  = Client{}
+	_ ports.ProfileSyncer        = Client{}
+	_ ports.ProfileWarmer        = Client{}
+	_ ports.SandboxSuperseder    = Client{}
+	_ ports.ProfileHistoryWarmer = Client{}
 )
 
 // Run submits one commit archive through the protected Unix socket and stores its bounded log as a blob.
@@ -822,4 +828,63 @@ func (c Client) Supersede(ctx context.Context, repo change.Repo, ch id.ChangeID,
 		return fmt.Errorf("runner refused supersede: status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// handleHistory creates or updates the history mirror of one repository. Like the module warm it is a fetch job: the
+// only kind with egress.
+func (r *Runner) handleHistory(req *http.Request) (response, int) {
+	body, err := r.decodeBody(req, 64<<10)
+	if err != nil {
+		return response{Error: "read request"}, http.StatusBadRequest
+	}
+	in, err := decodeRunRequest(body)
+	if err != nil || in.Job.Kind != ports.SandboxWarm {
+		return response{Error: "history requires a warm job"}, http.StatusBadRequest
+	}
+	if err := in.Job.Validate(); err != nil {
+		return response{Error: "invalid job"}, http.StatusBadRequest
+	}
+	res, err := r.WarmHistory(req.Context(), in.Profile, in.Job.Repo)
+	if err != nil {
+		return response{Error: err.Error()}, historyStatus(err)
+	}
+	return response{History: &res}, http.StatusOK
+}
+
+// historyStatus keeps a refusal of the profile (4xx) apart from a fetch failure (the job's own outcome).
+func historyStatus(err error) int {
+	switch {
+	case errors.Is(err, ErrProfileNotFound), errors.Is(err, ErrHistoryNotAllowed):
+		return http.StatusBadRequest
+	default:
+		return http.StatusUnprocessableEntity
+	}
+}
+
+// WarmHistory asks the runner to create or update a repository's history mirror under the profile's fetch_hosts.
+func (c Client) WarmHistory(ctx context.Context, req ports.ProfileWarmRequest) (ports.ProfileHistoryResult, error) {
+	if err := req.Validate(); err != nil {
+		return ports.ProfileHistoryResult{}, fmt.Errorf("invalid history request: %w", err)
+	}
+	if req.Profile == "" {
+		return ports.ProfileHistoryResult{}, errors.New("a history mirror needs a promoted profile")
+	}
+	job := ports.SandboxJob{Kind: ports.SandboxWarm, Repo: req.Repo, SHA: req.SHA, Timeout: historyTimeout}
+	body, err := json.Marshal(request{Profile: req.Profile, Job: job})
+	if err != nil {
+		return ports.ProfileHistoryResult{}, fmt.Errorf("encode history request: %w", err)
+	}
+	resp, err := c.post(ctx, "/v1/history", job.Timeout+maxQueueWait, body)
+	if err != nil {
+		return ports.ProfileHistoryResult{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out response
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return ports.ProfileHistoryResult{}, fmt.Errorf("decode runner history response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK || out.History == nil {
+		return ports.ProfileHistoryResult{}, fmt.Errorf("runner refused history job: %s", out.Error)
+	}
+	return *out.History, nil
 }
