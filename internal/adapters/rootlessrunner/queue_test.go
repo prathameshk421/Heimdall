@@ -235,3 +235,17 @@ func TestTheHandlerRefusesHeadersThatClaimABetterPlaceThanTheJob(t *testing.T) {
 	_, status = r.handleRun(req)
 	require.Equal(t, http.StatusBadRequest, status)
 }
+
+func TestSupersedingTwiceCancelsOnceAndAnOversizedResultIsRefused(t *testing.T) {
+	q := &jobQueue{}
+	_, release, err := q.Acquire(context.Background(), key(ports.PriorityBackground, "pr-7", sha("1")))
+	require.NoError(t, err)
+	defer release()
+	require.Equal(t, 1, q.Supersede("acme/pay", "pr-7", sha("2")))
+	require.Equal(t, 1, q.Supersede("acme/pay", "pr-7", sha("2")), "a replay is harmless: it only cancels an already cancelled context again")
+
+	big := "\nheimdall-result-begin\n{\"x\":\"" + strings.Repeat("a", ports.MaxJobResult) + "\"}\n\nheimdall-result-end\nheimdall-exit=0\n"
+	r := jobRunner(t, &checkExecutor{output: []byte(big)})
+	_, status := r.handleRun(jobRequest(t, ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: "patterns"}, nil))
+	require.Equal(t, http.StatusUnprocessableEntity, status, "a result over its bound is refused, whatever the wrapper did")
+}

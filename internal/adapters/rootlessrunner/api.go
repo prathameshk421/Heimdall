@@ -297,6 +297,8 @@ func profileJobResponse(kind ports.SandboxKind, out []byte, runErr error) (respo
 		return response{Error: "runner produced no job result"}, http.StatusUnprocessableEntity
 	case len(bytes.TrimSpace(parsed.Result)) == 0:
 		return response{Error: "job wrote no result file (exit " + strconv.Itoa(parsed.Exit) + ")"}, http.StatusUnprocessableEntity
+	case len(parsed.Result) > ports.MaxJobResult:
+		return response{Error: "job result exceeds its bound"}, http.StatusUnprocessableEntity
 	case kind == ports.SandboxCheck && !json.Valid(parsed.Result):
 		return response{Error: "check result is not valid JSON"}, http.StatusUnprocessableEntity
 	}
@@ -792,6 +794,9 @@ func (c Client) profileJobResult(ctx context.Context, job ports.SandboxJob, outp
 	parsed, ok := parseJobOutput(output)
 	if !ok {
 		return ports.SandboxResult{}, errors.New("runner job output has no result trailer")
+	}
+	if len(parsed.Result) > ports.MaxJobResult {
+		return ports.SandboxResult{}, errors.New("runner job result exceeds its bound")
 	}
 	logRef, err := c.Blobs.Put(ctx, ports.BlobLog, bytes.NewReader(parsed.Log))
 	if err != nil {
