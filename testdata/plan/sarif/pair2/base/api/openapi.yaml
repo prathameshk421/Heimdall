@@ -1,0 +1,10 @@
+openapi: 3.0.3
+info:
+  title: Refunds
+  version: 1.0.0
+paths:
+  /refunds:
+    post:
+      responses:
+        "201":
+          description: created

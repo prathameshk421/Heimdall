@@ -5,16 +5,15 @@
     {
       "tool": {
         "driver": {
-          "name": "heimdall-checks",
-          "version": "1.0.0"
+          "name": "oasdiff-sarif"
         }
       },
       "results": [
         {
-          "ruleId": "oasdiff:removed-endpoint",
+          "ruleId": "new-required-request-parameter",
           "level": "error",
           "message": {
-            "text": "endpoint /healthz was removed from api/openapi.yaml"
+            "text": "added required header parameter Idempotency-Key to POST /refunds"
           },
           "locations": [
             {
@@ -23,15 +22,15 @@
                   "uri": "api/openapi.yaml"
                 },
                 "region": {
-                  "startLine": 12,
-                  "endLine": 18
+                  "startLine": 9,
+                  "endLine": 12,
+                  "snippet": {
+                    "text": "        - name: Idempotency-Key\n          in: header\n          required: true\n          schema:"
+                  }
                 }
               }
             }
-          ],
-          "properties": {
-            "fingerprint": "oasdiff:removed-endpoint:api/openapi.yaml:3333333333333333333333333333333333333333333333333333333333333333"
-          }
+          ]
         }
       ]
     }

@@ -1,0 +1,22 @@
+# The profile rows the pairs run under. Copied from docs/REVIEW_ARCH.md section 4.1.
+# Each pair's input.json names the row ("check") that produced both of its SARIF files.
+# The row gives Result.Check (its id) and Result.Lens (its lens); no SARIF file carries either.
+checks:
+  - id: patterns
+    lens: security
+    when: ["**/*"]
+    image: checks
+    run: "opengrep scan --config /rules --config .heimdall/rules --sarif-output /out/result.sarif /work"
+    baseline: true
+  - id: migrations
+    lens: data
+    when: ["**/migrations/**", "**/*.sql"]
+    image: checks
+    run: "squawk-sarif /work > /out/result.sarif"
+    baseline: true
+  - id: api-break
+    lens: contract
+    when: ["**/openapi*.y*ml"]
+    image: checks
+    run: "oasdiff-sarif /base /work > /out/result.sarif"
+    baseline: false

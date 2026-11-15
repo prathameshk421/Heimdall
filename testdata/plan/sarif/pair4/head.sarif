@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "opengrep"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "sql-concat",
+          "level": "error",
+          "message": {
+            "text": "query formatted with string concatenation rather than parameterized query"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/api/refunds.go"
+                },
+                "region": {
+                  "startLine": 18,
+                  "endLine": 19,
+                  "snippet": {
+                    "text": "\trow := db.QueryRow(\"SELECT amount FROM payments WHERE id = '\" +\n\t\tid + \"'\")"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
