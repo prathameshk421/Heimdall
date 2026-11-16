@@ -41,6 +41,9 @@ type Testset struct {
 	Approved  bool
 	// TreeHash is the tree hash of tests.dir/KEY that was verified and pinned.
 	TreeHash string
+	// SurvivorsOpen counts the surviving mutants on head with no answer for head (TEST_AGENT_ARCH 6.3). The gate needs
+	// every survivor answered and no score; with no mutants result there is nothing to answer.
+	SurvivorsOpen int
 }
 
 // ReviewRequest is one reviewer the change asked for. Covered is decided by the caller: the reviewer's last review
@@ -174,6 +177,9 @@ func checkTestset(f Facts) string {
 	}
 	if f.Testset.Sensitive && !f.Testset.Approved {
 		parts = append(parts, "the tests cover a sensitive domain and no domain approver has approved them")
+	}
+	if n := f.Testset.SurvivorsOpen; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d surviving mutant(s) on head have no answer", n))
 	}
 	return strings.Join(parts, "; ")
 }

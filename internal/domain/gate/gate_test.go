@@ -217,3 +217,23 @@ func TestACoveredOrWaivedReviewRequestDoesNotBlock(t *testing.T) {
 		require.True(t, gate.Evaluate(f).OK, "%+v", r)
 	}
 }
+
+// TestSurvivorsMustBeAnsweredOnHead is the row of TEST_AGENT_ARCH 6.3 in the testset clause: an open survivor fails it,
+// none holds it.
+func TestSurvivorsMustBeAnsweredOnHead(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		open  int
+		holds bool
+	}{{"every survivor answered", 0, true}, {"one survivor open", 1, false}} {
+		t.Run(c.name, func(t *testing.T) {
+			f := green()
+			f.Testset.SurvivorsOpen = c.open
+			res := gate.Evaluate(f)
+			require.Equal(t, c.holds, res.OK, "%+v", res.Unmet)
+			if !c.holds {
+				require.Contains(t, res.Unmet[0].Reason, "1 surviving mutant(s) on head have no answer")
+			}
+		})
+	}
+}
