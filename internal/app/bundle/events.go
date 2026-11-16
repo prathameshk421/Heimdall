@@ -113,16 +113,6 @@ func applyTestsSubmitted(req *Request, p change.TestsSubmitted) {
 }
 
 func roleBudget(role workflow.Role) int {
-	switch role {
-	case workflow.RoleTestAuthor:
-		return 40000
-	case workflow.RoleReviewer:
-		return 60000
-	case workflow.RoleResolver:
-		return 30000
-	case workflow.RoleProfiler:
-		return 0
-	default:
-		return 0
-	}
+	k, _ := workflow.KindFor(role)
+	return k.Budget
 }

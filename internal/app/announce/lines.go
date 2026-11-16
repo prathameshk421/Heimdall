@@ -138,15 +138,8 @@ func narrateProgress(_ []change.Event, ev change.Event, k string) (Line, bool) {
 }
 
 func friendlyRole(role string) string {
-	switch workflow.Role(role) {
-	case workflow.RoleTestAuthor:
-		return "the Test Agent"
-	case workflow.RoleResolver:
-		return "the Resolver"
-	case workflow.RoleReviewer:
-		return "a Code Reviewer"
-	case workflow.RoleProfiler:
-		return "the Profiler"
+	if k, ok := workflow.KindFor(workflow.Role(role)); ok {
+		return k.Label
 	}
 	return "an agent"
 }

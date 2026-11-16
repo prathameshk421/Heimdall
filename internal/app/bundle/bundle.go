@@ -159,33 +159,13 @@ func sortedCriterionRefs(values []workflow.CriterionRef) []workflow.CriterionRef
 }
 
 func roleCap(role workflow.Role) (int, bool) {
-	switch role {
-	case workflow.RoleTestAuthor:
-		return 40000, true
-	case workflow.RoleReviewer:
-		return 60000, true
-	case workflow.RoleResolver:
-		return 30000, true
-	case workflow.RoleProfiler:
-		return 0, false
-	default:
-		return 0, false
-	}
+	k, _ := workflow.KindFor(role)
+	return k.Budget, k.Budget > 0
 }
 
 func skillFor(role workflow.Role) string { return string(role) + "@1.0.0" }
 
 func rulesFor(role workflow.Role) string {
-	switch role {
-	case workflow.RoleTestAuthor:
-		return "Write tests for every acceptance criterion; use only the base source and declared seam."
-	case workflow.RoleReviewer:
-		return "Review the change from the owner's perspective; file only evidence-backed findings."
-	case workflow.RoleResolver:
-		return "Recommend a verdict from the case evidence and cite prior decisions with validity times."
-	case workflow.RoleProfiler:
-		return ""
-	default:
-		return ""
-	}
+	k, _ := workflow.KindFor(role)
+	return k.Rules
 }

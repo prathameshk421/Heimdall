@@ -85,16 +85,12 @@ func buildEarlyEngineSteps(m map[string]workflow.Step, agents config.Agents, gen
 		Timeout: m[stepWriteTests].Timeout,
 		Output:  change.EventTestsSubmitted,
 		AgentFor: func(role workflow.Role) (id.AgentName, bool) {
-			switch role {
-			case workflow.RoleTestAuthor:
-				return id.AgentName(agents.TestAuthor), true
-			case workflow.RoleResolver:
-				return id.AgentName(agents.Resolver), true
-			case workflow.RoleReviewer, workflow.RoleProfiler:
-				return "", false
-			default:
-				return "", false
-			}
+			// The agents the engine wakes itself; reviewers come from the pick, the profiler from setup.
+			name, ok := map[workflow.Role]string{
+				workflow.RoleTestAuthor: agents.TestAuthor,
+				workflow.RoleResolver:   agents.Resolver,
+			}[role]
+			return id.AgentName(name), ok
 		},
 		Clock: clk,
 		IDs:   gen,

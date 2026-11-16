@@ -103,15 +103,8 @@ func TaskAssignText(agent, ticket string, role workflow.Role) string {
 
 // roleWork names the work of a role in a few plain words.
 func roleWork(role workflow.Role) string {
-	switch role {
-	case workflow.RoleTestAuthor:
-		return "write failing tests for the acceptance criteria"
-	case workflow.RoleReviewer:
-		return "review the pull request"
-	case workflow.RoleResolver:
-		return "settle the challenged findings"
-	case workflow.RoleProfiler:
-		return "propose a sandbox profile for the repository"
+	if k, ok := workflow.KindFor(role); ok {
+		return k.Work
 	}
 	return "see the task"
 }
