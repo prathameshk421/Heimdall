@@ -1,0 +1,17 @@
+rules:
+  - id: go-reaches-the-product
+    languages: [go]
+    severity: WARNING
+    message: >-
+      This test imports nothing of the product, so it cannot test it. It can only fail for a made-up reason, and it
+      passes on the base for the wrong one. Call the service through its seam.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?s)import[ \t]*(?:\((?:[^)]*)\)|"[^"]*")'
+      - pattern-not-regex: '"[^"]*\.[^"]*"'
+    metadata:
+      category: tests
+      technology: [go]
+      confidence: MEDIUM

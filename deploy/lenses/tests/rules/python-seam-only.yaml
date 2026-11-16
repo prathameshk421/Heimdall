@@ -1,0 +1,16 @@
+rules:
+  - id: python-seam-only
+    languages: [python]
+    severity: WARNING
+    message: >-
+      The test imports a module the product keeps to itself. Call the product over its seam instead, so the test
+      survives a refactor of the inside.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?m)^\s*(?:from|import)[ \t]+[A-Za-z0-9_.]*(?:internal[._]|\._[A-Za-z0-9_]+)'
+    metadata:
+      category: tests
+      technology: [python]
+      confidence: MEDIUM

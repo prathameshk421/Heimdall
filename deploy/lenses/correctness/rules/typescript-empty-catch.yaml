@@ -1,0 +1,15 @@
+rules:
+  - id: typescript-empty-catch
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      The failure was swallowed here. Handle it, or re-throw it, so the caller can see that the work did not happen.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?s)catch\s*\([^)]*\)\s*\{\s*\}'
+    metadata:
+      category: correctness
+      technology: [typescript]
+      confidence: MEDIUM

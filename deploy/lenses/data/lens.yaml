@@ -1,0 +1,12 @@
+id: data
+name: Data
+description: The shape of the stored data, the migrations that change it, and the money in it.
+when:
+  - "**/*.sql"
+  - "**/migrations/**"
+  - "**/schema/**"
+  - "**/migrate/**"
+  - "**/models/**"
+  - "**/entities/**"
+  - "**/*.prisma"
+  - "**/*.sqlx"

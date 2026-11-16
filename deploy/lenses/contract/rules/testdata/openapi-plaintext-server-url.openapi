@@ -1,0 +1,13 @@
+openapi: 3.1.0
+info:
+  title: payments
+  version: 1.0.0
+servers:
+  # ruleid: openapi-plaintext-server-url
+  - url: http://payments.internal:8080
+paths:
+  /payments:
+    get:
+      responses:
+        "200":
+          description: the payments

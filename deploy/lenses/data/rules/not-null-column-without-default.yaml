@@ -1,0 +1,18 @@
+rules:
+  - id: not-null-column-without-default
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      A NOT NULL column with no default cannot be added to a table that already has rows. Make it nullable, give it a
+      default, or add it in two steps.
+    paths:
+      include:
+        - "**/*.sql"
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?i)\balter\s+table\b[^\n]*\badd\s+(column\s+)?[^\n]*\bnot\s+null\b(?![^\n]*\bdefault\b)'
+    metadata:
+      category: data
+      technology: [sql]
+      confidence: HIGH

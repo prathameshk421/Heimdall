@@ -1,0 +1,12 @@
+id: contract
+name: Contract
+description: The shape other programs depend on: the routes, the fields, the errors and the retries.
+when:
+  - "**/openapi*.y*ml"
+  - "**/openapi*.json"
+  - "**/swagger*.json"
+  - "**/api/**"
+  - "**/*.proto"
+  - "**/graphql/**"
+  - "**/*.graphql"
+  - "**/contract/**"

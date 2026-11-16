@@ -1,0 +1,5 @@
+id: security
+name: Security
+description: Who may do this, what the caller may send, and where a secret may not go.
+when:
+  - "**/*"

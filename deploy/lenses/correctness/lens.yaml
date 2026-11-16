@@ -1,0 +1,5 @@
+id: correctness
+name: Correctness
+description: The base pass. What the change broke for its callers, what it left behind, and where it fails.
+when:
+  - "**/*"

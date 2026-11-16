@@ -1,0 +1,17 @@
+id: operability
+name: Operability
+description: What the service does when it fails, and what the person on call can see.
+when:
+  - "**/*.go"
+  - "**/*.py"
+  - "**/*.ts"
+  - "**/*.tsx"
+  - "**/*.js"
+  - "**/*.java"
+  - "**/*.rb"
+  - "**/*.rs"
+  - "**/deploy/**"
+  - "**/.github/workflows/**"
+  - "**/*.service"
+  - "**/charts/**"
+  - "**/helm/**"

@@ -1,0 +1,15 @@
+rules:
+  - id: python-empty-except
+    languages: [python]
+    severity: WARNING
+    message: >-
+      The exception was swallowed here. Handle it, or re-raise it, so the caller can see that the work did not happen.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?m)^[ \t]*except[^\n]*:[ \t]*\n(?:[ \t]*\n)*[ \t]*pass\b'
+    metadata:
+      category: correctness
+      technology: [python]
+      confidence: MEDIUM

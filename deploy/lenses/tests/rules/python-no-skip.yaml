@@ -1,0 +1,15 @@
+rules:
+  - id: python-no-skip
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A skipped test never runs and never fails. It is a test that says nothing. Delete it, or make it fail.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?m)^[ \t]*(?:@pytest\.mark\.(?:skip|skipif|xfail)|pytest\.skip\(|@unittest\.skip)'
+    metadata:
+      category: tests
+      technology: [python]
+      confidence: HIGH

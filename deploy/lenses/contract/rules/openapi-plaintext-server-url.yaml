@@ -1,0 +1,21 @@
+rules:
+  - id: openapi-plaintext-server-url
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      The server url is plaintext http. The traffic and the bearer token in it can be read on the way. Use https.
+    paths:
+      # The fixture of this rule cannot end in .yml: the engine loads every YAML file in the rule folder as a rule
+      # file, and the fixture would shadow itself. It ends in .openapi instead, which is why that glob is here.
+      include:
+        - "**/openapi*.y*ml"
+        - "**/openapi*.json"
+        - "**/*.openapi"
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?im)^[ \t]*(?:-\s*)?url:[ \t]*["'']?http://'
+    metadata:
+      category: contract
+      technology: [openapi]
+      confidence: HIGH

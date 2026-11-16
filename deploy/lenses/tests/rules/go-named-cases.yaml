@@ -1,0 +1,17 @@
+rules:
+  - id: go-named-cases
+    languages: [go]
+    severity: WARNING
+    message: >-
+      The rows of this table have no name, so a failure says which table failed and not which case. Give the row a
+      name field.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?s)\[\][ \t]*struct[ \t]*\{[^}]*\}'
+      - pattern-not-regex: '(?i)name'
+    metadata:
+      category: tests
+      technology: [go]
+      confidence: MEDIUM

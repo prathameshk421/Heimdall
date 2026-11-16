@@ -1,0 +1,22 @@
+rules:
+  - id: workflow-pull-request-target
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      This workflow runs on pull_request_target, which has the write token of the repository and the secrets of the
+      workflow, while the code that runs comes from the pull request. Split the job: build the untrusted code without
+      a token.
+    paths:
+      # The fixture of this rule cannot end in .yml: the engine loads every YAML file in the rule folder as a rule
+      # file, and the fixture would shadow itself. It ends in .workflow instead, which is why that glob is here.
+      include:
+        - "**/.github/workflows/**"
+        - "**/*.workflow"
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?im)^\s*pull_request_target\s*:'
+    metadata:
+      category: infra
+      technology: [github-actions]
+      confidence: HIGH

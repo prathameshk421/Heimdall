@@ -1,0 +1,19 @@
+rules:
+  - id: docker-image-latest-tag
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      This image is not pinned. A tag that moves, or no tag at all, runs code that nobody reviewed. Pin the image by
+      digest.
+    paths:
+      include:
+        - "**/Dockerfile*"
+        - "**/*.dockerfile"
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?im)^\s*FROM\s+(?:[^\s:@]+:latest\b|[^\s:@]+\s*(?:AS\s+[^\s]+)?\s*$)'
+    metadata:
+      category: infra
+      technology: [docker]
+      confidence: HIGH

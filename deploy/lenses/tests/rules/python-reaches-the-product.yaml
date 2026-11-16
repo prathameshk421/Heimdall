@@ -1,0 +1,17 @@
+rules:
+  - id: python-reaches-the-product
+    languages: [python]
+    severity: WARNING
+    message: >-
+      This test imports nothing of the product, so it cannot test it. It can only fail for a made-up reason, and it
+      passes on the base for the wrong one. Call the service through its seam.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?ms)(?:^[ \t]*(?:import|from)[ \t]+\S+[^\n]*\n)+'
+      - pattern-not-regex: '(?ms)(?:from[ \t]+\.)|(?:^[ \t]*(?:import|from)[ \t]+[A-Za-z0-9_]+\.[A-Za-z0-9_.]+)'
+    metadata:
+      category: tests
+      technology: [python]
+      confidence: MEDIUM

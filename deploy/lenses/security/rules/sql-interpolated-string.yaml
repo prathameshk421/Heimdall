@@ -1,0 +1,29 @@
+rules:
+  - id: sql-interpolated-string
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      The statement is built by formatting a value into its text. Pass the value as a parameter, so the text cannot be
+      changed by whoever sent it.
+    paths:
+      include:
+        - "**/*.go"
+        - "**/*.py"
+        - "**/*.ts"
+        - "**/*.tsx"
+        - "**/*.js"
+        - "**/*.jsx"
+        - "**/*.java"
+        - "**/*.rb"
+        - "**/*.php"
+        - "**/*.cs"
+        - "**/*.kt"
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: >-
+          (?i)(f"[^"\n]*\b(select|insert\s+into|update|delete\s+from)\b[^"\n]*\{[^}\n]*\}|"[^"\n]*\b(select|insert\s+into|update|delete\s+from)\b[^"\n]*"\s*(?:%|\.format\())
+    metadata:
+      category: security
+      technology: [sql]
+      confidence: HIGH

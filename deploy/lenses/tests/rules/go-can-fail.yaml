@@ -1,0 +1,16 @@
+rules:
+  - id: go-can-fail
+    languages: [go]
+    severity: WARNING
+    message: >-
+      This test has no assertion, so it cannot fail. Assert the outcome the test is about, or delete the test.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?s)func[ \t]+Test[A-Za-z0-9_]*[ \t]*\([^)]*\)[ \t]*\{(?:[^{}]|\{[^{}]*\})*\}'
+      - pattern-not-regex: '(?s)t\.(Error|Errorf|Fatal|Fatalf|Fail|FailNow)\(|assert\.|require\.'
+    metadata:
+      category: tests
+      technology: [go]
+      confidence: MEDIUM

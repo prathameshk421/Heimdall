@@ -1,0 +1,16 @@
+rules:
+  - id: python-can-fail
+    languages: [python]
+    severity: WARNING
+    message: >-
+      This test has no assertion, so it cannot fail. Assert the outcome the test is about, or delete the test.
+    paths:
+      exclude:
+        - "**/rules/testdata/**"
+    patterns:
+      - pattern-regex: '(?s)def[ \t]+test_[A-Za-z0-9_]*[ \t]*\([^)]*\)[ \t]*:(?:[ \t]+[^\n]*\n|[ \t]*\n)*'
+      - pattern-not-regex: '(?s)\bassert\b|pytest\.raises|pytest\.fail|unittest\.'
+    metadata:
+      category: tests
+      technology: [python]
+      confidence: MEDIUM

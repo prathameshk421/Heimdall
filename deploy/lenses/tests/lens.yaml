@@ -1,0 +1,15 @@
+id: tests
+name: Tests
+description: The tests that decide what "done" means: what they prove, how they reach the product, and whether they can lie.
+when:
+  - "**/*_test.go"
+  - "**/test_*.py"
+  - "**/*_test.py"
+  - "**/tests/**"
+  - "**/test/**"
+  - "**/__tests__/**"
+  - "**/*.spec.ts"
+  - "**/*.test.ts"
+  - "**/*.spec.js"
+  - "**/*.test.js"
+  - "**/e2e/**"
