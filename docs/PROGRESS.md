@@ -816,3 +816,19 @@ Bugs found and fixed: (1) `verify_evidence` ran under the 20 s default effect ti
 - Spikes (Step 1: SI1 to SI5, SR1 to SR3, ST1 to ST4).
 - Recorded real payloads (Step 3c: `testdata/real/`).
 - Live checks (Step 6).
+
+## Module M4: Tests, build evidence (branch `m4-tests`, from `m3-review`, Nov 16, 2026)
+
+Steps done: 3 (`internal/domain/testplan`, c0a27cb; goldens exact, one fuzz target), 6 (survivor answers and the
+open-on-head predicate, `internal/domain/testset/survivors.go`, faa09df).
+Step 7 (the gate row) is NOT committed. Patch saved outside the repo; see Noticed. Not done: 1, 2, 4, 5, 8, 9, 10, 11, 12.
+
+Evidence: `make fast` exit 0, 3544 tests (in the worktree, after step 6). Fuzz `FuzzDecodePlan` 8.5 s, no failure.
+`check-owned.sh M4 m3-review`: all paths inside M4's row. Full `make verify` for M4 not run yet.
+
+Noticed:
+- Step 7 would make every merge fail closed on the live path: `gateuse/inputs.go` builds `gate.Testset` without any
+  survivor count, and seven end-to-end `gateuse` tests assert a green merge. Adding `SurvivorsKnown`/`SurvivorsOpen` to
+  the testset clause, with its table test, passes the gate tests and fails those. Owner decision needed: either the
+  survivor loop (mutants check, ST2) must exist first, or those tests change. The patch is ready for review.
+- Steps 9 (critic) and 10 (UI preview) need the live runner pieces and are not started.
