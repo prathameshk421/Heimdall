@@ -99,7 +99,7 @@ View {
   closed:    null | {merged, head_sha}
   rejected:  null | {by, reason}
 }
-Tests    {sha, refs, ac_map, verified: null | {tree_hash, needs_signoff, run_ids}, rejected: [reasons],
+Tests    {sha, refs, ac_map, expected_paths, verified: null | {tree_hash, needs_signoff, run_ids}, rejected: [reasons],
           approved_by: "" | login, committed: null | {sha, tree_hash}}
 PR       {number, author, ticket, head_sha, picked: null | {people, by, method},
           slop: null | {sha, pass, failing_rules}, ci: {sha: {check: conclusion}}, gate: null | {sha, ok, reasons}}
@@ -117,7 +117,7 @@ Event by event:
 | `change.triggered` | sets `trigger` |
 | `room.opened` | sets `room` |
 | `branch.ensured` | sets `branch` |
-| `tests.submitted` | replaces `tests` with a new submission: `verified` and `committed` null, `rejected` empty, `approved_by` "" (a new submission is what the later events are about) |
+| `tests.submitted` | replaces `tests` with a new submission (`expected_paths` from the payload, `[]` when absent): `verified` and `committed` null, `rejected` empty, `approved_by` "" (a new submission is what the later events are about) |
 | `tests.verified` / `tests.committed` / `tests.rejected` / `tests.approved` | set `verified` / `committed` / `rejected` / `approved_by` on the current submission |
 | `pr.opened` | sets `pr`; `picked`, `slop`, `gate` null; `ci` empty |
 | `pr.pushed` | sets `pr.head_sha`. Nothing else is cleared: `slop`, `gate` and each review keep the SHA they were about, so a stale value is visible as stale |

@@ -297,6 +297,8 @@ func (s *Service) buildTestsSubmittedEvent(
 		ACMap:    sub.AcceptanceCriteria,
 		SHA:      sha,
 		TreeHash: sha,
+		// The scope check of the slop rule compares a pull request's files with these.
+		ExpectedPaths: sub.ExpectedPaths,
 	}
 	eid := s.ids.NewEvent()
 	causation := lastCausation(existing)

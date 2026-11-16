@@ -120,7 +120,7 @@ func (in *Intake) HandlePR(ctx context.Context, repo change.Repo, n int) (Result
 	if err != nil {
 		return Result{}, err
 	}
-	v, err := in.judge(ctx, repo, pr, files, ticket)
+	v, err := in.judge(ctx, repo, pr, files, ticket, stream)
 	if err != nil {
 		return Result{}, err
 	}
@@ -142,6 +142,23 @@ func (in *Intake) HandlePR(ctx context.Context, repo change.Repo, n int) (Result
 	}
 }
 
+// expectedPaths are the paths the change's current test submission expects a pull request to touch. A stream with no
+// submission (a PR with no ticket, or tests not yet submitted) expects none.
+func (in *Intake) expectedPaths(ctx context.Context, stream id.ChangeID) ([]string, error) {
+	events, err := in.events.Load(ctx, stream)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", stream, err)
+	}
+	v, err := change.Fold(events)
+	if err != nil {
+		return nil, fmt.Errorf("fold %s: %w", stream, err)
+	}
+	if v.Tests == nil {
+		return nil, nil
+	}
+	return v.Tests.Expected, nil
+}
+
 // streamFor returns the change a pull request belongs to: its ticket's change, or its own stream when it names none
 // (D146).
 func streamFor(repo change.Repo, n int, ticket id.ChangeID) (id.ChangeID, error) {
@@ -157,7 +174,7 @@ func streamFor(repo change.Repo, n int, ticket id.ChangeID) (id.ChangeID, error)
 
 // judge reads the policy at the base sha and, if it is usable, evaluates the slop rule on the head. An unusable policy
 // fails closed without evaluating the rule.
-func (in *Intake) judge(ctx context.Context, repo change.Repo, pr ports.PR, files []ports.ChangedFile, ticket id.ChangeID) (verdict, error) {
+func (in *Intake) judge(ctx context.Context, repo change.Repo, pr ports.PR, files []ports.ChangedFile, ticket, stream id.ChangeID) (verdict, error) {
 	read, err := readPolicy(ctx, in.code, in.policy, repo, pr.BaseSHA)
 	if err != nil {
 		return verdict{}, err
@@ -166,7 +183,11 @@ func (in *Intake) judge(ctx context.Context, repo change.Repo, pr ports.PR, file
 		detail := ruleInvalidPolicy + ": " + read.invalid
 		return failed([]string{detail}, detail), nil
 	}
-	facts, err := in.facts(ctx, repo, pr, files, ticket, read.pol.Tests.Dir)
+	expected, err := in.expectedPaths(ctx, stream)
+	if err != nil {
+		return verdict{}, err
+	}
+	facts, err := in.facts(ctx, repo, pr, files, ticket, read.pol.Tests.Dir, expected)
 	if err != nil {
 		return verdict{}, err
 	}
@@ -188,10 +209,10 @@ func failed(rules []string, detail string) verdict {
 	return verdict{pass: false, rules: rules, summary: "Slop rule failed. " + detail}
 }
 
-// facts builds what the slop rule reads. ExpectedPaths stays nil: the test author's submission is not loadable through
-// the ports yet, so every change outside the tests directory needs a justification (see doc.go).
-func (in *Intake) facts(ctx context.Context, repo change.Repo, pr ports.PR, files []ports.ChangedFile, ticket id.ChangeID, testsDir string) (slop.Facts, error) {
-	f := slop.Facts{Title: pr.Title, Branch: pr.Branch, Body: pr.Body, TicketKey: string(ticket)}
+// facts builds what the slop rule reads. ExpectedPaths are the paths the test author's current submission expects the
+// change to touch (from the change's folded view); a path outside them and the tests directory needs a justification.
+func (in *Intake) facts(ctx context.Context, repo change.Repo, pr ports.PR, files []ports.ChangedFile, ticket id.ChangeID, testsDir string, expected []string) (slop.Facts, error) {
+	f := slop.Facts{Title: pr.Title, Branch: pr.Branch, Body: pr.Body, TicketKey: string(ticket), ExpectedPaths: expected}
 	for _, cf := range files {
 		f.Files = append(f.Files, slop.File{Path: cf.Path, Added: cf.Additions, Deleted: cf.Deletions})
 		if inDir(cf.Path, testsDir) {

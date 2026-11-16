@@ -29,6 +29,7 @@
         "TestHealthz_Get_NoMerchantHeader"
       ]
     },
+    "expected_paths": [],
     "verified": {
       "tree_hash": "2fe3b3176c058d84a40b1be51097fc07c397a0e1",
       "needs_signoff": false,

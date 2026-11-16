@@ -59,8 +59,8 @@
 //
 // # Choices and gaps (see the T46 report)
 //
-//   - ExpectedPaths is nil. The test author's submission is not loadable through the ports yet, so every change
-//     outside the tests directory needs a non-empty "Justification" section. Not verified against a real test set.
+//   - ExpectedPaths come from the change's current test submission (tests.submitted expected_paths). A path outside
+//     them and the tests directory needs a non-empty "Justification" section in the PR body.
 //   - The policy's tests dir is used for the tests check. When the policy is invalid, no slop facts are built.
 //   - Ticket keys are case-sensitive. A lowercase branch such as pay-142 names no ticket, so the PR is unlinked.
 //

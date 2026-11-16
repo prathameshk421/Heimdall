@@ -23,6 +23,7 @@
         "TestHealthzReturnsOK"
       ]
     },
+    "expected_paths": [],
     "verified": {
       "tree_hash": "7e22a01",
       "needs_signoff": false,

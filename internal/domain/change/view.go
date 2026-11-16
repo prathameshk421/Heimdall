@@ -52,6 +52,7 @@ type TestsInfo struct {
 	SHA        id.SHA              `json:"sha"`
 	Refs       []string            `json:"refs"`
 	ACMap      map[string][]string `json:"ac_map"`
+	Expected   []string            `json:"expected_paths"`
 	Verified   *TestsVerifiedInfo  `json:"verified"`
 	Rejected   []string            `json:"rejected"`
 	ApprovedBy ActorID             `json:"approved_by"`
@@ -249,7 +250,7 @@ func (v *View) applyTask(p Payload) {
 
 func (v *View) applyTests(p Payload) {
 	if s, ok := p.(TestsSubmitted); ok {
-		v.Tests = &TestsInfo{SHA: s.SHA, Refs: nonNil(s.Refs), ACMap: nonNilMap(s.ACMap), Rejected: []string{}}
+		v.Tests = &TestsInfo{SHA: s.SHA, Refs: nonNil(s.Refs), ACMap: nonNilMap(s.ACMap), Expected: nonNil(s.ExpectedPaths), Rejected: []string{}}
 		return
 	}
 	if v.Tests == nil {

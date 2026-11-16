@@ -28,6 +28,9 @@ type TestsSubmitted struct {
 	ACMap    map[string][]string `json:"ac_map"`
 	SHA      id.SHA              `json:"sha"`
 	TreeHash id.SHA              `json:"tree_hash"`
+	// ExpectedPaths are the globs outside the tests directory the change is expected to touch; the slop rule's scope
+	// check reads them. Older events have none.
+	ExpectedPaths []string `json:"expected_paths,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -37,6 +40,7 @@ func (p TestsSubmitted) Validate() error {
 	v.add("ac_map", checkACMap(p.ACMap))
 	v.add("sha", checkSHA(p.SHA))
 	v.add("tree_hash", checkSHA(p.TreeHash))
+	v.each("expected_paths", p.ExpectedPaths, checkText)
 	return v.join()
 }
 

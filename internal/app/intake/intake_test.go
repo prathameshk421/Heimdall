@@ -232,7 +232,8 @@ func (r *rig) seed(t *testing.T, toBuilding bool) {
 			step{change.EventTaskAssigned, change.TaskAssigned{TaskID: testTaskID, Agent: "tester",
 				Role: workflow.RoleTestAuthor, Deadline: r.clock.at.Add(time.Hour), BundleRef: blob}},
 			step{change.EventTestsSubmitted, change.TestsSubmitted{Refs: []string{"AC1"},
-				ACMap: map[string][]string{"AC1": {"tests/heimdall/PAY-142/refund_test.go"}}, SHA: shaHead1, TreeHash: shaTree}},
+				ACMap: map[string][]string{"AC1": {"tests/heimdall/PAY-142/refund_test.go"}}, SHA: shaHead1, TreeHash: shaTree,
+				ExpectedPaths: []string{"internal/refund/**"}}},
 			step{change.EventTestsVerified, change.TestsVerified{RunIDs: []id.RunID{testRunID}, SHA: shaHead1,
 				TreeHash: shaTree, NeedsSignoff: false}},
 			step{change.EventTestsCommitted, change.TestsCommitted{SHA: shaHead1, TreeHash: shaTree}},
@@ -575,4 +576,26 @@ func TestNewRefusesEveryNilPortByName(t *testing.T) {
 	for _, name := range []string{"Events", "PRs", "Code", "Clock", "IDs"} {
 		require.Contains(t, err.Error(), name)
 	}
+}
+
+// The scope check reads the paths the test author's submission expects (live KAN-24: with none, every product change
+// failed scope, so reviewers were never picked).
+func TestScopePassesForExpectedPathsAndFailsOutsideThem(t *testing.T) {
+	r := newRig(t)
+	r.seed(t, true)
+	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
+	r.prs.files = append(testsOnlyFiles(), sourceFiles()...)
+	res, err := r.in.HandlePR(context.Background(), testRepo, 3)
+	require.NoError(t, err)
+	require.True(t, res.Pass, "internal/refund/round.go is inside the expected internal/refund/**")
+
+	r = newRig(t)
+	r.seed(t, true)
+	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
+	r.prs.files = append(testsOnlyFiles(), ports.ChangedFile{Path: "internal/billing/fee.go", Status: ports.FileModified, Additions: 3})
+	res, err = r.in.HandlePR(context.Background(), testRepo, 3)
+	require.NoError(t, err)
+	require.False(t, res.Pass)
+	rules := slopOf(t, r.ev.streams[ticketPay42][len(r.ev.streams[ticketPay42])-1]).FailingRules
+	require.Equal(t, []string{"scope"}, rules, "internal/billing/fee.go is outside the expected paths")
 }

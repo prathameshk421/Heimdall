@@ -35,6 +35,7 @@
         "TestRefundOtherMerchantReturns404"
       ]
     },
+    "expected_paths": [],
     "verified": null,
     "rejected": [],
     "approved_by": "",

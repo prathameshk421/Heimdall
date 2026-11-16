@@ -35,6 +35,7 @@
         "TestRefundOtherMerchantReturns404"
       ]
     },
+    "expected_paths": [],
     "verified": {
       "tree_hash": "e1e52e8c13540799e798b62d3d4983cd410f5536",
       "needs_signoff": false,
