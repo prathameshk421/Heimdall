@@ -1,6 +1,17 @@
 {
+  "input": {
+    "criteria": [
+      "AC1",
+      "AC2"
+    ],
+    "declared_kinds": [
+      "api",
+      "property",
+      "contract",
+      "ui"
+    ]
+  },
   "plan": {
-    "title": "TestPlan@1",
     "ticket": "KAN-31",
     "behaviours": [
       {
@@ -8,7 +19,26 @@
         "ac": "AC1",
         "kind": "api",
         "case": "positive",
-        "given": "a payment",
+        "given": "a captured payment of 100",
+        "when": "POST /refunds amount=40",
+        "then": "201 and remaining=60",
+        "oracle": "exact"
+      },
+      {
+        "id": "B2",
+        "ac": "AC1",
+        "kind": "property",
+        "case": "rule",
+        "given": "any sequence of partial refunds",
+        "then": "the sum of refunds never exceeds the payment",
+        "oracle": "property"
+      },
+      {
+        "id": "B3",
+        "ac": "AC2",
+        "kind": "api",
+        "case": "positive",
+        "given": "the merchant's own payment",
         "when": "POST /refunds",
         "then": "201",
         "oracle": "exact"
@@ -16,9 +46,16 @@
     ],
     "ui_handles": [],
     "expected_paths": [
-      "internal/**"
+      "internal/refunds/**",
+      "api/openapi.yaml"
     ],
-    "assumptions": []
+    "assumptions": [
+      "Refunds are in the payment's currency."
+    ]
   },
-  "expected_refusal": "plan must include at least one negative or boundary behaviour"
+  "expected_refusal": {
+    "field": "behaviours",
+    "problem": "no negative or boundary behaviour for any criterion (AC1, AC2)",
+    "example": "{\"id\": \"B4\", \"ac\": \"AC2\", \"kind\": \"api\", \"case\": \"negative\", \"given\": \"...\", \"when\": \"...\", \"then\": \"...\", \"oracle\": \"exact\"}"
+  }
 }
