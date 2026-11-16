@@ -1,6 +1,7 @@
 package ports
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -114,4 +115,112 @@ func TestProfileProposalValidation(t *testing.T) {
 		p.Artifact = nil
 		require.Error(t, p.Validate())
 	})
+}
+
+func validExtendedSpec() ProfileSpec {
+	spec := validProfileSpec()
+	spec.Runs = 3
+	spec.Checks = []ProfileCheck{{
+		ID: "patterns", Lens: "security", When: []string{"**/*"}, Image: "checks",
+		Run: "opengrep scan --sarif-output /out/result.sarif /work", Baseline: true,
+	}}
+	spec.Kinds = []ProfileKind{
+		{Name: "api", Run: "pytest {dir} --junitxml=/out/junit.xml"},
+		{Name: "ui", Image: "browser", Serve: "uvicorn app:app --port 8000", Ready: "http://127.0.0.1:8000/healthz", Run: "npx playwright test {dir}"},
+	}
+	spec.Services = []ProfileService{{Name: "db", Image: "postgres", Port: 5432, Data: "/var/lib/postgresql/data",
+		Env: map[string]string{"POSTGRES_PASSWORD": "test-only"}}}
+	return spec
+}
+
+func TestProfileExtensionsValidate(t *testing.T) {
+	require.NoError(t, validExtendedSpec().Validate())
+	require.NoError(t, validProfileSpec().ValidateExtensions(), "a profile with no extensions stays valid")
+
+	tests := []struct {
+		name   string
+		mutate func(*ProfileSpec)
+		field  string
+	}{
+		{"a kind run with no {dir}", func(s *ProfileSpec) { s.Kinds[0].Run = "pytest tests" }, "kinds[0]: run"},
+		{"a kind run with two {dir}", func(s *ProfileSpec) { s.Kinds[0].Run = "pytest {dir} {dir}" }, "kinds[0]: run"},
+		{"serve without ready", func(s *ProfileSpec) { s.Kinds[1].Ready = "" }, "kinds[1]: serve"},
+		{"ready without serve", func(s *ProfileSpec) { s.Kinds[0].Ready = "http://127.0.0.1:8000/" }, "kinds[0]: serve"},
+		{"ready on another host", func(s *ProfileSpec) { s.Kinds[1].Ready = "http://example.com:8000/" }, "kinds[1]: ready"},
+		{"ready on a private address", func(s *ProfileSpec) { s.Kinds[1].Ready = "http://10.0.0.5:8000/" }, "kinds[1]: ready"},
+		{"ready on the metadata address", func(s *ProfileSpec) { s.Kinds[1].Ready = "http://169.254.169.254:80/" }, "kinds[1]: ready"},
+		{"ready with userinfo trick", func(s *ProfileSpec) { s.Kinds[1].Ready = "http://127.0.0.1@evil.example:8000/" }, "kinds[1]: ready"},
+		{"ready with no port", func(s *ProfileSpec) { s.Kinds[1].Ready = "http://127.0.0.1/" }, "kinds[1]: ready"},
+		{"ready that is not http", func(s *ProfileSpec) { s.Kinds[1].Ready = "ftp://127.0.0.1:21/" }, "kinds[1]: ready"},
+		{"a run with a line break", func(s *ProfileSpec) { s.Kinds[0].Run = "pytest {dir}\nrm -rf /" }, "kinds[0]: run"},
+		{"runs missing while kinds exist", func(s *ProfileSpec) { s.Runs = 0 }, "runs"},
+		{"runs too large", func(s *ProfileSpec) { s.Runs = 11 }, "runs"},
+		{"a check with {dir}", func(s *ProfileSpec) { s.Checks[0].Run = "scan {dir}" }, "checks[0]: run"},
+		{"a check glob that climbs out", func(s *ProfileSpec) { s.Checks[0].When = []string{"../**"} }, "checks[0]: when[0]"},
+		{"an absolute check glob", func(s *ProfileSpec) { s.Checks[0].When = []string{"/etc/**"} }, "checks[0]: when[0]"},
+		{"a check with no glob", func(s *ProfileSpec) { s.Checks[0].When = nil }, "checks[0]: when"},
+		{"a check image that is neither name nor digest", func(s *ProfileSpec) { s.Checks[0].Image = "checks:latest" }, "checks[0]: image"},
+		{"a bad lens", func(s *ProfileSpec) { s.Checks[0].Lens = "Security!" }, "checks[0]: lens"},
+		{"a duplicate check id", func(s *ProfileSpec) { s.Checks = append(s.Checks, s.Checks[0]) }, "is used twice"},
+		{"a duplicate kind name", func(s *ProfileSpec) { s.Kinds[1].Name = "api" }, "is used twice"},
+		{"a service env name in lower case", func(s *ProfileSpec) { s.Services[0].Env = map[string]string{"password": "x"} }, "services[0]: env.password"},
+		{"a service env value with a line break", func(s *ProfileSpec) { s.Services[0].Env["POSTGRES_PASSWORD"] = "a\nb" }, "services[0]: env.POSTGRES_PASSWORD"},
+		{"a service with no port", func(s *ProfileSpec) { s.Services[0].Port = 0 }, "services[0]: port"},
+		{"a service port out of range", func(s *ProfileSpec) { s.Services[0].Port = 65536 }, "services[0]: port"},
+		{"a relative service data dir", func(s *ProfileSpec) { s.Services[0].Data = "var/lib/data" }, "services[0]: data"},
+		{"a service data dir that adds a tmpfs option", func(s *ProfileSpec) { s.Services[0].Data = "/data,exec" }, "services[0]: data"},
+		{"a service data dir with a colon", func(s *ProfileSpec) { s.Services[0].Data = "/data:exec" }, "services[0]: data"},
+		{"a service data dir that climbs", func(s *ProfileSpec) { s.Services[0].Data = "/data/../etc" }, "services[0]: data"},
+		{"the root as a service data dir", func(s *ProfileSpec) { s.Services[0].Data = "/" }, "services[0]: data"},
+		{"a service data dir over /proc", func(s *ProfileSpec) { s.Services[0].Data = "/proc/self" }, "services[0]: data"},
+		{"too many checks", func(s *ProfileSpec) {
+			s.Checks = nil
+			for i := range 33 {
+				c := validExtendedSpec().Checks[0]
+				c.ID = "c" + strconv.Itoa(i)
+				s.Checks = append(s.Checks, c)
+			}
+		}, "at most 32"},
+		{"too many services", func(s *ProfileSpec) {
+			s.Services = nil
+			for i := range 5 {
+				s.Services = append(s.Services, ProfileService{Name: "s" + strconv.Itoa(i), Image: "postgres", Port: 5432})
+			}
+		}, "at most 4"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := validExtendedSpec()
+			tt.mutate(&spec)
+			err := spec.Validate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.field)
+		})
+	}
+}
+
+func TestProfileServiceDataIsOptional(t *testing.T) {
+	spec := validExtendedSpec()
+	spec.Services[0].Data = ""
+	require.NoError(t, spec.Validate())
+}
+
+func TestProfileHistoryRequestToken(t *testing.T) {
+	base := ProfileWarmRequest{Repo: "aarush323/heimdall-fixture-pay", SHA: "4a0f6993769e3a3337dee3ea3e35fc3ad825bb88", Profile: "pay"}
+	require.NoError(t, ProfileHistoryRequest{ProfileWarmRequest: base}.Validate(), "a public repository needs no token")
+	require.NoError(t, ProfileHistoryRequest{ProfileWarmRequest: base, Token: "ghs_" + strings.Repeat("a", 36)}.Validate())
+	for name, token := range map[string]string{
+		"a line break would add a header": "ghs_" + strings.Repeat("a", 36) + "\r\nX-Evil: 1",
+		"a colon":                         "ghs_" + strings.Repeat("a", 30) + ":abcde",
+		"too short":                       "ghs_abc",
+		"too long":                        strings.Repeat("a", 256),
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := ProfileHistoryRequest{ProfileWarmRequest: base, Token: token}.Validate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "token")
+			require.NotContains(t, err.Error(), token, "a refusal never repeats the token")
+		})
+	}
+	require.Error(t, ProfileHistoryRequest{ProfileWarmRequest: ProfileWarmRequest{Repo: "x"}}.Validate(), "the warm request is still validated")
 }

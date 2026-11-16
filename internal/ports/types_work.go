@@ -1,6 +1,8 @@
 package ports
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -47,13 +49,18 @@ func (l Liveness) Valid() bool {
 // SandboxKind is one of the sandbox jobs of TECH_SPEC 12.2.
 type SandboxKind string
 
-// The sandbox jobs. Mutation is Later in the build and is listed so the enum matches the spec table.
+// The sandbox jobs. Check and Test are the one job shape of REVIEW_ARCH 4.1 and TEST_AGENT_ARCH 5.1: the head tree
+// at /work, an optional base tree at /base, a command taken from a promoted profile, a result file at /out.
 const (
-	SandboxRedFirst     SandboxKind = "red_first"
-	SandboxRepro        SandboxKind = "repro"
+	SandboxRedFirst SandboxKind = "red_first"
+	SandboxRepro    SandboxKind = "repro"
+	// SandboxCheck runs one profile check (CheckID) and returns its SARIF result.
+	SandboxCheck SandboxKind = "check"
+	// SandboxTest runs one profile test kind (TestKind) over Dir and returns its JUnit result.
+	SandboxTest SandboxKind = "test"
+	// SandboxStatic is the old single-purpose go vet job. The runner no longer executes it; the constant stays only
+	// until its last callers (the verify effect and the run_check tool, both M3's) move to SandboxCheck.
 	SandboxStatic       SandboxKind = "static"
-	SandboxContract     SandboxKind = "contract"
-	SandboxMutation     SandboxKind = "mutation"
 	SandboxProfileTrial SandboxKind = "profile_trial"
 	// SandboxWarm is the read-only module-cache fetch job (TECH_SPEC 12.2, D153). It never runs
 	// repository code and its egress is allowlisted by the runner's fetch boundary.
@@ -71,34 +78,128 @@ type SandboxJob struct {
 	Dir     string        `json:"dir"`
 	Timeout time.Duration `json:"timeout"`
 	Profile string        `json:"profile,omitempty"`
-	// Check names the fixed deterministic check a static job runs (CheckGoVet). It is empty for every other kind.
+	// BaseSHA, when set on a check or test job, is the commit whose tree the job also sees, read-only, at /base.
+	BaseSHA id.SHA `json:"base_sha,omitempty"`
+	// CheckID names the profile check a check job runs; empty for every other kind.
+	CheckID string `json:"check_id,omitempty"`
+	// TestKind names the profile test kind a test job runs; empty for every other kind.
+	TestKind string `json:"test_kind,omitempty"`
+	// OnDemand marks a check job a person or agent asked for (run_check) rather than one the pipeline ran by itself.
+	OnDemand bool `json:"on_demand,omitempty"`
+	// Change is the ticket or pull request this job serves. Only a job with a Change can be superseded by a new head.
+	Change id.ChangeID `json:"change,omitempty"`
+	// Head is the pull-request head this job serves, when it differs from SHA (a baseline run of a check at the merge
+	// base serves the head it will be compared with). Empty means SHA is the head.
+	Head id.SHA `json:"head,omitempty"`
+	// Check names the fixed deterministic check of the old static job (CheckGoVet). It is empty for every other kind.
 	Check string `json:"check,omitempty"`
 }
 
-// CheckGoVet is the static check that runs go vet over the repository (TECH_SPEC 12.2, evidence tier E2).
+// Priority orders the runner's queue (TEST_AGENT_ARCH 8): a lower value runs first. It is data on the job kind.
+type Priority int
+
+// The priorities, highest first. A preview is the lowest: it is a running process a person is waiting on only
+// while an agent explores, never a gate.
+const (
+	PriorityGate       Priority = iota // acceptance, red-first, evidence verification, profile trials
+	PriorityOnDemand                   // a check an agent or person asked for, a cache warm
+	PriorityBackground                 // checks and mutants the pipeline runs by itself
+	PriorityPreview
+)
+
+// Priority returns where the job waits in the runner's queue.
+func (j SandboxJob) Priority() Priority {
+	switch j.Kind {
+	case SandboxRedFirst, SandboxRepro, SandboxTest, SandboxProfileTrial, SandboxStatic:
+		return PriorityGate
+	case SandboxWarm:
+		return PriorityOnDemand
+	case SandboxCheck:
+		if j.OnDemand {
+			return PriorityOnDemand
+		}
+	}
+	return PriorityBackground
+}
+
+// HeadSHA returns the pull-request head the job serves.
+func (j SandboxJob) HeadSHA() id.SHA {
+	if j.Head != "" {
+		return j.Head
+	}
+	return j.SHA
+}
+
+// CheckGoVet is the old static check that ran go vet. See SandboxStatic: it goes with its last callers.
 const CheckGoVet = "go_vet"
 
 // MaxCheckOutput bounds the text output a static check returns.
 const MaxCheckOutput = 64 << 10
 
+// MaxJobResult bounds the result file (SARIF or JUnit) a check or test job returns.
+const MaxJobResult = 2 << 20
+
 // Validate returns every problem with the job.
 func (j SandboxJob) Validate() error {
 	var v problems
 	switch j.Kind {
-	case SandboxRedFirst, SandboxRepro, SandboxStatic, SandboxContract, SandboxMutation, SandboxProfileTrial, SandboxWarm:
+	case SandboxRedFirst, SandboxRepro, SandboxStatic, SandboxProfileTrial, SandboxWarm, SandboxCheck, SandboxTest:
 	default:
 		v.require("kind", false, "must be a known sandbox job kind")
 	}
 	v.add("repo", checkRepo(j.Repo))
 	v.add("sha", checkSHA(j.SHA))
-	v.add("dir", checkRelPath(j.Dir))
+	v.add("dir", j.validateDir())
 	v.require("timeout", j.Timeout > 0 && j.Timeout <= maxSandboxTimeout, "must be more than 0 and at most 10 minutes")
+	v.add("base_sha", j.validateBase())
+	if j.Head != "" {
+		v.add("head", checkSHA(j.Head))
+	}
+	if j.Change != "" {
+		v.add("change", func() error { _, err := id.ParseChangeID(string(j.Change)); return err }())
+	}
+	v.require("on_demand", !j.OnDemand || j.Kind == SandboxCheck, "only a check job is asked for on demand")
+	v.add("check_id", j.validateName(j.CheckID, SandboxCheck))
+	v.add("test_kind", j.validateName(j.TestKind, SandboxTest))
 	if j.Kind == SandboxStatic {
 		v.require("check", j.Check == CheckGoVet, "a static job must name a known check")
 	} else {
 		v.require("check", j.Check == "", "only a static job names a check")
 	}
 	return v.join()
+}
+
+// validateDir requires a directory for the jobs that run a test command over one and refuses a malformed one for
+// every job that names it.
+func (j SandboxJob) validateDir() error {
+	if (j.Kind == SandboxCheck || j.Kind == SandboxWarm) && j.Dir == "" {
+		return nil
+	}
+	return checkRelPath(j.Dir)
+}
+
+func (j SandboxJob) validateBase() error {
+	if j.BaseSHA == "" {
+		return nil
+	}
+	if j.Kind != SandboxCheck && j.Kind != SandboxTest {
+		return errors.New("only a check or test job sees a base tree")
+	}
+	return checkSHA(j.BaseSHA)
+}
+
+// validateName requires value to be a profile-style name exactly when the job is of kind want.
+func (j SandboxJob) validateName(value string, want SandboxKind) error {
+	if j.Kind != want {
+		if value != "" {
+			return fmt.Errorf("only a %s job sets it", want)
+		}
+		return nil
+	}
+	if !profileNameRef.MatchString(value) {
+		return errors.New("must be one to 64 lowercase name characters")
+	}
+	return nil
 }
 
 // Outcome is what one test did in a sandbox run. Failure is an assertion (JUnit <failure>); Error is a crash, a
@@ -128,6 +229,10 @@ type SandboxResult struct {
 	LogRef  workflow.BlobRef `json:"log_ref"`
 	// Output is the bounded text a static check printed. It is empty for test jobs.
 	Output string `json:"output,omitempty"`
+	// Sarif is the result file of a check job, at most MaxJobResult bytes. Its content is untrusted.
+	Sarif []byte `json:"sarif,omitempty"`
+	// Exit is the exit status of the command of a check or test job.
+	Exit int `json:"exit,omitempty"`
 }
 
 // Validate returns every problem with the result.
@@ -137,6 +242,7 @@ func (r SandboxResult) Validate() error {
 	v.require("failed", r.Failed >= 0, "must not be negative")
 	v.require("errored", r.Errored >= 0, "must not be negative")
 	v.require("output", len(r.Output) <= MaxCheckOutput, "must be at most 64 KiB")
+	v.require("sarif", len(r.Sarif) <= MaxJobResult, "must be at most 2 MiB")
 	for i, t := range r.Tests {
 		v.add("tests["+strconv.Itoa(i)+"].name", checkText(t.Name, 512))
 		switch t.Outcome {

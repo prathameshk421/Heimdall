@@ -2,7 +2,13 @@ package ports
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/netip"
+	"net/url"
+	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,10 +43,215 @@ type ProfileSpec struct {
 	ACTag      string
 	FetchHosts []string
 	TestsDir   string
+	// Checks are the profile's tool checks: each runs on the head tree (and on the base tree when Baseline is
+	// set) and writes SARIF (REVIEW_ARCH 4.1).
+	Checks []ProfileCheck
+	// Kinds are the profile's test kinds, sorted by name: each names how to run tests of that kind and writes
+	// JUnit (TEST_AGENT_ARCH 5.1).
+	Kinds []ProfileKind
+	// Runs is how many times a gate run of a kind is repeated; zero only when the profile declares no kinds.
+	Runs int
+	// Services are the throwaway containers a job may reach on a private network with no egress.
+	Services []ProfileService
+}
+
+// Profile extension bounds. They keep a hostile or careless profile from becoming an unbounded job plan.
+const (
+	maxProfileChecks   = 32
+	maxProfileKinds    = 8
+	maxProfileServices = 4
+	maxProfileGlobs    = 16
+	maxProfileRuns     = 10
+	maxProfileCommand  = 1024
+	maxServiceEnv      = 16
+)
+
+// ProfileCheck is one row of the profile's `checks:` list. Its command comes only from a profile a person merged.
+type ProfileCheck struct {
+	ID       string
+	Lens     string
+	When     []string // globs over the files the change touches
+	Image    string   // a name on the runner's image allowlist, or a digest-pinned reference on it
+	Run      string
+	Baseline bool // also run on base and keep only what is new
+	// History mounts the repository's history mirror read-only at /history for this check (REVIEW_ARCH 4.6). The mirror
+	// is fetched only by the warm job; a check can read it and never change it.
+	History bool
+}
+
+// ProfileKind is one test kind of the profile's `tests.kinds:` map.
+type ProfileKind struct {
+	Name  string
+	Image string // empty means the profile's own image
+	Run   string // must carry exactly one {dir}
+	Serve string // starts the app under test inside the job; empty for a kind that needs no app
+	Ready string // a loopback URL the job waits on before the run; set exactly when Serve is
+}
+
+// ProfileService is one throwaway container of the profile's `services:` list. It runs as a fixed non-root user with
+// no capabilities; an image that cannot run that way is not allowlisted. Port is the TCP port the runner waits on
+// before the job starts. Data, when set, is the directory the service writes, mounted as a fresh tmpfs.
+type ProfileService struct {
+	Name  string
+	Image string
+	Env   map[string]string
+	Port  int
+	Data  string
 }
 
 // Validate returns every problem with the parsed profile contract.
 func (s ProfileSpec) Validate() error {
+	return errors.Join(s.validateBase(), s.ValidateExtensions())
+}
+
+// ValidateExtensions returns every problem with the checks, test kinds, runs and services of the contract. It is
+// the one place the shape rules of those fields live: the profile parser calls it and adds the allowlist rule.
+func (s ProfileSpec) ValidateExtensions() error {
+	var v problems
+	v.require("checks", len(s.Checks) <= maxProfileChecks, "must name at most 32 checks")
+	seen := map[string]bool{}
+	for i, c := range s.Checks {
+		v.add("checks["+strconv.Itoa(i)+"]", c.validate(seen))
+	}
+	v.require("kinds", len(s.Kinds) <= maxProfileKinds, "must name at most 8 test kinds")
+	seen = map[string]bool{}
+	for i, k := range s.Kinds {
+		v.add("kinds["+strconv.Itoa(i)+"]", k.validate(seen))
+	}
+	if len(s.Kinds) > 0 || s.Runs != 0 {
+		v.require("runs", s.Runs >= 1 && s.Runs <= maxProfileRuns, "must be 1 to 10 when the profile declares test kinds")
+	}
+	v.require("services", len(s.Services) <= maxProfileServices, "must name at most 4 services")
+	seen = map[string]bool{}
+	for i, svc := range s.Services {
+		v.add("services["+strconv.Itoa(i)+"]", svc.validate(seen))
+	}
+	return v.join()
+}
+
+func (c ProfileCheck) validate(seen map[string]bool) error {
+	var v problems
+	v.add("id", checkUniqueName(c.ID, seen))
+	v.require("lens", profileNameRef.MatchString(c.Lens), "must be a lens name: one to 64 lowercase name characters")
+	v.require("when", len(c.When) >= 1 && len(c.When) <= maxProfileGlobs, "must name one to 16 globs")
+	for i, g := range c.When {
+		v.add("when["+strconv.Itoa(i)+"]", checkGlob(g))
+	}
+	v.add("image", checkProfileImage(c.Image))
+	v.add("run", checkRunCommand(c.Run))
+	v.require("run", !strings.Contains(c.Run, "{dir}"), "a check has no {dir}: it runs on the whole tree")
+	return v.join()
+}
+
+func (k ProfileKind) validate(seen map[string]bool) error {
+	var v problems
+	v.add("name", checkUniqueName(k.Name, seen))
+	if k.Image != "" {
+		v.add("image", checkProfileImage(k.Image))
+	}
+	v.add("run", checkRunCommand(k.Run))
+	v.require("run", acceptsDir(k.Run), "must contain exactly one {dir} placeholder")
+	v.require("serve", (k.Serve == "") == (k.Ready == ""), "serve and ready must be set together")
+	if k.Serve != "" {
+		v.add("serve", checkRunCommand(k.Serve))
+		v.add("ready", CheckLoopbackURL(k.Ready))
+	}
+	return v.join()
+}
+
+func (s ProfileService) validate(seen map[string]bool) error {
+	var v problems
+	v.add("name", checkUniqueName(s.Name, seen))
+	v.add("image", checkProfileImage(s.Image))
+	v.require("port", s.Port >= 1 && s.Port <= 65535, "must be the service's TCP port, 1 to 65535")
+	if s.Data != "" {
+		v.require("data", ValidServiceDataDir(s.Data), "must be an absolute, clean directory outside /proc, /sys and /dev, with no comma or colon")
+	}
+	v.require("env", len(s.Env) <= maxServiceEnv, "must hold at most 16 variables")
+	for key, value := range s.Env {
+		v.require("env."+key, envKey.MatchString(key), "must be an upper-case variable name")
+		v.require("env."+key, len(value) <= 256 && !strings.ContainsAny(value, "\x00\r\n"), "must be one line of at most 256 bytes")
+	}
+	return v.join()
+}
+
+var envKey = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
+
+// ValidServiceDataDir reports whether dir may become a service's tmpfs mount point. A comma or colon would add mount
+// options to the runner's --tmpfs argument, so neither is allowed.
+func ValidServiceDataDir(dir string) bool {
+	if len(dir) > 255 || !strings.HasPrefix(dir, "/") || dir == "/" || path.Clean(dir) != dir || strings.ContainsAny(dir, ",:\x00\r\n ") {
+		return false
+	}
+	for _, kernel := range []string{"/proc", "/sys", "/dev"} {
+		if dir == kernel || strings.HasPrefix(dir, kernel+"/") {
+			return false
+		}
+	}
+	return true
+}
+
+// checkUniqueName requires a profile-name-shaped identifier not seen before, and records it.
+func checkUniqueName(name string, seen map[string]bool) error {
+	if !profileNameRef.MatchString(name) {
+		return errors.New("must be one to 64 lowercase name characters")
+	}
+	if seen[name] {
+		return fmt.Errorf("%q is used twice", name)
+	}
+	seen[name] = true
+	return nil
+}
+
+// checkProfileImage requires a bare image name or a digest-pinned reference. Whether it is on the runner's allowlist
+// is the profile parser's rule, because only it holds the list.
+func checkProfileImage(image string) error {
+	if profileNameRef.MatchString(image) || checkImageReference(image) {
+		return nil
+	}
+	return errors.New("must be an allowlisted image name or a digest-pinned image reference")
+}
+
+// checkRunCommand requires one bounded command line: no NUL and no line break.
+func checkRunCommand(cmd string) error {
+	if err := checkText(cmd, maxProfileCommand); err != nil {
+		return err
+	}
+	if strings.ContainsAny(cmd, "\x00\r\n") {
+		return errors.New("must be one line")
+	}
+	return nil
+}
+
+// checkGlob requires a repository-relative glob: no absolute path, no parent step, no backslash.
+func checkGlob(g string) error {
+	if err := checkText(g, 200); err != nil {
+		return err
+	}
+	if strings.ContainsAny(g, "\x00\\") || path.IsAbs(g) || slices.Contains(strings.Split(g, "/"), "..") {
+		return fmt.Errorf("%q must be a relative glob with no .. step", g)
+	}
+	return nil
+}
+
+// CheckLoopbackURL requires an http URL that names a loopback address and a port, so a ready probe can only ever
+// reach the app started inside the job. The profile parser and the runner both apply it.
+func CheckLoopbackURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Port() == "" {
+		return fmt.Errorf("%q must be an http URL with a loopback host and a port", raw)
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return nil
+	}
+	if addr, perr := netip.ParseAddr(host); perr == nil && addr.IsLoopback() {
+		return nil
+	}
+	return fmt.Errorf("%q must name a loopback host", raw)
+}
+
+func (s ProfileSpec) validateBase() error {
 	var v problems
 	v.require("languages", len(s.Languages) > 0 && len(s.Languages) <= 4, "must name one to four languages")
 	for i, l := range s.Languages {
@@ -268,6 +479,40 @@ func (r ProfileWarmRequest) Validate() error {
 		v.require("profile", false, "must be an empty profile name or one to 64 lowercase name characters")
 	}
 	return v.join()
+}
+
+// ProfileHistoryRequest asks for a history-mirror update. Token, for a private repository, is a short-lived read-only
+// token the server minted for this one repository and this one request; the runner uses it for the fetch and keeps
+// nothing. A public repository needs none.
+type ProfileHistoryRequest struct {
+	ProfileWarmRequest
+	Token string
+}
+
+// historyToken is the shape of a forge token: long enough to be one, and only characters that cannot end an HTTP
+// header or start another.
+var historyToken = regexp.MustCompile(`^[A-Za-z0-9_]{20,255}$`)
+
+// Validate returns every problem with the history request. A refusal never repeats the token.
+func (r ProfileHistoryRequest) Validate() error {
+	var v problems
+	v.add("request", r.ProfileWarmRequest.Validate())
+	if r.Token != "" {
+		v.require("token", historyToken.MatchString(r.Token), "must be 20 to 255 letters, digits or underscores")
+	}
+	return v.join()
+}
+
+// ProfileHistoryResult is the bounded outcome of one history-mirror update.
+type ProfileHistoryResult struct {
+	Bytes int64 // size of the mirror after the update
+	Fresh bool  // the mirror did not exist before this update
+}
+
+// ProfileHistoryWarmer keeps the blobless history mirror of a repository (commits and trees only). Adapter: the runner
+// client; the runner owns the egress boundary, and the warm job is the only job that fetches.
+type ProfileHistoryWarmer interface {
+	WarmHistory(ctx context.Context, req ProfileHistoryRequest) (ProfileHistoryResult, error)
 }
 
 // ProfileWarmResult is the bounded outcome of one warm job.

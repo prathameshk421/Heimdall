@@ -30,5 +30,8 @@ func LoadApprovedProfiles(dir string, allowlistedImages []string) (map[string]Re
 // ErrImageNotAllowed reports a profile absent from the pinned image policy.
 var ErrImageNotAllowed = profileyaml.ErrImageNotAllowed
 
-// ErrUnknownCheck is returned for a static check the runner does not know.
-var ErrUnknownCheck = errors.New("unknown static check")
+// ErrUnknownCheck is returned for a check id the promoted profile does not hold.
+var ErrUnknownCheck = errors.New("unknown check")
+
+// ErrUnknownTestKind is returned for a test kind the promoted profile does not hold.
+var ErrUnknownTestKind = errors.New("unknown test kind")

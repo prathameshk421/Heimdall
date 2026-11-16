@@ -171,11 +171,7 @@ func (r *Runner) validateJob(j Job) error {
 	if err := j.Validate(); err != nil {
 		return fmt.Errorf("invalid sandbox job: %w", err)
 	}
-	switch j.Kind {
-	case ports.SandboxRedFirst, ports.SandboxRepro:
-	case ports.SandboxStatic, ports.SandboxContract, ports.SandboxMutation, ports.SandboxProfileTrial, ports.SandboxWarm:
-		return fmt.Errorf("unsupported sandbox kind %q: %w", j.Kind, ErrInvalidCommand)
-	default:
+	if j.Kind != ports.SandboxRedFirst && j.Kind != ports.SandboxRepro {
 		return fmt.Errorf("unsupported sandbox kind %q: %w", j.Kind, ErrInvalidCommand)
 	}
 	return validateCommand(j.Command)

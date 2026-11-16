@@ -12,40 +12,49 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/testevents"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/verify"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 const (
-	apiBodyLimit = 98 << 20
+	// apiBodyLimit covers a 64 MiB head archive and a 32 MiB base archive as base64 in JSON, plus the overlays.
+	apiBodyLimit = 140 << 20
 	// maxProfilePayload bounds one proposed or promoted profile artifact: the same bound the
 	// artifact itself carries.
 	maxProfilePayload = 64 << 10
 )
 
 type request struct {
-	Profile  string           `json:"profile"`
-	Job      ports.SandboxJob `json:"job"`
-	Archive  []byte           `json:"archive"`
-	Overlays []ports.File     `json:"overlays,omitempty"`
+	Profile string           `json:"profile"`
+	Job     ports.SandboxJob `json:"job"`
+	Archive []byte           `json:"archive"`
+	// BaseArchive is the base tree of a check or test job that compares trees.
+	BaseArchive []byte       `json:"base_archive,omitempty"`
+	Overlays    []ports.File `json:"overlays,omitempty"`
 	// Trial carries the proposed profile artifact of a SandboxProfileTrial job. The runner parses
 	// and validates it against its own allowlist and runs it outside the promoted set.
 	Trial []byte `json:"trial,omitempty"`
 	// TrialFrom names the repository the proposal belongs to, for the audit trail only.
 	TrialFrom string `json:"trial_from,omitempty"`
+	// Token is a history job's short-lived read-only token for one private repository. The runner uses it for that one
+	// fetch and keeps it nowhere.
+	Token string `json:"token,omitempty"`
 }
 
 // WarmSummary is the bounded result of one warm job: the staged modules and the fetched totals.
 type response struct {
-	Output  []byte       `json:"output,omitempty"`
-	Summary *WarmSummary `json:"summary,omitempty"`
-	Error   string       `json:"error,omitempty"`
+	Output  []byte                      `json:"output,omitempty"`
+	Summary *WarmSummary                `json:"summary,omitempty"`
+	History *ports.ProfileHistoryResult `json:"history,omitempty"`
+	Error   string                      `json:"error,omitempty"`
 }
 
 // profileView is the GET /v1/profiles body.
@@ -59,23 +68,15 @@ type policyView struct {
 }
 
 // Handler exposes the narrow job API to the Unix socket only: isolated runs, proposed-profile
-// trials, durable profile promotion, the policy allowlist and warm jobs.
+// trials, durable profile promotion, the policy allowlist, warm jobs and supersession of stale jobs.
+//
+// One job runs at a time: run, promotion and warm all stage files in the same module cache and job directory scope,
+// so the queue serializes the durable-state touches too. A caller that arrives while another job runs waits for its
+// turn, in priority order, for as long as its own request lives (TEST_AGENT_ARCH 8); it is never refused for being busy.
 func (r *Runner) Handler() http.Handler {
 	mux := http.NewServeMux()
-	slot := make(chan struct{}, 1)
-	// One job at a time: run, promotion and warm all stage files in the same module cache and job
-	// directory scope, so the slot serializes the durable-state touches too.
-	bounded := func(mutate func(w http.ResponseWriter, req *http.Request)) http.HandlerFunc {
-		return func(w http.ResponseWriter, req *http.Request) {
-			if !acquireSlot(slot) {
-				writeResponse(w, http.StatusServiceUnavailable, response{Error: "runner is busy"})
-				return
-			}
-			defer func() { <-slot }()
-			mutate(w, req)
-		}
-	}
-	mux.Handle("POST /v1/run", bounded(func(w http.ResponseWriter, req *http.Request) {
+	queue := &jobQueue{}
+	mux.Handle("POST /v1/run", queued(queue, runKey, func(w http.ResponseWriter, req *http.Request) {
 		out, status := r.handleRun(req)
 		writeResponse(w, status, out)
 	}))
@@ -85,24 +86,121 @@ func (r *Runner) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/policy", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, policyView{Images: r.AllowedImages()})
 	})
-	mux.Handle("POST /v1/profiles", bounded(func(w http.ResponseWriter, req *http.Request) {
+	mux.Handle("POST /v1/profiles", queued(queue, fixedKey(ports.PriorityGate), func(w http.ResponseWriter, req *http.Request) {
 		out, status := r.handleProfilesPush(req)
 		writeResponse(w, status, out)
 	}))
-	mux.Handle("POST /v1/warm", bounded(func(w http.ResponseWriter, req *http.Request) {
+	mux.Handle("POST /v1/warm", queued(queue, fixedKey(ports.PriorityOnDemand), func(w http.ResponseWriter, req *http.Request) {
 		out, status := r.handleWarm(req)
 		writeResponse(w, status, out)
 	}))
+	mux.Handle("POST /v1/history", queued(queue, fixedKey(ports.PriorityOnDemand), func(w http.ResponseWriter, req *http.Request) {
+		out, status := r.handleHistory(req)
+		writeResponse(w, status, out)
+	}))
+	mux.HandleFunc("POST /v1/supersede", func(w http.ResponseWriter, req *http.Request) {
+		out, status := handleSupersede(queue, req)
+		writeResponse(w, status, out)
+	})
 	return mux
 }
 
-func acquireSlot(slot chan struct{}) bool {
-	select {
-	case slot <- struct{}{}:
-		return true
-	default:
-		return false
+// Request headers that tell the queue where a job waits, so a waiting caller holds no request body in memory. The
+// run handler checks them against the decoded job and refuses a request whose headers claim a better place.
+const (
+	headerPriority = "X-Heimdall-Priority"
+	headerRepo     = "X-Heimdall-Repo"
+	headerChange   = "X-Heimdall-Change"
+	headerHead     = "X-Heimdall-Head"
+)
+
+// queued admits a request through the queue before its handler reads the body.
+func queued(q *jobQueue, keyOf func(*http.Request) (jobKey, error), handle http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		key, err := keyOf(req)
+		if err != nil {
+			writeResponse(w, http.StatusBadRequest, response{Error: "invalid queue headers"})
+			return
+		}
+		ctx, release, err := q.Acquire(req.Context(), key)
+		if err != nil {
+			status := http.StatusServiceUnavailable
+			if errors.Is(err, ErrSuperseded) {
+				status = http.StatusConflict
+			}
+			writeResponse(w, status, response{Error: err.Error()})
+			return
+		}
+		defer release()
+		handle(w, req.WithContext(ctx))
 	}
+}
+
+func fixedKey(p ports.Priority) func(*http.Request) (jobKey, error) {
+	return func(*http.Request) (jobKey, error) { return jobKey{Priority: p}, nil }
+}
+
+// runKey reads the queue headers of a run request.
+func runKey(req *http.Request) (jobKey, error) {
+	p, err := strconv.Atoi(req.Header.Get(headerPriority))
+	if err != nil || p < int(ports.PriorityGate) || p > int(ports.PriorityPreview) {
+		return jobKey{}, errors.New("priority header is missing or out of range")
+	}
+	key := jobKey{Priority: ports.Priority(p)}
+	if raw := req.Header.Get(headerRepo); raw != "" {
+		repo, err := change.ParseRepo(raw)
+		if err != nil {
+			return jobKey{}, fmt.Errorf("repo header: %w", err)
+		}
+		key.Repo = repo
+	}
+	if raw := req.Header.Get(headerChange); raw != "" {
+		ch, err := id.ParseChangeID(raw)
+		if err != nil {
+			return jobKey{}, fmt.Errorf("change header: %w", err)
+		}
+		key.Change = ch
+	}
+	if raw := req.Header.Get(headerHead); raw != "" {
+		sha, err := id.ParseSHA(raw)
+		if err != nil {
+			return jobKey{}, fmt.Errorf("head header: %w", err)
+		}
+		key.Head = sha
+	}
+	return key, nil
+}
+
+// jobKeyOf is the key a decoded job really has. The headers must not claim a better place than this.
+func jobKeyOf(job ports.SandboxJob) jobKey {
+	return jobKey{Priority: job.Priority(), Repo: job.Repo, Change: job.Change, Head: job.HeadSHA()}
+}
+
+type supersedeRequest struct {
+	Repo   change.Repo `json:"repo"`
+	Change id.ChangeID `json:"change"`
+	Head   id.SHA      `json:"head"`
+}
+
+// handleSupersede cancels the background jobs of a change that served an older head. It never waits in the queue:
+// it must be able to cancel the very job that is holding it.
+func handleSupersede(q *jobQueue, req *http.Request) (response, int) {
+	body, err := io.ReadAll(io.LimitReader(req.Body, 4<<10))
+	var in supersedeRequest
+	if err != nil || json.Unmarshal(body, &in) != nil || in.Change == "" {
+		return response{Error: "invalid supersede request"}, http.StatusBadRequest
+	}
+	if _, err := id.ParseChangeID(string(in.Change)); err != nil {
+		return response{Error: "invalid supersede request"}, http.StatusBadRequest
+	}
+	if _, err := id.ParseSHA(string(in.Head)); err != nil {
+		return response{Error: "invalid supersede request"}, http.StatusBadRequest
+	}
+	if _, err := change.ParseRepo(string(in.Repo)); err != nil {
+		return response{Error: "invalid supersede request"}, http.StatusBadRequest
+	}
+	q.Supersede(in.Repo, in.Change, in.Head)
+	return response{}, http.StatusOK
 }
 
 func (r *Runner) decodeBody(req *http.Request, limit int64) ([]byte, error) {
@@ -141,15 +239,27 @@ func (r *Runner) handleRun(req *http.Request) (response, int) {
 	if err := validateOverlays(in.Overlays); err != nil {
 		return response{Error: err.Error()}, http.StatusBadRequest
 	}
-	out, runErr := r.Run(req.Context(), JobInput{
+	if status, err := checkJobKind(in); err != nil {
+		return response{Error: err.Error()}, status
+	}
+	if claimed, err := runKey(req); err != nil || claimed != jobKeyOf(in.Job) {
+		return response{Error: "queue headers do not match the job"}, http.StatusBadRequest
+	}
+	return r.runRequest(req.Context(), in, spec)
+}
+
+// runRequest runs a validated request and shapes its answer.
+func (r *Runner) runRequest(ctx context.Context, in request, spec *RepoProfile) (response, int) {
+	job := JobInput{
 		Profile: in.Profile, Spec: spec, Archive: bytes.NewReader(in.Archive),
-		Overlays: in.Overlays, Dir: in.Job.Dir, Check: in.Job.Check, Timeout: in.Job.Timeout,
-	})
-	if in.Job.Check != "" {
-		if _, ok := parseCheckOutput(out); ok {
-			return response{Output: out}, http.StatusOK
-		}
-		return response{Error: "runner produced no check result"}, http.StatusUnprocessableEntity
+		Overlays: in.Overlays, Dir: in.Job.Dir, Repo: in.Job.Repo, CheckID: in.Job.CheckID, TestKind: in.Job.TestKind, Timeout: in.Job.Timeout,
+	}
+	if len(in.BaseArchive) > 0 {
+		job.BaseArchive = bytes.NewReader(in.BaseArchive)
+	}
+	out, runErr := r.Run(ctx, job)
+	if isProfileCommandJob(in.Job.Kind) {
+		return profileJobResponse(in.Job.Kind, out, runErr)
 	}
 	if validTestOutput(out) {
 		return response{Output: out}, http.StatusOK
@@ -158,6 +268,44 @@ func (r *Runner) handleRun(req *http.Request) (response, int) {
 		return response{Error: sandboxCause(out, runErr)}, http.StatusUnprocessableEntity
 	}
 	return response{Error: "runner produced no test results"}, http.StatusUnprocessableEntity
+}
+
+func isProfileCommandJob(kind ports.SandboxKind) bool {
+	return kind == ports.SandboxCheck || kind == ports.SandboxTest
+}
+
+// checkJobKind refuses a job kind the runner does not execute through /v1/run, and the inputs a kind may not carry.
+func checkJobKind(in request) (int, error) {
+	kind := in.Job.Kind
+	if !isProfileCommandJob(kind) && kind != ports.SandboxRedFirst && kind != ports.SandboxRepro && kind != ports.SandboxProfileTrial {
+		return http.StatusBadRequest, errors.New("the runner does not run this job kind")
+	}
+	if len(in.BaseArchive) > 0 && !isProfileCommandJob(kind) {
+		return http.StatusBadRequest, errors.New("only a check or test job carries a base tree")
+	}
+	if kind == ports.SandboxCheck && len(in.Overlays) > 0 {
+		return http.StatusBadRequest, errors.New("a check job takes no staged files")
+	}
+	return http.StatusOK, nil
+}
+
+// profileJobResponse turns the wrapper output of a check or test job into a response. A job that printed no trailer,
+// or a check that wrote no JSON result, is refused: the runner never reports a result it did not see.
+func profileJobResponse(kind ports.SandboxKind, out []byte, runErr error) (response, int) {
+	parsed, ok := parseJobOutput(out)
+	switch {
+	case !ok && runErr != nil:
+		return response{Error: sandboxCause(out, runErr)}, http.StatusUnprocessableEntity
+	case !ok:
+		return response{Error: "runner produced no job result"}, http.StatusUnprocessableEntity
+	case len(bytes.TrimSpace(parsed.Result)) == 0:
+		return response{Error: "job wrote no result file (exit " + strconv.Itoa(parsed.Exit) + ")"}, http.StatusUnprocessableEntity
+	case len(parsed.Result) > ports.MaxJobResult:
+		return response{Error: "job result exceeds its bound"}, http.StatusUnprocessableEntity
+	case kind == ports.SandboxCheck && !json.Valid(parsed.Result):
+		return response{Error: "check result is not valid JSON"}, http.StatusUnprocessableEntity
+	}
+	return response{Output: out}, http.StatusOK
 }
 
 // maxFailureCause bounds the runtime detail carried back to the server. The job output is the only
@@ -323,11 +471,13 @@ type Client struct {
 }
 
 var (
-	_ ports.Sandbox             = Client{}
-	_ ports.ProfileTrialRunner  = Client{}
-	_ ports.ProfilePolicySource = Client{}
-	_ ports.ProfileSyncer       = Client{}
-	_ ports.ProfileWarmer       = Client{}
+	_ ports.Sandbox              = Client{}
+	_ ports.ProfileTrialRunner   = Client{}
+	_ ports.ProfilePolicySource  = Client{}
+	_ ports.ProfileSyncer        = Client{}
+	_ ports.ProfileWarmer        = Client{}
+	_ ports.SandboxSuperseder    = Client{}
+	_ ports.ProfileHistoryWarmer = Client{}
 )
 
 // Run submits one commit archive through the protected Unix socket and stores its bounded log as a blob.
@@ -348,11 +498,17 @@ func (c Client) RunOverlay(ctx context.Context, job ports.SandboxJob, overlays [
 	if err := validateOverlays(overlays); err != nil {
 		return ports.SandboxResult{}, err
 	}
-	body, err := json.Marshal(request{Profile: runnerProfile(job.Profile), Job: job, Archive: data, Overlays: overlays})
+	req := request{Profile: runnerProfile(job.Profile), Job: job, Archive: data, Overlays: overlays}
+	if job.BaseSHA != "" {
+		if req.BaseArchive, err = c.loadTree(ctx, job.Repo, job.BaseSHA, maxBaseArchive); err != nil {
+			return ports.SandboxResult{}, err
+		}
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
 		return ports.SandboxResult{}, fmt.Errorf("encode runner request: %w", err)
 	}
-	resp, err := c.post(ctx, "/v1/run", job.Timeout, body)
+	resp, err := c.postRun(ctx, job, body)
 	if err != nil {
 		return ports.SandboxResult{}, err
 	}
@@ -388,7 +544,7 @@ func (c Client) Trial(ctx context.Context, j ports.ProfileTrialJob) (ports.Sandb
 	if err != nil {
 		return ports.SandboxResult{}, fmt.Errorf("encode trial request: %w", err)
 	}
-	resp, err := c.post(ctx, "/v1/run", job.Timeout, body)
+	resp, err := c.postRun(ctx, job, body)
 	if err != nil {
 		return ports.SandboxResult{}, err
 	}
@@ -522,6 +678,9 @@ func (c Client) validateJob(job ports.SandboxJob) error {
 	if err := job.Validate(); err != nil {
 		return fmt.Errorf("invalid sandbox job: %w", err)
 	}
+	if job.Kind == ports.SandboxStatic {
+		return errors.New("the runner no longer runs the static job; submit a check job")
+	}
 	if c.Source == nil || c.Blobs == nil {
 		return errors.New("runner source and blob store are required")
 	}
@@ -532,17 +691,22 @@ func (c Client) validateJob(job ports.SandboxJob) error {
 }
 
 func (c Client) loadArchive(ctx context.Context, job ports.SandboxJob) ([]byte, error) {
-	archive, err := c.Source.Tarball(ctx, job.Repo, job.SHA)
+	return c.loadTree(ctx, job.Repo, job.SHA, maxSourceArchive)
+}
+
+// loadTree fetches the tarball of one commit, refusing one larger than limit.
+func (c Client) loadTree(ctx context.Context, repo change.Repo, sha id.SHA, limit int64) ([]byte, error) {
+	archive, err := c.Source.Tarball(ctx, repo, sha)
 	if err != nil {
 		return nil, fmt.Errorf("fetch sandbox source: %w", err)
 	}
 	defer func() { _ = archive.Close() }()
-	data, err := io.ReadAll(io.LimitReader(archive, (64<<20)+1))
+	data, err := io.ReadAll(io.LimitReader(archive, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("read sandbox source: %w", err)
 	}
-	if len(data) > 64<<20 {
-		return nil, errors.New("sandbox source exceeds 64 MiB")
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("sandbox source exceeds %d MiB", limit>>20)
 	}
 	return data, nil
 }
@@ -564,7 +728,26 @@ func validateOverlays(overlays []ports.File) error {
 	return nil
 }
 
+// maxQueueWait bounds how long a caller's connection may wait for its turn before the job even starts. The caller's own
+// context is the deadline that matters; this only keeps the HTTP client from giving up first.
+const maxQueueWait = 30 * time.Minute
+
 func (c Client) post(ctx context.Context, path string, timeout time.Duration, body []byte) (*http.Response, error) {
+	return c.send(ctx, path, timeout, body, nil)
+}
+
+// postRun posts one job and tells the runner's queue where it waits. The runner checks the headers against the job.
+func (c Client) postRun(ctx context.Context, job ports.SandboxJob, body []byte) (*http.Response, error) {
+	key := jobKeyOf(job)
+	return c.send(ctx, "/v1/run", job.Timeout+maxQueueWait, body, map[string]string{
+		headerPriority: strconv.Itoa(int(key.Priority)),
+		headerRepo:     string(key.Repo),
+		headerChange:   string(key.Change),
+		headerHead:     string(key.Head),
+	})
+}
+
+func (c Client) send(ctx context.Context, path string, timeout time.Duration, body []byte, headers map[string]string) (*http.Response, error) {
 	transport := &http.Transport{DialContext: c.dial()}
 	client := &http.Client{Transport: transport, Timeout: timeout + 10*time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://runner"+path, bytes.NewReader(body))
@@ -573,6 +756,11 @@ func (c Client) post(ctx context.Context, path string, timeout time.Duration, bo
 		return nil, fmt.Errorf("create runner request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for name, value := range headers {
+		if value != "" {
+			req.Header.Set(name, value)
+		}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		transport.CloseIdleConnections()
@@ -589,8 +777,8 @@ func (c Client) result(ctx context.Context, job ports.SandboxJob, resp *http.Res
 	if resp.StatusCode != http.StatusOK {
 		return ports.SandboxResult{}, fmt.Errorf("runner rejected job: %s", out.Error)
 	}
-	if job.Check != "" {
-		return c.checkResult(ctx, out.Output)
+	if isProfileCommandJob(job.Kind) {
+		return c.profileJobResult(ctx, job, out.Output)
 	}
 	report, _, err := testevents.ParseEvents(bytes.NewReader(out.Output))
 	if err != nil {
@@ -601,4 +789,114 @@ func (c Client) result(ctx context.Context, job ports.SandboxJob, resp *http.Res
 		return ports.SandboxResult{}, fmt.Errorf("store runner log: %w", err)
 	}
 	return testevents.ReportToSandboxResult(report, workflow.BlobRef(logRef)), nil
+}
+
+// profileJobResult stores the bounded log and returns the result file: SARIF as it is for a check, parsed JUnit for a
+// test kind. Both are untrusted content; the caller's reader validates them.
+func (c Client) profileJobResult(ctx context.Context, job ports.SandboxJob, output []byte) (ports.SandboxResult, error) {
+	parsed, ok := parseJobOutput(output)
+	if !ok {
+		return ports.SandboxResult{}, errors.New("runner job output has no result trailer")
+	}
+	if len(parsed.Result) > ports.MaxJobResult {
+		return ports.SandboxResult{}, errors.New("runner job result exceeds its bound")
+	}
+	logRef, err := c.Blobs.Put(ctx, ports.BlobLog, bytes.NewReader(parsed.Log))
+	if err != nil {
+		return ports.SandboxResult{}, fmt.Errorf("store runner log: %w", err)
+	}
+	if job.Kind == ports.SandboxCheck {
+		return ports.SandboxResult{LogRef: workflow.BlobRef(logRef), Sarif: parsed.Result, Exit: parsed.Exit}, nil
+	}
+	report, err := verify.ParseBytes(parsed.Result)
+	if err != nil {
+		return ports.SandboxResult{}, fmt.Errorf("parse runner JUnit result: %w", err)
+	}
+	res := testevents.ReportToSandboxResult(report, workflow.BlobRef(logRef))
+	res.Exit = parsed.Exit
+	return res, nil
+}
+
+// Supersede tells the runner that a change has a new head, so it cancels the queued and running background jobs that
+// served an older one (TEST_AGENT_ARCH 8, rule 3).
+func (c Client) Supersede(ctx context.Context, repo change.Repo, ch id.ChangeID, head id.SHA) error {
+	if c.Socket == "" {
+		return errors.New("runner socket path is required")
+	}
+	body, err := json.Marshal(supersedeRequest{Repo: repo, Change: ch, Head: head})
+	if err != nil {
+		return fmt.Errorf("encode supersede request: %w", err)
+	}
+	resp, err := c.post(ctx, "/v1/supersede", 30*time.Second, body)
+	if err != nil {
+		return fmt.Errorf("supersede runner jobs: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("runner refused supersede: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// handleHistory creates or updates the history mirror of one repository. Like the module warm it is a fetch job: the
+// only kind with egress.
+func (r *Runner) handleHistory(req *http.Request) (response, int) {
+	body, err := r.decodeBody(req, 64<<10)
+	if err != nil {
+		return response{Error: "read request"}, http.StatusBadRequest
+	}
+	in, err := decodeRunRequest(body)
+	if err != nil || in.Job.Kind != ports.SandboxWarm {
+		return response{Error: "history requires a warm job"}, http.StatusBadRequest
+	}
+	if err := in.Job.Validate(); err != nil {
+		return response{Error: "invalid job"}, http.StatusBadRequest
+	}
+	hist := ports.ProfileHistoryRequest{ProfileWarmRequest: ports.ProfileWarmRequest{Repo: in.Job.Repo, SHA: in.Job.SHA, Profile: in.Profile}, Token: in.Token}
+	if err := hist.Validate(); err != nil {
+		return response{Error: "invalid history request"}, http.StatusBadRequest
+	}
+	res, err := r.WarmHistory(req.Context(), in.Profile, in.Job.Repo, in.Token)
+	if err != nil {
+		return response{Error: err.Error()}, historyStatus(err)
+	}
+	return response{History: &res}, http.StatusOK
+}
+
+// historyStatus keeps a refusal of the profile (4xx) apart from a fetch failure (the job's own outcome).
+func historyStatus(err error) int {
+	switch {
+	case errors.Is(err, ErrProfileNotFound), errors.Is(err, ErrHistoryNotAllowed):
+		return http.StatusBadRequest
+	default:
+		return http.StatusUnprocessableEntity
+	}
+}
+
+// WarmHistory asks the runner to create or update a repository's history mirror under the profile's fetch_hosts.
+func (c Client) WarmHistory(ctx context.Context, req ports.ProfileHistoryRequest) (ports.ProfileHistoryResult, error) {
+	if err := req.Validate(); err != nil {
+		return ports.ProfileHistoryResult{}, fmt.Errorf("invalid history request: %w", err)
+	}
+	if req.Profile == "" {
+		return ports.ProfileHistoryResult{}, errors.New("a history mirror needs a promoted profile")
+	}
+	job := ports.SandboxJob{Kind: ports.SandboxWarm, Repo: req.Repo, SHA: req.SHA, Timeout: historyTimeout}
+	body, err := json.Marshal(request{Profile: req.Profile, Job: job, Token: req.Token})
+	if err != nil {
+		return ports.ProfileHistoryResult{}, fmt.Errorf("encode history request: %w", err)
+	}
+	resp, err := c.post(ctx, "/v1/history", job.Timeout+maxQueueWait, body)
+	if err != nil {
+		return ports.ProfileHistoryResult{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out response
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return ports.ProfileHistoryResult{}, fmt.Errorf("decode runner history response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK || out.History == nil {
+		return ports.ProfileHistoryResult{}, fmt.Errorf("runner refused history job: %s", out.Error)
+	}
+	return *out.History, nil
 }

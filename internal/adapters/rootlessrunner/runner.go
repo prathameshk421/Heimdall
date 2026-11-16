@@ -15,8 +15,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -38,6 +40,10 @@ func (p Podman) Execute(ctx context.Context, args []string, dir string) ([]byte,
 	// #nosec G204 -- args come only from Policy.containerArgs; profile commands and image refs are fixed/validated.
 	cmd := exec.CommandContext(ctx, "podman", args...)
 	cmd.Dir = dir
+	// A cancelled job (superseded or timed out) gets SIGTERM, which podman forwards to the container and cleans up
+	// after; only a job that ignores it for ten seconds is killed.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = 10 * time.Second
 	home := p.Home
 	if home == "" {
 		home = "/var/lib/heimdall-runner"
@@ -62,8 +68,15 @@ type JobInput struct {
 	Archive  io.Reader
 	Overlays []ports.File
 	Dir      string // repository-relative directory the acceptance command's {dir} names
-	Check    string // a fixed static check (ports.CheckGoVet); empty for a test job
-	Timeout  time.Duration
+	// CheckID and TestKind select a row of the promoted profile; at most one is set. A job with neither runs the
+	// profile's acceptance command (red-first, repro and trial jobs).
+	CheckID  string
+	TestKind string
+	// Repo is the repository the job runs for; a check that reads the history mirror finds it by this name.
+	Repo change.Repo
+	// BaseArchive is the tree of the base commit, present at /base for a check or test job that compares trees.
+	BaseArchive io.Reader
+	Timeout     time.Duration
 }
 
 // Runner runs validated jobs using allowlisted images and holds the durable promoted profile set.
@@ -73,6 +86,10 @@ type Runner struct {
 	Policy   Policy
 	Executor Executor
 	Root     string
+	// Git runs the history mirror's git commands; nil means the real git binary.
+	Git GitRunner
+	// ServiceReady bounds the wait for a job's services to accept on their ports; zero means 30 seconds.
+	ServiceReady time.Duration
 
 	// profilesDir is the durable directory of promoted profiles; empty means no promotions are
 	// persisted for this runner instance (unit tests).
@@ -141,7 +158,7 @@ func (r *Runner) Activate(name string, artifact []byte) (RepoProfile, error) {
 	if !validProfileName(name) {
 		return RepoProfile{}, errors.New("profile name must be 1 to 64 lowercase name characters")
 	}
-	spec, err := ParseApprovedProfile(artifact, r.imageAllowlist())
+	spec, err := ParseApprovedProfile(artifact, r.AllowedImages())
 	if err != nil {
 		return RepoProfile{}, fmt.Errorf("validate promoted profile %q: %w", name, err)
 	}
@@ -153,28 +170,6 @@ func (r *Runner) Activate(name string, artifact []byte) (RepoProfile, error) {
 	r.active[name] = spec
 	r.mu.Unlock()
 	return spec, nil
-}
-
-func (r *Runner) imageAllowlist() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	allowed := make(map[string]struct{}, len(r.allowlist)+len(r.Policy.Images)+len(r.active))
-	for _, image := range r.allowlist {
-		allowed[image] = struct{}{}
-	}
-	for _, image := range r.Policy.Images {
-		allowed[image] = struct{}{}
-	}
-	for name, image := range r.active {
-		if name != "" && image.Image != "" {
-			allowed[image.Image] = struct{}{}
-		}
-	}
-	out := make([]string, 0, len(allowed))
-	for image := range allowed {
-		out = append(out, image)
-	}
-	return out
 }
 
 // persistProfile writes the artifact into the durable promoted directory atomically. Idempotent:
@@ -252,16 +247,18 @@ func (r *Runner) Names() []string {
 	return names
 }
 
-// AllowedImages returns the distinct image allowlist the runner validates proposals against.
+// AllowedImages returns the distinct image allowlist the runner validates proposals against: every digest-pinned
+// reference it may run and every image name a profile may use for a check, a test kind or a service. A name resolves
+// to its reference only here, at job time, so rotating an image's digest edits no repository profile.
 func (r *Runner) AllowedImages() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	allowed := make(map[string]struct{}, len(r.allowlist)+len(r.Policy.Images)+len(r.active))
+	allowed := make(map[string]struct{}, len(r.allowlist)+2*len(r.Policy.Images)+len(r.active))
 	for _, image := range r.allowlist {
 		allowed[image] = struct{}{}
 	}
-	for _, image := range r.Policy.Images {
-		allowed[image] = struct{}{}
+	for name, image := range r.Policy.Images {
+		allowed[name], allowed[image] = struct{}{}, struct{}{}
 	}
 	for _, spec := range r.active {
 		if spec.Image != "" {
@@ -286,12 +283,20 @@ func (r *Runner) RunOverlay(ctx context.Context, profile string, archive io.Read
 	return r.runJob(ctx, JobInput{Profile: profile, Archive: archive, Overlays: overlays, Timeout: timeout})
 }
 
-func (r *Runner) runJob(ctx context.Context, in JobInput) ([]byte, error) {
+// checkRunnable refuses a job the runner cannot or may not start.
+func (r *Runner) checkRunnable(in JobInput) error {
 	if r.Executor == nil {
-		return nil, errors.New("rootless runner executor is required")
+		return errors.New("rootless runner executor is required")
 	}
 	if in.Timeout <= 0 || in.Timeout > 10*time.Minute {
-		return nil, errors.New("sandbox timeout must be between 1 second and 10 minutes")
+		return errors.New("sandbox timeout must be between 1 second and 10 minutes")
+	}
+	return nil
+}
+
+func (r *Runner) runJob(ctx context.Context, in JobInput) ([]byte, error) {
+	if err := r.checkRunnable(in); err != nil {
+		return nil, err
 	}
 	policy, err := r.effectivePolicy(in)
 	if err != nil {
@@ -302,11 +307,7 @@ func (r *Runner) runJob(ctx context.Context, in JobInput) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	archivePath, err := storeArchive(dir, in.Archive)
-	if err != nil {
-		return nil, err
-	}
-	overlayDir, err := createOverlays(dir, in.Overlays)
+	archivePath, baseArchive, overlayDir, err := stageInputs(dir, in)
 	if err != nil {
 		return nil, err
 	}
@@ -314,17 +315,42 @@ func (r *Runner) runJob(ctx context.Context, in JobInput) ([]byte, error) {
 	if err := os.MkdirAll(moduleCache, 0o750); err != nil {
 		return nil, fmt.Errorf("prepare read-only module cache mount: %w", err)
 	}
-	args, err := containerArgsFor(policy, in, archivePath, overlayDir, moduleCache)
+	args, err := containerArgsFor(policy, in, archivePath, baseArchive, overlayDir, moduleCache)
+	if err != nil {
+		return nil, err
+	}
+	services, err := policy.resolveServices(in.Profile, in)
 	if err != nil {
 		return nil, err
 	}
 	jobCtx, cancel := context.WithTimeout(ctx, in.Timeout+5*time.Second)
 	defer cancel()
+	args, stop, err := r.startServices(jobCtx, services, filepath.Base(dir), args, dir, in.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	defer stop()
 	output, runErr := r.Executor.Execute(jobCtx, args, dir)
 	if runErr != nil && len(output) == 0 {
 		return nil, runErr
 	}
 	return output, runErr
+}
+
+// stageInputs writes the head archive, the optional base archive and the overlays into the job directory.
+func stageInputs(dir string, in JobInput) (archive, base, overlays string, err error) {
+	if archive, err = storeArchive(dir, "source.tgz", in.Archive, maxSourceArchive); err != nil {
+		return "", "", "", err
+	}
+	if in.BaseArchive != nil {
+		if base, err = storeArchive(dir, "base.tgz", in.BaseArchive, maxBaseArchive); err != nil {
+			return "", "", "", err
+		}
+	}
+	if overlays, err = createOverlays(dir, in.Overlays); err != nil {
+		return "", "", "", err
+	}
+	return archive, base, overlays, nil
 }
 
 func (r *Runner) moduleCache() string {
@@ -352,28 +378,34 @@ func (r *Runner) createJobDir() (string, error) {
 	return dir, nil
 }
 
-func storeArchive(dir string, archive io.Reader) (string, error) {
+// Archive bounds: the head tree and the base tree each have their own cap.
+const (
+	maxSourceArchive = 64 << 20
+	maxBaseArchive   = 32 << 20
+)
+
+func storeArchive(dir, name string, archive io.Reader, limit int64) (string, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return "", fmt.Errorf("open runner job directory: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-	f, err := root.OpenFile("source.tgz", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o444)
+	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o444)
 	if err != nil {
-		return "", fmt.Errorf("create source archive: %w", err)
+		return "", fmt.Errorf("create %s: %w", name, err)
 	}
-	written, copyErr := io.Copy(f, io.LimitReader(archive, (64<<20)+1))
+	written, copyErr := io.Copy(f, io.LimitReader(archive, limit+1))
 	closeErr := f.Close()
 	if copyErr != nil {
-		return "", fmt.Errorf("store source archive: %w", copyErr)
+		return "", fmt.Errorf("store %s: %w", name, copyErr)
 	}
 	if closeErr != nil {
-		return "", fmt.Errorf("close source archive: %w", closeErr)
+		return "", fmt.Errorf("close %s: %w", name, closeErr)
 	}
-	if written > 64<<20 {
-		return "", errors.New("source archive exceeds 64 MiB")
+	if written > limit {
+		return "", fmt.Errorf("%s exceeds %d MiB", name, limit>>20)
 	}
-	return filepath.Join(dir, "source.tgz"), nil
+	return filepath.Join(dir, name), nil
 }
 
 func createOverlays(dir string, overlays []ports.File) (string, error) {
@@ -456,11 +488,22 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-// containerArgsFor returns the Podman arguments of one job: the fixed static check when the job names one, the test
-// command otherwise.
-func containerArgsFor(policy Policy, in JobInput, archivePath, overlayDir, moduleCache string) ([]string, error) {
-	if in.Check != "" {
-		return policy.ContainerArgsCheck(in.Check, archivePath, moduleCache, int(in.Timeout.Seconds()))
+// containerArgsFor returns the Podman arguments of one job: a check or test-kind job from the promoted profile, or the
+// profile's acceptance command otherwise.
+func containerArgsFor(policy Policy, in JobInput, archivePath, baseArchive, overlayDir, moduleCache string) ([]string, error) {
+	if in.CheckID != "" || in.TestKind != "" {
+		spec, err := policy.resolveJob(in.Profile, in.CheckID, in.TestKind, in.Dir)
+		if err != nil {
+			return nil, err
+		}
+		spec.Archive, spec.BaseArchive, spec.OverlayDir = archivePath, baseArchive, overlayDir
+		spec.ModuleCache, spec.Timeout = moduleCache, int(in.Timeout.Seconds())
+		if spec.History {
+			if spec.HistoryDir, err = policy.historyMount(in.Repo); err != nil {
+				return nil, err
+			}
+		}
+		return policy.profileJobArgs(spec)
 	}
 	return policy.ContainerArgsWithOverlays(in.Profile, archivePath, overlayDir, moduleCache, in.Dir, int(in.Timeout.Seconds()))
 }
