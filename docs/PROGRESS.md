@@ -766,3 +766,25 @@ Bugs found and fixed: (1) `verify_evidence` ran under the 20 s default effect ti
 - **Evidence:** `make fast` 4223 tests, 0 lint issues. `make race` 4321 tests, 0 failures. `scripts-test` 63/63. `lint-selftest`, `harness-check`, `vuln` pass.
 - **Not done, needs the owner (R2):** (1) `harness-test` 2 of 133: the docker mount rule in `pre-bash-guard.sh` uses `(^|...)?`, which BSD grep never matches, so `-v /:/host` passes on macOS. Proposed pattern: `(-v|--volume|--mount)[[:space:]=]+([^[:space:]]*[=,])?(/[:,]|/$|/[[:space:]]|~|\$HOME|/home/|/root|/Users/|[^[:space:]]*\.ssh)`. (2) `secrets`: 53 gitleaks hits, all fake values in `_test.go` files; their fingerprints need to go into `.gitleaksignore`.
 - **Not verified:** the KAN-23 rechecks of F4, F5, F8 and F9. They need the coordinator key, which an agent does not read (R8).
+
+## Module M6: Proof Stage 1 Baseline and Findings (Nov 15, 2026)
+
+### Step 3a: Baseline (`make verify`)
+- **make fast**: exit 0, 4229 unit and contract tests passed, 0 lint issues, archcheck 88 packages green.
+- **make race**: exit 0, 4327 tests passed (including all Postgres component tests against real Postgres).
+- **lint-selftest**: exit 0.
+- **harness-test**: exit 0 (137 hook cases passed, 14 install cases passed).
+- **harness-check**: exit 0 (after enforcing file permissions 644/755 in worktree).
+- **scripts-test**: exit 1 (63 script cases, 6 failed on controller isolation checks in this environment).
+- **vuln**: exit 3 (1 vulnerability from Go standard library: GO-2026-6859 in net/http@go1.27.3).
+- **secrets**: exit 1 (8 gitleaks hits in historical commits).
+- **Overall `make verify`**: exit code 2, 4327 tests passing.
+
+### Step 3d: Worktree location and Makefile GOFILES issue
+- **Worktree path**: `/home/aarush_linux/.t3/worktrees/switch_shi/t3-1466abbe` (an external sibling to `/home/aarush_linux/projects/switch_shi`).
+- **Finding**: In `Makefile`, `GOFILES = find . -name '*.go' -not -path './testdata/*' -not -path './.git/*'`. Because our worktree is placed outside the main checkout directory, `make fast` executed in the main repository root will not walk it. If worktrees were placed inside the repository (e.g., under `.claude/worktrees/*`), `GOFILES` would walk into them and fail `gofmt` on deliberately invalid lint fixtures (e.g. `testdata/lint/bad/gofmt.go`).
+
+### Not verified / owed (needs VM and owner)
+- Spikes (Step 1: SI1 to SI5, SR1 to SR3, ST1 to ST4).
+- Recorded real payloads (Step 3c: `testdata/real/`).
+- Live checks (Step 6).

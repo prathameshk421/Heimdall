@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "oasdiff-sarif"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "new-required-request-parameter",
+          "level": "error",
+          "message": {
+            "text": "added required header parameter Idempotency-Key to POST /refunds"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "api/openapi.yaml"
+                },
+                "region": {
+                  "startLine": 9,
+                  "endLine": 12,
+                  "snippet": {
+                    "text": "        - name: Idempotency-Key\n          in: header\n          required: true\n          schema:"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

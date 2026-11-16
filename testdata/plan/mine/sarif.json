@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "heimdall-mine"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "forgotten-companion",
+          "level": "note",
+          "message": {
+            "text": "internal/adapters/postgres/schema.sql changed in 6 of the last 7 commits that changed migrations/0012_backoff.sql. internal/adapters/postgres/schema.sql is not in this change."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "migrations/0012_backoff.sql"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "forgotten-companion",
+          "level": "note",
+          "message": {
+            "text": "internal/domain/change/event.go changed in 6 of the last 7 commits that changed migrations/0012_backoff.sql. internal/domain/change/event.go is not in this change."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "migrations/0012_backoff.sql"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

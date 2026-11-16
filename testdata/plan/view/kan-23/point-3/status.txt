@@ -1,0 +1,6 @@
+KAN-23 · 4 needs
+Tests     5 tests for AC1, AC2, AC3 · submitted on 9b49652 · verified · committed b464e91
+PR        #11 by prathameshk421 · head 619a8f4 · slop passed · acceptance success
+Reviews   reviewer-1 waiting · reviewer-2 waiting · reviewer-3 3 findings on 619a8f4
+Findings  F1 E1 high open · F2 E4 medium unverified · F3 E4 medium unverified
+Next      reviewer-1 reviews 619a8f4; reviewer-2 reviews 619a8f4; F1 is resolved (E1 high, open); an approver who is not the author approves 619a8f4

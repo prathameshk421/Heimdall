@@ -1,0 +1,25 @@
+diff -ruN base/cmd/notifier/main.go head/cmd/notifier/main.go
+--- a/cmd/notifier/main.go
++++ b/cmd/notifier/main.go
+@@ -6,7 +6,7 @@
+ )
+ 
+ func main() {
+-	timeout := flag.Int("timeout", 30, "request timeout in seconds")
++	timeout := flag.Int("max-timeout", 30, "request timeout in seconds")
+ 	flag.Parse()
+ 	slog.Info("starting webhook notifier", "timeout", *timeout)
+ }
+diff -ruN base/internal/delivery/sender.go head/internal/delivery/sender.go
+--- a/internal/delivery/sender.go
++++ b/internal/delivery/sender.go
+@@ -14,8 +14,7 @@
+ 	if err != nil {
+ 		return fmt.Errorf("post: %w", err)
+ 	}
+-	defer resp.Body.Close()
+ 	_, _ = io.Copy(io.Discard, resp.Body)
+-	slog.Info("delivered webhook", "delivery_id", deliveryID, "url", url, "status", resp.StatusCode)
++	slog.Info("delivered webhook", "id", deliveryID, "url", url, "status", resp.StatusCode)
+ 	return nil
+ }

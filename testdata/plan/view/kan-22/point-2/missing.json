@@ -1,0 +1,16 @@
+[
+  {
+    "step": "slop",
+    "role": "",
+    "clause": "",
+    "subject": "",
+    "text": "the slop rules pass on ee4539d (failing: scope)"
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "approval",
+    "subject": "",
+    "text": "an approver who is not the author approves ee4539d"
+  }
+]

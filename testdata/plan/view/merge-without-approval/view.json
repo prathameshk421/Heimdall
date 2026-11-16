@@ -1,0 +1,94 @@
+{
+  "trigger": {
+    "ticket": "KAN-22",
+    "repo": "aarush323/heimdall-fixture-pay",
+    "assignee": "prathameshk421",
+    "source": "jira",
+    "acceptance_criteria": []
+  },
+  "room": "room-kan-22",
+  "branch": {
+    "repo": "aarush323/heimdall-fixture-pay",
+    "branch": "KAN-22-tests",
+    "base_sha": "4a0f699"
+  },
+  "plan": null,
+  "tests": {
+    "sha": "1c22a01",
+    "refs": [
+      "tests/heimdall/KAN-22/health_test.go"
+    ],
+    "ac_map": {
+      "AC1": [
+        "TestHealthzReturnsOK"
+      ]
+    },
+    "verified": {
+      "tree_hash": "7e22a01",
+      "needs_signoff": false,
+      "run_ids": [
+        "run_01KANRN0000000000000000001"
+      ]
+    },
+    "rejected": [],
+    "approved_by": "",
+    "committed": {
+      "sha": "1c22a02",
+      "tree_hash": "7e22a01"
+    }
+  },
+  "pr": {
+    "number": 10,
+    "author": "prathameshk421",
+    "ticket": "KAN-22",
+    "head_sha": "59effae",
+    "picked": {
+      "people": [
+        "reviewer-2"
+      ],
+      "by": "engine",
+      "method": "default"
+    },
+    "slop": {
+      "sha": "59effae",
+      "pass": true,
+      "failing_rules": []
+    },
+    "ci": {
+      "59effae": {
+        "heimdall/acceptance": "success"
+      }
+    },
+    "gate": {
+      "sha": "59effae",
+      "ok": false,
+      "reasons": [
+        "approval"
+      ]
+    }
+  },
+  "tasks": {
+    "tsk_01KANRY0000000000000000001": {
+      "agent": "reviewer-2",
+      "role": "reviewer",
+      "deadline": "2026-11-07T17:53:09Z",
+      "status": "assigned",
+      "progress": ""
+    }
+  },
+  "reviews": {
+    "reviewer-2": {
+      "head_sha": "59effae",
+      "finding_refs": [],
+      "clean": true,
+      "pack_date": "2026-11-07"
+    }
+  },
+  "findings": {},
+  "decisions": [],
+  "approvals": [],
+  "closed": {
+    "merged": true,
+    "head_sha": "59effae"
+  }
+}

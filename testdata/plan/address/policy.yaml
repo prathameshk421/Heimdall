@@ -1,0 +1,8 @@
+# The F3 shape of heimdall.yaml (AGENT_INTERACTION_ARCH.md F3; built by M0 step 7). Only what addressing reads.
+seats:
+  reviewer-1: {role: dev,      lenses: [correctness, contract, tests]}
+  reviewer-2: {role: security, lenses: [security, data]}
+  reviewer-3: {role: infra,    lenses: [infra, operability]}
+people:
+  priya:      {github: priyak,         chat: U0456, seat: reviewer-2}
+  prathamesh: {github: prathameshk421, chat: U0123}

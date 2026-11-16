@@ -1,0 +1,61 @@
+{
+  "input": {
+    "criteria": [
+      "AC1",
+      "AC2"
+    ],
+    "declared_kinds": [
+      "api",
+      "property",
+      "contract",
+      "ui"
+    ]
+  },
+  "plan": {
+    "ticket": "KAN-31",
+    "behaviours": [
+      {
+        "id": "B1",
+        "ac": "AC1",
+        "kind": "api",
+        "case": "positive",
+        "given": "a captured payment of 100",
+        "when": "POST /refunds amount=40",
+        "then": "201 and remaining=60",
+        "oracle": "fuzzy"
+      },
+      {
+        "id": "B2",
+        "ac": "AC1",
+        "kind": "property",
+        "case": "rule",
+        "given": "any sequence of partial refunds",
+        "then": "the sum of refunds never exceeds the payment",
+        "oracle": "property"
+      },
+      {
+        "id": "B3",
+        "ac": "AC2",
+        "kind": "api",
+        "case": "negative",
+        "given": "another merchant's payment",
+        "when": "POST /refunds",
+        "then": "404 and nothing stored",
+        "oracle": "exact"
+      }
+    ],
+    "ui_handles": [],
+    "expected_paths": [
+      "internal/refunds/**",
+      "api/openapi.yaml"
+    ],
+    "assumptions": [
+      "Refunds are in the payment's currency."
+    ]
+  },
+  "expected_refusal": {
+    "field": "behaviours[0].oracle",
+    "problem": "\"fuzzy\" is not one of exact, property, metamorphic, differential, regression_seed",
+    "example": "\"oracle\": \"exact\""
+  }
+}

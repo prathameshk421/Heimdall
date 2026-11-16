@@ -1,0 +1,167 @@
+[
+  {
+    "id": "thread_role_mention_no_key",
+    "input": {
+      "room": "review",
+      "thread_root_ticket": "KAN-22",
+      "sender": "U0456",
+      "mentions_board": false,
+      "text": "@security is F3 real?"
+    },
+    "expected": {
+      "ticket": "KAN-22",
+      "ticket_source": "thread_root",
+      "for": "agent",
+      "agent": "reviewer-2",
+      "command": null
+    }
+  },
+  {
+    "id": "thread_agent_name",
+    "input": {
+      "room": "tests",
+      "thread_root_ticket": "KAN-22",
+      "sender": "U0456",
+      "mentions_board": false,
+      "text": "@test-author which fixture covers the negative refund test?"
+    },
+    "expected": {
+      "ticket": "KAN-22",
+      "ticket_source": "thread_root",
+      "for": "agent",
+      "agent": "test-author",
+      "command": null
+    }
+  },
+  {
+    "id": "thread_grammar_no_key",
+    "input": {
+      "room": "review",
+      "thread_root_ticket": "KAN-22",
+      "sender": "U0123",
+      "mentions_board": false,
+      "text": "heimdall uphold F1"
+    },
+    "expected": {
+      "ticket": "KAN-22",
+      "ticket_source": "thread_root",
+      "for": "board",
+      "agent": "",
+      "command": {
+        "verb": "uphold",
+        "class": "deciding",
+        "needs_confirmation": false
+      }
+    }
+  },
+  {
+    "id": "top_level_grammar_with_key",
+    "input": {
+      "room": "review",
+      "thread_root_ticket": "",
+      "sender": "U0123",
+      "mentions_board": false,
+      "text": "heimdall uphold KAN-22 F1"
+    },
+    "expected": {
+      "ticket": "KAN-22",
+      "ticket_source": "text",
+      "for": "board",
+      "agent": "",
+      "command": {
+        "verb": "uphold",
+        "class": "deciding",
+        "needs_confirmation": false
+      }
+    }
+  },
+  {
+    "id": "top_level_light_grammar",
+    "input": {
+      "room": "tests",
+      "thread_root_ticket": "",
+      "sender": "U0123",
+      "mentions_board": false,
+      "text": "heimdall start KAN-23"
+    },
+    "expected": {
+      "ticket": "KAN-23",
+      "ticket_source": "text",
+      "for": "board",
+      "agent": "",
+      "command": {
+        "verb": "start",
+        "class": "light",
+        "needs_confirmation": false
+      }
+    }
+  },
+  {
+    "id": "top_level_lead_no_key",
+    "input": {
+      "room": "review",
+      "thread_root_ticket": "",
+      "sender": "U0456",
+      "mentions_board": false,
+      "text": "@heimdall what is blocked today?"
+    },
+    "expected": {
+      "ticket": "",
+      "ticket_source": "none",
+      "for": "agent",
+      "agent": "lead",
+      "command": null
+    }
+  },
+  {
+    "id": "thread_no_mention",
+    "input": {
+      "room": "review",
+      "thread_root_ticket": "KAN-23",
+      "sender": "U0456",
+      "mentions_board": false,
+      "text": "looks fine to me"
+    },
+    "expected": {
+      "ticket": "KAN-23",
+      "ticket_source": "thread_root",
+      "for": "nobody",
+      "agent": "",
+      "command": null
+    }
+  },
+  {
+    "id": "top_level_no_mention_no_key",
+    "input": {
+      "room": "tests",
+      "thread_root_ticket": "",
+      "sender": "U0123",
+      "mentions_board": false,
+      "text": "lunch at one?"
+    },
+    "expected": {
+      "ticket": "",
+      "ticket_source": "none",
+      "for": "nobody",
+      "agent": "",
+      "command": null
+    }
+  },
+  {
+    "id": "app_mention_not_grammar",
+    "input": {
+      "room": "review",
+      "thread_root_ticket": "KAN-22",
+      "sender": "U0123",
+      "mentions_board": true,
+      "text": "@Heimdall why is this blocked?"
+    },
+    "expected": {
+      "ticket": "KAN-22",
+      "ticket_source": "thread_root",
+      "for": "board_relay",
+      "agent": "lead",
+      "command": null
+    }
+  }
+]

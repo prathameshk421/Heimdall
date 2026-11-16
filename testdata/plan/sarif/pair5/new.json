@@ -1,0 +1,15 @@
+[
+  {
+    "check": "patterns",
+    "lens": "security",
+    "rule": "sql-concat",
+    "level": "error",
+    "file": "internal/api/refunds.go",
+    "lines": [
+      11,
+      12
+    ],
+    "message": "query formatted with string concatenation rather than parameterized query",
+    "finger": "sql-concat:internal/api/refunds.go:67b9f704e5dd28bca68ca1e9192af001395ccc45357f50417a68b7a871687d6d"
+  }
+]

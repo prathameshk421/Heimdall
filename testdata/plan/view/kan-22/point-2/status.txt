@@ -1,0 +1,6 @@
+KAN-22 · 2 needs
+Tests     2 tests for AC1, AC2 · submitted on 4a0f699 · verified · committed 4c14494
+PR        #10 by prathameshk421 · head ee4539d · slop failed: scope · acceptance success
+Reviews   not picked
+Findings  none
+Next      the slop rules pass on ee4539d (failing: scope); an approver who is not the author approves ee4539d

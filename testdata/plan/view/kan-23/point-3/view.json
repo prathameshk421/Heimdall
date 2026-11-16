@@ -1,0 +1,168 @@
+{
+  "trigger": {
+    "ticket": "KAN-23",
+    "repo": "aarush323/heimdall-fixture-pay",
+    "assignee": "712020:ae84de36-bdd7-4bf1-a68f-7ee4b7314cf2",
+    "source": "jira",
+    "acceptance_criteria": [
+      "AC1",
+      "AC2",
+      "AC3"
+    ]
+  },
+  "room": "8511dff5-fd48-40df-a1fd-dcb2f2615638",
+  "branch": {
+    "repo": "aarush323/heimdall-fixture-pay",
+    "branch": "KAN-23-refund-part-of-a-payment",
+    "base_sha": "9b4965238755b6473e8ea58632b7f045661b20dd"
+  },
+  "plan": null,
+  "tests": {
+    "sha": "9b4965238755b6473e8ea58632b7f045661b20dd",
+    "refs": [
+      "tests/heimdall/KAN-23/refund_test.go"
+    ],
+    "ac_map": {
+      "AC1": [
+        "TestRefundValidAmountReturns201WithRefundJSON",
+        "TestRefundExactPaymentAmountReturns201"
+      ],
+      "AC2": [
+        "TestRefundLargerThanPaymentReturns422",
+        "TestMultipleRefundsCappedAtPaymentAmount"
+      ],
+      "AC3": [
+        "TestRefundOtherMerchantReturns404"
+      ]
+    },
+    "verified": {
+      "tree_hash": "e1e52e8c13540799e798b62d3d4983cd410f5536",
+      "needs_signoff": false,
+      "run_ids": [
+        "run_01M6WV6SYSHTSVNA2T802ZXE1Q",
+        "run_01M6WV7XB99XDXXBFGXVNWMDEH",
+        "run_01M6WV90653KBW9YVARYCYF4SA"
+      ]
+    },
+    "rejected": [],
+    "approved_by": "",
+    "committed": {
+      "sha": "b464e91a9901fb554310aca728ed83eebc4f462c",
+      "tree_hash": "e1e52e8c13540799e798b62d3d4983cd410f5536"
+    }
+  },
+  "pr": {
+    "number": 11,
+    "author": "prathameshk421",
+    "ticket": "KAN-23",
+    "head_sha": "619a8f493a48c0628cde6743c766a1d3ad4b5a03",
+    "picked": {
+      "people": [
+        "reviewer-1",
+        "reviewer-2",
+        "reviewer-3"
+      ],
+      "by": "heimdall",
+      "method": "default"
+    },
+    "slop": {
+      "sha": "619a8f493a48c0628cde6743c766a1d3ad4b5a03",
+      "pass": true,
+      "failing_rules": []
+    },
+    "ci": {
+      "619a8f493a48c0628cde6743c766a1d3ad4b5a03": {
+        "go test": "success",
+        "heimdall/acceptance": "success"
+      }
+    },
+    "gate": {
+      "sha": "619a8f493a48c0628cde6743c766a1d3ad4b5a03",
+      "ok": false,
+      "reasons": [
+        "reviews: the review requests are not known",
+        "approval: no approval has been recorded from an approver of the changed domains"
+      ]
+    }
+  },
+  "tasks": {
+    "tsk_01M6WQ41K5S4EMH22JEQRVJ3TR": {
+      "agent": "test-author",
+      "role": "test-author",
+      "deadline": "2026-11-08T06:37:00.133667355Z",
+      "status": "acked",
+      "progress": "KAN-23: writing test file for POST /payments/{id}/refunds with AC1 (201), AC2 (422 oversized), AC3 (404 wrong merchant)."
+    },
+    "tsk_01M6WVHQG9X5BFR62WFV3BFGEH": {
+      "agent": "reviewer-1",
+      "role": "reviewer",
+      "deadline": "2026-11-08T06:24:22.857554089Z",
+      "status": "acked",
+      "progress": ""
+    },
+    "tsk_01M6WVHQG9X5BFR62WFV3BFGEJ": {
+      "agent": "reviewer-2",
+      "role": "reviewer",
+      "deadline": "2026-11-08T06:24:22.857554089Z",
+      "status": "acked",
+      "progress": ""
+    },
+    "tsk_01M6WVHQG9X5BFR62WFV3BFGEK": {
+      "agent": "reviewer-3",
+      "role": "reviewer",
+      "deadline": "2026-11-08T06:24:22.857554089Z",
+      "status": "acked",
+      "progress": "KAN-23: read the diff, ACs and head code; now checking wire contract and refund cap against the code."
+    }
+  },
+  "reviews": {
+    "reviewer-3": {
+      "head_sha": "619a8f493a48c0628cde6743c766a1d3ad4b5a03",
+      "finding_refs": [
+        "F1",
+        "F2",
+        "F3"
+      ],
+      "clean": false,
+      "pack_date": "2026-11-08"
+    }
+  },
+  "findings": {
+    "F1": {
+      "id": "fnd_01M6WVT864WVA736KTQZ075W09",
+      "tier": "E1",
+      "severity": "high",
+      "confidence": "high",
+      "state": "open",
+      "by": "reviewer-3",
+      "changed_by": "",
+      "checked": false,
+      "claim": "POST /payments no longer returns merchant_id: the JSON tag was changed to `merchant`, while api/openapi.yaml still requires merchant_id, so any client that reads merchant_id from the create-payment response now gets an empty field. The change is unrelated to the refund feature."
+    },
+    "F2": {
+      "id": "fnd_01M6WVT8651V53W8DVG4J9BYH2",
+      "tier": "E4",
+      "severity": "medium",
+      "confidence": "high",
+      "state": "unverified",
+      "by": "reviewer-3",
+      "changed_by": "",
+      "checked": false,
+      "claim": "The new POST /payments/{id}/refunds route is served but api/openapi.yaml still documents only /payments and /healthz, and README still lists only POST /payments, so the published wire contract does not cover the endpoint this change adds."
+    },
+    "F3": {
+      "id": "fnd_01M6WVT8651V53W8DVG4J9BYH3",
+      "tier": "E4",
+      "severity": "medium",
+      "confidence": "medium",
+      "state": "unverified",
+      "by": "reviewer-3",
+      "changed_by": "",
+      "checked": false,
+      "claim": "Two concurrent refunds on one payment can both pass the cap: Refund calls refunds.total() and then refunds.add() in separate lock acquisitions, so two 60 refunds on a payment of 100 can both be accepted and refund 120."
+    }
+  },
+  "decisions": [],
+  "approvals": [],
+  "closed": null
+}

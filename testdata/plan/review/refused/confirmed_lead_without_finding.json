@@ -1,0 +1,73 @@
+{
+  "brief": {
+    "obligations": [
+      "authz-new-route.md"
+    ],
+    "leads": [
+      {
+        "lead_id": "lead-sec-01",
+        "check": "patterns",
+        "lens": "security",
+        "rule": "sql-concat",
+        "level": "error",
+        "file": "internal/api/health.go",
+        "lines": [
+          18,
+          19
+        ],
+        "message": "query formatted with string concatenation rather than parameterized query"
+      }
+    ]
+  },
+  "submission": {
+    "head_sha": "a10a001",
+    "files_reviewed": [
+      "internal/api/health.go",
+      "api/openapi.yaml"
+    ],
+    "clean": false,
+    "findings": [
+      {
+        "claim": "the new route reads data before deciding who may call it",
+        "category": "security",
+        "severity": "medium",
+        "confidence": "high",
+        "location": {
+          "file": "internal/api/health.go",
+          "lines": [
+            15,
+            25
+          ]
+        },
+        "evidence": [
+          {
+            "type": "reasoning",
+            "reasoning": "health.go reads the payments table before any caller check."
+          }
+        ],
+        "context_refs": [
+          "authz-new-route.md"
+        ]
+      }
+    ],
+    "rule_checks": [
+      {
+        "card": "authz-new-route.md",
+        "verdict": "violated",
+        "note": "the new route decides no caller"
+      }
+    ],
+    "lead_checks": [
+      {
+        "lead_id": "lead-sec-01",
+        "verdict": "confirmed",
+        "reason": "the query is built from the request"
+      }
+    ]
+  },
+  "expected_refusal": {
+    "field": "lead_checks[0].verdict",
+    "problem": "lead lead-sec-01 is marked confirmed and no finding cites its run",
+    "example": null
+  }
+}

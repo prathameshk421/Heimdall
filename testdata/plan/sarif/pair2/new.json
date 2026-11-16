@@ -1,0 +1,15 @@
+[
+  {
+    "check": "api-break",
+    "lens": "contract",
+    "rule": "new-required-request-parameter",
+    "level": "error",
+    "file": "api/openapi.yaml",
+    "lines": [
+      9,
+      12
+    ],
+    "message": "added required header parameter Idempotency-Key to POST /refunds",
+    "finger": "new-required-request-parameter:api/openapi.yaml:7b42dc26ab582e051b1126b81899cc2347eddfdc2c9fdb51a842ef62db3abf49"
+  }
+]

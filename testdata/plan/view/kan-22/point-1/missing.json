@@ -1,0 +1,9 @@
+[
+  {
+    "step": "wait_pr",
+    "role": "",
+    "clause": "",
+    "subject": "",
+    "text": "a pull request for KAN-22 is opened"
+  }
+]

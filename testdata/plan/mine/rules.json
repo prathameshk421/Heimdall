@@ -1,0 +1,72 @@
+[
+  {
+    "antecedent": "cmd/heimdall/main.go",
+    "consequent": "internal/config/config.go",
+    "support": 6,
+    "antecedent_commits": 6,
+    "confidence": 1
+  },
+  {
+    "antecedent": "internal/adapters/postgres/schema.sql",
+    "consequent": "internal/domain/change/event.go",
+    "support": 6,
+    "antecedent_commits": 6,
+    "confidence": 1
+  },
+  {
+    "antecedent": "internal/adapters/postgres/schema.sql",
+    "consequent": "migrations/0012_backoff.sql",
+    "support": 6,
+    "antecedent_commits": 6,
+    "confidence": 1
+  },
+  {
+    "antecedent": "internal/config/config.go",
+    "consequent": "cmd/heimdall/main.go",
+    "support": 6,
+    "antecedent_commits": 6,
+    "confidence": 1
+  },
+  {
+    "antecedent": "internal/domain/change/event.go",
+    "consequent": "internal/adapters/postgres/schema.sql",
+    "support": 6,
+    "antecedent_commits": 6,
+    "confidence": 1
+  },
+  {
+    "antecedent": "internal/domain/change/event.go",
+    "consequent": "migrations/0012_backoff.sql",
+    "support": 6,
+    "antecedent_commits": 6,
+    "confidence": 1
+  },
+  {
+    "antecedent": "internal/domain/finding/finding.go",
+    "consequent": "internal/domain/finding/finding_test.go",
+    "support": 6,
+    "antecedent_commits": 6,
+    "confidence": 1
+  },
+  {
+    "antecedent": "internal/domain/finding/finding_test.go",
+    "consequent": "internal/domain/finding/finding.go",
+    "support": 6,
+    "antecedent_commits": 6,
+    "confidence": 1
+  },
+  {
+    "antecedent": "migrations/0012_backoff.sql",
+    "consequent": "internal/adapters/postgres/schema.sql",
+    "support": 6,
+    "antecedent_commits": 7,
+    "confidence": 0.8571428571428571
+  },
+  {
+    "antecedent": "migrations/0012_backoff.sql",
+    "consequent": "internal/domain/change/event.go",
+    "support": 6,
+    "antecedent_commits": 7,
+    "confidence": 0.8571428571428571
+  }
+]

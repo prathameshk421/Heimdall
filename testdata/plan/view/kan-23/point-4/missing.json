@@ -1,0 +1,79 @@
+[
+  {
+    "step": "verify",
+    "role": "",
+    "clause": "",
+    "subject": "F1",
+    "text": "F1 evidence is verified (E1)"
+  },
+  {
+    "step": "verify",
+    "role": "",
+    "clause": "",
+    "subject": "F4",
+    "text": "F4 evidence is verified (E1)"
+  },
+  {
+    "step": "verify",
+    "role": "",
+    "clause": "",
+    "subject": "F5",
+    "text": "F5 evidence is verified (E1)"
+  },
+  {
+    "step": "verify",
+    "role": "",
+    "clause": "",
+    "subject": "F8",
+    "text": "F8 evidence is verified (E1)"
+  },
+  {
+    "step": "verify",
+    "role": "",
+    "clause": "",
+    "subject": "F9",
+    "text": "F9 evidence is verified (E1)"
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "blocking",
+    "subject": "F1",
+    "text": "F1 is resolved (E1 high, open)"
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "blocking",
+    "subject": "F4",
+    "text": "F4 is resolved (E1 high, open)"
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "blocking",
+    "subject": "F5",
+    "text": "F5 is resolved (E1 high, open)"
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "blocking",
+    "subject": "F8",
+    "text": "F8 is resolved (E1 high, open)"
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "blocking",
+    "subject": "F9",
+    "text": "F9 is resolved (E1 high, open)"
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "approval",
+    "subject": "",
+    "text": "an approver who is not the author approves 619a8f4"
+  }
+]

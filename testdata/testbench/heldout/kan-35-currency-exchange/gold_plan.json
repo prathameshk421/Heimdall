@@ -1,0 +1,42 @@
+{
+  "title": "TestPlan@1",
+  "ticket": "KAN-35",
+  "behaviours": [
+    {
+      "id": "B1",
+      "ac": "AC1",
+      "kind": "api",
+      "case": "positive",
+      "given": "rate EUR/USD = 1.0850",
+      "when": "POST /exchange from=EUR to=USD amount=100",
+      "then": "converted=108.5000",
+      "oracle": "exact"
+    },
+    {
+      "id": "B2",
+      "ac": "AC2",
+      "kind": "property",
+      "case": "rule",
+      "given": "any positive amount and rate",
+      "then": "result has at most 4 decimal digits",
+      "oracle": "property"
+    },
+    {
+      "id": "B3",
+      "ac": "AC3",
+      "kind": "api",
+      "case": "negative",
+      "given": "unknown currency XYZ",
+      "when": "POST /exchange from=XYZ to=USD",
+      "then": "400 Bad Request",
+      "oracle": "exact"
+    }
+  ],
+  "ui_handles": [],
+  "expected_paths": [
+    "internal/exchange/**"
+  ],
+  "assumptions": [
+    "Exchange rates are positive floats."
+  ]
+}

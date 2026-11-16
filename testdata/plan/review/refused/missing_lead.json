@@ -1,0 +1,50 @@
+{
+  "brief": {
+    "obligations": [
+      "authz-new-route.md",
+      "secrets-in-logs.md"
+    ],
+    "leads": [
+      {
+        "lead_id": "lead-sec-01",
+        "check": "patterns",
+        "lens": "security",
+        "rule": "sql-concat",
+        "level": "error",
+        "file": "internal/api/health.go",
+        "lines": [
+          18,
+          19
+        ],
+        "message": "query formatted with string concatenation rather than parameterized query"
+      }
+    ]
+  },
+  "submission": {
+    "head_sha": "a10a001",
+    "files_reviewed": [
+      "internal/api/health.go",
+      "api/openapi.yaml"
+    ],
+    "clean": true,
+    "findings": [],
+    "rule_checks": [
+      {
+        "card": "authz-new-route.md",
+        "verdict": "holds",
+        "note": "the health route is public by the ticket"
+      },
+      {
+        "card": "secrets-in-logs.md",
+        "verdict": "holds",
+        "note": "only the status code is logged"
+      }
+    ],
+    "lead_checks": []
+  },
+  "expected_refusal": {
+    "field": "lead_checks",
+    "problem": "lead lead-sec-01 is in the brief's leads and has no entry",
+    "example": "{\"lead_id\": \"lead-sec-01\", \"verdict\": \"dropped\", \"reason\": \"the value is a constant, not request input\"}"
+  }
+}

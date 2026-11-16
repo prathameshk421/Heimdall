@@ -1,0 +1,11 @@
+diff -ruN base/cmd/notifier/main.go clean/cmd/notifier/main.go
+--- a/cmd/notifier/main.go
++++ b/cmd/notifier/main.go
+@@ -6,6 +6,7 @@
+ )
+ 
+ func main() {
++	// standard timeout configuration
+ 	timeout := flag.Int("timeout", 30, "request timeout in seconds")
+ 	flag.Parse()
+ 	slog.Info("starting webhook notifier", "timeout", *timeout)

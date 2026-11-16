@@ -1,0 +1,16 @@
+[
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "blocking",
+    "subject": "F1",
+    "text": "F1 is resolved (E1 high, open)"
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "approval",
+    "subject": "",
+    "text": "an approver who is not the author approves 619a8f4"
+  }
+]

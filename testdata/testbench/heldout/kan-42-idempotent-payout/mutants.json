@@ -1,0 +1,20 @@
+[
+  {
+    "id": "go-M1",
+    "file": "go/mutants/m1_cache_ignored.go",
+    "ac": "AC2",
+    "what_is_wrong": "Ignores the stored reply, so a repeated key inserts a second payout."
+  },
+  {
+    "id": "go-M2",
+    "file": "go/mutants/m2_generated_key.go",
+    "ac": "AC3",
+    "what_is_wrong": "Generates a key when the header is missing instead of refusing with 400."
+  },
+  {
+    "id": "go-M3",
+    "file": "go/mutants/m3_replay_rebuilt.go",
+    "ac": "AC2",
+    "what_is_wrong": "On replay, writes a body built from the key instead of the stored body, so the replay differs from the first response."
+  }
+]

@@ -1,0 +1,59 @@
+{
+  "brief": {
+    "obligations": [
+      "spec-drift.md",
+      "secrets-in-logs.md"
+    ],
+    "leads": []
+  },
+  "submission": {
+    "head_sha": "a10a001",
+    "files_reviewed": [
+      "internal/api/health.go",
+      "api/openapi.yaml"
+    ],
+    "clean": true,
+    "findings": [
+      {
+        "claim": "the handler is registered but api/openapi.yaml does not declare /healthz",
+        "category": "spec_drift",
+        "severity": "medium",
+        "confidence": "high",
+        "location": {
+          "file": "internal/api/health.go",
+          "lines": [
+            15,
+            25
+          ]
+        },
+        "evidence": [
+          {
+            "type": "reasoning",
+            "reasoning": "internal/api/health.go registers GET /healthz; api/openapi.yaml has no /healthz path."
+          }
+        ],
+        "context_refs": [
+          "spec-drift.md"
+        ]
+      }
+    ],
+    "rule_checks": [
+      {
+        "card": "spec-drift.md",
+        "verdict": "violated",
+        "note": "openapi.yaml does not include /healthz"
+      },
+      {
+        "card": "secrets-in-logs.md",
+        "verdict": "holds",
+        "note": "only the status code is logged"
+      }
+    ],
+    "lead_checks": []
+  },
+  "expected_refusal": {
+    "field": "clean",
+    "problem": "clean is true but findings has 1 entry",
+    "example": "\"clean\": false"
+  }
+}
