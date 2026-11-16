@@ -9,8 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/testkit/eventlog"
 )
 
@@ -101,4 +104,77 @@ func checkStored(t *testing.T, stored []byte) {
 	if err := change.VerifyChain(events); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestViewGoldensAreWellFormed checks the layout testdata/plan/view/README.md promises: each change directory has a
+// policy that the product would accept at the merge base; each point's prefix is exactly the first lines of the log;
+// and every point (or a single-point directory) has its view, missing and status, each ending in one newline.
+func TestViewGoldensAreWellFormed(t *testing.T) {
+	dirs, err := filepath.Glob(filepath.Join("..", "..", "..", "testdata", "plan", "view", "*", "log.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dirs) == 0 {
+		t.Fatal("no log.jsonl under testdata/plan/view/*/")
+	}
+	for _, l := range dirs {
+		dir := filepath.Dir(l)
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			checkPolicy(t, filepath.Join(dir, "policy.yaml"))
+			log := read(t, l)
+			points, err := filepath.Glob(filepath.Join(dir, "point-*"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(points) == 0 {
+				points = []string{dir}
+			}
+			for _, p := range points {
+				checkPoint(t, dir, p, log)
+			}
+		})
+	}
+}
+
+// checkPoint checks one point directory: a whole-line prefix of the log (unless the point is the log's own
+// directory) and the three outputs, each JSON where it should be and ending in exactly one newline.
+func checkPoint(t *testing.T, dir, p string, log []byte) {
+	t.Helper()
+	if p != dir {
+		prefix := read(t, filepath.Join(p, "prefix.jsonl"))
+		if len(prefix) == 0 || !bytes.HasPrefix(log, prefix) || prefix[len(prefix)-1] != '\n' {
+			t.Fatalf("%s is not a whole-line prefix of %s/log.jsonl", p, dir)
+		}
+	}
+	for _, f := range []string{"view.json", "missing.json", "status.txt"} {
+		b := read(t, filepath.Join(p, f))
+		if !bytes.HasSuffix(b, []byte("\n")) || bytes.HasSuffix(b, []byte("\n\n")) {
+			t.Fatalf("%s/%s must end in exactly one newline", p, f)
+		}
+		if strings.HasSuffix(f, ".json") && !json.Valid(b) {
+			t.Fatalf("%s/%s is not JSON", p, f)
+		}
+	}
+}
+
+func checkPolicy(t *testing.T, path string) {
+	t.Helper()
+	var p policy.Policy
+	dec := yaml.NewDecoder(bytes.NewReader(read(t, path)))
+	dec.KnownFields(true)
+	if err := dec.Decode(&p); err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+}
+
+func read(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
