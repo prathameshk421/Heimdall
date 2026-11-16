@@ -299,20 +299,20 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 
 Every event carries `id`, `change_id`, `version`, `type`, `actor{kind,id}`, `occurred_at`, `causation_id`, `correlation_id` (the trace id), `payload`, `blob_refs`, `prev_hash` and `hash`.
 
-### 3.3 Change states
+### 3.3 Facts and views (replaces the change states; AGENT_INTERACTION_ARCH F1, decided Nov 16)
 
-```
-TRIGGERED → ROOM_OPEN → WRITING_TESTS → VERIFYING_TESTS → (AWAITING_TEST_SIGNOFF, sensitive domains only, D33) → TESTS_READY → BUILDING
-BUILDING → PR_OPEN → SLOP_REJECTED (↺ on push) | PICKING_REVIEWERS → IN_REVIEW
-IN_REVIEW ⇄ DELIBERATING → ESCALATED → IN_REVIEW
-IN_REVIEW ⇄ FIXING → VERIFYING_FIX → IN_REVIEW
-IN_REVIEW → READY_FOR_APPROVAL → APPROVED → MERGED;  READY_FOR_APPROVAL → MERGED on a merged pr.closed (a green gate holds an approval on head)
-any → REJECTED;  WRITING_TESTS..BUILDING → WRITING_TESTS on ticket.changed;  PR states → PR_OPEN on push
-UNLINKED_PR (no ticket, D146) → slop failure, stays red; pr.linked moves the PR to its ticket's change and closes this stream
-TRIGGERED..TESTS_READY + pr.opened → the PR attaches; the state keeps its place and the gate says "tests are not ready yet" until BUILDING
-```
+There is no state machine. A change is its event log. `Fold(events) View` reads the log into a view of everything
+known (trigger, room, branch, tests, PR with its slop, CI and gate per head, tasks, reviews, findings, decisions,
+approvals, closed, rejected). Fold never refuses a fact: a merge with no approval is folded like any other event. It
+fails only on a payload that does not decode.
 
-The reducer is a pure `func(State, Event) (State, error)`. An illegal transition is refused. A table test covers every state × event pair, and a property test checks that replaying any valid stream twice gives the same state.
+- **A request is refused before it becomes an event**, by a predicate on the current view: `CanSubmitTests`,
+  `CanApproveTests`, `CanReview`, `CanReportOnTask`, joined by `CanAppend`. A refusal wraps `ErrRefused`.
+- **What a change still needs is `Missing(view, policy)`**: a workflow row (5.1) whose `after` rows are done and which
+  is not done itself, in workflow order, then the clauses of the merge rule (12.4) that the view can decide.
+- `Stage(view)` is a label for people. Nothing branches on it.
+- The JSON shape of the view, every fold rule and the words of every need are specified in
+  `testdata/plan/view/README.md`; the recorded KAN-22 and KAN-23 logs there are the tests.
 
 ### 3.4 Invariants (tested, and asserted at runtime)
 

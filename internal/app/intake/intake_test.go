@@ -547,9 +547,10 @@ func TestPRAttachedBeforeBuildingKeepsItsState(t *testing.T) {
 	require.True(t, res.Appended)
 	require.True(t, res.Pass)
 
-	state, err := change.Replay(r.ev.streams[ticketPay42])
+	v, err := change.Fold(r.ev.streams[ticketPay42])
 	require.NoError(t, err)
-	require.Equal(t, change.StateTriggered, state, "a PR before BUILDING does not move the change")
+	require.NotNil(t, v.PR, "a PR before the tests are committed attaches to the change")
+	require.Nil(t, v.Tests, "and the change still needs its tests")
 }
 
 func TestPRWithNoTicketGetsItsOwnUnlinkedStream(t *testing.T) {
@@ -562,9 +563,10 @@ func TestPRWithNoTicketGetsItsOwnUnlinkedStream(t *testing.T) {
 	require.Equal(t, id.ChangeID("pr-acme-pay-7"), res.Stream)
 	require.False(t, res.Pass)
 
-	state, err := change.Replay(r.ev.streams[res.Stream])
+	v, err := change.Fold(r.ev.streams[res.Stream])
 	require.NoError(t, err)
-	require.Equal(t, change.StateUnlinkedPR, state)
+	require.NotNil(t, v.PR)
+	require.Empty(t, v.PR.Ticket, "the stream holds a PR that names no ticket")
 }
 
 func TestNewRefusesEveryNilPortByName(t *testing.T) {

@@ -158,9 +158,10 @@ func liveGreenSeedStream(t *testing.T, pool *pgxpool.Pool, gen ports.IDs, pr por
 		),
 	}
 
-	state, err := change.Replay(evs)
-	require.NoError(t, err, "replay seeded events")
-	require.Equal(t, change.StateBuilding, state, "seeded events must transition stream to BUILDING")
+	v, err := change.Fold(evs)
+	require.NoError(t, err, "fold seeded events")
+	require.NotNil(t, v.Tests, "seeded events hold tests")
+	require.NotNil(t, v.Tests.Committed, "seeded events must commit the tests")
 
 	store := postgres.NewStore(pool)
 	_, err = store.Append(context.Background(), ticket, 0, evs, nil)

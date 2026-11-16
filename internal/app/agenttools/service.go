@@ -28,7 +28,7 @@ var (
 	ErrWrongRole        = errors.New("wrong role for task")
 	ErrAckWindowExpired = errors.New("acknowledgement window expired")
 	ErrLateSubmission   = errors.New("submission is late")
-	ErrReducerRefusal   = errors.New("reducer refused event")
+	ErrRefused          = change.ErrRefused
 	ErrVersionConflict  = errors.New("version conflict after max retries")
 	ErrValidation       = errors.New("validation failed")
 )
@@ -182,38 +182,34 @@ func New(cfg Config) (*Service, error) {
 }
 
 // appendEvents executes the retry loop on ports.ErrVersionConflict (up to MaxRetries attempts).
-func (s *Service) appendEvents(ctx context.Context, cid id.ChangeID, fn func(existing []change.Event, state change.State) ([]change.Event, error)) error {
+func (s *Service) appendEvents(ctx context.Context, cid id.ChangeID, fn func(existing []change.Event) ([]change.Event, error)) error {
 	return s.appendEventsWith(ctx, cid, fn, nil)
 }
 
 // appendEventsWith is appendEvents with an optional hook that stores the events in place of the event store. A hook
 // error is returned as it is; a version conflict from it takes the retry loop again.
-func (s *Service) appendEventsWith(ctx context.Context, cid id.ChangeID, fn func(existing []change.Event, state change.State) ([]change.Event, error), hook func(context.Context, id.ChangeID, []change.Event) error) error {
+func (s *Service) appendEventsWith(ctx context.Context, cid id.ChangeID, fn func(existing []change.Event) ([]change.Event, error), hook func(context.Context, id.ChangeID, []change.Event) error) error {
 	for attempt := 0; attempt < MaxRetries; attempt++ {
 		existing, err := s.events.Load(ctx, cid)
 		if err != nil {
 			return fmt.Errorf("load %s: %w", cid, err)
 		}
-		state, err := change.Replay(existing)
+		view, err := change.Fold(existing)
 		if err != nil {
-			return fmt.Errorf("stream %s does not replay: %w", cid, err)
+			return fmt.Errorf("stream %s does not fold: %w", cid, err)
 		}
 
-		evs, err := fn(existing, state)
+		evs, err := fn(existing)
 		if err != nil {
 			return err
 		}
 		if len(evs) == 0 {
 			return nil
 		}
-
-		currState := state
 		for _, ev := range evs {
-			nextState, err := change.Reduce(currState, ev)
-			if err != nil {
-				return fmt.Errorf("%w: %s refused by reducer in state %s: %w", ErrReducerRefusal, ev.Type, currState, err)
+			if err := change.CanAppend(view, ev); err != nil {
+				return fmt.Errorf("%s: %w", ev.Type, err)
 			}
-			currState = nextState
 		}
 
 		expected := int64(len(existing))

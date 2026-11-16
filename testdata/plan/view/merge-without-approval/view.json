@@ -90,5 +90,6 @@
   "closed": {
     "merged": true,
     "head_sha": "59effae"
-  }
+  },
+  "rejected": null
 }

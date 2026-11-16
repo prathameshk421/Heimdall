@@ -67,7 +67,7 @@
 //   - Time comes from ports.Clock and ids from ports.IDs. There is no time.Now, no logging and no fmt.Print.
 //   - An error names the ticket key, the changelog id, or the port error that was wrapped. This package never reads a
 //     credential, so no credential value can reach an error.
-//   - An event is started only after change.Event.Validate and change.Reduce accept it.
+//   - An event is started only after change.Event.Validate accepts it.
 //   - PollOnce is not safe for concurrent calls on one Poller. Two Pollers may share the Starter; the engine keeps a
 //     single change.triggered per ticket.
 //

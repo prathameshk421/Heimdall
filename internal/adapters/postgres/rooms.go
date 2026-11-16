@@ -69,14 +69,12 @@ func (s *Store) openRoom(ctx context.Context, cid id.ChangeID) (OpenRoom, bool, 
 	if err := validateHistory(cid, events); err != nil {
 		return OpenRoom{}, false, fmt.Errorf("discover room for %s: %w", cid, err)
 	}
-	state, err := change.Replay(events)
-	if err != nil && !state.IsTerminal() {
-		return OpenRoom{}, false, fmt.Errorf("replay history for %s: %w", cid, err)
+	view, err := change.Fold(events)
+	if err != nil {
+		return OpenRoom{}, false, fmt.Errorf("fold history for %s: %w", cid, err)
 	}
-	// A refused event after a terminal state (an agent wrote to a change the operator had already closed) leaves the
-	// change closed. Replay returns the state before the refused event, so a terminal state means the change ended
-	// there, and it must not stop room discovery for every other change.
-	if state.IsTerminal() {
+	// An ended change (merged, closed or rejected) has no open room, whatever was written after its end.
+	if view.Over() {
 		return OpenRoom{}, false, nil
 	}
 	roomID, err := roomIDFromEvents(cid, events)

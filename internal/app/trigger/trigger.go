@@ -347,9 +347,6 @@ func (p *Poller) triggeredEvent(key id.ChangeID, repo change.Repo, assignee chan
 	if err := ev.Validate(); err != nil {
 		return change.Event{}, fmt.Errorf("change.triggered for %s: %w", key, err)
 	}
-	if _, err := change.Reduce("", ev); err != nil {
-		return change.Event{}, fmt.Errorf("change.triggered for %s: %w", key, err)
-	}
 	return ev, nil
 }
 

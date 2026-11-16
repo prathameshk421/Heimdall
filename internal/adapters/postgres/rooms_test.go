@@ -46,14 +46,16 @@ func TestOpenRooms(t *testing.T) {
 		{ChangeID: "PAY-143", RoomID: "room_01HZX3K9QW7M2P5R8T0V4YB6CE"},
 	}, got)
 
-	// Append permits storage of catalog-valid events; discovery must still refuse a reducer-invalid history.
+	// A second trigger is a fact like any other (AGENT_INTERACTION_ARCH F1): it folds, and it does not stop room
+	// discovery for every other change. This change opened no room, so it is not listed.
 	badID := id.ChangeID("PAY-145")
 	first := discoveryEvent(badID, 1, change.EventChangeTriggered, `{"ticket":"PAY-145","repo":"acme/pay-demo","assignee":"engine","source":"manual"}`)
 	second := discoveryEvent(badID, 2, change.EventChangeTriggered, `{"ticket":"PAY-145","repo":"acme/pay-demo","assignee":"engine","source":"manual"}`)
 	_, err = s.Append(ctx, badID, 0, []change.Event{first, second}, nil)
 	require.NoError(t, err)
-	_, err = s.OpenRooms(ctx)
-	require.Error(t, err, "an inconsistent persisted history must fail discovery")
+	got, err = s.OpenRooms(ctx)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
 }
 
 // A change that was rejected and then received an event the reducer refuses (the agent submitted tests after the

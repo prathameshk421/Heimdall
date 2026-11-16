@@ -51,8 +51,8 @@
 //   - Handling the same head twice appends nothing: the second call finds a pr event for this PR with the same head
 //     and returns Appended false.
 //   - The events of one handling are appended together or not at all.
-//   - Every event is checked against the reducer (change.Reduce) before the Append. An event the reducer refuses
-//     is an error and nothing is appended.
+//   - A PR is a fact and is never refused (AGENT_INTERACTION_ARCH F1). The one rule: a ticket whose change already
+//     has a live pull request does not take a different one (ErrSecondPR), and nothing is appended.
 //   - A version conflict reloads the stream and decides again: one attempt plus five retries (TECH_SPEC 2.4). After
 //     that the error wraps ports.ErrVersionConflict.
 //   - The slop facts come from the head: the head's tests tree decides HeimdallTestsExist, through CodeReader.TreeHash.

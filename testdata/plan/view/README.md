@@ -97,6 +97,7 @@ View {
   decisions: [Decision in event order]
   approvals: [Approval in event order]
   closed:    null | {merged, head_sha}
+  rejected:  null | {by, reason}
 }
 Tests    {sha, refs, ac_map, verified: null | {tree_hash, needs_signoff, run_ids}, rejected: [reasons],
           approved_by: "" | login, committed: null | {sha, tree_hash}}
@@ -133,14 +134,16 @@ Event by event:
 | `decision.recorded` | appends a decision |
 | `approval.recorded` | appends an approval |
 | `pr.closed` | sets `closed` |
+| `change.rejected` | sets `rejected`: `by` is the event's actor id, `reason` the payload's |
+| `decision.recorded` of kind `reject` | also sets `rejected`: `by` is the login, `reason` the decision's |
 
 `by` follows one rule: it is always the filer. Who changed the finding last is `changed_by`. A task's status changes
 only on a task event: no event joins a `review.submitted` or `tests.submitted` to a task id, so the fold does not
 guess (open question Q3). That is why every task in these logs stays `acked`.
 
-Events these logs do not contain (`question.*`, `step.*`, `ticket.changed`, `pr.linked`, `review.unavailable`,
-`review.waived`, `challenge.filed`, `case.*`, `verdict.*`, `approval.invalidated`, `change.rejected`,
-`change.merged`, `finding.recheck_requested`) have no golden yet. Their fold is M0's decision and needs a golden
+`approval.invalidated` removes the matching approval. Events these logs do not contain (`question.*`, `step.*`,
+`ticket.changed`, `pr.linked`, `review.unavailable`, `review.waived`, `challenge.filed`, `case.*`, `verdict.*`,
+`change.merged`, `finding.recheck_requested`) change nothing in the view yet. Their fold is M0's decision and needs a golden
 before M3 or M5 read them.
 
 ## Missing

@@ -83,13 +83,18 @@ func (s *scenario) eventCount(cid id.ChangeID, typ change.EventType) int {
 	return n
 }
 
-// stateOf replays the stored events of the change and returns its state.
-func (s *scenario) stateOf(cid id.ChangeID) change.State {
+// writingTests reports whether the change has its room, branch and test-author task and no tests yet.
+func (s *scenario) writingTests(cid id.ChangeID) bool {
 	evs, err := s.store.Load(context.Background(), cid)
 	require.NoError(s.t, err)
-	st, err := change.Replay(evs)
+	v, err := change.Fold(evs)
 	require.NoError(s.t, err)
-	return st
+	for _, task := range v.Tasks {
+		if task.Role == workflow.RoleTestAuthor {
+			return v.Room != "" && v.Branch != nil && v.Tests == nil
+		}
+	}
+	return false
 }
 
 func (s *scenario) cursor() string {
@@ -138,7 +143,7 @@ func TestSliceOpensOneRoomAndOneBranchAcrossARestart(t *testing.T) {
 	}, acceptanceWaitFor, acceptancePollTick, "the room, the branch and the test-author task must be recorded")
 
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventChangeTriggered), "one change.triggered")
-	require.Equal(t, change.StateWritingTests, s.stateOf(acceptanceChange))
+	require.True(t, s.writingTests(acceptanceChange), "the test author is writing tests")
 	require.Eventually(t, func() bool { return len(sw.invitedAgents()) == 1 },
 		acceptanceWaitFor, acceptancePollTick, "the test-author is invited into the change room before its task is posted")
 	require.Equal(t, []string{"test-author"}, sw.invitedAgents(), "the invite names the agent")
@@ -176,7 +181,7 @@ func TestSliceOpensOneRoomAndOneBranchAcrossARestart(t *testing.T) {
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventRoomOpened), "a restart does not open another room")
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventBranchEnsured), "a restart does not make another branch")
 	require.Equal(t, 1, s.eventCount(acceptanceChange, change.EventTaskAssigned), "a restart does not assign the task again")
-	require.Equal(t, change.StateWritingTests, s.stateOf(acceptanceChange))
+	require.True(t, s.writingTests(acceptanceChange), "the test author is writing tests")
 	require.Len(t, sw.postBodies(), 2, "still the same two room messages after the restart")
 	require.Equal(t, []string{string(acceptanceChange) + " " + acceptanceTitle}, sw.createCallTitles(), "still one open-room call after the restart")
 	require.Len(t, gh.refCalls(), 1, "still one create-ref call after the restart")

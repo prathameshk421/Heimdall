@@ -165,7 +165,7 @@ func (s *Service) SubmitReview(ctx context.Context, a Assignment, r finding.Revi
 		return Receipt{Accepted: false, FindingErrors: findingErrors}, nil
 	}
 
-	err = s.appendEventsWith(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
+	err = s.appendEventsWith(ctx, a.ChangeID, func(existing []change.Event) ([]change.Event, error) {
 		if err := checkTaskAgent(existing, a); err != nil {
 			return nil, err
 		}
@@ -289,7 +289,7 @@ func (s *Service) SubmitVerdict(ctx context.Context, a Assignment, v deliberatio
 		return fmt.Errorf("%w: case_id does not match the assigned resolver case", ErrValidation)
 	}
 
-	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
+	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event) ([]change.Event, error) {
 		if err := checkTaskAgent(existing, a); err != nil {
 			return nil, err
 		}

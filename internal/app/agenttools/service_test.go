@@ -296,8 +296,10 @@ func makeBaseStream(t *testing.T, h *testHarness, role workflow.Role, agent id.A
 	corr := change.CorrelationID(firstID.String())
 
 	trigPayload, _ := json.Marshal(change.Triggered{
-		Ticket: testChangeID,
-		Repo:   "acme/pay-demo",
+		Ticket:   testChangeID,
+		Repo:     "acme/pay-demo",
+		Assignee: "dev-author",
+		Source:   change.TriggerSource("jira"),
 	})
 	e1 := change.Event{
 		ID:            firstID,
@@ -589,7 +591,7 @@ func TestPrepareTestsSubmissionRefusesAClosedChange(t *testing.T) {
 		},
 	}
 	_, prepared, _, err := h.svc.PrepareTestsSubmission(context.Background(), assign, validSubmission(), false)
-	require.ErrorIs(t, err, agenttools.ErrReducerRefusal)
+	require.ErrorIs(t, err, agenttools.ErrRefused)
 	require.False(t, prepared)
 }
 
@@ -648,8 +650,10 @@ func makeReviewStream(t *testing.T, h *testHarness) {
 	corr := change.CorrelationID(firstID.String())
 
 	trigPayload, _ := json.Marshal(change.Triggered{
-		Ticket: testChangeID,
-		Repo:   "acme/pay-demo",
+		Ticket:   testChangeID,
+		Repo:     "acme/pay-demo",
+		Assignee: "dev-author",
+		Source:   change.TriggerSource("jira"),
 	})
 	e1 := change.Event{
 		ID:            firstID,

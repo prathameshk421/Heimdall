@@ -2,9 +2,9 @@
 // of each change into plain values for the web edge to show. It only reads: it never appends, decides or calls a
 // tracker or a chat.
 //
-// Each read loads the whole log of a change and folds it in one pass. The state comes from change.Replay. The
-// findings, reviewers, open questions and gate come from the payloads, so they still show when the state machine
-// refuses the log: the timeline is the record, and the state is the verdict on it.
+// Each read loads the whole log of a change and folds it in one pass. The stage label comes from change.Fold and
+// change.Stage. The findings, reviewers, open questions and gate come from the payloads, so they still show when a
+// payload does not decode: the timeline is the record.
 package dashboard
 
 import (
@@ -37,7 +37,7 @@ const (
 	ReviewerWaived      = "waived"
 )
 
-// unknownState is the state of a log that the reducer refuses.
+// unknownState is the stage of a log with a payload that does not decode.
 const unknownState = "unknown"
 
 // unreadable is the timeline note of an event whose payload does not decode.
@@ -199,12 +199,12 @@ func fold(cid id.ChangeID, evs []change.Event) Detail {
 	f.d.Version = last.Version
 	f.d.UpdatedAt = last.OccurredAt
 
-	state, err := change.Replay(evs)
+	view, err := change.Fold(evs)
 	if err != nil {
 		f.d.State = unknownState
 		f.d.Problem = err.Error()
 	} else {
-		f.d.State = string(state)
+		f.d.State = change.Stage(view)
 	}
 	return f.result()
 }

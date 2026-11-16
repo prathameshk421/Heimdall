@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,27 +9,26 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
 
-func signoffEvents(t *testing.T, verifiedTree string) []change.Event {
-	t.Helper()
-	raw := json.RawMessage(`{"run_ids":["run_01ARZ3NDEKTSV4RRFFQ69G5FAV"],"sha":"` + string(testSignoffHead) + `","tree_hash":"` + verifiedTree + `","needs_signoff":true}`)
-	return []change.Event{{Type: change.EventTestsVerified, Payload: raw}}
+func waitingForSignoff(tree string, needs bool) change.View {
+	return change.View{Tests: &change.TestsInfo{Rejected: []string{},
+		Verified: &change.TestsVerifiedInfo{TreeHash: id.SHA(tree), NeedsSignoff: needs}}}
 }
-
-const testSignoffHead = "0123456789abcdef0123456789abcdef01234567"
 
 // Approving tests binds the approval to the tests tree that was verified, and only while the change waits for it
 // (A4, D33). Otherwise the command is refused, so an approval cannot land on tests nobody reviewed.
 func TestSignoffApprovalBindsToTheVerifiedTree(t *testing.T) {
 	tree := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	evs := signoffEvents(t, tree)
-	approved, err := signoffPayload(change.StateAwaitingTestSignoff, evs, "ana")
+	approved, err := signoffPayload(waitingForSignoff(tree, true), "ana")
 	require.NoError(t, err)
 	require.Equal(t, id.SHA(tree), approved.TreeHash)
 	require.Equal(t, change.ActorID("ana"), approved.Approver)
 }
 
 func TestSignoffRefusesWhenNothingWaits(t *testing.T) {
-	// A verified run exists, but the change is not waiting for sign-off, so the state alone refuses it.
-	_, err := signoffPayload(change.StateTestsReady, signoffEvents(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), "ana")
+	// A verified run exists, but it needs no sign-off, so the predicate refuses it.
+	_, err := signoffPayload(waitingForSignoff("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false), "ana")
 	require.ErrorContains(t, err, "nothing is waiting for test sign-off")
+	require.ErrorIs(t, err, change.ErrRefused)
+	_, err = signoffPayload(change.View{}, "ana")
+	require.ErrorIs(t, err, change.ErrRefused)
 }

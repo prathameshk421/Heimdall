@@ -164,5 +164,6 @@
   },
   "decisions": [],
   "approvals": [],
-  "closed": null
+  "closed": null,
+  "rejected": null
 }

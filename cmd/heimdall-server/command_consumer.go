@@ -887,11 +887,11 @@ func addressedCommand(body, prefix string) bool {
 // signoffEvents records the test sign-off of a change that waits for it (A4). The approval is bound to the verified
 // tests tree; a change not waiting for sign-off refuses the command.
 func (r *commandRuntime) signoffEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, actor change.Actor) ([]change.Event, error) {
-	st, err := change.Replay(state)
+	view, err := change.Fold(state)
 	if err != nil {
 		return nil, fmt.Errorf("read change for sign-off: %w", err)
 	}
-	payload, err := signoffPayload(st, state, person)
+	payload, err := signoffPayload(view, person)
 	if err != nil {
 		return nil, err
 	}

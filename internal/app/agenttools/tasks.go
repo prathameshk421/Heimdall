@@ -214,7 +214,7 @@ func (s *Service) Ack(ctx context.Context, a Assignment, at time.Time) error {
 		return fmt.Errorf("%w: ack at %v is after the task deadline %v", ErrAckWindowExpired, at, a.Deadline)
 	}
 
-	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
+	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event) ([]change.Event, error) {
 		if err := checkTaskAgent(existing, a); err != nil {
 			return nil, err
 		}
@@ -332,7 +332,7 @@ func (s *Service) SubmitTests(ctx context.Context, a Assignment, sub testset.Sub
 	isLate := late || s.clock.Now().After(a.Deadline)
 	var timedOutRecorded bool
 
-	err = s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
+	err = s.appendEvents(ctx, a.ChangeID, func(existing []change.Event) ([]change.Event, error) {
 		if err := checkTaskAgent(existing, a); err != nil {
 			return nil, err
 		}
@@ -405,22 +405,21 @@ func (s *Service) submissionEvent(a Assignment, sub testset.Submission, blobRef 
 	if err != nil {
 		return change.Event{}, err
 	}
-	if err := reducerAccepts(existing, ev); err != nil {
+	if err := canAppend(existing, ev); err != nil {
 		return change.Event{}, err
 	}
 	return ev, nil
 }
 
-// reducerAccepts checks that the change, as it stands, can take ev. The engine stores what it is given, so without
-// this check an agent could write to a change that is already closed, and the log would then hold an event the
-// reducer refuses.
-func reducerAccepts(existing []change.Event, ev change.Event) error {
-	state, err := change.Replay(existing)
+// canAppend checks that the change, as it stands, can take ev. The engine stores what it is given, so without this
+// check an agent could write to a change that has already ended.
+func canAppend(existing []change.Event, ev change.Event) error {
+	view, err := change.Fold(existing)
 	if err != nil {
-		return fmt.Errorf("stream %s does not replay: %w", ev.ChangeID, err)
+		return fmt.Errorf("stream %s does not fold: %w", ev.ChangeID, err)
 	}
-	if _, err := change.Reduce(state, ev); err != nil {
-		return fmt.Errorf("%w: %s refused by reducer in state %s: %w", ErrReducerRefusal, ev.Type, state, err)
+	if err := change.CanAppend(view, ev); err != nil {
+		return fmt.Errorf("%s: %w", ev.Type, err)
 	}
 	return nil
 }
@@ -520,7 +519,7 @@ func (s *Service) AskHumans(ctx context.Context, a Assignment, questions []strin
 		return err
 	}
 
-	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
+	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event) ([]change.Event, error) {
 		if err := checkTaskAgent(existing, a); err != nil {
 			return nil, err
 		}
@@ -539,7 +538,7 @@ func (s *Service) Progress(ctx context.Context, a Assignment, text string, at ti
 	if at.IsZero() {
 		at = s.clock.Now()
 	}
-	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event, _ change.State) ([]change.Event, error) {
+	return s.appendEvents(ctx, a.ChangeID, func(existing []change.Event) ([]change.Event, error) {
 		if err := checkTaskAgent(existing, a); err != nil {
 			return nil, err
 		}

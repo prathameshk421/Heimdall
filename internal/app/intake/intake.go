@@ -235,10 +235,10 @@ type job struct {
 	suggestedReviewers []change.ActorID
 }
 
-// streamView is the stream as one attempt loaded it: its state, its last version, and the last head this PR was
+// streamView is the stream as one attempt loaded it: its view, its last version, and the last head this PR was
 // recorded with.
 type streamView struct {
-	state    change.State
+	view     change.View
 	expected int64
 	head     id.SHA
 	seen     bool
@@ -253,12 +253,12 @@ func (in *Intake) load(ctx context.Context, j job) (streamView, error) {
 	if j.ticket != "" && len(existing) == 0 {
 		return streamView{}, fmt.Errorf("ticket %s: %w", j.ticket, ErrNoChange)
 	}
-	state, err := change.Replay(existing)
+	view, err := change.Fold(existing)
 	if err != nil {
-		return streamView{}, fmt.Errorf("stream %s does not replay: %w", j.stream, err)
+		return streamView{}, fmt.Errorf("stream %s does not fold: %w", j.stream, err)
 	}
 	var v streamView
-	v.state = state
+	v.view = view
 	if len(existing) > 0 {
 		v.expected = existing[len(existing)-1].Version
 	}
@@ -284,7 +284,7 @@ func (in *Intake) appendOnce(ctx context.Context, j job) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := checkTransitions(v.state, evs, j, v.seen); err != nil {
+	if err := checkSecondPR(v.view, j, v.seen); err != nil {
 		return Result{}, err
 	}
 
@@ -354,19 +354,12 @@ func (in *Intake) event(eid change.EventID, corr change.CorrelationID, stream id
 	}, nil
 }
 
-// checkTransitions runs the new events through the reducer from the state the stream is in. A second pr.opened on a
-// ticket in a PR state is named as ErrSecondPR, not as a generic refusal.
-func checkTransitions(state change.State, evs []change.Event, j job, seen bool) error {
-	s := state
-	for i, e := range evs {
-		next, err := change.Reduce(s, e)
-		if err != nil {
-			if i == 0 && j.ticket != "" && !seen && !state.IsTerminal() && errors.Is(err, change.ErrIllegalTransition) {
-				return fmt.Errorf("ticket %s is in %s: %w", j.ticket, state, ErrSecondPR)
-			}
-			return fmt.Errorf("stream %s: %w", j.stream, err)
-		}
-		s = next
+// checkSecondPR is the one rule intake keeps (AGENT_INTERACTION_ARCH F1: a fact is never refused): a ticket whose
+// change already has a live pull request does not take a different one. That PR stays with GitHub and is reported as
+// ErrSecondPR; everything about the PR the change already has is folded as it comes.
+func checkSecondPR(v change.View, j job, seen bool) error {
+	if j.ticket != "" && !seen && v.PR != nil && v.PR.Number != j.pr.Number && !v.Over() {
+		return fmt.Errorf("ticket %s already has pull request #%d: %w", j.ticket, v.PR.Number, ErrSecondPR)
 	}
 	return nil
 }

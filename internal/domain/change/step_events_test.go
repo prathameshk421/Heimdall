@@ -74,24 +74,14 @@ func TestStepEventsEncodeAndDecodeToTheSameValue(t *testing.T) {
 	require.Equal(t, escalated, got)
 }
 
-// TestStepEventsLeaveEveryLiveStateWhereItIs and TestStepEventsAreRefusedBeforeAChangeStarts pin the reducer rule: a
-// retry or an escalation is a fact about a live change, so it moves nothing and needs a stream to exist.
-func TestStepEventsLeaveEveryLiveStateWhereItIs(t *testing.T) {
-	for _, s := range change.AllStates() {
-		if s.IsTerminal() {
-			continue
-		}
-		for _, et := range []change.EventType{change.EventStepRetried, change.EventStepEscalated} {
-			next, err := change.Reduce(s, eventWith(et, string(goldenPayload(t, et))))
-			require.NoError(t, err, "%s + %s", s, et)
-			require.Equal(t, s, next, "%s + %s must leave the state unchanged", s, et)
-		}
-	}
-}
-
-func TestStepEventsAreRefusedBeforeAChangeStarts(t *testing.T) {
+// A retry or an escalation is a fact about the work (TECH_SPEC 3.2): it folds without error and changes nothing a
+// person or Missing reads.
+func TestStepEventsFoldAndChangeNothingInTheView(t *testing.T) {
 	for _, et := range []change.EventType{change.EventStepRetried, change.EventStepEscalated} {
-		_, err := change.Reduce("", eventWith(et, string(goldenPayload(t, et))))
-		require.ErrorIs(t, err, change.ErrIllegalTransition, et)
+		v, err := change.Fold([]change.Event{eventWith(et, string(goldenPayload(t, et)))})
+		require.NoError(t, err, et)
+		empty, err := change.Fold(nil)
+		require.NoError(t, err)
+		require.Equal(t, empty, v, et)
 	}
 }

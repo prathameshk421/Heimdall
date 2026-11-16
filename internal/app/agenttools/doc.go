@@ -18,5 +18,5 @@
 // # Concurrency and Consistency
 //
 // All mutations are appended to ports.EventStore with optimistic concurrency retry (up to 5 attempts on version conflict).
-// Every state transition is validated against change.Reduce before appending.
+// Every request is checked with change.CanAppend on the folded view before appending.
 package agenttools
