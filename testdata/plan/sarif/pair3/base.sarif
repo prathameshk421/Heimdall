@@ -5,33 +5,32 @@
     {
       "tool": {
         "driver": {
-          "name": "heimdall-checks",
-          "version": "1.0.0"
+          "name": "squawk-sarif"
         }
       },
       "results": [
         {
-          "ruleId": "hadolint:DL3008",
+          "ruleId": "adding-not-nullable-field",
           "level": "warning",
           "message": {
-            "text": "Pin versions in apt get install"
+            "text": "Adding a NOT NULL field requires exclusive locks and may require a default"
           },
           "locations": [
             {
               "physicalLocation": {
                 "artifactLocation": {
-                  "uri": "Dockerfile"
+                  "uri": "migrations/0007_refund_note.sql"
                 },
                 "region": {
-                  "startLine": 5,
-                  "endLine": 5
+                  "startLine": 2,
+                  "endLine": 2,
+                  "snippet": {
+                    "text": "ALTER TABLE refunds ADD COLUMN note text NOT NULL;"
+                  }
                 }
               }
             }
-          ],
-          "properties": {
-            "fingerprint": "hadolint:DL3008:Dockerfile:4444444444444444444444444444444444444444444444444444444444444444"
-          }
+          ]
         }
       ]
     }

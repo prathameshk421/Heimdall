@@ -1,16 +1,46 @@
 {
+  "input": {
+    "criteria": [
+      "AC1",
+      "AC2"
+    ],
+    "declared_kinds": [
+      "api",
+      "property",
+      "contract",
+      "ui"
+    ]
+  },
   "plan": {
-    "title": "TestPlan@1",
     "ticket": "KAN-31",
     "behaviours": [
       {
         "id": "B1",
         "ac": "AC1",
+        "kind": "api",
+        "case": "positive",
+        "given": "a captured payment of 100",
+        "when": "POST /refunds amount=40",
+        "then": "201 and remaining=60",
+        "oracle": "exact"
+      },
+      {
+        "id": "B2",
+        "ac": "AC1",
+        "kind": "property",
+        "case": "rule",
+        "given": "any sequence of partial refunds",
+        "then": "the sum of refunds never exceeds the payment",
+        "oracle": "property"
+      },
+      {
+        "id": "B3",
+        "ac": "AC2",
         "kind": "exploit",
         "case": "negative",
-        "given": "payload",
-        "when": "send",
-        "then": "blocked",
+        "given": "another merchant's payment",
+        "when": "POST /refunds",
+        "then": "404 and nothing stored",
         "oracle": "exact"
       }
     ],
@@ -23,5 +53,9 @@
       "Refunds are in the payment's currency."
     ]
   },
-  "expected_refusal": "behaviours[0].kind: 'exploit' is not declared in repository profile [api, property, contract, ui]"
+  "expected_refusal": {
+    "field": "behaviours[2].kind",
+    "problem": "kind \"exploit\" is not declared in the profile; declared: api, property, contract, ui",
+    "example": "\"kind\": \"api\""
+  }
 }

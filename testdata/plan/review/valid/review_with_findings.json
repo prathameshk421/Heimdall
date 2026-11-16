@@ -1,66 +1,54 @@
 {
-  "title": "Review@2",
-  "head_sha": "a10a001",
-  "files_reviewed": [
-    "internal/api/refunds.go",
-    "api/openapi.yaml"
-  ],
-  "clean": false,
-  "findings": [
-    {
-      "claim": "the handler drifts from the ticket: api/openapi.yaml does not declare /healthz",
-      "category": "spec_drift",
-      "severity": "medium",
-      "confidence": "high",
-      "location": {
-        "file": "internal/api/health.go",
-        "lines": [
-          15,
-          25
-        ]
-      },
-      "evidence": [
-        {
-          "type": "tool_result",
-          "tool_result": {
-            "tool": "oasdiff",
-            "args": [
-              "breaking",
-              "api/openapi.yaml"
-            ],
-            "location": {
-              "file": "api/openapi.yaml",
-              "lines": [
-                10,
-                20
-              ]
-            }
+  "brief": {
+    "obligations": [
+      "spec-drift.md",
+      "secrets-in-logs.md"
+    ],
+    "leads": []
+  },
+  "submission": {
+    "head_sha": "a10a001",
+    "files_reviewed": [
+      "internal/api/health.go",
+      "api/openapi.yaml"
+    ],
+    "clean": false,
+    "findings": [
+      {
+        "claim": "the handler is registered but api/openapi.yaml does not declare /healthz",
+        "category": "spec_drift",
+        "severity": "medium",
+        "confidence": "high",
+        "location": {
+          "file": "internal/api/health.go",
+          "lines": [
+            15,
+            25
+          ]
+        },
+        "evidence": [
+          {
+            "type": "reasoning",
+            "reasoning": "internal/api/health.go registers GET /healthz; api/openapi.yaml has no /healthz path."
           }
-        }
-      ],
-      "context_refs": [
-        "card:spec-drift.md",
-        "lead:lead-drift-01"
-      ]
-    }
-  ],
-  "rule_checks": [
-    {
-      "card": "spec-drift.md",
-      "verdict": "violated",
-      "note": "openapi spec does not include /healthz"
-    },
-    {
-      "card": "secrets-in-logs.md",
-      "verdict": "holds",
-      "note": "no secrets logged"
-    }
-  ],
-  "lead_checks": [
-    {
-      "lead_id": "lead-drift-01",
-      "verdict": "confirmed",
-      "reason": "oasdiff confirms missing route"
-    }
-  ]
+        ],
+        "context_refs": [
+          "spec-drift.md"
+        ]
+      }
+    ],
+    "rule_checks": [
+      {
+        "card": "spec-drift.md",
+        "verdict": "violated",
+        "note": "openapi.yaml does not include /healthz"
+      },
+      {
+        "card": "secrets-in-logs.md",
+        "verdict": "not_applicable",
+        "note": "the change adds no logging"
+      }
+    ],
+    "lead_checks": []
+  }
 }

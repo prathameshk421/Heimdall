@@ -5,33 +5,32 @@
     {
       "tool": {
         "driver": {
-          "name": "heimdall-checks",
-          "version": "1.0.0"
+          "name": "opengrep"
         }
       },
       "results": [
         {
-          "ruleId": "gitleaks:generic-api-key",
+          "ruleId": "sql-concat",
           "level": "error",
           "message": {
-            "text": "hardcoded fake secret detected"
+            "text": "query formatted with string concatenation rather than parameterized query"
           },
           "locations": [
             {
               "physicalLocation": {
                 "artifactLocation": {
-                  "uri": "internal/legacy/token.go"
+                  "uri": "internal/legacy/report.go"
                 },
                 "region": {
-                  "startLine": 12,
-                  "endLine": 12
+                  "startLine": 7,
+                  "endLine": 8,
+                  "snippet": {
+                    "text": "\treturn db.Query(\"SELECT id, total FROM reports WHERE owner = '\" +\n\t\towner + \"'\")"
+                  }
                 }
               }
             }
-          ],
-          "properties": {
-            "fingerprint": "gitleaks:generic-api-key:internal/legacy/token.go:1111111111111111111111111111111111111111111111111111111111111111"
-          }
+          ]
         }
       ]
     }

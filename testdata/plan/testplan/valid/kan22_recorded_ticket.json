@@ -1,0 +1,47 @@
+{
+  "input": {
+    "criteria": [
+      "AC1",
+      "AC2"
+    ],
+    "declared_kinds": [
+      "api",
+      "property",
+      "contract",
+      "ui"
+    ]
+  },
+  "plan": {
+    "ticket": "KAN-22",
+    "behaviours": [
+      {
+        "id": "B1",
+        "ac": "AC1",
+        "kind": "api",
+        "case": "positive",
+        "given": "the service is running",
+        "when": "GET /healthz",
+        "then": "200 and the JSON body {\"status\": \"ok\"}",
+        "oracle": "exact"
+      },
+      {
+        "id": "B2",
+        "ac": "AC2",
+        "kind": "api",
+        "case": "boundary",
+        "given": "a request with no X-Merchant-ID header",
+        "when": "GET /healthz",
+        "then": "200, not the missing-merchant refusal",
+        "oracle": "exact"
+      }
+    ],
+    "ui_handles": [],
+    "expected_paths": [
+      "internal/api/**",
+      "api/openapi.yaml"
+    ],
+    "assumptions": [
+      "The health check answers without the database."
+    ]
+  }
+}

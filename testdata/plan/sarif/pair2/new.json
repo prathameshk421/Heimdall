@@ -1,15 +1,15 @@
 [
   {
-    "check": "contracts",
+    "check": "api-break",
     "lens": "contract",
-    "rule": "oasdiff:removed-endpoint",
+    "rule": "new-required-request-parameter",
     "level": "error",
     "file": "api/openapi.yaml",
     "lines": [
-      12,
-      18
+      9,
+      12
     ],
-    "message": "endpoint /healthz was removed from api/openapi.yaml",
-    "finger": "oasdiff:removed-endpoint:api/openapi.yaml:3333333333333333333333333333333333333333333333333333333333333333"
+    "message": "added required header parameter Idempotency-Key to POST /refunds",
+    "finger": "new-required-request-parameter:api/openapi.yaml:7b42dc26ab582e051b1126b81899cc2347eddfdc2c9fdb51a842ef62db3abf49"
   }
 ]

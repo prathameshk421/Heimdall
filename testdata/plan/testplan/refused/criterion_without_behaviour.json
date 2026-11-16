@@ -1,0 +1,61 @@
+{
+  "input": {
+    "criteria": [
+      "AC1",
+      "AC2"
+    ],
+    "declared_kinds": [
+      "api",
+      "property",
+      "contract",
+      "ui"
+    ]
+  },
+  "plan": {
+    "ticket": "KAN-31",
+    "behaviours": [
+      {
+        "id": "B1",
+        "ac": "AC1",
+        "kind": "api",
+        "case": "positive",
+        "given": "a captured payment of 100",
+        "when": "POST /refunds amount=40",
+        "then": "201 and remaining=60",
+        "oracle": "exact"
+      },
+      {
+        "id": "B2",
+        "ac": "AC1",
+        "kind": "property",
+        "case": "rule",
+        "given": "any sequence of partial refunds",
+        "then": "the sum of refunds never exceeds the payment",
+        "oracle": "property"
+      },
+      {
+        "id": "B3",
+        "ac": "AC1",
+        "kind": "api",
+        "case": "boundary",
+        "given": "a captured payment of 100 with 100 refunded",
+        "when": "POST /refunds amount=1",
+        "then": "422 and nothing stored",
+        "oracle": "exact"
+      }
+    ],
+    "ui_handles": [],
+    "expected_paths": [
+      "internal/refunds/**",
+      "api/openapi.yaml"
+    ],
+    "assumptions": [
+      "Refunds are in the payment's currency."
+    ]
+  },
+  "expected_refusal": {
+    "field": "behaviours",
+    "problem": "criterion AC2 has no behaviour",
+    "example": "{\"id\": \"B4\", \"ac\": \"AC2\", \"kind\": \"api\", \"case\": \"negative\", \"given\": \"...\", \"when\": \"...\", \"then\": \"...\", \"oracle\": \"exact\"}"
+  }
+}

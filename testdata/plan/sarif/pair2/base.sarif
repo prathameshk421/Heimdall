@@ -5,8 +5,7 @@
     {
       "tool": {
         "driver": {
-          "name": "heimdall-checks",
-          "version": "1.0.0"
+          "name": "oasdiff-sarif"
         }
       },
       "results": []
