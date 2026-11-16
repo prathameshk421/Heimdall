@@ -5,13 +5,12 @@
     {
       "tool": {
         "driver": {
-          "name": "heimdall-mine",
-          "version": "1.0.0"
+          "name": "heimdall-mine"
         }
       },
       "results": [
         {
-          "ruleId": "mine:forgotten-companion",
+          "ruleId": "forgotten-companion",
           "level": "note",
           "message": {
             "text": "internal/adapters/postgres/schema.sql changed in 6 of the last 7 commits that changed migrations/0012_backoff.sql. internal/adapters/postgres/schema.sql is not in this change."
@@ -21,20 +20,26 @@
               "physicalLocation": {
                 "artifactLocation": {
                   "uri": "migrations/0012_backoff.sql"
-                },
-                "region": {
-                  "startLine": 1,
-                  "endLine": 1
                 }
               }
             }
-          ],
-          "properties": {
-            "lens": "contract",
-            "companion": "internal/adapters/postgres/schema.sql",
-            "support": 6,
-            "confidence": 0.857
-          }
+          ]
+        },
+        {
+          "ruleId": "forgotten-companion",
+          "level": "note",
+          "message": {
+            "text": "internal/domain/change/event.go changed in 6 of the last 7 commits that changed migrations/0012_backoff.sql. internal/domain/change/event.go is not in this change."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "migrations/0012_backoff.sql"
+                }
+              }
+            }
+          ]
         }
       ]
     }
