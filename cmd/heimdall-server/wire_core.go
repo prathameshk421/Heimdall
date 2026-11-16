@@ -130,6 +130,7 @@ func newAgentTools(ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.
 // proposal worker, which is nil when no cards directory is configured.
 func assembleMCP(
 	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng *engine.Engine, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
+	commands mcp.Proposer,
 ) (http.Handler, *cardProposer, error) {
 	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk, store)
 	if err != nil {
@@ -169,9 +170,10 @@ func assembleMCP(
 		Files:    newKnowledgeFileManager(files, ad.vcs),
 		Profiles: profiles,
 		// run_check runs its fixed static check through the runner, never in this process.
-		Sandbox: rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
-		Briefs:  moat.briefs,
-		Graph:   moat.graph,
+		Sandbox:  rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
+		Briefs:   moat.briefs,
+		Graph:    moat.graph,
+		Proposer: commands,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("build mcp server: %w", err)

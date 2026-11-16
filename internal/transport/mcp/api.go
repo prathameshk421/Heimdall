@@ -186,6 +186,8 @@ type Deps struct {
 	Briefs Briefs
 	// Graph backs search_code and find_symbol. The tools exist only when it is set.
 	Graph CodeGraph
+	// Proposer backs propose_command. The tool exists only when it is set.
+	Proposer Proposer
 }
 
 // Server answers MCP requests for the agents' tools.

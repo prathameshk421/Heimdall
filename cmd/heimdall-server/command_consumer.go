@@ -48,7 +48,7 @@ type commandRuntime struct {
 func newCommandRuntime(events ports.EventStore, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, in prIntakeHandler, profiles mcp.Profiles) (*commandRuntime, error) {
 	r := &commandRuntime{events: events, code: ad.vcs, prs: ad.vcs, repos: ad.vcs, tickets: ad.tickets, projects: ad.projects,
 		chat: ad.chat, comments: ad.vcs, engine: eng, ids: gen, clock: clk, intake: in, profiles: profiles}
-	p, err := collaboration.New(collaboration.Config{Identity: r, Executor: r, Replies: r})
+	p, err := collaboration.New(collaboration.Config{Identity: r, Executor: r, Replies: r, Proposals: r, Clock: clk})
 	if err != nil {
 		return nil, fmt.Errorf("build command processor: %w", err)
 	}
