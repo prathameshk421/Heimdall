@@ -1,7 +1,7 @@
-diff -ruN testdata/reviewbench/heldout/base/cmd/notifier/main.go testdata/reviewbench/heldout/head/cmd/notifier/main.go
---- testdata/reviewbench/heldout/base/cmd/notifier/main.go	2026-11-15 16:54:50.297102068 +0530
-+++ testdata/reviewbench/heldout/head/cmd/notifier/main.go	2026-11-15 16:54:50.297294601 +0530
-@@ -7,7 +7,7 @@
+diff -ruN base/cmd/notifier/main.go head/cmd/notifier/main.go
+--- a/cmd/notifier/main.go
++++ b/cmd/notifier/main.go
+@@ -6,7 +6,7 @@
  )
  
  func main() {
@@ -10,38 +10,16 @@ diff -ruN testdata/reviewbench/heldout/base/cmd/notifier/main.go testdata/review
  	flag.Parse()
  	slog.Info("starting webhook notifier", "timeout", *timeout)
  }
-diff -ruN testdata/reviewbench/heldout/base/internal/delivery/sender.go testdata/reviewbench/heldout/head/internal/delivery/sender.go
---- testdata/reviewbench/heldout/base/internal/delivery/sender.go	2026-11-15 16:54:50.297155832 +0530
-+++ testdata/reviewbench/heldout/head/internal/delivery/sender.go	2026-11-15 16:54:50.297338961 +0530
-@@ -11,9 +11,12 @@
- func SendWebhook(client *http.Client, url string, payload []byte) error {
- 	resp, err := client.Post(url, "application/json", bytes.NewReader(payload))
+diff -ruN base/internal/delivery/sender.go head/internal/delivery/sender.go
+--- a/internal/delivery/sender.go
++++ b/internal/delivery/sender.go
+@@ -14,8 +14,7 @@
  	if err != nil {
-+		if resp != nil && resp.Body != nil {
-+			resp.Body.Close()
-+		}
  		return fmt.Errorf("post: %w", err)
  	}
 -	defer resp.Body.Close()
-+	// BUG G1: resp.Body.Close() removed from success path, leaking sockets in pool
  	_, _ = io.Copy(io.Discard, resp.Body)
- 	slog.Info("delivered webhook", "url", url, "status", resp.StatusCode)
+-	slog.Info("delivered webhook", "delivery_id", deliveryID, "url", url, "status", resp.StatusCode)
++	slog.Info("delivered webhook", "id", deliveryID, "url", url, "status", resp.StatusCode)
  	return nil
-diff -ruN testdata/reviewbench/heldout/base/internal/signer/hmac.go testdata/reviewbench/heldout/head/internal/signer/hmac.go
---- testdata/reviewbench/heldout/base/internal/signer/hmac.go	2026-11-15 16:54:50.297205100 +0530
-+++ testdata/reviewbench/heldout/head/internal/signer/hmac.go	2026-11-15 16:54:50.297382200 +0530
-@@ -2,12 +2,12 @@
- 
- import (
- 	"crypto/hmac"
--	"crypto/sha256"
-+	"crypto/sha1" // BUG G2: card requires sha256
- 	"encoding/hex"
- )
- 
- func SignPayload(secret, payload []byte) string {
--	mac := hmac.New(sha256.New, secret)
-+	mac := hmac.New(sha1.New, secret)
- 	mac.Write(payload)
- 	return hex.EncodeToString(mac.Sum(nil))
  }

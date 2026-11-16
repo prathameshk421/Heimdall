@@ -1,8 +1,19 @@
 # Gold Findings: Held-Out Benchmark (`webhook-notifier`)
 
-- **G1 (Resource leak outside diff):** `internal/delivery/sender.go` removes `defer resp.Body.Close()` on the success path. While error cases close the body, 200 OK responses leak the TCP connection, exhausting `http.Transport` connection pools in long-running services.
-- **G2 (Card violation):** `internal/signer/hmac.go` downgrades hashing from `crypto/sha256` to `crypto/sha1`. Eli's card (`webhook-signature.md`) strictly requires HMAC-SHA256.
-- **G3 (Renamed CLI flag breaking caller):** `cmd/notifier/main.go` renames `--timeout` to `--max-timeout`. `scripts/drain.sh` (outside diff) still invokes `notifier --timeout 10` and fails under `set -e`.
-- **N1 (Noise / False alarm):** `slog.Info` in `sender.go` logging the destination URL is permitted and is not a secret leak.
+Trees: `base/` is the code before the change, `head/` is after it (`head.diff`), and `clean/` is the control (`clean.diff`).
+Each diff is `diff -ruN base head` with `a/` and `b/` paths and no timestamps. `check_build.sh` builds each tree and checks
+that applying each diff to `base/` gives exactly that tree.
 
-Clean branch contains documentation comment edits only. Every finding on the clean branch is noise.
+- **G1 (resource leak, inside the diff):** `internal/delivery/sender.go` removes `defer resp.Body.Close()` on the success path.
+  The reply is read to the end but never closed, so its connection does not return to the pool, and a long-running notifier
+  leaks sockets. This finding is inside `head.diff`. An out-of-diff form needs a caller that uses a returned response; that
+  caller would have to change with the signature, so it would join the diff. The case therefore keeps G1 inside the diff.
+- **G2 (team convention, card only):** `internal/delivery/sender.go` logs the delivery under the key `id` instead of
+  `delivery_id`. Eli's card `cards/eli/webhook-log-fields.md` requires the key `delivery_id`, because the on-call search indexes
+  on it. A generic reviewer sees an ordinary structured log line; only the card makes it a finding.
+- **G3 (renamed CLI flag, caller outside the diff):** `cmd/notifier/main.go` renames `--timeout` to `--max-timeout`.
+  `scripts/drain.sh` is not in the diff and still runs `notifier --timeout 10` under `set -euo pipefail`, so the drain fails
+  with an unknown-flag error.
+- **N1 (noise):** `slog.Info` in `sender.go` logs the destination URL. It is not a secret leak and is permitted.
+
+The clean branch adds one comment line in `cmd/notifier/main.go`. Every finding on the clean branch is noise.

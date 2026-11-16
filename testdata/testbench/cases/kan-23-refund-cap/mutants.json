@@ -1,12 +1,38 @@
 [
   {
-    "id": "M1",
-    "description": "refund cap check removed",
-    "killed_by": "B1"
+    "id": "go-M1",
+    "file": "go/mutants/m1_no_cap.go",
+    "ac": "AC1",
+    "what_is_wrong": "No cap: every refund is accepted, so 150 against a captured 100 returns 201."
   },
   {
-    "id": "M2",
-    "description": "merchant_id renamed to merchant in response body",
-    "killed_by": "B2"
+    "id": "go-M2",
+    "file": "go/mutants/m2_single_refund_cap.go",
+    "ac": "AC1",
+    "what_is_wrong": "Checks each refund alone against the captured amount, not the running total, so 40 then 70 on 100 both succeed."
+  },
+  {
+    "id": "go-M3",
+    "file": "go/mutants/m3_merchant_renamed.go",
+    "ac": "AC2",
+    "what_is_wrong": "The success response names the merchant under the key merchant, not merchant_id."
+  },
+  {
+    "id": "py-M1",
+    "file": "py/mutants/m1_no_cap.py",
+    "ac": "AC1",
+    "what_is_wrong": "No cap: every refund is accepted, so 150 against a captured 100 returns 201."
+  },
+  {
+    "id": "py-M2",
+    "file": "py/mutants/m2_single_refund_cap.py",
+    "ac": "AC1",
+    "what_is_wrong": "Checks each refund alone against the captured amount, not the running total, so 40 then 70 on 100 both succeed."
+  },
+  {
+    "id": "py-M3",
+    "file": "py/mutants/m3_merchant_renamed.py",
+    "ac": "AC2",
+    "what_is_wrong": "The success response names the merchant under the key merchant, not merchant_id."
   }
 ]

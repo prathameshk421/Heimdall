@@ -1,12 +1,38 @@
 [
   {
-    "id": "M1",
-    "description": "healthz handler performs db ping",
-    "killed_by": "B1"
+    "id": "go-M1",
+    "file": "go/mutants/m1_db_ping.go",
+    "ac": "AC1",
+    "what_is_wrong": "Pings the database on every GET, so GET /healthz does database I/O, which AC1 forbids."
   },
   {
-    "id": "M2",
-    "description": "POST /healthz returns 200 OK instead of 405",
-    "killed_by": "B2"
+    "id": "go-M2",
+    "file": "go/mutants/m2_post_ok.go",
+    "ac": "AC2",
+    "what_is_wrong": "Serves every method as GET, so POST /healthz returns 200 instead of 405."
+  },
+  {
+    "id": "go-M3",
+    "file": "go/mutants/m3_head_allowed.go",
+    "ac": "AC2",
+    "what_is_wrong": "Accepts HEAD as well as GET, so HEAD /healthz returns 200 instead of 405."
+  },
+  {
+    "id": "py-M1",
+    "file": "py/mutants/m1_db_ping.py",
+    "ac": "AC1",
+    "what_is_wrong": "Pings the database on every GET, so GET /healthz does database I/O, which AC1 forbids."
+  },
+  {
+    "id": "py-M2",
+    "file": "py/mutants/m2_post_ok.py",
+    "ac": "AC2",
+    "what_is_wrong": "Serves every method as GET, so POST /healthz returns 200 instead of 405."
+  },
+  {
+    "id": "py-M3",
+    "file": "py/mutants/m3_head_allowed.py",
+    "ac": "AC2",
+    "what_is_wrong": "Accepts HEAD as well as GET, so HEAD /healthz returns 200 instead of 405."
   }
 ]

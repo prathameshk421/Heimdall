@@ -1,12 +1,20 @@
 [
   {
-    "id": "M1",
-    "description": "rounding to 4 decimal places skipped",
-    "killed_by": "B2"
+    "id": "go-M1",
+    "file": "go/mutants/m1_rounded_12_places.go",
+    "ac": "AC2",
+    "what_is_wrong": "Rounds to 12 places and prints every digit, so the result is not exactly 4 decimal places."
   },
   {
-    "id": "M2",
-    "description": "unsupported currency returns 0 instead of 400",
-    "killed_by": "B3"
+    "id": "go-M2",
+    "file": "go/mutants/m2_unsupported_zero.go",
+    "ac": "AC3",
+    "what_is_wrong": "An unsupported currency code returns 200 with converted 0.0000 instead of 400."
+  },
+  {
+    "id": "go-M3",
+    "file": "go/mutants/m3_half_up.go",
+    "ac": "AC2",
+    "what_is_wrong": "Rounds ties up instead of to even, so 0.03125 gives 0.0313 instead of 0.0312."
   }
 ]
