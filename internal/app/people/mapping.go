@@ -92,7 +92,7 @@ func setChat(people map[string]policy.Person, name string, per *policy.Person, c
 		if other != name && q.Chat == string(sid) {
 			return fmt.Errorf("people.%s.chat: already the sender id of people.%s: %w", name, other, ErrDuplicate)
 		}
-		if q.Agent == string(sid) {
+		if q.Seat == string(sid) {
 			return fmt.Errorf("people.%s.chat: %w", name, ErrAmbiguous)
 		}
 	}
@@ -132,18 +132,18 @@ func setAgent(people map[string]policy.Person, name string, per *policy.Person, 
 	if _, err := id.ParseAgentName(agent); err != nil {
 		return fmt.Errorf("people.%s.agent: %w", name, err)
 	}
-	if per.Agent != "" && per.Agent != agent {
+	if per.Seat != "" && per.Seat != agent {
 		return fmt.Errorf("people.%s.agent: %w: edit heimdall.yaml to change it", name, ErrAlreadySet)
 	}
 	for other, q := range people {
-		if other != name && q.Agent == agent {
+		if other != name && q.Seat == agent {
 			return fmt.Errorf("people.%s.agent: already the agent of people.%s: %w", name, other, ErrDuplicate)
 		}
 		if q.Chat == agent {
 			return fmt.Errorf("people.%s.agent: %w", name, ErrAmbiguous)
 		}
 	}
-	per.Agent = agent
+	per.Seat = agent
 	return nil
 }
 

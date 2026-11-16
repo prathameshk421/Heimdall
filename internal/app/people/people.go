@@ -119,7 +119,7 @@ func New(p policy.Policy) (*Directory, error) {
 
 // add records one person's sender id, login and agent, and refuses one that another person already holds.
 func (d *Directory) add(name string, per policy.Person) error {
-	d.persons[name] = person{github: per.GitHub, agent: per.Agent}
+	d.persons[name] = person{github: per.GitHub, agent: per.Seat}
 	if per.Chat != "" {
 		sid, err := change.ParseSenderID(per.Chat)
 		if err != nil {
@@ -137,11 +137,11 @@ func (d *Directory) add(name string, per policy.Person) error {
 		}
 		d.logins[key] = name
 	}
-	if per.Agent != "" {
-		if other, dup := d.agents[per.Agent]; dup {
+	if per.Seat != "" {
+		if other, dup := d.agents[per.Seat]; dup {
 			return fmt.Errorf("people.%s.agent: already the agent of people.%s: %w", name, other, ErrDuplicate)
 		}
-		d.agents[per.Agent] = name
+		d.agents[per.Seat] = name
 	}
 	return nil
 }

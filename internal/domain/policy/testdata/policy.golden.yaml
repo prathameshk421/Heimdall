@@ -6,10 +6,10 @@ policy_owners: [ana]
 people:
   # chat is the opaque Switch sender id, filled by `heimdall connect people` (D140); names here are placeholders
   alice: { github: alice, chat: alice, teams: [payments] }
-  bob:   { github: bob,   chat: bob,   agent: bob-reviewer, teams: [payments] }
+  bob:   { github: bob,   chat: bob,   seat: bob-reviewer, teams: [payments] }
   dana:  { github: dana,  chat: dana,  teams: [payments] }          # the PR author in the demo; github is required only for authors and approvers (D158)
-  ana:   { github: ana,   chat: ana,   agent: ana-reviewer, teams: [security] }
-  eli:   { github: eli,   chat: eli,   agent: eli-reviewer, teams: [consumer] }
+  ana:   { github: ana,   chat: ana,   seat: ana-reviewer, teams: [security] }
+  eli:   { github: eli,   chat: eli,   seat: eli-reviewer, teams: [consumer] }
 domains: { "internal/auth/**": auth, "internal/refunds/**": money_movement }
 reviewers: { count: 3, pick_timeout: 15m, required: { "internal/auth/**": [ana], "api/openapi.yaml": [eli] } }
 slop: { max_changed_lines: 400, require_ticket: true, ignore: ["go.sum"] }

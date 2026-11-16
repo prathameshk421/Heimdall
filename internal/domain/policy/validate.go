@@ -19,6 +19,7 @@ func (p Policy) Validate() error {
 	c := &checker{}
 	p.checkTop(c)
 	p.checkPeople(c)
+	p.checkSeats(c)
 	p.checkApprovers(c)
 	p.checkReviewers(c)
 	p.checkSlop(c)
@@ -66,21 +67,16 @@ func (p Policy) checkTop(c *checker) {
 	}
 }
 
-// checkPeople checks what each person's name must carry. Agent names are unique and follow the Switch rule
-// (TECH_SPEC 3.1); GitHub logins are unique without regard to case, as GitHub treats them.
+// checkPeople checks what each person's name must carry. A seat is an agent name (the Switch rule, TECH_SPEC 3.1), at
+// most one person sits on it, and when the policy declares seats it is one of them (F3). GitHub logins are unique
+// without regard to case, as GitHub treats them.
 func (p Policy) checkPeople(c *checker) {
-	agents := map[string]string{}
+	seated := map[string]string{}
 	logins := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(p.People)) {
 		person := p.People[name]
-		if person.Agent != "" {
-			if _, err := id.ParseAgentName(person.Agent); err != nil {
-				c.addf("people.%s.agent: %v", name, err)
-			} else if other, dup := agents[person.Agent]; dup {
-				c.addf("people.%s.agent: %q is already the agent of people.%s", name, person.Agent, other)
-			} else {
-				agents[person.Agent] = name
-			}
+		if person.Seat != "" {
+			p.checkPersonSeat(c, name, person.Seat, seated)
 		}
 		if login := strings.ToLower(person.GitHub); login != "" {
 			if other, dup := logins[login]; dup {
@@ -157,8 +153,8 @@ func (p Policy) checkReviewers(c *checker) {
 			switch {
 			case !ok:
 				c.addf("reviewers.required[%q]: %q is not in people", pattern, name)
-			case person.Agent == "":
-				c.addf("reviewers.required[%q]: %q has no agent", pattern, name)
+			case person.Seat == "":
+				c.addf("reviewers.required[%q]: %q has no seat", pattern, name)
 			}
 		}
 	}
@@ -237,4 +233,69 @@ func (p Policy) checkDeliberation(c *checker) {
 func cleanRelativePath(dir string) bool {
 	return dir != "" && !path.IsAbs(dir) && path.Clean(dir) == dir &&
 		dir != "." && dir != ".." && !strings.HasPrefix(dir, "../")
+}
+
+// checkPersonSeat checks one person's seat and records it, so a second person on the same seat is refused.
+func (p Policy) checkPersonSeat(c *checker, name, seat string, seated map[string]string) {
+	if _, err := id.ParseAgentName(seat); err != nil {
+		c.addf("people.%s.seat: %v", name, err)
+		return
+	}
+	if _, ok := p.Seats[seat]; len(p.Seats) > 0 && !ok {
+		c.addf("people.%s.seat: %q is not a seat in seats", name, seat)
+	}
+	if other, dup := seated[seat]; dup {
+		c.addf("people.%s.seat: %q already has people.%s on it", name, seat, other)
+		return
+	}
+	seated[seat] = name
+}
+
+// checkSeats checks the seats map: each seat is an agent name and holds a role and at least one lens, each a lens
+// name.
+func (p Policy) checkSeats(c *checker) {
+	for _, seat := range slices.Sorted(maps.Keys(p.Seats)) {
+		s := p.Seats[seat]
+		if _, err := id.ParseAgentName(seat); err != nil {
+			c.addf("seats.%s: %v", seat, err)
+		}
+		if !lensName.MatchString(s.Role) {
+			c.addf("seats.%s.role: %q is not a role name", seat, s.Role)
+		}
+		if len(s.Lenses) == 0 {
+			c.addf("seats.%s.lenses: a seat holds at least one lens", seat)
+		}
+		for _, l := range s.Lenses {
+			if !lensName.MatchString(l) {
+				c.addf("seats.%s.lenses: %q is not a lens name", seat, l)
+			}
+		}
+	}
+}
+
+var lensName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+
+// ValidateSeats checks the seats against what the repository and the deployment hold, which the policy file alone
+// cannot know (REVIEW_ARCH 5.3): every seat is a known agent, every lens a seat holds is adopted, and every adopted lens
+// is held by a seat, so "a needed lens has no reviewer" is a configuration error, not a runtime case.
+func ValidateSeats(p Policy, agents, adopted []string) error {
+	var problems []error
+	held := map[string]bool{}
+	for _, seat := range slices.Sorted(maps.Keys(p.Seats)) {
+		if !slices.Contains(agents, seat) {
+			problems = append(problems, fmt.Errorf("seats.%s: no such agent", seat))
+		}
+		for _, l := range p.Seats[seat].Lenses {
+			held[l] = true
+			if !slices.Contains(adopted, l) {
+				problems = append(problems, fmt.Errorf("seats.%s.lenses: %q is not an adopted lens", seat, l))
+			}
+		}
+	}
+	for _, l := range adopted {
+		if !held[l] {
+			problems = append(problems, fmt.Errorf("lens %q is adopted but no seat holds it", l))
+		}
+	}
+	return errors.Join(problems...)
 }

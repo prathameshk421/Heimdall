@@ -29,11 +29,12 @@ type Policy struct {
 }
 
 // Person is one entry of people. GitHub is required only for authors and approvers (D158); Chat is the
-// opaque Switch sender id; Agent is the reviewer agent name, if the person has one.
+// opaque Switch sender id; Seat is the reviewer seat (an agent name) the person lends their name and cards to, if any
+// (AGENT_INTERACTION_ARCH F3).
 type Person struct {
 	GitHub string   `yaml:"github,omitempty" json:"github,omitempty"`
 	Chat   string   `yaml:"chat,omitempty" json:"chat,omitempty"`
-	Agent  string   `yaml:"agent,omitempty" json:"agent,omitempty"`
+	Seat   string   `yaml:"seat,omitempty" json:"seat,omitempty"`
 	Teams  []string `yaml:"teams,omitempty" json:"teams,omitempty"`
 }
 

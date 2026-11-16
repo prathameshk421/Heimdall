@@ -45,7 +45,7 @@ func proposerRig(t *testing.T, proposals []reviewlearn.Proposal) (*cardProposer,
 	return &cardProposer{
 		proposals: func(context.Context) ([]reviewlearn.Proposal, error) { return proposals, nil },
 		scopes: knowledge.PolicyScopes{Code: code, Decode: func([]byte) (policy.Policy, error) {
-			return policy.Policy{People: map[string]policy.Person{"ana": {GitHub: "Ana-Dev"}, "bot": {Agent: "bot-reviewer"}}}, nil
+			return policy.Policy{People: map[string]policy.Person{"ana": {GitHub: "Ana-Dev"}, "bot": {Seat: "bot-reviewer"}}}, nil
 		}},
 		store: store, logger: slog.New(slog.NewTextHandler(logs, nil)),
 	}, code, store, logs

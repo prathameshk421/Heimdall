@@ -84,7 +84,7 @@ func eventCandidateActors(events []change.Event) []string {
 
 func personMatches(name string, person policy.Person, actors []string) bool {
 	for _, actor := range actors {
-		if actor != "" && (name == actor || person.GitHub == actor || person.Agent == actor || person.Chat == actor) {
+		if actor != "" && (name == actor || person.GitHub == actor || person.Seat == actor || person.Chat == actor) {
 			return true
 		}
 	}

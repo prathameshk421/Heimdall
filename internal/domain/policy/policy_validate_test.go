@@ -42,7 +42,7 @@ func TestValidateBoundariesAndRulesTheSpecTestsDoNotPin(t *testing.T) {
 		"switch bridge is accepted":                      {func(p *policy.Policy) { p.Chat.Bridge = "switch" }, true, ""},
 		"file tracker is accepted":                       {func(p *policy.Policy) { p.Tracker.Kind = "file" }, true, ""},
 		"tracker with a zero interval is refused":        {func(p *policy.Policy) { p.Tracker.Interval = 0 }, false, "tracker.interval"},
-		"agent name with a space is refused":             {func(p *policy.Policy) { p.People["bob"] = policy.Person{GitHub: "bob", Agent: "Bob Reviewer"} }, false, "people.bob.agent"},
+		"seat name with a space is refused":              {func(p *policy.Policy) { p.People["bob"] = policy.Person{GitHub: "bob", Seat: "Bob Reviewer"} }, false, "people.bob.seat"},
 		"policy owner with no github is refused":         {func(p *policy.Policy) { p.People["ana"] = policy.Person{Chat: "ana"} }, false, "people.ana.github"},
 		"empty approver group is refused":                {func(p *policy.Policy) { p.Approvers["auth"] = nil }, false, "approvers.auth must name at least one person"},
 		"human only domain that is an approver group":    {func(p *policy.Policy) { p.Deliberation.HumanOnlyDomains = []string{"default"} }, true, ""},

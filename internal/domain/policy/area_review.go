@@ -5,9 +5,12 @@ import "github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/find
 // ReviewArea holds the review keys of the policy: how reviewers are picked, the slop rule and deliberation. Blocking
 // and Consensus are review keys too; they are named fields of Policy (see Policy).
 type ReviewArea struct {
-	Reviewers    Reviewers    `yaml:"reviewers" json:"reviewers"`
-	Slop         Slop         `yaml:"slop" json:"slop"`
-	Deliberation Deliberation `yaml:"deliberation" json:"deliberation"`
+	// Seats are the reviewer agents and the lenses each covers (AGENT_INTERACTION_ARCH F3, REVIEW_ARCH 5.3), keyed by
+	// agent name. A person lends a seat their name and cards through people.<p>.seat.
+	Seats        map[string]Seat `yaml:"seats,omitempty" json:"seats,omitempty"`
+	Reviewers    Reviewers       `yaml:"reviewers" json:"reviewers"`
+	Slop         Slop            `yaml:"slop" json:"slop"`
+	Deliberation Deliberation    `yaml:"deliberation" json:"deliberation"`
 }
 
 // Reviewers sets how many reviewer agents are picked and which people or agents a path always needs.
@@ -58,4 +61,10 @@ type Weight struct {
 type Deliberation struct {
 	MaxRounds        int      `yaml:"max_rounds" json:"max_rounds"`
 	HumanOnlyDomains []string `yaml:"human_only_domains" json:"human_only_domains"`
+}
+
+// Seat is one reviewer agent: the Switch role it holds (so @security reaches it) and its lenses.
+type Seat struct {
+	Role   string   `yaml:"role" json:"role"`
+	Lenses []string `yaml:"lenses" json:"lenses"`
 }

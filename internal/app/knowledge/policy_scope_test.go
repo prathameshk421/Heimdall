@@ -13,7 +13,7 @@ import (
 func TestPolicyScopesReadsBasePolicyAndReturnsMappedTeams(t *testing.T) {
 	reader := &codeSpy{body: []byte("policy")}
 	scopes := PolicyScopes{Code: reader, Decode: func([]byte) (policy.Policy, error) {
-		return policy.Policy{People: map[string]policy.Person{"ana": {Agent: "reviewer-ana", Teams: []string{"payments", "shared"}}}}, nil
+		return policy.Policy{People: map[string]policy.Person{"ana": {Seat: "reviewer-ana", Teams: []string{"payments", "shared"}}}}, nil
 	}}
 	groups, err := scopes.GroupsForAgent(context.Background(), "reviewer-ana", "acme/pay", id.SHA("base123"))
 	require.NoError(t, err)

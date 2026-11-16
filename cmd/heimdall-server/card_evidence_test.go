@@ -45,7 +45,7 @@ func (r *recordingRecheck) Recheck(_ context.Context, _ id.AgentName, _ change.R
 // evidencePolicy decodes through a small table, because the real policy file needs far more keys than this test does.
 func evidencePolicy(owners ...string) policy.Policy {
 	return policy.Policy{
-		People:    map[string]policy.Person{"bob": {Agent: "bob-reviewer"}},
+		People:    map[string]policy.Person{"bob": {Seat: "bob-reviewer"}},
 		Approvers: map[string][]string{"default": {"dan"}, "money_movement": owners},
 		Domains:   map[string]string{"internal/pay/**": "money_movement"},
 	}

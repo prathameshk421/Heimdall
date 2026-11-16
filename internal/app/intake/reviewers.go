@@ -54,13 +54,13 @@ func reviewerAgents(owners []string, pol policy.Policy) []change.ActorID {
 	peopleByLogin := make(map[string]string, len(pol.People))
 	peopleByTeam := make(map[string][]string)
 	for _, entry := range pol.People {
-		if entry.GitHub != "" && entry.Agent != "" {
-			peopleByLogin[strings.ToLower(entry.GitHub)] = entry.Agent
+		if entry.GitHub != "" && entry.Seat != "" {
+			peopleByLogin[strings.ToLower(entry.GitHub)] = entry.Seat
 		}
-		if entry.Agent != "" {
+		if entry.Seat != "" {
 			for _, team := range entry.Teams {
 				key := strings.ToLower(team)
-				peopleByTeam[key] = append(peopleByTeam[key], entry.Agent)
+				peopleByTeam[key] = append(peopleByTeam[key], entry.Seat)
 			}
 		}
 	}

@@ -25,7 +25,7 @@ They hold real test identifiers: the Jira account id of the assignee, Switch roo
 GitHub logins.
 
 `policy.yaml` in each directory is `heimdall.yaml` of `aarush323/heimdall-fixture-pay` (public) at the change's
-merge base: `4a0f699` for KAN-22, `9b49652` for KAN-23. `Missing(v, p)` takes it (TECH_SPEC 3.4.5: policy is read
+merge base: `4a0f699` for KAN-22, `9b49652` for KAN-23. The one edit: `people.<p>.agent` is renamed `seat` (M0 step 7, F3). `Missing(v, p)` takes it (TECH_SPEC 3.4.5: policy is read
 at the merge base). `merge-without-approval/` uses KAN-22's.
 
 The two Nov 7 sequences that stopped the live system are both inside the recorded KAN-22 log (`docs/PROGRESS.md`,

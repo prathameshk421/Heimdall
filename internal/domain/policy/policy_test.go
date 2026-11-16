@@ -33,7 +33,7 @@ func TestTheSpecExampleDecodesAndValidates(t *testing.T) {
 	require.Equal(t, finding.TierE3, p.Blocking.MinTier)
 	require.Equal(t, policy.Duration(15*time.Minute), p.Reviewers.PickTimeout)
 	require.Equal(t, policy.Duration(4*time.Hour), p.Timeouts.Question)
-	require.Equal(t, "bob-reviewer", p.People["bob"].Agent)
+	require.Equal(t, "bob-reviewer", p.People["bob"].Seat)
 	require.Equal(t, []string{"build", "lint"}, p.CIRequired)
 }
 
@@ -79,7 +79,7 @@ func TestValidateRefusesEachBrokenRuleAndNamesTheKey(t *testing.T) {
 		"domain maps to unknown group":      {func(p *policy.Policy) { p.Domains["x/**"] = "ghost" }, `domains["x/**"]: "ghost" is not an approver group`},
 		"bad glob":                          {func(p *policy.Policy) { p.Domains["internal/[a"] = "auth" }, `domains["internal/[a"]: glob`},
 		"required reviewer unknown":         {func(p *policy.Policy) { p.Reviewers.Required["api/**"] = []string{"zed"} }, `reviewers.required["api/**"]: "zed" is not in people`},
-		"required reviewer has no agent":    {func(p *policy.Policy) { p.Reviewers.Required["api/**"] = []string{"dana"} }, `reviewers.required["api/**"]: "dana" has no agent`},
+		"required reviewer has no seat":     {func(p *policy.Policy) { p.Reviewers.Required["api/**"] = []string{"dana"} }, `reviewers.required["api/**"]: "dana" has no seat`},
 		"reviewer count above agents":       {func(p *policy.Policy) { p.Reviewers.Count = 4 }, "reviewers.count must be between 1 and 3"},
 		"reviewer pick timeout zero":        {func(p *policy.Policy) { p.Reviewers.PickTimeout = 0 }, "reviewers.pick_timeout must be > 0"},
 		"slop zero lines":                   {func(p *policy.Policy) { p.Slop.MaxChangedLines = 0 }, "slop.max_changed_lines must be > 0"},
@@ -116,8 +116,8 @@ func TestValidateRefusesEachBrokenRuleAndNamesTheKey(t *testing.T) {
 		"tracker kind unknown":              {func(p *policy.Policy) { p.Tracker.Kind = "trello" }, "tracker.kind"},
 		"chat bridge unknown":               {func(p *policy.Policy) { p.Chat.Bridge = "irc" }, "chat.bridge"},
 		"agents runtime unknown":            {func(p *policy.Policy) { p.Agents.Runtime = "codex" }, "agents.runtime"},
-		"duplicate github login":            {func(p *policy.Policy) { p.People["eli"] = policy.Person{GitHub: "ALICE", Agent: "eli-reviewer"} }, "people.eli.github"},
-		"duplicate agent":                   {func(p *policy.Policy) { p.People["eli"] = policy.Person{GitHub: "eli", Agent: "bob-reviewer"} }, "people.eli.agent"},
+		"duplicate github login":            {func(p *policy.Policy) { p.People["eli"] = policy.Person{GitHub: "ALICE", Seat: "eli-reviewer"} }, "people.eli.github"},
+		"two people on one seat":            {func(p *policy.Policy) { p.People["eli"] = policy.Person{GitHub: "eli", Seat: "bob-reviewer"} }, "people.eli.seat"},
 		"keys openrouter empty":             {func(p *policy.Policy) { p.Keys.OpenRouter = "" }, "keys.openrouter must not be empty"},
 		"pack age zero":                     {func(p *policy.Policy) { p.Pack.MaxAgeDays = 0 }, "pack.max_age_days must be > 0"},
 		"memory keyword blank":              {func(p *policy.Policy) { p.Memory.ChatKeywords = []string{" "} }, "memory.chat_keywords[0]"},
@@ -151,7 +151,7 @@ func TestZeroPolicyIsInvalid(t *testing.T) {
 
 func TestReviewersNeedNoGitHubLogin(t *testing.T) {
 	p := freshPolicy(t)
-	p.People["rev"] = policy.Person{Chat: "rev", Agent: "rev-reviewer"}
+	p.People["rev"] = policy.Person{Chat: "rev", Seat: "rev-reviewer"}
 	p.Reviewers.Required["docs/**"] = []string{"rev"}
 	require.NoError(t, p.Validate(), "D158: github is required only for authors and approvers")
 }

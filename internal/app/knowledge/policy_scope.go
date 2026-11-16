@@ -65,7 +65,7 @@ func (s PolicyScopes) GroupsForAgent(ctx context.Context, agent id.AgentName, re
 		return nil, fmt.Errorf("decode memory policy at base: %w", err)
 	}
 	for _, person := range p.People {
-		if person.Agent == string(agent) {
+		if person.Seat == string(agent) {
 			return append([]string(nil), person.Teams...), nil
 		}
 	}
@@ -88,7 +88,7 @@ func (s PolicyScopes) PersonForAgent(ctx context.Context, agent id.AgentName, re
 		return "", policy.Policy{}, fmt.Errorf("decode memory policy at base: %w", err)
 	}
 	for name, person := range p.People {
-		if person.Agent == string(agent) {
+		if person.Seat == string(agent) {
 			return name, p, nil
 		}
 	}

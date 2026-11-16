@@ -11,10 +11,10 @@ people:
   telegram_owner: { github: placeholder-telegram-owner, chat: "@switch-telegram-ff4ccbe3-420c-4ca7-b852-d064a463032f-adumbstudent:localhost", teams: [payments] }
   mattermost_owner: { github: placeholder-mattermost-owner, chat: "@switch-mattermost-d5d5d493-5875-43a3-ac00-c55ffc9a22f0-dev-approver:localhost", teams: [payments] }
   slack_owner: { github: placeholder-slack-owner, chat: "@switch-slack-44cfe58c-8c5b-455e-a4ac-e5f93a8a8bf0-benzene276:localhost", teams: [payments] }
-  bob:      { chat: rev-backend,  agent: bob-reviewer, teams: [payments] }
-  eli:      { chat: rev-frontend, agent: eli-reviewer, teams: [consumer] }
+  bob:      { chat: rev-backend,  seat: bob-reviewer, teams: [payments] }
+  eli:      { chat: rev-frontend, seat: eli-reviewer, teams: [consumer] }
   # ana signs off tests in the room, so the policy needs a GitHub login for her as an approver; this placeholder is not a real account (D158)
-  ana:      { github: prathameshk421, chat: rev-infra,    agent: ana-reviewer, teams: [security] }
+  ana:      { github: prathameshk421, chat: rev-infra,    seat: ana-reviewer, teams: [security] }
 domains: { "internal/payments/**": money_movement, "internal/refunds/**": money_movement, "internal/export/**": tenant_data }
 reviewers: { count: 3, pick_timeout: 15m, required: { "internal/refunds/**": [bob], "api/openapi.yaml": [eli] } }
 slop: { max_changed_lines: 400, require_ticket: true, ignore: ["go.sum"] }

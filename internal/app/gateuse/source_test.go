@@ -81,10 +81,10 @@ const goldenPolicyJSON = `{
   "policy_owners": ["ana"],
   "people": {
     "alice": {"github": "alice", "chat": "alice", "teams": ["payments"]},
-    "ana": {"github": "ana", "chat": "ana", "agent": "ana-reviewer", "teams": ["security"]},
-    "bob": {"github": "bob", "chat": "bob", "agent": "bob-reviewer", "teams": ["payments"]},
+    "ana": {"github": "ana", "chat": "ana", "seat": "ana-reviewer", "teams": ["security"]},
+    "bob": {"github": "bob", "chat": "bob", "seat": "bob-reviewer", "teams": ["payments"]},
     "dana": {"github": "dana", "chat": "dana", "teams": ["payments"]},
-    "eli": {"github": "eli", "chat": "eli", "agent": "eli-reviewer", "teams": ["consumer"]}
+    "eli": {"github": "eli", "chat": "eli", "seat": "eli-reviewer", "teams": ["consumer"]}
   },
   "domains": {
     "internal/auth/**": "auth",

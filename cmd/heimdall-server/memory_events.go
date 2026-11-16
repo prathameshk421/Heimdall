@@ -141,7 +141,7 @@ func actorIdentity(event change.Event, assignee string) (string, error) {
 
 func mappedPerson(p policy.Policy, identity string) (string, bool) {
 	for name, person := range p.People {
-		if identity == name || identity == person.GitHub || identity == person.Chat || identity == person.Agent {
+		if identity == name || identity == person.GitHub || identity == person.Chat || identity == person.Seat {
 			return name, true
 		}
 	}

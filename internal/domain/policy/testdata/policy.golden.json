@@ -27,7 +27,7 @@
     "ana": {
       "github": "ana",
       "chat": "ana",
-      "agent": "ana-reviewer",
+      "seat": "ana-reviewer",
       "teams": [
         "security"
       ]
@@ -35,7 +35,7 @@
     "bob": {
       "github": "bob",
       "chat": "bob",
-      "agent": "bob-reviewer",
+      "seat": "bob-reviewer",
       "teams": [
         "payments"
       ]
@@ -50,7 +50,7 @@
     "eli": {
       "github": "eli",
       "chat": "eli",
-      "agent": "eli-reviewer",
+      "seat": "eli-reviewer",
       "teams": [
         "consumer"
       ]
