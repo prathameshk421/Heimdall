@@ -2,6 +2,8 @@
 
 Status: built on branch `heimdall-moat`. Unit tested and measured on a local bench. **Not verified on the live VM.**
 
+What comes next is in `docs/REVIEW_ARCH.md` (Nov 14): the review pipeline around this mechanism (analyzers, lenses, refute step, scope) and the path to a non-circular measurement. Note the status line above is older than the live deploy of Nov 8 recorded in `PROGRESS.md`.
+
 ## 1. The problem
 
 A generic reviewer can read the diff and the repository. So can CodeRabbit, Bugbot and Greptile. Three things decide who wins:

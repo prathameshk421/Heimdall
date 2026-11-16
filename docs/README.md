@@ -39,6 +39,18 @@ Start with the top row of the table that fits you.
 | [PROGRESS.md](PROGRESS.md) | Current state, live evidence, what is not verified |
 | [harness/](harness) | Hooks, settings and templates for agent sessions |
 
+## Plan the next stage
+
+Architecture plans written Nov 14, 2026. Nothing in them is built yet.
+
+| Doc | What's in it |
+|---|---|
+| [AGENT_INTERACTION_ARCH.md](AGENT_INTERACTION_ARCH.md) | **Read first.** The construction rules and foundations for all three plans: facts and views instead of a state machine, the kind table, seats, the two standing channels with a thread per change, how `@` reaches each agent. Agents talk to each other and to people through Switch; OpenCode supplies skills and subagents; the server keeps tools, evidence and rules |
+| [REVIEW_ARCH.md](REVIEW_ARCH.md) | One review pipeline for any language: checks as profile rows with SARIF out, seats with lens cards and stack skills, a refute step, scope and budget, co-change mining, the path to proving context helps |
+| [TEST_AGENT_ARCH.md](TEST_AGENT_ARCH.md) | Tests as evidence in any language: the test plan, test kinds and lints from the profile, mutants and the survivor loop, counter-implementations, UI tests with Playwright (its runner, its MCP server, its planner and generator) and the browser inside the sandbox |
+| [BUILD_PLAN.md](BUILD_PLAN.md) | How the three plans get built: seven modules, each built whole by one agent, with the folders it owns, its steps in order, the tests and golden files it must satisfy, the model tier it needs, and the hard parts a strong model must write or review |
+| [CONTEXT_CAPTURE_PLAN.md](CONTEXT_CAPTURE_PLAN.md), [KNOWLEDGE_TOPOLOGY.md](KNOWLEDGE_TOPOLOGY.md), [REVIEW_MOAT.md](REVIEW_MOAT.md) | Capturing a developer's and a repository's knowledge, where it lives, and what was measured |
+
 ## Demo
 
 | Doc | What's in it |

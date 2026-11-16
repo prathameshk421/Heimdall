@@ -1,5 +1,80 @@
 # Heimdall progress
 
+## Handoff: BUILD_PLAN orchestration (Nov 16, 2026, second session)
+
+**Roles now (owner, Nov 16).** The opus main thread does most work itself; only very token-heavy implementation goes
+to one long-lived haiku builder. No branch is pushed. Plan docs are still uncommitted in the main checkout. Worktrees
+are under `~/.t3/worktrees/switch_shi/`.
+
+| Branch (worktree) | State |
+|---|---|
+| `m0-core` (`t3-25782f1e`) | step 1 `aa654e7`; `d78c366` removes a 38 MB server binary step 1 committed by mistake (still in history: **M6 must squash-merge M0**); step 2b `f0573ab`: `scripts/check-owned.sh` and the archcheck parser rule, fixtures inside/outside, `make fast` exit 0. Steps 3 to 7 wait on the owner's yes to change assertions (R2) |
+| `m1-runner` (`t3-937f6fd9`) | steps 1-4, 6 as before, plus `ff707be`: the four owner decisions (private mirror token, service tmpfs data dir, TCP readiness, `heimdall.job=1` label and boot sweep), tests first, `make fast` exit 0. Step 5 waits on ST1 |
+| `m2a-lenses`, `m2b-skills` | unchanged (done; m2a still needs a high-tier read of the security and data cards) |
+| `m6-proof` (`t3-1466abbe`) | fix branches A, B, C merged (`0a8e2be`, `2a836b5`, `27f62b9`). `make fast` exit 0 (4231), `testdata/testbench/run_gold.sh` exit 0 (24 rows), `reviewbench/heldout/check_build.sh` exit 0, `check-owned.sh M6`: 209 paths, all inside |
+
+**Goldens, what changed.**
+- **A (view, status), opus.** KAN-22 and KAN-23 rebuilt from the recorded VM logs (58 and 45 events; payloads verbatim,
+  envelopes rebuilt by `eventlog`), with each change's merge-base `heimdall.yaml`. `testdata/plan/view/README.md` is
+  now the spec: View JSON shape, one fold rule per event, `Missing` as F1 rule 3 with a done rule per row and the gate
+  clauses the view can decide, the need vocabulary, serialization. Cross-check: wherever the recorded log has a
+  `gate.evaluated` on the same head, its reasons match `missing.json`. Both Nov 7 breaks are inside the KAN-22 log, so
+  the authored `nov7-*` dirs are gone. **Anomaly goldens NOT READY** (no document defines an anomaly). `status/rendered`
+  duplicates removed; `status/README.md` defines `Render`. New test `TestViewGoldensAreWellFormed`.
+- **B (sarif, review, testplan, mine, address), opus.** Each directory's README lists what is derived and its open
+  questions; each refused case breaks exactly one rule (checked by evaluating all rules on every case). Mine: 10 rules
+  (was 1), a merge commit that must be ignored, no invented region or float. Address: typed grammar runs with no
+  confirmation (5.1); F3 seat policy behind `@security`.
+- **C (testbench, reviewbench/heldout), haiku builder, reviewed by opus.** Four cases with Go references (Python for
+  KAN-22, KAN-23), three single-point mutants each, real gold tests; answer hints removed from heldout; G2 is now a
+  card-only log-key rule; G1 stays inside the diff (GOLD.md says so). Ticket wording tightened (KAN-23: the cap is on the
+  running total).
+- **Re-review:** opus self-review only (adversarial checks: recomputed SARIF fingerprints, rules, fold cross-check,
+  rule-break matrix, reran both bench scripts). No independent second model reviewed A and B, under the owner's
+  one-haiku rule.
+
+**Owner decisions needed.**
+1. **M0 phase 2 (steps 3 to 7) changes existing assertions** (`ErrIllegalTransition` become predicate refusals; the
+   reducer is deleted). R2 needs your yes, asked once.
+2. **M0 step 1 changed `internal/schema/skill_examples_test.go`** (outside M0's row; reads every `tools*.go` instead of
+   `tools.go`; same assertions). Yes or revert.
+3. **Open questions in the golden READMEs** (`view` Q1-Q7: mutation row, anomaly definition, task completion, review
+   coverage, gate clauses outside the view, changed domains, `proposed` state; plus each of sarif, review, testplan,
+   mine, address). The goldens are built so no case depends on an undecided answer.
+
+**Noticed.**
+- A test that creates a git repo inherited `GIT_DIR`/`GIT_INDEX_FILE` from the pre-commit hook and wiped M0's index
+  and set `core.bare=true` on the shared repo config (both repaired the same minute; no refs or commits changed).
+  `owned_test.go` now pins its children's git to the temp repo. Any future test that runs git must do the same.
+- `cmd/heimdall-runner/main.go` must call `runner.Sweep(ctx)` before `Listen`; the file is in no module's row, so M6
+  adds the line at merge.
+- `check-owned.sh M1` flags `internal/ports/types_work_test.go` (touched by earlier M1 commits): the row lists
+  `types_work.go` but not its test. Section 2's M1 row should read `internal/ports/types_work*.go`.
+- KAN-21's recorded log (27 events, closed unmerged, then rejected) is exported and has no golden yet.
+
+**Not verified (live, with the owner and the VM):** the M1 probe (`podman unshare --rootless-netns`, podman 4.9.3 lists
+it), the tmpfs data dir, the sweep, the private-mirror fetch; spikes SI1-SI5, SR1-SR3, ST1-ST4; the six live runner
+checks under M1 Noticed. **VM:** still running (started Nov 16 for the log export); stop with
+`aws ec2 stop-instances --profile heimdall --region ap-south-1 --instance-ids i-019af6359c549dfb0`.
+
+**Next:** with the owner's yes, M0 phase 2 (opus), then M3, M4, M5; M6 merges M0 (squash) and the rest.
+
+## Architecture plans for the next stage (Nov 14, 2026, planning only)
+
+- **Written:** `docs/AGENT_INTERACTION_ARCH.md`, `docs/REVIEW_ARCH.md`, `docs/TEST_AGENT_ARCH.md`, and a section in `docs/README.md`. No Go code changed. Each file lists its own spikes, phases with "done when", decisions for the owner and a "not verified" section.
+- **Basis:** the code on `heimdall-build` at `3877ae8`, `PROGRESS.md`, the Switch source (core 0.31.0), the parked `~/heimdall/parked-docs/AGENT_BEHAVIOR_SPEC.md`, and web research by three Haiku helpers (sources and trust labels are in each file).
+- **Defects found while reading, not fixed here (R10):** (1) `testdata/agents/AGENTS.md` rules 1 and 13 tell agents to call `heimdall_reply` and `heimdall_do`, which `internal/transport/mcp/tools.go` does not offer. (2) `run_check` accepts only `go_vet`, while the reviewer skill names `staticcheck`, `oasdiff` and `semgrep` as E2 tools. (3) The 4-hour "proceed on assumptions" question timeout of TECH_SPEC 7 has no code. (4) TECH_SPEC 12.2b `services:` has no field in `ports/types_profile.go`; every job runs with `--network=none`. (5) The acceptance run on a PR head is a single run, so the 3-run flake check of TECH_SPEC 12.1 covers only the base, where every test fails. (6) The reviewer role still holds the pack, knowledge-staging and profile-approval tools.
+- **Second pass (same day, owner's direction: one path, delete what is replaced, no state machines, language-agnostic, generic harness, plans a cheaper model can execute).** All three files were rewritten. `AGENT_INTERACTION_ARCH.md` now holds the shared construction rules C1 to C9 and foundations F1 to F6, and each file has a deletions table and work packages (H1 to H11, RV1 to RV11, TA1 to TA10) with read-first, tests-first and done-when.
+- **More defects found in the second read, not fixed here (R10):** (7) order is encoded twice: the workflow table and the 20-state table in `internal/domain/change/reducer.go`; both live outages of Nov 7 were that table refusing a true fact on replay. (8) `case workflow.Role` switches in five files. (9) the skill has two homes: `deploy/agents/install.sh` installs it and `get_task` sends it. (10) `"tests/heimdall"` is a literal in 8 non-test places while policy and profile both name the folder. (11) Go is assumed in generic layers: `agenttools/go_source.go`, the `go/parser` placeholder check in `effects/test_quality.go`, `verify/seam.go`. (12) `TestQualityDeps.Code` and `effects.BaseReader` are unused.
+- **Checked for the plans:** Switch addressing (name, room alias or role; an addressing policy scoped by rooms, room groups, users and agents, set in the Gateway) in the Switch docs; `post_message(body, thread_id)` in the Switch source. OpenCode 2.x's built-in browser is undocumented beyond a permission rule and would run on the agent host, so the UI plan puts Playwright MCP and Chromium inside the sandbox instead.
+- **Third pass (same day, owner's direction).** Decided: the change state machine is replaced by a fold, predicates and `Missing` (decision I0). Direction: agents talk to each other and to people; use Switch and OpenCode features before building; the Go server keeps tools, evidence and rules. The plans keep the two standing channels (tests, review) and the private working room per ticket, add one thread per change, and move reviewers into the working rooms too (today only the test author works there, which is why reviewer sessions span tickets), and use Switch addressing, roles and hand-offs, OpenCode skills served by the server and subagents inside a seat, and one `propose_command` tool that always acts as the person who asked. For UI tests the plan adopts Playwright as it is (test runner, MCP server attached over CDP to a browser in the sandbox, planner and generator as subagents) and Maestro for mobile. The other agentic tools the owner listed (Hercules, Alumnium, Skyvern, Browser-Use, Stagehand, Midscene, Finalrun) need a model call on every run, so they cannot be a gate test in a sandbox with no network.
+- **Read for the third pass:** Switch docs `using/hand-off-work.md` (roles, task hand-offs), `using/shared-context.md` (room documents), `internals/identity-and-access.md` (addressing policy). None of it tried on the VM: spikes SI2, SI3 and SI5 in `AGENT_INTERACTION_ARCH.md`.
+- **Build plan added:** `docs/BUILD_PLAN.md` groups the packages into seven modules, each built whole by one agent (owner's direction: large tasks with full context, not many small parallel pieces): M0 Core, M1 Runner and M6 Proof for a strong model; M3 Review, M4 Tests and M5 Interaction for Haiku; M2 Content for fast models. Each module owns whole folders. M0's first step splits the shared files by area so the others never edit the same file. Not tried: the ownership table comes from reading the code.
+- **Test audit of the build plan (Nov 15).** Builder tiers renamed high, medium, low. Checked the plan against `TEST_STRATEGY.md` and the code and added `BUILD_PLAN.md` section 5: which layer (L1 to L5) proves each module, a checklist per kind of code, and one adversarial pass per module. **Found while checking, not fixed here:** `testdata/real/` does not exist, so the contract layer has no recordings; both fixture repositories are Go, so "any language" and UI tests cannot be shown; `e2e/` has one `TestTask_*`, so `make e2e` has no check for most work; the scripted agent had no owner in the plan; `make fast` walks `.claude/worktrees/`. Each now has an owner and a step in the plan (M0 step 2b, M6 steps 3a to 3d).
+- **Evidence:** `make fast` exit 0, 4223 tests, run before the docs were written (same session, pull check).
+- **Not verified:** nothing in the three plans is built or run. `make verify` was not run. Every research number marked "snippet", "(S)" or "(V)" in the files is unverified. Proposed decisions are not yet recorded in `BRAINSTORM_BACKLOG.md`; that happens when the owner accepts them (D138).
+
+
 ## Graphiti made usable and resilient (Nov 7)
 
 - **Found against the live server (read-only: `tools/list` and two empty searches on the VM):** (1) the server wraps structured output as `{"result": {...}}`, which the adapter never unwrapped, so every search returned zero items even with data; (2) the "as of" arguments were inverted (`valid_at_after` with `invalid_at_before`), `search_nodes` takes no date at all and `entity_names` is not an argument of either search; (3) every error cause was discarded, so a failure could not be diagnosed; (4) the live graph is empty (`No relevant facts found`): nothing had been delivered; (5) one episode Graphiti rejected blocked every later one forever (`RunOnce` stopped at the first failure, no attempt count).
