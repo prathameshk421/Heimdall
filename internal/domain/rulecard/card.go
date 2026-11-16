@@ -52,6 +52,33 @@ type Card struct {
 	Kind      string
 	Source    string
 	Status    Status
+	Scope     Scope  // who wrote the card; empty means person, the scope of cards written before scopes existed
+	Lens      string // the lens a lens-scope card belongs to
+}
+
+// Scope says who wrote a card and where it lives (REVIEW_ARCH 5.1).
+type Scope string
+
+// The four scopes. A lens card is a place to look and can never reach E3.
+const (
+	ScopePerson   Scope = "person"
+	ScopeLens     Scope = "lens"
+	ScopeTeam     Scope = "team"
+	ScopeCodebase Scope = "codebase"
+)
+
+// EffectiveScope is the card's scope, with empty read as person.
+func (c Card) EffectiveScope() Scope {
+	if c.Scope == "" {
+		return ScopePerson
+	}
+	return c.Scope
+}
+
+// CanReachE3 reports whether the card may stand as E3 evidence: only a person's card that its owner has accepted
+// (REVIEW_ARCH 5.2 and RV3). Every other scope is a place to look only.
+func (c Card) CanReachE3() bool {
+	return c.EffectiveScope() == ScopePerson && c.Status == StatusActive
 }
 
 // General reports that the card has no scope, so it applies to every change.
@@ -75,6 +102,15 @@ func (c Card) Validate() error {
 		if len(trigger) < MinTriggerChars {
 			return fmt.Errorf("trigger %q is shorter than %d characters and would match almost every change", trigger, MinTriggerChars)
 		}
+	}
+	switch c.Scope {
+	case "", ScopePerson, ScopeTeam, ScopeCodebase:
+	case ScopeLens:
+		if c.Lens == "" {
+			return fmt.Errorf("a lens card must name its lens")
+		}
+	default:
+		return fmt.Errorf("scope %q is not person, lens, team or codebase", c.Scope)
 	}
 	switch c.Status {
 	case StatusActive, StatusProposed, StatusRejected:
