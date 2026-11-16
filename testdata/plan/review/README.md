@@ -23,7 +23,7 @@ Spec: `docs/REVIEW_ARCH.md` 5.4 (steps 4 and 6), 5.5, RV5, section 11 (`Review@2
   `"title": "Review@2"` inside a submission would be refused for that and not for the rule under test. The version is
   carried by the schema name, not by the submission. Every submission here validates against `Review@1` once `lead_checks`
   is removed (checked with a JSON Schema validator).
-- Match is **exact** on `field`, `problem` and `example`. `example` is the refusal's minimal valid fix (H5, 6.2).
+- Match is **exact** on `field`, `problem` and `example`. `example` is the refusal's minimal valid fix (H5, 6.2). Its prose slots (a `note` or `reason`) say what to write, for example "what the change breaks", because the right sentence is the reviewer's and appears in no input.
 
 ## Rules under test (5.5)
 

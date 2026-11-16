@@ -14,16 +14,6 @@ type reviewCase struct {
 	ExpectedRefusal *Refusal `json:"expected_refusal"`
 }
 
-// goldenExampleNotDerivable lists the refused goldens whose expected example is prose that appears in no input (a note,
-// a reason). A refusal can name the field and the problem from the input, and an example as a template, but not that
-// sentence. Field and problem are still compared exactly for them. See the report on M3 step 5.
-var goldenExampleNotDerivable = map[string]bool{
-	"contradiction_holds_but_cited.json": true,
-	"missing_obligation.json":            true,
-	"missing_lead.json":                  true,
-	"dropped_lead_without_reason.json":   true,
-}
-
 func loadReviewCase(t *testing.T, path string) reviewCase {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -66,12 +56,6 @@ func TestGoldenReviewsRefused(t *testing.T) {
 			want, g := *c.ExpectedRefusal, got[0]
 			if g.Field != want.Field || g.Problem != want.Problem {
 				t.Fatalf("refusal = {%q %q}, want {%q %q}", g.Field, g.Problem, want.Field, want.Problem)
-			}
-			if goldenExampleNotDerivable[name] {
-				if g.Example == "" {
-					t.Fatalf("refusal has no example; the golden has one")
-				}
-				return
 			}
 			if wantEx := exampleText(want.Example); g.Example != wantEx {
 				t.Fatalf("example = %q, want %q", g.Example, wantEx)

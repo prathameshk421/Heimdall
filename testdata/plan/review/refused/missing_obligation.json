@@ -46,6 +46,6 @@
   "expected_refusal": {
     "field": "rule_checks",
     "problem": "card secrets-in-logs.md is in the brief's obligations and has no entry",
-    "example": "{\"card\": \"secrets-in-logs.md\", \"verdict\": \"holds\", \"note\": \"only the status code is logged\"}"
+    "example": "{\"card\": \"secrets-in-logs.md\", \"verdict\": \"holds\", \"note\": \"why the change keeps this rule\"}"
   }
 }

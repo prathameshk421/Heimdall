@@ -54,6 +54,6 @@
   "expected_refusal": {
     "field": "rule_checks[0].verdict",
     "problem": "card spec-drift.md is marked holds but findings[0] cites it",
-    "example": "{\"card\": \"spec-drift.md\", \"verdict\": \"violated\", \"note\": \"openapi.yaml does not include /healthz\"}"
+    "example": "{\"card\": \"spec-drift.md\", \"verdict\": \"violated\", \"note\": \"what the change breaks\"}"
   }
 }

@@ -50,6 +50,6 @@
   "expected_refusal": {
     "field": "lead_checks[0].reason",
     "problem": "lead lead-sec-01 is marked dropped and has no reason",
-    "example": "{\"lead_id\": \"lead-sec-01\", \"verdict\": \"dropped\", \"reason\": \"the value is a constant, not request input\"}"
+    "example": "{\"lead_id\": \"lead-sec-01\", \"verdict\": \"dropped\", \"reason\": \"why this is not a real problem\"}"
   }
 }
