@@ -280,6 +280,7 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 | `task.assigned` / `task.acked` / `task.timed_out` / `task.failed` / `task.progress` | task id, agent, role, deadline, bundle hash, reason or bounded progress text | Engine / agent tool |
 | `step.retried` / `step.escalated` / `step.resumed` | step id, attempt, reasons / attempts, reason / step id, by | Engine (on_fail, 5.1); `step.resumed` is a person releasing an escalated step (A10 item 5) |
 | `question.asked` / `question.answered` | ids, refs, sender, message id | test-author, room sync |
+| `command.proposed` / `command.confirmed` | trigger message, sender, person, command text, verb, proposing agent, head sha / trigger, sender, message id | Board, for an agent's `propose_command` (AGENT_INTERACTION_ARCH 5.3) |
 | `tests.submitted` / `tests.verified` / `tests.rejected` / `tests.committed` | refs, AC map, run ids, reasons, sha, tree hash; `tests.verified` also carries `needs_signoff`, set by the engine from policy (sensitive paths and labels, D131, D33): true sends the change to AWAITING_TEST_SIGNOFF, false to TESTS_READY | Agent, sandbox, GitHub, engine |
 | `tests.approved` | approver, tree hash (sensitive domains, D33) | Room or GitHub command |
 | `ticket.changed` | changed fields | Jira poller |

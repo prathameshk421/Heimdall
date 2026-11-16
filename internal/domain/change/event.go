@@ -20,7 +20,7 @@ func All() []EventType {
 		EventChangeTriggered, EventRoomOpened, EventBranchEnsured,
 		EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed, EventTaskProgress,
 		EventStepRetried, EventStepEscalated, EventStepResumed,
-		EventQuestionAsked, EventQuestionAnswered,
+		EventQuestionAsked, EventQuestionAnswered, EventCommandProposed, EventCommandConfirmed,
 		EventTestsSubmitted, EventTestsVerified, EventTestsRejected, EventTestsCommitted, EventTestsApproved,
 		EventTicketChanged,
 		EventPROpened, EventPRPushed, EventPRLinked, EventPRClosed,

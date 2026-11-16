@@ -50,18 +50,23 @@ type Replies interface {
 	Reply(ctx context.Context, target Target, source commands.Source, sourceRef, body string) error
 }
 
-// Config contains the four collaborators for command processing.
+// Config contains the collaborators for command processing. Proposals and Clock serve propose_command and the yes
+// that confirms it (5.3); without them a yes is ordinary chat and Propose refuses.
 type Config struct {
-	Identity Identity
-	Executor Executor
-	Replies  Replies
+	Identity  Identity
+	Executor  Executor
+	Replies   Replies
+	Proposals Proposals
+	Clock     ports.Clock
 }
 
 // Processor parses, authorizes, dispatches and replies to one Switch message or GitHub issue comment.
 type Processor struct {
-	identity Identity
-	executor Executor
-	replies  Replies
+	identity  Identity
+	executor  Executor
+	replies   Replies
+	proposals Proposals
+	clock     ports.Clock
 }
 
 // New validates collaborators and builds the command processor.
@@ -79,7 +84,10 @@ func New(cfg Config) (*Processor, error) {
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("collaboration commands: missing %v", missing)
 	}
-	return &Processor{identity: cfg.Identity, executor: cfg.Executor, replies: cfg.Replies}, nil
+	if (cfg.Proposals == nil) != (cfg.Clock == nil) {
+		return nil, errors.New("collaboration commands: Proposals and Clock come together")
+	}
+	return &Processor{identity: cfg.Identity, executor: cfg.Executor, replies: cfg.Replies, proposals: cfg.Proposals, clock: cfg.Clock}, nil
 }
 
 // Handle processes one incoming message. Non-command text, edited GitHub comments, bots, and mapped agents never
@@ -88,6 +96,9 @@ func New(cfg Config) (*Processor, error) {
 func (p *Processor) Handle(ctx context.Context, in Input) error {
 	if in.Edited || in.Bot || in.SourceRef == "" {
 		return nil
+	}
+	if in.Command.Source == commands.SourceChat && commands.IsYes(in.Command.Text) && p.proposals != nil {
+		return p.confirm(ctx, in, p.clock.Now())
 	}
 	// Most room traffic is agent and human chatter. Decide that from the text alone, before any identity read,
 	// so plain chat never spends a GitHub policy lookup.
