@@ -232,7 +232,6 @@ type rig struct {
 	tokens    *fakeTokens
 	logs      *bytes.Buffer
 	knowledge *fakeKnowledge
-	packs     *fakePacks
 	files     *fakeKnowledgeFiles
 }
 
@@ -253,7 +252,6 @@ func newRig(t *testing.T, role workflow.Role) *rig {
 		blobOther: "not in this task",
 	}}
 	r.knowledge = &fakeKnowledge{}
-	r.packs = &fakePacks{}
 	r.files = &fakeKnowledgeFiles{}
 	logger := slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	srv, err := NewServer(Deps{
@@ -265,7 +263,6 @@ func newRig(t *testing.T, role workflow.Role) *rig {
 		Code:      r.code,
 		Blobs:     r.blobs,
 		Knowledge: r.knowledge,
-		Packs:     r.packs,
 		Files:     r.files,
 	})
 	require.NoError(t, err)
@@ -293,36 +290,6 @@ func (f *fakeKnowledgeFiles) Approve(_ context.Context, p Principal, ref string)
 func (f *fakeKnowledgeFiles) Forget(_ context.Context, p Principal, ref string) error {
 	f.forgetPrincipal, f.ref = p, ref
 	return nil
-}
-
-type fakePacks struct {
-	principal Principal
-	section   string
-	content   string
-}
-
-type fakePackPublisher struct {
-	principal                               Principal
-	repository, reviewer, replayKey, digest string
-	files                                   map[string][]byte
-	reviews, publishes                      int
-}
-
-func (f *fakePackPublisher) Review(_ context.Context, p Principal, repo, reviewer string, files map[string][]byte) (string, error) {
-	f.principal, f.repository, f.reviewer, f.files, f.reviews = p, repo, reviewer, files, f.reviews+1
-	return `{"review_digest":"` + strings.Repeat("a", 64) + `","files":{"notes.md":"redacted"}}`, nil
-}
-func (f *fakePackPublisher) Publish(_ context.Context, p Principal, repo, reviewer, replayKey, digest string, files map[string][]byte) (string, error) {
-	f.principal, f.repository, f.reviewer, f.replayKey, f.digest, f.files, f.publishes = p, repo, reviewer, replayKey, digest, files, f.publishes+1
-	return "pack-id", nil
-}
-
-func (f *fakePacks) Read(_ context.Context, p Principal, _ Assignment, section string) (string, error) {
-	f.principal, f.section = p, section
-	if f.content == "" {
-		f.content = "project conventions [PRIVATE PACK CANARY]"
-	}
-	return f.content, nil
 }
 
 type fakeKnowledge struct{ query ports.MemoryQuery }

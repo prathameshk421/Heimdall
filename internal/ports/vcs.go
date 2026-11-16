@@ -43,6 +43,11 @@ type PRCommentReader interface {
 	IssueCommentsSince(ctx context.Context, repo change.Repo, n int, since time.Time) ([]IssueComment, error)
 }
 
+// DefaultHeads reads the head commit of a repository's default branch, the base a ticket branch starts from.
+type DefaultHeads interface {
+	DefaultHead(ctx context.Context, repo change.Repo) (id.SHA, error)
+}
+
 // BranchWriter makes test branches and commits. Consumer: the test-author flow (TECH_SPEC 7).
 type BranchWriter interface {
 	// EnsureBranch creates name at from when it does not exist, and does nothing when it does. key is the effect's

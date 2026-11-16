@@ -66,7 +66,6 @@ type ReviewRefs interface {
 	LineCount(context.Context, workflow.ChangeRef, string) (int, error)
 	RunExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
 	MemoryExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
-	PackExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
 }
 
 // ReviewSubmission is the trusted scope supplied to semantic review validation.

@@ -18,7 +18,6 @@ type Refs interface {
 	LineCount(context.Context, workflow.ChangeRef, string) (int, error)
 	RunExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
 	MemoryExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
-	PackExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
 }
 
 // Submission contains the review and the trusted scope in which it was produced.
@@ -151,14 +150,7 @@ func checkContextRefs(ctx context.Context, refs Refs, sub Submission, prefix str
 		if err != nil {
 			return nil, fmt.Errorf("look up %s: %w", at, err)
 		}
-		if memory {
-			continue
-		}
-		pack, err := refs.PackExists(ctx, sub.Change, sub.Caller, ref)
-		if err != nil {
-			return nil, fmt.Errorf("look up %s: %w", at, err)
-		}
-		if !pack {
+		if !memory {
 			problems = append(problems, Problem{Message: at + " does not exist for this change and caller"})
 		}
 	}
@@ -224,18 +216,13 @@ func checkMemoryRef(ctx context.Context, refs Refs, sub Submission, at string, r
 	return nil, nil
 }
 
-func checkPackRef(ctx context.Context, refs Refs, sub Submission, at string, ref *string) ([]Problem, error) {
+// checkPackRef refuses pack_ref evidence: the pack pipeline was removed (AGENT_INTERACTION_ARCH H9), and a pack
+// reference was never accepted before either.
+func checkPackRef(_ context.Context, _ Refs, _ Submission, at string, ref *string) ([]Problem, error) {
 	if ref == nil {
 		return nil, nil
 	}
-	exists, err := refs.PackExists(ctx, sub.Change, sub.Caller, *ref)
-	if err != nil {
-		return nil, fmt.Errorf("look up %s.pack_ref: %w", at, err)
-	}
-	if !exists {
-		return []Problem{{Message: at + ".pack_ref does not exist for this change and caller"}}, nil
-	}
-	return nil, nil
+	return []Problem{{Message: at + ".pack_ref is not accepted: there are no packs; cite a card or give reasoning"}}, nil
 }
 
 func checkLocation(ctx context.Context, refs Refs, changeRef workflow.ChangeRef, at string, location finding.Location) ([]Problem, error) {

@@ -104,12 +104,6 @@ type Knowledge interface {
 	Ask(ctx context.Context, agent id.AgentName, task id.TaskID, repo change.Repo, base id.SHA, query ports.MemoryQuery) ([]ports.MemoryItem, error)
 }
 
-// PackReader loads only the pack owned by the authenticated principal. It must resolve the person's identity and
-// verification/decryption keys server-side; tool arguments never name an owner.
-type PackReader interface {
-	Read(context.Context, Principal, Assignment, string) (string, error)
-}
-
 // ErrCardNotFound is returned by Cards.Read for a card the caller does not have.
 var ErrCardNotFound = errors.New("card not found")
 
@@ -130,12 +124,6 @@ type Briefs interface {
 // CodeGraph returns the code index of one commit. The tools ask only for the head commit of the caller's assignment.
 type CodeGraph interface {
 	Index(ctx context.Context, repo change.Repo, sha id.SHA) (*codegraph.Index, error)
-}
-
-// PackPublisher stages an owner-visible redacted review and publishes exactly the reviewed content.
-type PackPublisher interface {
-	Review(context.Context, Principal, string, string, map[string][]byte) (string, error)
-	Publish(context.Context, Principal, string, string, string, string, map[string][]byte) (string, error)
 }
 
 // KnowledgeFileInfo is the non-content metadata returned by safe knowledge-file operations.
@@ -167,19 +155,17 @@ type Profiles interface {
 
 // Deps are the collaborators of a Server. Every field is required.
 type Deps struct {
-	Logger        *slog.Logger
-	Clock         ports.Clock
-	Tokens        Tokens
-	Tasks         Tasks
-	Reviews       Reviews
-	Code          Code
-	Blobs         Blobs
-	Knowledge     Knowledge
-	Packs         PackReader
-	Cards         Cards
-	PackPublisher PackPublisher
-	Files         KnowledgeFiles
-	Profiles      Profiles
+	Logger    *slog.Logger
+	Clock     ports.Clock
+	Tokens    Tokens
+	Tasks     Tasks
+	Reviews   Reviews
+	Code      Code
+	Blobs     Blobs
+	Knowledge Knowledge
+	Cards     Cards
+	Files     KnowledgeFiles
+	Profiles  Profiles
 	// Sandbox runs the fixed static checks of heimdall_run_check through the runner. The tool exists only when it is set.
 	Sandbox ports.Sandbox
 	// Briefs adds the compiled brief to get_task. Without it, get_task falls to Cards.ForTask for personal_context.

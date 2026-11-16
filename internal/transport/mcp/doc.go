@@ -13,7 +13,7 @@
 // heimdall_get_task. OpenCode adds the heimdall_ prefix on the model side, from the server key heimdall.
 //
 // Tools built here: get_task, ack, get_change, read_untrusted, read_code, submit_tests, submit_review,
-// submit_verdict, ask_humans, report_progress. The rest of the table (read_pack, ask_knowledge, run_check,
+// submit_verdict, ask_humans, report_progress, propose_command. The rest of the table (ask_knowledge, run_check,
 // challenge) belongs to later tasks.
 //
 // When their dependency is set, the server also has search_code and find_symbol (Deps.Graph), for a reviewer or a

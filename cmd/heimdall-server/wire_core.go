@@ -70,16 +70,12 @@ func closerOf(blobs ports.BlobStore) io.Closer {
 	return nil
 }
 
-func newUploadHandlers(d deps, ad adapters, blobs ports.BlobStore, pool *pgxpool.Pool) (http.Handler, http.Handler, error) {
-	packUpload, err := newPackUploadHandler(d, ad.tokens, blobs, pool)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build pack upload handler: %w", err)
-	}
+func newUploadHandlers(d deps, ad adapters) (http.Handler, error) {
 	cardsUpload, err := newCardsHandler(d.configuration, ad.tokens)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build cards handler: %w", err)
+		return nil, fmt.Errorf("build cards handler: %w", err)
 	}
-	return packUpload, cardsUpload, nil
+	return cardsUpload, nil
 }
 
 // mcpStore is the event store, the durable episode-trust ledger that knowledge search reads, and the history that the
@@ -155,7 +151,7 @@ func assembleMCP(
 		return nil, nil, err
 	}
 	reviewsAdp := &mcpReviewsAdapter{svc: toolsSvc, tracker: tracker}
-	packReader, cards, err := newReviewerReaders(d, blobs, pool, clk, ad.vcs)
+	cards, err := newCardReader(d.configuration.CardsDir, knowledge.PolicyScopes{Code: ad.vcs, Decode: policyyaml.Decode})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -166,7 +162,6 @@ func assembleMCP(
 	mcpSrv, err := mcp.NewServer(mcp.Deps{
 		Logger: d.logger, Clock: clk, Tokens: tokStore, Tasks: tasksAdp,
 		Reviews: reviewsAdp, Code: ad.vcs, Blobs: blobs, Knowledge: knowledgeSvc,
-		Packs:    packReader,
 		Cards:    cards,
 		Files:    newKnowledgeFileManager(files, ad.vcs),
 		Profiles: profiles,

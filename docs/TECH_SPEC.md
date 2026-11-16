@@ -538,7 +538,7 @@ How the VM agents actually run. Switch ships a **headless agent controller** for
 | Host setup API | With `agent_runtime` selected, `POST /admin/agents/prepare` requires the Switch coordinator bearer. It idempotently reconciles each Switch definition, requests `stopped`, and returns the role, Switch id, MCP endpoint, token-file path, and SHA-256 fingerprint; it never returns token contents. Host setup installs each role's file, then posts `{agent, role, mcp_endpoint, token_sha256, credentials_installed:true}` to `/admin/agents/activate`. Heimdall checks the receipt against configured role, endpoint, and token file before asking Switch for `desired_state=running`. Repeating prepare stops agents for safe reconfiguration; repeating a valid activation is idempotent. Unavailable Switch calls return retryable 503; config conflicts return 409; invalid receipts return 400 |
 | Process | `switch-agent-controller`, enrolled with a one-time code from the gateway's Machines page and installed with `install-service --separate-users`. That creates a pool of system users (`sa<uid>-01` and so on, 16 by default), one systemd template unit per agent, a polkit rule that lets the controller start, stop, restart and reset those units and nothing else, and agent directories under `/var/lib/switch-agents/<uid>`. It runs as a system service, so it survives a reboot. Requires the server flag `FEATURE_FLAGS_ENABLED=agent_management`, Node 22.13+ (Switch's own component), the `opencode` CLI on the path, and the OpenRouter key and `SWITCH_CONTROLLER_SELF_UPDATE=off` in the controller's `--env-file` (D123, D144) |
 | Switch credentials | None in the agents. The controller holds one connection and agents reach Switch through its local relay with a token only the relay accepts |
-| Working directory | Per agent, under `<agents-dir>/agent/<agent-name>/`: `AGENTS.md` (role rules), `opencode.json` as in the example below (mode 0600, holding that agent's token, D142), `.opencode/skills/<role>/SKILL.md`, `scratch/`. No pack files (reviewers read their own pack through `heimdall_read_pack`, D156), no repo checkout, no GitHub or Jira credentials |
+| Working directory | Per agent, under `<agents-dir>/agent/<agent-name>/`: `AGENTS.md` (role rules), `opencode.json` as in the example below (mode 0600, holding that agent's token, D142), `.opencode/skills/<role>/SKILL.md`, `scratch/`. No pack files (the pack pipeline was removed, AGENT_INTERACTION_ARCH H9), no repo checkout, no GitHub or Jira credentials |
 | Network | nftables keyed on the agents' group (`meta skgid`) allow only the Switch relay, `heimdall-server` and `openrouter.ai`, and drop `169.254.169.254` (D86). This holds even if an OpenCode permission is wrong |
 | Concurrency | One active task per agent; further tasks queue in River (unique key `agent:<name>`) |
 | Isolation between changes | Sessions are per room and each change has its own room, so nothing crosses between changes; rooms are archived at close (D145, proven by T01) |
@@ -773,7 +773,7 @@ Every rule or fact line has provenance (`[git:3f2a1c]`, `[pr:#88]`, `[transcript
 6. **Sign** the manifest (ed25519, the person's key).
 7. **Encrypt** with `age` to the VM recipient.
 8. **Upload** to blobs. The server keeps only metadata in Postgres.
-9. **Serve:** `heimdall_read_pack` decrypts in the server, verifies hashes and returns only the calling reviewer's own pack, refusing packs older than `pack.max_age_days` (14). Ciphertext stays at rest. A stale pack gives findings that are unverified (D156).
+9. **Serve (removed Nov 16, AGENT_INTERACTION_ARCH H9; personal context now reaches a seat as cards):** `heimdall_read_pack` decrypted in the server, verifies hashes and returns only the calling reviewer's own pack, refusing packs older than `pack.max_age_days` (14). Ciphertext stays at rest. A stale pack gives findings that are unverified (D156).
 
 `heimdall pack refresh` rebuilds incrementally. Revocation deletes blobs, stops the person's reviewer agent and revokes tokens.
 
@@ -987,7 +987,7 @@ Wire names are bare. The server lists and accepts `get_task`, not `heimdall_get_
 | `get_task`, `ack`, `get_change` | all |
 | `read_untrusted(ref)` | all |
 | `read_code(path, sha, range?)` | all (test-author: base SHA only) |
-| `read_pack(section?)` | reviewer (own pack only, D156) |
+| `propose_command(command, trigger)` | every agent; runs as the trigger message's sender, a deciding verb after that sender's yes (AGENT_INTERACTION_ARCH 5.3) |
 | `read_card(file?)` | reviewer (own cards only) |
 | `ask_knowledge(question, entities?, as_of?)` | all |
 | `run_check(kind, args)` | reviewer, resolver (counts toward budget) |
@@ -1086,7 +1086,7 @@ Attackers: an outside PR author, a careless or malicious insider, poisoned conte
 
 - Raw transcripts and notes never leave the laptop.
 - Two redaction passes; any hit blocks upload; owner review is mandatory.
-- `age` encryption at rest. The server decrypts only to answer `heimdall_read_pack` for the owner's reviewer agent, after the signature is checked (D156).
+- (Removed with the pack pipeline, H9.) `age` encryption at rest. The server decrypted only to answer `heimdall_read_pack` for the owner's reviewer agent, after the signature is checked (D156).
 - One container and Unix user per reviewer agent, no shared volumes, egress allowlist (Switch, server, `openrouter.ai`, GitHub read).
 - Canary strings planted in each pack; the output filter and an egress log scan alert on any appearance.
 - Packs never enter team memory, and findings cite pack line ids, not content.

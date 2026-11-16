@@ -74,17 +74,16 @@ const (
 // client and the timing. Every field is required. openPool and migrate are injected so a test can prove the wiring
 // without a live Postgres; productionDeps fills them with the real pgxpool and migration functions.
 type deps struct {
-	databaseURL    string
-	endpoints      endpoints
-	httpClient     *http.Client
-	logger         *slog.Logger
-	packIdentities packIdentityResolver
-	configuration  config.Config
-	pollEvery      time.Duration
-	syncEvery      time.Duration
-	drainTick      time.Duration
-	openPool       func(ctx context.Context, url string) (*pgxpool.Pool, error)
-	migrate        func(ctx context.Context, pool *pgxpool.Pool) error
+	databaseURL   string
+	endpoints     endpoints
+	httpClient    *http.Client
+	logger        *slog.Logger
+	configuration config.Config
+	pollEvery     time.Duration
+	syncEvery     time.Duration
+	drainTick     time.Duration
+	openPool      func(ctx context.Context, url string) (*pgxpool.Pool, error)
+	migrate       func(ctx context.Context, pool *pgxpool.Pool) error
 }
 
 // String implements fmt.Stringer, redacting the database URL.
@@ -185,7 +184,6 @@ type app struct {
 	narrator        *announce.Narrator
 	nudger          *taskNudger
 	timers          *workflowTimers
-	packUpload      http.Handler
 	cardsUpload     http.Handler
 	commands        *commandRuntime
 	workflowMemory  *knowledge.WorkflowMemory
@@ -571,7 +569,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	packUpload, cardsUpload, err := newUploadHandlers(d, ad, blobs, pool)
+	cardsUpload, err := newUploadHandlers(d, ad)
 	if err != nil {
 		return nil, err
 	}
@@ -581,7 +579,7 @@ func assembleWithBlobs(
 	}
 	return &app{
 		narrator: narrator, nudger: newTaskNudger(ad, store, store, pool, clk), timers: &workflowTimers{eng: eng, rooms: store, clock: clk, fired: map[string]bool{}},
-		pool: pool, pollers: pollers, drainer: box, syncer: sync, gateRefresher: gateRefresher, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, packUpload: packUpload, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
+		pool: pool, pollers: pollers, drainer: box, syncer: sync, gateRefresher: gateRefresher, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil

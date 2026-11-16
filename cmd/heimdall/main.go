@@ -36,8 +36,6 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runAdmin(rest, stdin, stdout, stderr)
 	case "controller":
 		return runController(rest, stdin, stdout, stderr, realControllerDeps())
-	case "pack":
-		return runPack(rest, stdin, stdout)
 	case "cards":
 		return runCards(rest, stdin, stdout, stderr)
 	default:
@@ -74,7 +72,6 @@ func command(name string) (func([]string) int, bool) {
 		"secrets-sync":    func(args []string) int { return runSecretsSync(args, os.Stdout, os.Stderr) },
 		"switch-register": func(args []string) int { return runSwitchRegister(args, os.Stdout, os.Stderr) },
 		"admin":           func(args []string) int { return runAdmin(args, os.Stdin, os.Stdout, os.Stderr) },
-		"pack":            func(args []string) int { return runPack(args, os.Stdin, os.Stdout) },
 		"controller": func(args []string) int {
 			return runController(args, os.Stdin, os.Stdout, os.Stderr, realControllerDeps())
 		},

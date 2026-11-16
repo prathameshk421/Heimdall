@@ -6,13 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/cardsfs"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
@@ -21,19 +18,6 @@ import (
 type cardReader struct {
 	store  *cardsfs.Store
 	scopes knowledge.PolicyScopes
-}
-
-// newReviewerReaders builds the two private-context readers a reviewer has: the encrypted pack and the plain cards.
-func newReviewerReaders(d deps, blobs ports.BlobStore, pool *pgxpool.Pool, clk ports.Clock, code knowledge.PolicyCode) (mcp.PackReader, mcp.Cards, error) {
-	packs, err := newPackReader(d, blobs, pool, clk, code)
-	if err != nil {
-		return nil, nil, err
-	}
-	cards, err := newCardReader(d.configuration.CardsDir, knowledge.PolicyScopes{Code: code, Decode: policyyaml.Decode})
-	if err != nil {
-		return nil, nil, err
-	}
-	return packs, cards, nil
 }
 
 // newCardReader returns nil when no cards directory is configured, which leaves the read_card tool off.

@@ -8,7 +8,6 @@
 //   - GitHubBranch (NewGitHubBranch, GitHubBranchDeps): performs github_branch. It expands the template of the payload
 //     with the ticket key and a slug of the title, calls ports.BranchWriter.EnsureBranch, and ingests branch.ensured.
 //   - Ingest: the consumer-defined interface that hands executor events to the engine.
-//   - BaseReader: reads the base commit of a default branch (see the gap below).
 //   - Slug: the slug of a branch name (lower case ASCII letters and digits, hyphens, at most 40 characters).
 //
 // Each Execute follows one order. It checks the kind and the target, decodes the payload with the domain decoder, and
@@ -22,7 +21,6 @@
 //
 // ports.BranchWriter.EnsureBranch takes the effect key (A10 item 3), so the branch write carries it. The port is
 // idempotent by name (it does nothing when the branch exists), and the retry check above covers the rest.
-// No port reads the default branch head, so BaseReader is a consumer interface that no adapter implements yet.
 //
 // Tests. The tests use fakes for every port and for Ingest, and check the effect key, the title, the event fields,
 // the retry path, the error text with a canary, and the slug rule.

@@ -195,3 +195,9 @@ func (h cardsHandler) remove(w http.ResponseWriter, person, name string) {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+
+// uploadBearer reads a bearer token from an Authorization header.
+func uploadBearer(header string) (string, bool) {
+	scheme, token, found := strings.Cut(header, " ")
+	return token, found && strings.EqualFold(scheme, "Bearer") && token != "" && !strings.ContainsAny(token, " \t\r\n")
+}

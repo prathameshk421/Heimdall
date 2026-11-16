@@ -32,7 +32,7 @@ func expectedTools(role workflow.Role) []string {
 	case workflow.RoleResolver:
 		return append(all, "ask_humans", "submit_verdict")
 	case workflow.RoleReviewer:
-		return append(all, "submit_review", "read_pack", "stage_knowledge")
+		return append(all, "submit_review", "stage_knowledge")
 	case workflow.RoleProfiler:
 		return all
 	}

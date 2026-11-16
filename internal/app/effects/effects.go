@@ -16,12 +16,6 @@ type Ingest interface {
 	Ingest(ctx context.Context, changeID id.ChangeID, evs []change.Event) error
 }
 
-// BaseReader reads the head commit of a repository's default branch. No port has this method yet: the branch writer
-// needs the base commit and the VCS port has no way to read it.
-type BaseReader interface {
-	DefaultHead(ctx context.Context, repo change.Repo) (id.SHA, error)
-}
-
 // Actor ids of the events that executors write. They name the adapter that reported the result.
 const (
 	switchActorID = change.ActorID("switch")

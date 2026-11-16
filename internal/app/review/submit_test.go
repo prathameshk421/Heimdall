@@ -60,10 +60,6 @@ func (r *refs) MemoryExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentN
 	return r.memory[ref], r.lookupErr
 }
 
-func (r *refs) PackExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentName, ref string) (bool, error) {
-	return r.packs[ref], r.lookupErr
-}
-
 func TestSubmitAcceptsValidReviewAndCalculatesTier(t *testing.T) {
 	got, err := review.Submit(context.Background(), newRefs(), submission(validFinding()))
 	require.NoError(t, err)
@@ -216,7 +212,7 @@ func submission(f finding.Input) review.Submission {
 }
 
 func validFinding() finding.Input {
-	return finding.Input{Claim: "Refund validation permits an amount that exceeds the requested refund limit.", Category: finding.CategoryCorrectness, Severity: finding.SeverityHigh, Confidence: finding.ConfidenceHigh, Location: finding.Location{File: "internal/refunds/refunds.go", Lines: [2]int{2, 4}}, Evidence: []finding.Evidence{{Type: finding.EvidenceMemory, MemoryRef: ptr("memory:refund-limit")}}, ContextRefs: []string{"pack:refunds:17"}}
+	return finding.Input{Claim: "Refund validation permits an amount that exceeds the requested refund limit.", Category: finding.CategoryCorrectness, Severity: finding.SeverityHigh, Confidence: finding.ConfidenceHigh, Location: finding.Location{File: "internal/refunds/refunds.go", Lines: [2]int{2, 4}}, Evidence: []finding.Evidence{{Type: finding.EvidenceMemory, MemoryRef: ptr("memory:refund-limit")}}, ContextRefs: []string{"card:refund-cap.md"}}
 }
 
 func ptr(s string) *string { return &s }

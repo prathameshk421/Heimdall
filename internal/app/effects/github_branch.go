@@ -16,7 +16,7 @@ var reBranchName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 // GitHubBranchDeps are the dependencies of GitHubBranch.
 type GitHubBranchDeps struct {
 	Tickets  ports.TicketReader
-	Base     BaseReader
+	Base     ports.DefaultHeads
 	Branches ports.BranchWriter
 	Store    ports.EventStore
 	Ingest   Ingest

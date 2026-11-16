@@ -92,7 +92,3 @@ func (r reviewRefs) MemoryExists(ctx context.Context, ref workflow.ChangeRef, ca
 	}
 	return verify.TierForE3(state) == finding.TierE3, nil
 }
-
-func (reviewRefs) PackExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error) {
-	return false, nil
-}

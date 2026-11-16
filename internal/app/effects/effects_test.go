@@ -32,7 +32,7 @@ var (
 // Compile-time checks: the executors are built from the ports and the ingest interface.
 var (
 	_ effects.Ingest     = (*fakeIngest)(nil)
-	_ effects.BaseReader = (*fakeBase)(nil)
+	_ ports.DefaultHeads = (*fakeBase)(nil)
 	_ ports.TicketReader = (*fakeTickets)(nil)
 	_ ports.Chat         = (*fakeChat)(nil)
 	_ ports.EventStore   = (*fakeStore)(nil)

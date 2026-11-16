@@ -250,9 +250,6 @@ func (fakeReviewRefs) RunExists(_ context.Context, _ workflow.ChangeRef, _ id.Ag
 func (fakeReviewRefs) MemoryExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentName, ref string) (bool, error) {
 	return ref == "decision:refund-limit", nil
 }
-func (fakeReviewRefs) PackExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error) {
-	return false, nil
-}
 
 func newTestHarness(t *testing.T) *testHarness {
 	t.Helper()
