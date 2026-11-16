@@ -2,6 +2,8 @@ module github.com/prathameshk421/flip_the_switch_hackathon
 
 go 1.27.3
 
+toolchain go1.27.4
+
 require (
 	filippo.io/age v1.3.2
 	github.com/google/go-cmp v0.7.0

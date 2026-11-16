@@ -210,11 +210,19 @@ func TestTheProbeScriptWaitsForAPortToAccept(t *testing.T) {
 	require.NoError(t, l.Close())
 	require.Error(t, probe(port, "2"), "a closed port fails once the attempts are spent")
 
-	later := time.AfterFunc(700*time.Millisecond, func() { l, err = lc.Listen(context.Background(), "tcp", "127.0.0.1:"+port) })
+	opened := make(chan net.Listener, 1)
+	later := time.AfterFunc(700*time.Millisecond, func() {
+		reopened, lerr := lc.Listen(context.Background(), "tcp", "127.0.0.1:"+port)
+		if lerr != nil {
+			reopened = nil
+		}
+		opened <- reopened
+	})
 	defer later.Stop()
 	require.NoError(t, probe(port, "8"), "a port that opens between attempts is accepted")
-	require.NoError(t, err)
-	require.NoError(t, l.Close())
+	reopened := <-opened
+	require.NotNil(t, reopened, "the port could be listened on again")
+	require.NoError(t, reopened.Close())
 	require.Error(t, probe(port, "1; touch /tmp/x"), "the count is an argument, not script text")
 }
 
