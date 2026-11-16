@@ -1,6 +1,0 @@
-KAN-21 · Refund endpoint                                           review in progress (re-dispatched after push)
-Tests      ✅ 1 behaviour, committed 3c21c02
-PR         #9 by prathamesh · slop ✅ on c09c002
-Reviews    Reviewer 2 ⏳ reading new head
-Findings   none
-Next       awaiting review on c09c002

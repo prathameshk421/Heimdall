@@ -2,13 +2,8 @@
   {
     "step": "gate",
     "role": "",
-    "description": "fix open finding F1",
-    "kind": ""
-  },
-  {
-    "step": "gate",
-    "role": "",
-    "description": "approval on head commit",
-    "kind": ""
+    "clause": "approval",
+    "subject": "",
+    "text": "an approver who is not the author approves 19ba050"
   }
 ]

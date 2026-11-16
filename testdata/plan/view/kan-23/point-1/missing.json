@@ -1,8 +1,9 @@
 [
   {
-    "step": "signoff",
+    "step": "test_qa",
     "role": "",
-    "description": "human signoff on test suite in sensitive domain",
-    "kind": ""
+    "clause": "",
+    "subject": "",
+    "text": "the sandbox verifies the tests"
   }
 ]

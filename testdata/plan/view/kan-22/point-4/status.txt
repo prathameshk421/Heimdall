@@ -1,6 +1,6 @@
-KAN-22 · Health endpoint                                           ready to merge
-Tests      ✅ 2 behaviours, committed 1c22a02
-PR         #10 by prathamesh · acceptance ✅ on 59effae
-Reviews    Reviewer 1 ✅ clean · Reviewer 2 ✅ clean · Reviewer 3 ✅ clean
-Findings   all resolved
-Next       ready to merge
+KAN-22 · 2 needs
+Tests     2 tests for AC1, AC2 · submitted on 4a0f699 · verified · committed 4c14494
+PR        #10 by prathameshk421 · head 59effae · slop passed · acceptance not reported
+Reviews   reviewer-1 clean on 59effae · reviewer-2 clean on 19ba050 · reviewer-3 clean on 59effae
+Findings  F1 E4 low upheld · F2 E4 low unverified
+Next      reviewer-2 reviews 59effae; heimdall/acceptance succeeds on 59effae

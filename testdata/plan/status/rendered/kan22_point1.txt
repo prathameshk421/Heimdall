@@ -1,6 +1,0 @@
-KAN-22 · Health endpoint                                           waiting for pull request
-Tests      ✅ 2 behaviours, committed 1c22a02
-PR         none
-Reviews    none
-Findings   none
-Next       open a pull request for KAN-22

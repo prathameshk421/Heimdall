@@ -1,0 +1,41 @@
+version: 1
+workflow: default
+approvers: { default: [approver, discord_rush, telegram_owner, mattermost_owner, slack_owner], tenant_data: [ana], money_movement: [approver, discord_rush, telegram_owner, mattermost_owner, slack_owner] }
+policy_owners: [approver, discord_rush, telegram_owner, mattermost_owner, slack_owner]
+people:
+  # approver's chat id is the owner's Discord sender in Switch; the other chat ids are still placeholders (D140)
+  author:   { github: aarush323, chat: dev-author,   teams: [payments] }
+  approver: { github: temporaryhameshakagroup-alt,    chat: "@switch-discord-35755c56-ff93-43ac-a7a3-3e46afa3c3a0-prathameshk421:localhost", teams: [payments] }
+  # The owner's other chat accounts, one person each (a person has one chat id). The GitHub logins are placeholders, not real accounts (D158).
+  discord_rush: { github: placeholder-discord-rush, chat: "@switch-discord-35755c56-ff93-43ac-a7a3-3e46afa3c3a0-rush32306:localhost", teams: [payments] }
+  telegram_owner: { github: placeholder-telegram-owner, chat: "@switch-telegram-ff4ccbe3-420c-4ca7-b852-d064a463032f-adumbstudent:localhost", teams: [payments] }
+  mattermost_owner: { github: placeholder-mattermost-owner, chat: "@switch-mattermost-d5d5d493-5875-43a3-ac00-c55ffc9a22f0-dev-approver:localhost", teams: [payments] }
+  slack_owner: { github: placeholder-slack-owner, chat: "@switch-slack-44cfe58c-8c5b-455e-a4ac-e5f93a8a8bf0-benzene276:localhost", teams: [payments] }
+  bob:      { chat: rev-backend,  agent: bob-reviewer, teams: [payments] }
+  eli:      { chat: rev-frontend, agent: eli-reviewer, teams: [consumer] }
+  # ana signs off tests in the room, so the policy needs a GitHub login for her as an approver; this placeholder is not a real account (D158)
+  ana:      { github: prathameshk421, chat: rev-infra,    agent: ana-reviewer, teams: [security] }
+domains: { "internal/payments/**": money_movement, "internal/refunds/**": money_movement, "internal/export/**": tenant_data }
+reviewers: { count: 3, pick_timeout: 15m, required: { "internal/refunds/**": [bob], "api/openapi.yaml": [eli] } }
+slop: { max_changed_lines: 400, require_ticket: true, ignore: ["go.sum"] }
+tests:
+  dir: tests/heimdall
+  allowed_imports: [github.com/stretchr/testify]
+  sensitive: ["**/export/**", "*delete*", "*privacy*", "*consent*"]
+  min_mutation_score: 0.6
+  mutation_blocks: false
+blocking: { min_severity: medium, min_tier: E3 }
+consensus: { min_high_reporters: 2, block_score: 1.5, min_reporters: majority, confidence: { high: 1.0, medium: 0.5, low: 0.2 }, weight: { start: 0.7, min: 0.3, max: 1.0, min_decided: 5 } }
+deliberation: { max_rounds: 2, human_only_domains: [money_movement, data_deletion] }
+keys: { openrouter: production }
+models: { provider: openrouter, test_author: openrouter/deepseek/deepseek-v4-flash, reviewer: openrouter/deepseek/deepseek-v4-flash, resolver: openrouter/deepseek/deepseek-v4-flash, extraction: deepseek/deepseek-v4-flash, embedding: "openrouter:mongodb/voyage-4-lite" }
+budgets: { test_author: 400000, reviewer: 150000, resolver: 120000, per_change: 1200000 }
+skills: { test_author: "1.0.0", reviewer: "1.0.0", resolver: "1.0.0" }
+memory: { rooms: [payments-eng], chat_keywords: [decided, decision, "we will", incident, postmortem] }
+pack: { max_age_days: 14 }
+timeouts: { question: 4h, remind_after: 2h, escalate_after: 8h, reject_after: 24h }
+ci_required: []
+chat: { bridge: mattermost, verbosity: milestones, decisions_in_room: true }
+github: { mode: poll, interval: 10s }
+tracker: { kind: jira, mode: poll, interval: 30s }
+agents: { runtime: opencode }

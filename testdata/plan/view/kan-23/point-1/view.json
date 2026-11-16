@@ -2,39 +2,52 @@
   "trigger": {
     "ticket": "KAN-23",
     "repo": "aarush323/heimdall-fixture-pay",
-    "assignee": "prathameshk421",
-    "source": "jira"
+    "assignee": "712020:ae84de36-bdd7-4bf1-a68f-7ee4b7314cf2",
+    "source": "jira",
+    "acceptance_criteria": [
+      "AC1",
+      "AC2",
+      "AC3"
+    ]
   },
-  "room": "room-kan-23",
+  "room": "8511dff5-fd48-40df-a1fd-dcb2f2615638",
   "branch": {
     "repo": "aarush323/heimdall-fixture-pay",
-    "branch": "KAN-23-tests",
-    "base_sha": "9b49652"
+    "branch": "KAN-23-refund-part-of-a-payment",
+    "base_sha": "9b4965238755b6473e8ea58632b7f045661b20dd"
   },
   "plan": null,
   "tests": {
-    "sha": "2c23b01",
-    "tree_hash": "8e23b01",
+    "sha": "9b4965238755b6473e8ea58632b7f045661b20dd",
     "refs": [
-      "tests/heimdall/KAN-23/refund_cap_test.go"
+      "tests/heimdall/KAN-23/refund_test.go"
     ],
     "ac_map": {
       "AC1": [
-        "TestRefundOverCapIsRefused"
+        "TestRefundValidAmountReturns201WithRefundJSON",
+        "TestRefundExactPaymentAmountReturns201"
       ],
       "AC2": [
-        "TestRefundResponseNamesMerchant"
+        "TestRefundLargerThanPaymentReturns422",
+        "TestMultipleRefundsCappedAtPaymentAmount"
+      ],
+      "AC3": [
+        "TestRefundOtherMerchantReturns404"
       ]
     },
-    "verified": true,
-    "needs_signoff": true
+    "verified": null,
+    "rejected": [],
+    "approved_by": "",
+    "committed": null
   },
   "pr": null,
   "tasks": {
-    "tsk_01KANTB0000000000000000001": {
+    "tsk_01M6WQ41K5S4EMH22JEQRVJ3TR": {
       "agent": "test-author",
       "role": "test-author",
-      "status": "submitted"
+      "deadline": "2026-11-08T06:37:00.133667355Z",
+      "status": "acked",
+      "progress": "KAN-23: writing test file for POST /payments/{id}/refunds with AC1 (201), AC2 (422 oversized), AC3 (404 wrong merchant)."
     }
   },
   "reviews": {},

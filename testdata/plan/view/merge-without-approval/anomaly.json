@@ -1,7 +1,0 @@
-[
-  {
-    "code": "merged_without_approval",
-    "event_index": 14,
-    "description": "PR closed with merged: true but no approval was recorded for head 59effae"
-  }
-]

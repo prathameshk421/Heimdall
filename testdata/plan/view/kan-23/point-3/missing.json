@@ -2,19 +2,29 @@
   {
     "step": "review",
     "role": "reviewer",
-    "description": "review by reviewer-1",
-    "kind": "review"
+    "clause": "",
+    "subject": "reviewer-1",
+    "text": "reviewer-1 reviews 619a8f4"
   },
   {
     "step": "review",
     "role": "reviewer",
-    "description": "review by reviewer-2",
-    "kind": "review"
+    "clause": "",
+    "subject": "reviewer-2",
+    "text": "reviewer-2 reviews 619a8f4"
   },
   {
-    "step": "review",
-    "role": "reviewer",
-    "description": "review by reviewer-3",
-    "kind": "review"
+    "step": "gate",
+    "role": "",
+    "clause": "blocking",
+    "subject": "F1",
+    "text": "F1 is resolved (E1 high, open)"
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "approval",
+    "subject": "",
+    "text": "an approver who is not the author approves 619a8f4"
   }
 ]

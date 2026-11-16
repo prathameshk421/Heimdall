@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "step": "review",
+    "role": "reviewer",
+    "clause": "",
+    "subject": "reviewer-2",
+    "text": "reviewer-2 reviews 59effae"
+  },
+  {
+    "step": "gate",
+    "role": "",
+    "clause": "ci",
+    "subject": "heimdall/acceptance",
+    "text": "heimdall/acceptance succeeds on 59effae"
+  }
+]

@@ -1,6 +1,0 @@
-KAN-22 · Health endpoint                                           ready to merge
-Tests      ✅ 2 behaviours, committed 1c22a02
-PR         #10 by prathamesh · acceptance ✅ on 59effae
-Reviews    Reviewer 1 ✅ clean · Reviewer 2 ✅ clean · Reviewer 3 ✅ clean
-Findings   all resolved
-Next       ready to merge

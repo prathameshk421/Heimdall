@@ -1,6 +1,0 @@
-KAN-22 · Health endpoint                                           merged (ANOMALY: merged without approval)
-Tests      ✅ 1 behaviour, committed 1c22a02
-PR         #10 by prathamesh · merged without approval
-Reviews    Reviewer 2 ✅ clean
-Findings   none
-Next       merged
