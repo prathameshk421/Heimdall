@@ -2,7 +2,8 @@
   {
     "step": "wait_pr",
     "role": "",
-    "description": "pull request opened",
-    "kind": ""
+    "clause": "",
+    "subject": "",
+    "text": "a pull request for KAN-22 is opened"
   }
 ]

@@ -29,5 +29,7 @@
 // # Tests
 //
 // eventlog_test.go: every testdata/plan/**/script.jsonl builds to the log.jsonl beside it byte for byte, and that
-// log validates and chains. Run with -update to rewrite the logs after a script changes.
+// log validates and chains. Run with -update to rewrite the logs after a script changes. TestViewGoldensAreWellFormed
+// checks the layout testdata/plan/view/README.md promises: a policy the product accepts, whole-line prefixes, and
+// the three outputs of each point.
 package eventlog

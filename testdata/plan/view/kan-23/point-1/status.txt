@@ -1,6 +1,6 @@
-KAN-23 · Refund cap enforcement                                    awaiting test signoff
-Tests      ⏳ 2 behaviours verified, awaiting signoff
-PR         none
-Reviews    none
-Findings   none
-Next       human approval needed on test suite
+KAN-23 · 1 need
+Tests     5 tests for AC1, AC2, AC3 · submitted on 9b49652
+PR        none yet
+Reviews   not picked
+Findings  none
+Next      the sandbox verifies the tests

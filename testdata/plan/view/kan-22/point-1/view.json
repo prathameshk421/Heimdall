@@ -2,45 +2,70 @@
   "trigger": {
     "ticket": "KAN-22",
     "repo": "aarush323/heimdall-fixture-pay",
-    "assignee": "prathameshk421",
-    "source": "jira"
+    "assignee": "712020:ae84de36-bdd7-4bf1-a68f-7ee4b7314cf2",
+    "source": "jira",
+    "acceptance_criteria": [
+      "AC1",
+      "AC2"
+    ]
   },
-  "room": "room-kan-22",
+  "room": "e68467cc-9eeb-41ca-b685-9981744f659b",
   "branch": {
     "repo": "aarush323/heimdall-fixture-pay",
-    "branch": "KAN-22-tests",
-    "base_sha": "4a0f699"
+    "branch": "KAN-22-add-a-health-check-to-the-pay-api",
+    "base_sha": "4a0f6993769e3a3337dee3ea3e35fc3ad825bb88"
   },
   "plan": null,
   "tests": {
-    "sha": "1c22a02",
-    "tree_hash": "7e22a01",
+    "sha": "4a0f6993769e3a3337dee3ea3e35fc3ad825bb88",
     "refs": [
-      "tests/heimdall/KAN-22/health_test.go"
+      "tests/heimdall/KAN-22/healthz_test.go"
     ],
     "ac_map": {
       "AC1": [
-        "TestHealthzReturnsOK"
+        "TestHealthz_Get_Returns200"
       ],
       "AC2": [
-        "TestHealthzRefusesOtherMethods"
+        "TestHealthz_Get_NoMerchantHeader"
       ]
     },
-    "verified": true,
-    "needs_signoff": false
+    "verified": {
+      "tree_hash": "2fe3b3176c058d84a40b1be51097fc07c397a0e1",
+      "needs_signoff": false,
+      "run_ids": [
+        "run_01M6VFHC1CP35FKH5S6TWEC205",
+        "run_01M6VFK30QKCMHKJB6C87SFZYQ",
+        "run_01M6VFM3W9ST4E85KHVYNMTMAB"
+      ]
+    },
+    "rejected": [],
+    "approved_by": "",
+    "committed": {
+      "sha": "4c14494e2221a8535c67db50b4fb77d2e4c44020",
+      "tree_hash": "2fe3b3176c058d84a40b1be51097fc07c397a0e1"
+    }
   },
   "pr": null,
   "tasks": {
-    "tsk_01KANTA0000000000000000001": {
+    "tsk_01M6VFAM1A3XP0WEFPAKY5WCEM": {
       "agent": "test-author",
       "role": "test-author",
-      "status": "progress",
-      "progress_text": "writing tests for GET /healthz"
+      "deadline": "2026-11-07T19:01:32.586133933Z",
+      "status": "acked",
+      "progress": "KAN-22: Writing failing tests for healthz endpoint in tests/heimdall/KAN-22/"
     }
   },
   "reviews": {},
   "findings": {},
-  "decisions": [],
+  "decisions": [
+    {
+      "kind": "remember",
+      "target": "team",
+      "login": "slack_owner",
+      "reason": "the health check must not touch the database",
+      "source_ref": "sw_8c85621be9e0c1fb84cd3b8be392e588"
+    }
+  ],
   "approvals": [],
   "closed": null
 }

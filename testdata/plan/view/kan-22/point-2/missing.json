@@ -2,13 +2,15 @@
   {
     "step": "slop",
     "role": "",
-    "description": "pass slop evaluation on head commit",
-    "kind": ""
+    "clause": "",
+    "subject": "",
+    "text": "the slop rules pass on ee4539d (failing: scope)"
   },
   {
-    "step": "pick",
+    "step": "gate",
     "role": "",
-    "description": "pick reviewers after slop passes",
-    "kind": ""
+    "clause": "approval",
+    "subject": "",
+    "text": "an approver who is not the author approves ee4539d"
   }
 ]

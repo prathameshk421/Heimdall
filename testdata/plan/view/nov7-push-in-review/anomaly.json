@@ -1,7 +1,0 @@
-[
-  {
-    "code": "push_during_review",
-    "event_index": 11,
-    "description": "PR pushed to c09c002 while reviewer task tsk_01KANRX0000000000000000001 on c09c001 was active"
-  }
-]
