@@ -1,63 +1,41 @@
 # Heimdall progress
 
-## Handoff: BUILD_PLAN orchestration (Nov 16, 2026, second session)
+## Handoff: the overhaul (Nov 16, 2026, third session)
 
-**Roles now (owner, Nov 16).** The opus main thread does most work itself; only very token-heavy implementation goes
-to one long-lived haiku builder. No branch is pushed. Plan docs are still uncommitted in the main checkout. Worktrees
-are under `~/.t3/worktrees/switch_shi/`.
+Owner said yes to M0 phase 2 (changing assertions, R2), to completing the three plans, and to SSM on the VM; the bar
+is "no slop: simple, clear, no internal state machines". Everything below is on `heimdall-build`, committed, not
+pushed. `make fast` exit 0 at the last commit (3617 tests). `make verify`: unit, race, lint, archcheck, vuln pass;
+`secrets` fails on one false positive that needs this owner-only line in `.gitleaksignore`:
+`0dc2a9e70dc986edb97da5a12c047e774a64bc4e:testdata/plan/sarif/pair2/new.json:generic-api-key:13`.
 
-| Branch (worktree) | State |
-|---|---|
-| `m0-core` (`t3-25782f1e`) | step 1 `aa654e7`; `d78c366` removes a 38 MB server binary step 1 committed by mistake (still in history: **M6 must squash-merge M0**); step 2b `f0573ab`: `scripts/check-owned.sh` and the archcheck parser rule, fixtures inside/outside, `make fast` exit 0. Steps 3 to 7 wait on the owner's yes to change assertions (R2) |
-| `m1-runner` (`t3-937f6fd9`) | steps 1-4, 6 as before, plus `ff707be`: the four owner decisions (private mirror token, service tmpfs data dir, TCP readiness, `heimdall.job=1` label and boot sweep), tests first, `make fast` exit 0. Step 5 waits on ST1 |
-| `m2a-lenses`, `m2b-skills` | unchanged (done; m2a still needs a high-tier read of the security and data cards) |
-| `m6-proof` (`t3-1466abbe`) | fix branches A, B, C merged (`0a8e2be`, `2a836b5`, `27f62b9`). `make fast` exit 0 (4231), `testdata/testbench/run_gold.sh` exit 0 (24 rows), `reviewbench/heldout/check_build.sh` exit 0, `check-owned.sh M6`: 209 paths, all inside |
+**Done**
+- Integration: plan docs committed; M0 (squash, no binary), M6 goldens A/B/C, M1, M2a, M2b merged; Go 1.27.4.
+- **M0 complete.** No state machine: `change.Fold` (View), `change.Missing` (F1 rule 3 as a row table), `CanAppend` and
+  four predicates (`ErrRefused`); reducer, states and their tests deleted; every caller moved; TECH_SPEC 3.3
+  rewritten; goldens in `testdata/plan/view` reproduced byte for byte. `workflow/kinds.go` replaces the role switches.
+  `policy.Seats`, `people.<p>.seat`, `ValidateSeats`.
+- **M5 (opus):** addressing `commands.Route` (address goldens); `announce.Render` (status goldens);
+  `propose_command` end to end (`command.proposed`/`command.confirmed`, the open-proposal predicate, the sender's own
+  yes, injection cases); `questions.Due`; `liveness.Next`; the tool-call record (migration 0013, redaction) and
+  repeat detection; `internal/secretscan` (scanner moved out of `pack`) and the room post scan hook.
+- **M3/M4 (haiku builder, reviewed):** SARIF `New` (goldens), submit rules `Review@2` (goldens, exact again), refute
+  rules, scope and budget, the miner (goldens), learning tables, card scope; `TestPlan@1` (goldens), survivor
+  predicate, the survivors gate row.
 
-**Goldens, what changed.**
-- **A (view, status), opus.** KAN-22 and KAN-23 rebuilt from the recorded VM logs (58 and 45 events; payloads verbatim,
-  envelopes rebuilt by `eventlog`), with each change's merge-base `heimdall.yaml`. `testdata/plan/view/README.md` is
-  now the spec: View JSON shape, one fold rule per event, `Missing` as F1 rule 3 with a done rule per row and the gate
-  clauses the view can decide, the need vocabulary, serialization. Cross-check: wherever the recorded log has a
-  `gate.evaluated` on the same head, its reasons match `missing.json`. Both Nov 7 breaks are inside the KAN-22 log, so
-  the authored `nov7-*` dirs are gone. **Anomaly goldens NOT READY** (no document defines an anomaly). `status/rendered`
-  duplicates removed; `status/README.md` defines `Render`. New test `TestViewGoldensAreWellFormed`.
-- **B (sarif, review, testplan, mine, address), opus.** Each directory's README lists what is derived and its open
-  questions; each refused case breaks exactly one rule (checked by evaluating all rules on every case). Mine: 10 rules
-  (was 1), a merge commit that must be ignored, no invented region or float. Address: typed grammar runs with no
-  confirmation (5.1); F3 seat policy behind `@security`.
-- **C (testbench, reviewbench/heldout), haiku builder, reviewed by opus.** Four cases with Go references (Python for
-  KAN-22, KAN-23), three single-point mutants each, real gold tests; answer hints removed from heldout; G2 is now a
-  card-only log-key rule; G1 stays inside the diff (GOLD.md says so). Ticket wording tightened (KAN-23: the cap is on the
-  running total).
-- **Re-review:** opus self-review only (adversarial checks: recomputed SARIF fingerprints, rules, fold cross-check,
-  rule-break matrix, reran both bench scripts). No independent second model reviewed A and B, under the owner's
-  one-haiku rule.
+**Spike SI1 (from Switch source f100d2c5):** `post_message` takes a `thread_id`, so threads exist. Agents have no
+operation to edit a posted message and none to post a card. Bridges can redraw a post internally (`update_rich` on
+every platform), so 4.3's decision applies: add an `update_message` operation to Switch as a patch.
 
-**Owner decisions needed.**
-1. **M0 phase 2 (steps 3 to 7) changes existing assertions** (`ErrIllegalTransition` become predicate refusals; the
-   reducer is deleted). R2 needs your yes, asked once.
-2. **M0 step 1 changed `internal/schema/skill_examples_test.go`** (outside M0's row; reads every `tools*.go` instead of
-   `tools.go`; same assertions). Yes or revert.
-3. **Open questions in the golden READMEs** (`view` Q1-Q7: mutation row, anomaly definition, task completion, review
-   coverage, gate clauses outside the view, changed domains, `proposed` state; plus each of sarif, review, testplan,
-   mine, address). The goldens are built so no case depends on an undecided answer.
-
-**Noticed.**
-- A test that creates a git repo inherited `GIT_DIR`/`GIT_INDEX_FILE` from the pre-commit hook and wiped M0's index
-  and set `core.bare=true` on the shared repo config (both repaired the same minute; no refs or commits changed).
-  `owned_test.go` now pins its children's git to the temp repo. Any future test that runs git must do the same.
-- `cmd/heimdall-runner/main.go` must call `runner.Sweep(ctx)` before `Listen`; the file is in no module's row, so M6
-  adds the line at merge.
-- `check-owned.sh M1` flags `internal/ports/types_work_test.go` (touched by earlier M1 commits): the row lists
-  `types_work.go` but not its test. Section 2's M1 row should read `internal/ports/types_work*.go`.
-- KAN-21's recorded log (27 events, closed unmerged, then rejected) is exported and has no golden yet.
-
-**Not verified (live, with the owner and the VM):** the M1 probe (`podman unshare --rootless-netns`, podman 4.9.3 lists
-it), the tmpfs data dir, the sweep, the private-mirror fetch; spikes SI1-SI5, SR1-SR3, ST1-ST4; the six live runner
-checks under M1 Noticed. **VM:** still running (started Nov 16 for the log export); stop with
-`aws ec2 stop-instances --profile heimdall --region ap-south-1 --instance-ids i-019af6359c549dfb0`.
-
-**Next:** with the owner's yes, M0 phase 2 (opus), then M3, M4, M5; M6 merges M0 (squash) and the rest.
+**Not done (each is real work, in order)**
+1. Wiring: M3 step 2 (check effect through the M1 runner), lensfs, routing into the pick, the refute kind; M4 steps
+   1, 2, 4, 5, 8 to 12 and the survivor count in gateuse; `liveness.Next` and `questions.Due` into the loops with a
+   provider probe; card texts and canaries into the post scan; the three-part refusal for every existing tool;
+   `heimdall trace show`.
+2. M5 step 13: delete the pack pipeline (`internal/pack`, `read_pack`, `publish_pack`, `PackExists`, `BaseReader`).
+3. M5 steps 1, 2, 4 (live), 10, 11: every role in its working room, threads and the status message kept current
+   (needs the Switch `update_message` patch), the agent host template, the lead agent.
+4. M6 on the VM: the fixture repo's `heimdall.yaml` must say `seat:` instead of `agent:` before the next live run;
+   deploy; spikes SI2, SI3, SR1, SR2, ST1; the M1 live checks; a live ticket to merge.
 
 ## Architecture plans for the next stage (Nov 14, 2026, planning only)
 
