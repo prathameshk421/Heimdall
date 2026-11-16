@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/record"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -333,12 +334,39 @@ func (s *Server) callTool(ctx context.Context, p Principal, params json.RawMessa
 	if !ok {
 		return nil, invalidParams()
 	}
+	started := s.deps.Clock.Now()
 	p, args, err := withTicket(p, call.Arguments)
-	if err != nil {
-		return s.toolOutcome(ctx, p, t.name, "", err), nil
+	var text string
+	if err == nil {
+		text, err = t.handle(ctx, p, args)
 	}
-	text, err := t.handle(ctx, p, args)
+	err = s.recordCall(ctx, p, t.name, call.Arguments, started, text, err)
 	return s.toolOutcome(ctx, p, t.name, text, err), nil
+}
+
+// recordCall writes the call to the record (AGENT_INTERACTION_ARCH 9) and makes repeats visible (6.2): the third equal
+// refusal in a row comes back as a shorter, different message. A failure to record is logged and never fails the call.
+func (s *Server) recordCall(ctx context.Context, p Principal, name string, args json.RawMessage, started time.Time, text string, err error) error {
+	if s.deps.Calls == nil {
+		return err
+	}
+	c := ports.ToolCall{At: started, Agent: p.Agent, Ticket: p.Ticket, Tool: name, Args: record.Summarize(args), Outcome: "ok",
+		ResultBytes: len(text), Duration: s.deps.Clock.Now().Sub(started)}
+	var ref refusal
+	switch {
+	case err == nil:
+	case errors.As(err, &ref):
+		c.Outcome, c.Refusal = "refused", string(ref)
+		if recent, rerr := s.deps.Calls.RecentCalls(ctx, p.Agent, 2); rerr == nil && record.RepeatedRefusals(recent, name, c.Refusal) >= 2 {
+			err = refusal(record.RepeatMessage(name, c.Refusal))
+		}
+	default:
+		c.Outcome = "failed"
+	}
+	if rerr := s.deps.Calls.RecordCall(ctx, c); rerr != nil {
+		s.deps.Logger.ErrorContext(ctx, "record tool call", "tool", name, "agent", p.Agent, "cause", rerr)
+	}
+	return err
 }
 
 // toolFor returns the named tool when the role may call it.

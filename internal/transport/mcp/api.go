@@ -188,6 +188,8 @@ type Deps struct {
 	Graph CodeGraph
 	// Proposer backs propose_command. The tool exists only when it is set.
 	Proposer Proposer
+	// Calls is the record of tool calls. Without it nothing is recorded and repeats are not detected.
+	Calls ports.ToolCalls
 }
 
 // Server answers MCP requests for the agents' tools.

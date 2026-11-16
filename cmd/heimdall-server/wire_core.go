@@ -88,6 +88,7 @@ type mcpStore interface {
 	ports.EventStore
 	ports.EpisodeSourceTrust
 	reviewlearn.History
+	ports.ToolCalls
 }
 
 // newTasksAdapter builds the MCP task adapter: test submissions advance the engine, and agent output is filtered.
@@ -174,6 +175,7 @@ func assembleMCP(
 		Briefs:   moat.briefs,
 		Graph:    moat.graph,
 		Proposer: commands,
+		Calls:    store,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("build mcp server: %w", err)
