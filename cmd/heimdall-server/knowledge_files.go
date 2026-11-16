@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/graphiti"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/pack"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
@@ -26,7 +27,7 @@ func assembleKnowledgeRetention(d deps, ad adapters, store knowledgeStore, blobs
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	scanner, err := pack.NewSecretScanner()
+	scanner, err := secretscan.NewSecretScanner()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("build knowledge file scanner: %w", err)
 	}
@@ -43,7 +44,7 @@ func assembleKnowledgeRetention(d deps, ad adapters, store knowledgeStore, blobs
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("build workflow memory projection: %w", err)
 	}
-	// The Gitleaks SecretScanner (T48) redacts knowledge files and workflow payloads and reports what it removed.
+	// The Gitleaks secretscan.SecretScanner (T48) redacts knowledge files and workflow payloads and reports what it removed.
 	service, err := knowledge.NewFileService(ad.vcs, ad.vcs, blobs, deleter, store,
 		knowledge.PolicyFileApproval{Code: ad.vcs, Decode: policyyaml.Decode}, worker, lifecycle,
 		knowledgeScanner{scanner: scanner}, clk)
@@ -72,7 +73,7 @@ type knowledgeStore interface {
 	knowledge.WorkflowHistory
 }
 
-type knowledgeScanner struct{ scanner *pack.SecretScanner }
+type knowledgeScanner struct{ scanner *secretscan.SecretScanner }
 
 func (s knowledgeScanner) Scan(raw string) (string, []knowledge.RedactionSummary, error) {
 	clean, hits, err := s.scanner.Scan(raw)

@@ -9,12 +9,13 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
+
 	"gopkg.in/yaml.v3"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/cardsfs"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/cardgen"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/rulecard"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/pack"
 )
 
 const longCardChars = 1500
@@ -80,7 +81,7 @@ func checkCardText(name, text string) cardReport {
 		r.problems = append(r.problems, err.Error())
 		return r
 	}
-	if _, found := pack.RedactReport(text); len(found) > 0 {
+	if _, found := secretscan.RedactReport(text); len(found) > 0 {
 		kinds := make([]string, 0, len(found))
 		for _, f := range found {
 			kinds = append(kinds, f.Kind)

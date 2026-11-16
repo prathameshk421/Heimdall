@@ -6,12 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestDraftSaveLoadKeepsOnlyReviewablePackMaterial(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".heimdall", "pack-draft.json")
-	want := Draft{Person: "alice", Version: 2, CreatedAt: time.Date(2026, 11, 6, 1, 0, 0, 0, time.UTC), Canary: "canary-token", Sections: []Section{{Name: "invariants", Content: "safe text"}}, Removed: []Redaction{{Kind: "email", Count: 1}}}
+	want := Draft{Person: "alice", Version: 2, CreatedAt: time.Date(2026, 11, 6, 1, 0, 0, 0, time.UTC), Canary: "canary-token", Sections: []Section{{Name: "invariants", Content: "safe text"}}, Removed: []secretscan.Redaction{{Kind: "email", Count: 1}}}
 	require.NoError(t, SaveDraft(path, want))
 	got, err := LoadDraft(path)
 	require.NoError(t, err)

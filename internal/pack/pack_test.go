@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
+
 	"filippo.io/age"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +19,7 @@ const fakeAWSKey = "AKIA" + "1234567890ABCDEF"
 
 func TestRedactRemovesCredentialAndPIIWithoutKeepingValues(t *testing.T) {
 	input := "token=" + fakeAWSKey + " email alice@example.com Authorization: Bearer abcdefghijklmnop"
-	got, hits := RedactReport(input)
+	got, hits := secretscan.RedactReport(input)
 	require.NotContains(t, got, fakeAWSKey)
 	require.NotContains(t, got, "alice@example.com")
 	require.NotContains(t, got, "abcdefghijklmnop")
@@ -29,7 +31,7 @@ func TestRedactRemovesCredentialAndPIIWithoutKeepingValues(t *testing.T) {
 }
 
 func TestEmbeddedGitleaksRulesRedactPlantedAWSKey(t *testing.T) {
-	scanner, err := NewSecretScanner()
+	scanner, err := secretscan.NewSecretScanner()
 	require.NoError(t, err)
 	redacted, hits, err := scanner.Scan("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE")
 	require.NoError(t, err)
@@ -38,14 +40,14 @@ func TestEmbeddedGitleaksRulesRedactPlantedAWSKey(t *testing.T) {
 }
 
 func TestScannerRedactsLuhnCardAndOrganizationDenials(t *testing.T) {
-	scanner, err := NewSecretScannerWithConfig(ScannerConfig{InternalHostnames: []string{"git.internal.example"}, DenyTerms: []string{"Project Nightingale"}})
+	scanner, err := secretscan.NewSecretScannerWithConfig(secretscan.ScannerConfig{InternalHostnames: []string{"git.internal.example"}, DenyTerms: []string{"Project Nightingale"}})
 	require.NoError(t, err)
 	got, hits, err := scanner.Scan("card 4111 1111 1111 1111 host git.internal.example project nightingale")
 	require.NoError(t, err)
 	require.NotContains(t, got, "4111 1111 1111 1111")
 	require.NotContains(t, got, "git.internal.example")
 	require.NotContains(t, got, "Nightingale")
-	require.Contains(t, hits, Redaction{Kind: "payment_card", Count: 1})
+	require.Contains(t, hits, secretscan.Redaction{Kind: "payment_card", Count: 1})
 }
 
 func FuzzRedactNeverReturnsMatchedCredential(f *testing.F) {
@@ -55,7 +57,7 @@ func FuzzRedactNeverReturnsMatchedCredential(f *testing.F) {
 		if len(input) > maxSourceBytes {
 			return
 		}
-		redacted, _ := RedactReport(input)
+		redacted, _ := secretscan.RedactReport(input)
 		require.NotContains(t, redacted, "AKIA1234567890ABCDEF")
 		require.NotContains(t, redacted, "user@example.com")
 	})
@@ -88,7 +90,7 @@ func TestSecondPassBlocksAnySecretIntroducedByDistiller(t *testing.T) {
 			return []Section{{Name: "invariants.md", Content: "leaked alice@example.com"}}, nil
 		}),
 		Scanner: scannerFunc{},
-		Review:  reviewFunc(func(context.Context, Manifest, []Section, []Redaction) (bool, error) { return true, nil }),
+		Review:  reviewFunc(func(context.Context, Manifest, []Section, []secretscan.Redaction) (bool, error) { return true, nil }),
 		Cipher:  cipherFunc{}, Upload: upload,
 	})
 	require.ErrorContains(t, err, "redact pack section")
@@ -108,7 +110,7 @@ func TestBuildRequiresApprovalBeforeEncryptionAndUpload(t *testing.T) {
 			return []Section{{Name: "invariants.md", Content: "safe"}}, nil
 		}),
 		Scanner: scannerFunc{},
-		Review:  reviewFunc(func(context.Context, Manifest, []Section, []Redaction) (bool, error) { return false, nil }), Cipher: cipher, Upload: upload,
+		Review:  reviewFunc(func(context.Context, Manifest, []Section, []secretscan.Redaction) (bool, error) { return false, nil }), Cipher: cipher, Upload: upload,
 	})
 	require.ErrorContains(t, err, "owner approval")
 	require.False(t, cipher.called)
@@ -155,14 +157,14 @@ func (f distillerFunc) Distill(ctx context.Context, d []SourceDocument) ([]Secti
 
 type scannerFunc struct{}
 
-func (scannerFunc) Scan(s string) (string, []Redaction, error) {
-	text, hits := RedactReport(s)
+func (scannerFunc) Scan(s string) (string, []secretscan.Redaction, error) {
+	text, hits := secretscan.RedactReport(s)
 	return text, hits, nil
 }
 
-type reviewFunc func(context.Context, Manifest, []Section, []Redaction) (bool, error)
+type reviewFunc func(context.Context, Manifest, []Section, []secretscan.Redaction) (bool, error)
 
-func (f reviewFunc) Approve(ctx context.Context, m Manifest, s []Section, r []Redaction) (bool, error) {
+func (f reviewFunc) Approve(ctx context.Context, m Manifest, s []Section, r []secretscan.Redaction) (bool, error) {
 	return f(ctx, m, s, r)
 }
 

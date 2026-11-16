@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
+
 	"filippo.io/age"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +27,7 @@ func TestTask_T48(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(docs, "guide.md"), []byte("Use idempotency keys. Contact maintainer@example.invalid.\n"), 0o600))
 	documents, err := CollectMarkdown(repo, []string{"docs/guide.md"})
 	require.NoError(t, err)
-	scanner, err := NewSecretScanner()
+	scanner, err := secretscan.NewSecretScanner()
 	require.NoError(t, err)
 	identity, err := age.GenerateX25519Identity()
 	require.NoError(t, err)
@@ -61,7 +63,7 @@ func TestTask_T48(t *testing.T) {
 
 type e2eOwnerReview struct{ approved bool }
 
-func (r *e2eOwnerReview) Approve(_ context.Context, _ Manifest, sections []Section, removed []Redaction) (bool, error) {
+func (r *e2eOwnerReview) Approve(_ context.Context, _ Manifest, sections []Section, removed []secretscan.Redaction) (bool, error) {
 	r.approved = len(sections) > 0 && len(removed) > 0
 	return r.approved, nil
 }

@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/cardgen"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/pack"
 )
 
 const (
@@ -90,7 +91,7 @@ func scanRepo(ctx context.Context, f scanFlags, env cardsEnv) (scanState, []card
 	if info, err := os.Stat(f.repo); err != nil || !info.IsDir() {
 		return scanState{}, nil, fmt.Errorf("repository %q is not a folder", f.repo)
 	}
-	redact := func(s string) string { r, _ := pack.RedactReport(s); return r }
+	redact := func(s string) string { r, _ := secretscan.RedactReport(s); return r }
 	name, email := gitIdentity(ctx, env.git, f.repo)
 	state := scanState{Repo: f.repo, RepoName: filepath.Base(f.repo), Identity: strings.TrimSpace(name + " <" + email + ">"), Docs: findDocs(f.repo)}
 	cutoff := env.now().AddDate(0, 0, -f.days)

@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
+
 	"github.com/pelletier/go-toml/v2"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/pack"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
@@ -137,7 +139,7 @@ func refreshPack(ctx context.Context, p localPackProfile, secrets config.Config,
 	if err != nil {
 		return fmt.Errorf("pack profile openrouter_key_secret: %w", err)
 	}
-	scanner, err := pack.NewSecretScanner()
+	scanner, err := secretscan.NewSecretScanner()
 	if err != nil {
 		return fmt.Errorf("build pack secret scanner: %w", err)
 	}
@@ -257,7 +259,7 @@ type terminalPackReview struct {
 	output io.Writer
 }
 
-func (r terminalPackReview) Approve(_ context.Context, manifest pack.Manifest, sections []pack.Section, removed []pack.Redaction) (bool, error) {
+func (r terminalPackReview) Approve(_ context.Context, manifest pack.Manifest, sections []pack.Section, removed []secretscan.Redaction) (bool, error) {
 	if _, err := fmt.Fprintf(r.output, "Pack %s v%d. Removed-material summary: %v\n", manifest.Person, manifest.Version, removed); err != nil {
 		return false, err
 	}
