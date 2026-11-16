@@ -37,33 +37,20 @@ type OnFail struct {
 }
 
 // Default is the default workflow of TECH_SPEC 5.1, all fourteen steps in the order the spec lists them. The
-// mutation step is marked Later in the spec and is kept, because the spec lists it in the workflow.
+// mutation step is marked Later in the spec and is kept, because the spec lists it in the workflow. Each area declares
+// its own rows (rows_<area>.go); the order of the steps is declared here and nowhere else.
 func Default() Workflow {
-	return Workflow{Version: 1, Steps: []Step{
-		{ID: "open_room", On: "jira.transitioned{to:'In Progress',assignee:human}", Do: "switch.open_room",
-			With: json.RawMessage(`{"invite":["role:test-author","person:$assignee"]}`)},
-		{ID: "branch", After: []string{"open_room"}, Do: "github.ensure_branch",
-			With: json.RawMessage(`{"name":"{ticket}-{slug}"}`)},
-		{ID: "write_tests", After: []string{"branch"}, Do: "agent.task", Role: RoleTestAuthor,
-			Output: "TestSubmission@1", Timeout: 2 * time.Hour},
-		{ID: "test_qa", After: []string{"write_tests"}, Do: "sandbox.test_quality",
-			With:   json.RawMessage(`{"checks":["red_first","ac_coverage","flake","contracts"]}`),
-			OnFail: &OnFail{Retry: "write_tests", Until: "task_budget", Then: "escalate"}},
-		{ID: "commit", After: []string{"test_qa", "signoff"}, Do: "github.commit_tests",
-			With: json.RawMessage(`{"dir":"tests/heimdall/{ticket}"}`)},
-		{ID: "wait_pr", After: []string{"commit"}, Do: "wait",
-			With: json.RawMessage(`{"event":"pr.opened"}`)},
-		{ID: "slop", After: []string{"wait_pr"}, Do: "rule.slop", OnFail: &OnFail{Then: "reject"}},
-		{ID: "pick", After: []string{"slop"}, Do: "human.pick_reviewers", Timeout: time.Minute,
-			With: json.RawMessage(`{"default":"suggest"}`)},
-		{ID: "review", After: []string{"pick"}, Do: "agent.fanout", Role: RoleReviewer,
-			Output: "Review@1", Timeout: 30 * time.Minute, With: json.RawMessage(`{"from":"review_requests"}`)},
-		{ID: "verify", After: []string{"review"}, Do: "sandbox.verify_evidence"},
-		{ID: "signoff", After: []string{"test_qa"}, Do: "human.approve_tests", When: "sensitive_domain"},
-		{ID: "mutation", After: []string{"review"}, Do: "sandbox.mutation",
-			With: json.RawMessage(`{"scope":"changed_lines"}`)},
-		{ID: "deliberate", After: []string{"verify"}, Do: "deliberation.run", Role: RoleResolver, Timeout: 30 * time.Minute,
-			With: json.RawMessage(`{"max_rounds":2}`)},
-		{ID: "gate", On: "any", Do: "rule.merge_allowed"},
-	}}
+	rows := map[string]Step{}
+	for _, area := range [][]Step{coreRows(), testsRows(), reviewRows()} {
+		for _, s := range area {
+			rows[s.ID] = s
+		}
+	}
+	order := []string{"open_room", "branch", "write_tests", "test_qa", "commit", "wait_pr", "slop", "pick", "review",
+		"verify", "signoff", "mutation", "deliberate", "gate"}
+	steps := make([]Step, 0, len(order))
+	for _, id := range order {
+		steps = append(steps, rows[id])
+	}
+	return Workflow{Version: 1, Steps: steps}
 }

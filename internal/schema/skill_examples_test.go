@@ -256,15 +256,22 @@ func modelToolName(t *testing.T, wire string) string {
 	return "heimdall_" + wire
 }
 
-// implementedTools reads the tool table the MCP server builds today, as the model sees each name.
+// implementedTools reads the tool table the MCP server builds today, as the model sees each name. The table is split
+// by area into internal/transport/mcp/tools*.go.
 func implementedTools(t *testing.T) map[string]bool {
 	t.Helper()
-	body := readText(t, filepath.Join("..", "..", "internal", "transport", "mcp", "tools.go"))
+	files, err := filepath.Glob(filepath.Join("..", "..", "internal", "transport", "mcp", "tools*.go"))
+	require.NoError(t, err)
 	set := map[string]bool{}
-	for _, m := range regexp.MustCompile(`name: "([a-z][a-z_]*)"`).FindAllStringSubmatch(body, -1) {
-		set[modelToolName(t, m[1])] = true
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		for _, m := range regexp.MustCompile(`name: "([a-z][a-z_]*)"`).FindAllStringSubmatch(readText(t, file), -1) {
+			set[modelToolName(t, m[1])] = true
+		}
 	}
-	require.NotEmpty(t, set, "no tool names were found in internal/transport/mcp/tools.go")
+	require.NotEmpty(t, set, "no tool names were found in internal/transport/mcp/tools*.go")
 	return set
 }
 

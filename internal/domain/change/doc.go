@@ -13,6 +13,11 @@
 //   - EventID, RoomID, SenderID, MessageID, QuestionID, CorrelationID, ActorID, Repo: typed identifiers. Those the id
 //     package does not define (events and Switch's ids) are defined here, with the same validate-on-parse rule.
 //
+// Layout by area. The catalog is split into one file per area: events_core.go, events_tests.go, events_review.go,
+// events_checks.go and events_talk.go. Each holds its event type constants, their payload types and its part of the
+// payload registry; registry() in payload.go joins the parts. The catalog order (All, in event.go) is the order of
+// TECH_SPEC 3.2 and is declared there only.
+//
 // Invariants (TECH_SPEC 3.4) that this package guards by construction:
 //   - Invariant 1: Decode and Event.Validate refuse decision.recorded and approval.recorded from an agent. Reduce
 //     reads decision.recorded through Decode, so the same refusal reaches it.

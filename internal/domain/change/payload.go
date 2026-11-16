@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 )
 
 // Payload is the typed content of one event. Every payload type has a Validate that reports every problem.
@@ -25,55 +26,17 @@ func entry[T Payload]() payloadEntry {
 	return payloadEntry{zero: zero, decode: decodeAs[T]}
 }
 
-// registry maps every catalog type to its payload type. It is built fresh on each call because package-level
-// mutable state is not allowed in the domain; the map is small.
+// registry maps every catalog type to its payload type. Each area of the catalog (events_<area>.go) declares its own
+// entries; registry joins them. It is built fresh on each call because package-level mutable state is not allowed in
+// the domain; the map is small.
 func registry() map[EventType]payloadEntry {
-	return map[EventType]payloadEntry{
-		EventChangeTriggered:         entry[Triggered](),
-		EventRoomOpened:              entry[RoomOpened](),
-		EventBranchEnsured:           entry[BranchEnsured](),
-		EventTaskAssigned:            entry[TaskAssigned](),
-		EventTaskAcked:               entry[TaskAcked](),
-		EventTaskTimedOut:            entry[TaskTimedOut](),
-		EventTaskFailed:              entry[TaskFailed](),
-		EventTaskProgress:            entry[TaskProgress](),
-		EventStepRetried:             entry[StepRetried](),
-		EventStepEscalated:           entry[StepEscalated](),
-		EventStepResumed:             entry[StepResumed](),
-		EventQuestionAsked:           entry[QuestionAsked](),
-		EventQuestionAnswered:        entry[QuestionAnswered](),
-		EventTestsSubmitted:          entry[TestsSubmitted](),
-		EventTestsVerified:           entry[TestsVerified](),
-		EventTestsRejected:           entry[TestsRejected](),
-		EventTestsCommitted:          entry[TestsCommitted](),
-		EventTestsApproved:           entry[TestsApproved](),
-		EventTicketChanged:           entry[TicketChanged](),
-		EventPROpened:                entry[PROpened](),
-		EventPRPushed:                entry[PRPushed](),
-		EventPRLinked:                entry[PRLinked](),
-		EventPRClosed:                entry[PRClosed](),
-		EventSlopEvaluated:           entry[SlopEvaluated](),
-		EventReviewersPicked:         entry[ReviewersPicked](),
-		EventReviewSubmitted:         entry[ReviewSubmitted](),
-		EventReviewUnavailable:       entry[ReviewUnavailable](),
-		EventReviewWaived:            entry[ReviewWaived](),
-		EventFindingFiled:            entry[FindingFiled](),
-		EventFindingVerified:         entry[FindingVerified](),
-		EventFindingStateChanged:     entry[FindingStateChanged](),
-		EventFindingRecheckRequested: entry[FindingRecheckRequested](),
-		EventChallengeFiled:          entry[ChallengeFiled](),
-		EventCaseOpened:              entry[CaseOpened](),
-		EventVerdictSubmitted:        entry[VerdictSubmitted](),
-		EventVerdictApplied:          entry[VerdictApplied](),
-		EventVerdictEscalated:        entry[VerdictEscalated](),
-		EventDecisionRecorded:        entry[DecisionRecorded](),
-		EventApprovalRecorded:        entry[ApprovalRecorded](),
-		EventApprovalInvalidated:     entry[ApprovalInvalidated](),
-		EventCIReported:              entry[CIReported](),
-		EventGateEvaluated:           entry[GateEvaluated](),
-		EventChangeRejected:          entry[Rejected](),
-		EventChangeMerged:            entry[Merged](),
+	all := map[EventType]payloadEntry{}
+	for _, area := range []map[EventType]payloadEntry{
+		corePayloads(), testsPayloads(), reviewPayloads(), checksPayloads(), talkPayloads(),
+	} {
+		maps.Copy(all, area)
 	}
+	return all
 }
 
 // PayloadFor returns a zero value of the payload type of t, and false when t is not in the catalog. Consumers that

@@ -3,7 +3,7 @@
 //
 // The rule: domain imports nothing internal but domain; app imports domain and ports; adapters
 // implement ports and never import app or transport; transport calls app and never imports adapters;
-// nothing in production imports internal/testkit. golangci's depguard states the same rule at lint
+// nothing in production imports internal/testkit; server code does not parse Go source (parser.go). golangci's depguard states the same rule at lint
 // time; this package checks the real import graph and is tested on its own.
 package archcheck
 
@@ -69,6 +69,7 @@ func Check(module string, pkgs []Package) []Violation {
 			continue
 		}
 		out = append(out, binaryViolations(module, rel, p.Deps)...)
+		out = append(out, parserViolations(rel, p.Imports)...)
 		for _, imp := range p.Imports {
 			impRel, internal := relative(module, imp)
 			shown := imp

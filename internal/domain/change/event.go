@@ -9,58 +9,9 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
-// EventType names what happened. Each constant is one row of the catalog in TECH_SPEC 3.2.
+// EventType names what happened. Each constant is one row of the catalog in TECH_SPEC 3.2; the constants live in
+// the area files events_<area>.go beside their payloads.
 type EventType string
-
-// The event catalog, in the order of TECH_SPEC 3.2.
-const (
-	EventChangeTriggered     EventType = "change.triggered"
-	EventRoomOpened          EventType = "room.opened"
-	EventBranchEnsured       EventType = "branch.ensured"
-	EventTaskAssigned        EventType = "task.assigned"
-	EventTaskAcked           EventType = "task.acked"
-	EventTaskTimedOut        EventType = "task.timed_out"
-	EventTaskFailed          EventType = "task.failed"
-	EventTaskProgress        EventType = "task.progress"
-	EventStepRetried         EventType = "step.retried"
-	EventStepEscalated       EventType = "step.escalated"
-	EventStepResumed         EventType = "step.resumed"
-	EventQuestionAsked       EventType = "question.asked"
-	EventQuestionAnswered    EventType = "question.answered"
-	EventTestsSubmitted      EventType = "tests.submitted"
-	EventTestsVerified       EventType = "tests.verified"
-	EventTestsRejected       EventType = "tests.rejected"
-	EventTestsCommitted      EventType = "tests.committed"
-	EventTestsApproved       EventType = "tests.approved"
-	EventTicketChanged       EventType = "ticket.changed"
-	EventPROpened            EventType = "pr.opened"
-	EventPRPushed            EventType = "pr.pushed"
-	EventPRLinked            EventType = "pr.linked"
-	EventPRClosed            EventType = "pr.closed"
-	EventSlopEvaluated       EventType = "slop.evaluated"
-	EventReviewersPicked     EventType = "reviewers.picked"
-	EventReviewSubmitted     EventType = "review.submitted"
-	EventReviewUnavailable   EventType = "review.unavailable"
-	EventReviewWaived        EventType = "review.waived"
-	EventFindingFiled        EventType = "finding.filed"
-	EventFindingVerified     EventType = "finding.verified"
-	EventFindingStateChanged EventType = "finding.state_changed"
-	// EventFindingRecheckRequested asks the server to repeat a finding's evidence on the current head, after a run that
-	// gave a wrong answer (for example, a runner fault that dropped a true finding to E4).
-	EventFindingRecheckRequested EventType = "finding.recheck_requested"
-	EventChallengeFiled          EventType = "challenge.filed"
-	EventCaseOpened              EventType = "case.opened"
-	EventVerdictSubmitted        EventType = "verdict.submitted"
-	EventVerdictApplied          EventType = "verdict.applied"
-	EventVerdictEscalated        EventType = "verdict.escalated"
-	EventDecisionRecorded        EventType = "decision.recorded"
-	EventApprovalRecorded        EventType = "approval.recorded"
-	EventApprovalInvalidated     EventType = "approval.invalidated"
-	EventCIReported              EventType = "ci.reported"
-	EventGateEvaluated           EventType = "gate.evaluated"
-	EventChangeRejected          EventType = "change.rejected"
-	EventChangeMerged            EventType = "change.merged"
-)
 
 // All returns every event type in catalog order. It returns a fresh slice, because package-level mutable state is
 // not allowed in the domain.

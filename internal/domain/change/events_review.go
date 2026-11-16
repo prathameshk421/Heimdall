@@ -9,6 +9,66 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
 
+// The review area of the event catalog (TECH_SPEC 3.2): the slop rule, reviewers, reviews, findings, challenges,
+// cases and verdicts.
+const (
+	EventSlopEvaluated       EventType = "slop.evaluated"
+	EventReviewersPicked     EventType = "reviewers.picked"
+	EventReviewSubmitted     EventType = "review.submitted"
+	EventReviewUnavailable   EventType = "review.unavailable"
+	EventReviewWaived        EventType = "review.waived"
+	EventFindingFiled        EventType = "finding.filed"
+	EventFindingVerified     EventType = "finding.verified"
+	EventFindingStateChanged EventType = "finding.state_changed"
+	// EventFindingRecheckRequested asks the server to repeat a finding's evidence on the current head, after a run that
+	// gave a wrong answer (for example, a runner fault that dropped a true finding to E4).
+	EventFindingRecheckRequested EventType = "finding.recheck_requested"
+	EventChallengeFiled          EventType = "challenge.filed"
+	EventCaseOpened              EventType = "case.opened"
+	EventVerdictSubmitted        EventType = "verdict.submitted"
+	EventVerdictApplied          EventType = "verdict.applied"
+	EventVerdictEscalated        EventType = "verdict.escalated"
+)
+
+// reviewPayloads is the registry of the review area.
+func reviewPayloads() map[EventType]payloadEntry {
+	return map[EventType]payloadEntry{
+		EventSlopEvaluated:           entry[SlopEvaluated](),
+		EventReviewersPicked:         entry[ReviewersPicked](),
+		EventReviewSubmitted:         entry[ReviewSubmitted](),
+		EventReviewUnavailable:       entry[ReviewUnavailable](),
+		EventReviewWaived:            entry[ReviewWaived](),
+		EventFindingFiled:            entry[FindingFiled](),
+		EventFindingVerified:         entry[FindingVerified](),
+		EventFindingStateChanged:     entry[FindingStateChanged](),
+		EventFindingRecheckRequested: entry[FindingRecheckRequested](),
+		EventChallengeFiled:          entry[ChallengeFiled](),
+		EventCaseOpened:              entry[CaseOpened](),
+		EventVerdictSubmitted:        entry[VerdictSubmitted](),
+		EventVerdictApplied:          entry[VerdictApplied](),
+		EventVerdictEscalated:        entry[VerdictEscalated](),
+	}
+}
+
+// SlopEvaluated is the payload of slop.evaluated: the pure slop rule passed or named the rules it broke (12.3).
+type SlopEvaluated struct {
+	Pass         bool     `json:"pass"`
+	FailingRules []string `json:"failing_rules"`
+}
+
+// Validate returns every problem with the payload.
+func (p SlopEvaluated) Validate() error {
+	var v problems
+	if p.Pass && len(p.FailingRules) > 0 {
+		v.add("failing_rules", errors.New("must be empty when pass is true"))
+	}
+	if !p.Pass && len(p.FailingRules) == 0 {
+		v.add("failing_rules", errors.New("must name a rule when pass is false"))
+	}
+	v.each("failing_rules", p.FailingRules, checkText)
+	return v.join()
+}
+
 // ReviewersPicked is the payload of reviewers.picked: who was asked to review, and how they were chosen.
 type ReviewersPicked struct {
 	People []ActorID  `json:"people"`
@@ -282,43 +342,35 @@ func (p VerdictEscalated) Validate() error {
 	return v.join()
 }
 
-// DecisionRecorded is the payload of decision.recorded: a human decision from GitHub or from the room (TECH_SPEC 11.5).
-// Only an actor that is not an agent may cause it (invariant 1).
-type DecisionRecorded struct {
-	Kind      DecisionKind `json:"kind"`
-	Target    string       `json:"target"`
-	Login     ActorID      `json:"login"`
-	Reason    string       `json:"reason"`
-	SourceRef string       `json:"source_ref"`
+// PickMethod says how reviewers were chosen (TECH_SPEC 3.2 and 8.1).
+type PickMethod string
+
+// Valid reports whether m is a pick method.
+func (m PickMethod) Valid() bool {
+	return oneOf(m, PickDashboard, PickCommand, PickTimer, PickDefault)
 }
 
-// Validate returns every problem with the payload.
-func (p DecisionRecorded) Validate() error {
-	var v problems
-	v.add("kind", checkEnum(p.Kind, p.Kind.Valid()))
-	v.add("target", checkText(p.Target))
-	v.add("login", checkActor(p.Login))
-	v.add("reason", checkText(p.Reason))
-	v.add("source_ref", checkText(p.SourceRef))
-	return v.join()
+// Verdict is the resolver's answer to a case (TECH_SPEC 11.3).
+type Verdict string
+
+// Valid reports whether v is a verdict.
+func (v Verdict) Valid() bool {
+	return oneOf(v, VerdictUphold, VerdictDismiss, VerdictAmend, VerdictSpecChange, VerdictNeedsHuman)
 }
 
-// ApprovalRecorded is the payload of approval.recorded: a GitHub review approved a commit (TECH_SPEC 3.4, 12.4).
-type ApprovalRecorded struct {
-	Login     ActorID `json:"login"`
-	CommitSHA id.SHA  `json:"commit_sha"`
-}
+// The pick methods.
+const (
+	PickDashboard PickMethod = "dashboard"
+	PickCommand   PickMethod = "command"
+	PickTimer     PickMethod = "timer"
+	PickDefault   PickMethod = "default"
+)
 
-// Validate returns every problem with the payload.
-func (p ApprovalRecorded) Validate() error {
-	var v problems
-	v.add("login", checkActor(p.Login))
-	v.add("commit_sha", checkSHA(p.CommitSHA))
-	return v.join()
-}
-
-// ApprovalInvalidated is the payload of approval.invalidated: a push made an earlier approval stale.
-type ApprovalInvalidated ApprovalRecorded
-
-// Validate returns every problem with the payload.
-func (p ApprovalInvalidated) Validate() error { return ApprovalRecorded(p).Validate() }
+// The verdicts.
+const (
+	VerdictUphold     Verdict = "uphold"
+	VerdictDismiss    Verdict = "dismiss"
+	VerdictAmend      Verdict = "amend"
+	VerdictSpecChange Verdict = "spec_change"
+	VerdictNeedsHuman Verdict = "needs_human"
+)
