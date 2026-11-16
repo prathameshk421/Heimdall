@@ -128,7 +128,8 @@ func validExtendedSpec() ProfileSpec {
 		{Name: "api", Run: "pytest {dir} --junitxml=/out/junit.xml"},
 		{Name: "ui", Image: "browser", Serve: "uvicorn app:app --port 8000", Ready: "http://127.0.0.1:8000/healthz", Run: "npx playwright test {dir}"},
 	}
-	spec.Services = []ProfileService{{Name: "db", Image: "postgres", Env: map[string]string{"POSTGRES_PASSWORD": "test-only"}}}
+	spec.Services = []ProfileService{{Name: "db", Image: "postgres", Port: 5432, Data: "/var/lib/postgresql/data",
+		Env: map[string]string{"POSTGRES_PASSWORD": "test-only"}}}
 	return spec
 }
 
@@ -164,6 +165,14 @@ func TestProfileExtensionsValidate(t *testing.T) {
 		{"a duplicate kind name", func(s *ProfileSpec) { s.Kinds[1].Name = "api" }, "is used twice"},
 		{"a service env name in lower case", func(s *ProfileSpec) { s.Services[0].Env = map[string]string{"password": "x"} }, "services[0]: env.password"},
 		{"a service env value with a line break", func(s *ProfileSpec) { s.Services[0].Env["POSTGRES_PASSWORD"] = "a\nb" }, "services[0]: env.POSTGRES_PASSWORD"},
+		{"a service with no port", func(s *ProfileSpec) { s.Services[0].Port = 0 }, "services[0]: port"},
+		{"a service port out of range", func(s *ProfileSpec) { s.Services[0].Port = 65536 }, "services[0]: port"},
+		{"a relative service data dir", func(s *ProfileSpec) { s.Services[0].Data = "var/lib/data" }, "services[0]: data"},
+		{"a service data dir that adds a tmpfs option", func(s *ProfileSpec) { s.Services[0].Data = "/data,exec" }, "services[0]: data"},
+		{"a service data dir with a colon", func(s *ProfileSpec) { s.Services[0].Data = "/data:exec" }, "services[0]: data"},
+		{"a service data dir that climbs", func(s *ProfileSpec) { s.Services[0].Data = "/data/../etc" }, "services[0]: data"},
+		{"the root as a service data dir", func(s *ProfileSpec) { s.Services[0].Data = "/" }, "services[0]: data"},
+		{"a service data dir over /proc", func(s *ProfileSpec) { s.Services[0].Data = "/proc/self" }, "services[0]: data"},
 		{"too many checks", func(s *ProfileSpec) {
 			s.Checks = nil
 			for i := range 33 {
@@ -175,7 +184,7 @@ func TestProfileExtensionsValidate(t *testing.T) {
 		{"too many services", func(s *ProfileSpec) {
 			s.Services = nil
 			for i := range 5 {
-				s.Services = append(s.Services, ProfileService{Name: "s" + strconv.Itoa(i), Image: "postgres"})
+				s.Services = append(s.Services, ProfileService{Name: "s" + strconv.Itoa(i), Image: "postgres", Port: 5432})
 			}
 		}, "at most 4"},
 	}
@@ -188,4 +197,30 @@ func TestProfileExtensionsValidate(t *testing.T) {
 			require.Contains(t, err.Error(), tt.field)
 		})
 	}
+}
+
+func TestProfileServiceDataIsOptional(t *testing.T) {
+	spec := validExtendedSpec()
+	spec.Services[0].Data = ""
+	require.NoError(t, spec.Validate())
+}
+
+func TestProfileHistoryRequestToken(t *testing.T) {
+	base := ProfileWarmRequest{Repo: "aarush323/heimdall-fixture-pay", SHA: "4a0f6993769e3a3337dee3ea3e35fc3ad825bb88", Profile: "pay"}
+	require.NoError(t, ProfileHistoryRequest{ProfileWarmRequest: base}.Validate(), "a public repository needs no token")
+	require.NoError(t, ProfileHistoryRequest{ProfileWarmRequest: base, Token: "ghs_" + strings.Repeat("a", 36)}.Validate())
+	for name, token := range map[string]string{
+		"a line break would add a header": "ghs_" + strings.Repeat("a", 36) + "\r\nX-Evil: 1",
+		"a colon":                         "ghs_" + strings.Repeat("a", 30) + ":abcde",
+		"too short":                       "ghs_abc",
+		"too long":                        strings.Repeat("a", 256),
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := ProfileHistoryRequest{ProfileWarmRequest: base, Token: token}.Validate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "token")
+			require.NotContains(t, err.Error(), token, "a refusal never repeats the token")
+		})
+	}
+	require.Error(t, ProfileHistoryRequest{ProfileWarmRequest: ProfileWarmRequest{Repo: "x"}}.Validate(), "the warm request is still validated")
 }

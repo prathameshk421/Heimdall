@@ -103,6 +103,9 @@ type Service struct {
 	Name  string            `yaml:"name" json:"name"`
 	Image string            `yaml:"image" json:"image"`
 	Env   map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+	// Port is the TCP port the runner waits on before the job; Data is the directory the service writes, a fresh tmpfs.
+	Port int    `yaml:"port" json:"port"`
+	Data string `yaml:"data,omitempty" json:"data,omitempty"`
 }
 
 // Spec converts the artifact into the port-level contract, dropping fields this build does not
@@ -126,7 +129,7 @@ func Spec(p RepoProfile) ports.ProfileSpec {
 		spec.Kinds = append(spec.Kinds, ports.ProfileKind{Name: name, Image: k.Image, Run: k.Run, Serve: k.Serve, Ready: k.Ready})
 	}
 	for _, svc := range p.Services {
-		spec.Services = append(spec.Services, ports.ProfileService{Name: svc.Name, Image: svc.Image, Env: svc.Env})
+		spec.Services = append(spec.Services, ports.ProfileService{Name: svc.Name, Image: svc.Image, Env: svc.Env, Port: svc.Port, Data: svc.Data})
 	}
 	return spec
 }

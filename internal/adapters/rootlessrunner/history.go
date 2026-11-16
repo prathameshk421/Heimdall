@@ -3,6 +3,7 @@ package rootlessrunner
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -31,8 +32,11 @@ import (
 // at /history, and every other job sees no trace of it. The mirror lives in a directory named by the hash of the
 // repository, so no repository name can reach a path.
 //
-// What is not done. The runner holds no credential (CLAUDE.md R8), so only a repository a host serves without one can be
-// mirrored; a private repository needs a per-request token from the server, which is a decision for the owner.
+// Private repositories (owner's decision, Nov 16). The runner holds no credential of its own (CLAUDE.md R8). For a
+// private repository the server mints a short-lived, read-only token for that one repository and passes it with the
+// request. The runner hands it to git only through the environment (GIT_CONFIG_COUNT, an http.extraHeader scoped to
+// https://github.com/), so it is in no argument list, no mirror config and no file; an error from the fetch is
+// returned with the token cut out. A public repository is fetched with no header.
 
 const (
 	// historyHost is the one forge host a mirror is fetched from. The profile must list it in fetch_hosts, which a person
@@ -149,7 +153,7 @@ func historyCommands(proxy, dir, repoURL string, fresh bool) [][]string {
 }
 
 // WarmHistory creates or updates the history mirror of a repository under a promoted profile that allows it.
-func (r *Runner) WarmHistory(ctx context.Context, profileName string, repo change.Repo) (ports.ProfileHistoryResult, error) {
+func (r *Runner) WarmHistory(ctx context.Context, profileName string, repo change.Repo, token string) (ports.ProfileHistoryResult, error) {
 	spec, ok := r.specNamed(profileName)
 	if !ok {
 		return ports.ProfileHistoryResult{}, ErrProfileNotFound
@@ -167,7 +171,7 @@ func (r *Runner) WarmHistory(ctx context.Context, profileName string, repo chang
 	if statErr != nil && !fresh {
 		return ports.ProfileHistoryResult{}, fmt.Errorf("inspect history mirror: %w", statErr)
 	}
-	if err := r.fetchMirror(ctx, dir, repoURL, fresh); err != nil {
+	if err := r.fetchMirror(ctx, dir, repoURL, fresh, token); err != nil {
 		if fresh {
 			_ = os.RemoveAll(dir)
 		}
@@ -185,7 +189,7 @@ func (r *Runner) WarmHistory(ctx context.Context, profileName string, repo chang
 }
 
 // fetchMirror runs the mirror's git commands behind the exact-host proxy.
-func (r *Runner) fetchMirror(ctx context.Context, dir, repoURL string, fresh bool) error {
+func (r *Runner) fetchMirror(ctx context.Context, dir, repoURL string, fresh bool, token string) error {
 	proxy, stop, err := startConnectProxy(ctx, []string{historyHost})
 	if err != nil {
 		return err
@@ -194,10 +198,29 @@ func (r *Runner) fetchMirror(ctx context.Context, dir, repoURL string, fresh boo
 	if err := os.MkdirAll(r.Policy.historyRoot(), 0o700); err != nil {
 		return fmt.Errorf("prepare history directory: %w", err)
 	}
-	return r.runGit(ctx, proxy, dir, repoURL, fresh)
+	return r.runGit(ctx, proxy, dir, repoURL, fresh, token)
 }
 
-func (r *Runner) runGit(ctx context.Context, proxy, dir, repoURL string, fresh bool) error {
+// tokenEnv carries a request token to git as an extra Authorization header for the forge host only.
+func tokenEnv(token string) []string {
+	if token == "" {
+		return nil
+	}
+	basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
+	return []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.https://" + historyHost + "/.extraHeader",
+		"GIT_CONFIG_VALUE_0=Authorization: Basic " + basic}
+}
+
+// withoutToken cuts a token, raw or in its header form, out of text that leaves the runner.
+func withoutToken(text, token string) string {
+	if token == "" {
+		return text
+	}
+	text = strings.ReplaceAll(text, token, "[token]")
+	return strings.ReplaceAll(text, base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token)), "[token]")
+}
+
+func (r *Runner) runGit(ctx context.Context, proxy, dir, repoURL string, fresh bool, token string) error {
 	git := r.Git
 	if git == nil {
 		git = ExecGit{}
@@ -206,8 +229,8 @@ func (r *Runner) runGit(ctx context.Context, proxy, dir, repoURL string, fresh b
 	ctx, cancel := context.WithTimeout(ctx, historyTimeout)
 	defer cancel()
 	for _, args := range historyCommands(proxy, dir, repoURL, fresh) {
-		if out, err := git.Run(ctx, home, gitEnv(home), args); err != nil {
-			return fmt.Errorf("update history mirror: %w (%s)", err, strings.TrimSpace(tail(out, 512)))
+		if out, err := git.Run(ctx, home, append(gitEnv(home), tokenEnv(token)...), args); err != nil {
+			return fmt.Errorf("update history mirror: %w (%s)", err, withoutToken(strings.TrimSpace(tail(out, 512)), token))
 		}
 	}
 	return nil

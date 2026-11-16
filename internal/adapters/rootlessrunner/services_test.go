@@ -3,6 +3,7 @@ package rootlessrunner
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,8 +23,8 @@ func servicePolicy() Policy {
 	p := jobPolicy()
 	spec := p.Profiles["acme-pay"]
 	spec.Services = []profileyaml.Service{
-		{Name: "db", Image: postgresRef, Env: map[string]string{"POSTGRES_PASSWORD": "test-only", "A_FIRST": "1"}},
-		{Name: "cache", Image: "checks"},
+		{Name: "db", Image: postgresRef, Port: 5432, Data: "/var/lib/postgresql/data", Env: map[string]string{"POSTGRES_PASSWORD": "test-only", "A_FIRST": "1"}},
+		{Name: "cache", Image: "checks", Port: 6379},
 	}
 	spec.Tests.Kinds["web"] = profileyaml.Kind{Serve: "uvicorn app:app --port 8000", Ready: "http://127.0.0.1:8000/healthz", Run: "pytest {dir}"}
 	p.Images["postgres"] = postgresRef
@@ -37,13 +38,16 @@ func TestAServiceStartsDetachedOnThePrivateNetworkWithTheLeastPrivilege(t *testi
 	require.Len(t, svcs, 2)
 
 	network, container := serviceNames("job-123")
-	require.Equal(t, []string{"network", "create", "--internal", network}, networkCreateArgs(network), "an internal network has no route out")
+	require.Equal(t, []string{"network", "create", "--internal", "--label=heimdall.job=1", network}, networkCreateArgs(network), "an internal network has no route out")
 
 	args := serviceStartArgs("job-123", svcs[0], 120)
 	for _, want := range []string{"-d", "--rm", "--pull=never", container("db"), network, "db", "--user=65532:65532",
-		"--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=256", "--memory=512m", "--cpus=1", "--timeout=150"} {
+		"--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=256", "--memory=512m", "--cpus=1", "--timeout=150",
+		"--label=heimdall.job=1", "/var/lib/postgresql/data:rw,nosuid,nodev,size=256m,mode=1777"} {
 		require.Contains(t, args, want)
 	}
+	cache := serviceStartArgs("job-123", svcs[1], 120)
+	require.Equal(t, 1, strings.Count(strings.Join(cache, " "), "--tmpfs"), "a service with no data dir gets only /tmp")
 	require.Equal(t, postgresRef, args[len(args)-1])
 	joined := strings.Join(args, " ")
 	for _, banned := range []string{"--privileged", "--cap-add", "--publish", "-p ", "--mount", "docker.sock", "--network=host", "--read-only=false"} {
@@ -54,12 +58,14 @@ func TestAServiceStartsDetachedOnThePrivateNetworkWithTheLeastPrivilege(t *testi
 
 func TestServicesAreRefusedForEveryForbiddenInput(t *testing.T) {
 	for name, mutate := range map[string]func(*RepoProfile){
-		"an image the runner does not hold":  func(s *RepoProfile) { s.Services[0].Image = "evil" },
-		"an unlisted digest":                 func(s *RepoProfile) { s.Services[0].Image = "registry.example/x@sha256:" + strings.Repeat("9", 64) },
-		"a service name with a shell escape": func(s *RepoProfile) { s.Services[0].Name = "db;rm" },
-		"two services with one name":         func(s *RepoProfile) { s.Services[1].Name = "db" },
-		"a lower-case variable name":         func(s *RepoProfile) { s.Services[0].Env = map[string]string{"x": "1"} },
-		"a variable value with a line break": func(s *RepoProfile) { s.Services[0].Env = map[string]string{"A": "1\n2"} },
+		"an image the runner does not hold":   func(s *RepoProfile) { s.Services[0].Image = "evil" },
+		"an unlisted digest":                  func(s *RepoProfile) { s.Services[0].Image = "registry.example/x@sha256:" + strings.Repeat("9", 64) },
+		"a service name with a shell escape":  func(s *RepoProfile) { s.Services[0].Name = "db;rm" },
+		"two services with one name":          func(s *RepoProfile) { s.Services[1].Name = "db" },
+		"a lower-case variable name":          func(s *RepoProfile) { s.Services[0].Env = map[string]string{"x": "1"} },
+		"a variable value with a line break":  func(s *RepoProfile) { s.Services[0].Env = map[string]string{"A": "1\n2"} },
+		"no port":                             func(s *RepoProfile) { s.Services[0].Port = 0 },
+		"a data dir that adds a mount option": func(s *RepoProfile) { s.Services[0].Data = "/data,exec" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := servicePolicy()
@@ -102,6 +108,8 @@ type orderExecutor struct {
 	calls  [][]string
 	failOn string
 	output []byte
+	// closedProbes is how many readiness probes fail; -1 means every one does.
+	closedProbes int
 }
 
 func (e *orderExecutor) Execute(_ context.Context, args []string, _ string) ([]byte, error) {
@@ -113,6 +121,13 @@ func (e *orderExecutor) Execute(_ context.Context, args []string, _ string) ([]b
 	}
 	if len(args) > 0 && args[0] == "run" && !slicesContainsStr(args, "-d") {
 		return e.output, nil
+	}
+	if len(args) > 0 && args[0] == "inspect" {
+		return []byte("10.89.0.7\n"), nil
+	}
+	if len(args) > 0 && args[0] == "unshare" && e.closedProbes != 0 {
+		e.closedProbes--
+		return []byte("connection refused"), errors.New("exit 1")
 	}
 	return nil, nil
 }
@@ -146,7 +161,7 @@ func serviceRunner(t *testing.T, exec Executor) Runner {
 	p := servicePolicy()
 	active := p.Profiles
 	p.Profiles = nil
-	return Runner{Policy: p, Executor: exec, Root: t.TempDir(), active: active}
+	return Runner{Policy: p, Executor: exec, Root: t.TempDir(), active: active, ServiceReady: 2 * time.Second}
 }
 
 func TestAJobWithServicesRunsOnItsPrivateNetworkAndLeavesNothingBehind(t *testing.T) {
@@ -154,9 +169,10 @@ func TestAJobWithServicesRunsOnItsPrivateNetworkAndLeavesNothingBehind(t *testin
 	r := serviceRunner(t, exec)
 	_, err := r.Run(context.Background(), JobInput{Profile: "acme-pay", TestKind: "api", Dir: "tests/heimdall/PAY-1", Archive: strings.NewReader("a"), Timeout: time.Minute})
 	require.NoError(t, err)
-	require.Equal(t, []string{"network create", "service", "service", "run"}, exec.verbs()[0:4])
+	require.Equal(t, []string{"network create", "service", "service", "inspect", "unshare", "inspect", "unshare", "run"}, exec.verbs()[0:8],
+		"the job starts only after each service accepts on its port")
 
-	job := exec.calls[3]
+	job := exec.calls[7]
 	require.Equal(t, "run", job[0])
 	netFlag := ""
 	for _, a := range job {
@@ -167,12 +183,60 @@ func TestAJobWithServicesRunsOnItsPrivateNetworkAndLeavesNothingBehind(t *testin
 	require.True(t, strings.HasPrefix(netFlag, "--network=heimdall-job-") && strings.HasSuffix(netFlag, "-net"), netFlag)
 	require.NotContains(t, job, "--network=none")
 	require.Contains(t, exec.calls[1], "--network-alias")
+	require.Equal(t, []string{"unshare", "--rootless-netns", "/bin/bash", "-c", tcpProbe, "10.89.0.7", "5432", "4"}, exec.calls[4],
+		"the probe dials from the rootless network namespace; the address and port are arguments, never script text")
 
-	tail := exec.calls[4:]
+	tail := exec.calls[8:]
 	require.Len(t, tail, 3, "both services and the network are removed")
 	require.Equal(t, "rm", tail[0][0])
 	require.Equal(t, "rm", tail[1][0])
-	require.Equal(t, []string{"network", "rm", "-f", exec.calls[0][3]}, tail[2])
+	require.Equal(t, []string{"network", "rm", "-f", exec.calls[0][4]}, tail[2])
+}
+
+// The probe script, run for real with the host's bash: it fails on a closed port after its attempts, and succeeds on
+// a port that starts accepting between two attempts.
+func TestTheProbeScriptWaitsForAPortToAccept(t *testing.T) {
+	probe := func(port string, attempts string) error {
+		cmd := exec.CommandContext(context.Background(), "/bin/bash", "-c", tcpProbe, "127.0.0.1", port, attempts)
+		cmd.Env = []string{"PATH=/usr/bin:/bin"}
+		return cmd.Run()
+	}
+	var lc net.ListenConfig
+	l, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	_, port, err := net.SplitHostPort(l.Addr().String())
+	require.NoError(t, err)
+	require.NoError(t, probe(port, "1"), "an open port is accepted on the first attempt")
+	require.NoError(t, l.Close())
+	require.Error(t, probe(port, "2"), "a closed port fails once the attempts are spent")
+
+	later := time.AfterFunc(700*time.Millisecond, func() { l, err = lc.Listen(context.Background(), "tcp", "127.0.0.1:"+port) })
+	defer later.Stop()
+	require.NoError(t, probe(port, "8"), "a port that opens between attempts is accepted")
+	require.NoError(t, err)
+	require.NoError(t, l.Close())
+	require.Error(t, probe(port, "1; touch /tmp/x"), "the count is an argument, not script text")
+}
+
+func TestAServiceThatNeverAcceptsFailsTheJobAndLeavesNothingBehind(t *testing.T) {
+	exec := &orderExecutor{closedProbes: -1}
+	r := serviceRunner(t, exec)
+	_, err := r.Run(context.Background(), JobInput{Profile: "acme-pay", TestKind: "api", Dir: "tests/heimdall/PAY-1", Archive: strings.NewReader("a"), Timeout: time.Minute})
+	require.ErrorContains(t, err, `service "db" did not accept on port 5432`)
+	for _, c := range exec.calls {
+		require.False(t, c[0] == "run" && !slicesContainsStr(c, "-d"), "the job itself never started")
+	}
+	require.Equal(t, []string{"network", "rm", "-f", exec.calls[0][4]}, exec.calls[len(exec.calls)-1])
+}
+
+func TestAServiceAddressThatIsNotAnIPIsRefused(t *testing.T) {
+	_, err := serviceAddress([]byte("10.89.0.7; rm -rf /\n"))
+	require.Error(t, err)
+	_, err = serviceAddress([]byte("\n"))
+	require.Error(t, err)
+	ip, err := serviceAddress([]byte("10.89.0.7\n"))
+	require.NoError(t, err)
+	require.Equal(t, "10.89.0.7", ip)
 }
 
 func TestServicesAreRemovedWhenAServiceFailsToStartOrTheJobFails(t *testing.T) {
@@ -192,7 +256,7 @@ func TestServicesAreRemovedWhenAServiceFailsToStartOrTheJobFails(t *testing.T) {
 	_, err = r.Run(context.Background(), JobInput{Profile: "acme-pay", TestKind: "api", Dir: "tests/heimdall/PAY-1", Archive: strings.NewReader("a"), Timeout: time.Minute})
 	require.Error(t, err)
 	last := exec.calls[len(exec.calls)-1]
-	require.Equal(t, []string{"network", "rm", "-f", exec.calls[0][3]}, last, "a failed job still removes its services and network")
+	require.Equal(t, []string{"network", "rm", "-f", exec.calls[0][4]}, last, "a failed job still removes its services and network")
 }
 
 func TestAJobWithoutServicesRunsOnNoNetworkAndTouchesNoNetworkCommands(t *testing.T) {
@@ -272,4 +336,52 @@ func TestTheWrapperWaitsForTheServedAppBeforeItRunsTheCommand(t *testing.T) {
 	require.NoError(t, err, string(out))
 	require.Contains(t, string(out), "ready=1")
 	require.FileExists(t, filepath.Join(dir, "up"), "the serve command ran in the background")
+}
+
+// sweepExecutor answers the two listings of the boot sweep and records the rest.
+type sweepExecutor struct {
+	calls      [][]string
+	containers string
+	networks   string
+}
+
+func (e *sweepExecutor) Execute(_ context.Context, args []string, _ string) ([]byte, error) {
+	e.calls = append(e.calls, args)
+	switch {
+	case args[0] == "ps":
+		return []byte(e.containers), nil
+	case args[0] == "network" && args[1] == "ls":
+		return []byte(e.networks), nil
+	}
+	return nil, nil
+}
+
+func TestTheBootSweepRemovesEveryLabelledContainerThenNetwork(t *testing.T) {
+	exec := &sweepExecutor{containers: "3f2a9c1b7d4e\n9e8d7c6b5a41\n", networks: "heimdall-job-1-net\nheimdall-job-2-net\n"}
+	r := Runner{Executor: exec}
+	require.NoError(t, r.Sweep(context.Background()))
+	require.Equal(t, [][]string{
+		{"ps", "-a", "-q", "--filter", "label=heimdall.job=1"},
+		{"rm", "-f", "-t", "0", "3f2a9c1b7d4e", "9e8d7c6b5a41"},
+		{"network", "ls", "-q", "--filter", "label=heimdall.job=1"},
+		{"network", "rm", "-f", "heimdall-job-1-net", "heimdall-job-2-net"},
+	}, exec.calls)
+}
+
+func TestTheBootSweepTouchesNothingWhenNothingIsLeftAndRefusesStrangeNames(t *testing.T) {
+	exec := &sweepExecutor{}
+	r := Runner{Executor: exec}
+	require.NoError(t, r.Sweep(context.Background()))
+	require.Len(t, exec.calls, 2, "only the two listings")
+
+	exec = &sweepExecutor{containers: "--all\n", networks: "podman\n"}
+	r = Runner{Executor: exec}
+	require.Error(t, r.Sweep(context.Background()), "a listing the sweep did not expect is not passed on to rm")
+	for _, c := range exec.calls {
+		require.NotEqual(t, "rm", c[0])
+	}
+}
+
+func TestEveryJobContainerCarriesTheSweepLabel(t *testing.T) {
+	require.Contains(t, hardenedArgs(60), "--label=heimdall.job=1")
 }

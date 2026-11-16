@@ -33,7 +33,7 @@ const extendedTail = `tests:
       ready: "http://127.0.0.1:8000/"
       run: "npx playwright test {dir}"
 services:
-  - {name: db, image: postgres, env: {POSTGRES_PASSWORD: test-only}}
+  - {name: db, image: postgres, port: 5432, data: /var/lib/postgresql/data, env: {POSTGRES_PASSWORD: test-only}}
 checks:
   - {id: patterns, lens: security, when: ["**/*"], image: checks, run: "opengrep scan /work", baseline: true}
 `
@@ -54,6 +54,8 @@ func TestParsedProfileCarriesChecksKindsServicesAndRuns(t *testing.T) {
 	require.Equal(t, []string{"api", "ui"}, []string{spec.Kinds[0].Name, spec.Kinds[1].Name}, "kinds come out sorted by name")
 	require.Equal(t, "http://127.0.0.1:8000/", spec.Kinds[1].Ready)
 	require.Equal(t, "test-only", spec.Services[0].Env["POSTGRES_PASSWORD"])
+	require.Equal(t, 5432, spec.Services[0].Port)
+	require.Equal(t, "/var/lib/postgresql/data", spec.Services[0].Data)
 }
 
 func TestAProfileWithoutExtensionsStillParses(t *testing.T) {
@@ -72,7 +74,7 @@ func TestProfileExtensionsAreRefused(t *testing.T) {
 		{"a check image off the allowlist", "checks:\n  - {id: c, lens: security, when: ['**/*'], image: evil, run: x}\n", profileyaml.ErrImageNotAllowed, "evil"},
 		{"a check digest off the allowlist", "checks:\n  - {id: c, lens: security, when: ['**/*'], image: 'registry.example/x@sha256:" + strings.Repeat("b", 64) + "', run: x}\n", profileyaml.ErrImageNotAllowed, "registry.example/x"},
 		{"a kind image off the allowlist", "tests:\n  runs: 1\n  kinds:\n    ui: {image: evil, run: 'x {dir}'}\n", profileyaml.ErrImageNotAllowed, "evil"},
-		{"a service image off the allowlist", "services:\n  - {name: db, image: evil}\n", profileyaml.ErrImageNotAllowed, "evil"},
+		{"a service image off the allowlist", "services:\n  - {name: db, image: evil, port: 5432}\n", profileyaml.ErrImageNotAllowed, "evil"},
 		{"a kind run without {dir}", "tests:\n  runs: 1\n  kinds:\n    api: {run: 'pytest tests'}\n", nil, "{dir}"},
 		{"a ready URL that is not loopback", "tests:\n  runs: 1\n  kinds:\n    ui: {serve: 'x', ready: 'http://example.com:80/', run: 'x {dir}'}\n", nil, "loopback"},
 		{"serve with no ready", "tests:\n  runs: 1\n  kinds:\n    ui: {serve: 'x', run: 'x {dir}'}\n", nil, "together"},

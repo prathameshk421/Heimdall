@@ -88,11 +88,15 @@ type ProfileKind struct {
 	Ready string // a loopback URL the job waits on before the run; set exactly when Serve is
 }
 
-// ProfileService is one throwaway container of the profile's `services:` list.
+// ProfileService is one throwaway container of the profile's `services:` list. It runs as a fixed non-root user with
+// no capabilities; an image that cannot run that way is not allowlisted. Port is the TCP port the runner waits on
+// before the job starts. Data, when set, is the directory the service writes, mounted as a fresh tmpfs.
 type ProfileService struct {
 	Name  string
 	Image string
 	Env   map[string]string
+	Port  int
+	Data  string
 }
 
 // Validate returns every problem with the parsed profile contract.
@@ -159,6 +163,10 @@ func (s ProfileService) validate(seen map[string]bool) error {
 	var v problems
 	v.add("name", checkUniqueName(s.Name, seen))
 	v.add("image", checkProfileImage(s.Image))
+	v.require("port", s.Port >= 1 && s.Port <= 65535, "must be the service's TCP port, 1 to 65535")
+	if s.Data != "" {
+		v.require("data", ValidServiceDataDir(s.Data), "must be an absolute, clean directory outside /proc, /sys and /dev, with no comma or colon")
+	}
 	v.require("env", len(s.Env) <= maxServiceEnv, "must hold at most 16 variables")
 	for key, value := range s.Env {
 		v.require("env."+key, envKey.MatchString(key), "must be an upper-case variable name")
@@ -168,6 +176,20 @@ func (s ProfileService) validate(seen map[string]bool) error {
 }
 
 var envKey = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
+
+// ValidServiceDataDir reports whether dir may become a service's tmpfs mount point. A comma or colon would add mount
+// options to the runner's --tmpfs argument, so neither is allowed.
+func ValidServiceDataDir(dir string) bool {
+	if len(dir) > 255 || !strings.HasPrefix(dir, "/") || dir == "/" || path.Clean(dir) != dir || strings.ContainsAny(dir, ",:\x00\r\n ") {
+		return false
+	}
+	for _, kernel := range []string{"/proc", "/sys", "/dev"} {
+		if dir == kernel || strings.HasPrefix(dir, kernel+"/") {
+			return false
+		}
+	}
+	return true
+}
 
 // checkUniqueName requires a profile-name-shaped identifier not seen before, and records it.
 func checkUniqueName(name string, seen map[string]bool) error {
@@ -459,6 +481,28 @@ func (r ProfileWarmRequest) Validate() error {
 	return v.join()
 }
 
+// ProfileHistoryRequest asks for a history-mirror update. Token, for a private repository, is a short-lived read-only
+// token the server minted for this one repository and this one request; the runner uses it for the fetch and keeps
+// nothing. A public repository needs none.
+type ProfileHistoryRequest struct {
+	ProfileWarmRequest
+	Token string
+}
+
+// historyToken is the shape of a forge token: long enough to be one, and only characters that cannot end an HTTP
+// header or start another.
+var historyToken = regexp.MustCompile(`^[A-Za-z0-9_]{20,255}$`)
+
+// Validate returns every problem with the history request. A refusal never repeats the token.
+func (r ProfileHistoryRequest) Validate() error {
+	var v problems
+	v.add("request", r.ProfileWarmRequest.Validate())
+	if r.Token != "" {
+		v.require("token", historyToken.MatchString(r.Token), "must be 20 to 255 letters, digits or underscores")
+	}
+	return v.join()
+}
+
 // ProfileHistoryResult is the bounded outcome of one history-mirror update.
 type ProfileHistoryResult struct {
 	Bytes int64 // size of the mirror after the update
@@ -468,7 +512,7 @@ type ProfileHistoryResult struct {
 // ProfileHistoryWarmer keeps the blobless history mirror of a repository (commits and trees only). Adapter: the runner
 // client; the runner owns the egress boundary, and the warm job is the only job that fetches.
 type ProfileHistoryWarmer interface {
-	WarmHistory(ctx context.Context, req ProfileWarmRequest) (ProfileHistoryResult, error)
+	WarmHistory(ctx context.Context, req ProfileHistoryRequest) (ProfileHistoryResult, error)
 }
 
 // ProfileWarmResult is the bounded outcome of one warm job.

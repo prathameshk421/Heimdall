@@ -88,6 +88,8 @@ type Runner struct {
 	Root     string
 	// Git runs the history mirror's git commands; nil means the real git binary.
 	Git GitRunner
+	// ServiceReady bounds the wait for a job's services to accept on their ports; zero means 30 seconds.
+	ServiceReady time.Duration
 
 	// profilesDir is the durable directory of promoted profiles; empty means no promotions are
 	// persisted for this runner instance (unit tests).

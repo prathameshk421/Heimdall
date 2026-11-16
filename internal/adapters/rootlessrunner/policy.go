@@ -232,7 +232,7 @@ const noNetwork = "--network=none"
 // result directories. Nothing in a profile or a request can change them.
 func hardenedArgs(timeoutSeconds int) []string {
 	return []string{
-		"run", "--rm", "--pull=never", noNetwork, "--read-only", "--user=65532:65532",
+		"run", "--rm", "--pull=never", jobLabel, noNetwork, "--read-only", "--user=65532:65532",
 		"--group-add=keep-groups",
 		"--cap-drop=ALL", "--security-opt=no-new-privileges",
 		"--pids-limit=512", "--memory=2g", "--cpus=2", "--timeout=" + strconv.Itoa(timeoutSeconds),

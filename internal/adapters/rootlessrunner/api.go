@@ -44,6 +44,9 @@ type request struct {
 	Trial []byte `json:"trial,omitempty"`
 	// TrialFrom names the repository the proposal belongs to, for the audit trail only.
 	TrialFrom string `json:"trial_from,omitempty"`
+	// Token is a history job's short-lived read-only token for one private repository. The runner uses it for that one
+	// fetch and keeps it nowhere.
+	Token string `json:"token,omitempty"`
 }
 
 // WarmSummary is the bounded result of one warm job: the staged modules and the fetched totals.
@@ -849,7 +852,11 @@ func (r *Runner) handleHistory(req *http.Request) (response, int) {
 	if err := in.Job.Validate(); err != nil {
 		return response{Error: "invalid job"}, http.StatusBadRequest
 	}
-	res, err := r.WarmHistory(req.Context(), in.Profile, in.Job.Repo)
+	hist := ports.ProfileHistoryRequest{ProfileWarmRequest: ports.ProfileWarmRequest{Repo: in.Job.Repo, SHA: in.Job.SHA, Profile: in.Profile}, Token: in.Token}
+	if err := hist.Validate(); err != nil {
+		return response{Error: "invalid history request"}, http.StatusBadRequest
+	}
+	res, err := r.WarmHistory(req.Context(), in.Profile, in.Job.Repo, in.Token)
 	if err != nil {
 		return response{Error: err.Error()}, historyStatus(err)
 	}
@@ -867,7 +874,7 @@ func historyStatus(err error) int {
 }
 
 // WarmHistory asks the runner to create or update a repository's history mirror under the profile's fetch_hosts.
-func (c Client) WarmHistory(ctx context.Context, req ports.ProfileWarmRequest) (ports.ProfileHistoryResult, error) {
+func (c Client) WarmHistory(ctx context.Context, req ports.ProfileHistoryRequest) (ports.ProfileHistoryResult, error) {
 	if err := req.Validate(); err != nil {
 		return ports.ProfileHistoryResult{}, fmt.Errorf("invalid history request: %w", err)
 	}
@@ -875,7 +882,7 @@ func (c Client) WarmHistory(ctx context.Context, req ports.ProfileWarmRequest) (
 		return ports.ProfileHistoryResult{}, errors.New("a history mirror needs a promoted profile")
 	}
 	job := ports.SandboxJob{Kind: ports.SandboxWarm, Repo: req.Repo, SHA: req.SHA, Timeout: historyTimeout}
-	body, err := json.Marshal(request{Profile: req.Profile, Job: job})
+	body, err := json.Marshal(request{Profile: req.Profile, Job: job, Token: req.Token})
 	if err != nil {
 		return ports.ProfileHistoryResult{}, fmt.Errorf("encode history request: %w", err)
 	}
