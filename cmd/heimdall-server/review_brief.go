@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/cardsfs"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/codegraph"
@@ -20,7 +22,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/rulecard"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/pack"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
@@ -329,7 +330,7 @@ func (c *cardProposer) write(person string, p reviewlearn.Proposal) (bool, error
 	if card.Status != rulecard.StatusProposed {
 		return false, fmt.Errorf("proposal has status %q, want %q", card.Status, rulecard.StatusProposed)
 	}
-	if _, found := pack.RedactReport(p.Text); len(found) > 0 {
+	if _, found := secretscan.RedactReport(p.Text); len(found) > 0 {
 		return false, fmt.Errorf("proposal looks like it holds sensitive text (%d matches)", len(found))
 	}
 	if err := c.store.Write(person, p.Name, []byte(p.Text)); err != nil {

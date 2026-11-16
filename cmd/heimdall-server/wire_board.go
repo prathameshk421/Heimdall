@@ -45,7 +45,11 @@ func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engin
 	if !ok {
 		return nil, nil, nil, errors.New("selected chat adapter does not implement the Switch room stream")
 	}
-	roomConsumer, err := roomstream.New(roomstream.Config{Rooms: store, Cursors: store, Stream: stream, Handler: runtime.processor, Standing: ad.standingRooms, RefreshEvery: refreshEvery, Wait: clock.Wait,
+	scan, err := newPostScanner(runtime, slog.Default())
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("build post scanner: %w", err)
+	}
+	roomConsumer, err := roomstream.New(roomstream.Config{Rooms: store, Cursors: store, Stream: stream, Handler: runtime.processor, Standing: ad.standingRooms, RefreshEvery: refreshEvery, Wait: clock.Wait, Watch: scan.Watch,
 		Probe: func(ctx context.Context, room change.RoomID) error {
 			_, _, err := ad.chat.Read(ctx, room, "")
 			return err

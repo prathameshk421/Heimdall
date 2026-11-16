@@ -567,7 +567,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	mcpH, proposer, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager)
+	mcpH, proposer, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager, runtime)
 	if err != nil {
 		return nil, err
 	}

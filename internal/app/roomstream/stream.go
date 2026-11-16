@@ -45,6 +45,8 @@ type Config struct {
 	// Probe reads one room. When Switch refuses the whole stream, the service probes each room, and a room the probe
 	// finds missing or refused is dropped, so one deleted room cannot stop every other room. Nil turns this off.
 	Probe func(ctx context.Context, room change.RoomID) error
+	// Watch sees every delivered message before it is handled (the board's post scan, H11). It never stops delivery.
+	Watch func(ctx context.Context, m ports.Message)
 }
 
 // Service runs the coordinator stream. Call Run once; the Switch adapter reconnects dropped streams, while this
@@ -58,6 +60,7 @@ type Service struct {
 	refreshEvery time.Duration
 	wait         func(context.Context, time.Duration) error
 	probe        func(ctx context.Context, room change.RoomID) error
+	watch        func(ctx context.Context, m ports.Message)
 }
 
 // New validates dependencies and builds the stream service.
@@ -86,7 +89,7 @@ func New(cfg Config) (*Service, error) {
 	}
 	return &Service{
 		rooms: cfg.Rooms, cursors: cfg.Cursors, stream: cfg.Stream, handler: cfg.Handler, standing: cfg.Standing,
-		refreshEvery: cfg.RefreshEvery, wait: cfg.Wait, probe: cfg.Probe,
+		refreshEvery: cfg.RefreshEvery, wait: cfg.Wait, probe: cfg.Probe, watch: cfg.Watch,
 	}, nil
 }
 
@@ -199,6 +202,9 @@ func (s *Service) deliver(ctx context.Context, rooms map[change.RoomID][]ports.R
 		return fmt.Errorf("message %s arrived for unindexed room %s", d.Message.ID, d.Message.Room)
 	}
 	room := candidates[0]
+	if s.watch != nil {
+		s.watch(ctx, d.Message)
+	}
 	var err error
 	if shared, isShared := s.handler.(SharedHandler); isShared && len(candidates) > 1 {
 		err = shared.HandleSharedRoomMessage(ctx, d.Message.Room, candidates, d.Message)

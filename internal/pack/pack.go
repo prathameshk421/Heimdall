@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
 )
 
 // Section is one approved markdown pack section.
@@ -37,12 +39,12 @@ type Distiller interface {
 
 // Scanner is the two-pass secret/PII scanner. Production uses the embedded Gitleaks rule set.
 type Scanner interface {
-	Scan(string) (string, []Redaction, error)
+	Scan(string) (string, []secretscan.Redaction, error)
 }
 
 // OwnerReview presents the complete pack and removed-material summary, then returns explicit approval.
 type OwnerReview interface {
-	Approve(context.Context, Manifest, []Section, []Redaction) (bool, error)
+	Approve(context.Context, Manifest, []Section, []secretscan.Redaction) (bool, error)
 }
 
 // Cipher encrypts plaintext for the configured age recipient.
@@ -69,13 +71,13 @@ type BuildInput struct {
 
 // Draft is the redacted material presented for owner review before signing or upload.
 type Draft struct {
-	Person         string      `json:"person"`
-	Version        int         `json:"version"`
-	CreatedAt      time.Time   `json:"created_at"`
-	TranscriptDays int         `json:"transcript_days"`
-	Canary         string      `json:"canary"`
-	Sections       []Section   `json:"sections"`
-	Removed        []Redaction `json:"removed"`
+	Person         string                 `json:"person"`
+	Version        int                    `json:"version"`
+	CreatedAt      time.Time              `json:"created_at"`
+	TranscriptDays int                    `json:"transcript_days"`
+	Canary         string                 `json:"canary"`
+	Sections       []Section              `json:"sections"`
+	Removed        []secretscan.Redaction `json:"removed"`
 }
 
 // BuildDeps are required collaborators. Nil dependencies fail closed.
@@ -151,9 +153,9 @@ func validateBuild(in BuildInput, deps BuildDeps) error {
 	return nil
 }
 
-func distillAndRedact(ctx context.Context, documents []SourceDocument, distiller Distiller, scanner Scanner, canary string) ([]Section, []Redaction, error) {
+func distillAndRedact(ctx context.Context, documents []SourceDocument, distiller Distiller, scanner Scanner, canary string) ([]Section, []secretscan.Redaction, error) {
 	cleanDocs := make([]SourceDocument, len(documents))
-	var removed []Redaction
+	var removed []secretscan.Redaction
 	for i, doc := range documents {
 		clean, hits, err := scanner.Scan(doc.Raw)
 		if err != nil {
@@ -182,7 +184,7 @@ func distillAndRedact(ctx context.Context, documents []SourceDocument, distiller
 	return sections, removed, nil
 }
 
-func approveEncryptUpload(ctx context.Context, person string, plain []byte, manifest Manifest, sections []Section, removed []Redaction, deps BuildDeps) error {
+func approveEncryptUpload(ctx context.Context, person string, plain []byte, manifest Manifest, sections []Section, removed []secretscan.Redaction, deps BuildDeps) error {
 	approved, err := deps.Review.Approve(ctx, manifest, sections, removed)
 	if err != nil {
 		return fmt.Errorf("review pack: %w", err)

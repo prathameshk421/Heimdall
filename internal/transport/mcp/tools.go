@@ -58,7 +58,7 @@ func llmRoles() []workflow.Role {
 // generated from the domain type, so it cannot drift from the validator.
 func (s *Server) buildTools() ([]tool, error) {
 	var tools []tool
-	for _, area := range []func() ([]tool, error){s.coreTools, s.testsTools, s.reviewTools, s.checksTools, s.talkTools} {
+	for _, area := range []func() ([]tool, error){s.coreTools, s.testsTools, s.reviewTools, s.checksTools, s.talkTools, s.commandTools} {
 		more, err := area()
 		if err != nil {
 			return nil, err

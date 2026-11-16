@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/cardsfs"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/rulecard"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/pack"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
@@ -168,7 +169,7 @@ func (h cardsHandler) put(w http.ResponseWriter, r *http.Request, person, name s
 		http.Error(w, "card front matter is invalid: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if _, found := pack.RedactReport(text); len(found) > 0 {
+	if _, found := secretscan.RedactReport(text); len(found) > 0 {
 		kinds := make([]string, 0, len(found))
 		for _, f := range found {
 			kinds = append(kinds, f.Kind)

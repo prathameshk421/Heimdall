@@ -1,4 +1,4 @@
-package pack
+package secretscan
 
 import (
 	"fmt"
