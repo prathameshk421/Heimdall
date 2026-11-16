@@ -100,8 +100,13 @@ func TestReviewLines(t *testing.T) {
 			"• 1 upheld finding is open\n• no approval on the latest commit"},
 		{"merged", nil, ev(t, change.EventChangeMerged, struct{}{}),
 			"Merged · KAN-14"},
-		{"merged on GitHub", nil, ev(t, change.EventPRClosed, change.PRClosed{Repo: "aarush323/heimdall-fixture-pay", Number: 10, HeadSHA: "59effae547d768799972d6e54eff32e82dbb7912", Merged: true}),
+		{"merged on GitHub after a green gate on head", []change.Event{
+			ev(t, change.EventPROpened, change.PROpened{Repo: "aarush323/heimdall-fixture-pay", Number: 10, HeadSHA: "59effae547d768799972d6e54eff32e82dbb7912", Author: "dev", Ticket: "KAN-14"}),
+			ev(t, change.EventGateEvaluated, change.GateEvaluated{OK: true, SHA: "59effae547d768799972d6e54eff32e82dbb7912", TreeHash: "59effae547d768799972d6e54eff32e82dbb7912", PolicyVersion: 1}),
+		}, ev(t, change.EventPRClosed, change.PRClosed{Repo: "aarush323/heimdall-fixture-pay", Number: 10, HeadSHA: "59effae547d768799972d6e54eff32e82dbb7912", Merged: true}),
 			"Merged · KAN-14"},
+		{"merged on GitHub with no green gate", nil, ev(t, change.EventPRClosed, change.PRClosed{Repo: "aarush323/heimdall-fixture-pay", Number: 10, HeadSHA: "59effae547d768799972d6e54eff32e82dbb7912", Merged: true}),
+			"Merged on GitHub without passing Heimdall's gate · KAN-14"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

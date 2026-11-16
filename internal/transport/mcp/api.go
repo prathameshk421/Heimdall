@@ -174,6 +174,8 @@ type Deps struct {
 	Graph CodeGraph
 	// Proposer backs propose_command. The tool exists only when it is set.
 	Proposer Proposer
+	// Paths lists a repository's files for the repo map in get_task and the root of read_code. Without it, neither.
+	Paths ports.RepoPaths
 	// Calls is the record of tool calls. Without it nothing is recorded and repeats are not detected.
 	Calls ports.ToolCalls
 }

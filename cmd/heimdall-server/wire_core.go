@@ -171,6 +171,7 @@ func assembleMCP(
 		Graph:    moat.graph,
 		Proposer: commands,
 		Calls:    store,
+		Paths:    ad.vcs,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("build mcp server: %w", err)

@@ -14,9 +14,17 @@ import (
 // MaxSummary bounds the stored argument summary in runes.
 const MaxSummary = 300
 
-// credentialLike matches values that must never reach the record: forge, chat and model tokens, private keys, and long
-// unbroken runs of hex or base64 that may be keys.
-var credentialLike = regexp.MustCompile(`(?i)(gh[pousr]_[A-Za-z0-9_]{10,}|github_pat_[A-Za-z0-9_]{10,}|xox[abprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[^"]*|[A-Za-z0-9+/=_-]{40,})`)
+// credentialLike matches the known credential shapes: forge, chat and model tokens and private keys.
+var credentialLike = regexp.MustCompile(`(?i)(gh[pousr]_[A-Za-z0-9_]{10,}|github_pat_[A-Za-z0-9_]{10,}|xox[abprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[^"]*)`)
+
+// longRun is a long unbroken run of key characters. It is redacted only when it looks random (randomLooking): a
+// commit SHA or a test name is not (the live KAN-24 record had hidden both).
+var longRun = regexp.MustCompile(`[A-Za-z0-9+/=_-]{32,}`)
+
+// randomLooking: digits and both letter cases together, as base64 and API keys have; hex SHAs are lower case only.
+func randomLooking(s string) bool {
+	return strings.ContainsAny(s, "0123456789") && strings.ToLower(s) != s && strings.ToUpper(s) != s
+}
 
 // Summarize is the stored form of a call's arguments: compact JSON with credential-looking values replaced, cut to
 // MaxSummary runes.
@@ -30,6 +38,12 @@ func Summarize(args json.RawMessage) string {
 		return ""
 	}
 	s := credentialLike.ReplaceAllString(string(compact), "[redacted]")
+	s = longRun.ReplaceAllStringFunc(s, func(run string) string {
+		if randomLooking(run) {
+			return "[redacted]"
+		}
+		return run
+	})
 	if utf8.RuneCountInString(s) > MaxSummary {
 		s = string([]rune(s)[:MaxSummary]) + "…"
 	}

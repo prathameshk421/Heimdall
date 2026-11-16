@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -119,6 +120,42 @@ func (a *Adapter) childTree(ctx context.Context, token, base, treeSHA, name stri
 		}
 	}
 	return "", fmt.Errorf("%w: no directory %q", ports.ErrNotFound, name)
+}
+
+// maxRepoPaths bounds the file list Paths returns; GitHub truncates a recursive tree itself past 100,000 entries.
+const maxRepoPaths = 5000
+
+// Paths returns every file path at sha, sorted, in one call (the recursive git tree). It is the repository map an agent
+// gets with its task, so it never has to explore folder by folder (live KAN-24).
+func (a *Adapter) Paths(ctx context.Context, repo change.Repo, sha id.SHA) ([]string, error) {
+	base, err := repoPath(repo)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkSHA(sha); err != nil {
+		return nil, err
+	}
+	token, err := a.tokens.Reader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	path := fmt.Sprintf("%s/git/trees/%s", base, sha)
+	resp, err := a.get(ctx, token, path, url.Values{"recursive": {"1"}})
+	if err != nil {
+		return nil, err
+	}
+	tree, err := decode[treeJSON](resp, path)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range tree.Tree {
+		if e.Type == "blob" && len(out) < maxRepoPaths {
+			out = append(out, e.Path)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // Tarball returns the source tree at sha as GitHub's tarball. The caller closes it.

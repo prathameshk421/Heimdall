@@ -276,6 +276,11 @@ func narratePRMerged(history []change.Event, ev change.Event, k string) (Line, b
 			return Line{}, false
 		}
 	}
+	// Say what is true (live KAN-24 day: a ticketless policy PR merged over a red gate was announced as a clean merge).
+	v, err := change.Fold(append(append([]change.Event{}, history...), ev))
+	if err != nil || v.PR == nil || v.PR.Gate == nil || !v.PR.Gate.OK || v.PR.Gate.SHA != v.PR.HeadSHA {
+		return review("⚠️ **Merged on GitHub without passing Heimdall's gate · %s**", k), true
+	}
 	return narrateMerged(history, ev, k)
 }
 

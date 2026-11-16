@@ -164,7 +164,9 @@ func (dummyVCS) PR(context.Context, change.Repo, int) (ports.PR, error)   { retu
 func (dummyVCS) Files(context.Context, change.Repo, int) ([]ports.ChangedFile, error) {
 	return nil, nil
 }
-func (dummyVCS) OpenPRs(context.Context, change.Repo) ([]ports.PR, error) { return nil, nil }
+func (dummyVCS) OpenPRs(context.Context, change.Repo) ([]ports.PR, error)     { return nil, nil }
+func (dummyVCS) Paths(context.Context, change.Repo, id.SHA) ([]string, error) { return nil, nil }
+
 func (dummyVCS) ReadFile(context.Context, change.Repo, id.SHA, string) ([]byte, error) {
 	return nil, nil
 }

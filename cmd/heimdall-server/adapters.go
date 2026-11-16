@@ -42,6 +42,7 @@ type vcsPort interface {
 	ports.PRReader
 	ports.PRCommentReader
 	ports.CodeReader
+	ports.RepoPaths
 	ports.ReviewReader
 	ports.CheckReader
 	ports.CheckWriter

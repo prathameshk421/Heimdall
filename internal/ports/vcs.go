@@ -63,6 +63,11 @@ type CheckWriter interface {
 	SetCheck(ctx context.Context, repo change.Repo, sha id.SHA, c Check) error
 }
 
+// RepoPaths lists every file of a repository at a commit, sorted: the map an agent reads before it opens files.
+type RepoPaths interface {
+	Paths(ctx context.Context, repo change.Repo, sha id.SHA) ([]string, error)
+}
+
 // CodeReader reads code at a commit. Consumers: the test pin (tree hashes, TECH_SPEC 12.4) and the sandbox source.
 type CodeReader interface {
 	// TreeHash returns the git tree hash of dir at sha.
