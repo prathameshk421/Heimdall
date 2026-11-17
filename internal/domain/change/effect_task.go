@@ -16,7 +16,9 @@ type TaskAssignPayload struct {
 	Agent  id.AgentName  `json:"agent"`
 	Role   workflow.Role `json:"role"`
 	TaskID id.TaskID     `json:"task_id"`
-	RoomID RoomID        `json:"room_id"`
+	// Change is the change the task belongs to. Effects made before it existed carry it in their key only.
+	Change id.ChangeID `json:"change,omitempty"`
+	RoomID RoomID      `json:"room_id"`
 	// Bundle is the old context bundle. New tasks may leave it empty: inputs are rendered when the agent calls get_task.
 	Bundle []byte `json:"bundle,omitempty"`
 }

@@ -75,13 +75,14 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, replayPoll.AlreadyTriggered, "overlapping Jira changelog replay dedupes the change")
 	roomEvent := jiraJourneyEvent(t, gen, cid, change.EventRoomOpened, change.Actor{Kind: change.ActorSwitch, ID: "switch"}, change.RoomOpened{RoomID: change.RoomID(acceptanceRoomID)})
-	_, err = eng.Advance(ctx, cid, []change.Event{roomEvent})
+	err = eng.Append(ctx, cid, []change.Event{roomEvent})
 	require.NoError(t, err)
 	branchEvent := jiraJourneyEvent(t, gen, cid, change.EventBranchEnsured, change.Actor{Kind: change.ActorGitHub, ID: "github"}, change.BranchEnsured{
 		Repo: change.Repo("aarush323/PBL_TOS_RISK_ANALYZER"), Branch: "KAN-1-add-refunds", BaseSHA: id.SHA(acceptanceBaseSHA),
 	})
-	_, err = eng.Advance(ctx, cid, []change.Event{branchEvent})
+	err = eng.Append(ctx, cid, []change.Event{branchEvent})
 	require.NoError(t, err)
+	require.NoError(t, newTestReconciler(t, store).Run(ctx, cid), "the write_tests row assigns the configured test author")
 	events, err := store.Load(ctx, cid)
 	require.NoError(t, err)
 	var tid id.TaskID
@@ -143,7 +144,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 		if len(advanced) == 1 {
 			return errors.New("engine temporarily unavailable")
 		}
-		_, err := eng.Advance(ctx, cid, []change.Event{event})
+		err := eng.Append(ctx, cid, []change.Event{event})
 		return err
 	}}
 	reviews := &mcpReviewsAdapter{svc: svc, tracker: tracker}

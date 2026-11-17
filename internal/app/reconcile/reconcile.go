@@ -34,7 +34,7 @@ type InputSource interface {
 	// Profile returns the promoted profile of repo, or the zero Profile when there is none.
 	Profile(ctx context.Context, repo change.Repo) (change.Profile, error)
 	// Bundle builds the context bundle a task_assign still carries. It goes with the bundle itself (HARNESS_DESIGN H7).
-	Bundle(ctx context.Context, kind string, changeID id.ChangeID, events []change.Event) ([]byte, error)
+	Bundle(ctx context.Context, kind, subject string, changeID id.ChangeID, events []change.Event) ([]byte, error)
 }
 
 // Config is everything a Reconciler needs.

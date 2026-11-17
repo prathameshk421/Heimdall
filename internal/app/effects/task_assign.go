@@ -74,7 +74,7 @@ func (t TaskAssign) Execute(ctx context.Context, fx change.Effect) error {
 		return failf(err, "task_assign %s: invite %s into the room", fx.Key, p.Agent)
 	}
 
-	ticket, err := ticketFromKey(fx.Key)
+	ticket, err := changeOfEffect(p.Change, fx.Key)
 	if err != nil {
 		return failf(err, "task_assign %s: read the ticket from the effect key", fx.Key)
 	}

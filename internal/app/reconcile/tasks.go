@@ -84,21 +84,35 @@ func (r *Reconciler) assign(ctx context.Context, d *decision, in change.In, even
 		return fmt.Errorf("no timeout is configured for task kind %q", t.Kind)
 	}
 	tid := r.cfg.IDs.NewTask()
-	d.fact(change.TaskAssigned{TaskID: tid, Agent: agent, Role: kind.Holder, Deadline: in.Now.Add(timeout),
-		Kind: t.Kind, Subject: t.Subject, Input: t.Input})
-	return r.wake(ctx, d, in, events, tid, agent, kind.Holder, t.Kind, "task/"+string(tid))
-}
-
-// wake attaches a task_assign job for the task: the first assignment and each repeat of the wake line are the same job
-// kind under different keys.
-func (r *Reconciler) wake(ctx context.Context, d *decision, in change.In, events []change.Event, tid id.TaskID, agent id.AgentName, role workflow.Role, kind, keyTail string) error {
-	bundle, err := r.cfg.Inputs.Bundle(ctx, kind, in.Change, events)
+	bundle, err := r.cfg.Inputs.Bundle(ctx, t.Kind, t.Subject, in.Change, events)
 	if err != nil {
 		return fmt.Errorf("build the bundle of %s: %w", tid, err)
 	}
-	p := change.TaskAssignPayload{Agent: agent, Role: role, TaskID: tid, RoomID: in.View.Room, Bundle: bundle}
-	return d.job(change.Job{Kind: change.EffectTaskAssign, Key: change.EffectKey(string(in.Change) + "/" + keyTail),
-		Target: bundleTarget(bundle), Payload: p})
+	// BundleRef goes with the bundle itself (HARNESS_DESIGN H7): get_task still reads the task's context through it.
+	assigned := change.TaskAssigned{TaskID: tid, Agent: agent, Role: kind.Holder, Deadline: in.Now.Add(timeout),
+		Kind: t.Kind, Subject: t.Subject, Input: t.Input, BundleRef: workflow.BlobRef(bundleTarget(bundle))}
+	if t.Kind == "verdict" {
+		assigned.CaseID = id.CaseID(t.Subject) // the resolver's tools bind the task to its case
+	}
+	d.fact(assigned)
+	return d.job(wakeJob(in, tid, agent, kind.Holder, bundle, "task/"+string(tid)))
+}
+
+// wakeJob is the task_assign job that wakes the agent in the change's room: the first assignment and each repeat of the
+// wake line are the same job kind under different keys.
+func wakeJob(in change.In, tid id.TaskID, agent id.AgentName, role workflow.Role, bundle []byte, keyTail string) change.Job {
+	p := change.TaskAssignPayload{Agent: agent, Role: role, TaskID: tid, RoomID: in.View.Room, Bundle: bundle, Change: in.Change}
+	return change.Job{Kind: change.EffectTaskAssign, Key: change.EffectKey(string(in.Change) + "/" + keyTail),
+		Target: bundleTarget(bundle), Payload: p}
+}
+
+// wake attaches a repeat of the wake line for a live task, with a fresh bundle.
+func (r *Reconciler) wake(ctx context.Context, d *decision, in change.In, events []change.Event, tid id.TaskID, agent id.AgentName, role workflow.Role, kind, subject, keyTail string) error {
+	bundle, err := r.cfg.Inputs.Bundle(ctx, kind, subject, in.Change, events)
+	if err != nil {
+		return fmt.Errorf("build the bundle of %s: %w", tid, err)
+	}
+	return d.job(wakeJob(in, tid, agent, role, bundle, keyTail))
 }
 
 // watch decides what to do about a live task made for the current input: time it out past its deadline, otherwise do
@@ -120,7 +134,7 @@ func (r *Reconciler) watch(ctx context.Context, d *decision, in change.In, event
 		return nil
 	case liveness.Repeat:
 		d.fact(change.TaskRewoken{TaskID: t.id, N: n})
-		return r.wake(ctx, d, in, events, t.id, t.info.Agent, t.info.Role, t.info.Kind, fmt.Sprintf("%s/wake/%d", t.id, n))
+		return r.wake(ctx, d, in, events, t.id, t.info.Agent, t.info.Role, t.info.Kind, t.info.Subject, fmt.Sprintf("%s/wake/%d", t.id, n))
 	case liveness.Probe, liveness.Blocked:
 		return r.probe(ctx, d, in.View)
 	case liveness.Reset:
@@ -129,7 +143,7 @@ func (r *Reconciler) watch(ctx context.Context, d *decision, in change.In, event
 			return err
 		}
 		d.fact(change.TaskRewoken{TaskID: t.id, N: n, Reset: true})
-		return r.wake(ctx, d, in, events, t.id, t.info.Agent, t.info.Role, t.info.Kind, fmt.Sprintf("%s/wake/%d", t.id, n))
+		return r.wake(ctx, d, in, events, t.id, t.info.Agent, t.info.Role, t.info.Kind, t.info.Subject, fmt.Sprintf("%s/wake/%d", t.id, n))
 	case liveness.Fail:
 		d.fact(change.TaskFailed{TaskID: t.id, Agent: t.info.Agent, Role: t.info.Role, Reason: "unresponsive"})
 		return nil

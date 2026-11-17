@@ -22,11 +22,10 @@ allow_M0=(
 	'internal/archcheck/*' scripts/check-owned.sh e2e/task_m0_test.go
 	'internal/domain/change/*' 'internal/domain/workflow/*' 'internal/domain/policy/*'
 	'internal/app/bundle/*' 'internal/app/people/*' 'internal/app/intake/*' 'internal/app/trigger/*'
-	'internal/app/agenttools/*' 'internal/app/dashboard/*' 'internal/app/engine/*' 'internal/adapters/postgres/*'
+	'internal/app/agenttools/*' 'internal/app/dashboard/*' 'internal/adapters/postgres/*'
 	'internal/transport/mcp/tools*.go' cmd/heimdall-server/app.go 'cmd/heimdall-server/wire_*.go'
 )
-deny_M0=('internal/app/engine/steps_review*' 'internal/app/engine/steps_tests*' internal/app/engine/steps_commit.go
-	'internal/transport/mcp/*_test.go')
+deny_M0=('internal/transport/mcp/*_test.go')
 
 allow_M1=(
 	'internal/adapters/rootlessrunner/*' 'internal/adapters/localrunner/*' 'internal/adapters/profileyaml/*'
@@ -42,7 +41,7 @@ allow_M3=(
 	'internal/domain/sarif/*' 'internal/domain/rulecard/*' 'internal/domain/finding/*' 'internal/domain/present/*'
 	'internal/app/review/*' 'internal/app/reviewbrief/*' 'internal/app/reviewlearn/*' 'internal/app/codegraph/*'
 	'internal/adapters/lensfs/*' 'internal/mine/*' 'cmd/heimdall-mine/*'
-	'internal/app/engine/steps_review*.go' 'internal/app/effects/check*.go' internal/app/effects/verify_evidence.go
+	'internal/app/effects/check*.go' internal/app/effects/verify_evidence.go
 	internal/transport/mcp/tools_review.go internal/transport/mcp/tools_checks.go
 	internal/domain/change/events_review.go internal/domain/change/events_checks.go
 	internal/domain/workflow/rows_review.go cmd/heimdall-server/wire_review.go
@@ -52,7 +51,6 @@ deny_M3=()
 
 allow_M4=(
 	'internal/domain/testplan/*' 'internal/domain/testset/*' 'internal/domain/verify/*' 'internal/domain/gate/*'
-	'internal/app/engine/steps_tests*.go' internal/app/engine/steps_commit.go
 	'internal/app/effects/test*.go' internal/app/effects/acceptance.go
 	internal/transport/mcp/tools_tests.go internal/transport/mcp/tools_files.go internal/transport/mcp/tools_preview.go
 	internal/domain/change/events_tests.go internal/domain/workflow/rows_tests.go cmd/heimdall-server/wire_tests.go
@@ -66,7 +64,7 @@ allow_M5=(
 	'internal/adapters/switch/*' internal/ports/chat.go 'internal/transport/skills/*' 'internal/pack/*'
 	'deploy/agents/*' 'testdata/agents/*' skills/embed.go
 	internal/transport/mcp/tools_commands.go internal/transport/mcp/list.go internal/domain/change/events_talk.go
-	cmd/heimdall-server/wire_board.go cmd/heimdall-server/wire_liveness.go cmd/heimdall-server/nudge.go
+	cmd/heimdall-server/wire_board.go cmd/heimdall-server/wire_liveness.go
 	cmd/heimdall-server/command_consumer.go 'cmd/heimdall-testagent/scenarios_talk*.go' e2e/task_m5_test.go
 )
 deny_M5=()

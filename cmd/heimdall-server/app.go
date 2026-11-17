@@ -13,16 +13,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/blobfs"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/openrouter"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/announce"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
@@ -45,8 +46,6 @@ const (
 	drainTick = 2 * time.Second
 	// knowledgeRetentionInterval bounds how long expired approved knowledge remains available.
 	knowledgeRetentionInterval = 30 * time.Minute
-	// maxAttempts is the task budget of a retry (engine.Config.MaxAttempts). The slice has no retry, so it is a bound only.
-	maxAttempts = 3
 	// outboxBatch is how many effects one drain claims at once.
 	outboxBatch = 1
 	// drainWorkers is how many effects can run at once.
@@ -182,20 +181,20 @@ type app struct {
 	operatorRecheck http.Handler
 	operatorRoom    http.Handler
 	narrator        *announce.Narrator
-	nudger          *taskNudger
-	timers          *workflowTimers
-	cardsUpload     http.Handler
-	commands        *commandRuntime
-	workflowMemory  *knowledge.WorkflowMemory
-	proposer        *cardProposer
-	retention       knowledgeRetention
-	episodeWorker   episodeDrainer
-	blobs           io.Closer
-	logger          *slog.Logger
-	clock           ports.Clock
-	pollEvery       time.Duration
-	syncEvery       time.Duration
-	drainTick       time.Duration
+	// reconciler starts all work of every change (HARNESS_DESIGN B3).
+	reconciler     *reconcile.Reconciler
+	cardsUpload    http.Handler
+	commands       *commandRuntime
+	workflowMemory *knowledge.WorkflowMemory
+	proposer       *cardProposer
+	retention      knowledgeRetention
+	episodeWorker  episodeDrainer
+	blobs          io.Closer
+	logger         *slog.Logger
+	clock          ports.Clock
+	pollEvery      time.Duration
+	syncEvery      time.Duration
+	drainTick      time.Duration
 }
 
 // poller is the part of trigger.Poller the loop uses. A test supplies a fake one.
@@ -497,22 +496,20 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 		}
 	}
 	gen := ids.New()
-	wf, steps, err := sliceSteps(ad.agents, gen, clk)
+	prober := openrouter.Prober{Secrets: keyReader{cfg: d.configuration}, KeyName: openRouterKey, Model: probeModel}
+	rec, err := newReconciler(ad, store, prober, gen, clk, d.logger)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build reconciler: %w", err)
 	}
-	eng, err := engine.New(engine.Config{
-		Workflow: wf, Steps: steps, Store: store, Clock: clk, IDs: gen, MaxAttempts: maxAttempts,
-		Roles: sliceRoles(), Schemas: sliceSchemas(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build engine: %w", err)
-	}
+	eng := reconcile.Recorder{Store: reconcile.Kicking{EventStore: store, Kicker: rec}}
 	blobStore, err := blobfs.New(blobStoreRoot)
 	if err != nil {
 		return nil, fmt.Errorf("open blob store: %w", err)
 	}
 	a, err := assembleWithBlobs(ctx, d, ad, store, pool, blobStore, eng, gen, clk, setupHandler)
+	if err == nil {
+		a.reconciler = rec
+	}
 	if err != nil {
 		_ = blobStore.Close()
 		return nil, err
@@ -523,7 +520,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 
 func assembleWithBlobs(
 	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
-	eng *engine.Engine, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
+	eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
 ) (*app, error) {
 	profileManager, err := assembleProfileLifecycle(ad, store, blobs, clk)
 	if err != nil {
@@ -578,8 +575,8 @@ func assembleWithBlobs(
 		return nil, err
 	}
 	return &app{
-		narrator: narrator, nudger: newTaskNudger(ad, store, store, pool, clk), timers: &workflowTimers{eng: eng, rooms: store, clock: clk, fired: map[string]bool{}},
-		pool: pool, pollers: pollers, drainer: box, syncer: sync, gateRefresher: gateRefresher, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
+		narrator: narrator,
+		pool:     pool, pollers: pollers, drainer: box, syncer: sync, gateRefresher: gateRefresher, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil

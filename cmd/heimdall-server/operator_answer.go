@@ -94,7 +94,7 @@ func (r *commandRuntime) OperatorAnswer(ctx context.Context, cid id.ChangeID, qu
 	if err != nil {
 		return err
 	}
-	if _, err := r.engine.Advance(ctx, cid, events); err != nil {
+	if err := r.engine.Append(ctx, cid, events); err != nil {
 		return fmt.Errorf("apply the answer: %w", err)
 	}
 	if err := r.wakeAsker(ctx, cid, state, question, sourceRef); err != nil {

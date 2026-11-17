@@ -124,7 +124,7 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 			SHA: commandTestHead, TreeHash: commandTestHead}, "review-seed-verified"),
 		makeEvent(change.EventTestsCommitted, change.TestsCommitted{SHA: commandTestHead, TreeHash: commandTestHead}, "review-seed-committed"),
 	}
-	_, err := runtime.engine.Advance(ctx, cid, seed)
+	err := runtime.engine.Append(ctx, cid, seed)
 	require.NoError(t, err)
 	policyBytes, err := os.ReadFile("../../internal/domain/policy/testdata/policy.golden.yaml")
 	require.NoError(t, err)
@@ -153,10 +153,9 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, cid, intakeResult.Stream)
 	require.True(t, intakeResult.Pass)
-	_, err = runtime.engine.Advance(ctx, cid, nil)
-	require.NoError(t, err)
-	_, err = runtime.engine.Timeout(ctx, cid, "pick")
-	require.NoError(t, err)
+	rec := newTestReconciler(t, store, "ana-reviewer", "eli-reviewer")
+	require.NoError(t, rec.Run(ctx, cid)) // records the default pick
+	require.NoError(t, rec.Run(ctx, cid)) // assigns one review task per seat
 
 	events, err := store.Load(ctx, cid)
 	require.NoError(t, err)
@@ -170,7 +169,7 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 		Asker: &chatAsker{chat: runtime.chat, store: store, ids: gen}, ReviewRefs: reviewRefs{code: commandTestVCS{dummyVCS: dummyVCS{}}},
 		ReviewValidator: reviewJourneyValidator{},
 		Advance: func(ctx context.Context, cid id.ChangeID, evs []change.Event) error {
-			_, err := runtime.engine.Advance(ctx, cid, evs)
+			err := runtime.engine.Append(ctx, cid, evs)
 			return err
 		},
 	})
@@ -192,6 +191,7 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 	// A challenge opens a durable, case-scoped resolver task; resolver evidence is followed by the human decision.
 	challenge := ports.Message{ID: "review-challenge-f1", Room: room.RoomID, Sender: "bob", Text: "heimdall challenge F1 a failing regression test proves this", At: time.Now().UTC()}
 	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, challenge))
+	require.NoError(t, rec.Run(ctx, cid))
 	events, err = store.Load(ctx, cid)
 	require.NoError(t, err)
 	resolverTask := resolverAssignmentForJourney(t, events)
@@ -201,8 +201,6 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 		Rationale: "The regression confirms the reported path.", Confidence: finding.ConfidenceHigh,
 		Citations: []deliberation.Citation{{Kind: deliberation.CitationFinding, Ref: "F1", Quote: "the regression reproduces the report"}}}
 	require.NoError(t, reviewService.SubmitVerdict(ctx, resolver, verdict, false))
-	_, err = runtime.engine.Advance(ctx, cid, nil)
-	require.NoError(t, err)
 	uphold := ports.Message{ID: "review-uphold-f1", Room: room.RoomID, Sender: "alice", Text: "heimdall uphold F1", At: time.Now().UTC()}
 	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, uphold))
 
@@ -210,6 +208,7 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 	// two-reviewer consensus, so the consensus-created blocking hold is released.
 	dismissChallenge := ports.Message{ID: "review-challenge-f2", Room: room.RoomID, Sender: "bob", Text: "heimdall challenge F2 a separate test disputes this finding", At: time.Now().UTC()}
 	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, dismissChallenge))
+	require.NoError(t, rec.Run(ctx, cid))
 	events, err = store.Load(ctx, cid)
 	require.NoError(t, err)
 	dismissTask := resolverAssignmentForJourney(t, events)
@@ -219,8 +218,6 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 		Rationale: "The independent test contradicts this report.", Confidence: finding.ConfidenceHigh,
 		Citations: []deliberation.Citation{{Kind: deliberation.CitationFinding, Ref: "F2", Quote: "the independent test contradicts the claim"}}}
 	require.NoError(t, reviewService.SubmitVerdict(ctx, dismissResolver, dismissVerdict, false))
-	_, err = runtime.engine.Advance(ctx, cid, nil)
-	require.NoError(t, err)
 	dismiss := ports.Message{ID: "review-dismiss-f2", Room: room.RoomID, Sender: "alice", Text: "heimdall dismiss F2 the independent test contradicts this claim", At: time.Now().UTC()}
 	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, dismiss))
 	oneSurvivor, err := gateEvaluator.Evaluate(ctx, cid)
@@ -235,8 +232,9 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 	newPick := makeEvent(change.EventReviewersPicked, change.ReviewersPicked{
 		People: []change.ActorID{"ana-reviewer", "eli-reviewer"}, By: "alice", Method: change.PickCommand,
 	}, "review-new-pick")
-	_, err = runtime.engine.Advance(ctx, cid, []change.Event{newHead, newSlop, newPick})
+	err = runtime.engine.Append(ctx, cid, []change.Event{newHead, newSlop, newPick})
 	require.NoError(t, err)
+	require.NoError(t, rec.Run(ctx, cid))
 	events, err = store.Load(ctx, cid)
 	require.NoError(t, err)
 	facts, err := gateuse.Fold(events)
@@ -286,8 +284,6 @@ func submitJourneyReview(ctx context.Context, t *testing.T, runtime *commandRunt
 	_, err := service.SubmitReview(ctx, assignment, review, false)
 	require.NoError(t, err)
 	runJourneyVerification(ctx, t, runtime, cid)
-	_, err = runtime.engine.Advance(ctx, cid, nil)
-	require.NoError(t, err)
 }
 
 type journeySource struct{}

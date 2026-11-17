@@ -67,7 +67,7 @@ func (c CommitTests) Execute(ctx context.Context, fx change.Effect) error {
 	if err != nil {
 		return failf(err, "commit_tests effect %s: payload refused: %v", fx.Key, err)
 	}
-	ticket, err := ticketFromKey(fx.Key)
+	ticket, err := changeOfEffect(p.Change, fx.Key)
 	if err != nil {
 		return failf(err, "commit_tests effect %s: extract ticket", fx.Key)
 	}
@@ -179,6 +179,15 @@ func findCommitCause(l loadedChange) *change.Event {
 		return cause
 	}
 	return l.first(change.EventTestsSubmitted)
+}
+
+// changeOfEffect is the change an effect is about: the payload names it; an effect made before payloads did names it in
+// its key (kind:change:version:discriminator). // Old effects only.
+func changeOfEffect(fromPayload id.ChangeID, k change.EffectKey) (id.ChangeID, error) {
+	if fromPayload != "" {
+		return fromPayload, nil
+	}
+	return ticketFromKey(k)
 }
 
 func ticketFromKey(k change.EffectKey) (id.ChangeID, error) {

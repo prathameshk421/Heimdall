@@ -17,10 +17,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
@@ -164,24 +164,9 @@ func (m *memStore) Load(_ context.Context, cid id.ChangeID) ([]change.Event, err
 	return slices.Clone(m.events[cid]), nil
 }
 
-// newSliceEngine builds the engine of the slice on store, as assemble does.
-func newSliceEngine(t *testing.T, store ports.EventStore) *engine.Engine {
-	t.Helper()
-	agents := config.Agents{
-		TestAuthor: "test-author",
-		Reviewers:  []string{"reviewer-1", "reviewer-2"},
-		Resolver:   "resolver",
-	}
-	gen := ids.New()
-	clk := clock.System{}
-	wf, steps, err := sliceSteps(agents, gen, clk)
-	require.NoError(t, err)
-	eng, err := engine.New(engine.Config{
-		Workflow: wf, Steps: steps, Store: store, Clock: clk, IDs: gen, MaxAttempts: maxAttempts,
-		Roles: sliceRoles(), Schemas: sliceSchemas(),
-	})
-	require.NoError(t, err)
-	return eng
+// newSliceEngine returns the recorder writers use on store, as assemble builds it (without a reconciler to kick).
+func newSliceEngine(_ *testing.T, store ports.EventStore) reconcile.Recorder {
+	return reconcile.Recorder{Store: store}
 }
 
 // triggeredEvent is the change.triggered event the poller builds for a ticket.
@@ -219,8 +204,10 @@ func TestStarterStartsTheChangeAndCommitsItsRoomEffect(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, evs, 1, "the first event only: room.opened comes from the executor")
 	require.Equal(t, change.EventChangeTriggered, evs[0].Type)
+	require.Empty(t, store.fx, "the starter only records the fact")
+	require.NoError(t, newTestReconciler(t, store).Run(context.Background(), "KAN-1"))
 	require.Len(t, store.fx, 1)
-	require.Equal(t, change.EffectRoomOpen, store.fx[0].Kind, "the switch.open_room step commits its effect with the trigger")
+	require.Equal(t, change.EffectRoomOpen, store.fx[0].Kind, "the open_room row asks for the room")
 }
 
 func TestStarterReturnsVersionConflictForAnExistingChange(t *testing.T) {

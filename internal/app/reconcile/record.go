@@ -84,3 +84,9 @@ func number(changeID id.ChangeID, stored, built []change.Event) []change.Event {
 	}
 	return out
 }
+
+// Append records events that are already built, whatever the view says. It is Record for a writer that decides
+// nothing from the view.
+func (r Recorder) Append(ctx context.Context, changeID id.ChangeID, evs []change.Event) error {
+	return r.Record(ctx, changeID, func(change.View) ([]change.Event, error) { return evs, nil })
+}

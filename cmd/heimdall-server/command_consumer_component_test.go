@@ -35,7 +35,7 @@ func TestMappedRoomCommandPersistsAndRepliesThroughPostgres(t *testing.T) {
 	first.Payload, err = json.Marshal(change.Triggered{Ticket: cid, Repo: "aarush323/PBL_TOS_RISK_ANALYZER", Assignee: "jira-assignee", Source: change.TriggerJira})
 	require.NoError(t, err)
 	require.NoError(t, first.Validate())
-	_, err = eng.Start(ctx, first)
+	err = eng.Append(ctx, first.ChangeID, []change.Event{first})
 	require.NoError(t, err)
 
 	policyBytes, err := os.ReadFile("../../internal/domain/policy/testdata/policy.golden.yaml")

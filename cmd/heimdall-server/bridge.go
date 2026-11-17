@@ -15,11 +15,11 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	appreview "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/review"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
@@ -32,10 +32,9 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
-// starter opens a change with its first event. It adapts engine.Start, which also returns an outcome the poller
-// does not use (trigger.Starter).
+// starter records the first event of a change (trigger.Starter).
 type starter struct {
-	eng    *engine.Engine
+	eng    reconcile.Recorder
 	memory *knowledge.WorkflowIngestor
 	store  ports.EventStore
 	logger *slog.Logger
@@ -45,8 +44,12 @@ type starter struct {
 // Once the change is durably opened, memory capture is best effort here: the durable workflow backfill replays the
 // stored events from its persisted sequence, so a capture failure must not stop the trigger's cursor from advancing.
 func (s starter) Start(ctx context.Context, first change.Event) error {
-	_, err := s.eng.Start(ctx, first)
-	if err != nil {
+	if err := s.eng.Record(ctx, first.ChangeID, func(v change.View) ([]change.Event, error) {
+		if v.Trigger != nil {
+			return nil, fmt.Errorf("change %s already started: %w", first.ChangeID, ports.ErrVersionConflict)
+		}
+		return []change.Event{first}, nil
+	}); err != nil {
 		return err
 	}
 	if err := s.capture(ctx, first.ChangeID); err != nil && s.logger != nil {
@@ -69,17 +72,16 @@ func (s starter) capture(ctx context.Context, changeID id.ChangeID) error {
 	return nil
 }
 
-// ingestor hands the events of an executor to the engine (effects.Ingest). It adapts engine.Advance, which also
-// returns an outcome the executors do not use.
+// ingestor hands the events of an executor to the log (effects.Ingest).
 type ingestor struct {
-	eng    *engine.Engine
+	eng    reconcile.Recorder
 	memory *knowledge.WorkflowIngestor
 	store  ports.EventStore
 }
 
-// Ingest stores the events and runs the steps that follow them.
+// Ingest records the events; the reconciler wakes after the append.
 func (i ingestor) Ingest(ctx context.Context, changeID id.ChangeID, evs []change.Event) error {
-	_, err := i.eng.Advance(ctx, changeID, evs)
+	err := i.eng.Record(ctx, changeID, func(change.View) ([]change.Event, error) { return evs, nil })
 	if err != nil {
 		return err
 	}

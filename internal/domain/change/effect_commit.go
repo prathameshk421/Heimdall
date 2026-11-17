@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
@@ -22,6 +23,8 @@ type CommitTestsPayload struct {
 	Dir     string       `json:"dir"`
 	Files   []CommitFile `json:"files"`
 	Message string       `json:"message"`
+	// Change is the change whose tests are committed. Effects made before it existed carry it in their key only.
+	Change id.ChangeID `json:"change,omitempty"`
 }
 
 // Validate returns every problem with the payload.

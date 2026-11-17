@@ -13,7 +13,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -102,64 +101,11 @@ func (testMCPKnowledge) Ask(context.Context, id.AgentName, id.TaskID, change.Rep
 	return nil, nil
 }
 
-func TestWorkflowBuildsAndEngineAcceptsIt(t *testing.T) {
-	agents := config.Agents{
-		TestAuthor: "test-author",
-		Reviewers:  []string{"reviewer-1", "reviewer-2"},
-		Resolver:   "resolver",
-	}
-	gen := ids.New()
-	clk := clock.System{}
-
-	wf, steps, err := sliceSteps(agents, gen, clk)
-	require.NoError(t, err)
-
-	store := newMemStore()
-	eng, err := engine.New(engine.Config{
-		Workflow:    wf,
-		Steps:       steps,
-		Store:       store,
-		Clock:       clk,
-		IDs:         gen,
-		MaxAttempts: maxAttempts,
-		Roles:       sliceRoles(),
-		Schemas:     sliceSchemas(),
-	})
-	require.NoError(t, err)
-	require.NotNil(t, eng)
-
-	// Step count and ids: exactly the 11 implemented steps
-	expectedIDs := []string{
-		"open_room", "branch", "write_tests", "test_qa", "commit",
-		"wait_pr", "slop", "pick", "review", "verify", "deliberate",
-	}
-	actualIDs := make([]string, len(wf.Steps))
-	for i, s := range wf.Steps {
-		actualIDs[i] = s.ID
-	}
-	require.Equal(t, expectedIDs, actualIDs)
-
-	// Commit step after list must be trimmed to surviving ancestors
-	for _, s := range wf.Steps {
-		if s.ID == "commit" {
-			require.Equal(t, []string{"test_qa"}, s.After, "commit after must be trimmed to surviving ancestors")
-		}
-	}
-}
-
 func TestEveryEffectKindEmittedByWorkflowHasAnExecutor(t *testing.T) {
-	agents := config.Agents{
-		TestAuthor: "test-author",
-		Reviewers:  []string{"reviewer-1", "reviewer-2"},
-		Resolver:   "resolver",
-	}
 	gen := ids.New()
 	clk := clock.System{}
 
-	_, _, err := sliceSteps(agents, gen, clk)
-	require.NoError(t, err)
-
-	// Effects that steps in the workflow emit:
+	// Effects that rows in the workflow emit:
 	// open_room -> EffectRoomOpen
 	// branch -> EffectGitHubBranch
 	// write_tests -> EffectTaskAssign

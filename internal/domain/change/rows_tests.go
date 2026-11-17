@@ -147,7 +147,7 @@ func rowCommit() Row {
 				files = append(files, CommitFile{Path: dir + "/test.go", BlobRef: v.Tests.Ref})
 			}
 			p := CommitTestsPayload{Repo: v.Trigger.Repo, Branch: branchName(v), Dir: dir, Files: files,
-				Message: "tests: commit tests for " + string(in.Change)}
+				Message: "tests: commit tests for " + string(in.Change), Change: in.Change}
 			return []Action{{Text: "the tests are committed to the branch",
 				Job: &Job{Kind: EffectGitHubCommitTests, Key: in.jobKey("commit", string(v.Tests.Ref)), Target: string(v.Trigger.Repo), Payload: p}}}
 		}}

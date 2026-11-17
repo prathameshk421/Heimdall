@@ -10,8 +10,8 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/announce"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/roomstream"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
@@ -36,7 +36,7 @@ func assembleNarrator(d deps, ad adapters, store *postgres.Store) (*announce.Nar
 	return n, nil
 }
 
-func assembleCollaboration(store *postgres.Store, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, refreshEvery time.Duration, intakeCase *intake.Intake, profiles mcp.Profiles) (roomStreamRunner, commentPoller, *commandRuntime, error) {
+func assembleCollaboration(store *postgres.Store, ad adapters, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, refreshEvery time.Duration, intakeCase *intake.Intake, profiles mcp.Profiles) (roomStreamRunner, commentPoller, *commandRuntime, error) {
 	runtime, err := newCommandRuntime(store, ad, eng, gen, clk, prIntake{in: intakeCase}, profiles)
 	if err != nil {
 		return nil, nil, nil, err

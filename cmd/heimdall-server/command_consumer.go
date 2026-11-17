@@ -12,8 +12,8 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/people"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/commands"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -36,7 +36,7 @@ type commandRuntime struct {
 	projects  projectRepos
 	chat      ports.Chat
 	comments  ports.PRComments
-	engine    *engine.Engine
+	engine    reconcile.Recorder
 	ids       ports.IDs
 	clock     ports.Clock
 	intake    prIntakeHandler
@@ -45,7 +45,7 @@ type commandRuntime struct {
 	processor *collaboration.Processor
 }
 
-func newCommandRuntime(events ports.EventStore, ad adapters, eng *engine.Engine, gen ports.IDs, clk ports.Clock, in prIntakeHandler, profiles mcp.Profiles) (*commandRuntime, error) {
+func newCommandRuntime(events ports.EventStore, ad adapters, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, in prIntakeHandler, profiles mcp.Profiles) (*commandRuntime, error) {
 	r := &commandRuntime{events: events, code: ad.vcs, prs: ad.vcs, repos: ad.vcs, tickets: ad.tickets, projects: ad.projects,
 		chat: ad.chat, comments: ad.vcs, engine: eng, ids: gen, clock: clk, intake: in, profiles: profiles}
 	p, err := collaboration.New(collaboration.Config{Identity: r, Executor: r, Replies: r, Proposals: r, Clock: clk})
@@ -348,7 +348,7 @@ func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Targe
 	if err != nil {
 		return "", err
 	}
-	if _, err := r.engine.Advance(ctx, target.ChangeID, events); err != nil {
+	if err := r.engine.Append(ctx, target.ChangeID, events); err != nil {
 		return "", fmt.Errorf("apply %s command: %w", cmd.Verb(), err)
 	}
 	if ans, ok := cmd.(commands.Answer); ok {
@@ -656,14 +656,19 @@ func (r *commandRuntime) start(ctx context.Context, person string, source comman
 	if err != nil && !errors.Is(err, ports.ErrNotFound) {
 		return "", fmt.Errorf("check start ticket: %w", err)
 	}
-	if len(existing) == 0 {
+	if !hasTrigger(existing) {
 		triggered, err := r.event(id.ChangeID(cmd.Ticket), change.Actor{Kind: change.ActorHuman, ID: change.ActorID(person)}, source, change.EventChangeTriggered,
 			change.Triggered{Ticket: id.ChangeID(cmd.Ticket), Repo: repo, Assignee: ticket.Assignee, Source: change.TriggerManual}, sourceRef)
 		if err != nil {
 			return "", err
 		}
-		triggered.Version = 1
-		if _, err := r.engine.Start(ctx, triggered); err != nil && !errors.Is(err, ports.ErrVersionConflict) {
+		// A pull request that named the ticket first has a stream already: the trigger joins it (HARNESS_DESIGN B1).
+		if err := r.engine.Record(ctx, triggered.ChangeID, func(v change.View) ([]change.Event, error) {
+			if v.Trigger != nil {
+				return nil, nil
+			}
+			return []change.Event{triggered}, nil
+		}); err != nil {
 			return "", fmt.Errorf("start ticket %s: %w", cmd.Ticket, err)
 		}
 	}
@@ -683,7 +688,7 @@ func (r *commandRuntime) recordStartDecision(ctx context.Context, cid id.ChangeI
 	if err != nil {
 		return "", err
 	}
-	if _, err := r.engine.Advance(ctx, cid, []change.Event{decision}); err != nil {
+	if err := r.engine.Append(ctx, cid, []change.Event{decision}); err != nil {
 		latest, loadErr := r.events.Load(ctx, cid)
 		if loadErr == nil && hasDecisionSource(latest, source, sourceRef) {
 			return "Already started.", nil
@@ -900,4 +905,14 @@ func (r *commandRuntime) signoffEvents(cid id.ChangeID, state []change.Event, pe
 		return nil, err
 	}
 	return []change.Event{ev}, nil
+}
+
+// hasTrigger reports whether the stream already holds change.triggered.
+func hasTrigger(events []change.Event) bool {
+	for _, e := range events {
+		if e.Type == change.EventChangeTriggered {
+			return true
+		}
+	}
+	return false
 }

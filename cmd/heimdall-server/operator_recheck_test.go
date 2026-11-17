@@ -65,7 +65,7 @@ func TestOperatorRecheckRecordsARequestForAProvableFindingOnly(t *testing.T) {
 	filedE4, err := runtime.event(cid, agent, commands.SourceGitHub, change.EventFindingFiled,
 		change.FindingFiled{FindingID: e4, Ref: id.FindingRef(7), Tier: "E4", Severity: "low", State: "unverified", By: "reviewer-1"}, "f7")
 	require.NoError(t, err)
-	_, err = runtime.engine.Advance(ctx, cid, []change.Event{opened, filedE1, downgraded, filedE4})
+	err = runtime.engine.Append(ctx, cid, []change.Event{opened, filedE1, downgraded, filedE4})
 	require.NoError(t, err)
 
 	require.NoError(t, runtime.OperatorRecheck(ctx, cid, "F4", "the runner was busy"))

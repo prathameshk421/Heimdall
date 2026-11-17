@@ -15,13 +15,13 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/engine"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
 	appprofile "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/profile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	appreview "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/review"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reviewlearn"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/trigger"
@@ -34,7 +34,7 @@ import (
 
 // newTicketPollers builds one ticket poller per listed project, each with its own cursor source provider:project
 // (A10 item 10).
-func newTicketPollers(ad adapters, store *postgres.Store, eng *engine.Engine, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock) ([]poller, error) {
+func newTicketPollers(ad adapters, store *postgres.Store, eng reconcile.Recorder, blobs ports.BlobStore, gen ports.IDs, clk ports.Clock) ([]poller, error) {
 	pollers := make([]poller, 0, len(ad.projectKeys))
 	for _, key := range ad.projectKeys {
 		tp, err := trigger.New(trigger.Config{
@@ -88,19 +88,19 @@ type mcpStore interface {
 }
 
 // newTasksAdapter builds the MCP task adapter: test submissions advance the engine, and agent output is filtered.
-func newTasksAdapter(d deps, toolsSvc *agenttools.Service, tracker *assignmentAgentTracker, store mcpStore, eng *engine.Engine) (*tasksAdapter, error) {
+func newTasksAdapter(d deps, toolsSvc *agenttools.Service, tracker *assignmentAgentTracker, store mcpStore, eng reconcile.Recorder) (*tasksAdapter, error) {
 	outputFilter, err := appreview.NewOutputFilter(nil, outputAudit{logger: d.logger})
 	if err != nil {
 		return nil, fmt.Errorf("build agent output filter: %w", err)
 	}
 	return &tasksAdapter{svc: toolsSvc, tracker: tracker, focus: cursorsOf(store), filter: outputFilter, advanceTests: func(ctx context.Context, changeID id.ChangeID, event change.Event) error {
-		_, err := eng.Advance(ctx, changeID, []change.Event{event})
+		err := eng.Append(ctx, changeID, []change.Event{event})
 		return err
 	}}, nil
 }
 
 // newAgentTools builds the service behind the agents' tools.
-func newAgentTools(ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng *engine.Engine, gen ports.IDs, clk ports.Clock, refs reviewRefs) (*agenttools.Service, error) {
+func newAgentTools(ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, refs reviewRefs) (*agenttools.Service, error) {
 	toolsSvc, err := agenttools.New(agenttools.Config{
 		Events:          store,
 		Index:           postgres.NewTaskIndex(pool),
@@ -113,7 +113,7 @@ func newAgentTools(ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.
 		PRFiles:         ad.vcs,
 		// Review events go through the engine, so the verify step sees each finding and requests its verification.
 		Advance: func(ctx context.Context, cid id.ChangeID, evs []change.Event) error {
-			_, err := eng.Advance(ctx, cid, evs)
+			err := eng.Append(ctx, cid, evs)
 			return err
 		},
 	})
@@ -126,7 +126,7 @@ func newAgentTools(ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.
 // assembleMCP wires the agent tools service, adapters, the reviewer brief and the MCP server. It also returns the card
 // proposal worker, which is nil when no cards directory is configured.
 func assembleMCP(
-	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng *engine.Engine, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
+	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
 	commands mcp.Proposer,
 ) (http.Handler, *cardProposer, error) {
 	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk, store)

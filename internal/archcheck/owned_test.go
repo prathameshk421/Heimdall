@@ -58,11 +58,11 @@ func TestCheckOwnedFailsADiffOutsideTheModuleAndNamesEachPath(t *testing.T) {
 
 func TestCheckOwnedHonoursADenyInsideAnOwnedFolder(t *testing.T) {
 	list := filepath.Join(t.TempDir(), "paths.txt")
-	require.NoError(t, os.WriteFile(list, []byte("internal/app/engine/engine.go\ninternal/app/engine/steps_review.go\n"), 0o600))
+	require.NoError(t, os.WriteFile(list, []byte("internal/domain/change/view.go\ninternal/transport/mcp/tools_test.go\n"), 0o600))
 	out, code := runOwned(t, ".", "M0", "--paths", list)
 	require.Equal(t, 1, code, out)
-	require.Contains(t, out, "outside M0: internal/app/engine/steps_review.go")
-	require.NotContains(t, out, "engine.go\n")
+	require.Contains(t, out, "outside M0: internal/transport/mcp/tools_test.go")
+	require.NotContains(t, out, "view.go\n")
 }
 
 func TestCheckOwnedRefusesAnUnknownModule(t *testing.T) {

@@ -110,21 +110,6 @@ func (a *app) narratorLoop(ctx context.Context) {
 	}
 }
 
-// nudgeLoop mentions an agent again when its task has waited too long for an ack.
-func (a *app) nudgeLoop(ctx context.Context) {
-	for {
-		sent, err := a.nudger.RunOnce(ctx)
-		if err != nil && ctx.Err() == nil {
-			a.logger.ErrorContext(ctx, "task nudge failed; it will be retried", "error", err)
-		} else if err == nil && sent > 0 {
-			a.logger.InfoContext(ctx, "agents nudged", "count", sent)
-		}
-		if err := clock.Wait(ctx, 15*time.Second); err != nil {
-			return
-		}
-	}
-}
-
 func (a *app) roomStreamLoop(ctx context.Context) {
 	var delay time.Duration
 	for ctx.Err() == nil {
@@ -329,11 +314,8 @@ func (a *app) backgroundLoops(wake chan<- struct{}) []func(context.Context) {
 	if a.narrator != nil {
 		runs = append(runs, a.narratorLoop)
 	}
-	if a.nudger != nil {
-		runs = append(runs, a.nudgeLoop)
-	}
-	if a.timers != nil {
-		runs = append(runs, a.timerLoop)
+	if a.reconciler != nil {
+		runs = append(runs, a.reconciler.Loop)
 	}
 	if a.episodeWorker != nil {
 		runs = append(runs, a.episodeDeliveryLoop)

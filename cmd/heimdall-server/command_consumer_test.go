@@ -77,7 +77,7 @@ func setupCommandRuntime(t *testing.T, cid id.ChangeID, tickets ports.TicketRead
 	first.ChangeID = cid
 	first.Payload, _ = json.Marshal(change.Triggered{Ticket: cid, Repo: "aarush323/PBL_TOS_RISK_ANALYZER", Assignee: "jira-assignee", Source: change.TriggerJira})
 	require.NoError(t, first.Validate())
-	_, err := eng.Start(context.Background(), first)
+	err := eng.Append(context.Background(), first.ChangeID, []change.Event{first})
 	require.NoError(t, err)
 	policyBytes, err := os.ReadFile("../../internal/domain/policy/testdata/policy.golden.yaml")
 	require.NoError(t, err)
@@ -206,10 +206,17 @@ func TestServerCommandRuntimeSelectsReviewersForFanout(t *testing.T) {
 	opened, err := runtime.event(cid, change.Actor{Kind: change.ActorGitHub, ID: "github"}, commands.SourceGitHub, change.EventPROpened,
 		change.PROpened{Repo: pr.Repo, Number: pr.Number, HeadSHA: pr.HeadSHA, Author: pr.Author}, "open-pr")
 	require.NoError(t, err)
-	_, err = runtime.engine.Advance(context.Background(), cid, []change.Event{opened})
+	err = runtime.engine.Append(context.Background(), cid, []change.Event{opened})
 	require.NoError(t, err)
 	msg := ports.Message{ID: "switch-review-43", Room: room.RoomID, Sender: "alice", Text: "heimdall review @ana @eli", At: time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)}
 	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, msg))
+	// Task assignment waits for the room (the room executor records room.opened).
+	require.NoError(t, runtime.engine.Append(context.Background(), cid, []change.Event{func() change.Event {
+		e, err := runtime.event(cid, change.Actor{Kind: change.ActorSwitch, ID: "switch"}, commands.SourceChat, change.EventRoomOpened, change.RoomOpened{RoomID: room.RoomID}, "room-for-fanout")
+		require.NoError(t, err)
+		return e
+	}()}))
+	require.NoError(t, newTestReconciler(t, store).Run(context.Background(), cid))
 	events, err := store.Load(context.Background(), cid)
 	require.NoError(t, err)
 	var picked *change.ReviewersPicked
@@ -262,7 +269,7 @@ func TestServerCommandRuntimeUpheldFindingChangesGateState(t *testing.T) {
 	caseOpened, err := runtime.event(cid, change.Actor{Kind: change.ActorHuman, ID: "bob"}, commands.SourceChat, change.EventCaseOpened,
 		change.CaseOpened{CaseID: id.CaseID("case_01ARZ3NDEKTSV4RRFFQ69G5FAV"), Finding: id.FindingRef(1)}, "case")
 	require.NoError(t, err)
-	_, err = runtime.engine.Advance(context.Background(), cid, []change.Event{opened, filed, caseOpened})
+	err = runtime.engine.Append(context.Background(), cid, []change.Event{opened, filed, caseOpened})
 	require.NoError(t, err)
 	msg := ports.Message{ID: "switch-uphold-44", Room: room.RoomID, Sender: "alice", Text: "heimdall uphold F1", At: time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)}
 	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, msg))
@@ -297,7 +304,7 @@ func TestServerCommandRuntimeRoutesGitHubCommentChallengeAndReplies(t *testing.T
 	filed, err := runtime.event(cid, change.Actor{Kind: change.ActorAgent, ID: "ana-reviewer"}, commands.SourceGitHub, change.EventFindingFiled,
 		change.FindingFiled{FindingID: id.FindingID("fnd_01ARZ3NDEKTSV4RRFFQ69G5FAV"), Ref: id.FindingRef(1), Tier: "E3", Severity: "high", State: "open", By: "ana-reviewer"}, "finding")
 	require.NoError(t, err)
-	_, err = runtime.engine.Advance(context.Background(), cid, []change.Event{filed})
+	err = runtime.engine.Append(context.Background(), cid, []change.Event{filed})
 	require.NoError(t, err)
 	created := time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)
 	comment := ports.IssueComment{ID: 41, Login: "bob", UserType: "User", Body: "/heimdall challenge F1 the regression test reproduces it", CreatedAt: created, UpdatedAt: created}

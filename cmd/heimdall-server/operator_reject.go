@@ -69,7 +69,7 @@ func (r *commandRuntime) OperatorReject(ctx context.Context, cid id.ChangeID, re
 	if err != nil {
 		return err
 	}
-	if _, err := r.engine.Advance(ctx, cid, events); err != nil {
+	if err := r.engine.Append(ctx, cid, events); err != nil {
 		return fmt.Errorf("apply the rejection: %w", err)
 	}
 	return nil

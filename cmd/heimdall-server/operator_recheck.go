@@ -86,7 +86,7 @@ func (r *commandRuntime) OperatorRecheck(ctx context.Context, cid id.ChangeID, r
 	if err != nil {
 		return err
 	}
-	if _, err := r.engine.Advance(ctx, cid, []change.Event{ev}); err != nil {
+	if err := r.engine.Append(ctx, cid, []change.Event{ev}); err != nil {
 		return fmt.Errorf("record the recheck of %s: %w", ref, err)
 	}
 	return nil
