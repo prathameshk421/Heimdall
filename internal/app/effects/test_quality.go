@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"path"
 	"strings"
 	"time"
 
@@ -157,23 +158,34 @@ func (t TestQuality) runChecks(ctx context.Context, p change.TestQualityPayload,
 	return allReasons, runIDs, nil
 }
 
-// placeholderReasons refuses a test file that imports nothing but the test package and the standard library's test
-// helpers. It cannot reach the product, so it can only fail for a made-up reason, and red-first alone would pass it.
+// placeholderReasons refuses a test package (a directory) none of whose files imports anything but the standard
+// library. It cannot reach the product, so it can only fail for a made-up reason, and red-first alone would pass it.
+// The unit is the package, as in Go: on live KAN-25 one file used the helpers of a sibling that imports the product,
+// and a per-file check refused it.
 func placeholderReasons(sub testset.Submission) []string {
-	var reasons []string
+	reaches, imports := map[string]bool{}, map[string]bool{}
+	var dirs []string
 	for _, f := range sub.Files {
 		parsed, err := parser.ParseFile(token.NewFileSet(), f.Path, f.Content, parser.ImportsOnly)
 		if err != nil {
 			continue // submit_tests already refuses Go that does not parse
 		}
-		reaches := false
+		dir := path.Dir(f.Path)
+		if _, seen := reaches[dir]; !seen {
+			dirs = append(dirs, dir)
+			reaches[dir] = false
+		}
 		for _, imp := range parsed.Imports {
+			imports[dir] = true
 			if strings.Contains(strings.Trim(imp.Path.Value, `"`), ".") {
-				reaches = true
+				reaches[dir] = true
 			}
 		}
-		if !reaches && len(parsed.Imports) > 0 {
-			reasons = append(reasons, f.Path+" never imports the product, so it cannot test it. Call the service through its test seam.")
+	}
+	var reasons []string
+	for _, dir := range dirs {
+		if imports[dir] && !reaches[dir] {
+			reasons = append(reasons, dir+" never imports the product, so its tests cannot test it. Call the service through its test seam.")
 		}
 	}
 	return reasons
