@@ -57,9 +57,6 @@ func (testInputs) Outside(context.Context, change.View) (change.Outside, error) 
 func (testInputs) Profile(context.Context, change.Repo) (change.Profile, error) {
 	return change.Profile{}, nil
 }
-func (testInputs) Bundle(ctx context.Context, kind, subject string, c id.ChangeID, evs []change.Event) ([]byte, error) {
-	return reconcileInputs{}.Bundle(ctx, kind, subject, c, evs) // the real bundle: tests read it back through get_task
-}
 
 type noCalls struct{}
 

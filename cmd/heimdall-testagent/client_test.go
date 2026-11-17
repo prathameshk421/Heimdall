@@ -42,7 +42,7 @@ func TestTheClientSpeaksTheProtocolTheServerImplements(t *testing.T) {
 
 	c, err := newClient(hs.URL+"/mcp", testToken)
 	require.NoError(t, err)
-	res, err := c.callTool(t.Context(), toolAck, map[string]any{})
+	res, err := c.callTool(t.Context(), toolGetTask, map[string]any{})
 	require.NoError(t, err)
 	require.Equal(t, "hello", res.text())
 	require.False(t, res.IsError)
@@ -54,7 +54,7 @@ func TestTheClientSpeaksTheProtocolTheServerImplements(t *testing.T) {
 	require.Equal(t, "tools/call", body["method"])
 	params, ok := body["params"].(map[string]any)
 	require.True(t, ok, "params must be an object: %v", body["params"])
-	require.Equal(t, toolAck, params["name"])
+	require.Equal(t, toolGetTask, params["name"])
 	arguments, ok := params["arguments"].(map[string]any)
 	require.True(t, ok, "arguments must be an object: %v", params["arguments"])
 	require.Empty(t, arguments)

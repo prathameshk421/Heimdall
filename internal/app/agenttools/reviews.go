@@ -142,6 +142,7 @@ func (s *Service) buildReviewEvents(
 		FindingRefs: filedRefs,
 		PackDate:    s.clock.Now().UTC().Format("2006-01-02"),
 		RuleChecks:  ruleChecks,
+		TaskID:      a.TaskID,
 	}
 	revEv, err := s.buildEventWithID(s.ids.NewEvent(), a.ChangeID, baseVer+int64(len(evs)+1), change.EventReviewSubmitted, a.Agent, corr, causation, reviewPayload, nil)
 	if err != nil {
@@ -303,6 +304,7 @@ func (s *Service) SubmitVerdict(ctx context.Context, a Assignment, v deliberatio
 			Verdict:   change.Verdict(v.Decision),
 			Citations: citations,
 			Checks:    []string{},
+			TaskID:    a.TaskID,
 		}
 		eid := s.ids.NewEvent()
 		causation := lastCausation(existing)

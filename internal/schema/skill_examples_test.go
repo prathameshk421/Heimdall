@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,13 +13,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 )
-
-// toolName matches a tool name as an agent writes it. It needs a letter after the prefix, so the prose form
-// "heimdall_*" is not mistaken for a tool called "heimdall_".
-var toolName = regexp.MustCompile(`heimdall_[a-z][a-z_]*`)
-
-// wireToolName matches a bare MCP tool name in backticks, as the tool table of TECH_SPEC 14.1 writes it.
-var wireToolName = regexp.MustCompile("`([a-z][a-z_]*)")
 
 // placeholder matches the words a skill must never carry into a run.
 var placeholder = regexp.MustCompile(`(?i)\b(todo|tbd)\b`)
@@ -33,18 +25,12 @@ func readText(t *testing.T, path string) string {
 	return string(b)
 }
 
-// skillBody returns one skill's SKILL.md.
-func skillBody(t *testing.T, skill string) string {
-	t.Helper()
-	return readText(t, filepath.Join("..", "..", "skills", skill, "SKILL.md"))
-}
-
 // exampleFiles returns the JSON examples of one skill, and insists there are at least three of them.
 func exampleFiles(t *testing.T, skill string) []string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join("..", "..", "skills", skill, "examples", "*.json"))
+	files, err := filepath.Glob(filepath.Join("testdata", "examples", skill, "*.json"))
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(files), 3, "skills/%s/examples needs at least 3 JSON examples", skill)
+	require.GreaterOrEqual(t, len(files), 3, "testdata/examples/%s needs at least 3 JSON examples", skill)
 	return files
 }
 
@@ -84,7 +70,7 @@ func fitsTopLevel(t *testing.T, id string, b []byte) {
 }
 
 func TestReviewerExamplesAreValidReviewsOfTheSampleDiff(t *testing.T) {
-	sample := readText(t, filepath.Join("..", "..", "skills", "reviewer", "examples", "sample.md"))
+	sample := readText(t, filepath.Join("testdata", "examples", "reviewer", "sample.md"))
 	for _, file := range exampleFiles(t, "reviewer") {
 		t.Run(filepath.Base(file), func(t *testing.T) {
 			var review finding.Review
@@ -103,7 +89,7 @@ func TestReviewerExamplesAreValidReviewsOfTheSampleDiff(t *testing.T) {
 }
 
 func TestResolverExamplesAreValidVerdictsOnTheSampleCase(t *testing.T) {
-	sample := readText(t, filepath.Join("..", "..", "skills", "resolver", "examples", "sample.md"))
+	sample := readText(t, filepath.Join("testdata", "examples", "resolver", "sample.md"))
 	seen := map[deliberation.Decision]bool{}
 	for _, file := range exampleFiles(t, "resolver") {
 		t.Run(filepath.Base(file), func(t *testing.T) {
@@ -123,172 +109,15 @@ func TestResolverExamplesAreValidVerdictsOnTheSampleCase(t *testing.T) {
 	}
 }
 
-func TestSkillsNameOnlyToolsTheServerOffersTheirRole(t *testing.T) {
-	roles, later := specToolTable(t)
-	for name := range documentedLater(t) {
-		later[name] = true
-	}
-	implemented := implementedTools(t)
-	for name := range later {
-		require.NotNil(t, roles[name], "the later-tool list names %s, which TECH_SPEC 14.1 does not declare", name)
-		require.False(t, implemented[name], "%s is implemented now: drop it from the later-tool list", name)
-	}
-	cases := []struct {
-		skill string
-		role  string
-		must  []string
-	}{
-		{"reviewer", "reviewer", []string{"heimdall_get_task", "heimdall_ack", "heimdall_read_code", "heimdall_read_untrusted", "heimdall_submit_review"}},
-		{"resolver", "resolver", []string{"heimdall_get_task", "heimdall_ack", "heimdall_read_code", "heimdall_read_untrusted", "heimdall_ask_humans", "heimdall_submit_verdict", "heimdall_report_progress"}},
-	}
-	for _, c := range cases {
-		t.Run(c.skill, func(t *testing.T) {
-			named := toolNames(skillBody(t, c.skill))
-			require.NotEmpty(t, named, "skills/%s/SKILL.md names no tool", c.skill)
-			for name := range named {
-				allowed, declared := roles[name]
-				require.True(t, declared, "skills/%s names %s, which the MCP tool table (TECH_SPEC 14.1) does not declare", c.skill, name)
-				require.True(t, allowed[c.role] || allowed["all"], "skills/%s names %s, which the %s role does not have", c.skill, name, c.role)
-				require.True(t, implemented[name] || later[name], "skills/%s names %s, which the MCP server neither implements nor documents as a later task", c.skill, name)
-			}
-			for _, name := range c.must {
-				require.True(t, named[name], "skills/%s/SKILL.md must name %s", c.skill, name)
-			}
-		})
-	}
-}
-
-// TestEverySkillAcksItsTaskRightAfterGetTask guards TECH_SPEC 6.2 step 3: an agent acks within 60 s of the
-// assignment, or the task times out. The room message names only heimdall_get_task, so the skill must name
-// heimdall_ack as the next call, before the agent reads anything else. A live test-author run read the ticket and
-// asked questions but never acked, because the test-quality skill did not name the tool.
-func TestEverySkillAcksItsTaskRightAfterGetTask(t *testing.T) {
-	for _, skill := range []string{"test-quality", "reviewer", "resolver"} {
-		t.Run(skill, func(t *testing.T) {
-			calls := toolName.FindAllString(skillBody(t, skill), -1)
-			require.GreaterOrEqual(t, len(calls), 2, "skills/%s/SKILL.md names too few tools", skill)
-			require.Equal(t, []string{"heimdall_get_task", "heimdall_ack"}, calls[:2],
-				"skills/%s/SKILL.md must name heimdall_get_task, then heimdall_ack, before any other tool", skill)
-		})
-	}
-}
-
-func TestSkillsCarryNoEmDashAndNoPlaceholderWords(t *testing.T) {
-	for _, skill := range []string{"reviewer", "resolver"} {
-		body := skillBody(t, skill)
-		require.NotContains(t, body, "\u2014", "skills/%s/SKILL.md must not use an em dash", skill)
-		require.NotRegexp(t, placeholder, body, "skills/%s/SKILL.md must not contain TODO or TBD", skill)
-	}
-}
-
-func TestSkillsCarryTheSameFrontMatterAsTheTestQualitySkill(t *testing.T) {
-	for _, skill := range []string{"reviewer", "resolver"} {
-		body := skillBody(t, skill)
-		require.True(t, strings.HasPrefix(body, "---\nname: "+skill+"\n"), "skills/%s/SKILL.md must open with front matter naming the skill", skill)
-		head, _, ok := strings.Cut(body, "\n---\n")
-		require.True(t, ok, "skills/%s/SKILL.md front matter is not closed", skill)
-		require.Contains(t, head, "description: ", "skills/%s/SKILL.md front matter needs a description", skill)
-	}
-}
-
-// toolNames returns the tool names a skill names.
-func toolNames(body string) map[string]bool {
-	names := map[string]bool{}
-	for _, name := range toolName.FindAllString(body, -1) {
-		names[name] = true
-	}
-	return names
-}
-
-// specToolTable reads the tool table of TECH_SPEC 14.1 and returns, per tool, the roles that may call it, and the
-// set of tools the table marks as later work. A parse that finds too few rows fails, so a changed table cannot make
-// the check pass on nothing.
-func specToolTable(t *testing.T) (roles map[string]map[string]bool, later map[string]bool) {
-	t.Helper()
-	body := readText(t, filepath.Join("..", "..", "docs", "TECH_SPEC.md"))
-	roles, later = map[string]map[string]bool{}, map[string]bool{}
-	section := false
-	for _, line := range strings.Split(body, "\n") {
-		if strings.HasPrefix(line, "### 14.1") {
-			section = true
-			continue
-		}
-		if section && strings.HasPrefix(line, "### ") {
-			section = false
-		}
-		if !section || !strings.HasPrefix(line, "| `") {
-			continue
-		}
-		cells := strings.Split(line, "|")
-		require.GreaterOrEqual(t, len(cells), 3, "malformed tool table row: %s", line)
-		matches := wireToolName.FindAllStringSubmatch(cells[1], -1)
-		require.NotEmpty(t, matches, "malformed tool table row: %s", line)
-		allowed := roleSet(cells[2])
-		for _, m := range matches {
-			name := modelToolName(t, m[1])
-			roles[name] = allowed
-			if strings.Contains(line, "(Later") {
-				later[name] = true
-			}
-		}
-	}
-	require.GreaterOrEqual(t, len(roles), 10, "the tool table of TECH_SPEC 14.1 was not parsed")
-	return roles, later
-}
-
-// roleSet returns the roles named in a tool table cell, with a parenthetical note removed.
-func roleSet(cell string) map[string]bool {
-	set := map[string]bool{}
-	cell = regexp.MustCompile(`\([^)]*\)`).ReplaceAllString(cell, "")
-	for _, role := range strings.Split(cell, ",") {
-		if role = strings.ToLower(strings.TrimSpace(role)); role != "" {
-			set[role] = true
-		}
-	}
-	return set
-}
-
-// modelToolName returns the name the model sees for a wire tool name. OpenCode shows an MCP tool as <server key>_<tool>,
-// and the server key is heimdall. Wire names are bare, so a wire name that already carries the prefix fails here.
-func modelToolName(t *testing.T, wire string) string {
-	t.Helper()
-	require.False(t, strings.HasPrefix(wire, "heimdall_"), "wire tool name %s carries the heimdall_ prefix; wire names are bare (TECH_SPEC 14.1)", wire)
-	return "heimdall_" + wire
-}
-
-// implementedTools reads the tool table the MCP server builds today, as the model sees each name. The table is split
-// by area into internal/transport/mcp/tools*.go.
-func implementedTools(t *testing.T) map[string]bool {
-	t.Helper()
-	files, err := filepath.Glob(filepath.Join("..", "..", "internal", "transport", "mcp", "tools*.go"))
+// The skill files of the kind table carry no em dash and no placeholder words. That they stay short and name only the
+// tools of their kind is checked by workflow.CheckKinds (internal/transport/mcp).
+func TestSkillFilesCarryNoEmDashAndNoPlaceholderWords(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "skills", "*.md"))
 	require.NoError(t, err)
-	set := map[string]bool{}
-	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") {
-			continue
-		}
-		for _, m := range regexp.MustCompile(`name: "([a-z][a-z_]*)"`).FindAllStringSubmatch(readText(t, file), -1) {
-			set[modelToolName(t, m[1])] = true
-		}
+	require.NotEmpty(t, files)
+	for _, f := range files {
+		body := readText(t, f)
+		require.NotContains(t, body, "\u2014", "%s must not use an em dash", f)
+		require.NotRegexp(t, placeholder, body, "%s must not contain TODO or TBD", f)
 	}
-	require.NotEmpty(t, set, "no tool names were found in internal/transport/mcp/tools*.go")
-	return set
-}
-
-// documentedLater reads the tools the MCP server's own doc.go says belong to later tasks. A skill may name one of
-// them, because the spec declares it and the task that builds it is known; it may name nothing else that is missing.
-func documentedLater(t *testing.T) map[string]bool {
-	t.Helper()
-	body := readText(t, filepath.Join("..", "..", "internal", "transport", "mcp", "doc.go"))
-	m := regexp.MustCompile(`\(([a-z_, ]+)\) belongs to later tasks`).FindStringSubmatch(body)
-	set := map[string]bool{}
-	if m == nil {
-		return set // every tool of the spec table is built: nothing is left for a later task
-	}
-	for _, name := range strings.Split(m[1], ",") {
-		if name = strings.TrimSpace(name); name != "" {
-			set["heimdall_"+name] = true
-		}
-	}
-	return set
 }

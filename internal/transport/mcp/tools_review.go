@@ -25,13 +25,13 @@ func (s *Server) reviewTools() ([]tool, error) {
 		return nil, fmt.Errorf("schema of submit_verdict: %w", err)
 	}
 	tools := []tool{
-		{name: "submit_review", description: "Submit your code review findings for the change.",
-			schema: json.RawMessage(reviewSchema), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.submitReview},
-		{name: "submit_verdict", description: "Submit your verdict on the disputed finding.",
-			schema: json.RawMessage(verdictSchema), roles: []workflow.Role{workflow.RoleResolver}, handle: s.submitVerdict},
+		{name: "submit_review", description: "Submit your review of the pull request once, with findings, evidence and rule_checks, and return what was accepted or the errors to fix. Use it when your hypotheses are checked; do not submit a finding you could not tie to an input. Example: submit_review {\"head_sha\":\"<head>\",\"files_reviewed\":[\"a.go\"],\"clean\":true,\"findings\":[],\"rule_checks\":[]}",
+			schema: json.RawMessage(reviewSchema), handle: s.submitReview},
+		{name: "submit_verdict", description: "Submit your verdict on the disputed finding once, with a citation for every claim. Use it when you have checked the facts; do not cite a ref the case does not contain. Example: submit_verdict {\"case_id\":\"case_...\",\"decision\":\"uphold\",\"rationale\":\"...\",\"citations\":[],\"confidence\":\"high\"}",
+			schema: json.RawMessage(verdictSchema), handle: s.submitVerdict},
 	}
 	if s.deps.Cards != nil {
-		tools = append(tools, tool{name: "read_card", description: "Read your own personal context cards (what you own, the rules that must hold, past incidents). Call it with no file to list them, then with a file name to read one. Use what you learn as E4 pack_ref or reasoning evidence.", schema: readCardSchema(), roles: []workflow.Role{workflow.RoleReviewer}, handle: s.readCard})
+		tools = append(tools, tool{name: "read_card", description: "List your personal context cards with no file, or return one card by file name. Use it to read the rules your person enforces; a card says where to look and is not evidence. Example: read_card {\"file\":\"refund-cap.md\"}", schema: readCardSchema(), handle: s.readCard})
 	}
 	return tools, nil
 }

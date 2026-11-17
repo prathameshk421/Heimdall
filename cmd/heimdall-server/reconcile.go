@@ -9,14 +9,12 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/bundle"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/liveness"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -92,34 +90,11 @@ func (r reconcileInputs) Profile(ctx context.Context, repo change.Repo) (change.
 	return out, nil
 }
 
-// Bundle builds the context bundle a task_assign still carries (deleted with the bundle, HARNESS_DESIGN H7).
-func (reconcileInputs) Bundle(_ context.Context, kind, subject string, changeID id.ChangeID, events []change.Event) ([]byte, error) {
-	if kind == "verdict" {
-		b, err := bundle.BuildForCaseEvents(changeID, id.CaseID(subject), events)
-		return b.Bytes, err
-	}
-	k, ok := kindByName(kind)
-	if !ok {
-		return nil, fmt.Errorf("no task kind %q", kind)
-	}
-	b, err := bundle.BuildFromEvents(k.Holder, changeID, events)
-	return b.Bytes, err
-}
-
 // keyReader lets the OpenRouter prober read its key through the configuration.
 type keyReader struct{ cfg config.Config }
 
 // Get reads one named key.
 func (k keyReader) Get(name string) (string, error) { return k.cfg.Secret(name) }
-
-func kindByName(name string) (workflow.Kind, bool) {
-	for _, k := range workflow.Kinds() {
-		if k.Name == name {
-			return k, true
-		}
-	}
-	return workflow.Kind{}, false
-}
 
 // agentFor says which agent holds a task: the test author and the resolver are configured, a review seat is its own
 // agent name.

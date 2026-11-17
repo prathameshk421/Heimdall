@@ -2,8 +2,6 @@ package reconcile
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
@@ -30,7 +28,7 @@ func (d *decision) job(j change.Job) error {
 
 // decide reads the actions of every open row and turns them into facts and jobs. Asks and texts need nothing done:
 // they are what Missing says.
-func (r *Reconciler) decide(ctx context.Context, in change.In, events []change.Event) (decision, error) {
+func (r *Reconciler) decide(ctx context.Context, in change.In) (decision, error) {
 	var d decision
 	for _, ra := range change.Next(in) {
 		switch {
@@ -41,7 +39,7 @@ func (r *Reconciler) decide(ctx context.Context, in change.In, events []change.E
 				return d, fmt.Errorf("row %s: %w", ra.Row, err)
 			}
 		case ra.Task != nil:
-			if err := r.task(ctx, &d, in, events, *ra.Task); err != nil {
+			if err := r.task(ctx, &d, in, *ra.Task); err != nil {
 				return d, fmt.Errorf("row %s: %w", ra.Row, err)
 			}
 		}
@@ -87,10 +85,4 @@ func (r *Reconciler) events(facts []change.Payload) ([]change.Event, error) {
 			CorrelationID: "", Payload: raw})
 	}
 	return out, nil
-}
-
-// bundleTarget is the effect target the task_assign executor checks against the bundle's hash.
-func bundleTarget(bundle []byte) string {
-	sum := sha256.Sum256(bundle)
-	return "blob:sha256:" + hex.EncodeToString(sum[:])
 }

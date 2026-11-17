@@ -35,12 +35,15 @@ func historyLine(ev change.Event) (string, bool) {
 		Reason  string   `json:"reason"`
 		Attempt int      `json:"attempt"`
 		Refs    []string `json:"refs"`
+		Files   []struct {
+			Path string `json:"path"`
+		} `json:"files"`
 	}
 	if json.Unmarshal(ev.Payload, &p) != nil {
 		return "", false
 	}
 	lines := map[change.EventType]string{
-		change.EventTestsSubmitted:   fmt.Sprintf("Tests were submitted (%d file(s)).", len(p.Refs)),
+		change.EventTestsSubmitted:   fmt.Sprintf("Tests were submitted (%d file(s)).", max(len(p.Refs), len(p.Files))),
 		change.EventTestsRejected:    "The tests were rejected: " + strings.Join(p.Reasons, "; ") + ".",
 		change.EventStepRetried:      fmt.Sprintf("The task was given again (attempt %d).", p.Attempt),
 		change.EventTestsVerified:    "The tests were verified: they fail on the current code, as they should.",

@@ -13,9 +13,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
-// caseFileSource names the untrusted input of a resolver's envelope that holds the case file.
-const caseFileSource = "case_file"
-
 // citationPlan is one citation a scripted verdict makes: the item it points at and the span it quotes.
 type citationPlan struct {
 	kind  deliberation.CitationKind
@@ -99,17 +96,13 @@ func needsHumanPlan() verdictPlan {
 // verdictFlow plays the resolver flow: read the task, acknowledge it, read the case file and the disputed file at head,
 // then submit the verdict. A refused get_task is the outcome, as for the reviewer.
 func verdictFlow(ctx context.Context, c *client, out io.Writer, name string, plan verdictPlan) error {
-	task, started, err := startTask(ctx, c, out, name)
+	task, inputs, started, err := startTask(ctx, c, out, name)
 	if err != nil || !started {
 		return err
 	}
-	ref, err := caseFileRef(task)
-	if err != nil {
-		return err
-	}
-	caseRes, err := setupCall(ctx, c, toolReadUntrusted, map[string]any{"ref": string(ref)})
-	if err != nil {
-		return err
+	caseText := inputs["case"]
+	if caseText == "" {
+		return errors.New("the task has no case file")
 	}
 	file, err := firstChanged(task)
 	if err != nil {
@@ -118,7 +111,7 @@ func verdictFlow(ctx context.Context, c *client, out io.Writer, name string, pla
 	if _, err := setupCall(ctx, c, toolReadCode, map[string]any{"path": file, "sha": string(task.Change.HeadSHA)}); err != nil {
 		return err
 	}
-	v, err := plan.verdictFor(task, caseRes.text())
+	v, err := plan.verdictFor(task, caseText)
 	if err != nil {
 		return fmt.Errorf("build the %s verdict: %w", name, err)
 	}
@@ -127,16 +120,6 @@ func verdictFlow(ctx context.Context, c *client, out io.Writer, name string, pla
 		return err
 	}
 	return reportOutcome(out, name, res)
-}
-
-// caseFileRef returns the reference of the case file the envelope names.
-func caseFileRef(task workflow.TaskEnvelope) (workflow.BlobRef, error) {
-	for _, u := range task.Inputs.Untrusted {
-		if u.Source == caseFileSource {
-			return u.Ref, nil
-		}
-	}
-	return "", errors.New("the task names no case file")
 }
 
 // caseIDOf returns the case the task settles. The server accepts a verdict only for the case the task is scoped to, so

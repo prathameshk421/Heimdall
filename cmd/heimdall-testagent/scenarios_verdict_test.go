@@ -61,7 +61,7 @@ func playVerdictScenario(t *testing.T, w world, name string) (int, string, strin
 // verdictWorld serves the resolver envelope with the given case text as the case file.
 func verdictWorld(t *testing.T, caseText string) world {
 	t.Helper()
-	return buildWorld(t, workflow.RoleResolver, caseEnvelope(), &testBlobs{texts: map[workflow.BlobRef]string{caseRef: caseText}})
+	return buildWorld(t, workflow.RoleResolver, caseEnvelope(), &testBlobs{texts: map[workflow.BlobRef]string{caseRef: caseText, testTask().Inputs.Diff: "=== internal/refunds/service.go (modified, +1 -0)\n+x\n"}})
 }
 
 // TestTheVerdictScenariosRecordAVerdictOnTheRealServer plays the three verdicts against the real MCP edge. Each verdict

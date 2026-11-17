@@ -18,32 +18,6 @@ import (
 // maxMapLines bounds the repository map. Tests of other tickets fold into one line each.
 const maxMapLines = 400
 
-// ticketText is the ticket's description and every criterion, in one untrusted block, or "" when none is readable.
-func (s *Server) ticketText(ctx context.Context, a Assignment) string {
-	var b strings.Builder
-	for _, u := range a.Task.Inputs.Untrusted {
-		if !strings.HasPrefix(u.Source, "ticket") {
-			continue
-		}
-		if text, err := s.readBlob(ctx, u.Ref); err == nil {
-			fmt.Fprintf(&b, "%s\n\n", strings.TrimSpace(string(text)))
-		}
-	}
-	for _, c := range a.Task.Inputs.AcceptanceCriteria {
-		if text, err := s.readBlob(ctx, c.Ref); err == nil {
-			fmt.Fprintf(&b, "%s: %s\n", c.ID, strings.TrimSpace(string(text)))
-		}
-	}
-	if b.Len() == 0 {
-		return ""
-	}
-	wrapped, err := wrapUntrusted("the ticket and its acceptance criteria", []byte(b.String()))
-	if err != nil {
-		return ""
-	}
-	return wrapped
-}
-
 // repoMap lists the files of the repository at the base commit, one per line, with each other ticket's tests folded
 // into a single line. It is "" when no file list is configured or it cannot be read.
 func (s *Server) repoMap(ctx context.Context, a Assignment) string {
@@ -82,15 +56,6 @@ func foldMap(paths []string, ticket string) string {
 		lines = append(lines[:maxMapLines], fmt.Sprintf("... %d more", len(lines)-maxMapLines))
 	}
 	return strings.Join(lines, "\n")
-}
-
-// orientation are the get_task fields that save the agent its exploring: the ticket text and the repository map.
-func (s *Server) orientation(ctx context.Context, a Assignment) map[string]string {
-	fields := map[string]string{"ticket": s.ticketText(ctx, a)}
-	if m := s.repoMap(ctx, a); m != "" {
-		fields["repo_map"] = m
-	}
-	return fields
 }
 
 // rootRefusal is the answer to read_code on the repository root when there is no map: what to do instead, per role.

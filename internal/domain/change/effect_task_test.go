@@ -2,7 +2,6 @@ package change_test
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"testing"
 
@@ -24,7 +23,6 @@ func validTaskAssignPayload() change.TaskAssignPayload {
 		Role:   workflow.RoleReviewer,
 		TaskID: validTaskID,
 		RoomID: validRoomID,
-		Bundle: []byte(`{"ticket":"PAY-1"}`),
 	}
 }
 
@@ -68,26 +66,10 @@ func TestTaskAssignPayloadValidate(t *testing.T) {
 		p.RoomID = ""
 		require.Error(t, p.Validate())
 	})
-
-	t.Run("empty bundle is allowed: inputs are rendered when the agent calls get_task", func(t *testing.T) {
-		p := validTaskAssignPayload()
-		p.Bundle = nil
-		require.NoError(t, p.Validate())
-
-		p.Bundle = []byte{}
-		require.NoError(t, p.Validate())
-	})
-
-	t.Run("bundle exceeds max size", func(t *testing.T) {
-		p := validTaskAssignPayload()
-		p.Bundle = make([]byte, change.MaxBundleBytes+1)
-		require.Error(t, p.Validate())
-	})
 }
 
 func TestDecodeTaskAssignPayloadStrict(t *testing.T) {
 	p := validTaskAssignPayload()
-	bundleB64 := base64.StdEncoding.EncodeToString(p.Bundle)
 
 	validJSON := func() map[string]any {
 		return map[string]any{
@@ -95,7 +77,6 @@ func TestDecodeTaskAssignPayloadStrict(t *testing.T) {
 			"role":    string(p.Role),
 			"task_id": string(p.TaskID),
 			"room_id": string(p.RoomID),
-			"bundle":  bundleB64,
 		}
 	}
 
@@ -109,7 +90,6 @@ func TestDecodeTaskAssignPayloadStrict(t *testing.T) {
 		require.Equal(t, p.Role, decoded.Role)
 		require.Equal(t, p.TaskID, decoded.TaskID)
 		require.Equal(t, p.RoomID, decoded.RoomID)
-		require.Equal(t, p.Bundle, decoded.Bundle)
 	})
 
 	t.Run("not a JSON object", func(t *testing.T) {

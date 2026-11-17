@@ -503,7 +503,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	if err != nil {
 		return nil, fmt.Errorf("open blob store: %w", err)
 	}
-	a, err := assembleWithBlobs(d, ad, store, pool, blobStore, eng, gen, clk, setupHandler)
+	a, err := assembleWithBlobs(rec, d, ad, store, pool, blobStore, eng, gen, clk, setupHandler)
 	if err == nil {
 		a.reconciler = rec
 	}
@@ -516,7 +516,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 }
 
 func assembleWithBlobs(
-	d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
+	rec *reconcile.Reconciler, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
 	eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
 ) (*app, error) {
 	profileManager, err := assembleProfileLifecycle(ad, store, blobs, clk)
@@ -559,7 +559,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	mcpH, proposer, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager, runtime)
+	mcpH, proposer, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager, runtime, rec.Needs)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +586,7 @@ func executors(ad adapters, store ports.EventStore, profiles ports.ProfileStore,
 		Sandbox:  rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
 		Profiles: profiles,
 	}
-	core, err := coreExecutors(ad, store, blobs, in, gen, clk)
+	core, err := coreExecutors(ad, store, in, gen, clk)
 	if err != nil {
 		return nil, err
 	}

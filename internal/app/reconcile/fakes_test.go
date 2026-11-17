@@ -172,9 +172,6 @@ func (fakeInputs) Outside(context.Context, change.View) (change.Outside, error) 
 func (fakeInputs) Profile(context.Context, change.Repo) (change.Profile, error) {
 	return change.Profile{}, nil
 }
-func (fakeInputs) Bundle(context.Context, string, string, id.ChangeID, []change.Event) ([]byte, error) {
-	return []byte(`{"bundle":true}`), nil
-}
 
 type fakeCalls struct{ calls []ports.ToolCall }
 

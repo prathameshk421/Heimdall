@@ -145,10 +145,11 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 		Agent:      latest.Agent,
 		Role:       latest.Role,
 		Deadline:   latest.Deadline,
-		BundleRef:  latest.BundleRef,
 		AssignedAt: assignedAt,
 		Acked:      acked,
 		History:    ticketHistory(events),
+		Rejection:  latestRejection(events),
+		Attempt:    submissionCount(events) + 1,
 		Task: workflow.TaskEnvelope{
 			TaskID:   latest.TaskID,
 			CaseID:   latest.CaseID,
@@ -284,19 +285,18 @@ func (s *Service) buildTestsSubmittedEvent(
 	blobRef workflow.BlobRef,
 	existing []change.Event,
 ) (change.Event, error) {
-	refs := make([]string, 0, len(sub.Files))
+	// The submission is stored whole: every file with the blob that holds it, the author's notes, the task it ends and
+	// the commit it was written against (HARNESS_DESIGN B6).
+	files := make([]change.TestFile, 0, len(sub.Files))
 	for _, f := range sub.Files {
-		refs = append(refs, f.Path)
-	}
-	sha := a.Task.Change.BaseSHA
-	if sha == "" {
-		sha = id.SHA("0000000")
+		files = append(files, change.TestFile{Path: f.Path, Blob: blobRef})
 	}
 	payload := change.TestsSubmitted{
-		Refs:     refs,
-		ACMap:    sub.AcceptanceCriteria,
-		SHA:      sha,
-		TreeHash: sha,
+		Files:   files,
+		Notes:   sub.Notes,
+		TaskID:  a.TaskID,
+		BaseSHA: a.Task.Change.BaseSHA,
+		ACMap:   sub.AcceptanceCriteria,
 		// The scope check of the slop rule compares a pull request's files with these.
 		ExpectedPaths: sub.ExpectedPaths,
 	}
@@ -617,4 +617,35 @@ func collectAnswers(events []change.Event) []workflow.AnswerRef {
 		out = append(out, workflow.AnswerRef{ID: refs[qid], Answer: a.Answer, AnsweredBy: string(a.Sender)})
 	}
 	return out
+}
+
+// latestRejection are the reasons of the newest tests.rejected when it follows the newest tests.submitted.
+func latestRejection(events []change.Event) []string {
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type == change.EventTestsSubmitted {
+			return nil
+		}
+		if events[i].Type != change.EventTestsRejected {
+			continue
+		}
+		p, err := change.Decode(events[i])
+		if err != nil {
+			return nil
+		}
+		if r, ok := p.(change.TestsRejected); ok {
+			return r.Reasons
+		}
+		return nil
+	}
+	return nil
+}
+
+func submissionCount(events []change.Event) int {
+	n := 0
+	for _, e := range events {
+		if e.Type == change.EventTestsSubmitted {
+			n++
+		}
+	}
+	return n
 }

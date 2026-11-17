@@ -40,12 +40,15 @@ type Assignment struct {
 	Agent      id.AgentName
 	Role       workflow.Role
 	Deadline   time.Time
-	BundleRef  workflow.BlobRef
 	AssignedAt time.Time
 	Acked      bool
 	// History is this ticket's story so far, in plain lines; the agent reads it with get_task.
 	History []string
-	Task    workflow.TaskEnvelope
+	// Rejection holds the reasons the latest tests submission was rejected for, and Attempt is the submission this
+	// task is waiting for (1 for the first). Only the test author's task reads them.
+	Rejection []string
+	Attempt   int
+	Task      workflow.TaskEnvelope
 }
 
 // FindingError reports a validation failure for one finding in a review.

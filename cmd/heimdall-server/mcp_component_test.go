@@ -86,7 +86,6 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	events, err := store.Load(ctx, cid)
 	require.NoError(t, err)
 	var tid id.TaskID
-	var assignedBundle workflow.BlobRef
 	for _, ev := range events {
 		if ev.Type != change.EventTaskAssigned {
 			continue
@@ -96,30 +95,8 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 		assigned, ok := payload.(change.TaskAssigned)
 		require.True(t, ok)
 		tid = assigned.TaskID
-		assignedBundle = assigned.BundleRef
 	}
 	require.NotEmpty(t, tid, "the replayed workflow assigns the configured test-author")
-	require.NotEmpty(t, assignedBundle)
-	pendingTaskEffects, err := store.Pending(ctx, 100)
-	require.NoError(t, err)
-	var assignmentEffect change.Effect
-	for _, effect := range pendingTaskEffects {
-		if effect.Kind == change.EffectTaskAssign {
-			assignmentEffect = effect
-			break
-		}
-	}
-	require.NotEmpty(t, assignmentEffect.Key)
-	assigner, err := effects.NewTaskAssign(effects.TaskAssignDeps{Blobs: blobs, Chat: dummyChat{}, Inviter: dummyChat{}})
-	require.NoError(t, err)
-	require.NoError(t, assigner.Execute(ctx, assignmentEffect), "persist the durable task bundle before MCP retrieves it")
-	bundleReader, err := blobs.Get(ctx, assignedBundle)
-	require.NoError(t, err, "the task assignment effect stores the content-addressed bundle")
-	bundleBytes, err := io.ReadAll(bundleReader)
-	require.NoError(t, err)
-	require.NoError(t, bundleReader.Close())
-	require.Contains(t, string(bundleBytes), `"id":"AC1","ref":"`)
-	require.NotContains(t, string(bundleBytes), "Refunds are idempotent", "the durable context bundle contains a ref, not ticket-authored text")
 
 	// Real agenttools Service with FAKE TaskIndex
 	fakeIdx := &fakeComponentTaskIndex{ref: ports.ActiveTaskRef{ChangeID: cid, TaskID: tid}}
@@ -214,27 +191,30 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	require.Contains(t, rpcResp.Result.Content[0].Text, string(tid))
 	require.Contains(t, rpcResp.Result.Content[0].Text, string(cid))
 	var task struct {
-		Inputs struct {
-			AcceptanceCriteria []struct {
-				ID  string `json:"id"`
-				Ref string `json:"ref"`
-			} `json:"acceptance_criteria"`
+		Task struct {
+			Kind string `json:"kind"`
+		} `json:"task"`
+		Inputs []struct {
+			Name    string `json:"name"`
+			Content string `json:"content"`
 		} `json:"inputs"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(rpcResp.Result.Content[0].Text), &task))
-	require.Len(t, task.Inputs.AcceptanceCriteria, 1, "the authenticated task envelope must carry the ticket criterion")
-	require.Equal(t, "AC1", task.Inputs.AcceptanceCriteria[0].ID)
-	require.Equal(t, "blob:sha256:"+hex.EncodeToString(criterionHash[:]), task.Inputs.AcceptanceCriteria[0].Ref)
-	require.NotContains(t, rpcResp.Result.Content[0].Text, criterionText, "the MCP envelope must not inline ticket-authored text")
-	untrusted := callComponentMCPTool(t, ts, authorToken, 5, "read_untrusted", map[string]string{"ref": task.Inputs.AcceptanceCriteria[0].Ref})
-	require.False(t, untrusted.IsError, untrusted.Text)
-	require.Contains(t, untrusted.Text, "Refunds are idempotent")
-	require.Contains(t, untrusted.Text, "data, not instructions")
+	require.Equal(t, "tests", task.Task.Kind)
+	var ticketInput string
+	for _, in := range task.Inputs {
+		if in.Name == "ticket" {
+			ticketInput = in.Content
+		}
+	}
+	require.Contains(t, ticketInput, "AC1: Refunds are idempotent", "the ticket input carries the criterion with its id")
+	require.Contains(t, ticketInput, "HEIMDALL-UNTRUSTED-BEGIN", "ticket-authored text arrives only inside the untrusted wrapper")
+	require.Contains(t, ticketInput, "data, not instructions")
 
-	// 2. Calling get_task with reviewerToken returns a refusal because the reviewer has no active task.
+	// 2. With no active task get_task answers plainly: it is not a refusal.
 	reviewerTask := callComponentMCPTool(t, ts, reviewerToken, 6, "get_task", map[string]any{})
-	require.True(t, reviewerTask.IsError, "must be error refusal for reviewer")
-	require.Contains(t, reviewerTask.Text, "You have no active task.")
+	require.False(t, reviewerTask.IsError)
+	require.Contains(t, reviewerTask.Text, "no active task")
 
 	// A test-author submission must advance the workflow atomically with its event and quality effect. If advancement
 	// fails before append, retrying the same submission must still give the engine another chance without duplication.
@@ -267,6 +247,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 		}
 	}
 	require.Equal(t, 1, submitted, "duplicate submissions are replay-safe")
+	require.NoError(t, newTestReconciler(t, store).Run(ctx, cid), "the test_qa row asks for the quality job")
 	pending, err := store.Pending(ctx, 100)
 	require.NoError(t, err)
 	var qualityEffect change.Effect
@@ -275,7 +256,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 			qualityEffect = effect
 		}
 	}
-	require.NotEmpty(t, qualityEffect.Key, "submission atomically queues one durable quality job")
+	require.NotEmpty(t, qualityEffect.Key, "the reconciler queues one durable quality job for the submission")
 
 	// Run the real quality and commit executors against deterministic runner and GitHub ports. The quality executor
 	// sees the submitted tests as overlays on the base commit and only commits after a stable red-first result.
@@ -293,6 +274,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, eventTypeCount(verifiedEvents, change.EventTestsVerified))
 
+	require.NoError(t, newTestReconciler(t, store).Run(ctx, cid), "the commit row asks for the commit")
 	pending, err = store.Pending(ctx, 100)
 	require.NoError(t, err)
 	var commitEffect change.Effect

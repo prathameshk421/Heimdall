@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
 // Limits of the questions an agent may ask. The schema repeats them, and the schema tests check that they agree.
@@ -19,8 +17,8 @@ const (
 // talkTools are the tools of the talk area: questions to people.
 func (s *Server) talkTools() ([]tool, error) {
 	tools := []tool{
-		{name: "ask_humans", description: "Ask the people on the change up to 3 questions.",
-			schema: askHumansSchema(), roles: []workflow.Role{workflow.RoleTestAuthor, workflow.RoleResolver}, handle: s.askHumans},
+		{name: "ask_humans", description: "Send up to 3 questions to the people in the change room; answers arrive in your next get_task. Use it only when a behaviour cannot be decided from the ticket and the code; do not ask what you can read. Example: ask_humans {\"questions\":[\"Is the limit per day or per payment?\"]}",
+			schema: askHumansSchema(), handle: s.askHumans},
 	}
 	return tools, nil
 }

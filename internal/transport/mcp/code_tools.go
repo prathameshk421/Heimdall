@@ -44,7 +44,11 @@ func (s *Server) headIndex(ctx context.Context, p Principal) (*codegraph.Index, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, codeIndexWait)
 	defer cancel()
-	idx, err := s.deps.Graph.Index(ctx, change.Repo(a.Task.Change.Repo), a.Task.Change.HeadSHA)
+	sha := a.Task.Change.HeadSHA
+	if sha == "" {
+		sha = a.Task.Change.BaseSHA // a task with no pull request (the test author's) works on the base
+	}
+	idx, err := s.deps.Graph.Index(ctx, change.Repo(a.Task.Change.Repo), sha)
 	if err != nil {
 		s.deps.Logger.WarnContext(ctx, "code index unavailable", "agent", string(p.Agent), "error", err)
 		return nil, refusal("The code index is not ready. Use read_code now. Try this tool once more after your next step.")

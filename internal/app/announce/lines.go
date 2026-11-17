@@ -38,6 +38,7 @@ type (
 	taskAssigned   struct{ Agent, Role string }
 	testsSubmitted struct {
 		Refs  []string            `json:"refs"`
+		Files []struct{}          `json:"files"`
 		ACMap map[string][]string `json:"ac_map"`
 	}
 	testsRejected struct{ Reasons []string }
@@ -150,7 +151,7 @@ func narrateSubmitted(_ []change.Event, ev change.Event, k string) (Line, bool) 
 		return Line{}, false
 	}
 	return tests("🔎 %s: the Test Agent submitted its tests (%s, covering %s). I'm running them against the current code to confirm they fail for the right reason.",
-		k, count(len(p.Refs), "file"), joinNames(sortedKeys(p.ACMap))), true
+		k, count(max(len(p.Refs), len(p.Files)), "file"), joinNames(sortedKeys(p.ACMap))), true
 }
 
 func narrateRejected(_ []change.Event, ev change.Event, k string) (Line, bool) {

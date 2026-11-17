@@ -126,7 +126,7 @@ func newAgentTools(ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.
 // proposal worker, which is nil when no cards directory is configured.
 func assembleMCP(
 	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
-	commands mcp.Proposer,
+	commands mcp.Proposer, needs func(context.Context, id.ChangeID) ([]string, error),
 ) (http.Handler, *cardProposer, error) {
 	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk, store)
 	if err != nil {
@@ -171,6 +171,7 @@ func assembleMCP(
 		Proposer: commands,
 		Calls:    store,
 		Paths:    ad.vcs,
+		Needs:    needs,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("build mcp server: %w", err)
@@ -279,7 +280,7 @@ func baseExecutors(
 }
 
 // coreExecutors builds the executors of the core area: the room, the branch, the check run and the task assignment.
-func coreExecutors(ad adapters, store ports.EventStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
+func coreExecutors(ad adapters, store ports.EventStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
 	room, branch, check, err := baseExecutors(ad, in, gen, clk)
 	if err != nil {
 		return nil, err
@@ -289,7 +290,7 @@ func coreExecutors(ad adapters, store ports.EventStore, blobs ports.BlobStore, i
 		return nil, errors.New("build task_assign executor: the selected chat cannot invite agents into a room")
 	}
 	taskAssign, err := effects.NewTaskAssign(effects.TaskAssignDeps{
-		Blobs: blobs, Chat: ad.chat, Inviter: inviter, Focus: cursorsOf(store),
+		Chat: ad.chat, Inviter: inviter, Focus: cursorsOf(store),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build task_assign executor: %w", err)

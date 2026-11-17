@@ -8,9 +8,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
-// MaxBundleBytes is the maximum allowed size of the bundle in bytes (1 MiB).
-const MaxBundleBytes = 1024 * 1024
-
 // TaskAssignPayload is the payload of a task_assign effect.
 type TaskAssignPayload struct {
 	Agent  id.AgentName  `json:"agent"`
@@ -19,8 +16,6 @@ type TaskAssignPayload struct {
 	// Change is the change the task belongs to. Effects made before it existed carry it in their key only.
 	Change id.ChangeID `json:"change,omitempty"`
 	RoomID RoomID      `json:"room_id"`
-	// Bundle is the old context bundle. New tasks may leave it empty: inputs are rendered when the agent calls get_task.
-	Bundle []byte `json:"bundle,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -31,9 +26,6 @@ func (p TaskAssignPayload) Validate() error {
 	v.add("task_id", checkTask(p.TaskID))
 	_, err := ParseRoomID(string(p.RoomID))
 	v.add("room_id", err)
-	if len(p.Bundle) > MaxBundleBytes {
-		v.add("bundle", fmt.Errorf("length %d exceeds maximum of %d bytes", len(p.Bundle), MaxBundleBytes))
-	}
 	return v.join()
 }
 

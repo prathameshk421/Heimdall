@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -58,11 +57,8 @@ func runReviewSilent(ctx context.Context, c *client, out io.Writer) error {
 // then submit the review. A refusal is printed as the outcome. When correct is set, a refused review is corrected and
 // submitted once more. A refused get_task is the outcome of the run, because the token does not hold this role's task.
 func reviewFlow(ctx context.Context, c *client, out io.Writer, name string, build reviewBuild, correct reviewCorrect) error {
-	task, started, err := startTask(ctx, c, out, name)
+	task, _, started, err := startTask(ctx, c, out, name)
 	if err != nil || !started {
-		return err
-	}
-	if _, err := setupCall(ctx, c, toolReadUntrusted, map[string]any{"ref": string(task.Inputs.Diff)}); err != nil {
 		return err
 	}
 	lines, err := readChangedFiles(ctx, c, task)
@@ -94,24 +90,21 @@ func reviewFlow(ctx context.Context, c *client, out io.Writer, name string, buil
 	return reportOutcome(out, name, res)
 }
 
-// startTask reads the agent's task and acknowledges it. The bool is false when the server refused the task: that refusal
+// startTask reads the agent's task with get_task, which acknowledges it, and returns the text of each input. The bool is false when the server refused the task: that refusal
 // is written as the outcome line and the run ends without an error. Any other refusal is a setup failure.
-func startTask(ctx context.Context, c *client, out io.Writer, name string) (workflow.TaskEnvelope, bool, error) {
+func startTask(ctx context.Context, c *client, out io.Writer, name string) (workflow.TaskEnvelope, map[string]string, bool, error) {
 	res, err := c.callTool(ctx, toolGetTask, map[string]any{})
 	if err != nil {
-		return workflow.TaskEnvelope{}, false, err
+		return workflow.TaskEnvelope{}, nil, false, err
 	}
 	if res.IsError {
-		return workflow.TaskEnvelope{}, false, reportOutcome(out, name, res)
+		return workflow.TaskEnvelope{}, nil, false, reportOutcome(out, name, res)
 	}
-	var task workflow.TaskEnvelope
-	if err := json.Unmarshal([]byte(res.text()), &task); err != nil {
-		return workflow.TaskEnvelope{}, false, fmt.Errorf("decode the task envelope: %w", err)
+	task, inputs, err := parseTask(res.text())
+	if err != nil {
+		return workflow.TaskEnvelope{}, nil, false, err
 	}
-	if _, err := setupCall(ctx, c, toolAck, map[string]any{}); err != nil {
-		return workflow.TaskEnvelope{}, false, err
-	}
-	return task, true, nil
+	return task, inputs, true, nil
 }
 
 // readChangedFiles reads every changed file at the head commit and returns how many numbered lines each one has.

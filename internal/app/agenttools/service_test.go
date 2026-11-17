@@ -392,7 +392,6 @@ func TestCurrentHappyPath(t *testing.T) {
 	require.Equal(t, testTaskID, assign.TaskID)
 	require.Equal(t, testAgent, assign.Agent)
 	require.Equal(t, workflow.RoleTestAuthor, assign.Role)
-	require.Equal(t, testBundleRef, assign.BundleRef)
 	require.False(t, assign.Acked)
 	require.Equal(t, t0.Add(2*time.Second), assign.AssignedAt)
 	require.Equal(t, t0.Add(30*time.Minute), assign.Deadline)
@@ -1369,4 +1368,43 @@ func TestSubmitReviewHandsItsEventsToTheAdvanceHook(t *testing.T) {
 	stored, err := h.events.Load(context.Background(), testChangeID)
 	require.NoError(t, err)
 	require.Len(t, stored, 10, "the service wrote nothing itself; the hook stores the events")
+}
+
+// A submission is stored whole and names the task it ends (HARNESS_DESIGN B6): through the tool, the fold and back,
+// every field is in the view or the blob.
+func TestATestsSubmissionRoundTripsThroughTheFold(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	makeBaseStream(t, h, workflow.RoleTestAuthor, testAgent)
+	assign := agenttools.Assignment{
+		ChangeID: testChangeID, TaskID: testTaskID, Agent: testAgent, Role: workflow.RoleTestAuthor,
+		Deadline: t0.Add(30 * time.Minute), AssignedAt: t0.Add(2 * time.Second),
+		Task: workflow.TaskEnvelope{
+			Change: workflow.ChangeRef{ID: testChangeID, BaseSHA: testBaseSHA, HeadSHA: testHeadSHA},
+			Inputs: workflow.Inputs{AcceptanceCriteria: []workflow.CriterionRef{{ID: "AC1", Ref: testBundleRef}}},
+		},
+	}
+	sub := validSubmission()
+	sub.Notes = "assumes the refund cap is per payment"
+	require.NoError(t, h.svc.SubmitTests(context.Background(), assign, sub, false))
+
+	evs, err := h.events.Load(context.Background(), testChangeID)
+	require.NoError(t, err)
+	v, err := change.Fold(evs)
+	require.NoError(t, err)
+	require.NotNil(t, v.Tests)
+	require.Equal(t, testTaskID, v.Tests.TaskID)
+	require.Equal(t, testBaseSHA, v.Tests.BaseSHA)
+	require.Equal(t, sub.AcceptanceCriteria, v.Tests.ACMap)
+	require.Equal(t, v.Tests.Expected, sub.ExpectedPaths)
+	require.Len(t, v.Tests.Files, len(sub.Files))
+	for i, f := range sub.Files {
+		require.Equal(t, f.Path, v.Tests.Files[i].Path)
+		require.NotEmpty(t, v.Tests.Files[i].Blob, "each file names the blob that holds the submission")
+	}
+	require.Equal(t, 1, v.Tests.Attempts)
+	last := evs[len(evs)-1]
+	var payload change.TestsSubmitted
+	require.NoError(t, json.Unmarshal(last.Payload, &payload))
+	require.Equal(t, sub.Notes, payload.Notes)
 }

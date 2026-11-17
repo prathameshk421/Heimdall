@@ -10,7 +10,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/verify"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -20,7 +19,7 @@ func (s *Server) checksTools() ([]tool, error) {
 		return nil, nil
 	}
 	return []tool{
-		{name: "run_check", description: "Run a deterministic check on the head commit through the sandbox and read its located diagnostics. Use it before you cite a tool result in a finding.", schema: runCheckSchema(), roles: []workflow.Role{workflow.RoleReviewer, workflow.RoleResolver}, handle: s.runCheck},
+		{name: "run_check", description: "Run one check of the repository profile on the head commit and return the new results as file:line rule: message. The id must be one listed in your leads; at most 5 calls per task. Use it before you cite a tool result; do not use it to explore. Example: run_check {\"check_id\":\"lint\"}", schema: runCheckSchema(), handle: s.runCheck},
 	}, nil
 }
 

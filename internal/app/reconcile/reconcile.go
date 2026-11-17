@@ -33,8 +33,6 @@ type InputSource interface {
 	Outside(ctx context.Context, v change.View) (change.Outside, error)
 	// Profile returns the promoted profile of repo, or the zero Profile when there is none.
 	Profile(ctx context.Context, repo change.Repo) (change.Profile, error)
-	// Bundle builds the context bundle a task_assign still carries. It goes with the bundle itself (HARNESS_DESIGN H7).
-	Bundle(ctx context.Context, kind, subject string, changeID id.ChangeID, events []change.Event) ([]byte, error)
 }
 
 // Config is everything a Reconciler needs.
@@ -191,7 +189,7 @@ func (r *Reconciler) runOnce(ctx context.Context, changeID id.ChangeID) error {
 	if err != nil {
 		return fmt.Errorf("reconcile %s: %w", changeID, err)
 	}
-	d, err := r.decide(ctx, in, events)
+	d, err := r.decide(ctx, in)
 	if err != nil {
 		return fmt.Errorf("reconcile %s: %w", changeID, err)
 	}
@@ -233,4 +231,30 @@ func repoAndBase(v change.View) (change.Repo, id.SHA) {
 		return v.Trigger.Repo, ""
 	}
 	return "", ""
+}
+
+// Needs says in plain words what the change still needs (change.Missing), for the board and for get_task. It reads the
+// same inputs a Run reads and decides nothing.
+func (r *Reconciler) Needs(ctx context.Context, changeID id.ChangeID) ([]string, error) {
+	events, err := r.cfg.Store.Load(ctx, changeID)
+	if err != nil {
+		return nil, fmt.Errorf("needs of %s: load: %w", changeID, err)
+	}
+	v, err := change.Fold(events)
+	if err != nil {
+		return nil, fmt.Errorf("needs of %s: fold: %w", changeID, err)
+	}
+	if v.Trigger == nil && v.PR == nil {
+		return []string{}, nil
+	}
+	in, err := r.buildIn(ctx, changeID, v)
+	if err != nil {
+		return nil, fmt.Errorf("needs of %s: %w", changeID, err)
+	}
+	needs := change.Missing(in)
+	out := make([]string, 0, len(needs))
+	for _, n := range needs {
+		out = append(out, n.Text)
+	}
+	return out, nil
 }

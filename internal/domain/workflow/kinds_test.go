@@ -23,3 +23,15 @@ func TestEveryRoleHoldsOneKindAndKindNamesAreUnique(t *testing.T) {
 	_, ok := KindFor("nobody")
 	require.False(t, ok)
 }
+
+func TestKindToolsAreSharedWithNoOtherKindOnlyWhereTheTableSaysSo(t *testing.T) {
+	for _, k := range Kinds() {
+		require.NotEmpty(t, k.Inputs, k.Name)
+		require.NotEmpty(t, k.Tools, k.Name)
+		require.NotEmpty(t, k.Skill, k.Name)
+		require.Positive(t, k.Timeout, k.Name)
+		for _, shared := range SharedTools() {
+			require.NotContains(t, k.Tools, shared, "shared tools are not repeated per kind")
+		}
+	}
+}

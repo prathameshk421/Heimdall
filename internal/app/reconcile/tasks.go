@@ -18,7 +18,7 @@ const recentCalls = 20
 
 // task does what one Task action asks (HARNESS_DESIGN B3): assign it when no task of that kind and subject is live,
 // replace a live task made for another input, and watch a live task made for this input.
-func (r *Reconciler) task(ctx context.Context, d *decision, in change.In, events []change.Event, t change.Task) error {
+func (r *Reconciler) task(ctx context.Context, d *decision, in change.In, t change.Task) error {
 	v := in.View
 	if v.Room == "" {
 		return nil // the agent is woken in the change's room: nothing can be assigned before it exists
@@ -41,9 +41,9 @@ func (r *Reconciler) task(ctx context.Context, d *decision, in change.In, events
 		d.fact(change.TaskSuperseded{TaskID: live.id, Reason: "new input " + t.Input})
 	}
 	if current == nil {
-		return r.assign(ctx, d, in, events, kind, agent, t)
+		return r.assign(d, in, kind, agent, t)
 	}
-	return r.watch(ctx, d, in, events, *current)
+	return r.watch(ctx, d, in, *current)
 }
 
 type taskRef struct {
@@ -78,46 +78,33 @@ func kindNamed(name string) (workflow.Kind, bool) {
 }
 
 // assign records the task and attaches the job that wakes the agent in the change's room.
-func (r *Reconciler) assign(ctx context.Context, d *decision, in change.In, events []change.Event, kind workflow.Kind, agent id.AgentName, t change.Task) error {
+func (r *Reconciler) assign(d *decision, in change.In, kind workflow.Kind, agent id.AgentName, t change.Task) error {
 	timeout := in.Settings.Timeouts[t.Kind]
 	if timeout <= 0 {
 		return fmt.Errorf("no timeout is configured for task kind %q", t.Kind)
 	}
 	tid := r.cfg.IDs.NewTask()
-	bundle, err := r.cfg.Inputs.Bundle(ctx, t.Kind, t.Subject, in.Change, events)
-	if err != nil {
-		return fmt.Errorf("build the bundle of %s: %w", tid, err)
-	}
-	// BundleRef goes with the bundle itself (HARNESS_DESIGN H7): get_task still reads the task's context through it.
 	assigned := change.TaskAssigned{TaskID: tid, Agent: agent, Role: kind.Holder, Deadline: in.Now.Add(timeout),
-		Kind: t.Kind, Subject: t.Subject, Input: t.Input, BundleRef: workflow.BlobRef(bundleTarget(bundle))}
+		Kind: t.Kind, Subject: t.Subject, Input: t.Input}
 	if t.Kind == "verdict" {
 		assigned.CaseID = id.CaseID(t.Subject) // the resolver's tools bind the task to its case
 	}
 	d.fact(assigned)
-	return d.job(wakeJob(in, tid, agent, kind.Holder, bundle, "task/"+string(tid)))
+	return d.job(wakeJob(in, tid, agent, kind.Holder, "task/"+string(tid)))
 }
 
 // wakeJob is the task_assign job that wakes the agent in the change's room: the first assignment and each repeat of the
-// wake line are the same job kind under different keys.
-func wakeJob(in change.In, tid id.TaskID, agent id.AgentName, role workflow.Role, bundle []byte, keyTail string) change.Job {
-	p := change.TaskAssignPayload{Agent: agent, Role: role, TaskID: tid, RoomID: in.View.Room, Bundle: bundle, Change: in.Change}
+// wake line are the same job kind under different keys. The agent gets its inputs from get_task, so the job carries
+// none.
+func wakeJob(in change.In, tid id.TaskID, agent id.AgentName, role workflow.Role, keyTail string) change.Job {
+	p := change.TaskAssignPayload{Agent: agent, Role: role, TaskID: tid, RoomID: in.View.Room, Change: in.Change}
 	return change.Job{Kind: change.EffectTaskAssign, Key: change.EffectKey(string(in.Change) + "/" + keyTail),
-		Target: bundleTarget(bundle), Payload: p}
-}
-
-// wake attaches a repeat of the wake line for a live task, with a fresh bundle.
-func (r *Reconciler) wake(ctx context.Context, d *decision, in change.In, events []change.Event, tid id.TaskID, agent id.AgentName, role workflow.Role, kind, subject, keyTail string) error {
-	bundle, err := r.cfg.Inputs.Bundle(ctx, kind, subject, in.Change, events)
-	if err != nil {
-		return fmt.Errorf("build the bundle of %s: %w", tid, err)
-	}
-	return d.job(wakeJob(in, tid, agent, role, bundle, keyTail))
+		Target: string(tid), Payload: p}
 }
 
 // watch decides what to do about a live task made for the current input: time it out past its deadline, otherwise do
 // what liveness.Next says about a quiet agent.
-func (r *Reconciler) watch(ctx context.Context, d *decision, in change.In, events []change.Event, t taskRef) error {
+func (r *Reconciler) watch(ctx context.Context, d *decision, in change.In, t taskRef) error {
 	if !in.Now.Before(t.info.Deadline) {
 		d.fact(change.TaskTimedOut{TaskID: t.id, Agent: t.info.Agent, Role: t.info.Role, Reason: "the deadline passed"})
 		return nil
@@ -134,7 +121,7 @@ func (r *Reconciler) watch(ctx context.Context, d *decision, in change.In, event
 		return nil
 	case liveness.Repeat:
 		d.fact(change.TaskRewoken{TaskID: t.id, N: n})
-		return r.wake(ctx, d, in, events, t.id, t.info.Agent, t.info.Role, t.info.Kind, t.info.Subject, fmt.Sprintf("%s/wake/%d", t.id, n))
+		return d.job(wakeJob(in, t.id, t.info.Agent, t.info.Role, fmt.Sprintf("%s/wake/%d", t.id, n)))
 	case liveness.Probe, liveness.Blocked:
 		return r.probe(ctx, d, in.View)
 	case liveness.Reset:
@@ -143,7 +130,7 @@ func (r *Reconciler) watch(ctx context.Context, d *decision, in change.In, event
 			return err
 		}
 		d.fact(change.TaskRewoken{TaskID: t.id, N: n, Reset: true})
-		return r.wake(ctx, d, in, events, t.id, t.info.Agent, t.info.Role, t.info.Kind, t.info.Subject, fmt.Sprintf("%s/wake/%d", t.id, n))
+		return d.job(wakeJob(in, t.id, t.info.Agent, t.info.Role, fmt.Sprintf("%s/wake/%d", t.id, n)))
 	case liveness.Fail:
 		d.fact(change.TaskFailed{TaskID: t.id, Agent: t.info.Agent, Role: t.info.Role, Reason: "unresponsive"})
 		return nil

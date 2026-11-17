@@ -15,8 +15,6 @@ import (
 // The tools this agent calls (TECH_SPEC 14.1).
 const (
 	toolGetTask        = "get_task"
-	toolAck            = "ack"
-	toolReadUntrusted  = "read_untrusted"
 	toolReadCode       = "read_code"
 	toolSubmitTests    = "submit_tests"
 	toolSubmitReview   = "submit_review"
@@ -152,9 +150,6 @@ func submitFlow(ctx context.Context, c *client, out io.Writer, name string, buil
 	if err != nil {
 		return err
 	}
-	if _, err := setupCall(ctx, c, toolAck, map[string]any{}); err != nil {
-		return err
-	}
 	if err := readBaseFile(ctx, c, task); err != nil {
 		return err
 	}
@@ -178,7 +173,7 @@ func submitFlow(ctx context.Context, c *client, out io.Writer, name string, buil
 // runSlow acknowledges, reports progress and then waits for its context to end without submitting, so a deadline test
 // can watch the server time the task out. Ending on the context is the scripted behaviour, so it is not an error.
 func runSlow(ctx context.Context, c *client, out io.Writer) error {
-	if _, err := setupCall(ctx, c, toolAck, map[string]any{}); err != nil {
+	if _, err := fetchTask(ctx, c); err != nil { // the first get_task acknowledges the task
 		return err
 	}
 	if err := reportProgress(ctx, c); err != nil {
@@ -196,29 +191,23 @@ func runSilent(ctx context.Context, c *client, out io.Writer) error {
 	return silentFlow(ctx, c, out, "silent")
 }
 
-// silentFlow reads the task and stops without acknowledging. name is the scenario's name, which starts the output line.
-func silentFlow(ctx context.Context, c *client, out io.Writer, name string) error {
-	if _, err := fetchTask(ctx, c); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, "%s: no ack: read the task and stopped without acknowledging\n", name); err != nil {
+// silentFlow never calls get_task, so the task is never acknowledged. name is the scenario's name, which starts the
+// output line.
+func silentFlow(_ context.Context, _ *client, out io.Writer, name string) error {
+	if _, err := fmt.Fprintf(out, "%s: no ack: ignored the wake and never called get_task\n", name); err != nil {
 		return fmt.Errorf("write the %s outcome: %w", name, err)
 	}
 	return nil
 }
 
-// fetchTask reads the agent's one active task and decodes the envelope with the domain type, so the wire form and the
-// agent's reading of it cannot drift.
+// fetchTask reads the agent's one active task with get_task, which also acknowledges it.
 func fetchTask(ctx context.Context, c *client) (workflow.TaskEnvelope, error) {
 	res, err := setupCall(ctx, c, toolGetTask, map[string]any{})
 	if err != nil {
 		return workflow.TaskEnvelope{}, err
 	}
-	var task workflow.TaskEnvelope
-	if err := json.Unmarshal([]byte(res.text()), &task); err != nil {
-		return workflow.TaskEnvelope{}, fmt.Errorf("decode the task envelope: %w", err)
-	}
-	return task, nil
+	task, _, err := parseTask(res.text())
+	return task, err
 }
 
 // readBaseFile reads the first changed file at the base commit, which is all a test-author may read.

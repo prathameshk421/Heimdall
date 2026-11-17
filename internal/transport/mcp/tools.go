@@ -36,22 +36,23 @@ func refusalf(format string, args ...any) error {
 // toolHandler runs one tool for one principal and returns the text of its result.
 type toolHandler func(ctx context.Context, p Principal, args json.RawMessage) (string, error)
 
-// tool is one MCP tool: its listed shape, the roles that may call it (TECH_SPEC 14.1) and its handler.
+// tool is one MCP tool: its listed shape and its handler. Who may call it is not here: the kind table says which tools
+// each kind of task holds (workflow.Kind.Tools), and every kind holds the shared ones.
 type tool struct {
 	name        string
 	description string
 	schema      json.RawMessage
-	roles       []workflow.Role
 	humanOnly   bool
 	handle      toolHandler
 }
 
-// allows reports whether the role may call the tool.
-func (t tool) allows(role workflow.Role) bool { return slices.Contains(t.roles, role) }
-
-// llmRoles lists the LLM roles. TECH_SPEC 14.1 writes "all" for the tools every LLM role gets.
-func llmRoles() []workflow.Role {
-	return []workflow.Role{workflow.RoleTestAuthor, workflow.RoleReviewer, workflow.RoleResolver, workflow.RoleProfiler}
+// allows reports whether the role's kind holds the tool, or every kind does.
+func (t tool) allows(role workflow.Role) bool {
+	k, ok := workflow.KindFor(role)
+	if !ok {
+		return false // a principal with no role (a human) holds no kind, so no task tools
+	}
+	return slices.Contains(workflow.SharedTools(), t.name) || slices.Contains(k.Tools, t.name)
 }
 
 // buildTools returns the tool table. Each area declares its own tools (tools_<area>.go); a submit schema is

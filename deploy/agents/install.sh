@@ -25,21 +25,19 @@ done
 
 manifest=$repo/testdata/agents/agents.json
 templates=$repo/testdata/agents
-skills=$repo/skills
 rules=$repo/testdata/agents/AGENTS.md
 
 [[ -f "$manifest" ]] || { echo "install agents: manifest is unavailable" >&2; exit 1; }
 [[ -f "$rules" ]] || { echo "install agents: agent rules are unavailable" >&2; exit 1; }
 
-while IFS=$'\t' read -r name template skill; do
+# The agents get their instructions from get_task, so no skill file is installed; the third column of the manifest is unused.
+while IFS=$'\t' read -r name template _skill; do
 	[[ -n "$name" ]] || continue
 	template_path=$templates/$template
-	skill_path=$skills/$skill/SKILL.md
 	token_path=$secrets_dir/agent_token_$name
 	destination=$agents_dir/agent/$name
 
 	[[ -f "$template_path" ]] || { echo "install agents: template unavailable for $name" >&2; exit 1; }
-	[[ -f "$skill_path" ]] || { echo "install agents: skill unavailable for $name" >&2; exit 1; }
 	[[ -f "$token_path" && -r "$token_path" ]] || { echo "install agents: missing token file for $name" >&2; exit 1; }
 	grep -Fq '"model": "deploy/deepseek-ai/deepseek-v4.1-flash-1017"' "$template_path" || { echo "install agents: wrong model for $name" >&2; exit 1; }
 	grep -Fq '"apiKey": "{env:DEPLOY_API_KEY}"' "$template_path" || { echo "install agents: the model key must come from DEPLOY_API_KEY for $name" >&2; exit 1; }
@@ -48,12 +46,11 @@ while IFS=$'\t' read -r name template skill; do
 	grep -Fq "{{file:secrets/agent_token_$name}}" "$template_path" || { echo "install agents: token reference missing for $name" >&2; exit 1; }
 
 	if $dry_run; then
-		echo "plan $name dir=$destination model=deploy/deepseek-ai/deepseek-v4.1-flash-1017 skill=$skill"
+		echo "plan $name dir=$destination model=deploy/deepseek-ai/deepseek-v4.1-flash-1017"
 		continue
 	fi
 
-	mkdir -p "$destination/.opencode/skills/$skill" "$destination/scratch"
-	install -m 0644 "$skill_path" "$destination/.opencode/skills/$skill/SKILL.md"
+	mkdir -p "$destination/scratch"
 	install -m 0644 "$rules" "$destination/AGENTS.md"
 	python3 - "$template_path" "$token_path" "$destination/opencode.json" <<'PY'
 import json

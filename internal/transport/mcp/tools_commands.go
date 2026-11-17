@@ -9,7 +9,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
 // Proposer runs propose_command (AGENT_INTERACTION_ARCH 5.3): the command runs as the person who sent the trigger
@@ -24,9 +23,8 @@ func (s *Server) commandTools() ([]tool, error) {
 		return nil, nil
 	}
 	return []tool{{name: "propose_command",
-		description: "Ask Heimdall to run a command for the person whose message asked for it. Pass the command without the heimdall prefix (for example: dismiss F2 duplicate of F1, same lines and cause), the id of that person's message as trigger, and the ticket. It runs as that person, and a deciding command waits for their yes.",
+		description: "Ask Heimdall to run a command for the person whose message asked for it, as that person; a deciding command waits for their yes. Use it when a person asked in chat for dismiss, uphold or similar; do not use it for your own decisions. Example: propose_command {\"command\":\"dismiss F2 duplicate of F1\",\"trigger\":\"<message id>\",\"ticket\":\"KAN-5\"}",
 		schema:      proposeCommandSchema(),
-		roles:       []workflow.Role{workflow.RoleTestAuthor, workflow.RoleReviewer, workflow.RoleResolver, workflow.RoleProfiler},
 		handle:      s.proposeCommand}}, nil
 }
 

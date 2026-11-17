@@ -230,11 +230,19 @@ func buildWorld(t *testing.T, tokenRole workflow.Role, task workflow.TaskEnvelop
 		Code:      w.code,
 		Blobs:     w.blobs,
 		Knowledge: knowledgeStub{},
+		Paths:     testPaths{},
 	})
 	require.NoError(t, err)
 	w.hs = httptest.NewServer(srv.Handler())
 	t.Cleanup(w.hs.Close)
 	return w
+}
+
+// testPaths lists the files of the fake repository: the one source file the scenarios read, and another ticket's tests.
+type testPaths struct{}
+
+func (testPaths) Paths(context.Context, change.Repo, id.SHA) ([]string, error) {
+	return []string{changedFile, "tests/heimdall/PAY-9/other_test.go"}, nil
 }
 
 type knowledgeStub struct{}

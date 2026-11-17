@@ -19,20 +19,17 @@ type wireTool struct {
 	InputSchema json.RawMessage `json:"inputSchema"`
 }
 
-// expectedTools is the tool table of TECH_SPEC 14.1 for the tools this package builds. "all" in the spec means every
-// LLM role, so profiler gets the same tools as reviewer.
+// expectedTools are the tools of each kind (workflow.Kinds) that this rig registers: no graph, cards, sandbox or
+// profile service is wired, so the tools that need them are absent.
 func expectedTools(role workflow.Role) []string {
-	all := []string{
-		"get_task", "ack", "get_change",
-		"read_untrusted", "read_code", "ask_knowledge", "report_progress",
-	}
+	all := []string{"get_task", "report_progress", "read_code"}
 	switch role {
 	case workflow.RoleTestAuthor:
 		return append(all, "submit_tests", "ask_humans")
 	case workflow.RoleResolver:
-		return append(all, "ask_humans", "submit_verdict")
+		return append(all, "ask_knowledge", "submit_verdict")
 	case workflow.RoleReviewer:
-		return append(all, "submit_review", "stage_knowledge")
+		return append(all, "ask_knowledge", "submit_review", "stage_knowledge")
 	case workflow.RoleProfiler:
 		return all
 	}
@@ -226,14 +223,14 @@ func TestTheTaskEnvelopeMustBeForTheTokensRole(t *testing.T) {
 	require.Empty(t, r.tasks.progress, "no effect may run for a mismatched envelope")
 }
 
-func TestNoActiveTaskIsARefusalNotAProtocolError(t *testing.T) {
+func TestNoActiveTaskIsAPlainAnswerNotAProtocolError(t *testing.T) {
 	r := newRig(t, workflow.RoleTestAuthor)
 	r.tasks.currentErr = ErrNoTask
 	rep := r.rpc("tools/call", `{"name":"get_task","arguments":{}}`)
 	require.Nil(t, rep.Error, "no active task is an answer the agent can act on, not a protocol error")
 	var res toolResult
 	require.NoError(t, decodeInto(rep.Result, &res))
-	require.True(t, res.IsError)
+	require.False(t, res.IsError, "get_task with no task answers plainly")
 	require.Contains(t, res.text(), "no active task")
 }
 

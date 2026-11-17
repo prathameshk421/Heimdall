@@ -107,20 +107,18 @@ func TestFindSymbolShowsDefinitionsAndUses(t *testing.T) {
 	require.Contains(t, none.text(), "No definition or use")
 }
 
-func TestCodeToolsAreLimitedToReviewerAndResolver(t *testing.T) {
-	for _, role := range []workflow.Role{workflow.RoleReviewer, workflow.RoleResolver} {
+func TestCodeToolsFollowTheKindTable(t *testing.T) {
+	for _, role := range []workflow.Role{workflow.RoleReviewer} {
 		r := graphRig(t, role, sampleGraph())
 		require.False(t, r.call("search_code", `{"pattern":"x"}`).IsError, role)
 		require.False(t, r.call("find_symbol", `{"name":"x"}`).IsError, role)
 	}
 	g := sampleGraph()
 	author := graphRig(t, workflow.RoleTestAuthor, g)
-	for _, call := range []string{`{"name":"search_code","arguments":{"pattern":"x"}}`, `{"name":"find_symbol","arguments":{"name":"x"}}`} {
-		refused := author.rpc("tools/call", call)
-		require.NotNil(t, refused.Error, "a test author may read only the base commit")
-		require.Equal(t, codeInvalidParams, refused.Error.Code)
-	}
-	require.Empty(t, g.asked)
+	require.False(t, author.call("search_code", `{"pattern":"x"}`).IsError, "a test author searches the base commit")
+	refused := author.rpc("tools/call", `{"name":"find_symbol","arguments":{"name":"x"}}`)
+	require.NotNil(t, refused.Error, "find_symbol is not a tool of the tests kind")
+	require.Equal(t, codeInvalidParams, refused.Error.Code)
 }
 
 func TestCodeToolsAreAbsentWithoutAGraph(t *testing.T) {
@@ -160,43 +158,52 @@ func briefRig(t *testing.T, role workflow.Role, b *fakeBriefs) *rig {
 	return r
 }
 
-func taskFields(t *testing.T, text string) map[string]json.RawMessage {
+// section returns the rendered input of get_task by name.
+func section(t *testing.T, text, name string) (note, content string) {
 	t.Helper()
-	fields := map[string]json.RawMessage{}
-	require.NoError(t, json.Unmarshal([]byte(text), &fields))
-	return fields
+	var v taskView
+	require.NoError(t, json.Unmarshal([]byte(text), &v))
+	for _, in := range v.Inputs {
+		if in.Name == name {
+			return in.Note, in.Content
+		}
+	}
+	t.Fatalf("no input %s", name)
+	return "", ""
 }
 
 func TestGetTaskAddsEachBriefSectionWrapped(t *testing.T) {
-	b := &fakeBriefs{brief: reviewbrief.Brief{Obligations: "CARD", ChangeMap: "MAP", PriorFindings: "PRIOR", Memory: "MEMORY", Record: "RECORD"}}
+	b := &fakeBriefs{brief: reviewbrief.Brief{Obligations: "CARD", PriorFindings: "PRIOR", Memory: "MEMORY"}}
 	r := briefRig(t, workflow.RoleReviewer, b)
 	res := r.call("get_task", `{}`)
 	require.False(t, res.IsError, res.text())
-	fields := taskFields(t, res.text())
-	for field, want := range map[string]string{"personal_context": "CARD", "change_map": "MAP", "prior_findings": "PRIOR", "team_memory": "MEMORY", "your_record": "RECORD"} {
-		require.Contains(t, string(fields[field]), want, field)
-		require.Contains(t, string(fields[field]), "HEIMDALL-UNTRUSTED-BEGIN", field)
+	for input, want := range map[string]string{"obligations": "CARD", "prior_findings": "PRIOR", "team_memory": "MEMORY"} {
+		_, content := section(t, res.text(), input)
+		require.Contains(t, content, want, input)
+		require.Contains(t, content, "HEIMDALL-UNTRUSTED-BEGIN", input)
 	}
 }
 
-func TestGetTaskLeavesOutEmptySections(t *testing.T) {
-	r := briefRig(t, workflow.RoleReviewer, &fakeBriefs{brief: reviewbrief.Brief{ChangeMap: "MAP"}})
-	fields := taskFields(t, r.call("get_task", `{}`).text())
-	require.Contains(t, fields, "change_map")
-	require.NotContains(t, fields, "personal_context")
-	require.NotContains(t, fields, "your_record")
+func TestGetTaskSaysSoWhenASectionIsEmpty(t *testing.T) {
+	r := briefRig(t, workflow.RoleReviewer, &fakeBriefs{brief: reviewbrief.Brief{Memory: "MEMORY"}})
+	note, content := section(t, r.call("get_task", `{}`).text(), "obligations")
+	require.Empty(t, content)
+	require.Contains(t, note, "Nothing to show")
 }
 
 func TestAFailedBriefDoesNotCostTheTask(t *testing.T) {
 	r := briefRig(t, workflow.RoleReviewer, &fakeBriefs{err: errors.New("down")})
 	res := r.call("get_task", `{}`)
 	require.False(t, res.IsError)
-	require.Contains(t, taskFields(t, res.text()), "instructions")
-	require.Contains(t, r.logs.String(), "brief unavailable")
+	var v taskView
+	require.NoError(t, json.Unmarshal([]byte(res.text()), &v))
+	require.NotEmpty(t, v.Instructions)
+	note, _ := section(t, res.text(), "obligations")
+	require.Contains(t, note, "unavailable")
 }
 
 func TestATestAuthorGetsNoBrief(t *testing.T) {
-	b := &fakeBriefs{brief: reviewbrief.Brief{ChangeMap: "HEAD SECRET"}}
+	b := &fakeBriefs{brief: reviewbrief.Brief{Memory: "HEAD SECRET"}}
 	r := briefRig(t, workflow.RoleTestAuthor, b)
 	res := r.call("get_task", `{}`)
 	require.False(t, res.IsError)
@@ -204,7 +211,6 @@ func TestATestAuthorGetsNoBrief(t *testing.T) {
 	require.Zero(t, b.calls, "a test author reads only the base, so nothing about the head is compiled for it")
 }
 
-// A cheap model can loop on get_task. A whole brief is kept. A partial one is compiled again, and a new head is too.
 func TestABriefIsHeldUntilItIsPartialOrTheHeadMoves(t *testing.T) {
 	b := &fakeBriefs{brief: reviewbrief.Brief{ChangeMap: "MAP"}}
 	r := briefRig(t, workflow.RoleReviewer, b)

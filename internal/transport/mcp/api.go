@@ -39,6 +39,9 @@ type Assignment struct {
 	AssignedAt time.Time
 	Acked      bool
 	History    []string
+	// Rejection and Attempt are the test author's: why the last submission was refused, and which attempt this is.
+	Rejection []string
+	Attempt   int
 }
 
 // ErrInvalidSubmission marks a problem the application found in what the agent submitted. Its message names only the
@@ -176,6 +179,8 @@ type Deps struct {
 	Proposer Proposer
 	// Paths lists a repository's files for the repo map in get_task and the root of read_code. Without it, neither.
 	Paths ports.RepoPaths
+	// Needs says in plain words what a change still needs; get_task shows it. Without it the list is empty.
+	Needs func(ctx context.Context, change id.ChangeID) ([]string, error)
 	// Calls is the record of tool calls. Without it nothing is recorded and repeats are not detected.
 	Calls ports.ToolCalls
 }

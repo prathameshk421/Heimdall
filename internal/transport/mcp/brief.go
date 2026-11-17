@@ -10,7 +10,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reviewbrief"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
 // briefDeadline bounds one compile of a brief. It stays under the 30 s deadline of the stdio bridge, so a slow source
@@ -24,43 +23,6 @@ const maxHeldBriefs = 256
 type heldBrief struct {
 	head  id.SHA
 	brief reviewbrief.Brief
-}
-
-// briefFields returns the brief's sections as get_task fields, each inside an untrusted wrapper. Only a reviewer and a
-// resolver get a brief. A test author never does, because a brief describes the head commit. A failure is logged and
-// the task goes ahead without the failed part.
-func (s *Server) briefFields(ctx context.Context, p Principal, a Assignment) map[string]string {
-	if s.deps.Briefs == nil {
-		return map[string]string{"personal_context": s.personalContext(ctx, p, a)}
-	}
-	if p.Role != workflow.RoleReviewer && p.Role != workflow.RoleResolver {
-		return nil
-	}
-	brief, err := s.taskBrief(ctx, p, a)
-	if err != nil {
-		s.deps.Logger.WarnContext(ctx, "brief unavailable for task", "agent", string(p.Agent), "error", err)
-		return nil
-	}
-	sections := []struct{ field, label, text string }{
-		{"personal_context", "the reviewer's own rule cards that this change must answer", brief.Obligations},
-		{"change_map", "the code graph of the head commit", brief.ChangeMap},
-		{"prior_findings", "past findings on these files", brief.PriorFindings},
-		{"team_memory", "team memory on the symbols and files of this change", brief.Memory},
-		{"your_record", "the record of this reviewer", brief.Record},
-	}
-	fields := make(map[string]string, len(sections))
-	for _, section := range sections {
-		if section.text == "" {
-			continue
-		}
-		wrapped, err := wrapUntrusted(section.label, []byte(section.text))
-		if err != nil {
-			s.deps.Logger.WarnContext(ctx, "brief section could not be wrapped", "field", section.field, "error", err)
-			continue
-		}
-		fields[section.field] = wrapped
-	}
-	return fields
 }
 
 // taskBrief returns the held brief of the task when it is whole and for the same head, and compiles it otherwise.
