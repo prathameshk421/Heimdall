@@ -1,5 +1,25 @@
 # Heimdall progress
 
+## Harness overhaul (D170)
+
+Spec and plan: [HARNESS_DESIGN.md](HARNESS_DESIGN.md). Baseline before H1: `make fast` exit 0, 3539 tests (Nov 17, 2026).
+
+| Step | Status | Commit | Evidence / not verified |
+|---|---|---|---|
+| H0 Ground | done | see git log `H0:` | docs only |
+| H1 View fields and new events | pending | | |
+| H2 Row table and Missing | pending | | |
+| H3 Store support | pending | | |
+| H4 Reconciler | pending | | |
+| H5 Switch over, delete engine | pending | | |
+| H6 Executors, intake, prsync, gate | pending | | |
+| H7 Kinds, get_task, tools, skills | pending | | |
+| H8 Checks | pending | | |
+| H9 Wiring proofs | pending | | |
+| H10 Component e2e, retire stories | pending | | |
+| H11 Deploy and live run | pending | | needs VM, owner Terminal root, spend |
+| H12 Specs and leftovers | pending | | |
+
 ## Handoff: the overhaul (Nov 16, 2026, third session)
 
 Owner said yes to M0 phase 2 (changing assertions, R2), to completing the three plans, and to SSM on the VM; the bar

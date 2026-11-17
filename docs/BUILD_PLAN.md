@@ -1,3 +1,5 @@
+> Superseded where it conflicts by docs/HARNESS_DESIGN.md (D170).
+
 # Build plan: seven modules, each built whole by one agent
 
 Status: plan (Nov 14, 2026). Nothing here is built.

@@ -1,3 +1,5 @@
+> Superseded where it conflicts by docs/HARNESS_DESIGN.md (D170).
+
 # Harness and interaction architecture: free in the room, strict at the edge
 
 Status: architecture and plan, third pass (Nov 14, 2026). Nothing here is implemented.
