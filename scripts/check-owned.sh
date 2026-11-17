@@ -61,8 +61,8 @@ allow_M4=(
 deny_M4=()
 
 allow_M5=(
-	'internal/app/announce/*' 'internal/app/collaboration/*' 'internal/app/roomstream/*' 'internal/app/liveness/*'
-	'internal/app/toolguard/*' 'internal/app/record/*' 'internal/app/questions/*' 'internal/domain/commands/*'
+	'internal/app/announce/*' 'internal/app/collaboration/*' 'internal/app/roomstream/*' 'internal/domain/liveness/*'
+	'internal/app/toolguard/*' 'internal/app/record/*' 'internal/domain/questions/*' 'internal/domain/commands/*'
 	'internal/adapters/switch/*' internal/ports/chat.go 'internal/transport/skills/*' 'internal/pack/*'
 	'deploy/agents/*' 'testdata/agents/*' skills/embed.go
 	internal/transport/mcp/tools_commands.go internal/transport/mcp/list.go internal/domain/change/events_talk.go

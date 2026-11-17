@@ -1,7 +1,7 @@
 package change
 
 import (
-	"encoding/json"
+	"encoding/base64"
 	"fmt"
 	"slices"
 	"strings"
@@ -158,18 +158,8 @@ func attachProof(p *VerifyEvidencePayload, f FindingInfo) {
 		p.Check = &VerifyCheck{Name: checkNameFor(f.ToolResult.Tool), File: f.ToolResult.Location.File, Lines: f.ToolResult.Location.Lines}
 	case f.ReproTest != nil:
 		p.TestPath, p.TestName = f.ReproTest.Path, f.ReproTest.Name
-		p.TestSource = base64Of(f.ReproTest.Content)
+		p.TestSource = base64.StdEncoding.EncodeToString([]byte(f.ReproTest.Content))
 	}
-}
-
-// base64Of is the standard base64 text of s, which is how a repro test travels in a verify_evidence payload. encoding/json
-// writes a byte slice exactly so, and the domain may import it where it may not import encoding/base64.
-func base64Of(s string) string {
-	b, err := json.Marshal([]byte(s))
-	if err != nil || len(b) < 2 {
-		return ""
-	}
-	return string(b[1 : len(b)-1])
 }
 
 // checkNameFor maps the tool a reviewer names in tool_result evidence to the fixed check the runner knows. It goes with
