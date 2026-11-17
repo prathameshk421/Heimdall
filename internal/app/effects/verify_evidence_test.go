@@ -67,32 +67,6 @@ func sampleReproEffect() change.Effect {
 	}
 }
 
-func sampleChangeEvents() []change.Event {
-	return []change.Event{
-		{
-			ID:       "ev-1",
-			ChangeID: veTicket,
-			Version:  1,
-			Type:     change.EventChangeTriggered,
-			Payload:  json.RawMessage(`{"ticket":"PAY-142","repo":"` + string(veRepo) + `","assignee":"person:alice","source":"jira"}`),
-		},
-		{
-			ID:       "ev-2",
-			ChangeID: veTicket,
-			Version:  2,
-			Type:     change.EventPROpened,
-			Payload:  json.RawMessage(`{"repo":"` + string(veRepo) + `","number":42,"head_sha":"` + string(veHead) + `","author":"ana","ticket":"PAY-142"}`),
-		},
-		{
-			ID:       "ev-3",
-			ChangeID: veTicket,
-			Version:  3,
-			Type:     change.EventFindingFiled,
-			Payload:  json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","tier":"E1","severity":"high","state":"open","by":"reviewer-agent"}`),
-		},
-	}
-}
-
 func TestVerifyEvidenceAssertionFailureVerifiesE1(t *testing.T) {
 	ctx := context.Background()
 	sandbox := &overlaySandboxFake{
@@ -103,14 +77,12 @@ func TestVerifyEvidenceAssertionFailureVerifiesE1(t *testing.T) {
 			},
 		},
 	}
-	store := &fakeStore{events: sampleChangeEvents()}
 	ingest := &fakeIngest{}
 	source := &fakeSource{}
 
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
 		Source:  source,
 		Sandbox: sandbox,
-		Store:   store,
 		Ingest:  ingest,
 		IDs:     &fakeIDs{},
 		Clock:   fixedClock{},
@@ -147,14 +119,12 @@ func TestVerifyEvidencePassDoesNotVerifyE1(t *testing.T) {
 			},
 		},
 	}
-	store := &fakeStore{events: sampleChangeEvents()}
 	ingest := &fakeIngest{}
 	source := &fakeSource{}
 
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
 		Source:  source,
 		Sandbox: sandbox,
-		Store:   store,
 		Ingest:  ingest,
 		IDs:     &fakeIDs{},
 		Clock:   fixedClock{},
@@ -185,14 +155,12 @@ func TestVerifyEvidenceCompileErrorNeverVerifies(t *testing.T) {
 			},
 		},
 	}
-	store := &fakeStore{events: sampleChangeEvents()}
 	ingest := &fakeIngest{}
 	source := &fakeSource{}
 
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
 		Source:  source,
 		Sandbox: sandbox,
-		Store:   store,
 		Ingest:  ingest,
 		IDs:     &fakeIDs{},
 		Clock:   fixedClock{},
@@ -218,7 +186,7 @@ func TestVerifyEvidenceRetriesWhenTheSandboxGivesNoResult(t *testing.T) {
 	sandbox := &overlaySandboxFake{err: errors.New("runner rejected job: runner is busy")}
 	ingest := &fakeIngest{}
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: sandbox, Store: &fakeStore{events: sampleChangeEvents()}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Source: &fakeSource{}, Sandbox: sandbox, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
 
@@ -232,7 +200,7 @@ func TestVerifyEvidenceTestThatErrorsInsteadOfFailingNeverVerifies(t *testing.T)
 	sandbox := &overlaySandboxFake{res: ports.SandboxResult{Errored: 1, Tests: []ports.TestResult{{Name: "TestReproErrors", Outcome: ports.OutcomeError}}}}
 	ingest := &fakeIngest{}
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: sandbox, Store: &fakeStore{events: sampleChangeEvents()}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Source: &fakeSource{}, Sandbox: sandbox, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
 
@@ -245,67 +213,8 @@ func TestVerifyEvidenceTestThatErrorsInsteadOfFailingNeverVerifies(t *testing.T)
 	require.Equal(t, finding.StateUnverified, sc.State)
 }
 
-func TestVerifyEvidenceSkipsIfAlreadyRecorded(t *testing.T) {
-	ctx := context.Background()
-	events := append(sampleChangeEvents(), change.Event{
-		ID:       "ev-ver-1",
-		ChangeID: veTicket,
-		Version:  4,
-		Type:     change.EventFindingVerified,
-		Payload:  json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","tier":"E1","severity":"high","state":"open","by":"heimdall"}`),
-	})
-	store := &fakeStore{events: events}
-	sandbox := &overlaySandboxFake{}
-	ingest := &fakeIngest{}
-	source := &fakeSource{}
-
-	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source:  source,
-		Sandbox: sandbox,
-		Store:   store,
-		Ingest:  ingest,
-		IDs:     &fakeIDs{},
-		Clock:   fixedClock{},
-	})
-	require.NoError(t, err)
-
-	err = exec.Execute(ctx, sampleReproEffect())
-	require.NoError(t, err)
-
-	require.Empty(t, ingest.written)
-	require.Empty(t, sandbox.runs)
-}
-
 func TestVerifyEvidenceMissingDepsRefused(t *testing.T) {
 	_, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing")
-}
-
-func TestVerifyEvidenceRunsAgainAfterARecheckAndSkipsOnceTheRecheckHasAResult(t *testing.T) {
-	ctx := context.Background()
-	unverified := change.Event{
-		ID: "ev-unv", ChangeID: veTicket, Version: 4, Type: change.EventFindingStateChanged,
-		Payload: json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","tier":"E4","severity":"high","state":"unverified","by":"heimdall"}`),
-	}
-	recheck := change.Event{
-		ID: "ev-recheck", ChangeID: veTicket, Version: 5, Type: change.EventFindingRecheckRequested,
-		Payload: json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","reason":"the runner was busy","by":"operator"}`),
-	}
-	sandbox := &overlaySandboxFake{res: ports.SandboxResult{Failed: 1, Tests: []ports.TestResult{{Name: veTestName, Outcome: ports.OutcomeFailure}}}}
-	ingest := &fakeIngest{}
-	store := &fakeStore{events: append(sampleChangeEvents(), unverified, recheck)}
-	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: sandbox, Store: store, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
-	})
-	require.NoError(t, err)
-
-	require.NoError(t, exec.Execute(ctx, sampleReproEffect()))
-	require.Len(t, sandbox.runs, 1, "a recheck lifts the earlier result on the same head")
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventFindingVerified, ingest.written[0].Type, "the repro fails on an assertion, so the finding is E1 again")
-
-	store.events = append(store.events, ingest.written[0])
-	require.NoError(t, exec.Execute(ctx, sampleReproEffect()))
-	require.Len(t, sandbox.runs, 1, "a replay after the recheck's result runs nothing")
 }

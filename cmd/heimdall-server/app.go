@@ -503,7 +503,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	if err != nil {
 		return nil, fmt.Errorf("open blob store: %w", err)
 	}
-	a, err := assembleWithBlobs(ctx, d, ad, store, pool, blobStore, eng, gen, clk, setupHandler)
+	a, err := assembleWithBlobs(d, ad, store, pool, blobStore, eng, gen, clk, setupHandler)
 	if err == nil {
 		a.reconciler = rec
 	}
@@ -516,7 +516,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 }
 
 func assembleWithBlobs(
-	ctx context.Context, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
+	d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
 	eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
 ) (*app, error) {
 	profileManager, err := assembleProfileLifecycle(ad, store, blobs, clk)
@@ -527,7 +527,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	execs, err := executors(ctx, ad, store, store, blobs, ingestor{eng: eng}, gen, clk, evidence)
+	execs, err := executors(ad, store, store, blobs, ingestor{eng: eng}, gen, clk, evidence)
 	if err != nil {
 		return nil, err
 	}
@@ -581,7 +581,7 @@ func assembleWithBlobs(
 
 // executors maps each effect kind to its executor. Each area builds its own (wire_<area>.go). Each executor checks the
 // kind of the effect it receives, so a swapped entry fails every effect it is given.
-func executors(ctx context.Context, ad adapters, store ports.EventStore, profiles ports.ProfileStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock, recheck effects.MemoryRecheck) (map[change.EffectKind]outbox.Executor, error) {
+func executors(ad adapters, store ports.EventStore, profiles ports.ProfileStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock, recheck effects.MemoryRecheck) (map[change.EffectKind]outbox.Executor, error) {
 	sandbox := profileSandbox{
 		Sandbox:  rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
 		Profiles: profiles,
@@ -590,11 +590,11 @@ func executors(ctx context.Context, ad adapters, store ports.EventStore, profile
 	if err != nil {
 		return nil, err
 	}
-	tests, err := testsExecutors(ctx, ad, store, blobs, sandbox, in, gen, clk)
+	tests, err := testsExecutors(ad, blobs, sandbox, in, gen, clk)
 	if err != nil {
 		return nil, err
 	}
-	review, err := reviewExecutors(ad, store, sandbox, in, gen, clk, recheck)
+	review, err := reviewExecutors(ad, sandbox, in, gen, clk, recheck)
 	if err != nil {
 		return nil, err
 	}

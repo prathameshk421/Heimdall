@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
@@ -12,16 +11,16 @@ import (
 
 // testsExecutors builds the executors of the tests area: committing the tests, their quality checks and the
 // acceptance run.
-func testsExecutors(ctx context.Context, ad adapters, store ports.EventStore, blobs ports.BlobStore, sandbox profileSandbox, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
+func testsExecutors(ad adapters, blobs ports.BlobStore, sandbox profileSandbox, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
 	commitTests, err := effects.NewCommitTests(effects.CommitTestsDeps{
-		Blobs: blobs, Branches: ad.vcs, Store: store, Ingest: in, IDs: gen, Clock: clk, Code: ad.vcs,
+		Blobs: blobs, Branches: ad.vcs, Ingest: in, IDs: gen, Clock: clk, Code: ad.vcs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build github_commit_tests executor: %w", err)
 	}
 	testQuality, err := effects.NewTestQuality(effects.TestQualityDeps{
-		Blobs: blobs, Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Store: store, Ingest: in, IDs: gen, Clock: clk, Code: ad.vcs,
-		ForbiddenImports: testQualityForbiddenImports(), NeedsSignoff: testQualityNeedsSignoff(ctx, blobs, ad.vcs),
+		Blobs: blobs, Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Ingest: in, IDs: gen, Clock: clk, Code: ad.vcs,
+		ForbiddenImports: testQualityForbiddenImports(), NeedsSignoff: testQualityNeedsSignoff(ad.vcs),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build test_quality executor: %w", err)

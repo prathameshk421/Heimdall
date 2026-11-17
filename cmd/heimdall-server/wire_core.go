@@ -254,17 +254,17 @@ func workflowAgentNames(a config.Agents) []string {
 
 // baseExecutors builds the room_open, github_branch, and github_check executors.
 func baseExecutors(
-	ad adapters, store ports.EventStore, in effects.Ingest, gen ports.IDs, clk ports.Clock,
+	ad adapters, in effects.Ingest, gen ports.IDs, clk ports.Clock,
 ) (room effects.RoomOpen, branch effects.GitHubBranch, check effects.GitHubCheck, err error) {
 	room, err = effects.NewRoomOpen(effects.RoomOpenDeps{
-		Tickets: ad.tickets, Chat: ad.chat, Store: store, Ingest: in, IDs: gen, Clock: clk,
+		Tickets: ad.tickets, Chat: ad.chat, Ingest: in, IDs: gen, Clock: clk,
 		Agents: workflowAgentNames(ad.agents),
 	})
 	if err != nil {
 		return room, branch, check, fmt.Errorf("build room_open executor: %w", err)
 	}
 	branch, err = effects.NewGitHubBranch(effects.GitHubBranchDeps{
-		Tickets: ad.tickets, Base: ad.vcs, Branches: ad.vcs, Store: store, Ingest: in, IDs: gen, Clock: clk,
+		Tickets: ad.tickets, Base: ad.vcs, Branches: ad.vcs, Ingest: in, IDs: gen, Clock: clk,
 	})
 	if err != nil {
 		return room, branch, check, fmt.Errorf("build github_branch executor: %w", err)
@@ -280,7 +280,7 @@ func baseExecutors(
 
 // coreExecutors builds the executors of the core area: the room, the branch, the check run and the task assignment.
 func coreExecutors(ad adapters, store ports.EventStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
-	room, branch, check, err := baseExecutors(ad, store, in, gen, clk)
+	room, branch, check, err := baseExecutors(ad, in, gen, clk)
 	if err != nil {
 		return nil, err
 	}

@@ -28,14 +28,14 @@ type TestQualityDeps struct {
 	Blobs   ports.BlobStore
 	Source  Source
 	Sandbox ports.Sandbox
-	Store   ports.EventStore
 	Ingest  Ingest
 	IDs     ports.IDs
 	Clock   ports.Clock
 	// Code is not used by verification any more: the pinned tree comes from the submission.
 	Code             ports.CodeReader
 	ForbiddenImports []string
-	NeedsSignoff     func(events []change.Event) bool
+	// NeedsSignoff says whether the submission touches a sensitive domain, from the policy at the base commit.
+	NeedsSignoff func(ctx context.Context, repo change.Repo, base id.SHA, sub testset.Submission) bool
 }
 
 // TestQuality performs test_quality effects: runs sandbox checks (red-first, flake, seam imports),
@@ -55,9 +55,6 @@ func NewTestQuality(d TestQualityDeps) (TestQuality, error) {
 	}
 	if d.Sandbox == nil {
 		missing = append(missing, "sandbox")
-	}
-	if d.Store == nil {
-		missing = append(missing, "store")
 	}
 	if d.Ingest == nil {
 		missing = append(missing, "ingest")
@@ -87,36 +84,25 @@ func (t TestQuality) Execute(ctx context.Context, fx change.Effect) error {
 		return failf(nil, "test_quality effect %s: target %q is not ticket %s", fx.Key, fx.Target, p.Ticket)
 	}
 
-	l, err := load(ctx, t.deps.Store, p.Ticket)
-	if err != nil {
-		return err
-	}
-	// Done when the current submission has its verdict. A resubmission after a rejection is judged afresh (live
-	// KAN-25: "any verdict ever" left the second submission unjudged and the change stalled with no log line).
-	current := l.last(change.EventTestsSubmitted)
-	if current == nil || l.judgedSince(current, change.EventTestsVerified, change.EventTestsRejected) {
-		return nil
-	}
-
 	sub, err := t.readSubmission(ctx, p.Ticket, p.SubmissionRef)
 	if err != nil {
 		return err
 	}
 
-	baseSHA := baseSHAOf(l)
+	baseSHA := p.BaseSHA
 	if baseSHA == "" {
-		return failf(nil, "test_quality %s: no branch.ensured with base SHA", p.Ticket)
+		return failf(nil, "test_quality %s: the job names no base SHA", p.Ticket)
 	}
 	if err := t.deps.Source.Fetch(ctx, p.Repo, baseSHA); err != nil {
 		return failf(err, "test_quality %s: fetch base source", p.Ticket)
 	}
 
-	allReasons, runIDs, err := t.runChecks(ctx, p, sub, l, baseSHA)
+	allReasons, runIDs, err := t.runChecks(ctx, p, sub, baseSHA)
 	if err != nil {
 		return err
 	}
 
-	return t.ingestOutcome(ctx, p.Ticket, sub, l, baseSHA, runIDs, allReasons)
+	return t.ingestOutcome(ctx, p, sub, runIDs, allReasons)
 }
 
 func (t TestQuality) readSubmission(ctx context.Context, ticket id.ChangeID, ref workflow.BlobRef) (testset.Submission, error) {
@@ -133,7 +119,7 @@ func (t TestQuality) readSubmission(ctx context.Context, ticket id.ChangeID, ref
 	return sub, nil
 }
 
-func (t TestQuality) runChecks(ctx context.Context, p change.TestQualityPayload, sub testset.Submission, l loadedChange, baseSHA id.SHA) ([]string, []id.RunID, error) {
+func (t TestQuality) runChecks(ctx context.Context, p change.TestQualityPayload, sub testset.Submission, baseSHA id.SHA) ([]string, []id.RunID, error) {
 	var allReasons []string
 
 	seamReasons, err := t.checkSeam(sub)
@@ -149,7 +135,7 @@ func (t TestQuality) runChecks(ctx context.Context, p change.TestQualityPayload,
 	}
 	allReasons = append(allReasons, flakeReasons...)
 
-	redFirstRunIDs, redFirstReasons, err := t.checkRedFirst(ctx, p.Repo, p.Ticket, sub, l, baseSHA, flakeReports[0])
+	redFirstRunIDs, redFirstReasons, err := t.checkRedFirst(ctx, p, sub, baseSHA, flakeReports[0])
 	if err != nil {
 		return nil, nil, err
 	}
@@ -246,8 +232,8 @@ func (t TestQuality) checkFlake(ctx context.Context, repo change.Repo, ticket id
 	return flakeReports, runIDs, reasons, nil
 }
 
-func (t TestQuality) checkRedFirst(ctx context.Context, repo change.Repo, ticket id.ChangeID, sub testset.Submission, l loadedChange, baseSHA id.SHA, beforeRep verify.Report) ([]id.RunID, []string, error) {
-	headSHA := headSHAOf(l)
+func (t TestQuality) checkRedFirst(ctx context.Context, p change.TestQualityPayload, sub testset.Submission, baseSHA id.SHA, beforeRep verify.Report) ([]id.RunID, []string, error) {
+	repo, ticket, headSHA := p.Repo, p.Ticket, p.HeadSHA
 	if headSHA != "" && headSHA != baseSHA {
 		dir := "tests/heimdall/" + string(ticket)
 		runID := t.deps.IDs.NewRun()
@@ -309,18 +295,14 @@ func overlayFiles(sub testset.Submission) []ports.File {
 	return files
 }
 
-func (t TestQuality) ingestOutcome(ctx context.Context, ticket id.ChangeID, sub testset.Submission, l loadedChange, baseSHA id.SHA, runIDs []id.RunID, reasons []string) error {
-	cause := l.last(change.EventTestsSubmitted)
-	if cause == nil {
-		return failf(nil, "test_quality %s: no tests.submitted in the change", ticket)
-	}
+func (t TestQuality) ingestOutcome(ctx context.Context, p change.TestQualityPayload, sub testset.Submission, runIDs []id.RunID, reasons []string) error {
 	if len(reasons) > 0 {
-		return t.ingestRejected(ctx, ticket, cause, baseSHA, runIDs, reasons)
+		return t.ingestRejected(ctx, p.Ticket, p.BaseSHA, runIDs, reasons)
 	}
-	return t.ingestVerified(ctx, ticket, sub, cause, baseSHA, runIDs, l)
+	return t.ingestVerified(ctx, p, sub, runIDs)
 }
 
-func (t TestQuality) ingestRejected(ctx context.Context, ticket id.ChangeID, cause *change.Event, baseSHA id.SHA, runIDs []id.RunID, reasons []string) error {
+func (t TestQuality) ingestRejected(ctx context.Context, ticket id.ChangeID, baseSHA id.SHA, runIDs []id.RunID, reasons []string) error {
 	payload := change.TestsRejected{
 		Reasons: boundReasons(reasons),
 		RunIDs:  runIDs,
@@ -329,7 +311,7 @@ func (t TestQuality) ingestRejected(ctx context.Context, ticket id.ChangeID, cau
 	if err := payload.Validate(); err != nil {
 		return failf(err, "test_quality %s: tests.rejected refused", ticket)
 	}
-	ev, err := newEvent(t.deps.IDs, t.deps.Clock, *cause, change.EventTestsRejected,
+	ev, err := newFact(t.deps.IDs, t.deps.Clock, change.EventTestsRejected,
 		change.Actor{Kind: change.ActorSystem, ID: "heimdall"}, payload)
 	if err != nil {
 		return failf(err, "test_quality %s: build event", ticket)
@@ -340,7 +322,8 @@ func (t TestQuality) ingestRejected(ctx context.Context, ticket id.ChangeID, cau
 	return nil
 }
 
-func (t TestQuality) ingestVerified(ctx context.Context, ticket id.ChangeID, sub testset.Submission, cause *change.Event, baseSHA id.SHA, runIDs []id.RunID, l loadedChange) error {
+func (t TestQuality) ingestVerified(ctx context.Context, p change.TestQualityPayload, sub testset.Submission, runIDs []id.RunID) error {
+	ticket := p.Ticket
 	dir := "tests/heimdall/" + string(ticket)
 	// The tests exist only as a sandbox overlay until they are committed, so the base commit has no such directory.
 	// The pinned tree is the one git gives the directory once these files are committed; the gate compares it with
@@ -352,19 +335,19 @@ func (t TestQuality) ingestVerified(ctx context.Context, ticket id.ChangeID, sub
 	treeHash := id.SHA(tree)
 	needsSignoff := false
 	if t.deps.NeedsSignoff != nil {
-		needsSignoff = t.deps.NeedsSignoff(l.events)
+		needsSignoff = t.deps.NeedsSignoff(ctx, p.Repo, p.BaseSHA, sub)
 	}
 
 	payload := change.TestsVerified{
 		RunIDs:       runIDs,
-		SHA:          baseSHA,
+		SHA:          p.BaseSHA,
 		TreeHash:     treeHash,
 		NeedsSignoff: needsSignoff,
 	}
 	if err := payload.Validate(); err != nil {
 		return failf(err, "test_quality %s: tests.verified refused", ticket)
 	}
-	ev, err := newEvent(t.deps.IDs, t.deps.Clock, *cause, change.EventTestsVerified,
+	ev, err := newFact(t.deps.IDs, t.deps.Clock, change.EventTestsVerified,
 		change.Actor{Kind: change.ActorSystem, ID: "heimdall"}, payload)
 	if err != nil {
 		return failf(err, "test_quality %s: build event", ticket)
@@ -373,41 +356,6 @@ func (t TestQuality) ingestVerified(ctx context.Context, ticket id.ChangeID, sub
 		return failf(err, "test_quality %s: ingest tests.verified", ticket)
 	}
 	return nil
-}
-
-func baseSHAOf(l loadedChange) id.SHA {
-	for i := len(l.events) - 1; i >= 0; i-- {
-		e := l.events[i]
-		if e.Type != change.EventBranchEnsured {
-			continue
-		}
-		if p, err := change.Decode(e); err == nil {
-			if be, ok := p.(change.BranchEnsured); ok {
-				return be.BaseSHA
-			}
-		}
-	}
-	return ""
-}
-
-func headSHAOf(l loadedChange) id.SHA {
-	for i := len(l.events) - 1; i >= 0; i-- {
-		e := l.events[i]
-		if e.Type != change.EventPRPushed && e.Type != change.EventPROpened {
-			continue
-		}
-		p, err := change.Decode(e)
-		if err != nil {
-			continue
-		}
-		if pr, ok := p.(change.PRPushed); ok {
-			return pr.HeadSHA
-		}
-		if pr, ok := p.(change.PROpened); ok {
-			return pr.HeadSHA
-		}
-	}
-	return ""
 }
 
 func toReport(res ports.SandboxResult) verify.Report {

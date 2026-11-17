@@ -3,7 +3,6 @@ package effects_test
 import (
 	"context"
 	"encoding/json"
-	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -34,7 +33,7 @@ func memoryEffect(t *testing.T) change.Effect {
 	t.Helper()
 	ref, _ := id.ParseFindingRef("F1")
 	p := change.VerifyEvidencePayload{
-		Repo: veRepo, Ticket: veTicket, FindingID: veFndID, FindingRef: ref, Severity: finding.SeverityHigh, HeadSHA: veHead,
+		Repo: veRepo, Ticket: veTicket, FindingID: veFndID, FindingRef: ref, Severity: finding.SeverityHigh, HeadSHA: veHead, BaseSHA: memoryBase,
 		Memory: &change.VerifyMemory{Ref: "decision:refund-limit", Agent: "bob-reviewer"},
 	}
 	raw, err := json.Marshal(p)
@@ -44,11 +43,11 @@ func memoryEffect(t *testing.T) change.Effect {
 	return change.Effect{Key: key, Kind: change.EffectVerifyEvidence, Target: string(veTicket), Payload: raw}
 }
 
-func runMemory(t *testing.T, recheck effects.MemoryRecheck, events []change.Event) (*fakeIngest, error) {
+func runMemory(t *testing.T, recheck effects.MemoryRecheck) (*fakeIngest, error) {
 	t.Helper()
 	ingest := &fakeIngest{}
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: &overlaySandboxFake{}, Memory: recheck, Store: &fakeStore{events: withBranch(events)}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Source: &fakeSource{}, Sandbox: &overlaySandboxFake{}, Memory: recheck, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
 	return ingest, exec.Execute(context.Background(), memoryEffect(t))
@@ -57,18 +56,10 @@ func runMemory(t *testing.T, recheck effects.MemoryRecheck, events []change.Even
 // memoryBase is the merge base of the change in these tests. It differs from veHead on purpose.
 const memoryBase = id.SHA("1234567")
 
-func withBranch(events []change.Event) []change.Event {
-	branch := change.Event{
-		ID: "ev-branch", ChangeID: veTicket, Version: 100, Type: change.EventBranchEnsured,
-		Payload: json.RawMessage(`{"repo":"` + string(veRepo) + `","branch":"PAY-142","base_sha":"` + string(memoryBase) + `"}`),
-	}
-	return append(slices.Clone(events), branch)
-}
-
 // The policy behind a re-query comes from the merge base, so a change cannot edit its way to more evidence or less.
 func TestVerifyMemoryReadsPolicyAtTheMergeBase(t *testing.T) {
 	rc := &fakeRecheck{state: verify.MemoryState{Found: true, Confirmed: true}}
-	_, err := runMemory(t, rc, verifyCheckEvents())
+	_, err := runMemory(t, rc)
 	require.NoError(t, err)
 	require.Equal(t, memoryBase, rc.sha)
 	require.NotEqual(t, veHead, rc.sha)
@@ -77,7 +68,7 @@ func TestVerifyMemoryReadsPolicyAtTheMergeBase(t *testing.T) {
 // A confirmed, current memory reference verifies the E3 finding, looked up with the filing reviewer's scopes.
 func TestVerifyMemoryConfirmsAFoundConfirmedReference(t *testing.T) {
 	rc := &fakeRecheck{state: verify.MemoryState{Found: true, Confirmed: true}}
-	ingest, err := runMemory(t, rc, verifyCheckEvents())
+	ingest, err := runMemory(t, rc)
 	require.NoError(t, err)
 	typ, rec := decodeVerifyWritten(t, ingest)
 	require.Equal(t, change.EventFindingVerified, typ)
@@ -93,29 +84,24 @@ func TestVerifyMemoryDropsToE4WhenTheReferenceNoLongerHolds(t *testing.T) {
 		"observed":   {Found: true},
 		"superseded": {Found: true, Confirmed: true, Superseded: true},
 	} {
-		for runName, events := range map[string][]change.Event{
-			"first run": verifyCheckEvents(),
-			"re-run":    verifyCheckEvents(verifyCheckVerified(), verifyCheckPushed()),
-		} {
-			t.Run(name+" "+runName, func(t *testing.T) {
-				ingest, err := runMemory(t, &fakeRecheck{state: state}, events)
-				require.NoError(t, err)
-				typ, rec := decodeVerifyWritten(t, ingest)
-				require.Equal(t, change.EventFindingStateChanged, typ)
-				require.Equal(t, finding.TierE4, rec.Tier)
-				require.Equal(t, finding.StateUnverified, rec.State)
-			})
-		}
+		t.Run(name, func(t *testing.T) {
+			ingest, err := runMemory(t, &fakeRecheck{state: state})
+			require.NoError(t, err)
+			typ, rec := decodeVerifyWritten(t, ingest)
+			require.Equal(t, change.EventFindingStateChanged, typ)
+			require.Equal(t, finding.TierE4, rec.Tier)
+			require.Equal(t, finding.StateUnverified, rec.State)
+		})
 	}
 }
 
 // A lookup that fails, or no memory service at all, writes nothing and fails so the outbox retries.
 func TestVerifyMemoryThatCannotBeLookedUpWritesNothing(t *testing.T) {
-	ingest, err := runMemory(t, &fakeRecheck{err: context.DeadlineExceeded}, verifyCheckEvents())
+	ingest, err := runMemory(t, &fakeRecheck{err: context.DeadlineExceeded})
 	require.Error(t, err)
 	require.Empty(t, ingest.written)
 
-	ingest, err = runMemory(t, nil, verifyCheckEvents())
+	ingest, err = runMemory(t, nil)
 	require.Error(t, err)
 	require.Empty(t, ingest.written)
 }

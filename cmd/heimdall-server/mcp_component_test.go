@@ -282,7 +282,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	code := &jiraJourneyCode{}
 	sandbox := &jiraJourneySandbox{}
 	quality, err := effects.NewTestQuality(effects.TestQualityDeps{
-		Blobs: blobs, Source: jiraJourneySource{}, Sandbox: sandbox, Store: store,
+		Blobs: blobs, Source: jiraJourneySource{}, Sandbox: sandbox,
 		Ingest: ingestor{eng: eng}, IDs: gen, Clock: clk, Code: code,
 	})
 	require.NoError(t, err)
@@ -304,7 +304,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 	require.NotEmpty(t, commitEffect.Key, "verified tests queue a commit")
 	branch := &jiraJourneyBranchWriter{}
 	commit, err := effects.NewCommitTests(effects.CommitTestsDeps{
-		Blobs: blobs, Branches: branch, Store: store, Ingest: ingestor{eng: eng}, IDs: gen, Clock: clk, Code: code,
+		Blobs: blobs, Branches: branch, Ingest: ingestor{eng: eng}, IDs: gen, Clock: clk, Code: code,
 	})
 	require.NoError(t, err)
 	require.NoError(t, commit.Execute(ctx, commitEffect))

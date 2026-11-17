@@ -132,7 +132,7 @@ func TestEveryEffectKindEmittedByWorkflowHasAnExecutor(t *testing.T) {
 		chat:    dummyChat{},
 	}
 
-	execs, err := executors(context.Background(), ad, store, nil, blobs, ingestor{eng: eng}, gen, clk, nil)
+	execs, err := executors(ad, store, nil, blobs, ingestor{eng: eng}, gen, clk, nil)
 	require.NoError(t, err)
 
 	registered := make(map[change.EffectKind]bool)

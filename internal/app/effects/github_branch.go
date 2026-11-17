@@ -18,7 +18,6 @@ type GitHubBranchDeps struct {
 	Tickets  ports.TicketReader
 	Base     ports.DefaultHeads
 	Branches ports.BranchWriter
-	Store    ports.EventStore
 	Ingest   Ingest
 	IDs      ports.IDs
 	Clock    ports.Clock
@@ -41,9 +40,6 @@ func NewGitHubBranch(d GitHubBranchDeps) (GitHubBranch, error) {
 	if d.Branches == nil {
 		missing = append(missing, "branches")
 	}
-	if d.Store == nil {
-		missing = append(missing, "store")
-	}
 	if d.Ingest == nil {
 		missing = append(missing, "ingest")
 	}
@@ -59,23 +55,12 @@ func NewGitHubBranch(d GitHubBranchDeps) (GitHubBranch, error) {
 	return GitHubBranch{deps: d}, nil
 }
 
-// Execute writes the branch unless branch.ensured is already stored. The name is the template of the payload with the
+// Execute writes the branch and records branch.ensured. The name is the template of the payload with the
 // ticket key and the slug of the ticket title. It starts with the ticket key and a hyphen.
 func (g GitHubBranch) Execute(ctx context.Context, fx change.Effect) error {
 	p, err := branchPayload(fx)
 	if err != nil {
 		return err
-	}
-	l, err := load(ctx, g.deps.Store, p.Ticket)
-	if err != nil {
-		return err
-	}
-	if l.has(change.EventBranchEnsured) {
-		return nil
-	}
-	cause := l.first(change.EventRoomOpened)
-	if cause == nil {
-		return failf(nil, "github_branch %s: no room.opened in the change", p.Ticket)
 	}
 	name, err := g.name(ctx, p)
 	if err != nil {
@@ -92,7 +77,7 @@ func (g GitHubBranch) Execute(ctx context.Context, fx change.Effect) error {
 	if err := payload.Validate(); err != nil {
 		return failf(err, "github_branch %s: branch.ensured refused", p.Ticket)
 	}
-	ev, err := newEvent(g.deps.IDs, g.deps.Clock, *cause, change.EventBranchEnsured,
+	ev, err := newFact(g.deps.IDs, g.deps.Clock, change.EventBranchEnsured,
 		change.Actor{Kind: change.ActorGitHub, ID: githubActorID}, payload)
 	if err != nil {
 		return failf(err, "github_branch %s: build event", p.Ticket)

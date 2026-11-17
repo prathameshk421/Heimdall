@@ -261,3 +261,29 @@ func TestAnOverChangeHasNoOpenRow(t *testing.T) {
 	v := fold(t, triggered(t), ev(t, 2, change.EventChangeRejected, change.Rejected{Reason: "no"}))
 	require.Empty(t, change.Next(inOf("KAN-5", v, t0)))
 }
+
+// A job carries every value the executor needs, so the executor reads nothing from the log: the base the tests must
+// fail on, the head they must pass on, and whether a finding was verified on an earlier head.
+func TestJobsCarryWhatTheirExecutorsNeed(t *testing.T) {
+	v := fold(t, triggered(t), ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
+		ev(t, 3, change.EventBranchEnsured, change.BranchEnsured{Repo: "acme/pay", Branch: "KAN-5-x", BaseSHA: fBase}),
+		submission(t, 4, blobA), opened(t))
+	qa := actionsOf(inOf("KAN-5", v, t0))["test_qa"][0].Job
+	p := qa.Payload.(change.TestQualityPayload)
+	require.Equal(t, id.SHA(fBase), p.BaseSHA)
+	require.Equal(t, id.SHA(fHead), p.HeadSHA, "tests written while a PR exists are judged on its head")
+	require.Contains(t, string(qa.Key), fHead, "a new head is a new job")
+
+	rec := change.FindingRecord{FindingID: "fnd_01HZX3K9QW7M2P5R8T0V4YB6CD", Ref: 1, Tier: "E1", Severity: "high", State: "open", By: "rev-1"}
+	review := []change.Event{opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
+		ev(t, 3, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1"}, By: "heimdall", Method: change.PickDefault}),
+		ev(t, 4, change.EventChecksReported, change.ChecksReported{Head: fHead}),
+		ev(t, 5, change.EventReviewSubmitted, change.ReviewSubmitted{Reviewer: "rev-1", PackDate: "2026-11-04"}),
+		ev(t, 6, change.EventFindingFiled, withRepro(rec)), ev(t, 7, change.EventFindingVerified, rec),
+		ev(t, 8, change.EventPRPushed, change.PRPushed{Repo: "acme/pay", Number: 7, HeadSHA: fHead2}),
+		ev(t, 9, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
+		ev(t, 10, change.EventReviewSubmitted, change.ReviewSubmitted{Reviewer: "rev-1", PackDate: "2026-11-04"})}
+	verify := actionsOf(inOf("pr-acme-pay-7", fold(t, review...), t0))["verify"][0].Job.Payload.(change.VerifyEvidencePayload)
+	require.True(t, verify.Reverify, "verified on the first head, so this is a re-run")
+	require.Equal(t, id.SHA(fBase), verify.BaseSHA)
+}

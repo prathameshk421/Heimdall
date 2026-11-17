@@ -154,47 +154,6 @@ func (f *fakeBranches) CommitFiles(context.Context, change.Repo, string, string,
 	return "", errors.New("commits are not used by the executors")
 }
 
-// triggeredEvent is change.triggered at version 1, the cause of the room request.
-func triggeredEvent(t *testing.T) change.Event {
-	t.Helper()
-	return storedEvent(t, "10000000-0000-4000-8000-000000000001", 1, change.EventChangeTriggered,
-		change.Actor{Kind: change.ActorJira, ID: "jira"}, change.Triggered{
-			Ticket: ticket, Repo: repo, Assignee: "ana", Source: change.TriggerJira,
-		})
-}
-
-// roomOpenedEvent is room.opened at version 2, the cause of the branch.
-func roomOpenedEvent(t *testing.T) change.Event {
-	t.Helper()
-	return storedEvent(t, "10000000-0000-4000-8000-000000000002", 2, change.EventRoomOpened,
-		change.Actor{Kind: change.ActorSwitch, ID: "switch"}, change.RoomOpened{RoomID: "room-7"})
-}
-
-// branchEnsuredEvent is branch.ensured at version 3.
-func branchEnsuredEvent(t *testing.T) change.Event {
-	t.Helper()
-	return storedEvent(t, "10000000-0000-4000-8000-000000000003", 3, change.EventBranchEnsured,
-		change.Actor{Kind: change.ActorGitHub, ID: "github"}, change.BranchEnsured{
-			Repo: repo, Branch: "KAN-7-fix-refunds", BaseSHA: base,
-		})
-}
-
-func storedEvent(t *testing.T, eid string, version int64, typ change.EventType, actor change.Actor, p any) change.Event {
-	t.Helper()
-	raw, err := json.Marshal(p)
-	require.NoError(t, err)
-	return change.Event{
-		ID:            change.EventID(eid),
-		ChangeID:      ticket,
-		Version:       version,
-		Type:          typ,
-		Actor:         actor,
-		OccurredAt:    now.Add(-time.Minute),
-		CorrelationID: "corr-7",
-		Payload:       raw,
-	}
-}
-
 // roomEffect is the room_open effect the open-room step builds for the trigger of version 1.
 func roomEffect(t *testing.T, invite ...string) change.Effect {
 	t.Helper()
@@ -219,7 +178,6 @@ func branchEffect(t *testing.T, template string) change.Effect {
 type kit struct {
 	tickets  *fakeTickets
 	chat     *fakeChat
-	store    *fakeStore
 	ingest   *fakeIngest
 	base     *fakeBase
 	branches *fakeBranches
@@ -227,23 +185,22 @@ type kit struct {
 	branch   effects.GitHubBranch
 }
 
-func newKit(t *testing.T, events ...change.Event) *kit {
+func newKit(t *testing.T) *kit {
 	t.Helper()
 	k := &kit{
 		tickets:  &fakeTickets{ticket: ports.Ticket{Key: ticket, Title: "Fix refunds on partial capture", Status: "In Progress"}},
 		chat:     &fakeChat{room: "room-7"},
-		store:    &fakeStore{events: events},
 		ingest:   &fakeIngest{},
 		base:     &fakeBase{sha: base},
 		branches: &fakeBranches{},
 	}
 	room, err := effects.NewRoomOpen(effects.RoomOpenDeps{
-		Tickets: k.tickets, Chat: k.chat, Store: k.store, Ingest: k.ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Tickets: k.tickets, Chat: k.chat, Ingest: k.ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
 	k.room = room
 	branch, err := effects.NewGitHubBranch(effects.GitHubBranchDeps{
-		Tickets: k.tickets, Base: k.base, Branches: k.branches, Store: k.store, Ingest: k.ingest,
+		Tickets: k.tickets, Base: k.base, Branches: k.branches, Ingest: k.ingest,
 		IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
@@ -252,9 +209,9 @@ func newKit(t *testing.T, events ...change.Event) *kit {
 }
 
 func TestRoomOpenAsksForTheWorkflowAgentsToBeInTheRoom(t *testing.T) {
-	k := newKit(t, triggeredEvent(t))
+	k := newKit(t)
 	room, err := effects.NewRoomOpen(effects.RoomOpenDeps{
-		Tickets: k.tickets, Chat: k.chat, Store: k.store, Ingest: k.ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Tickets: k.tickets, Chat: k.chat, Ingest: k.ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 		Agents: []string{"test-author", "reviewer-1", "resolver"},
 	})
 	require.NoError(t, err)
@@ -266,7 +223,7 @@ func TestRoomOpenAsksForTheWorkflowAgentsToBeInTheRoom(t *testing.T) {
 }
 
 func TestRoomOpenPassesEffectKeyAsIdempotencyKeyAndTitleFromTracker(t *testing.T) {
-	k := newKit(t, triggeredEvent(t))
+	k := newKit(t)
 	fx := roomEffect(t, "role:test-author", "person:ana")
 
 	require.NoError(t, k.room.Execute(context.Background(), fx))
@@ -280,18 +237,17 @@ func TestRoomOpenPassesEffectKeyAsIdempotencyKeyAndTitleFromTracker(t *testing.T
 // Found live: KAN-9 and KAN-11 had the same summary, and OpenRoom adopts an open room by title, so both changes shared
 // one room and one Discord channel. The ticket key in the title keeps each change in its own room.
 func TestTwoTicketsWithTheSameSummaryGetDifferentRoomTitles(t *testing.T) {
-	first := newKit(t, triggeredEvent(t))
+	first := newKit(t)
 	require.NoError(t, first.room.Execute(context.Background(), roomEffect(t, "person:ana")))
-	second := newKit(t, triggeredEvent(t))
+	second := newKit(t)
 	second.tickets.ticket.Key = "KAN-8"
 	require.NoError(t, second.room.Execute(context.Background(), roomEffect(t, "person:ana")))
 	require.Equal(t, first.tickets.ticket.Title, second.tickets.ticket.Title, "same summary")
 	require.NotEqual(t, first.chat.requests[0].Title, second.chat.requests[0].Title)
 }
 
-func TestRoomOpenIngestsRoomOpenedCausedByTheTrigger(t *testing.T) {
-	trig := triggeredEvent(t)
-	k := newKit(t, trig)
+func TestRoomOpenRecordsRoomOpened(t *testing.T) {
+	k := newKit(t)
 
 	require.NoError(t, k.room.Execute(context.Background(), roomEffect(t, "person:ana")))
 	require.Equal(t, 1, k.ingest.calls)
@@ -302,10 +258,7 @@ func TestRoomOpenIngestsRoomOpenedCausedByTheTrigger(t *testing.T) {
 	require.Equal(t, change.EventRoomOpened, ev.Type)
 	require.Equal(t, change.ActorSwitch, ev.Actor.Kind, "the room comes from the chat adapter, which is the switch actor")
 	require.Equal(t, change.ActorID("switch"), ev.Actor.ID)
-	require.NotNil(t, ev.CausationID)
-	require.Equal(t, trig.ID, *ev.CausationID)
-	require.Equal(t, trig.CorrelationID, ev.CorrelationID)
-	require.Equal(t, ticket, ev.ChangeID)
+	require.Equal(t, ticket, k.ingest.change)
 	require.True(t, ev.OccurredAt.Equal(now))
 	require.Zero(t, ev.Version, "the engine numbers the event when it stores it")
 
@@ -314,17 +267,8 @@ func TestRoomOpenIngestsRoomOpenedCausedByTheTrigger(t *testing.T) {
 	require.Equal(t, change.RoomOpened{RoomID: "room-7"}, p)
 }
 
-func TestRoomOpenRetryAfterCrashIngestsNothingAndOpensNothing(t *testing.T) {
-	k := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
-
-	require.NoError(t, k.room.Execute(context.Background(), roomEffect(t, "person:ana")))
-	require.Zero(t, k.tickets.calls, "the title is not read when the room is already in the log")
-	require.Empty(t, k.chat.requests, "no second room is requested")
-	require.Zero(t, k.ingest.calls)
-}
-
 func TestRoomOpenReturnsTicketReaderErrorSoTheOutboxRetries(t *testing.T) {
-	k := newKit(t, triggeredEvent(t))
+	k := newKit(t)
 	k.tickets.err = errTracker
 
 	err := k.room.Execute(context.Background(), roomEffect(t, "person:ana"))
@@ -334,7 +278,7 @@ func TestRoomOpenReturnsTicketReaderErrorSoTheOutboxRetries(t *testing.T) {
 }
 
 func TestRoomOpenReturnsChatErrorAndIngestsNothing(t *testing.T) {
-	k := newKit(t, triggeredEvent(t))
+	k := newKit(t)
 	sentinel := errors.New("switch refused the room")
 	k.chat.err = sentinel
 
@@ -343,19 +287,15 @@ func TestRoomOpenReturnsChatErrorAndIngestsNothing(t *testing.T) {
 	require.Zero(t, k.ingest.calls)
 }
 
-func TestRoomOpenReturnsIngestAndLoadErrors(t *testing.T) {
-	k := newKit(t, triggeredEvent(t))
+func TestRoomOpenReturnsIngestErrors(t *testing.T) {
+	k := newKit(t)
 	k.ingest.err = errors.New("engine is down")
 	require.ErrorIs(t, k.room.Execute(context.Background(), roomEffect(t, "person:ana")), k.ingest.err)
 
-	k2 := newKit(t, triggeredEvent(t))
-	k2.store.err = errors.New("database is down")
-	require.ErrorIs(t, k2.room.Execute(context.Background(), roomEffect(t, "person:ana")), k2.store.err)
-	require.Empty(t, k2.chat.requests)
 }
 
 func TestRoomOpenRefusesAPayloadThatDoesNotValidate(t *testing.T) {
-	k := newKit(t, triggeredEvent(t))
+	k := newKit(t)
 	missing := change.Effect{
 		Key: roomEffect(t).Key, Kind: change.EffectRoomOpen, Target: string(ticket),
 		Payload: json.RawMessage(`{"invite":["person:ana"]}`),
@@ -374,14 +314,8 @@ func TestRoomOpenRefusesAPayloadThatDoesNotValidate(t *testing.T) {
 	require.Zero(t, k.tickets.calls)
 }
 
-func TestRoomOpenRefusesChangeWithoutTrigger(t *testing.T) {
-	k := newKit(t)
-	require.Error(t, k.room.Execute(context.Background(), roomEffect(t, "person:ana")))
-	require.Empty(t, k.chat.requests)
-}
-
 func TestRoomOpenTruncatesTitleToTheRoomLimit(t *testing.T) {
-	k := newKit(t, triggeredEvent(t))
+	k := newKit(t)
 	k.tickets.ticket.Title = strings.Repeat("é", 200) // 400 bytes, all of them valid UTF-8
 
 	require.NoError(t, k.room.Execute(context.Background(), roomEffect(t, "person:ana")))
@@ -392,7 +326,7 @@ func TestRoomOpenTruncatesTitleToTheRoomLimit(t *testing.T) {
 }
 
 func TestRoomOpenErrorsCarryNoSecret(t *testing.T) {
-	k := newKit(t, triggeredEvent(t))
+	k := newKit(t)
 	k.chat.err = fmt.Errorf("POST https://switch.example token=%s", canary)
 
 	err := k.room.Execute(context.Background(), roomEffect(t, "person:ana"))
@@ -400,13 +334,13 @@ func TestRoomOpenErrorsCarryNoSecret(t *testing.T) {
 	require.NotContains(t, err.Error(), canary)
 	require.Contains(t, err.Error(), "KAN-7", "the error names the change")
 
-	k2 := newKit(t, triggeredEvent(t))
+	k2 := newKit(t)
 	k2.tickets.err = fmt.Errorf("auth failed with key %s", canary)
 	err = k2.room.Execute(context.Background(), roomEffect(t, "person:ana"))
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), canary)
 
-	k3 := newKit(t, triggeredEvent(t))
+	k3 := newKit(t)
 	k3.ingest.err = fmt.Errorf("engine said %s", canary)
 	err = k3.room.Execute(context.Background(), roomEffect(t, "person:ana"))
 	require.Error(t, err)
@@ -419,8 +353,7 @@ func TestNewRoomOpenRefusesMissingDependencies(t *testing.T) {
 }
 
 func TestBranchWritesNameAtBaseAndIngestsBranchEnsured(t *testing.T) {
-	k := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
-	room := roomOpenedEvent(t)
+	k := newKit(t)
 
 	fx := branchEffect(t, change.DefaultBranchTemplate)
 	require.NoError(t, k.branch.Execute(context.Background(), fx))
@@ -436,8 +369,6 @@ func TestBranchWritesNameAtBaseAndIngestsBranchEnsured(t *testing.T) {
 	require.Equal(t, change.EventBranchEnsured, ev.Type)
 	require.Equal(t, change.ActorGitHub, ev.Actor.Kind)
 	require.Equal(t, change.ActorID("github"), ev.Actor.ID)
-	require.NotNil(t, ev.CausationID)
-	require.Equal(t, room.ID, *ev.CausationID, "the branch is caused by room.opened")
 
 	p, err := change.Decode(ev)
 	require.NoError(t, err)
@@ -447,44 +378,30 @@ func TestBranchWritesNameAtBaseAndIngestsBranchEnsured(t *testing.T) {
 }
 
 func TestBranchUsesTheTemplateFromThePayload(t *testing.T) {
-	k := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
+	k := newKit(t)
 	require.NoError(t, k.branch.Execute(context.Background(), branchEffect(t, "{ticket}-wip-{slug}")))
 	require.Equal(t, "KAN-7-wip-fix-refunds-on-partial-capture", k.branches.name)
 }
 
-func TestBranchRetryAfterCrashWritesNothing(t *testing.T) {
-	k := newKit(t, triggeredEvent(t), roomOpenedEvent(t), branchEnsuredEvent(t))
-	require.NoError(t, k.branch.Execute(context.Background(), branchEffect(t, change.DefaultBranchTemplate)))
-	require.Zero(t, k.branches.calls, "the branch is not written again")
-	require.Zero(t, k.base.calls)
-	require.Zero(t, k.ingest.calls)
-}
-
-func TestBranchNeedsRoomOpenedInTheLog(t *testing.T) {
-	k := newKit(t, triggeredEvent(t))
-	require.Error(t, k.branch.Execute(context.Background(), branchEffect(t, change.DefaultBranchTemplate)))
-	require.Zero(t, k.branches.calls)
-}
-
 func TestBranchRefusesTitleWithoutLettersAndDigits(t *testing.T) {
-	k := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
+	k := newKit(t)
 	k.tickets.ticket.Title = "!!! ??? ..."
 	require.Error(t, k.branch.Execute(context.Background(), branchEffect(t, change.DefaultBranchTemplate)))
 	require.Zero(t, k.branches.calls, "no branch is written for a name it cannot make")
 }
 
 func TestBranchReturnsErrorsFromTheTrackerBaseAndWriter(t *testing.T) {
-	k := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
+	k := newKit(t)
 	k.tickets.err = errTracker
 	require.ErrorIs(t, k.branch.Execute(context.Background(), branchEffect(t, change.DefaultBranchTemplate)), errTracker)
 	require.Zero(t, k.branches.calls)
 
-	k2 := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
+	k2 := newKit(t)
 	k2.base.err = errors.New("github is slow")
 	require.Error(t, k2.branch.Execute(context.Background(), branchEffect(t, change.DefaultBranchTemplate)))
 	require.Zero(t, k2.branches.calls)
 
-	k3 := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
+	k3 := newKit(t)
 	writerErr := errors.New("writer refused")
 	k3.branches.err = writerErr
 	require.ErrorIs(t, k3.branch.Execute(context.Background(), branchEffect(t, change.DefaultBranchTemplate)), writerErr)
@@ -492,7 +409,7 @@ func TestBranchReturnsErrorsFromTheTrackerBaseAndWriter(t *testing.T) {
 }
 
 func TestBranchErrorsCarryNoSecret(t *testing.T) {
-	k := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
+	k := newKit(t)
 	k.branches.err = fmt.Errorf("PUT /repos/x/git/refs token=%s", canary)
 	err := k.branch.Execute(context.Background(), branchEffect(t, change.DefaultBranchTemplate))
 	require.Error(t, err)
@@ -501,7 +418,7 @@ func TestBranchErrorsCarryNoSecret(t *testing.T) {
 }
 
 func TestBranchRefusesPayloadAndTargetThatDoNotValidate(t *testing.T) {
-	k := newKit(t, triggeredEvent(t), roomOpenedEvent(t))
+	k := newKit(t)
 	bad := branchEffect(t, change.DefaultBranchTemplate)
 	bad.Payload = json.RawMessage(`{"repo":"aarush323/heimdall-fixture-pay","ticket":"KAN-7"}`)
 	require.Error(t, k.branch.Execute(context.Background(), bad))
@@ -556,9 +473,7 @@ func TestSlugRefusesTitleWithNothingLeft(t *testing.T) {
 // started the change and is named after it, with no tracker read.
 func TestRoomOpenForAPullRequestOnlyChange(t *testing.T) {
 	const prChange = id.ChangeID("pr-acme-pay-7")
-	opened := storedEvent(t, "10000000-0000-4000-8000-000000000001", 1, change.EventPROpened,
-		change.Actor{Kind: change.ActorGitHub, ID: "ana"}, change.PROpened{Repo: repo, Number: 7, HeadSHA: base, Author: "ana"})
-	k := newKit(t, opened)
+	k := newKit(t)
 	raw, err := json.Marshal(change.RoomOpenPayload{Ticket: prChange, Invite: []string{}})
 	require.NoError(t, err)
 	key, err := change.IdempotencyKey(prChange, 1, change.EffectRoomOpen, "room")
@@ -567,5 +482,4 @@ func TestRoomOpenForAPullRequestOnlyChange(t *testing.T) {
 	require.NoError(t, k.room.Execute(context.Background(), change.Effect{Key: key, Kind: change.EffectRoomOpen, Target: string(prChange), Payload: raw}))
 	require.Zero(t, k.tickets.calls, "there is no ticket to read")
 	require.Equal(t, "PR acme/pay#7", k.chat.requests[0].Title)
-	require.Equal(t, opened.ID, *k.ingest.written[0].CausationID)
 }

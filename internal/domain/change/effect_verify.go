@@ -24,9 +24,13 @@ type VerifyEvidencePayload struct {
 	FindingRef id.FindingRef    `json:"finding_ref"`
 	Severity   finding.Severity `json:"severity"`
 	HeadSHA    id.SHA           `json:"head_sha"`
-	TestPath   string           `json:"test_path,omitempty"`
-	TestSource string           `json:"test_source,omitempty"`
-	TestName   string           `json:"test_name,omitempty"`
+	// BaseSHA is the pull request's base commit: an E3 check reads the policy there. Reverify is true when the finding
+	// was verified before (on an earlier head), so this run is a re-run and not the first verification.
+	BaseSHA    id.SHA `json:"base_sha,omitempty"`
+	Reverify   bool   `json:"reverify,omitempty"`
+	TestPath   string `json:"test_path,omitempty"`
+	TestSource string `json:"test_source,omitempty"`
+	TestName   string `json:"test_name,omitempty"`
 	// Check, when set, makes this an E2 verification: a fixed static check re-run on the head. The repro test fields
 	// stay empty then.
 	Check *VerifyCheck `json:"check,omitempty"`
@@ -79,6 +83,9 @@ func (p VerifyEvidencePayload) Validate() error {
 	_, err = finding.ParseSeverity(string(p.Severity))
 	v.add("severity", err)
 	v.add("head_sha", checkSHA(p.HeadSHA))
+	if p.BaseSHA != "" {
+		v.add("base_sha", checkSHA(p.BaseSHA))
+	}
 	if p.Check != nil && p.Memory != nil {
 		v.require("memory", false, "a verification is a check or a memory re-query, not both")
 		return v.join()

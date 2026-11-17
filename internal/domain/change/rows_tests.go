@@ -108,9 +108,15 @@ func rowTestQA() Row {
 		Done: func(in In) bool { return in.View.Tests != nil && in.View.Tests.Verified != nil },
 		Next: func(in In) []Action {
 			v := in.View
-			p := TestQualityPayload{Repo: v.Trigger.Repo, Branch: branchName(v), Ticket: in.Change, SubmissionRef: v.Tests.Ref}
+			p := TestQualityPayload{Repo: v.Trigger.Repo, Branch: branchName(v), Ticket: in.Change, SubmissionRef: v.Tests.Ref,
+				BaseSHA: v.Branch.BaseSHA}
+			suffix := string(v.Tests.Ref)
+			if v.PR != nil { // tests written while a PR exists are judged on its head too; a new head is a new job
+				p.HeadSHA = v.PR.HeadSHA
+				suffix += "/" + string(v.PR.HeadSHA)
+			}
 			return []Action{{Text: "the sandbox verifies the tests",
-				Job: &Job{Kind: EffectTestQuality, Key: in.jobKey("test_qa", string(v.Tests.Ref)), Target: string(in.Change), Payload: p}}}
+				Job: &Job{Kind: EffectTestQuality, Key: in.jobKey("test_qa", suffix), Target: string(in.Change), Payload: p}}}
 		}}
 }
 

@@ -105,35 +105,10 @@ func TestTestQualityExecutorSuccess(t *testing.T) {
 	ids := &fakeIDs{}
 	clock := fixedClock{}
 
-	store := &fakeStore{
-		events: []change.Event{
-			{
-				ID:       "ev-1",
-				ChangeID: "PAY-142",
-				Type:     change.EventChangeTriggered,
-				Payload:  json.RawMessage(`{"ticket":"PAY-142","repo":"acme/pay-demo","assignee":"ana","source":"jira"}`),
-			},
-			{
-				ID:       "ev-2",
-				ChangeID: "PAY-142",
-				Type:     change.EventBranchEnsured,
-				Payload:  json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","base_sha":"0123456789abcdef0123456789abcdef01234567"}`),
-			},
-			{
-				ID:       "ev-3",
-				ChangeID: "PAY-142",
-				Type:     change.EventTestsSubmitted,
-				BlobRefs: []workflow.BlobRef{blobRef},
-				Payload:  json.RawMessage(`{"refs":["tests/heimdall/PAY-142/refund_test.go"],"ac_map":{"AC1":["TestA"]},"sha":"0123456789abcdef0123456789abcdef01234567","tree_hash":"0123456789abcdef0123456789abcdef01234567"}`),
-			},
-		},
-	}
-
 	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
 		Blobs:   blobs,
 		Source:  source,
 		Sandbox: sandbox,
-		Store:   store,
 		Ingest:  ingest,
 		IDs:     ids,
 		Clock:   clock,
@@ -146,6 +121,7 @@ func TestTestQualityExecutorSuccess(t *testing.T) {
 		Branch:        "PAY-142-refunds",
 		Ticket:        id.ChangeID("PAY-142"),
 		SubmissionRef: blobRef,
+		BaseSHA:       baseSHA,
 	}
 	raw, err := json.Marshal(payload)
 	require.NoError(t, err)
@@ -187,9 +163,9 @@ func TestTestQualityExecutorSuccess(t *testing.T) {
 
 func TestTestQualityExecutorWithHeadPassesRedFirst(t *testing.T) {
 	ctx := context.Background()
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
 	headSHA := id.SHA("fedcba9876543210fedcba9876543210fedcba98")
+	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	sub := testset.Submission{
 		Files: []testset.File{
@@ -215,35 +191,10 @@ func TestTestQualityExecutorWithHeadPassesRedFirst(t *testing.T) {
 	}
 	ingest := &fakeIngest{}
 
-	store := &fakeStore{
-		events: []change.Event{
-			{
-				ID:       "ev-1",
-				ChangeID: "PAY-142",
-				Type:     change.EventBranchEnsured,
-				Payload:  json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","base_sha":"` + string(baseSHA) + `"}`),
-			},
-			{
-				ID:       "ev-2",
-				ChangeID: "PAY-142",
-				Type:     change.EventPROpened,
-				Payload:  json.RawMessage(`{"repo":"acme/pay-demo","number":42,"head_sha":"` + string(headSHA) + `","author":"ana","ticket":"PAY-142"}`),
-			},
-			{
-				ID:       "ev-3",
-				ChangeID: "PAY-142",
-				Type:     change.EventTestsSubmitted,
-				BlobRefs: []workflow.BlobRef{blobRef},
-				Payload:  json.RawMessage(`{"refs":["tests/heimdall/PAY-142/refund_test.go"],"ac_map":{"AC1":["TestA"]},"sha":"` + string(baseSHA) + `","tree_hash":"` + string(baseSHA) + `"}`),
-			},
-		},
-	}
-
 	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
 		Blobs:   blobs,
 		Source:  source,
 		Sandbox: sandbox,
-		Store:   store,
 		Ingest:  ingest,
 		IDs:     &fakeIDs{},
 		Clock:   fixedClock{},
@@ -255,7 +206,7 @@ func TestTestQualityExecutorWithHeadPassesRedFirst(t *testing.T) {
 		Key:     "test_quality:PAY-142:1:test_qa",
 		Kind:    change.EffectTestQuality,
 		Target:  "PAY-142",
-		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `"}`),
+		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `","base_sha":"` + string(baseSHA) + `","head_sha":"` + string(headSHA) + `"}`),
 	}
 
 	err = exec.Execute(ctx, fx)
@@ -270,8 +221,8 @@ func TestTestQualityExecutorWithHeadPassesRedFirst(t *testing.T) {
 
 func TestTestQualityRefusesVerificationWhenAFileIsOutsideTheTestsDirectory(t *testing.T) {
 	ctx := context.Background()
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
+	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	sub := testset.Submission{
 		Files:              []testset.File{{Path: "tests/heimdall/PAY-999/refund_test.go", Content: "package refund_test\\n"}},
 		AcceptanceCriteria: map[string][]string{"AC1": {"TestA"}},
@@ -284,19 +235,15 @@ func TestTestQualityRefusesVerificationWhenAFileIsOutsideTheTestsDirectory(t *te
 		{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
 		{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
 	}}
-	store := &fakeStore{events: []change.Event{
-		{ID: "ev-1", ChangeID: "PAY-142", Type: change.EventBranchEnsured, Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","base_sha":"` + string(baseSHA) + `"}`)},
-		{ID: "ev-2", ChangeID: "PAY-142", Type: change.EventTestsSubmitted, BlobRefs: []workflow.BlobRef{blobRef}, Payload: json.RawMessage(`{"refs":["tests/heimdall/PAY-142/refund_test.go"],"ac_map":{"AC1":["TestA"]},"sha":"` + string(baseSHA) + `","tree_hash":"` + string(baseSHA) + `"}`)},
-	}}
 	ingest := &fakeIngest{}
 	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
-		Blobs: blobs, Source: &fakeSource{}, Sandbox: sandbox, Store: store, Ingest: ingest,
+		Blobs: blobs, Source: &fakeSource{}, Sandbox: sandbox, Ingest: ingest,
 		IDs: &fakeIDs{}, Clock: fixedClock{}, Code: &fakeTestQualityCode{},
 	})
 	require.NoError(t, err)
 	err = exec.Execute(ctx, change.Effect{
 		Key: "test_quality:PAY-142:1:test_qa", Kind: change.EffectTestQuality, Target: "PAY-142",
-		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `"}`),
+		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `","base_sha":"` + string(baseSHA) + `"}`),
 	})
 	require.ErrorContains(t, err, "pin the submitted tests tree")
 	require.Empty(t, ingest.written, "verification must not be recorded for a tree that cannot be pinned")
@@ -304,9 +251,9 @@ func TestTestQualityRefusesVerificationWhenAFileIsOutsideTheTestsDirectory(t *te
 
 func TestTestQualityExecutorWithHeadRejectsFailingRedFirst(t *testing.T) {
 	ctx := context.Background()
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
 	headSHA := id.SHA("fedcba9876543210fedcba9876543210fedcba98")
+	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	sub := testset.Submission{
 		Files: []testset.File{
@@ -331,35 +278,10 @@ func TestTestQualityExecutorWithHeadRejectsFailingRedFirst(t *testing.T) {
 	}
 	ingest := &fakeIngest{}
 
-	store := &fakeStore{
-		events: []change.Event{
-			{
-				ID:       "ev-1",
-				ChangeID: "PAY-142",
-				Type:     change.EventBranchEnsured,
-				Payload:  json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","base_sha":"` + string(baseSHA) + `"}`),
-			},
-			{
-				ID:       "ev-2",
-				ChangeID: "PAY-142",
-				Type:     change.EventPROpened,
-				Payload:  json.RawMessage(`{"repo":"acme/pay-demo","number":42,"head_sha":"` + string(headSHA) + `","author":"ana","ticket":"PAY-142"}`),
-			},
-			{
-				ID:       "ev-3",
-				ChangeID: "PAY-142",
-				Type:     change.EventTestsSubmitted,
-				BlobRefs: []workflow.BlobRef{blobRef},
-				Payload:  json.RawMessage(`{"refs":["tests/heimdall/PAY-142/refund_test.go"],"ac_map":{"AC1":["TestA"]},"sha":"` + string(baseSHA) + `","tree_hash":"` + string(baseSHA) + `"}`),
-			},
-		},
-	}
-
 	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
 		Blobs:   blobs,
 		Source:  source,
 		Sandbox: sandbox,
-		Store:   store,
 		Ingest:  ingest,
 		IDs:     &fakeIDs{},
 		Clock:   fixedClock{},
@@ -370,7 +292,7 @@ func TestTestQualityExecutorWithHeadRejectsFailingRedFirst(t *testing.T) {
 		Key:     "test_quality:PAY-142:1:test_qa",
 		Kind:    change.EffectTestQuality,
 		Target:  "PAY-142",
-		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `"}`),
+		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `","base_sha":"` + string(baseSHA) + `","head_sha":"` + string(headSHA) + `"}`),
 	}
 
 	err = exec.Execute(ctx, fx)
@@ -387,6 +309,7 @@ func TestTestQualityExecutorWithHeadRejectsFailingRedFirst(t *testing.T) {
 
 func TestTestQualityExecutorRejectionOnFlake(t *testing.T) {
 	ctx := context.Background()
+	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
 	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	sub := testset.Submission{
@@ -412,29 +335,10 @@ func TestTestQualityExecutorRejectionOnFlake(t *testing.T) {
 	ids := &fakeIDs{}
 	clock := fixedClock{}
 
-	store := &fakeStore{
-		events: []change.Event{
-			{
-				ID:       "ev-1",
-				ChangeID: "PAY-142",
-				Type:     change.EventBranchEnsured,
-				Payload:  json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","base_sha":"0123456789abcdef0123456789abcdef01234567"}`),
-			},
-			{
-				ID:       "ev-2",
-				ChangeID: "PAY-142",
-				Type:     change.EventTestsSubmitted,
-				BlobRefs: []workflow.BlobRef{blobRef},
-				Payload:  json.RawMessage(`{"refs":["tests/heimdall/PAY-142/refund_test.go"],"ac_map":{"AC1":["TestA"]},"sha":"0123456789abcdef0123456789abcdef01234567","tree_hash":"0123456789abcdef0123456789abcdef01234567"}`),
-			},
-		},
-	}
-
 	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
 		Blobs:   blobs,
 		Source:  source,
 		Sandbox: sandbox,
-		Store:   store,
 		Ingest:  ingest,
 		IDs:     ids,
 		Clock:   clock,
@@ -446,6 +350,7 @@ func TestTestQualityExecutorRejectionOnFlake(t *testing.T) {
 		Branch:        "PAY-142-refunds",
 		Ticket:        id.ChangeID("PAY-142"),
 		SubmissionRef: blobRef,
+		BaseSHA:       baseSHA,
 	}
 	raw, err := json.Marshal(payload)
 	require.NoError(t, err)
@@ -472,6 +377,7 @@ func TestTestQualityExecutorRejectionOnFlake(t *testing.T) {
 
 func TestTestQualityExecutorRejectionOnSeamImports(t *testing.T) {
 	ctx := context.Background()
+	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
 	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	sub := testset.Submission{
@@ -497,29 +403,10 @@ func TestTestQualityExecutorRejectionOnSeamImports(t *testing.T) {
 	}
 	ingest := &fakeIngest{}
 
-	store := &fakeStore{
-		events: []change.Event{
-			{
-				ID:       "ev-1",
-				ChangeID: "PAY-142",
-				Type:     change.EventBranchEnsured,
-				Payload:  json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","base_sha":"0123456789abcdef0123456789abcdef01234567"}`),
-			},
-			{
-				ID:       "ev-2",
-				ChangeID: "PAY-142",
-				Type:     change.EventTestsSubmitted,
-				BlobRefs: []workflow.BlobRef{blobRef},
-				Payload:  json.RawMessage(`{"refs":["tests/heimdall/PAY-142/refund_test.go"],"ac_map":{"AC1":["TestA"]},"sha":"0123456789abcdef0123456789abcdef01234567","tree_hash":"0123456789abcdef0123456789abcdef01234567"}`),
-			},
-		},
-	}
-
 	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
 		Blobs:            blobs,
 		Source:           source,
 		Sandbox:          sandbox,
-		Store:            store,
 		Ingest:           ingest,
 		IDs:              &fakeIDs{},
 		Clock:            fixedClock{},
@@ -531,7 +418,7 @@ func TestTestQualityExecutorRejectionOnSeamImports(t *testing.T) {
 		Key:     "test_quality:PAY-142:1:test_qa",
 		Kind:    change.EffectTestQuality,
 		Target:  "PAY-142",
-		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `"}`),
+		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `","base_sha":"` + string(baseSHA) + `"}`),
 	}
 
 	err = exec.Execute(ctx, fx)
@@ -544,68 +431,4 @@ func TestTestQualityExecutorRejectionOnSeamImports(t *testing.T) {
 	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &rejected))
 	require.NotEmpty(t, rejected.Reasons)
 	require.Contains(t, rejected.Reasons[0], "imports forbidden")
-}
-
-func TestTestQualityExecutorSkipsWhenAlreadyEvaluated(t *testing.T) {
-	ctx := context.Background()
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: []byte("{}")}}
-	source := &fakeSource{}
-	sandbox := &fakeSandbox{}
-	ingest := &fakeIngest{}
-
-	store := &fakeStore{
-		events: []change.Event{
-			{ID: "ev-1", Type: change.EventTestsVerified},
-		},
-	}
-
-	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
-		Blobs:   blobs,
-		Source:  source,
-		Sandbox: sandbox,
-		Store:   store,
-		Ingest:  ingest,
-		IDs:     &fakeIDs{},
-		Clock:   fixedClock{},
-	})
-	require.NoError(t, err)
-
-	fx := change.Effect{
-		Key:     "test_quality:PAY-142:1:test_qa",
-		Kind:    change.EffectTestQuality,
-		Target:  "PAY-142",
-		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `"}`),
-	}
-
-	err = exec.Execute(ctx, fx)
-	require.NoError(t, err)
-	require.Empty(t, ingest.written)
-	require.Empty(t, sandbox.runs)
-}
-
-// Live KAN-25: tests were rejected, the author resubmitted, and the verifier skipped the new submission because the
-// change "already had a verdict". Only the current submission's verdict counts.
-func TestTestQualityJudgesAResubmissionAfterARejection(t *testing.T) {
-	ctx := context.Background()
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	run := func(events []change.Event) (bool, error) {
-		sandbox, ingest := &fakeSandbox{}, &fakeIngest{}
-		exec, err := effects.NewTestQuality(effects.TestQualityDeps{
-			Blobs: &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: []byte("{}")}}, Source: &fakeSource{},
-			Sandbox: sandbox, Store: &fakeStore{events: events}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
-		})
-		require.NoError(t, err)
-		err = exec.Execute(ctx, change.Effect{Key: "test_quality:PAY-142:3:test_qa", Kind: change.EffectTestQuality, Target: "PAY-142",
-			Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `"}`)})
-		skipped := err == nil && len(sandbox.runs) == 0 && len(ingest.written) == 0
-		return skipped, err
-	}
-	skipped, err := run([]change.Event{{ID: "ev-1", Version: 1, Type: change.EventTestsSubmitted}, {ID: "ev-2", Version: 2, Type: change.EventTestsVerified}})
-	require.NoError(t, err)
-	require.True(t, skipped, "the current submission has its verdict")
-
-	skipped, _ = run([]change.Event{{ID: "ev-1", Version: 1, Type: change.EventTestsSubmitted}, {ID: "ev-2", Version: 2, Type: change.EventTestsRejected},
-		{ID: "ev-3", Version: 3, Type: change.EventTestsSubmitted}})
-	require.False(t, skipped, "the resubmission is judged, not skipped")
 }

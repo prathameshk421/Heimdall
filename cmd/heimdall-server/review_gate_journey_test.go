@@ -307,7 +307,7 @@ func runJourneyVerification(ctx context.Context, t *testing.T, runtime *commandR
 	mem, ok := runtime.events.(*memStore)
 	require.True(t, ok)
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: journeySource{}, Sandbox: journeySandbox{}, Store: mem, Ingest: ingestor{eng: runtime.engine}, IDs: ids.New(), Clock: clock.System{},
+		Source: journeySource{}, Sandbox: journeySandbox{}, Ingest: ingestor{eng: runtime.engine}, IDs: ids.New(), Clock: clock.System{},
 	})
 	require.NoError(t, err)
 	mem.mu.Lock()

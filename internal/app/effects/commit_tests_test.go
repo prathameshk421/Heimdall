@@ -91,22 +91,9 @@ func TestCommitTestsExecutor(t *testing.T) {
 	clock := fixedClock{}
 	treeHash := id.SHA("abcdef0123456789abcdef0123456789abcdef01")
 
-	store := &fakeStore{
-		events: []change.Event{
-			{
-				ID:            "ev-1",
-				ChangeID:      "PAY-142",
-				Type:          change.EventTestsVerified,
-				CorrelationID: "corr-1",
-				Payload:       json.RawMessage(`{"run_ids":["run_01ARZ3NDEKTSV4RRFFQ69G5FAV"],"sha":"0123456789abcdef0123456789abcdef01234567","tree_hash":"0123456789abcdef0123456789abcdef01234567"}`),
-			},
-		},
-	}
-
 	exec, err := effects.NewCommitTests(effects.CommitTestsDeps{
 		Blobs:    blobs,
 		Branches: branches,
-		Store:    store,
 		Ingest:   ingest,
 		IDs:      ids,
 		Clock:    clock,
@@ -152,12 +139,11 @@ func TestCommitTestsExecutor(t *testing.T) {
 func TestCommitTestsRefusesUnpinnedTreeHash(t *testing.T) {
 	ctx := context.Background()
 	ref := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	store := &fakeStore{events: []change.Event{{ID: "ev-1", Type: change.EventTestsVerified, CorrelationID: "corr-1", Payload: json.RawMessage(`{"run_ids":["run_01ARZ3NDEKTSV4RRFFQ69G5FAV"],"sha":"0123456789abcdef0123456789abcdef01234567","tree_hash":"0123456789abcdef0123456789abcdef01234567"}`)}}}
 	branches := &fakeBranchWriter{commitSHA: id.SHA("0123456789abcdef0123456789abcdef01234567")}
 	ingest := &fakeIngest{}
 	bundle, err := json.Marshal(testset.Submission{Files: []testset.File{{Path: "tests/heimdall/PAY-142/test.go", Content: "content"}}})
 	require.NoError(t, err)
-	exec, err := effects.NewCommitTests(effects.CommitTestsDeps{Blobs: &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{ref: bundle}}, Branches: branches, Store: store, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{}, Code: fakeCommitCode{}})
+	exec, err := effects.NewCommitTests(effects.CommitTestsDeps{Blobs: &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{ref: bundle}}, Branches: branches, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{}, Code: fakeCommitCode{}})
 	require.NoError(t, err)
 	raw, err := json.Marshal(change.CommitTestsPayload{Repo: "acme/pay-demo", Branch: "PAY-142-refunds", Dir: "tests/heimdall/PAY-142", Files: []change.CommitFile{{Path: "tests/heimdall/PAY-142/test.go", BlobRef: ref}}, Message: "tests"})
 	require.NoError(t, err)
@@ -166,62 +152,14 @@ func TestCommitTestsRefusesUnpinnedTreeHash(t *testing.T) {
 	require.Empty(t, ingest.written)
 }
 
-func TestCommitTestsExecutorSkipsWhenAlreadyCommitted(t *testing.T) {
-	ctx := context.Background()
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: []byte("content")}}
-	branches := &fakeBranchWriter{}
-	ingest := &fakeIngest{}
-
-	store := &fakeStore{
-		events: []change.Event{
-			{ID: "ev-1", Type: change.EventTestsCommitted},
-		},
-	}
-
-	exec, err := effects.NewCommitTests(effects.CommitTestsDeps{
-		Blobs:    blobs,
-		Branches: branches,
-		Store:    store,
-		Ingest:   ingest,
-		IDs:      &fakeIDs{},
-		Clock:    fixedClock{},
-	})
-	require.NoError(t, err)
-
-	payload := change.CommitTestsPayload{
-		Repo:    change.Repo("acme/pay-demo"),
-		Branch:  "PAY-142-refunds",
-		Dir:     "tests/heimdall/PAY-142",
-		Files:   []change.CommitFile{{Path: "tests/heimdall/PAY-142/refund_test.go", BlobRef: blobRef}},
-		Message: "tests: add tests",
-	}
-	raw, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	fx := change.Effect{
-		Key:     "github_commit_tests:PAY-142:1:commit:treehash",
-		Kind:    change.EffectGitHubCommitTests,
-		Target:  "acme/pay-demo",
-		Payload: raw,
-	}
-
-	err = exec.Execute(ctx, fx)
-	require.NoError(t, err)
-	// Skipped: no commit, no ingest
-	require.Empty(t, branches.committedFiles)
-	require.Empty(t, ingest.written)
-}
-
 // A commit file the submission does not hold is refused, so nothing but the submitted test source is ever committed.
 func TestCommitTestsRefusesAFileTheSubmissionDoesNotHold(t *testing.T) {
 	ctx := context.Background()
 	ref := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	store := &fakeStore{events: []change.Event{{ID: "ev-1", Type: change.EventTestsVerified, CorrelationID: "corr-1", Payload: json.RawMessage(`{"run_ids":["run_01ARZ3NDEKTSV4RRFFQ69G5FAV"],"sha":"0123456789abcdef0123456789abcdef01234567","tree_hash":"0123456789abcdef0123456789abcdef01234567"}`)}}}
 	branches := &fakeBranchWriter{commitSHA: id.SHA("0123456789abcdef0123456789abcdef01234567")}
 	bundle, err := json.Marshal(testset.Submission{Files: []testset.File{{Path: "tests/heimdall/PAY-142/a_test.go", Content: "package a\n"}}})
 	require.NoError(t, err)
-	exec, err := effects.NewCommitTests(effects.CommitTestsDeps{Blobs: &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{ref: bundle}}, Branches: branches, Store: store, Ingest: &fakeIngest{}, IDs: &fakeIDs{}, Clock: fixedClock{}, Code: fakeCommitCode{}})
+	exec, err := effects.NewCommitTests(effects.CommitTestsDeps{Blobs: &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{ref: bundle}}, Branches: branches, Ingest: &fakeIngest{}, IDs: &fakeIDs{}, Clock: fixedClock{}, Code: fakeCommitCode{}})
 	require.NoError(t, err)
 	raw, err := json.Marshal(change.CommitTestsPayload{Repo: "acme/pay-demo", Branch: "PAY-142-refunds", Dir: "tests/heimdall/PAY-142", Files: []change.CommitFile{{Path: "tests/heimdall/PAY-142/missing_test.go", BlobRef: ref}}, Message: "tests"})
 	require.NoError(t, err)

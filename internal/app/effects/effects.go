@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -23,73 +22,14 @@ const (
 	githubActorID = change.ActorID("github")
 )
 
-// loadedChange is the stored events of a change, read before an executor acts.
-type loadedChange struct {
-	events []change.Event
-}
-
-// load returns the stored events of the change. Every executor loads first, so it can see whether its result is
-// already in the log.
-func load(ctx context.Context, store ports.EventStore, cid id.ChangeID) (loadedChange, error) {
-	evs, err := store.Load(ctx, cid)
-	if err != nil {
-		return loadedChange{}, failf(err, "load change %s", cid)
-	}
-	return loadedChange{events: evs}, nil
-}
-
-// has reports whether an event of type t is stored.
-func (l loadedChange) has(t change.EventType) bool {
-	return l.first(t) != nil
-}
-
-// first returns the first stored event of type t, or nil.
-func (l loadedChange) first(t change.EventType) *change.Event {
-	for i := range l.events {
-		if l.events[i].Type == t {
-			return &l.events[i]
-		}
-	}
-	return nil
-}
-
-// last returns the last stored event of type t, or nil.
-func (l loadedChange) last(t change.EventType) *change.Event {
-	for i := len(l.events) - 1; i >= 0; i-- {
-		if l.events[i].Type == t {
-			return &l.events[i]
-		}
-	}
-	return nil
-}
-
-// judgedSince reports whether an event of one of the types follows the event at.
-func (l loadedChange) judgedSince(at *change.Event, types ...change.EventType) bool {
-	for _, e := range l.events {
-		if e.Version > at.Version && slices.Contains(types, e.Type) {
-			return true
-		}
-	}
-	return false
-}
-
-// newEvent builds an event caused by cause. The id comes from the IDs port and the time from the clock.
-func newEvent(ids ports.IDs, clock ports.Clock, cause change.Event, typ change.EventType, actor change.Actor, p change.Payload) (change.Event, error) {
+// newFact builds an event that an executor records. The id comes from the IDs port and the time from the clock. The
+// change id, the version, the causation and the correlation are set when the event is recorded (reconcile.Recorder).
+func newFact(ids ports.IDs, clock ports.Clock, typ change.EventType, actor change.Actor, p change.Payload) (change.Event, error) {
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return change.Event{}, fmt.Errorf("encode %s: %w", typ, err)
 	}
-	causation := cause.ID
-	return change.Event{
-		ID:            ids.NewEvent(),
-		ChangeID:      cause.ChangeID,
-		Type:          typ,
-		Actor:         actor,
-		OccurredAt:    clock.Now(),
-		CausationID:   &causation,
-		CorrelationID: cause.CorrelationID,
-		Payload:       raw,
-	}, nil
+	return change.Event{ID: ids.NewEvent(), Type: typ, Actor: actor, OccurredAt: clock.Now(), Payload: raw}, nil
 }
 
 // failure is the error an executor returns. Its text holds only fixed words and ids, so it is safe to store as the
@@ -122,7 +62,6 @@ func checkTarget(fx change.Effect, cid id.ChangeID) error {
 type RoomOpenDeps struct {
 	Tickets ports.TicketReader
 	Chat    ports.Chat
-	Store   ports.EventStore
 	Ingest  Ingest
 	IDs     ports.IDs
 	Clock   ports.Clock
@@ -144,9 +83,6 @@ func NewRoomOpen(d RoomOpenDeps) (RoomOpen, error) {
 	if d.Chat == nil {
 		missing = append(missing, "chat")
 	}
-	if d.Store == nil {
-		missing = append(missing, "store")
-	}
 	if d.Ingest == nil {
 		missing = append(missing, "ingest")
 	}
@@ -162,25 +98,13 @@ func NewRoomOpen(d RoomOpenDeps) (RoomOpen, error) {
 	return RoomOpen{deps: d}, nil
 }
 
-// Execute opens the room unless room.opened is already stored. The effect key is the idempotency key of the room
-// request, so Switch adopts a room that an earlier attempt made.
+// Execute opens the room and records room.opened. The effect key is the idempotency key of the room request, so Switch
+// adopts a room that an earlier attempt made.
 func (r RoomOpen) Execute(ctx context.Context, fx change.Effect) error {
 	p, err := roomPayload(fx)
 	if err != nil {
 		return err
 	}
-	l, err := load(ctx, r.deps.Store, p.Ticket)
-	if err != nil {
-		return err
-	}
-	if l.has(change.EventRoomOpened) {
-		return nil
-	}
-	// The room follows the first fact of the change: the trigger, or the pull request that started it (B1).
-	if len(l.events) == 0 {
-		return failf(nil, "room_open %s: the change has no events", p.Ticket)
-	}
-	cause := &l.events[0]
 	req, err := r.request(ctx, p.Ticket, fx.Key)
 	if err != nil {
 		return err
@@ -193,7 +117,7 @@ func (r RoomOpen) Execute(ctx context.Context, fx change.Effect) error {
 	if err := payload.Validate(); err != nil {
 		return failf(err, "room_open %s: room id refused", p.Ticket)
 	}
-	ev, err := newEvent(r.deps.IDs, r.deps.Clock, *cause, change.EventRoomOpened,
+	ev, err := newFact(r.deps.IDs, r.deps.Clock, change.EventRoomOpened,
 		change.Actor{Kind: change.ActorSwitch, ID: switchActorID}, payload)
 	if err != nil {
 		return failf(err, "room_open %s: build event", p.Ticket)

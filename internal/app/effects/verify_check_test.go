@@ -16,11 +16,12 @@ import (
 
 const checkFile = "internal/pay/refund.go"
 
-func verifyCheckEffect(t *testing.T) change.Effect {
+// verifyCheckEffect is the job; reverify says the finding was verified on an earlier head.
+func verifyCheckEffect(t *testing.T, reverify bool) change.Effect {
 	t.Helper()
 	ref, _ := id.ParseFindingRef("F1")
 	p := change.VerifyEvidencePayload{
-		Repo: veRepo, Ticket: veTicket, FindingID: veFndID, FindingRef: ref, Severity: finding.SeverityHigh, HeadSHA: veHead,
+		Repo: veRepo, Ticket: veTicket, FindingID: veFndID, FindingRef: ref, Severity: finding.SeverityHigh, HeadSHA: veHead, Reverify: reverify,
 		Check: &change.VerifyCheck{Name: change.CheckGoVet, File: checkFile, Lines: [2]int{10, 12}},
 	}
 	raw, err := json.Marshal(p)
@@ -30,35 +31,15 @@ func verifyCheckEffect(t *testing.T) change.Effect {
 	return change.Effect{Key: key, Kind: change.EffectVerifyEvidence, Target: string(veTicket), Payload: raw}
 }
 
-func verifyCheckEvents(extra ...change.Event) []change.Event {
-	evs := sampleChangeEvents()
-	evs[2].Payload = json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","tier":"E2","severity":"high","state":"open","by":"reviewer-agent"}`)
-	return append(evs, extra...)
-}
-
-func verifyCheckVerified() change.Event {
-	return change.Event{
-		ID: "ev-4", ChangeID: veTicket, Version: 4, Type: change.EventFindingVerified,
-		Payload: json.RawMessage(`{"finding_id":"` + string(veFndID) + `","ref":"F1","tier":"E2","severity":"high","state":"open","by":"heimdall"}`),
-	}
-}
-
-func verifyCheckPushed() change.Event {
-	return change.Event{
-		ID: "ev-5", ChangeID: veTicket, Version: 5, Type: change.EventPRPushed,
-		Payload: json.RawMessage(`{"repo":"` + string(veRepo) + `","number":42,"head_sha":"` + string(veHead) + `"}`),
-	}
-}
-
-func runVerifyCheck(t *testing.T, res ports.SandboxResult, runErr error, events []change.Event) (*overlaySandboxFake, *fakeIngest, error) {
+func runVerifyCheck(t *testing.T, res ports.SandboxResult, runErr error, reverify bool) (*overlaySandboxFake, *fakeIngest, error) {
 	t.Helper()
 	sandbox := &overlaySandboxFake{res: res, err: runErr}
 	ingest := &fakeIngest{}
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: sandbox, Store: &fakeStore{events: events}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Source: &fakeSource{}, Sandbox: sandbox, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
-	return sandbox, ingest, exec.Execute(context.Background(), verifyCheckEffect(t))
+	return sandbox, ingest, exec.Execute(context.Background(), verifyCheckEffect(t, reverify))
 }
 
 func decodeVerifyWritten(t *testing.T, ingest *fakeIngest) (change.EventType, change.FindingRecord) {
@@ -72,7 +53,7 @@ func decodeVerifyWritten(t *testing.T, ingest *fakeIngest) (change.EventType, ch
 // The first run confirms an E2 finding only when the check fails at the location the finding names, and it runs the
 // fixed static job through the runner.
 func TestVerifyCheckConfirmsAFailureAtTheNamedLocation(t *testing.T) {
-	sandbox, ingest, err := runVerifyCheck(t, ports.SandboxResult{Failed: 1, Output: "# pay\n./internal/pay/refund.go:11:3: bad format\n"}, nil, verifyCheckEvents())
+	sandbox, ingest, err := runVerifyCheck(t, ports.SandboxResult{Failed: 1, Output: "# pay\n./internal/pay/refund.go:11:3: bad format\n"}, nil, false)
 	require.NoError(t, err)
 
 	typ, rec := decodeVerifyWritten(t, ingest)
@@ -92,7 +73,7 @@ func TestVerifyCheckWithoutAMatchingFailureStaysE4(t *testing.T) {
 		"pass":              {Passed: 1},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, ingest, err := runVerifyCheck(t, res, nil, verifyCheckEvents())
+			_, ingest, err := runVerifyCheck(t, res, nil, false)
 			require.NoError(t, err)
 			typ, rec := decodeVerifyWritten(t, ingest)
 			require.Equal(t, change.EventFindingStateChanged, typ)
@@ -104,7 +85,7 @@ func TestVerifyCheckWithoutAMatchingFailureStaysE4(t *testing.T) {
 
 // After a push, a pass resolves the finding with no claim from the author.
 func TestVerifyCheckResolvesAfterAFixPush(t *testing.T) {
-	_, ingest, err := runVerifyCheck(t, ports.SandboxResult{Passed: 1}, nil, verifyCheckEvents(verifyCheckVerified(), verifyCheckPushed()))
+	_, ingest, err := runVerifyCheck(t, ports.SandboxResult{Passed: 1}, nil, true)
 	require.NoError(t, err)
 	typ, rec := decodeVerifyWritten(t, ingest)
 	require.Equal(t, change.EventFindingStateChanged, typ)
@@ -114,14 +95,14 @@ func TestVerifyCheckResolvesAfterAFixPush(t *testing.T) {
 
 // A failure elsewhere resolves the located problem too, but a diagnostic still at the location keeps it verified.
 func TestVerifyCheckAfterAPushKeepsOrResolvesByLocation(t *testing.T) {
-	events := verifyCheckEvents(verifyCheckVerified(), verifyCheckPushed())
+	reverify := true
 
-	_, ingest, err := runVerifyCheck(t, ports.SandboxResult{Failed: 1, Output: "./other.go:3:1: bad\n"}, nil, events)
+	_, ingest, err := runVerifyCheck(t, ports.SandboxResult{Failed: 1, Output: "./other.go:3:1: bad\n"}, nil, reverify)
 	require.NoError(t, err)
 	_, rec := decodeVerifyWritten(t, ingest)
 	require.Equal(t, finding.StateResolved, rec.State, "the located problem is fixed, another one is not this finding")
 
-	_, ingest, err = runVerifyCheck(t, ports.SandboxResult{Failed: 1, Output: "./internal/pay/refund.go:12:1: still bad\n"}, nil, events)
+	_, ingest, err = runVerifyCheck(t, ports.SandboxResult{Failed: 1, Output: "./internal/pay/refund.go:12:1: still bad\n"}, nil, reverify)
 	require.NoError(t, err)
 	typ, rec := decodeVerifyWritten(t, ingest)
 	require.Equal(t, change.EventFindingVerified, typ, "verified again, so the push does not leave the step waiting")
@@ -130,11 +111,11 @@ func TestVerifyCheckAfterAPushKeepsOrResolvesByLocation(t *testing.T) {
 
 // A check that could not run proves nothing either way: the effect fails so the outbox retries, and nothing is written.
 func TestVerifyCheckThatCouldNotRunWritesNothing(t *testing.T) {
-	_, ingest, err := runVerifyCheck(t, ports.SandboxResult{}, nil, verifyCheckEvents())
+	_, ingest, err := runVerifyCheck(t, ports.SandboxResult{}, nil, false)
 	require.Error(t, err)
 	require.Empty(t, ingest.written)
 
-	_, ingest, err = runVerifyCheck(t, ports.SandboxResult{}, context.DeadlineExceeded, verifyCheckEvents())
+	_, ingest, err = runVerifyCheck(t, ports.SandboxResult{}, context.DeadlineExceeded, false)
 	require.Error(t, err)
 	require.Empty(t, ingest.written)
 }

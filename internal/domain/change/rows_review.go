@@ -135,7 +135,7 @@ func rowVerify() Row {
 			for _, ref := range unchecked(in.View) {
 				f := in.View.Findings[ref]
 				p := VerifyEvidencePayload{Repo: pr.Repo, Ticket: in.Change, FindingID: f.ID, FindingRef: refOf(ref),
-					Severity: f.Severity, HeadSHA: pr.HeadSHA}
+					Severity: f.Severity, HeadSHA: pr.HeadSHA, BaseSHA: pr.Base, Reverify: f.Verified}
 				attachProof(&p, f)
 				suffix := fmt.Sprintf("%s/%s/k%d", ref, pr.HeadSHA, f.Rechecks)
 				out = append(out, Action{Text: ref + " evidence is verified (" + string(f.Tier) + ")",

@@ -203,6 +203,7 @@
       "checked": true,
       "claim": "POST /payments no longer returns merchant_id: the JSON tag was changed to `merchant`, while api/openapi.yaml still requires merchant_id, so any client that reads merchant_id from the create-payment response now gets an empty field. The change is unrelated to the refund feature.",
       "fingerprint": "5150d86bfb33e1cbece01d7c65e54d449cedb8780c3f50d8e040b834a0470009",
+      "verified": true,
       "rechecks": 0,
       "repro_test": {
         "path": "tests/heimdall/KAN-23/merchant_field_test.go",

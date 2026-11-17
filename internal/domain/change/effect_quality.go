@@ -15,6 +15,10 @@ type TestQualityPayload struct {
 	Branch        string           `json:"branch"`
 	Ticket        id.ChangeID      `json:"ticket"`
 	SubmissionRef workflow.BlobRef `json:"submission_ref"`
+	// BaseSHA is the branch's base commit, the one the tests must fail on. HeadSHA is the pull request's head when
+	// there is one: the tests must then pass there. Effects made before these fields carry neither.
+	BaseSHA id.SHA `json:"base_sha,omitempty"`
+	HeadSHA id.SHA `json:"head_sha,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -27,6 +31,12 @@ func (p TestQualityPayload) Validate() error {
 	_, err := id.ParseChangeID(string(p.Ticket))
 	v.add("ticket", err)
 	v.add("submission_ref", checkBlob(p.SubmissionRef))
+	if p.BaseSHA != "" {
+		v.add("base_sha", checkSHA(p.BaseSHA))
+	}
+	if p.HeadSHA != "" {
+		v.add("head_sha", checkSHA(p.HeadSHA))
+	}
 	return v.join()
 }
 

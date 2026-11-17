@@ -18,7 +18,6 @@ import (
 type CommitTestsDeps struct {
 	Blobs    ports.BlobStore
 	Branches ports.BranchWriter
-	Store    ports.EventStore
 	Ingest   Ingest
 	IDs      ports.IDs
 	Clock    ports.Clock
@@ -40,9 +39,6 @@ func NewCommitTests(d CommitTestsDeps) (CommitTests, error) {
 	if d.Branches == nil {
 		missing = append(missing, "branches")
 	}
-	if d.Store == nil {
-		missing = append(missing, "store")
-	}
 	if d.Ingest == nil {
 		missing = append(missing, "ingest")
 	}
@@ -58,7 +54,7 @@ func NewCommitTests(d CommitTestsDeps) (CommitTests, error) {
 	return CommitTests{deps: d}, nil
 }
 
-// Execute performs the commit unless tests.committed is already stored.
+// Execute commits the tests and records tests.committed.
 func (c CommitTests) Execute(ctx context.Context, fx change.Effect) error {
 	if fx.Kind != change.EffectGitHubCommitTests {
 		return failf(nil, "commit_tests executor: effect %s has kind %s", fx.Key, fx.Kind)
@@ -70,14 +66,6 @@ func (c CommitTests) Execute(ctx context.Context, fx change.Effect) error {
 	ticket, err := changeOfEffect(p.Change, fx.Key)
 	if err != nil {
 		return failf(err, "commit_tests effect %s: extract ticket", fx.Key)
-	}
-
-	l, err := load(ctx, c.deps.Store, ticket)
-	if err != nil {
-		return err
-	}
-	if l.has(change.EventTestsCommitted) {
-		return nil
 	}
 
 	files, err := c.readFiles(ctx, ticket, p.Files)
@@ -94,7 +82,7 @@ func (c CommitTests) Execute(ctx context.Context, fx change.Effect) error {
 	if err != nil {
 		return failf(err, "commit_tests %s: pin tests tree", ticket)
 	}
-	return c.ingestCommitted(ctx, ticket, l, sha, treeHash)
+	return c.ingestCommitted(ctx, ticket, sha, treeHash)
 }
 
 // readFiles returns the content of each file to commit. A commit file's blob is the stored submission, so the file
@@ -148,37 +136,20 @@ func (c CommitTests) treeHash(ctx context.Context, repo change.Repo, sha id.SHA,
 	return th, nil
 }
 
-func (c CommitTests) ingestCommitted(ctx context.Context, ticket id.ChangeID, l loadedChange, sha, treeHash id.SHA) error {
-	cause := findCommitCause(l)
-	if cause == nil {
-		return failf(nil, "commit_tests %s: no cause event in the change", ticket)
-	}
-
+func (c CommitTests) ingestCommitted(ctx context.Context, ticket id.ChangeID, sha, treeHash id.SHA) error {
 	payload := change.TestsCommitted{SHA: sha, TreeHash: treeHash}
 	if err := payload.Validate(); err != nil {
 		return failf(err, "commit_tests %s: tests.committed refused", ticket)
 	}
-
-	ev, err := newEvent(c.deps.IDs, c.deps.Clock, *cause, change.EventTestsCommitted,
+	ev, err := newFact(c.deps.IDs, c.deps.Clock, change.EventTestsCommitted,
 		change.Actor{Kind: change.ActorGitHub, ID: githubActorID}, payload)
 	if err != nil {
 		return failf(err, "commit_tests %s: build event", ticket)
 	}
-
 	if err := c.deps.Ingest.Ingest(ctx, ticket, []change.Event{ev}); err != nil {
 		return failf(err, "commit_tests %s: ingest tests.committed", ticket)
 	}
 	return nil
-}
-
-func findCommitCause(l loadedChange) *change.Event {
-	if cause := l.first(change.EventTestsApproved); cause != nil {
-		return cause
-	}
-	if cause := l.first(change.EventTestsVerified); cause != nil {
-		return cause
-	}
-	return l.first(change.EventTestsSubmitted)
 }
 
 // changeOfEffect is the change an effect is about: the payload names it; an effect made before payloads did names it in

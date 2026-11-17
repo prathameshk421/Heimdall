@@ -10,9 +10,9 @@ import (
 )
 
 // reviewExecutors builds the executors of the review area: verifying the evidence of findings.
-func reviewExecutors(ad adapters, store ports.EventStore, sandbox profileSandbox, in effects.Ingest, gen ports.IDs, clk ports.Clock, recheck effects.MemoryRecheck) (map[change.EffectKind]outbox.Executor, error) {
+func reviewExecutors(ad adapters, sandbox profileSandbox, in effects.Ingest, gen ports.IDs, clk ports.Clock, recheck effects.MemoryRecheck) (map[change.EffectKind]outbox.Executor, error) {
 	verifyEvidence, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Memory: recheck, Store: store, Ingest: in, IDs: gen, Clock: clk,
+		Source: vcsSource{vcs: ad.vcs}, Sandbox: sandbox, Memory: recheck, Ingest: in, IDs: gen, Clock: clk,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build verify_evidence executor: %w", err)

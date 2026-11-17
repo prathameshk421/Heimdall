@@ -219,6 +219,8 @@ type FindingInfo struct {
 	Fingerprint string `json:"fingerprint"`
 	// Rechecks counts finding.recheck_requested; each makes the evidence due again. ReproTest, ToolResult and
 	// MemoryRef are the proof the filing event carried, which verification repeats.
+	// Verified is true once a finding.verified was recorded for it, on any head: a later run is a re-run.
+	Verified   bool                `json:"verified,omitempty"`
 	Rechecks   int                 `json:"rechecks"`
 	ReproTest  *finding.ReproTest  `json:"repro_test,omitempty"`
 	ToolResult *finding.ToolResult `json:"tool_result,omitempty"`
@@ -550,6 +552,9 @@ func (v *View) applyFinding(e Event, p FindingRecord) {
 	f.ChangedBy = p.By
 	if e.Type == EventFindingVerified || e.Actor.Kind == ActorSystem {
 		f.Checked = true
+	}
+	if e.Type == EventFindingVerified {
+		f.Verified = true
 	}
 	v.Findings[ref] = f
 }
