@@ -91,7 +91,10 @@ func (t TestQuality) Execute(ctx context.Context, fx change.Effect) error {
 	if err != nil {
 		return err
 	}
-	if l.has(change.EventTestsVerified) || l.has(change.EventTestsRejected) {
+	// Done when the current submission has its verdict. A resubmission after a rejection is judged afresh (live
+	// KAN-25: "any verdict ever" left the second submission unjudged and the change stalled with no log line).
+	current := l.last(change.EventTestsSubmitted)
+	if current == nil || l.judgedSince(current, change.EventTestsVerified, change.EventTestsRejected) {
 		return nil
 	}
 
@@ -307,7 +310,7 @@ func overlayFiles(sub testset.Submission) []ports.File {
 }
 
 func (t TestQuality) ingestOutcome(ctx context.Context, ticket id.ChangeID, sub testset.Submission, l loadedChange, baseSHA id.SHA, runIDs []id.RunID, reasons []string) error {
-	cause := l.first(change.EventTestsSubmitted)
+	cause := l.last(change.EventTestsSubmitted)
 	if cause == nil {
 		return failf(nil, "test_quality %s: no tests.submitted in the change", ticket)
 	}

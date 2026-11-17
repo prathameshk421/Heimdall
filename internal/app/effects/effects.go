@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -50,6 +51,26 @@ func (l loadedChange) first(t change.EventType) *change.Event {
 		}
 	}
 	return nil
+}
+
+// last returns the last stored event of type t, or nil.
+func (l loadedChange) last(t change.EventType) *change.Event {
+	for i := len(l.events) - 1; i >= 0; i-- {
+		if l.events[i].Type == t {
+			return &l.events[i]
+		}
+	}
+	return nil
+}
+
+// judgedSince reports whether an event of one of the types follows the event at.
+func (l loadedChange) judgedSince(at *change.Event, types ...change.EventType) bool {
+	for _, e := range l.events {
+		if e.Version > at.Version && slices.Contains(types, e.Type) {
+			return true
+		}
+	}
+	return false
 }
 
 // newEvent builds an event caused by cause. The id comes from the IDs port and the time from the clock.

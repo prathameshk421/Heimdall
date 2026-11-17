@@ -583,3 +583,29 @@ func TestTestQualityExecutorSkipsWhenAlreadyEvaluated(t *testing.T) {
 	require.Empty(t, ingest.written)
 	require.Empty(t, sandbox.runs)
 }
+
+// Live KAN-25: tests were rejected, the author resubmitted, and the verifier skipped the new submission because the
+// change "already had a verdict". Only the current submission's verdict counts.
+func TestTestQualityJudgesAResubmissionAfterARejection(t *testing.T) {
+	ctx := context.Background()
+	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	run := func(events []change.Event) (bool, error) {
+		sandbox, ingest := &fakeSandbox{}, &fakeIngest{}
+		exec, err := effects.NewTestQuality(effects.TestQualityDeps{
+			Blobs: &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: []byte("{}")}}, Source: &fakeSource{},
+			Sandbox: sandbox, Store: &fakeStore{events: events}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		})
+		require.NoError(t, err)
+		err = exec.Execute(ctx, change.Effect{Key: "test_quality:PAY-142:3:test_qa", Kind: change.EffectTestQuality, Target: "PAY-142",
+			Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `"}`)})
+		skipped := err == nil && len(sandbox.runs) == 0 && len(ingest.written) == 0
+		return skipped, err
+	}
+	skipped, err := run([]change.Event{{ID: "ev-1", Version: 1, Type: change.EventTestsSubmitted}, {ID: "ev-2", Version: 2, Type: change.EventTestsVerified}})
+	require.NoError(t, err)
+	require.True(t, skipped, "the current submission has its verdict")
+
+	skipped, _ = run([]change.Event{{ID: "ev-1", Version: 1, Type: change.EventTestsSubmitted}, {ID: "ev-2", Version: 2, Type: change.EventTestsRejected},
+		{ID: "ev-3", Version: 3, Type: change.EventTestsSubmitted}})
+	require.False(t, skipped, "the resubmission is judged, not skipped")
+}
