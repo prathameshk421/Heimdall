@@ -3,4 +3,4 @@ Tests     5 tests for AC1, AC2, AC3 · submitted on 9b49652 · verified · commi
 PR        #11 by prathameshk421 · head 619a8f4 · slop passed · acceptance success
 Reviews   not picked
 Findings  none
-Next      reviewers are picked; an approver who is not the author approves 619a8f4
+Next      reviewers are picked; no approval has been recorded from an approver of the changed domains

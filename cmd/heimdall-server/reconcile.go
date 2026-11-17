@@ -10,6 +10,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/bundle"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -42,7 +43,7 @@ const (
 // reconcileInputs reads what the rows need from outside the log (reconcile.InputSource).
 type reconcileInputs struct {
 	code     ports.CodeReader
-	prs      ports.PRReader
+	gate     gateuse.Source
 	profiles ports.ProfileStore
 }
 
@@ -63,17 +64,16 @@ func (r reconcileInputs) Policy(ctx context.Context, repo change.Repo, sha id.SH
 	return policyyaml.Decode(raw)
 }
 
-// Outside returns the files the pull request changes.
+// Outside reads the facts the merge rule needs from the repository and the policy.
 func (r reconcileInputs) Outside(ctx context.Context, v change.View) (change.Outside, error) {
-	files, err := r.prs.Files(ctx, v.PR.Repo, v.PR.Number)
-	if err != nil {
-		return change.Outside{}, fmt.Errorf("list changed files of %s#%d: %w", v.PR.Repo, v.PR.Number, err)
+	var approvers []string
+	for _, a := range v.Approvals {
+		if a.CommitSHA == v.PR.HeadSHA {
+			approvers = append(approvers, string(a.Login))
+		}
 	}
-	out := change.Outside{ChangedFiles: make([]string, 0, len(files))}
-	for _, f := range files {
-		out.ChangedFiles = append(out.ChangedFiles, f.Path)
-	}
-	return out, nil
+	return r.gate.Outside(ctx, gateuse.Request{ChangeID: v.PR.Ticket, Repo: v.PR.Repo, Number: v.PR.Number,
+		HeadSHA: v.PR.HeadSHA, Author: v.PR.Author, Approvers: approvers})
 }
 
 // Profile returns the repository's promoted profile, or the zero Profile when it has none.
@@ -141,13 +141,17 @@ func agentFor(agents config.Agents) func(kind, subject string) (id.AgentName, bo
 
 // newReconciler builds the reconciler on the store (which should be the Kicking one for writers).
 func newReconciler(ad adapters, store *postgres.Store, openrouter ports.ModelHealth, gen ports.IDs, clk ports.Clock, logger *slog.Logger) (*reconcile.Reconciler, error) {
+	gate, err := gateuse.NewSource(gateuse.SourceConfig{PRs: ad.vcs, Code: ad.vcs, Decode: policyyaml.Decode})
+	if err != nil {
+		return nil, fmt.Errorf("build gate source: %w", err)
+	}
 	reviewers := make([]change.ActorID, 0, len(ad.agents.Reviewers))
 	for _, r := range ad.agents.Reviewers {
 		reviewers = append(reviewers, change.ActorID(r))
 	}
 	return reconcile.New(reconcile.Config{
 		Store: store, Effects: store, Open: store, Dead: store, Calls: store, Health: openrouter,
-		Inputs: reconcileInputs{code: ad.vcs, prs: ad.vcs, profiles: store},
+		Inputs: reconcileInputs{code: ad.vcs, gate: gate, profiles: store},
 		Agents: agentFor(ad.agents), IDs: gen, Clock: clk, Logger: logger, Wait: clock.Wait,
 		Settings: change.Settings{Reviewers: reviewers, TestAttempts: testAttempts, PickWait: pickWait,
 			Timeouts: map[string]time.Duration{"tests": testsTimeout, "review": reviewTimeout, "verdict": verdictTimeout}},

@@ -15,7 +15,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
@@ -209,27 +208,11 @@ func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports
 	return profileAPI{service: service}, nil
 }
 
-// assembleSyncer wires the policy decoder, gate source, evaluator, intake and PR syncer.
-func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, *gateuse.Refresher, error) {
-	gateSrc, err := gateuse.NewSource(gateuse.SourceConfig{
-		PRs:    ad.vcs,
-		Code:   ad.vcs,
-		Decode: policyyaml.Decode,
-	})
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build gate source: %w", err)
-	}
-	gateEval, err := gateuse.New(gateuse.Config{
-		Events: store,
-		Source: gateSrc,
-		Clock:  clk,
-		IDs:    gen,
-	})
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build gate evaluator: %w", err)
-	}
+// assembleSyncer wires the policy decoder, intake and the PR syncer. Their events go through the kicking store, so the
+// reconciler wakes after each one. They record facts; the reconciler decides the gate.
+func assembleSyncer(ad adapters, store *postgres.Store, events ports.EventStore, gen ports.IDs, clk ports.Clock) (*prsync.Syncer, *intake.Intake, error) {
 	intakeCase, err := intake.New(intake.Config{
-		Events: store,
+		Events: events,
 		PRs:    ad.vcs,
 		Code:   ad.vcs,
 		Clock:  clk,
@@ -237,7 +220,7 @@ func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports
 		Policy: policyyaml.Decode,
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build intake: %w", err)
+		return nil, nil, fmt.Errorf("build intake: %w", err)
 	}
 	sync, err := prsync.New(prsync.Config{
 		Repos:   ad.repos,
@@ -246,19 +229,14 @@ func assembleSyncer(ad adapters, store *postgres.Store, gen ports.IDs, clk ports
 		Intake:  syncIntake{in: intakeCase},
 		Reviews: reviewsAdapter{reader: ad.vcs},
 		Checks:  checksAdapter{reader: ad.vcs},
-		Gate:    prGate{eval: gateEval},
-		Events:  store,
+		Events:  events,
 		Clock:   clk,
 		IDs:     gen,
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build pr syncer: %w", err)
+		return nil, nil, fmt.Errorf("build pr syncer: %w", err)
 	}
-	refresher, err := gateuse.NewRefresher(store, gateRefreshCursor{table: store}, gateEval)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build gate refresher: %w", err)
-	}
-	return sync, intakeCase, refresher, nil
+	return sync, intakeCase, nil
 }
 
 // workflowAgentNames lists the configured test author, reviewers and resolver, so a change room is made with them in it.

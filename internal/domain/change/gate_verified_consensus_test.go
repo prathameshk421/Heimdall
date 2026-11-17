@@ -1,4 +1,4 @@
-package gateuse_test
+package change_test
 
 import (
 	"testing"
@@ -36,7 +36,7 @@ func TestVerificationDoesNotEraseConsensusFacts(t *testing.T) {
 		add(change.EventFindingFiled, systemActor, filed(1, "eli-reviewer")).
 		add(change.EventFindingVerified, systemActor, verified(0)).
 		add(change.EventFindingVerified, systemActor, verified(1))
-	res, _ := evaluate(t, s, out)
+	res := evaluate(t, s, out)
 	require.False(t, res.OK, "two independent high-confidence reports of one claim hold the merge after verification")
 	require.True(t, hasClause(res.Reasons, gate.ClauseBlocking))
 }

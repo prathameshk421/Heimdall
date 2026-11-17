@@ -64,20 +64,20 @@ func NewSource(cfg SourceConfig) (*RepoSource, error) {
 }
 
 // Outside returns the repository and policy facts for the change.
-func (s *RepoSource) Outside(ctx context.Context, req Request) (Outside, error) {
+func (s *RepoSource) Outside(ctx context.Context, req Request) (change.Outside, error) {
 	pr, err := s.prs.PR(ctx, req.Repo, req.Number)
 	if err != nil {
-		return Outside{}, fmt.Errorf("get pull request %s#%d: %w", req.Repo, req.Number, err)
+		return change.Outside{}, fmt.Errorf("get pull request %s#%d: %w", req.Repo, req.Number, err)
 	}
 
 	basePol, baseKnown, err := s.readBasePolicy(ctx, req.Repo, pr.BaseSHA)
 	if err != nil {
-		return Outside{}, fmt.Errorf("read base policy %s at %s: %w", s.policyPath, pr.BaseSHA, err)
+		return change.Outside{}, fmt.Errorf("read base policy %s at %s: %w", s.policyPath, pr.BaseSHA, err)
 	}
 
 	headPol, headKnown, err := s.readHeadPolicy(ctx, req.Repo, req.HeadSHA)
 	if err != nil {
-		return Outside{}, fmt.Errorf("read head policy %s at %s: %w", s.policyPath, req.HeadSHA, err)
+		return change.Outside{}, fmt.Errorf("read head policy %s at %s: %w", s.policyPath, req.HeadSHA, err)
 	}
 
 	policyKnown := baseKnown && headKnown
@@ -89,7 +89,7 @@ func (s *RepoSource) Outside(ctx context.Context, req Request) (Outside, error) 
 
 	headTestTreeHash, err := s.readHeadTestTreeHash(ctx, req, basePol, baseKnown)
 	if err != nil {
-		return Outside{}, err
+		return change.Outside{}, err
 	}
 
 	testDiffKnown, testDiffOutsideKey, changedFiles := s.readFiles(ctx, req, basePol, baseKnown)
@@ -103,7 +103,12 @@ func (s *RepoSource) Outside(ctx context.Context, req Request) (Outside, error) 
 
 	policyOwnerApproved := checkPolicyOwnerApproved(basePol, headPol, baseKnown, headKnown, req.Approvers)
 
-	return Outside{
+	paths := make([]string, 0, len(changedFiles))
+	for _, f := range changedFiles {
+		paths = append(paths, f.Path)
+	}
+	return change.Outside{
+		ChangedFiles:               paths,
 		HeadTestTreeHash:           headTestTreeHash,
 		TestDiffKnown:              testDiffKnown,
 		TestDiffOutsideKey:         testDiffOutsideKey,

@@ -176,10 +176,11 @@ func (r RoomOpen) Execute(ctx context.Context, fx change.Effect) error {
 	if l.has(change.EventRoomOpened) {
 		return nil
 	}
-	cause := l.first(change.EventChangeTriggered)
-	if cause == nil {
-		return failf(nil, "room_open %s: no change.triggered in the change", p.Ticket)
+	// The room follows the first fact of the change: the trigger, or the pull request that started it (B1).
+	if len(l.events) == 0 {
+		return failf(nil, "room_open %s: the change has no events", p.Ticket)
 	}
+	cause := &l.events[0]
 	req, err := r.request(ctx, p.Ticket, fx.Key)
 	if err != nil {
 		return err
@@ -205,6 +206,14 @@ func (r RoomOpen) Execute(ctx context.Context, fx change.Effect) error {
 
 // request reads the title of the ticket and builds the room request with the effect key.
 func (r RoomOpen) request(ctx context.Context, cid id.ChangeID, key change.EffectKey) (ports.RoomRequest, error) {
+	if repo, n, err := cid.PullRequest(); err == nil {
+		// A pull request that names no ticket has no tracker entry: the room is named after the pull request.
+		req := ports.RoomRequest{ChangeID: cid, Title: truncate(fmt.Sprintf("PR %s#%d", repo, n), maxRoomTitle), Key: key, Agents: r.deps.Agents}
+		if err := req.Validate(); err != nil {
+			return ports.RoomRequest{}, failf(err, "room_open %s: room request refused", cid)
+		}
+		return req, nil
+	}
 	t, err := r.deps.Tickets.Ticket(ctx, cid)
 	if err != nil {
 		return ports.RoomRequest{}, failf(err, "room_open %s: read ticket", cid)

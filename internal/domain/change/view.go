@@ -2,6 +2,7 @@ package change
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -46,8 +47,10 @@ type ProviderInfo struct {
 // CaseInfo is one deliberation. LastEvent is the last event that concerned the case; a verdict task's input is that id,
 // so a challenge or a new verdict makes a new task.
 type CaseInfo struct {
-	Finding   string  `json:"finding"`
-	Open      bool    `json:"open"`
+	Finding string `json:"finding"`
+	Open    bool   `json:"open"`
+	// Escalated is true from verdict.escalated until a verdict is applied: a person must decide.
+	Escalated bool    `json:"escalated"`
 	LastEvent EventID `json:"last_event"`
 }
 
@@ -126,7 +129,10 @@ type PRInfo struct {
 	Picked    *PickedInfo                        `json:"picked"`
 	Slop      *SlopInfo                          `json:"slop"`
 	CI        map[id.SHA]map[string]CIConclusion `json:"ci"`
-	Gate      *GateInfo                          `json:"gate"`
+	// GateCount counts the PR's gate.evaluated events. A gate job key names it, so a result that comes back (head A, then
+	// B, then A again) is posted again: the check on A would otherwise keep showing the earlier result.
+	GateCount int       `json:"-"`
+	Gate      *GateInfo `json:"gate"`
 }
 
 // PickedInfo is who reviews.
@@ -384,6 +390,7 @@ func (v *View) applyPR(e Event, p Payload) {
 	case PRPushed:
 		v.PR.HeadSHA = p.HeadSHA
 		v.PR.Base = orKeep(p.BaseSHA, v.PR.Base)
+		v.Approvals = []ApprovalInfo{} // a push voids every approval: the reviewer must approve what is now the head
 		v.uncheckLiveFindings()
 	case PRLinked:
 		v.PR.Ticket = p.Ticket
@@ -396,10 +403,18 @@ func (v *View) applyPR(e Event, p Payload) {
 		}
 		v.PR.CI[p.SHA][p.Check] = p.Conclusion
 	case GateEvaluated:
-		v.PR.Gate = &GateInfo{SHA: p.SHA, OK: p.OK, Reasons: nonNil(p.Reasons)}
+		v.PR.applyGate(p)
 	case ReviewersPicked:
 		v.PR.Picked = &PickedInfo{People: nonNil(p.People), By: p.By, Method: p.Method}
 	}
+}
+
+// applyGate records a gate result. A result recorded twice in a row (a crash after the append) counts once.
+func (pr *PRInfo) applyGate(p GateEvaluated) {
+	if g := pr.Gate; g == nil || g.SHA != p.SHA || g.OK != p.OK || !slices.Equal(g.Reasons, p.Reasons) {
+		pr.GateCount++
+	}
+	pr.Gate = &GateInfo{SHA: p.SHA, OK: p.OK, Reasons: nonNil(p.Reasons)}
 }
 
 // applyFindingEvent folds the three finding events, which share one record.
@@ -484,8 +499,17 @@ func (v *View) applyCase(e Event, p Payload) {
 		v.endTask(p.TaskID)
 	case VerdictApplied:
 		v.touchCase(p.CaseID, e.ID, false)
+		v.setEscalated(p.CaseID, false)
 	case VerdictEscalated:
 		v.touchCase(p.CaseID, e.ID, false)
+		v.setEscalated(p.CaseID, true)
+	}
+}
+
+func (v *View) setEscalated(c id.CaseID, escalated bool) {
+	if k, ok := v.Cases[c]; ok {
+		k.Escalated = escalated
+		v.Cases[c] = k
 	}
 }
 

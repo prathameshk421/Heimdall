@@ -551,3 +551,21 @@ func TestSlugRefusesTitleWithNothingLeft(t *testing.T) {
 		require.Error(t, err, title)
 	}
 }
+
+// A pull request that names no ticket has a room too (HARNESS_DESIGN B1): the room follows the pull request that
+// started the change and is named after it, with no tracker read.
+func TestRoomOpenForAPullRequestOnlyChange(t *testing.T) {
+	const prChange = id.ChangeID("pr-acme-pay-7")
+	opened := storedEvent(t, "10000000-0000-4000-8000-000000000001", 1, change.EventPROpened,
+		change.Actor{Kind: change.ActorGitHub, ID: "ana"}, change.PROpened{Repo: repo, Number: 7, HeadSHA: base, Author: "ana"})
+	k := newKit(t, opened)
+	raw, err := json.Marshal(change.RoomOpenPayload{Ticket: prChange, Invite: []string{}})
+	require.NoError(t, err)
+	key, err := change.IdempotencyKey(prChange, 1, change.EffectRoomOpen, "room")
+	require.NoError(t, err)
+
+	require.NoError(t, k.room.Execute(context.Background(), change.Effect{Key: key, Kind: change.EffectRoomOpen, Target: string(prChange), Payload: raw}))
+	require.Zero(t, k.tickets.calls, "there is no ticket to read")
+	require.Equal(t, "PR acme/pay#7", k.chat.requests[0].Title)
+	require.Equal(t, opened.ID, *k.ingest.written[0].CausationID)
+}

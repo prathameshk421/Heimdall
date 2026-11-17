@@ -50,6 +50,18 @@ type In struct {
 type Outside struct {
 	// ChangedFiles are the files the pull request changes, which decide the profile checks that apply.
 	ChangedFiles []string
+	// HeadTestTreeHash is the git tree hash of the change's test directory at the pull request head, read from the
+	// repository. It is never derived from events: the pin clause exists to catch a PR that changed the pinned tests.
+	HeadTestTreeHash           string
+	TestDiffKnown              bool
+	TestDiffOutsideKey         []string
+	CIRequired                 []string
+	ApproversForChangedDomains []string
+	PolicyKnown                bool
+	PolicyAtBase               policy.Policy
+	PolicyAtHead               policy.Policy
+	PolicyOwnerApproved        bool
+	PolicyVersion              int
 }
 
 // Profile is the part of the repository's promoted profile the rows read. The zero value means there is none.

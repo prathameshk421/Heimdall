@@ -73,11 +73,6 @@ type Intake interface {
 	HandlePR(ctx context.Context, repo change.Repo, n int) (Handled, error)
 }
 
-// Gate evaluates the merge rule for a change.
-type Gate interface {
-	Evaluate(ctx context.Context, changeID id.ChangeID) error
-}
-
 // Reviews reads submitted reviews of a pull request.
 type Reviews interface {
 	PRReviews(ctx context.Context, repo change.Repo, n int) ([]PRReview, error)
@@ -103,10 +98,9 @@ type FailedPR struct {
 
 // Result counts what one SyncOnce call did and lists any per-PR failures.
 type Result struct {
-	Synced    int
-	Appended  int
-	Evaluated int
-	Failed    []FailedPR
+	Synced   int
+	Appended int
+	Failed   []FailedPR
 }
 
 // Config holds the configuration and ports Syncer needs. Every field is required.
@@ -117,13 +111,12 @@ type Config struct {
 	Intake  Intake
 	Reviews Reviews
 	Checks  Checks
-	Gate    Gate
 	Events  ports.EventStore
 	Clock   ports.Clock
 	IDs     ports.IDs
 }
 
-// Syncer syncs open pull requests, reviews and check runs into change events, and runs the gate.
+// Syncer syncs open pull requests, reviews and check runs into change events, .
 type Syncer struct {
 	repos   []change.Repo
 	prs     PRs
@@ -131,13 +124,11 @@ type Syncer struct {
 	intake  Intake
 	reviews Reviews
 	checks  Checks
-	gate    Gate
 	events  ports.EventStore
 	clock   ports.Clock
 	ids     ports.IDs
 
 	seenReviews  map[string]struct{}
-	lastHeads    map[id.ChangeID]id.SHA
 	lastVersions map[id.ChangeID]int64
 }
 
@@ -162,9 +153,6 @@ func New(cfg Config) (*Syncer, error) {
 	if cfg.Checks == nil {
 		missing = append(missing, "Checks")
 	}
-	if cfg.Gate == nil {
-		missing = append(missing, "Gate")
-	}
 	if cfg.Events == nil {
 		missing = append(missing, "Events")
 	}
@@ -184,12 +172,10 @@ func New(cfg Config) (*Syncer, error) {
 		intake:       cfg.Intake,
 		reviews:      cfg.Reviews,
 		checks:       cfg.Checks,
-		gate:         cfg.Gate,
 		events:       cfg.Events,
 		clock:        cfg.Clock,
 		ids:          cfg.IDs,
 		seenReviews:  make(map[string]struct{}),
-		lastHeads:    make(map[id.ChangeID]id.SHA),
 		lastVersions: make(map[id.ChangeID]int64),
 	}, nil
 }
@@ -288,20 +274,11 @@ func (s *Syncer) syncPR(ctx context.Context, repo change.Repo, pr ports.PR, res 
 		return fmt.Errorf("read check runs for %s#%d at %s: %w", repo, pr.Number, pr.HeadSHA, err)
 	}
 
-	appended, headChanged, err := s.syncOpenPR(ctx, changeID, pr, reviews, checks)
+	appended, err := s.syncOpenPR(ctx, changeID, pr, reviews, checks)
 	if err != nil {
 		return err
 	}
 	res.Appended += appended
-
-	// handled.Appended covers a head the log did not hold yet. After a restart headChanged is false, because the
-	// in-memory head is gone, so intake's append is the only sign that the gate must run again.
-	if appended > 0 || headChanged || handled.Appended {
-		if err := s.gate.Evaluate(ctx, changeID); err != nil {
-			return fmt.Errorf("evaluate gate for %s: %w", changeID, err)
-		}
-		res.Evaluated++
-	}
 	return nil
 }
 
@@ -388,15 +365,7 @@ func (s *Syncer) buildClosedEvent(changeID id.ChangeID, repo change.Repo, pr por
 	return ev, nil
 }
 
-func (s *Syncer) checkHeadChanged(changeID id.ChangeID, currentHead id.SHA) bool {
-	if prevHead, ok := s.lastHeads[changeID]; ok && prevHead != currentHead {
-		return true
-	}
-	return false
-}
-
-func (s *Syncer) recordProgress(changeID id.ChangeID, currentHead id.SHA, version int64, seenReviews []string) {
-	s.lastHeads[changeID] = currentHead
+func (s *Syncer) recordProgress(changeID id.ChangeID, version int64, seenReviews []string) {
 	s.lastVersions[changeID] = version
 	for _, rID := range seenReviews {
 		s.seenReviews[rID] = struct{}{}
@@ -404,11 +373,11 @@ func (s *Syncer) recordProgress(changeID id.ChangeID, currentHead id.SHA, versio
 }
 
 // syncOpenPR synchronizes reviews and check runs for an open pull request.
-func (s *Syncer) syncOpenPR(ctx context.Context, changeID id.ChangeID, pr ports.PR, reviews []PRReview, checks []CheckRun) (int, bool, error) {
+func (s *Syncer) syncOpenPR(ctx context.Context, changeID id.ChangeID, pr ports.PR, reviews []PRReview, checks []CheckRun) (int, error) {
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		events, err := s.events.Load(ctx, changeID)
 		if err != nil {
-			return 0, false, fmt.Errorf("load stream %s: %w", changeID, err)
+			return 0, fmt.Errorf("load stream %s: %w", changeID, err)
 		}
 
 		var expected int64
@@ -416,15 +385,14 @@ func (s *Syncer) syncOpenPR(ctx context.Context, changeID id.ChangeID, pr ports.
 			expected = events[len(events)-1].Version
 		}
 
-		headChanged := s.checkHeadChanged(changeID, pr.HeadSHA)
 		newEvents, newlySeenReviews, err := s.decide(changeID, pr, reviews, checks, events, expected)
 		if err != nil {
-			return 0, false, err
+			return 0, err
 		}
 
 		if len(newEvents) == 0 {
-			s.recordProgress(changeID, pr.HeadSHA, expected, newlySeenReviews)
-			return 0, headChanged, nil
+			s.recordProgress(changeID, expected, newlySeenReviews)
+			return 0, nil
 		}
 
 		_, err = s.events.Append(ctx, changeID, expected, newEvents, nil)
@@ -432,16 +400,16 @@ func (s *Syncer) syncOpenPR(ctx context.Context, changeID id.ChangeID, pr ports.
 			if attempt < maxRetries {
 				continue
 			}
-			return 0, false, fmt.Errorf("append to %s: %w", changeID, err)
+			return 0, fmt.Errorf("append to %s: %w", changeID, err)
 		}
 		if err != nil {
-			return 0, false, fmt.Errorf("append to %s: %w", changeID, err)
+			return 0, fmt.Errorf("append to %s: %w", changeID, err)
 		}
 
-		s.recordProgress(changeID, pr.HeadSHA, expected+int64(len(newEvents)), newlySeenReviews)
-		return len(newEvents), headChanged, nil
+		s.recordProgress(changeID, expected+int64(len(newEvents)), newlySeenReviews)
+		return len(newEvents), nil
 	}
-	return 0, false, ports.ErrVersionConflict
+	return 0, ports.ErrVersionConflict
 }
 
 // decide computes the list of new events to append for reviews and check runs.

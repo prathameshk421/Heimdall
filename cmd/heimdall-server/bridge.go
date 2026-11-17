@@ -15,7 +15,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
@@ -163,22 +162,6 @@ func (p syncIntake) HandlePR(ctx context.Context, repo change.Repo, n int) (prsy
 		return prsync.Handled{}, err
 	}
 	return prsync.Handled{Change: res.Stream, Appended: res.Appended}, nil
-}
-
-// gateEvaluator is the part of gateuse.Evaluator that prGate needs.
-type gateEvaluator interface {
-	Evaluate(ctx context.Context, changeID id.ChangeID) (gateuse.Result, error)
-}
-
-// prGate adapts gateuse.Evaluator to prsync.Gate.
-type prGate struct {
-	eval gateEvaluator
-}
-
-// Evaluate evaluates the merge gate for changeID.
-func (g prGate) Evaluate(ctx context.Context, changeID id.ChangeID) error {
-	_, err := g.eval.Evaluate(ctx, changeID)
-	return err
 }
 
 // reviewsAdapter maps ports.ReviewReader to prsync.Reviews.

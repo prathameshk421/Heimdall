@@ -11,13 +11,11 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
@@ -250,35 +248,6 @@ func TestPRIntakePropagatesError(t *testing.T) {
 	h := &fakeIntakeHandler{err: boom}
 	pi := prIntake{in: h}
 	_, err := pi.HandlePR(context.Background(), change.Repo("acme/pay"), 1)
-	require.ErrorIs(t, err, boom)
-}
-
-type fakeGateEvaluator struct {
-	called   atomic.Bool
-	passedID id.ChangeID
-	err      error
-}
-
-func (f *fakeGateEvaluator) Evaluate(_ context.Context, cid id.ChangeID) (gateuse.Result, error) {
-	f.called.Store(true)
-	f.passedID = cid
-	return gateuse.Result{}, f.err
-}
-
-func TestPRGateCallsEvaluator(t *testing.T) {
-	eval := &fakeGateEvaluator{}
-	pg := prGate{eval: eval}
-	err := pg.Evaluate(context.Background(), id.ChangeID("PAY-42"))
-	require.NoError(t, err)
-	require.True(t, eval.called.Load())
-	require.Equal(t, id.ChangeID("PAY-42"), eval.passedID)
-}
-
-func TestPRGatePropagatesError(t *testing.T) {
-	boom := errors.New("gate failed")
-	eval := &fakeGateEvaluator{err: boom}
-	pg := prGate{eval: eval}
-	err := pg.Evaluate(context.Background(), id.ChangeID("PAY-42"))
 	require.ErrorIs(t, err, boom)
 }
 

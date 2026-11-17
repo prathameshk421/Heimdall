@@ -1,24 +1,19 @@
-package gateuse_test
+package change_test
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/gate"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/slop"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 const (
@@ -139,9 +134,9 @@ func ref(n int) id.FindingRef {
 	return r
 }
 
-func greenOutside() gateuse.Outside {
+func greenOutside() change.Outside {
 	pol := policy.Policy{Version: 1, Workflow: "default"}
-	return gateuse.Outside{
+	return change.Outside{
 		HeadTestTreeHash:           string(testTree1),
 		TestDiffKnown:              true,
 		CIRequired:                 []string{"build"},
@@ -153,16 +148,17 @@ func greenOutside() gateuse.Outside {
 	}
 }
 
-func fold(t *testing.T, s *stream) gate.Facts {
+// foldFacts reads the gate facts of a stream from its view, with no outside facts.
+func foldFacts(t *testing.T, s *stream) gate.Facts {
 	t.Helper()
-	facts, err := gateuse.Fold(s.events())
+	v, err := change.Fold(s.events())
 	require.NoError(t, err)
-	return facts
+	return change.GateFacts(v, change.Outside{})
 }
 
 // TestFoldReadsEveryEventFact is the green case: every fact comes from the stream and none is assumed.
 func TestFoldReadsEveryEventFact(t *testing.T) {
-	f := fold(t, greenStream(t))
+	f := foldFacts(t, greenStream(t))
 
 	require.Equal(t, string(author), f.AuthorLogin)
 	require.Equal(t, head, f.HeadSHA)
@@ -185,27 +181,6 @@ func TestFoldReadsEveryEventFact(t *testing.T) {
 	require.Equal(t, []gate.Approval{{Login: string(approver), Commit: head, Approved: true}}, f.Approvals)
 }
 
-func TestFoldRefusesAChangeWithoutAPullRequest(t *testing.T) {
-	s := newStream(t).add(change.EventChangeTriggered, systemActor, change.Triggered{
-		Ticket: changeKey, Repo: prRepo, Assignee: "ana", Source: change.TriggerManual,
-	})
-
-	_, err := gateuse.Fold(s.events())
-	require.ErrorIs(t, err, gateuse.ErrNoPullRequest)
-}
-
-func TestFoldRefusesAMalformedPayload(t *testing.T) {
-	s := newStream(t).
-		add(change.EventPROpened, githubActor, change.PROpened{
-			Repo: prRepo, Number: prNumber, HeadSHA: head, Author: author, Ticket: changeKey,
-		})
-	s.evs[0].Payload = json.RawMessage(`{"repo": "acme/pay"}`)
-
-	_, err := gateuse.Fold(s.events())
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "pr.opened")
-}
-
 // TestFoldTakesCIOnlyFromTheCurrentHead proves an old check cannot make the new head green.
 func TestFoldTakesCIOnlyFromTheCurrentHead(t *testing.T) {
 	s := greenStream(t).
@@ -216,14 +191,14 @@ func TestFoldTakesCIOnlyFromTheCurrentHead(t *testing.T) {
 		add(change.EventCIReported, githubActor, change.CIReported{
 			Check: "build", SHA: oldHead, Conclusion: change.CISuccess,
 		})
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.NotContains(t, f.CI, gate.CheckAcceptance)
 	require.NotContains(t, f.CI, "build")
 
 	s.add(change.EventCIReported, githubActor, change.CIReported{
 		Check: gate.CheckAcceptance, SHA: head, Conclusion: change.CISuccess,
 	})
-	f = fold(t, s)
+	f = foldFacts(t, s)
 	require.Equal(t, "success", f.CI[gate.CheckAcceptance])
 	require.NotContains(t, f.CI, "build")
 }
@@ -232,23 +207,23 @@ func TestFoldCountsAnApprovalOnlyOnTheHeadFromSomeoneElse(t *testing.T) {
 	s := greenStream(t).add(change.EventPRPushed, githubActor, change.PRPushed{
 		Repo: prRepo, Number: prNumber, HeadSHA: nextHead,
 	})
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.Empty(t, f.Approvals, "a push voids the approval")
 
 	s.add(change.EventApprovalRecorded, change.Actor{Kind: change.ActorHuman, ID: author},
 		change.ApprovalRecorded{Login: author, CommitSHA: nextHead})
-	f = fold(t, s)
+	f = foldFacts(t, s)
 	require.Empty(t, f.Approvals, "the author's approval does not count")
 
 	s.add(change.EventApprovalRecorded, change.Actor{Kind: change.ActorHuman, ID: approver},
 		change.ApprovalRecorded{Login: approver, CommitSHA: nextHead})
-	f = fold(t, s)
+	f = foldFacts(t, s)
 	require.Equal(t, []gate.Approval{{Login: string(approver), Commit: nextHead, Approved: true}}, f.Approvals)
 
 	sOld := greenStream(t).drop(change.EventApprovalRecorded).
 		add(change.EventApprovalRecorded, change.Actor{Kind: change.ActorHuman, ID: approver},
 			change.ApprovalRecorded{Login: approver, CommitSHA: oldHead})
-	fOld := fold(t, sOld)
+	fOld := foldFacts(t, sOld)
 	require.Empty(t, fOld.Approvals, "approval on old sha must not be recorded")
 }
 
@@ -256,7 +231,7 @@ func TestFoldVoidsAnApprovalThatWasInvalidated(t *testing.T) {
 	s := greenStream(t).add(change.EventApprovalInvalidated,
 		change.Actor{Kind: change.ActorHuman, ID: approver},
 		change.ApprovalInvalidated{Login: approver, CommitSHA: head})
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.Empty(t, f.Approvals)
 }
 
@@ -265,7 +240,7 @@ func TestFoldTracksThePinAndTheSignoff(t *testing.T) {
 		replace(change.EventTestsVerified, change.TestsVerified{
 			RunIDs: []id.RunID{runID}, SHA: head, TreeHash: testTree1, NeedsSignoff: true,
 		})
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.True(t, f.Testset.Sensitive)
 	require.False(t, f.Testset.Approved)
 	require.Empty(t, f.HeadTestTreeHash, "the head tree is read from the repository, never folded from events")
@@ -273,18 +248,18 @@ func TestFoldTracksThePinAndTheSignoff(t *testing.T) {
 	s.add(change.EventTestsApproved, systemActor, change.TestsApproved{
 		Approver: approver, TreeHash: testTree1,
 	})
-	f = fold(t, s)
+	f = foldFacts(t, s)
 	require.True(t, f.Testset.Approved)
 
 	s.replace(change.EventTestsCommitted, change.TestsCommitted{SHA: head, TreeHash: testTree2})
-	f = fold(t, s)
+	f = foldFacts(t, s)
 	require.Equal(t, string(testTree2), f.Testset.TreeHash)
 	require.Empty(t, f.HeadTestTreeHash, "the head tree is read from the repository, never folded from events")
 }
 
 func TestFoldDoesNotCallUncommittedTestsVerified(t *testing.T) {
 	s := greenStream(t).drop(change.EventTestsCommitted)
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.False(t, f.Testset.Verified)
 	require.Empty(t, f.Testset.TreeHash)
 	require.Empty(t, f.HeadTestTreeHash, "the head tree is read from the repository, never folded from events")
@@ -298,7 +273,7 @@ func TestFoldTracksSlopFailuresAndAcceptanceCoverage(t *testing.T) {
 		replace(change.EventTestsSubmitted, change.TestsSubmitted{
 			Refs: []string{"test"}, ACMap: nil, SHA: head, TreeHash: testTree1,
 		})
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.False(t, f.Slop.Pass)
 	require.Equal(t, []slop.Failure{{
 		Rule: slop.RuleSize, Message: "the slop rule failed on this head",
@@ -308,13 +283,13 @@ func TestFoldTracksSlopFailuresAndAcceptanceCoverage(t *testing.T) {
 
 func TestFoldLeavesReviewsUnknownUntilTheyArePicked(t *testing.T) {
 	s := greenStream(t).drop(change.EventReviewersPicked)
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.False(t, f.ReviewsKnown)
 
 	s.add(change.EventReviewersPicked, systemActor, change.ReviewersPicked{
 		People: []change.ActorID{"ana", "bo"}, By: "lead", Method: change.PickDefault,
 	})
-	f = fold(t, s)
+	f = foldFacts(t, s)
 	require.True(t, f.ReviewsKnown)
 	require.Equal(t, []gate.ReviewRequest{
 		{Reviewer: "ana", Waived: true},
@@ -326,23 +301,23 @@ func TestFoldBuildsTheBlockingSetAndHumanCases(t *testing.T) {
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
 		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.Equal(t, []id.FindingID{findingID}, f.Blocking)
 
 	s.add(change.EventFindingStateChanged, systemActor, change.FindingStateChanged{
 		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: "high", State: finding.StateResolved, By: "author",
 	})
-	f = fold(t, s)
+	f = foldFacts(t, s)
 	require.Empty(t, f.Blocking)
 
 	s.add(change.EventCaseOpened, systemActor, change.CaseOpened{CaseID: caseID, Finding: ref(1)})
-	f = fold(t, s)
+	f = foldFacts(t, s)
 	require.Equal(t, []id.CaseID{caseID}, f.HumanPending)
 
 	s.add(change.EventVerdictApplied, systemActor, change.VerdictApplied{
 		CaseID: caseID, Verdict: change.VerdictDismiss, Citations: []string{"c"}, Checks: []string{"k"},
 	})
-	f = fold(t, s)
+	f = foldFacts(t, s)
 	require.Empty(t, f.HumanPending)
 }
 
@@ -350,7 +325,7 @@ func TestFoldNeverBlocksAnE4Finding(t *testing.T) {
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
 		FindingID: findingID, Ref: ref(1), Tier: finding.TierE4, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.Empty(t, f.Blocking)
 }
 
@@ -362,28 +337,23 @@ func TestFoldMarksAChangedTicketAndAClosedPR(t *testing.T) {
 		add(change.EventPRLinked, githubActor, change.PRLinked{
 			Repo: prRepo, Number: prNumber, Ticket: changeKey,
 		})
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.True(t, f.TicketLinked)
 
 	s.add(change.EventPRClosed, githubActor, change.PRClosed{
 		Repo: prRepo, Number: prNumber, HeadSHA: head,
 	})
-	eval, err := gateuse.New(gateuse.Config{
-		Events: &fakeStore{events: s.events()},
-		Source: &fakeSource{outside: greenOutside()},
-		Clock:  fixedClock{},
-		IDs:    &fakeIDs{},
-	})
+	v, err := change.Fold(s.events())
 	require.NoError(t, err)
-	_, err = eval.Evaluate(context.Background(), changeKey)
-	require.ErrorIs(t, err, gateuse.ErrPullRequestClosed)
+	require.True(t, v.Over(), "a closed pull request ends the change: no row is open and the gate is not evaluated")
+	require.Empty(t, change.Next(change.In{Change: changeKey, View: v}))
 }
 
 func TestFoldRefusesCaseInsensitiveAuthorApproval(t *testing.T) {
 	s := greenStream(t).drop(change.EventApprovalRecorded).
 		add(change.EventApprovalRecorded, change.Actor{Kind: change.ActorHuman, ID: "AARUSH323"},
 			change.ApprovalRecorded{Login: "AARUSH323", CommitSHA: head})
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.Empty(t, f.Approvals, "author approval with different case must still be refused")
 }
 
@@ -391,7 +361,7 @@ func TestFoldApprovalDoesNotSurvivePushEvenWithSameHead(t *testing.T) {
 	s := greenStream(t).add(change.EventPRPushed, githubActor, change.PRPushed{
 		Repo: prRepo, Number: prNumber, HeadSHA: head,
 	})
-	f := fold(t, s)
+	f := foldFacts(t, s)
 	require.Empty(t, f.Approvals, "a push with the same head SHA must still void earlier approvals")
 }
 
@@ -401,91 +371,21 @@ func TestFoldIsDeterministic(t *testing.T) {
 		FindingID: id.FindingID("fnd_01ARZ3NDEKTSV4RRFFQ69G5FAW"),
 		Ref:       ref(2), Tier: finding.TierE2, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
-	a := fold(t, s)
-	b := fold(t, s)
+	a := foldFacts(t, s)
+	b := foldFacts(t, s)
 	require.Equal(t, a.Blocking, b.Blocking)
 	require.Equal(t, a.HumanPending, b.HumanPending)
 }
 
-// fakeSource is an Outside source that returns a fixed answer.
-type fakeSource struct {
-	outside gateuse.Outside
-	err     error
-	calls   int
-}
+// gateResult is what the merge rule says about a stream: the outcome the gate row would publish.
+type gateResult = change.GateOutcome
 
-func (f *fakeSource) Outside(context.Context, gateuse.Request) (gateuse.Outside, error) {
-	f.calls++
-	if f.err != nil {
-		return gateuse.Outside{}, f.err
-	}
-	return f.outside, nil
-}
-
-// fakeStore keeps a stream in memory and can refuse the first Append calls with a version conflict.
-type fakeStore struct {
-	events       []change.Event
-	conflicts    int
-	loadErr      error
-	appendErr    error
-	appendCalls  int
-	lastExpected int64
-	lastEvents   []change.Event
-	lastEffects  []change.Effect
-}
-
-func (f *fakeStore) Load(context.Context, id.ChangeID) ([]change.Event, error) {
-	if f.loadErr != nil {
-		return nil, f.loadErr
-	}
-	return append([]change.Event(nil), f.events...), nil
-}
-
-func (f *fakeStore) Append(_ context.Context, _ id.ChangeID, expected int64, evs []change.Event, fx []change.Effect) (int64, error) {
-	f.appendCalls++
-	f.lastExpected = expected
-	if f.appendErr != nil {
-		return 0, f.appendErr
-	}
-	if f.conflicts > 0 {
-		f.conflicts--
-		return 0, ports.ErrVersionConflict
-	}
-	f.lastEvents = evs
-	f.lastEffects = fx
-	f.events = append(f.events, evs...)
-	return int64(len(f.events)), nil
-}
-
-type fixedClock struct{}
-
-func (fixedClock) Now() time.Time { return time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC) }
-
-type fakeIDs struct{ n int }
-
-func (f *fakeIDs) NewEvent() change.EventID {
-	f.n++
-	return change.EventID(fmt.Sprintf("20000000-0000-4000-8000-%012d", f.n))
-}
-func (f *fakeIDs) NewFinding() id.FindingID { return id.FindingID("fnd_01ARZ3NDEKTSV4RRFFQ69G5FAV") }
-func (f *fakeIDs) NewRun() id.RunID         { return id.RunID("run_01ARZ3NDEKTSV4RRFFQ69G5FAW") }
-func (f *fakeIDs) NewCase() id.CaseID       { return id.CaseID("case_01ARZ3NDEKTSV4RRFFQ69G5FAX") }
-func (f *fakeIDs) NewTask() id.TaskID       { return id.TaskID("tsk_01ARZ3NDEKTSV4RRFFQ69G5FAV") }
-
-// evaluate builds an Evaluator over a stream, runs it, and returns the store for assertions.
-func evaluate(t *testing.T, s *stream, out gateuse.Outside) (gateuse.Result, *fakeStore) {
+// evaluate runs the merge rule on a stream and the outside facts.
+func evaluate(t *testing.T, s *stream, out change.Outside) gateResult {
 	t.Helper()
-	store := &fakeStore{events: s.events()}
-	eval, err := gateuse.New(gateuse.Config{
-		Events: store,
-		Source: &fakeSource{outside: out},
-		Clock:  fixedClock{},
-		IDs:    &fakeIDs{},
-	})
+	v, err := change.Fold(s.events())
 	require.NoError(t, err)
-	res, err := eval.Evaluate(context.Background(), changeKey)
-	require.NoError(t, err)
-	return res, store
+	return change.EvaluateGate(v, out)
 }
 
 func hasClause(reasons []string, want gate.ClauseID) bool {
@@ -497,17 +397,3 @@ func hasClause(reasons []string, want gate.ClauseID) bool {
 	}
 	return false
 }
-
-func producedEvent(t *testing.T, store *fakeStore, typ change.EventType) change.Event {
-	t.Helper()
-	var found []change.Event
-	for _, e := range store.lastEvents {
-		if e.Type == typ {
-			found = append(found, e)
-		}
-	}
-	require.Len(t, found, 1)
-	return found[0]
-}
-
-var errBoom = errors.New("boom")

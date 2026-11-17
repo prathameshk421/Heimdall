@@ -14,7 +14,8 @@
 //   - Intake.HandlePR(ctx, repo, n) (Result, error): one call per pull request head. It is the unit of test.
 //   - Result: the stream the PR belongs to, whether events were appended, the slop verdict (meaningful only when
 //     Appended is true), and the version after the append.
-//   - ErrNoChange: the PR names a ticket that has no change yet. It is not treated as unlinked.
+//   - A PR that names a ticket with no change yet starts that change: pr.opened is its first event, and the ticket's
+//     trigger joins the stream when it arrives (HARNESS_DESIGN B1).
 //   - ErrSecondPR: the PR names a ticket whose change is already past attachment (a PR state), so the reducer refuses
 //     another pr.opened. Nothing is appended.
 //   - ticketKey (ticket.go): the first ticket key in the branch, then in the title. Case-sensitive, whole token, and
@@ -66,7 +67,7 @@
 //
 // # Failure modes
 //
-// Missing change: ErrNoChange, nothing appended. A second PR on a ticket in a PR state: ErrSecondPR, nothing appended.
+// Missing change: the PR starts it. A second PR on a ticket in a PR state: ErrSecondPR, nothing appended.
 // A port error: wrapped and returned, nothing appended. A stream whose history does not replay: an error naming the
 // event; nothing is appended.
 //
@@ -75,5 +76,5 @@
 // Table tests with in-memory fakes of EventStore, PRReader, CodeReader, Clock and IDs. They cover: the bad PR naming
 // its rules, the good PR passing, the unlinked stream id, the policy read at the base sha (the fake records each sha),
 // invalid and missing policy failing closed, a transport error appending nothing, idempotency, a moved head, the
-// conflict retry and its exhaustion, ErrNoChange, ErrSecondPR, and a PR attached before BUILDING.
+// conflict retry and its exhaustion, ErrSecondPR, and a PR attached before BUILDING.
 package intake

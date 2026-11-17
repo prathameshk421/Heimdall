@@ -19,7 +19,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/announce"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/prsync"
@@ -163,12 +162,10 @@ type endpoints struct {
 
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
 type app struct {
-	pool    *pgxpool.Pool
-	pollers []poller
-	drainer drainer
-	syncer  syncer
-	// gateRefresher re-evaluates the gate after reviews, findings, verdicts, decisions and approvals.
-	gateRefresher     *gateuse.Refresher
+	pool              *pgxpool.Pool
+	pollers           []poller
+	drainer           drainer
+	syncer            syncer
 	roomStream        roomStreamRunner
 	comments          commentPoller
 	mcpHandler        http.Handler
@@ -550,7 +547,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	sync, intakeCase, gateRefresher, err := assembleSyncer(ad, store, gen, clk)
+	sync, intakeCase, err := assembleSyncer(ad, store, eng.Store, gen, clk)
 	if err != nil {
 		return nil, err
 	}
@@ -576,7 +573,7 @@ func assembleWithBlobs(
 	}
 	return &app{
 		narrator: narrator,
-		pool:     pool, pollers: pollers, drainer: box, syncer: sync, gateRefresher: gateRefresher, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
+		pool:     pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil

@@ -38,7 +38,7 @@ func TestRenderMatchesTheStatusGoldens(t *testing.T) {
 				}
 				v, err := change.Fold(loadEvents(t, src))
 				require.NoError(t, err)
-				require.Equal(t, string(read(t, filepath.Join(pt, "status.txt"))), Render(v, change.Missing(change.In{View: v, Policy: p, Settings: change.Settings{TestAttempts: 3, PickWait: time.Minute}})))
+				require.Equal(t, string(read(t, filepath.Join(pt, "status.txt"))), Render(v, change.Missing(change.In{View: v, Policy: p, Outside: goldenOutside(v, p), Settings: change.Settings{TestAttempts: 3, PickWait: time.Minute}})))
 			})
 		}
 	}
@@ -71,4 +71,22 @@ func read(t *testing.T, path string) []byte {
 	b, err := os.ReadFile(path)
 	require.NoError(t, err)
 	return b
+}
+
+// goldenOutside is what a repository with a readable policy gives the board: both policies known and equal, the tests
+// directory diff known and clean, and the head test tree the one that was pinned.
+func goldenOutside(v change.View, p policy.Policy) change.Outside {
+	o := change.Outside{PolicyKnown: true, PolicyAtBase: p, PolicyAtHead: p, PolicyVersion: p.Version, TestDiffKnown: true,
+		CIRequired: p.CIRequired}
+	if v.Tests != nil && v.Tests.Committed != nil {
+		o.HeadTestTreeHash = string(v.Tests.Committed.TreeHash)
+	}
+	for _, names := range p.Approvers {
+		for _, n := range names {
+			if gh := p.People[n].GitHub; gh != "" {
+				o.ApproversForChangedDomains = append(o.ApproversForChangedDomains, gh)
+			}
+		}
+	}
+	return o
 }

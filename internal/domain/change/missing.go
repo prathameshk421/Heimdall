@@ -1,13 +1,12 @@
 package change
 
 import (
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/gate"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
@@ -33,7 +32,7 @@ func Missing(in In) []Need {
 		}
 		out = append(out, Need{Step: ra.Row, Role: roleOf(ra.Action), Subject: subjectOf(ra), Text: ra.Text})
 	}
-	out = append(out, gateNeeds(in.View, in.Policy)...)
+	out = append(out, gateNeeds(in)...)
 	out = append(out, providerNeeds(in.View)...)
 	return append(out, deadNeeds(in)...)
 }
@@ -135,79 +134,40 @@ func refNumber(ref string) int {
 	return n
 }
 
-// gateNeeds are the merge rule's clauses (TECH_SPEC 12.4) that the view and policy can decide. There is no head before
-// a pull request, so there are none then.
-func gateNeeds(v View, p policy.Policy) []Need {
-	if v.PR == nil {
+// gateNeeds are the merge rule's unmet clauses (TECH_SPEC 12.4), as the rule words them. There is none before a pull
+// request, since there is no head.
+func gateNeeds(in In) []Need {
+	if in.View.PR == nil || in.View.Over() {
 		return nil
 	}
-	h := short(string(v.PR.HeadSHA))
 	var out []Need
-	if v.PR.Ticket == "" {
-		out = append(out, gateNeed("ticket", "", "the pull request is linked to a ticket"))
-	}
-	out = append(out, uncoveredCriteria(v)...)
-	for _, check := range append([]string{"heimdall/acceptance"}, p.CIRequired...) {
-		if c := v.PR.CI[v.PR.HeadSHA][check]; c == "" {
-			out = append(out, gateNeed("ci", check, check+" succeeds on "+h))
-		} else if c != CIConclusion("success") {
-			out = append(out, gateNeed("ci", check, check+" succeeds on "+h+" (it reported "+string(c)+")"))
+	for _, u := range EvaluateGate(in.View, in.Outside).Unmet {
+		if u.ID == gate.ClauseReviews || u.ID == gate.ClauseSlopPassed {
+			continue // the review and slop rows already say what they wait for
 		}
+		if u.ID == gate.ClauseBlocking {
+			out = append(out, blockingNeeds(in.View, in.Outside)...) // people read F1, never an internal id
+			continue
+		}
+		out = append(out, Need{Step: "gate", Clause: string(u.ID), Text: u.Reason})
 	}
+	return out
+}
+
+// blockingNeeds names each blocking finding by its short ref, with its tier, severity and state.
+func blockingNeeds(v View, o Outside) []Need {
+	blocking := map[id.FindingID]bool{}
+	for _, fid := range gate.BlockingSet(findingStates(v, o.PolicyAtBase.Consensus), blockingFor(o)) {
+		blocking[fid] = true
+	}
+	var out []Need
 	for _, ref := range findingRefs(v) {
-		if f := v.Findings[ref]; blocks(f, p.Blocking) {
-			out = append(out, gateNeed("blocking", ref, ref+" is resolved ("+string(f.Tier)+" "+string(f.Severity)+", "+string(f.State)+")"))
-		}
-	}
-	if !approvedOnHead(v, p) {
-		out = append(out, gateNeed("approval", "", "an approver who is not the author approves "+h))
-	}
-	return out
-}
-
-func gateNeed(clause, subject, text string) Need {
-	return Need{Step: "gate", Clause: clause, Subject: subject, Text: text}
-}
-
-// uncoveredCriteria are the ticket's criteria no submitted test covers.
-func uncoveredCriteria(v View) []Need {
-	if v.Tests == nil || v.Trigger == nil {
-		return nil
-	}
-	var out []Need
-	for _, ac := range v.Trigger.Criteria {
-		if len(v.Tests.ACMap[ac]) == 0 {
-			out = append(out, gateNeed("ac_covered", ac, "a test covers "+ac))
+		if f := v.Findings[ref]; blocking[f.ID] {
+			out = append(out, Need{Step: "gate", Clause: string(gate.ClauseBlocking), Subject: ref,
+				Text: ref + " is resolved (" + string(f.Tier) + " " + string(f.Severity) + ", " + string(f.State) + ")"})
 		}
 	}
 	return out
-}
-
-// blocks is the blocking set of TECH_SPEC 11.1: a live state, a tier no weaker than min_tier, a severity no lower
-// than min_severity. An E4 finding never blocks (invariant 3), because min_tier is at most E3.
-func blocks(f FindingInfo, b policy.Blocking) bool {
-	live := []finding.State{finding.StateOpen, finding.StateDisputed, finding.StateEscalated, finding.StateUpheld,
-		finding.StateFixClaimed, finding.StateVerifying}
-	return slices.Contains(live, f.State) && f.Tier.AtLeast(b.MinTier) && f.Severity.AtLeast(b.MinSeverity)
-}
-
-// approvedOnHead: an approval of the head, by a login that is not the author and is the GitHub login of a person
-// named in any approvers list (which domains a change touches is in no event: view README Q6).
-func approvedOnHead(v View, p policy.Policy) bool {
-	approvers := map[string]bool{}
-	for _, names := range p.Approvers {
-		for _, n := range names {
-			if gh := p.People[n].GitHub; gh != "" {
-				approvers[gh] = true
-			}
-		}
-	}
-	for _, a := range v.Approvals {
-		if a.CommitSHA == v.PR.HeadSHA && a.Login != v.PR.Author && approvers[string(a.Login)] {
-			return true
-		}
-	}
-	return false
 }
 
 func short(sha string) string {

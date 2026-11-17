@@ -220,26 +220,6 @@ func (f *fakeChecks) CheckRuns(_ context.Context, _ change.Repo, sha id.SHA) ([]
 	return append([]prsync.CheckRun(nil), f.checks[sha]...), nil
 }
 
-// fakeGate implements prsync.Gate.
-type fakeGate struct {
-	mu    sync.Mutex
-	calls []id.ChangeID
-	err   error
-}
-
-func (f *fakeGate) Evaluate(_ context.Context, changeID id.ChangeID) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, changeID)
-	return f.err
-}
-
-func (f *fakeGate) evaluated() []id.ChangeID {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]id.ChangeID(nil), f.calls...)
-}
-
 type fakeClock struct{ at time.Time }
 
 func (c fakeClock) Now() time.Time { return c.at }
@@ -268,7 +248,6 @@ type rig struct {
 	intake  *fakeIntake
 	reviews *fakeReviews
 	checks  *fakeChecks
-	gate    *fakeGate
 	ids     *seqIDs
 	clock   fakeClock
 	syncer  *prsync.Syncer
@@ -283,7 +262,6 @@ func newRig(t *testing.T) *rig {
 		intake:  newFakeIntake(),
 		reviews: newFakeReviews(),
 		checks:  newFakeChecks(),
-		gate:    &fakeGate{},
 		ids:     &seqIDs{},
 		clock:   fakeClock{at: testNow},
 	}
@@ -302,7 +280,6 @@ func (r *rig) restart(t *testing.T) *prsync.Syncer {
 		Intake:  r.intake,
 		Reviews: r.reviews,
 		Checks:  r.checks,
-		Gate:    r.gate,
 		Events:  r.events,
 		Clock:   r.clock,
 		IDs:     r.ids,
@@ -372,7 +349,6 @@ func TestFirstSyncAppendsApprovalAndCIOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, res.Failed)
 	require.Equal(t, 2, res.Appended)
-	require.Equal(t, 1, res.Evaluated)
 
 	evs, err := r.events.Load(context.Background(), changeID)
 	require.NoError(t, err)
@@ -392,7 +368,6 @@ func TestFirstSyncAppendsApprovalAndCIOnce(t *testing.T) {
 	require.Equal(t, change.CISuccess, ci.Conclusion)
 	require.Equal(t, head1, ci.SHA)
 
-	require.Equal(t, []id.ChangeID{changeID}, r.gate.evaluated())
 }
 
 func TestSecondSyncAppendsNothing(t *testing.T) {
@@ -431,12 +406,10 @@ func TestSecondSyncAppendsNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, res2.Failed)
 	require.Equal(t, 0, res2.Appended)
-	require.Equal(t, 0, res2.Evaluated)
 
 	evs, err := r.events.Load(context.Background(), changeID)
 	require.NoError(t, err)
-	require.Len(t, evs, 3)                                        // No new events added
-	require.Equal(t, []id.ChangeID{changeID}, r.gate.evaluated()) // Gate was not called on 2nd sync
+	require.Len(t, evs, 3) // No new events added
 }
 
 func TestNewPushVoidsOldApproval(t *testing.T) {
@@ -621,42 +594,6 @@ func TestInProgressCheckAppendsNothing(t *testing.T) {
 	require.Len(t, evs, 1)
 }
 
-func TestGateCalledOnlyForChangedPRs(t *testing.T) {
-	r := newRig(t)
-	pr := samplePR(10, head1, ports.PRStateOpen)
-	r.prs.prs[testRepo] = []ports.PR{pr}
-	changeID := id.ChangeID("PAY-10")
-	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
-
-	// Sync 1: nothing new on PR -> gate not called
-	res1, err := r.syncer.SyncOnce(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, 0, res1.Evaluated)
-	require.Empty(t, r.gate.evaluated())
-
-	// Add an approval -> sync 2 appends event and evaluates gate
-	r.reviews.reviews[10] = []prsync.PRReview{
-		{
-			ID:          "rev-bob",
-			Login:       reviewerBob,
-			State:       prsync.ReviewApproved,
-			CommitSHA:   head1,
-			SubmittedAt: testNow,
-		},
-	}
-	res2, err := r.syncer.SyncOnce(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, 1, res2.Evaluated)
-	require.Equal(t, []id.ChangeID{changeID}, r.gate.evaluated())
-
-	// Sync 3: unchanged -> gate NOT called
-	res3, err := r.syncer.SyncOnce(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, 0, res3.Evaluated)
-	require.Equal(t, []id.ChangeID{changeID}, r.gate.evaluated())
-}
-
 func TestOneFailingPRDoesNotStopOthers(t *testing.T) {
 	r := newRig(t)
 	pr1 := samplePR(1, head1, ports.PRStateOpen)
@@ -784,7 +721,6 @@ func TestNewRequiresAllPorts(t *testing.T) {
 		Intake:  r.intake,
 		Reviews: r.reviews,
 		Checks:  r.checks,
-		Gate:    r.gate,
 		Events:  r.events,
 		Clock:   r.clock,
 		IDs:     r.ids,
@@ -902,36 +838,4 @@ func TestReconcileReadFailureDoesNotStopOthers(t *testing.T) {
 	evs, err := r.events.Load(context.Background(), id.ChangeID("PAY-11"))
 	require.NoError(t, err)
 	require.Len(t, evs, 2)
-}
-
-// The head moved to head2 while the server was down. The first sync after the restart must evaluate the gate for
-// the new head, because intake appended the pr.pushed. The in-memory head of the old process is gone.
-func TestRestartedSyncEvaluatesGateWhenIntakeAppendedAHead(t *testing.T) {
-	r := newRig(t)
-	changeID := id.ChangeID("PAY-10")
-	r.seedInitialPROpened(changeID, 10, head1)
-	r.prs.prs[testRepo] = []ports.PR{samplePR(10, head2, ports.PRStateOpen)}
-	r.intake.changeID[10] = changeID
-	r.intake.appended[10] = true
-
-	fresh := r.restart(t)
-	res, err := fresh.SyncOnce(context.Background())
-	require.NoError(t, err)
-	require.Empty(t, res.Failed)
-	require.Equal(t, 1, res.Evaluated)
-	require.Equal(t, []id.ChangeID{changeID}, r.gate.evaluated())
-}
-
-// A restarted sync of an unchanged pull request does not run the gate: intake appended nothing.
-func TestRestartedSyncOfUnchangedPRDoesNotEvaluateGate(t *testing.T) {
-	r := newRig(t)
-	changeID := id.ChangeID("PAY-10")
-	r.seedInitialPROpened(changeID, 10, head1)
-	r.prs.prs[testRepo] = []ports.PR{samplePR(10, head1, ports.PRStateOpen)}
-	r.intake.changeID[10] = changeID
-
-	res, err := r.restart(t).SyncOnce(context.Background())
-	require.NoError(t, err)
-	require.Zero(t, res.Evaluated)
-	require.Empty(t, r.gate.evaluated())
 }

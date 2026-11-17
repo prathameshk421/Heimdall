@@ -6,16 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/slop"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
-
-// gateCheck is the name of the required check run (TECH_SPEC 13).
-const gateCheck = "heimdall/gate"
 
 // ruleInvalidPolicy names the failing rule when the policy at the merge base cannot be used (fail closed).
 const ruleInvalidPolicy = "policy_invalid"
@@ -25,10 +21,6 @@ const maxRetries = 5
 
 // intakeActor is the system actor of the slop verdict.
 const intakeActor change.ActorID = "intake"
-
-// ErrNoChange is returned when a pull request names a ticket that has no change yet. Such a PR is not unlinked: it
-// waits for the ticket's change, so nothing is appended.
-var ErrNoChange = errors.New("no change exists for the ticket")
 
 // ErrSecondPR is returned when a pull request names a ticket whose change is already past attachment (it has a PR in
 // a PR state), so the reducer refuses another pr.opened. Nothing is appended.
@@ -265,14 +257,12 @@ type streamView struct {
 	seen     bool
 }
 
-// load reads the stream of a job and replays it. A ticket with no events has no change yet (ErrNoChange).
+// load reads the stream of a job and replays it. A ticket with no events yet has no change: this pull request starts it
+// (HARNESS_DESIGN B1), and the ticket's trigger joins the stream when it arrives.
 func (in *Intake) load(ctx context.Context, j job) (streamView, error) {
 	existing, err := in.events.Load(ctx, j.stream)
 	if err != nil {
 		return streamView{}, fmt.Errorf("load %s: %w", j.stream, err)
-	}
-	if j.ticket != "" && len(existing) == 0 {
-		return streamView{}, fmt.Errorf("ticket %s: %w", j.ticket, ErrNoChange)
 	}
 	view, err := change.Fold(existing)
 	if err != nil {
@@ -309,20 +299,7 @@ func (in *Intake) appendOnce(ctx context.Context, j job) (Result, error) {
 		return Result{}, err
 	}
 
-	fx, err := in.gateEffect(j, v.expected+int64(len(evs)))
-	if err != nil {
-		return Result{}, err
-	}
-	var effs []change.Effect
-	if j.ticket != "" {
-		acc, err := in.acceptanceEffect(j, v.expected+int64(len(evs)))
-		if err != nil {
-			return Result{}, err
-		}
-		effs = append(effs, acc)
-	}
-	effs = append(effs, fx)
-	ver, err := in.events.Append(ctx, j.stream, v.expected, evs, effs)
+	ver, err := in.events.Append(ctx, j.stream, v.expected, evs, nil)
 	if err != nil {
 		return Result{}, fmt.Errorf("append to %s: %w", j.stream, err)
 	}
@@ -337,11 +314,11 @@ func (in *Intake) buildEvents(j job, expected int64, seen bool) ([]change.Event,
 	var prPayload change.Payload
 	if seen {
 		prType = change.EventPRPushed
-		prPayload = change.PRPushed{Repo: j.repo, Number: j.pr.Number, HeadSHA: j.pr.HeadSHA}
+		prPayload = change.PRPushed{Repo: j.repo, Number: j.pr.Number, HeadSHA: j.pr.HeadSHA, BaseSHA: j.pr.BaseSHA}
 	} else {
 		prType = change.EventPROpened
 		prPayload = change.PROpened{Repo: j.repo, Number: j.pr.Number, HeadSHA: j.pr.HeadSHA, Author: j.pr.Author,
-			Ticket: j.ticket, SuggestedReviewers: j.suggestedReviewers}
+			Ticket: j.ticket, SuggestedReviewers: j.suggestedReviewers, BaseSHA: j.pr.BaseSHA}
 	}
 	slopPayload := change.SlopEvaluated{Pass: j.v.pass, FailingRules: j.v.rules}
 
@@ -383,72 +360,6 @@ func checkSecondPR(v change.View, j job, seen bool) error {
 		return fmt.Errorf("ticket %s already has pull request #%d: %w", j.ticket, v.PR.Number, ErrSecondPR)
 	}
 	return nil
-}
-
-// gateEffect builds the github_check row that shows the verdict on the head. Its key depends on the new version and
-// the head, so a new head or a new version never reuses a key.
-func (in *Intake) gateEffect(j job, newVersion int64) (change.Effect, error) {
-	key, err := change.IdempotencyKey(j.stream, newVersion, change.EffectGitHubCheck,
-		string(j.repo)+":"+j.pr.HeadSHA.String())
-	if err != nil {
-		return change.Effect{}, fmt.Errorf("gate effect key: %w", err)
-	}
-	// The shared github_check payload: the executor reads the same type, and the effect key is the check's external id.
-	c := change.CheckPayload{
-		Repo:    j.repo,
-		SHA:     j.pr.HeadSHA,
-		Name:    gateCheck,
-		Summary: clipSummary(j.v.summary, change.MaxCheckSummary),
-	}
-	if j.v.pass {
-		c.Status = change.CheckStatusInProgress
-	} else {
-		c.Status = change.CheckStatusCompleted
-		c.Conclusion = change.CIFailure
-	}
-	if err := c.Validate(); err != nil {
-		return change.Effect{}, fmt.Errorf("gate check: %w", err)
-	}
-	raw, err := json.Marshal(c)
-	if err != nil {
-		return change.Effect{}, fmt.Errorf("encode gate check: %w", err)
-	}
-	return change.Effect{Key: key, Kind: change.EffectGitHubCheck, Target: string(j.repo), Payload: raw}, nil
-}
-
-// acceptanceCheck is the check Heimdall's own run of every Heimdall test reports under (TECH_SPEC 12.4, D150).
-const acceptanceCheck = "heimdall/acceptance"
-
-// acceptanceEffect asks for the acceptance run on the head. The payload names the check to report; the executor runs
-// the tests and completes it.
-func (in *Intake) acceptanceEffect(j job, newVersion int64) (change.Effect, error) {
-	key, err := change.IdempotencyKey(j.stream, newVersion, change.EffectAcceptance,
-		string(j.repo)+":"+j.pr.HeadSHA.String())
-	if err != nil {
-		return change.Effect{}, fmt.Errorf("acceptance effect key: %w", err)
-	}
-	c := change.CheckPayload{Repo: j.repo, SHA: j.pr.HeadSHA, Name: acceptanceCheck,
-		Status: change.CheckStatusQueued, Summary: "Heimdall runs every acceptance test on this head."}
-	if err := c.Validate(); err != nil {
-		return change.Effect{}, fmt.Errorf("acceptance check: %w", err)
-	}
-	raw, err := json.Marshal(c)
-	if err != nil {
-		return change.Effect{}, fmt.Errorf("encode acceptance check: %w", err)
-	}
-	return change.Effect{Key: key, Kind: change.EffectAcceptance, Target: string(j.repo), Payload: raw}, nil
-}
-
-// clipSummary cuts s to at most limit bytes on a rune boundary, with an ellipsis inside the limit.
-func clipSummary(s string, limit int) string {
-	if len(s) <= limit {
-		return s
-	}
-	cut := limit - 3
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut] + "..."
 }
 
 // lastHead returns the head sha of the latest pr.opened or pr.pushed for pull request n of repo, and whether one exists.

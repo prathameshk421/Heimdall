@@ -3,4 +3,4 @@ Tests     2 tests for AC1, AC2 · submitted on 4a0f699 · verified · committed 
 PR        #10 by prathameshk421 · head 19ba050 · slop passed · acceptance success
 Reviews   reviewer-1 1 finding on 19ba050 · reviewer-2 clean on 19ba050 · reviewer-3 1 finding on 19ba050
 Findings  F1 E4 low upheld · F2 E4 low unverified
-Next      an approver who is not the author approves 19ba050
+Next      no approval has been recorded from an approver of the changed domains

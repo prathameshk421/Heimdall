@@ -252,18 +252,6 @@ func types(evs []change.Event) []change.EventType {
 	return out
 }
 
-// lastGate returns the gate check payload of the most recent effect.
-func (r *rig) lastGate(t *testing.T) change.CheckPayload {
-	t.Helper()
-	require.NotEmpty(t, r.ev.effects)
-	fx := r.ev.effects[len(r.ev.effects)-1]
-	require.Equal(t, change.EffectGitHubCheck, fx.Kind)
-	// The executor reads this payload with the same strict decoder, so the shape is the contract.
-	c, err := change.DecodeCheckPayload(fx.Payload)
-	require.NoError(t, err, "the gate check effect must be accepted by the shared github_check decoder")
-	return c
-}
-
 func slopOf(t *testing.T, e change.Event) change.SlopEvaluated {
 	t.Helper()
 	p, err := change.Decode(e)
@@ -290,14 +278,10 @@ func TestBadPRFailsTheSlopRuleAndNamesTheRule(t *testing.T) {
 	require.Contains(t, rules, "tests_present")
 	require.Contains(t, rules, "scope")
 
-	c := r.lastGate(t)
-	require.Equal(t, change.CheckStatusCompleted, c.Status)
-	require.Equal(t, change.CIFailure, c.Conclusion)
-	require.Contains(t, c.Summary, "ticket_linked")
-	require.Equal(t, gateCheck, c.Name)
+	require.Empty(t, r.ev.effects, "intake records the verdict only; the gate row publishes the check")
 }
 
-func TestGoodPRPassesAndTheGateStaysPending(t *testing.T) {
+func TestGoodPRPassesSlop(t *testing.T) {
 	r := newRig(t)
 	r.seed(t, true)
 	r.prs.pr = pullRequest(3, "PAY-142 refund rounding", "feature/PAY-142-refund", shaHead1)
@@ -313,10 +297,7 @@ func TestGoodPRPassesAndTheGateStaysPending(t *testing.T) {
 	require.Equal(t, []change.EventType{change.EventPROpened, change.EventSlopEvaluated}, types(evs))
 	require.True(t, slopOf(t, evs[1]).Pass)
 
-	c := r.lastGate(t)
-	require.Equal(t, change.CheckStatusInProgress, c.Status)
-	require.Empty(t, c.Conclusion)
-	require.Contains(t, c.Summary, "stays pending")
+	require.Empty(t, r.ev.effects, "intake records the verdict only; the gate row publishes the check")
 }
 
 func TestIntakePersistsCODEOWNERSReviewerSuggestionsAtTheMergeBase(t *testing.T) {
@@ -411,9 +392,6 @@ func TestInvalidPolicyFailsClosedAndNamesThePolicy(t *testing.T) {
 			rules := slopOf(t, r.ev.streams[ticketPay42][len(r.ev.streams[ticketPay42])-1]).FailingRules
 			require.Len(t, rules, 1)
 			require.True(t, strings.HasPrefix(rules[0], ruleInvalidPolicy+": "), "rule %q", rules[0])
-			c := r.lastGate(t)
-			require.Equal(t, change.CheckStatusCompleted, c.Status)
-			require.Equal(t, change.CIFailure, c.Conclusion)
 		})
 	}
 }
@@ -472,7 +450,6 @@ func TestMovedHeadAppendsPushedThenEvaluatesAgain(t *testing.T) {
 	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
 	_, err := r.in.HandlePR(ctx, testRepo, 3)
 	require.NoError(t, err)
-	firstKey := r.ev.effects[len(r.ev.effects)-1].Key
 
 	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead2)
 	res, err := r.in.HandlePR(ctx, testRepo, 3)
@@ -480,8 +457,7 @@ func TestMovedHeadAppendsPushedThenEvaluatesAgain(t *testing.T) {
 	require.True(t, res.Appended)
 	require.Equal(t, []change.EventType{change.EventPROpened, change.EventSlopEvaluated,
 		change.EventPRPushed, change.EventSlopEvaluated}, types(r.ev.streams[ticketPay42][seededToBuilding:]))
-	require.NotEqual(t, firstKey, r.ev.effects[len(r.ev.effects)-1].Key,
-		"a new head and a new version must give a new effect key")
+	require.Empty(t, r.ev.effects, "intake records facts only")
 }
 
 func TestVersionConflictIsRetriedAndSucceeds(t *testing.T) {
@@ -511,15 +487,18 @@ func TestVersionConflictRetriesAreBounded(t *testing.T) {
 	require.Len(t, r.ev.streams[ticketPay42], seededToBuilding)
 }
 
-func TestUnknownTicketIsErrNoChangeAndAppendsNothing(t *testing.T) {
+func TestAPullRequestForAnUnknownTicketStartsThatChange(t *testing.T) {
 	r := newRig(t)
 	r.prs.pr = pullRequest(9, "PAY-999 refund", "feature/PAY-999-refund", shaHead1)
 	r.prs.files = testsOnlyFiles()
 
-	_, err := r.in.HandlePR(context.Background(), testRepo, 9)
-	require.ErrorIs(t, err, ErrNoChange)
-	require.Zero(t, r.ev.calls)
-	require.Empty(t, r.ev.streams)
+	res, err := r.in.HandlePR(context.Background(), testRepo, 9)
+	require.NoError(t, err)
+	require.True(t, res.Appended)
+	require.Equal(t, id.ChangeID("PAY-999"), res.Stream)
+	evs := r.ev.streams[res.Stream]
+	require.Equal(t, []change.EventType{change.EventPROpened, change.EventSlopEvaluated}, types(evs), "pr.opened is version 1")
+	require.Equal(t, int64(1), evs[0].Version)
 }
 
 func TestSecondPRForATicketIsRefusedWithoutAppend(t *testing.T) {

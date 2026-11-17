@@ -97,5 +97,23 @@ func goldenIn(v change.View, p policy.Policy) change.In {
 	case v.PR != nil:
 		c = v.PR.Ticket
 	}
-	return change.In{Change: c, View: v, Policy: p, Settings: change.Settings{TestAttempts: 3, PickWait: time.Minute}}
+	return change.In{Change: c, View: v, Policy: p, Outside: goldenOutside(v, p), Settings: change.Settings{TestAttempts: 3, PickWait: time.Minute}}
+}
+
+// goldenOutside is what a repository with a readable policy gives the board: both policies known and equal, the tests
+// directory diff known and clean, and the head test tree the one that was pinned.
+func goldenOutside(v change.View, p policy.Policy) change.Outside {
+	o := change.Outside{PolicyKnown: true, PolicyAtBase: p, PolicyAtHead: p, PolicyVersion: p.Version, TestDiffKnown: true,
+		CIRequired: p.CIRequired}
+	if v.Tests != nil && v.Tests.Committed != nil {
+		o.HeadTestTreeHash = string(v.Tests.Committed.TreeHash)
+	}
+	for _, names := range p.Approvers {
+		for _, n := range names {
+			if gh := p.People[n].GitHub; gh != "" {
+				o.ApproversForChangedDomains = append(o.ApproversForChangedDomains, gh)
+			}
+		}
+	}
+	return o
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -211,10 +212,25 @@ func rowAcceptance() Row {
 		}}
 }
 
-// rowGate is never done while the PR is open. What it decides (the merge rule on the view) is added with the gate
-// facts (HARNESS_DESIGN H6); until then Missing reads the gate's clauses from gateNeeds.
+// gateCheckName is the check the merge rule publishes on the pull request.
+const gateCheckName = "heimdall/gate"
+
+// rowGate is never done while the PR is open. It publishes the merge rule's decision whenever it differs from the last
+// one recorded for the head: a fact (gate.evaluated) and the heimdall/gate check, keyed by what they say.
 func rowGate() Row {
 	return Row{ID: "gate", Flow: FlowReview,
 		Done: func(In) bool { return false },
-		Next: func(In) []Action { return nil }}
+		Next: func(in In) []Action {
+			pr := in.View.PR
+			g := EvaluateGate(in.View, in.Outside)
+			if g.Same(in.View) {
+				return nil
+			}
+			check := CheckPayload{Repo: pr.Repo, SHA: pr.HeadSHA, Name: gateCheckName, Status: g.Status, Conclusion: g.Conclusion, Summary: g.Summary}
+			event := GateEvaluated{OK: g.OK, Reasons: g.Reasons, SHA: pr.HeadSHA, TreeHash: g.TreeHash, PolicyVersion: g.PolicyVersion}
+			return []Action{
+				{Fact: event},
+				{Job: &Job{Kind: EffectGitHubCheck, Key: in.jobKey("gate", string(pr.HeadSHA)+"/"+g.digest()+"/n"+strconv.Itoa(pr.GateCount)), Target: string(pr.Repo), Payload: check}},
+			}
+		}}
 }

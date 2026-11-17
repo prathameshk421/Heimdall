@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -75,7 +76,7 @@ func (c *inputCache) profile(ctx context.Context, src InputSource, repo change.R
 
 // outside is cached by change and head: the changed files and the like do not change while the head stays.
 func (c *inputCache) outside(ctx context.Context, src InputSource, changeID id.ChangeID, v change.View) (change.Outside, error) {
-	key := "outside/" + string(changeID) + "/" + string(v.PR.HeadSHA)
+	key := "outside/" + string(changeID) + "/" + string(v.PR.HeadSHA) + "/" + strconv.Itoa(len(v.Approvals))
 	if x, ok := c.get(key); ok {
 		return x.(change.Outside), nil
 	}

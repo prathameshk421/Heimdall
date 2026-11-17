@@ -10,7 +10,7 @@
     "step": "gate",
     "role": "",
     "clause": "ci",
-    "subject": "heimdall/acceptance",
-    "text": "heimdall/acceptance succeeds on 59effae"
+    "subject": "",
+    "text": "check heimdall/acceptance has not reported on head"
   }
 ]

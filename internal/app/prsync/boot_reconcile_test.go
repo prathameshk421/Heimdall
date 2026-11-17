@@ -31,7 +31,7 @@ func TestBootAfterDowntimeAppendsMissedPushAndCIOnce(t *testing.T) {
 
 	fresh, err := prsync.New(prsync.Config{
 		Repos: r.repos, PRs: r.prs, Streams: r.events, Intake: r.intake, Reviews: r.reviews, Checks: r.checks,
-		Gate: r.gate, Events: r.events, Clock: r.clock, IDs: r.ids,
+		Events: r.events, Clock: r.clock, IDs: r.ids,
 	})
 	require.NoError(t, err)
 	first, err := fresh.SyncOnce(context.Background())

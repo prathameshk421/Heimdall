@@ -15,7 +15,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/github"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -269,28 +268,8 @@ func TestLiveGateGreenPath(t *testing.T) {
 
 	liveGreenAppendReview(t, pool, gen, changeKey, pr)
 
-	gateSrc, err := gateuse.NewSource(gateuse.SourceConfig{
-		PRs:    ghAdapter,
-		Code:   ghAdapter,
-		Decode: policyyaml.Decode,
-	})
-	require.NoError(t, err, "build gate source")
-
-	gateEval, err := gateuse.New(gateuse.Config{
-		Events: postgres.NewStore(pool),
-		Source: gateSrc,
-		Clock:  clock.System{},
-		IDs:    gen,
-	})
-	require.NoError(t, err, "build gate evaluator")
-
-	evalRes, err := gateEval.Evaluate(ctx, changeKey)
-	require.NoError(t, err, "direct gate evaluator Evaluate for %s", changeKey)
-	t.Logf("Direct gate evaluation returned OK: %t, Appended: %t, Status: %s, Reasons count: %d",
-		evalRes.OK, evalRes.Appended, evalRes.Status, len(evalRes.Reasons))
-	for i, r := range evalRes.Reasons {
-		t.Logf("Direct gate reason [%d]: %s", i+1, r)
-	}
+	// The reconciler decides the gate from the log and the repository, and attaches the check job.
+	require.NoError(t, appInstance.reconciler.Run(ctx, changeKey), "reconciler Run for %s", changeKey)
 
 	boxDrainer, ok := appInstance.drainer.(*outbox.Drainer)
 	require.True(t, ok, "drainer must be *outbox.Drainer")

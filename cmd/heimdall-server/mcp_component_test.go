@@ -324,7 +324,7 @@ func TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex(t *testing.T) {
 		Conclusion: change.CIFailure, SHA: acceptanceCommitSHA}}}
 	syncer, err := prsync.New(prsync.Config{
 		Repos: []change.Repo{ciPR.Repo}, PRs: jiraJourneyPRs{pr: ciPR}, Streams: store, Intake: jiraJourneyIntake{cid: cid},
-		Reviews: jiraJourneyReviews{}, Checks: checks, Gate: &jiraJourneyGate{}, Events: store, Clock: clk, IDs: gen,
+		Reviews: jiraJourneyReviews{}, Checks: checks, Events: store, Clock: clk, IDs: gen,
 	})
 	require.NoError(t, err)
 	firstCI, err := syncer.SyncOnce(ctx)
@@ -498,10 +498,6 @@ type jiraJourneyChecks struct{ runs []prsync.CheckRun }
 func (c *jiraJourneyChecks) CheckRuns(context.Context, change.Repo, id.SHA) ([]prsync.CheckRun, error) {
 	return append([]prsync.CheckRun(nil), c.runs...), nil
 }
-
-type jiraJourneyGate struct{}
-
-func (*jiraJourneyGate) Evaluate(context.Context, id.ChangeID) error { return nil }
 
 type jiraJourneyTickets struct{ ticket ports.Ticket }
 

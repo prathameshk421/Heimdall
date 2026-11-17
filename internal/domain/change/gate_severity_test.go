@@ -1,4 +1,4 @@
-package gateuse_test
+package change_test
 
 import (
 	"testing"
@@ -22,7 +22,7 @@ func TestSeverityBelowPolicyMinimumDoesNotBlock(t *testing.T) {
 		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: finding.SeverityLow,
 		State: finding.StateOpen, By: "reviewer",
 	})
-	res, _ := evaluate(t, low, out)
+	res := evaluate(t, low, out)
 	require.True(t, res.OK, "a low severity finding is below the policy's medium minimum and must not block")
 	require.False(t, hasClause(res.Reasons, gate.ClauseBlocking))
 }
@@ -36,7 +36,7 @@ func TestSeverityAtOrAbovePolicyMinimumBlocks(t *testing.T) {
 		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: finding.SeverityHigh,
 		State: finding.StateOpen, By: "reviewer",
 	})
-	res, _ := evaluate(t, high, out)
+	res := evaluate(t, high, out)
 	require.False(t, res.OK, "a high severity finding meets the policy's medium minimum and must block")
 	require.True(t, hasClause(res.Reasons, gate.ClauseBlocking))
 }
@@ -50,6 +50,6 @@ func TestSeverityLowBlocksUnderTheStrictDefault(t *testing.T) {
 		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: finding.SeverityLow,
 		State: finding.StateOpen, By: "reviewer",
 	})
-	res, _ := evaluate(t, low, out)
+	res := evaluate(t, low, out)
 	require.False(t, res.OK, "with no policy known, a low finding must still block")
 }

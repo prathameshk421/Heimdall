@@ -262,7 +262,10 @@ func findCauseEvent(l loadedChange, fndID id.FindingID) *change.Event {
 			}
 		}
 	}
-	return l.first(change.EventChangeTriggered)
+	if len(l.events) == 0 {
+		return nil
+	}
+	return &l.events[0] // a pull request that names no ticket has no trigger: the change starts at its first fact
 }
 
 // executeCheck verifies an E2 finding: it re-runs the fixed static check on the head through the runner and applies the

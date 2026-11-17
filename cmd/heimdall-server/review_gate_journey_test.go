@@ -11,7 +11,6 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/gateuse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/commands"
@@ -48,19 +47,28 @@ func (reviewJourneyValidator) Submit(_ context.Context, submission agenttools.Re
 	return result, nil
 }
 
-type reviewJourneyGateSource struct{}
-
-func (reviewJourneyGateSource) Outside(context.Context, gateuse.Request) (gateuse.Outside, error) {
+// reviewJourneyOutside is the repository facts of the journey: the policy at the base and head, the pinned tests tree.
+func reviewJourneyOutside() change.Outside {
 	pol := policy.Policy{
 		Version: 1, Workflow: "default",
 		Blocking: policy.Blocking{MinTier: finding.TierE1, MinSeverity: finding.SeverityHigh},
 		Consensus: policy.Consensus{MinHighReporters: 2, BlockScore: 100,
 			Confidence: policy.Confidence{High: 1, Medium: .5, Low: .2}},
 	}
-	return gateuse.Outside{
+	return change.Outside{
 		HeadTestTreeHash: string(commandTestHead), TestDiffKnown: true,
 		PolicyKnown: true, PolicyAtBase: pol, PolicyAtHead: pol,
-	}, nil
+	}
+}
+
+// journeyGate is the merge rule on the change's log as it stands.
+func journeyGate(ctx context.Context, t *testing.T, store *memStore, cid id.ChangeID) change.GateOutcome {
+	t.Helper()
+	events, err := store.Load(ctx, cid)
+	require.NoError(t, err)
+	v, err := change.Fold(events)
+	require.NoError(t, err)
+	return change.EvaluateGate(v, reviewJourneyOutside())
 }
 
 type reviewJourneyProvider struct {
@@ -174,18 +182,14 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	gateEvaluator, err := gateuse.New(gateuse.Config{Events: store, Source: reviewJourneyGateSource{}, Clock: clock.System{}, IDs: gen})
-	require.NoError(t, err)
 
 	// A single high-confidence report stays below the base policy threshold. The second independent report shares its
 	// fingerprint and must create a consensus hold even though each report is below the normal tier threshold.
 	submitJourneyReview(ctx, t, runtime, reviewService, cid, pr, assignments[0], pr.HeadSHA)
-	oneReport, err := gateEvaluator.Evaluate(ctx, cid)
-	require.NoError(t, err)
+	oneReport := journeyGate(ctx, t, store, cid)
 	require.False(t, hasReasonPrefix(oneReport.Reasons, "blocking:"))
 	submitJourneyReview(ctx, t, runtime, reviewService, cid, pr, assignments[1], pr.HeadSHA)
-	twoReports, err := gateEvaluator.Evaluate(ctx, cid)
-	require.NoError(t, err)
+	twoReports := journeyGate(ctx, t, store, cid)
 	require.True(t, hasReasonPrefix(twoReports.Reasons, "blocking:"), "two high-confidence reviewers independently report the same fingerprint")
 
 	// A challenge opens a durable, case-scoped resolver task; resolver evidence is followed by the human decision.
@@ -220,8 +224,7 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 	require.NoError(t, reviewService.SubmitVerdict(ctx, dismissResolver, dismissVerdict, false))
 	dismiss := ports.Message{ID: "review-dismiss-f2", Room: room.RoomID, Sender: "alice", Text: "heimdall dismiss F2 the independent test contradicts this claim", At: time.Now().UTC()}
 	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, dismiss))
-	oneSurvivor, err := gateEvaluator.Evaluate(ctx, cid)
-	require.NoError(t, err)
+	oneSurvivor := journeyGate(ctx, t, store, cid)
 	require.False(t, hasReasonPrefix(oneSurvivor.Reasons, "blocking:"), "dismissal removes that reporter from consensus")
 
 	// A new SHA invalidates old review coverage and starts a fresh selection/fan-out cycle.
@@ -237,12 +240,12 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 	require.NoError(t, rec.Run(ctx, cid))
 	events, err = store.Load(ctx, cid)
 	require.NoError(t, err)
-	facts, err := gateuse.Fold(events)
+	view, err := change.Fold(events)
 	require.NoError(t, err)
+	facts := change.GateFacts(view, reviewJourneyOutside())
 	require.Equal(t, reviewJourneyHead2, facts.HeadSHA)
 	requireReviewCoverage(t, facts, false)
-	stale, err := gateEvaluator.Evaluate(ctx, cid)
-	require.NoError(t, err)
+	stale := journeyGate(ctx, t, store, cid)
 	require.True(t, hasReasonPrefix(stale.Reasons, "reviews:"), "the gate rejects review coverage from the previous SHA")
 
 	newAssignments := reviewerAssignmentsAfterLatestPush(t, events)
@@ -250,8 +253,7 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 	for _, assignment := range newAssignments {
 		submitJourneyReview(ctx, t, runtime, reviewService, cid, pr, assignment, reviewJourneyHead2)
 	}
-	current, err := gateEvaluator.Evaluate(ctx, cid)
-	require.NoError(t, err)
+	current := journeyGate(ctx, t, store, cid)
 	require.False(t, hasReasonPrefix(current.Reasons, "reviews:"), "fresh submissions cover the current head")
 	require.True(t, hasReasonPrefix(current.Reasons, "blocking:"), "new current-head reports restore the independent consensus hold")
 
