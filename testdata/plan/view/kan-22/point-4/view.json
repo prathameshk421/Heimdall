@@ -17,6 +17,10 @@
   },
   "plan": null,
   "tests": {
+    "ref": "",
+    "attempts": 1,
+    "task_id": "",
+    "base_sha": "",
     "sha": "4a0f6993769e3a3337dee3ea3e35fc3ad825bb88",
     "refs": [
       "tests/heimdall/KAN-22/healthz_test.go"
@@ -51,6 +55,9 @@
     "author": "prathameshk421",
     "ticket": "KAN-22",
     "head_sha": "59effae547d768799972d6e54eff32e82dbb7912",
+    "base": "",
+    "slop_at": "2026-11-07T17:31:26.811908Z",
+    "suggested": [],
     "picked": {
       "people": [
         "reviewer-1",
@@ -89,6 +96,12 @@
   },
   "tasks": {
     "tsk_01M6VFAM1A3XP0WEFPAKY5WCEM": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-07T17:01:32.586133Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "test-author",
       "role": "test-author",
       "deadline": "2026-11-07T19:01:32.586133933Z",
@@ -96,6 +109,12 @@
       "progress": "KAN-22: Writing failing tests for healthz endpoint in tests/heimdall/KAN-22/"
     },
     "tsk_01M6VFWTYSG915YTR5RR3MQ3VK": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-07T17:11:29.497101Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-1",
       "role": "reviewer",
       "deadline": "2026-11-07T17:41:29.497086934Z",
@@ -103,6 +122,12 @@
       "progress": "Reviewed diff, ticket, and criteria for KAN-22; reading handler/tests and spec."
     },
     "tsk_01M6VFWTYSG915YTR5RR3MQ3VM": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-07T17:11:29.497145Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-2",
       "role": "reviewer",
       "deadline": "2026-11-07T17:41:29.497086934Z",
@@ -110,6 +135,12 @@
       "progress": "KAN-22: Reviewed the diff — healthz handler added to api.go, test file for AC1/AC2. Reading test setup to verify correctness."
     },
     "tsk_01M6VFWTYSG915YTR5RR3MQ3VN": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-07T17:11:29.497167Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-3",
       "role": "reviewer",
       "deadline": "2026-11-07T17:41:29.497086934Z",
@@ -117,6 +148,12 @@
       "progress": ""
     },
     "tsk_01M6VH1JK4K8773VVBMVQEWMXZ": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-07T17:31:33.349373Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-1",
       "role": "reviewer",
       "deadline": "2026-11-07T18:01:33.348902765Z",
@@ -124,6 +161,12 @@
       "progress": ""
     },
     "tsk_01M6VH1JK5RSR2EGX6AV2V6WZ8": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-07T17:31:33.349416Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-2",
       "role": "reviewer",
       "deadline": "2026-11-07T18:01:33.348902765Z",
@@ -131,6 +174,12 @@
       "progress": "KAN-22: New push added openapi.yaml spec for /healthz. Go code and tests unchanged from prior clean review."
     },
     "tsk_01M6VH1JK5RSR2EGX6AV2V6WZ9": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-07T17:31:33.349446Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-3",
       "role": "reviewer",
       "deadline": "2026-11-07T18:01:33.348902765Z",
@@ -143,19 +192,22 @@
       "head_sha": "59effae547d768799972d6e54eff32e82dbb7912",
       "finding_refs": [],
       "clean": true,
-      "pack_date": "2026-11-07"
+      "pack_date": "2026-11-07",
+      "outcome": "submitted"
     },
     "reviewer-2": {
       "head_sha": "19ba050c16ff0c7d914ce8f04b49c8188d248f59",
       "finding_refs": [],
       "clean": true,
-      "pack_date": "2026-11-07"
+      "pack_date": "2026-11-07",
+      "outcome": "submitted"
     },
     "reviewer-3": {
       "head_sha": "59effae547d768799972d6e54eff32e82dbb7912",
       "finding_refs": [],
       "clean": true,
-      "pack_date": "2026-11-07"
+      "pack_date": "2026-11-07",
+      "outcome": "submitted"
     }
   },
   "findings": {
@@ -168,7 +220,8 @@
       "by": "reviewer-1",
       "changed_by": "slack_owner",
       "checked": false,
-      "claim": "GET /healthz is implemented and registered on the router but api/openapi.yaml still documents only /payments, so the documented wire contract no longer matches the served surface and spec-driven clients/tooling won't see the new endpoint."
+      "claim": "GET /healthz is implemented and registered on the router but api/openapi.yaml still documents only /payments, so the documented wire contract no longer matches the served surface and spec-driven clients/tooling won't see the new endpoint.",
+      "fingerprint": "2d50610075886eda57aaea42ad31292c6dbb35f6267dd522696b7ce25ee97b42"
     },
     "F2": {
       "id": "fnd_01M6VGW33HKJF1NBPJFJ5PJR57",
@@ -179,7 +232,8 @@
       "by": "reviewer-3",
       "changed_by": "",
       "checked": false,
-      "claim": "The new GET /healthz endpoint is missing from api/openapi.yaml. Downstream consumers and integration tooling that rely on the spec will not discover the health check, and the file is now stale relative to the implementation."
+      "claim": "The new GET /healthz endpoint is missing from api/openapi.yaml. Downstream consumers and integration tooling that rely on the spec will not discover the health check, and the file is now stale relative to the implementation.",
+      "fingerprint": "ab6612689897e28e0c458b737227e5668bcd31d1eecdcdcec40b59eedbdead66"
     }
   },
   "decisions": [
@@ -205,5 +259,8 @@
     }
   ],
   "closed": null,
-  "rejected": null
+  "rejected": null,
+  "cases": {},
+  "resumes": {},
+  "checks": {}
 }

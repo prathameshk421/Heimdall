@@ -6,8 +6,8 @@ Spec and plan: [HARNESS_DESIGN.md](HARNESS_DESIGN.md). Baseline before H1: `make
 
 | Step | Status | Commit | Evidence / not verified |
 |---|---|---|---|
-| H0 Ground | done | see git log `H0:` | docs only |
-| H1 View fields and new events | pending | | |
+| H0 Ground | done | `ed86e10` | docs only |
+| H1 View fields and new events | done | `H1:` in git log | `make fast` exit 0, 3559 tests. `make verify`: race/component fails only `cmd/heimdall-server.TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex`, which also fails on `ed86e10` (baseline, untrusted ticket text appears in get_task output; H7 rewrites get_task). Not verified: the rest of `make verify` after the race step (make stops there). |
 | H2 Row table and Missing | pending | | |
 | H3 Store support | pending | | |
 | H4 Reconciler | pending | | |

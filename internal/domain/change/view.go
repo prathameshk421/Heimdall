@@ -6,6 +6,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/sarif"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
@@ -26,6 +27,28 @@ type View struct {
 	Approvals []ApprovalInfo         `json:"approvals"`
 	Closed    *ClosedInfo            `json:"closed"`
 	Rejected  *RejectedInfo          `json:"rejected"`
+	// Cases are the deliberations: open from case.opened until a verdict is applied or escalated.
+	Cases map[id.CaseID]CaseInfo `json:"cases"`
+	// Resumes counts step.resumed per row: the re-arm of HARNESS_DESIGN B2.
+	Resumes map[string]int `json:"resumes"`
+	// Checks are the profile check results per head.
+	Checks map[id.SHA]CheckInfo `json:"checks"`
+}
+
+// CaseInfo is one deliberation. LastEvent is the last event that concerned the case; a verdict task's input is that id,
+// so a challenge or a new verdict makes a new task.
+type CaseInfo struct {
+	Finding   string  `json:"finding"`
+	Open      bool    `json:"open"`
+	LastEvent EventID `json:"last_event"`
+}
+
+// CheckInfo is what the profile checks reported on one head. Ran is true once checks.reported arrived.
+type CheckInfo struct {
+	Ran     bool           `json:"ran"`
+	Results []sarif.Result `json:"results"`
+	Errors  []CheckError   `json:"errors"`
+	More    int            `json:"more"`
 }
 
 // TriggerInfo is the ticket that started the change.
@@ -49,6 +72,12 @@ type PlanInfo struct{}
 
 // TestsInfo is the current test submission and what happened to it. A new submission replaces it.
 type TestsInfo struct {
+	// Ref is the blob of the submission's first file (the event's first blob reference); Attempts counts every
+	// tests.submitted and is never reset; TaskID and BaseSHA are what the submission named.
+	Ref        workflow.BlobRef    `json:"ref"`
+	Attempts   int                 `json:"attempts"`
+	TaskID     id.TaskID           `json:"task_id"`
+	BaseSHA    id.SHA              `json:"base_sha"`
 	SHA        id.SHA              `json:"sha"`
 	Refs       []string            `json:"refs"`
 	ACMap      map[string][]string `json:"ac_map"`
@@ -74,14 +103,19 @@ type TestsCommittedInfo struct {
 
 // PRInfo is the pull request. Slop, CI, gate and reviews keep the head they were about, so stale is visible.
 type PRInfo struct {
-	Number  int                                `json:"number"`
-	Author  ActorID                            `json:"author"`
-	Ticket  id.ChangeID                        `json:"ticket"`
-	HeadSHA id.SHA                             `json:"head_sha"`
-	Picked  *PickedInfo                        `json:"picked"`
-	Slop    *SlopInfo                          `json:"slop"`
-	CI      map[id.SHA]map[string]CIConclusion `json:"ci"`
-	Gate    *GateInfo                          `json:"gate"`
+	Number  int         `json:"number"`
+	Author  ActorID     `json:"author"`
+	Ticket  id.ChangeID `json:"ticket"`
+	HeadSHA id.SHA      `json:"head_sha"`
+	Base    id.SHA      `json:"base"`
+	// SlopAt is when the slop rule last ran on the current head; the reviewer pick waits from then.
+	SlopAt time.Time `json:"slop_at"`
+	// Suggested are the reviewers CODEOWNERS suggested when the PR opened.
+	Suggested []ActorID                          `json:"suggested"`
+	Picked    *PickedInfo                        `json:"picked"`
+	Slop      *SlopInfo                          `json:"slop"`
+	CI        map[id.SHA]map[string]CIConclusion `json:"ci"`
+	Gate      *GateInfo                          `json:"gate"`
 }
 
 // PickedInfo is who reviews.
@@ -107,6 +141,14 @@ type GateInfo struct {
 
 // TaskInfo is one task. Its status changes only on task events.
 type TaskInfo struct {
+	// Kind, Subject and Input say what the task is for (HARNESS_DESIGN B4); Since is when it was assigned, Wakes how
+	// many times the agent was woken again and ResetAt when its session was last reset.
+	Kind     string        `json:"kind"`
+	Subject  string        `json:"subject"`
+	Input    string        `json:"input"`
+	Since    time.Time     `json:"since"`
+	Wakes    int           `json:"wakes"`
+	ResetAt  time.Time     `json:"reset_at"`
 	Agent    id.AgentName  `json:"agent"`
 	Role     workflow.Role `json:"role"`
 	Deadline time.Time     `json:"deadline"`
@@ -120,7 +162,13 @@ const (
 	TaskAckedStatus    = "acked"
 	TaskTimedOutStatus = "timed_out"
 	TaskFailedStatus   = "failed"
+	// TaskDoneStatus is a task a submission named. TaskSupersededStatus is a task replaced because its input changed.
+	TaskDoneStatus       = "done"
+	TaskSupersededStatus = "superseded"
 )
+
+// Live reports whether the task is still being worked: assigned or acknowledged.
+func (t TaskInfo) Live() bool { return t.Status == TaskAssignedStatus || t.Status == TaskAckedStatus }
 
 // ReviewInfo is a reviewer's last review, stamped with the head it was on.
 type ReviewInfo struct {
@@ -128,7 +176,16 @@ type ReviewInfo struct {
 	FindingRefs []id.FindingRef `json:"finding_refs"`
 	Clean       bool            `json:"clean"`
 	PackDate    string          `json:"pack_date"`
+	// Outcome is how the seat ended on that head: submitted, unavailable or waived.
+	Outcome string `json:"outcome"`
 }
+
+// Review outcomes.
+const (
+	ReviewSubmittedOutcome   = "submitted"
+	ReviewUnavailableOutcome = "unavailable"
+	ReviewWaivedOutcome      = "waived"
+)
 
 // FindingInfo is one finding. By is always the filer; ChangedBy is who moved it last.
 type FindingInfo struct {
@@ -141,6 +198,8 @@ type FindingInfo struct {
 	ChangedBy  ActorID            `json:"changed_by"`
 	Checked    bool               `json:"checked"`
 	Claim      string             `json:"claim"`
+	// Fingerprint is what consensus compares between reviewers; only finding.filed sets it.
+	Fingerprint string `json:"fingerprint"`
 }
 
 // DecisionInfo is one human decision.
@@ -177,7 +236,8 @@ func (v View) Over() bool { return v.Closed != nil || v.Rejected != nil }
 // not decode.
 func Fold(events []Event) (View, error) {
 	v := View{Tasks: map[id.TaskID]TaskInfo{}, Reviews: map[string]ReviewInfo{}, Findings: map[string]FindingInfo{},
-		Decisions: []DecisionInfo{}, Approvals: []ApprovalInfo{}}
+		Decisions: []DecisionInfo{}, Approvals: []ApprovalInfo{},
+		Cases: map[id.CaseID]CaseInfo{}, Resumes: map[string]int{}, Checks: map[id.SHA]CheckInfo{}}
 	for i, e := range events {
 		p, err := Decode(e)
 		if err != nil {
@@ -197,20 +257,19 @@ func (v *View) apply(e Event, p Payload) {
 	case BranchEnsured:
 		v.Branch = &BranchInfo{Repo: p.Repo, Branch: p.Branch, BaseSHA: p.BaseSHA}
 	case TestsSubmitted, TestsVerified, TestsRejected, TestsCommitted, TestsApproved:
-		v.applyTests(p)
-	case PROpened, PRPushed, SlopEvaluated, CIReported, GateEvaluated, ReviewersPicked, PRClosed:
-		v.applyPR(p)
-	case TaskAssigned, TaskAcked, TaskTimedOut, TaskFailed, TaskProgress:
-		v.applyTask(p)
-	case ReviewSubmitted:
-		v.Reviews[string(p.Reviewer)] = ReviewInfo{HeadSHA: v.head(), FindingRefs: nonNil(p.FindingRefs),
-			Clean: len(p.FindingRefs) == 0, PackDate: p.PackDate}
-	case FindingFiled:
-		v.applyFinding(e, FindingRecord(p))
-	case FindingVerified:
-		v.applyFinding(e, FindingRecord(p))
-	case FindingStateChanged:
-		v.applyFinding(e, FindingRecord(p))
+		v.applyTests(e, p)
+	case PROpened, PRPushed, PRLinked, SlopEvaluated, CIReported, GateEvaluated, ReviewersPicked, PRClosed:
+		v.applyPR(e, p)
+	case TaskAssigned, TaskAcked, TaskTimedOut, TaskFailed, TaskProgress, TaskSuperseded, TaskRewoken:
+		v.applyTask(e, p)
+	case ReviewSubmitted, ReviewUnavailable, ReviewWaived:
+		v.applyReview(p)
+	case CaseOpened, VerdictSubmitted, VerdictApplied, VerdictEscalated:
+		v.applyCase(e, p)
+	case StepResumed, ChecksReported:
+		v.applyRecords(p)
+	case FindingFiled, FindingVerified, FindingStateChanged:
+		v.applyFindingEvent(e, p)
 	default:
 		v.applyHuman(e, p)
 	}
@@ -233,10 +292,21 @@ func (v *View) applyHuman(e Event, p Payload) {
 	}
 }
 
-func (v *View) applyTask(p Payload) {
+func (v *View) applyTask(e Event, p Payload) {
 	switch p := p.(type) {
 	case TaskAssigned:
-		v.Tasks[p.TaskID] = TaskInfo{Agent: p.Agent, Role: p.Role, Deadline: p.Deadline, Status: TaskAssignedStatus}
+		v.Tasks[p.TaskID] = TaskInfo{Agent: p.Agent, Role: p.Role, Deadline: p.Deadline, Status: TaskAssignedStatus,
+			Kind: p.Kind, Subject: p.Subject, Input: p.Input, Since: e.OccurredAt}
+	case TaskSuperseded:
+		v.setTask(p.TaskID, TaskSupersededStatus, "")
+	case TaskRewoken:
+		if t, ok := v.Tasks[p.TaskID]; ok {
+			t.Wakes = p.N
+			if p.Reset {
+				t.ResetAt = e.OccurredAt
+			}
+			v.Tasks[p.TaskID] = t
+		}
 	case TaskAcked:
 		v.setTask(p.TaskID, TaskAckedStatus, "")
 	case TaskTimedOut:
@@ -248,9 +318,19 @@ func (v *View) applyTask(p Payload) {
 	}
 }
 
-func (v *View) applyTests(p Payload) {
+func (v *View) applyTests(e Event, p Payload) {
 	if s, ok := p.(TestsSubmitted); ok {
-		v.Tests = &TestsInfo{SHA: s.SHA, Refs: nonNil(s.Refs), ACMap: nonNilMap(s.ACMap), Expected: nonNil(s.ExpectedPaths), Rejected: []string{}}
+		attempts := 1
+		if v.Tests != nil {
+			attempts = v.Tests.Attempts + 1
+		}
+		var ref workflow.BlobRef
+		if len(e.BlobRefs) > 0 {
+			ref = e.BlobRefs[0]
+		}
+		v.Tests = &TestsInfo{Ref: ref, Attempts: attempts, TaskID: s.TaskID, BaseSHA: s.BaseSHA, SHA: s.SHA,
+			Refs: nonNil(s.Refs), ACMap: nonNilMap(s.ACMap), Expected: nonNil(s.ExpectedPaths), Rejected: []string{}}
+		v.endTask(s.TaskID)
 		return
 	}
 	if v.Tests == nil {
@@ -268,9 +348,10 @@ func (v *View) applyTests(p Payload) {
 	}
 }
 
-func (v *View) applyPR(p Payload) {
+func (v *View) applyPR(e Event, p Payload) {
 	if o, ok := p.(PROpened); ok {
-		v.PR = &PRInfo{Number: o.Number, Author: o.Author, Ticket: o.Ticket, HeadSHA: o.HeadSHA, CI: map[id.SHA]map[string]CIConclusion{}}
+		v.PR = &PRInfo{Number: o.Number, Author: o.Author, Ticket: o.Ticket, HeadSHA: o.HeadSHA, Base: o.BaseSHA,
+			Suggested: nonNil(o.SuggestedReviewers), CI: map[id.SHA]map[string]CIConclusion{}}
 		return
 	}
 	if c, ok := p.(PRClosed); ok {
@@ -283,8 +364,12 @@ func (v *View) applyPR(p Payload) {
 	switch p := p.(type) {
 	case PRPushed:
 		v.PR.HeadSHA = p.HeadSHA
+		v.PR.Base = orKeep(p.BaseSHA, v.PR.Base)
+	case PRLinked:
+		v.PR.Ticket = p.Ticket
 	case SlopEvaluated:
 		v.PR.Slop = &SlopInfo{SHA: v.PR.HeadSHA, Pass: p.Pass, FailingRules: nonNil(p.FailingRules)}
+		v.PR.SlopAt = e.OccurredAt
 	case CIReported:
 		if v.PR.CI[p.SHA] == nil {
 			v.PR.CI[p.SHA] = map[string]CIConclusion{}
@@ -297,11 +382,79 @@ func (v *View) applyPR(p Payload) {
 	}
 }
 
+// applyFindingEvent folds the three finding events, which share one record.
+func (v *View) applyFindingEvent(e Event, p Payload) {
+	switch p := p.(type) {
+	case FindingFiled:
+		v.applyFinding(e, FindingRecord(p))
+	case FindingVerified:
+		v.applyFinding(e, FindingRecord(p))
+	case FindingStateChanged:
+		v.applyFinding(e, FindingRecord(p))
+	}
+}
+
+// applyRecords folds the counters and reports the reconciler reads: resumes and check results.
+func (v *View) applyRecords(p Payload) {
+	switch p := p.(type) {
+	case StepResumed:
+		v.Resumes[p.Step]++
+	case ChecksReported:
+		v.Checks[p.Head] = CheckInfo{Ran: true, Results: nonNil(p.Results), Errors: nonNil(p.Errors), More: p.More}
+	}
+}
+
+// applyReview folds how a seat ended on the current head.
+func (v *View) applyReview(p Payload) {
+	switch p := p.(type) {
+	case ReviewSubmitted:
+		v.Reviews[string(p.Reviewer)] = ReviewInfo{HeadSHA: v.head(), FindingRefs: nonNil(p.FindingRefs),
+			Clean: len(p.FindingRefs) == 0, PackDate: p.PackDate, Outcome: ReviewSubmittedOutcome}
+		v.endTask(p.TaskID)
+	case ReviewUnavailable:
+		v.Reviews[string(p.Reviewer)] = ReviewInfo{HeadSHA: v.head(), FindingRefs: []id.FindingRef{}, Outcome: ReviewUnavailableOutcome}
+	case ReviewWaived:
+		v.Reviews[string(p.Reviewer)] = ReviewInfo{HeadSHA: v.head(), FindingRefs: []id.FindingRef{}, Outcome: ReviewWaivedOutcome}
+	}
+}
+
+// applyCase folds the deliberations: a case is open from case.opened until a verdict is applied or escalated.
+func (v *View) applyCase(e Event, p Payload) {
+	switch p := p.(type) {
+	case CaseOpened:
+		v.Cases[p.CaseID] = CaseInfo{Finding: p.Finding.String(), Open: true, LastEvent: e.ID}
+	case VerdictSubmitted:
+		v.touchCase(p.CaseID, e.ID, true)
+		v.endTask(p.TaskID)
+	case VerdictApplied:
+		v.touchCase(p.CaseID, e.ID, false)
+	case VerdictEscalated:
+		v.touchCase(p.CaseID, e.ID, false)
+	}
+}
+
+func (v *View) touchCase(c id.CaseID, event EventID, open bool) {
+	if k, ok := v.Cases[c]; ok {
+		k.LastEvent = event
+		if !open {
+			k.Open = false
+		}
+		v.Cases[c] = k
+	}
+}
+
+// endTask marks the task a submission named as done. An empty or unknown id changes nothing.
+func (v *View) endTask(task id.TaskID) {
+	if task != "" {
+		v.setTask(task, TaskDoneStatus, "")
+	}
+}
+
 func (v *View) applyFinding(e Event, p FindingRecord) {
 	ref := p.Ref.String()
 	if e.Type == EventFindingFiled {
 		v.Findings[ref] = FindingInfo{ID: p.FindingID, Tier: p.Tier, Severity: p.Severity, Confidence: p.Confidence,
-			State: p.State, By: p.By, Claim: p.Claim}
+			State: p.State, By: p.By, Claim: p.Claim, Fingerprint: p.Fingerprint}
 		return
 	}
 	f, ok := v.Findings[ref]

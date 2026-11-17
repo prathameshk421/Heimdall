@@ -18,6 +18,10 @@
   },
   "plan": null,
   "tests": {
+    "ref": "",
+    "attempts": 1,
+    "task_id": "",
+    "base_sha": "",
     "sha": "9b4965238755b6473e8ea58632b7f045661b20dd",
     "refs": [
       "tests/heimdall/KAN-23/refund_test.go"
@@ -57,6 +61,9 @@
     "author": "prathameshk421",
     "ticket": "KAN-23",
     "head_sha": "619a8f493a48c0628cde6743c766a1d3ad4b5a03",
+    "base": "",
+    "slop_at": "2026-11-08T05:53:08.249505Z",
+    "suggested": [],
     "picked": null,
     "slop": {
       "sha": "619a8f493a48c0628cde6743c766a1d3ad4b5a03",
@@ -80,6 +87,12 @@
   },
   "tasks": {
     "tsk_01M6WQ41K5S4EMH22JEQRVJ3TR": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-08T04:37:00.133667Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "test-author",
       "role": "test-author",
       "deadline": "2026-11-08T06:37:00.133667355Z",
@@ -92,5 +105,8 @@
   "decisions": [],
   "approvals": [],
   "closed": null,
-  "rejected": null
+  "rejected": null,
+  "cases": {},
+  "resumes": {},
+  "checks": {}
 }

@@ -93,6 +93,10 @@ type ReviewSubmitted struct {
 	PackDate    string          `json:"pack_date"`
 	// RuleChecks is what the reviewer said about each rule card it was given. Old events have none.
 	RuleChecks []finding.RuleCheck `json:"rule_checks,omitempty"`
+	// TaskID is the task the submission ends; LeadChecks are the check ids whose results the reviewer was given as
+	// leads. Old events have neither.
+	TaskID     id.TaskID `json:"task_id,omitempty"`
+	LeadChecks []string  `json:"lead_checks,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -101,6 +105,10 @@ func (p ReviewSubmitted) Validate() error {
 	v.add("reviewer", checkAgent(p.Reviewer))
 	v.each("finding_refs", p.FindingRefs, checkFindingRef)
 	v.add("pack_date", checkDate(p.PackDate))
+	if p.TaskID != "" {
+		v.add("task_id", checkTask(p.TaskID))
+	}
+	v.each("lead_checks", p.LeadChecks, checkText)
 	if len(p.RuleChecks) > finding.MaxRuleChecks {
 		v.add("rule_checks", fmt.Errorf("must have at most %d entries", finding.MaxRuleChecks))
 	}
@@ -300,11 +308,16 @@ type VerdictSubmitted struct {
 	Verdict   Verdict   `json:"verdict"`
 	Citations []string  `json:"citations"`
 	Checks    []string  `json:"checks"`
+	// TaskID is the task the submission ends. Old events have none.
+	TaskID id.TaskID `json:"task_id,omitempty"`
 }
 
 // Validate returns every problem with the payload.
 func (p VerdictSubmitted) Validate() error {
 	var v problems
+	if p.TaskID != "" {
+		v.add("task_id", checkTask(p.TaskID))
+	}
 	v.add("case_id", checkCase(p.CaseID))
 	v.add("verdict", checkEnum(p.Verdict, p.Verdict.Valid()))
 	v.each("citations", p.Citations, checkText)

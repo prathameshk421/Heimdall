@@ -24,6 +24,9 @@ const (
 	EventTaskTimedOut        EventType = "task.timed_out"
 	EventTaskFailed          EventType = "task.failed"
 	EventTaskProgress        EventType = "task.progress"
+	EventTaskSuperseded      EventType = "task.superseded"
+	EventTaskRewoken         EventType = "task.rewoken"
+	EventProviderProbed      EventType = "provider.probed"
 	EventStepRetried         EventType = "step.retried"
 	EventStepEscalated       EventType = "step.escalated"
 	EventStepResumed         EventType = "step.resumed"
@@ -51,6 +54,9 @@ func corePayloads() map[EventType]payloadEntry {
 		EventTaskTimedOut:        entry[TaskTimedOut](),
 		EventTaskFailed:          entry[TaskFailed](),
 		EventTaskProgress:        entry[TaskProgress](),
+		EventTaskSuperseded:      entry[TaskSuperseded](),
+		EventTaskRewoken:         entry[TaskRewoken](),
+		EventProviderProbed:      entry[ProviderProbed](),
 		EventStepRetried:         entry[StepRetried](),
 		EventStepEscalated:       entry[StepEscalated](),
 		EventStepResumed:         entry[StepResumed](),
@@ -174,6 +180,8 @@ type PROpened struct {
 	Author             ActorID     `json:"author"`
 	Ticket             id.ChangeID `json:"ticket,omitempty"`
 	SuggestedReviewers []ActorID   `json:"suggested_reviewers,omitempty"`
+	// BaseSHA is the pull request's base commit when it opened. Old events have none.
+	BaseSHA id.SHA `json:"base_sha,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -187,6 +195,9 @@ func (p PROpened) Validate() error {
 		v.add("ticket", checkTicket(p.Ticket))
 	}
 	v.each("suggested_reviewers", p.SuggestedReviewers, checkActor)
+	if p.BaseSHA != "" {
+		v.add("base_sha", checkSHA(p.BaseSHA))
+	}
 	return v.join()
 }
 
@@ -195,6 +206,8 @@ type PRPushed struct {
 	Repo    Repo   `json:"repo"`
 	Number  int    `json:"number"`
 	HeadSHA id.SHA `json:"head_sha"`
+	// BaseSHA is the base commit at the push. Old events have none.
+	BaseSHA id.SHA `json:"base_sha,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -203,6 +216,9 @@ func (p PRPushed) Validate() error {
 	v.add("repo", checkRepo(p.Repo))
 	v.add("number", checkAtLeastOne(p.Number))
 	v.add("head_sha", checkSHA(p.HeadSHA))
+	if p.BaseSHA != "" {
+		v.add("base_sha", checkSHA(p.BaseSHA))
+	}
 	return v.join()
 }
 
@@ -315,14 +331,20 @@ func (p StepEscalated) Validate() error {
 	return v.join()
 }
 
-// TaskAssigned is the payload of task.assigned. BundleRef is the blob whose hash is the context bundle (TECH_SPEC 6.4).
+// TaskAssigned is the payload of task.assigned. Kind, Subject and Input say what the task is (HARNESS_DESIGN B4): the
+// workflow kind, what it is about (a seat or a case) and the input it was made for (a head or an attempt), so a
+// submission can name the task it ends. Old events lack them. BundleRef is the blob whose hash is the context bundle;
+// new tasks leave it empty because inputs are rendered when the agent calls get_task.
 type TaskAssigned struct {
 	TaskID    id.TaskID        `json:"task_id"`
 	CaseID    id.CaseID        `json:"case_id,omitempty"`
 	Agent     id.AgentName     `json:"agent"`
 	Role      workflow.Role    `json:"role"`
 	Deadline  time.Time        `json:"deadline"`
-	BundleRef workflow.BlobRef `json:"bundle_ref"`
+	BundleRef workflow.BlobRef `json:"bundle_ref,omitempty"`
+	Kind      string           `json:"kind,omitempty"`
+	Subject   string           `json:"subject,omitempty"`
+	Input     string           `json:"input,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -337,7 +359,14 @@ func (p TaskAssigned) Validate() error {
 	if p.Deadline.IsZero() {
 		v.add("deadline", errors.New("is required"))
 	}
-	v.add("bundle_ref", checkBlob(p.BundleRef))
+	if p.BundleRef != "" {
+		v.add("bundle_ref", checkBlob(p.BundleRef))
+	}
+	if p.Kind != "" {
+		v.add("kind", checkText(p.Kind))
+		v.add("subject", checkText(p.Subject))
+		v.add("input", checkText(p.Input))
+	}
 	return v.join()
 }
 
@@ -398,6 +427,51 @@ func (p TaskProgress) Validate() error {
 	v.add("agent", checkAgent(p.Agent))
 	v.add("role", checkRole(p.Role))
 	v.add("text", checkText(p.Text))
+	return v.join()
+}
+
+// TaskSuperseded is the payload of task.superseded: the reconciler replaced a live task because its input changed (a
+// new head, a new attempt). The task is over; a new one is assigned.
+type TaskSuperseded struct {
+	TaskID id.TaskID `json:"task_id"`
+	Reason string    `json:"reason"`
+}
+
+// Validate returns every problem with the payload.
+func (p TaskSuperseded) Validate() error {
+	var v problems
+	v.add("task_id", checkTask(p.TaskID))
+	v.add("reason", checkText(p.Reason))
+	return v.join()
+}
+
+// TaskRewoken is the payload of task.rewoken: the agent was woken again for a live task. N counts the wakes, from 1.
+type TaskRewoken struct {
+	TaskID id.TaskID `json:"task_id"`
+	N      int       `json:"n"`
+	// Reset is true when the wake also reset the agent's session.
+	Reset bool `json:"reset,omitempty"`
+}
+
+// Validate returns every problem with the payload.
+func (p TaskRewoken) Validate() error {
+	var v problems
+	v.add("task_id", checkTask(p.TaskID))
+	v.add("n", checkAtLeastOne(p.N))
+	return v.join()
+}
+
+// ProviderProbed is the payload of provider.probed: the model provider was asked whether it answers. Health is one of
+// the liveness package's values ("ok", "refusing").
+type ProviderProbed struct {
+	Health string `json:"health"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// Validate returns every problem with the payload.
+func (p ProviderProbed) Validate() error {
+	var v problems
+	v.add("health", checkText(p.Health))
 	return v.join()
 }
 

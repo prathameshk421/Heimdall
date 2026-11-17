@@ -75,6 +75,17 @@ func checkText(s string) error {
 	return nil
 }
 
+// checkLongText requires a non-blank value of at most 64 KiB: notes and other prose that is not a reference.
+func checkLongText(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return errors.New("must not be blank")
+	}
+	if len(s) > 64<<10 {
+		return errors.New("must be at most 65536 bytes")
+	}
+	return nil
+}
+
 // checkAtLeastOne requires n to be 1 or more: a count of entries, or a number that starts at 1.
 func checkAtLeastOne(n int) error {
 	if n < 1 {

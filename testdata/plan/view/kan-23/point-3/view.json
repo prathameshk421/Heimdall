@@ -18,6 +18,10 @@
   },
   "plan": null,
   "tests": {
+    "ref": "",
+    "attempts": 1,
+    "task_id": "",
+    "base_sha": "",
     "sha": "9b4965238755b6473e8ea58632b7f045661b20dd",
     "refs": [
       "tests/heimdall/KAN-23/refund_test.go"
@@ -57,6 +61,9 @@
     "author": "prathameshk421",
     "ticket": "KAN-23",
     "head_sha": "619a8f493a48c0628cde6743c766a1d3ad4b5a03",
+    "base": "",
+    "slop_at": "2026-11-08T05:53:08.249505Z",
+    "suggested": [],
     "picked": {
       "people": [
         "reviewer-1",
@@ -88,6 +95,12 @@
   },
   "tasks": {
     "tsk_01M6WQ41K5S4EMH22JEQRVJ3TR": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-08T04:37:00.133667Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "test-author",
       "role": "test-author",
       "deadline": "2026-11-08T06:37:00.133667355Z",
@@ -95,6 +108,12 @@
       "progress": "KAN-23: writing test file for POST /payments/{id}/refunds with AC1 (201), AC2 (422 oversized), AC3 (404 wrong merchant)."
     },
     "tsk_01M6WVHQG9X5BFR62WFV3BFGEH": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-08T05:54:22.857566Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-1",
       "role": "reviewer",
       "deadline": "2026-11-08T06:24:22.857554089Z",
@@ -102,6 +121,12 @@
       "progress": ""
     },
     "tsk_01M6WVHQG9X5BFR62WFV3BFGEJ": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-08T05:54:22.857596Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-2",
       "role": "reviewer",
       "deadline": "2026-11-08T06:24:22.857554089Z",
@@ -109,6 +134,12 @@
       "progress": ""
     },
     "tsk_01M6WVHQG9X5BFR62WFV3BFGEK": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-08T05:54:22.857612Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-3",
       "role": "reviewer",
       "deadline": "2026-11-08T06:24:22.857554089Z",
@@ -125,7 +156,8 @@
         "F3"
       ],
       "clean": false,
-      "pack_date": "2026-11-08"
+      "pack_date": "2026-11-08",
+      "outcome": "submitted"
     }
   },
   "findings": {
@@ -138,7 +170,8 @@
       "by": "reviewer-3",
       "changed_by": "",
       "checked": false,
-      "claim": "POST /payments no longer returns merchant_id: the JSON tag was changed to `merchant`, while api/openapi.yaml still requires merchant_id, so any client that reads merchant_id from the create-payment response now gets an empty field. The change is unrelated to the refund feature."
+      "claim": "POST /payments no longer returns merchant_id: the JSON tag was changed to `merchant`, while api/openapi.yaml still requires merchant_id, so any client that reads merchant_id from the create-payment response now gets an empty field. The change is unrelated to the refund feature.",
+      "fingerprint": "5150d86bfb33e1cbece01d7c65e54d449cedb8780c3f50d8e040b834a0470009"
     },
     "F2": {
       "id": "fnd_01M6WVT8651V53W8DVG4J9BYH2",
@@ -149,7 +182,8 @@
       "by": "reviewer-3",
       "changed_by": "",
       "checked": false,
-      "claim": "The new POST /payments/{id}/refunds route is served but api/openapi.yaml still documents only /payments and /healthz, and README still lists only POST /payments, so the published wire contract does not cover the endpoint this change adds."
+      "claim": "The new POST /payments/{id}/refunds route is served but api/openapi.yaml still documents only /payments and /healthz, and README still lists only POST /payments, so the published wire contract does not cover the endpoint this change adds.",
+      "fingerprint": "f7af4c2a4254d31e0d311e17cc1c9f40146c0cda60aff7ce9e1451bb9890e467"
     },
     "F3": {
       "id": "fnd_01M6WVT8651V53W8DVG4J9BYH3",
@@ -160,11 +194,15 @@
       "by": "reviewer-3",
       "changed_by": "",
       "checked": false,
-      "claim": "Two concurrent refunds on one payment can both pass the cap: Refund calls refunds.total() and then refunds.add() in separate lock acquisitions, so two 60 refunds on a payment of 100 can both be accepted and refund 120."
+      "claim": "Two concurrent refunds on one payment can both pass the cap: Refund calls refunds.total() and then refunds.add() in separate lock acquisitions, so two 60 refunds on a payment of 100 can both be accepted and refund 120.",
+      "fingerprint": "78358567ada5a61b648faa2327e714a76c69502598910a572236c606f128a1c9"
     }
   },
   "decisions": [],
   "approvals": [],
   "closed": null,
-  "rejected": null
+  "rejected": null,
+  "cases": {},
+  "resumes": {},
+  "checks": {}
 }

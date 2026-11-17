@@ -17,6 +17,10 @@
   },
   "plan": null,
   "tests": {
+    "ref": "",
+    "attempts": 1,
+    "task_id": "",
+    "base_sha": "",
     "sha": "4a0f6993769e3a3337dee3ea3e35fc3ad825bb88",
     "refs": [
       "tests/heimdall/KAN-22/healthz_test.go"
@@ -51,6 +55,9 @@
     "author": "prathameshk421",
     "ticket": "KAN-22",
     "head_sha": "ee4539de10978ffa251f60d7340f35275ebec665",
+    "base": "",
+    "slop_at": "2026-11-07T17:09:13.905021Z",
+    "suggested": [],
     "picked": null,
     "slop": {
       "sha": "ee4539de10978ffa251f60d7340f35275ebec665",
@@ -77,6 +84,12 @@
   },
   "tasks": {
     "tsk_01M6VFAM1A3XP0WEFPAKY5WCEM": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-07T17:01:32.586133Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "test-author",
       "role": "test-author",
       "deadline": "2026-11-07T19:01:32.586133933Z",
@@ -97,5 +110,8 @@
   ],
   "approvals": [],
   "closed": null,
-  "rejected": null
+  "rejected": null,
+  "cases": {},
+  "resumes": {},
+  "checks": {}
 }

@@ -1,0 +1,1 @@
+{"head":"9f1c2ab","results":[{"check":"vet","lens":"correctness","rule":"printf","level":"error","file":"a.go","lines":[3,3],"message":"m","finger":"f"}],"errors":[{"check":"lint","reason":"image missing"}],"more":0}

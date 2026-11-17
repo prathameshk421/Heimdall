@@ -19,6 +19,7 @@ func All() []EventType {
 	return []EventType{
 		EventChangeTriggered, EventRoomOpened, EventBranchEnsured,
 		EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed, EventTaskProgress,
+		EventTaskSuperseded, EventTaskRewoken, EventProviderProbed,
 		EventStepRetried, EventStepEscalated, EventStepResumed,
 		EventQuestionAsked, EventQuestionAnswered, EventCommandProposed, EventCommandConfirmed,
 		EventTestsSubmitted, EventTestsVerified, EventTestsRejected, EventTestsCommitted, EventTestsApproved,
@@ -32,7 +33,7 @@ func All() []EventType {
 		EventCaseOpened, EventVerdictSubmitted, EventVerdictApplied, EventVerdictEscalated,
 		EventDecisionRecorded,
 		EventApprovalRecorded, EventApprovalInvalidated,
-		EventCIReported, EventGateEvaluated,
+		EventCIReported, EventChecksReported, EventGateEvaluated,
 		EventChangeRejected, EventChangeMerged,
 	}
 }

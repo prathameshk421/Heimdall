@@ -1,6 +1,9 @@
 package change
 
-import "github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+import (
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
+)
 
 // The tests area of the event catalog (TECH_SPEC 3.2): the acceptance tests from submission to commit.
 const (
@@ -23,11 +26,23 @@ func testsPayloads() map[EventType]payloadEntry {
 }
 
 // TestsSubmitted is the payload of tests.submitted: the test-author handed in its tests (TECH_SPEC 7).
+//
+// A submission is stored whole (HARNESS_DESIGN B6): Files holds every test file, with the blob of its content.
+// Refs, SHA and TreeHash are the old shape and no writer sets them now.
 type TestsSubmitted struct {
-	Refs     []string            `json:"refs"`
-	ACMap    map[string][]string `json:"ac_map"`
-	SHA      id.SHA              `json:"sha"`
-	TreeHash id.SHA              `json:"tree_hash"`
+	// Old events only.
+	Refs  []string            `json:"refs,omitempty"`
+	ACMap map[string][]string `json:"ac_map"`
+	// Old events only.
+	SHA id.SHA `json:"sha,omitempty"`
+	// Old events only.
+	TreeHash id.SHA `json:"tree_hash,omitempty"`
+	// Files are the test files; Notes is what the author says about them; TaskID is the task the submission ends and
+	// BaseSHA the commit it was written against.
+	Files   []TestFile `json:"files,omitempty"`
+	Notes   string     `json:"notes,omitempty"`
+	TaskID  id.TaskID  `json:"task_id,omitempty"`
+	BaseSHA id.SHA     `json:"base_sha,omitempty"`
 	// ExpectedPaths are the globs outside the tests directory the change is expected to touch; the slop rule's scope
 	// check reads them. Older events have none.
 	ExpectedPaths []string `json:"expected_paths,omitempty"`
@@ -38,9 +53,37 @@ func (p TestsSubmitted) Validate() error {
 	var v problems
 	v.each("refs", p.Refs, checkText)
 	v.add("ac_map", checkACMap(p.ACMap))
-	v.add("sha", checkSHA(p.SHA))
-	v.add("tree_hash", checkSHA(p.TreeHash))
+	if p.SHA != "" {
+		v.add("sha", checkSHA(p.SHA))
+	}
+	if p.TreeHash != "" {
+		v.add("tree_hash", checkSHA(p.TreeHash))
+	}
+	v.require("files", len(p.Files) > 0 || len(p.Refs) > 0, "a submission needs files")
+	v.each("files", p.Files, func(f TestFile) error { return f.validate() })
+	if p.Notes != "" {
+		v.add("notes", checkLongText(p.Notes))
+	}
+	if p.TaskID != "" {
+		v.add("task_id", checkTask(p.TaskID))
+	}
+	if p.BaseSHA != "" {
+		v.add("base_sha", checkSHA(p.BaseSHA))
+	}
 	v.each("expected_paths", p.ExpectedPaths, checkText)
+	return v.join()
+}
+
+// TestFile is one test file of a submission: its path in the repository and the blob that holds its content.
+type TestFile struct {
+	Path string           `json:"path"`
+	Blob workflow.BlobRef `json:"blob"`
+}
+
+func (f TestFile) validate() error {
+	var v problems
+	v.add("path", checkText(f.Path))
+	v.add("blob", checkBlob(f.Blob))
 	return v.join()
 }
 

@@ -14,6 +14,10 @@
   },
   "plan": null,
   "tests": {
+    "ref": "",
+    "attempts": 1,
+    "task_id": "",
+    "base_sha": "",
     "sha": "1c22a01",
     "refs": [
       "tests/heimdall/KAN-22/health_test.go"
@@ -43,6 +47,9 @@
     "author": "prathameshk421",
     "ticket": "KAN-22",
     "head_sha": "59effae",
+    "base": "",
+    "slop_at": "2026-11-07T17:22:08Z",
+    "suggested": [],
     "picked": {
       "people": [
         "reviewer-2"
@@ -70,6 +77,12 @@
   },
   "tasks": {
     "tsk_01KANRY0000000000000000001": {
+      "kind": "",
+      "subject": "",
+      "input": "",
+      "since": "2026-11-07T17:23:09Z",
+      "wakes": 0,
+      "reset_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-2",
       "role": "reviewer",
       "deadline": "2026-11-07T17:53:09Z",
@@ -82,7 +95,8 @@
       "head_sha": "59effae",
       "finding_refs": [],
       "clean": true,
-      "pack_date": "2026-11-07"
+      "pack_date": "2026-11-07",
+      "outcome": "submitted"
     }
   },
   "findings": {},
@@ -92,5 +106,8 @@
     "merged": true,
     "head_sha": "59effae"
   },
-  "rejected": null
+  "rejected": null,
+  "cases": {},
+  "resumes": {},
+  "checks": {}
 }

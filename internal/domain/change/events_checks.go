@@ -1,16 +1,26 @@
 package change
 
-import "github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+import (
+	"fmt"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/sarif"
+)
+
+// MaxCheckResults bounds the results one checks.reported keeps; the rest are counted in More.
+const MaxCheckResults = 200
 
 // The checks area of the event catalog (TECH_SPEC 3.2): results of check runs on a commit.
 const (
-	EventCIReported EventType = "ci.reported"
+	EventCIReported     EventType = "ci.reported"
+	EventChecksReported EventType = "checks.reported"
 )
 
 // checksPayloads is the registry of the checks area.
 func checksPayloads() map[EventType]payloadEntry {
 	return map[EventType]payloadEntry{
-		EventCIReported: entry[CIReported](),
+		EventCIReported:     entry[CIReported](),
+		EventChecksReported: entry[ChecksReported](),
 	}
 }
 
@@ -48,3 +58,34 @@ const (
 	CITimedOut       CIConclusion = "timed_out"
 	CIActionRequired CIConclusion = "action_required"
 )
+
+// ChecksReported is the payload of checks.reported: the profile checks ran on a head (HARNESS_DESIGN B7). Results are
+// the new results only (a check with a baseline reports what the head added), at most MaxCheckResults; More counts
+// the rest. A check that could not run is an Errors entry, not a failure of the job.
+type ChecksReported struct {
+	Head    id.SHA         `json:"head"`
+	Results []sarif.Result `json:"results"`
+	Errors  []CheckError   `json:"errors"`
+	More    int            `json:"more"`
+}
+
+// CheckError is one check that could not run, and why.
+type CheckError struct {
+	Check  string `json:"check"`
+	Reason string `json:"reason"`
+}
+
+// Validate returns every problem with the payload.
+func (p ChecksReported) Validate() error {
+	var v problems
+	v.add("head", checkSHA(p.Head))
+	v.require("results", len(p.Results) <= MaxCheckResults, fmt.Sprintf("must hold at most %d items", MaxCheckResults))
+	v.require("more", p.More >= 0, "must not be negative")
+	v.each("errors", p.Errors, func(e CheckError) error {
+		var w problems
+		w.add("check", checkText(e.Check))
+		w.add("reason", checkText(e.Reason))
+		return w.join()
+	})
+	return v.join()
+}
