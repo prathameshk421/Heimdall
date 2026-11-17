@@ -20,6 +20,17 @@ Spec and plan: [HARNESS_DESIGN.md](HARNESS_DESIGN.md). Baseline before H1: `make
 | H11 Deploy and live run | pending | | needs VM, owner Terminal root, spend |
 | H12 Specs and leftovers | pending | | |
 
+**Where the overhaul stands (Nov 17, 2026): H0 to H4 are committed and green; H5 to H12 are not started.** The product still runs on the old engine; nothing in H1 to H4 is wired into `cmd/heimdall-server`. I stopped at the end of H4 on purpose: H5 deletes the engine in one atomic change and cannot be left half done.
+
+Notes for whoever starts H5 (read from the code, not run):
+- `engine.Advance`/`Start`/`Timeout` callers to move to `reconcile.Recorder.Record`: `bridge.go` (ingestor, starter), `wire_core.go` (x2), `operator_reject.go`, `operator_answer.go`, `operator_recheck.go`, `command_consumer.go` (x3), `timers.go`, and tests `operator_recheck_test.go`, `review_gate_journey_test.go`, `command_consumer_test.go`, `bridge_test.go`, `mcp_component_test.go`. `workflowTimers`, `taskNudger` and `gateRefresher` are what the Loop replaces.
+- A `reconcile.InputSource` adapter has to be written in `cmd/heimdall-server`: `Policy(repo, sha)` and `Outside` from today's `gateuse.RepoSource`; `Profile` from `ports.ProfileStore.ActiveProfile` mapped to `change.Profile{TestsDir, Checks}`; `Bundle` from `internal/app/bundle` (deleted in H7). `Settings` and `Agents` come from config as the spec lists; `Wait` is `clock.Wait`.
+- `EffectAgentReset` has no executor yet (Switch session reset: check `~/.t3/projects/switchthon/switch`). `EffectRunChecks` has none either (H8).
+- The `task_assign` executor still checks `Target` against the bundle hash; H7 removes that with the bundle.
+- `resume.go` must keep writing `step.resumed{step}`; the row ids are the step names (`open_room`, `write_tests`, `commit`, `checks`, `verify`...).
+- `make verify` has one failure that predates H1 (`TestMCPGetTaskWithRealAgenttoolsAndFakeTaskIndex`): the untrusted ticket text appears in `get_task` output. H7 rewrites `get_task`.
+- Owner decisions still open: allow `encoding/base64` in the domain (`.golangci.yml` depguard) so `base64Of` in `rows_review.go` can go; update the two globs in `scripts/check-owned.sh` that still name `internal/app/liveness` and `internal/app/questions`.
+
 ## Handoff: the overhaul (Nov 16, 2026, third session)
 
 Owner said yes to M0 phase 2 (changing assertions, R2), to completing the three plans, and to SSM on the VM; the bar
