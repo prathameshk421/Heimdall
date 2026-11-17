@@ -181,7 +181,11 @@ func (in In) resumeSuffix(row string) string {
 
 // jobKey is the key of a job: change, the row's own suffix, and the resume count of the row.
 func (in In) jobKey(row, suffix string) EffectKey {
-	k := string(in.Change) + "/" + row
+	part := row
+	if row == "open_room" {
+		part = "room"
+	}
+	k := string(in.Change) + "/" + part
 	if suffix != "" {
 		k += "/" + suffix
 	}

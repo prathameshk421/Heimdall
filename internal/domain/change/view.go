@@ -33,6 +33,14 @@ type View struct {
 	Resumes map[string]int `json:"resumes"`
 	// Checks are the profile check results per head.
 	Checks map[id.SHA]CheckInfo `json:"checks"`
+	// Provider is the last model-provider probe's health ("ok", "refusing"); empty before any probe.
+	Provider *ProviderInfo `json:"provider,omitempty"`
+}
+
+// ProviderInfo is what the last provider.probed said.
+type ProviderInfo struct {
+	Health string `json:"health"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // CaseInfo is one deliberation. LastEvent is the last event that concerned the case; a verdict task's input is that id,
@@ -269,6 +277,8 @@ func (v *View) apply(e Event, p Payload) {
 		v.applyTests(e, p)
 	case PROpened, PRPushed, PRLinked, SlopEvaluated, CIReported, GateEvaluated, ReviewersPicked, PRClosed:
 		v.applyPR(e, p)
+	case ProviderProbed:
+		v.Provider = &ProviderInfo{Health: p.Health, Detail: p.Detail}
 	case TaskAssigned, TaskAcked, TaskTimedOut, TaskFailed, TaskProgress, TaskSuperseded, TaskRewoken:
 		v.applyTask(e, p)
 	case ReviewSubmitted, ReviewUnavailable, ReviewWaived:

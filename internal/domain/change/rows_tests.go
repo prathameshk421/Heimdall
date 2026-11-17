@@ -16,7 +16,7 @@ func rowOpenRoom() Row {
 		Next: func(in In) []Action {
 			p := RoomOpenPayload{Ticket: in.Change, Invite: roomInvite(in)}
 			return []Action{{Text: "the change's room is opened",
-				Job: &Job{Kind: EffectRoomOpen, Key: in.jobKey("room", ""), Target: string(in.Change), Payload: p}}}
+				Job: &Job{Kind: EffectRoomOpen, Key: in.jobKey("open_room", ""), Target: string(in.Change), Payload: p}}}
 		}}
 }
 

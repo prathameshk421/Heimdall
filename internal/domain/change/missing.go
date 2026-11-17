@@ -34,7 +34,22 @@ func Missing(in In) []Need {
 		out = append(out, Need{Step: ra.Row, Role: roleOf(ra.Action), Subject: subjectOf(ra), Text: ra.Text})
 	}
 	out = append(out, gateNeeds(in.View, in.Policy)...)
+	out = append(out, providerNeeds(in.View)...)
 	return append(out, deadNeeds(in)...)
+}
+
+// providerNeeds says so when the model provider refuses requests and an agent holds a task: no agent can answer until it
+// does, and waking them again would not help.
+func providerNeeds(v View) []Need {
+	if v.Provider == nil || v.Provider.Health != "refusing" {
+		return nil
+	}
+	for _, t := range v.Tasks {
+		if t.Live() {
+			return []Need{{Text: "the model provider refuses requests, so agents cannot answer until it recovers"}}
+		}
+	}
+	return nil
 }
 
 // roleOf is the role that holds the work of a task action, and none for any other action.
@@ -82,7 +97,7 @@ func rowOfJob(k EffectKind) string {
 		return "acceptance"
 	case EffectGitHubCheck:
 		return "gate"
-	case EffectGitHubComment, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign:
+	case EffectGitHubComment, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign, EffectAgentReset:
 		return ""
 	}
 	return ""

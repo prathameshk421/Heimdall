@@ -69,13 +69,13 @@ func TestTaskAssignPayloadValidate(t *testing.T) {
 		require.Error(t, p.Validate())
 	})
 
-	t.Run("empty bundle", func(t *testing.T) {
+	t.Run("empty bundle is allowed: inputs are rendered when the agent calls get_task", func(t *testing.T) {
 		p := validTaskAssignPayload()
 		p.Bundle = nil
-		require.Error(t, p.Validate())
+		require.NoError(t, p.Validate())
 
 		p.Bundle = []byte{}
-		require.Error(t, p.Validate())
+		require.NoError(t, p.Validate())
 	})
 
 	t.Run("bundle exceeds max size", func(t *testing.T) {
@@ -122,7 +122,7 @@ func TestDecodeTaskAssignPayloadStrict(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	for _, field := range []string{"agent", "role", "task_id", "room_id", "bundle"} {
+	for _, field := range []string{"agent", "role", "task_id", "room_id"} {
 		t.Run("missing required field "+field, func(t *testing.T) {
 			m := validJSON()
 			delete(m, field)
