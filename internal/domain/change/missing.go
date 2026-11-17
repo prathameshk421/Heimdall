@@ -21,118 +21,86 @@ type Need struct {
 	Text    string        `json:"text"`
 }
 
-// Missing lists what the change still needs: each workflow row whose after rows are done and which is not done itself,
-// in the order of the workflow, then the merge rule's clauses the view can decide (TECH_SPEC 12.4). The rules and
-// words are the spec in testdata/plan/view/README.md.
-func Missing(v View, p policy.Policy) []Need {
-	rows := workflow.Default().Steps
-	table := rowTable()
-	done := map[string]bool{}
-	for _, r := range rows {
-		rule, ok := table[r.ID]
-		done[r.ID] = !ok || rule.done(v) // mutation, deliberate and gate are never row needs (view README, Q1)
-	}
+// Missing lists what the change still needs (HARNESS_DESIGN B2): the Text of every action of every open row, in table
+// order; then the merge rule's clauses the view can decide (TECH_SPEC 12.4); then one need per job that failed for good.
+// There is no second table: the rows are the ones the reconciler runs. The words are the spec in
+// testdata/plan/view/README.md.
+func Missing(in In) []Need {
 	out := []Need{}
-	for _, r := range rows {
-		if done[r.ID] || !allDone(done, r.After) {
-			continue
+	for _, ra := range Next(in) {
+		if ra.Text == "" {
+			continue // the need is told elsewhere (the gate's clause)
 		}
-		for _, n := range table[r.ID].needs(v) {
-			n.Step, n.Role = r.ID, r.Role
-			out = append(out, n)
+		out = append(out, Need{Step: ra.Row, Role: roleOf(ra.Action), Subject: subjectOf(ra), Text: ra.Text})
+	}
+	out = append(out, gateNeeds(in.View, in.Policy)...)
+	return append(out, deadNeeds(in)...)
+}
+
+// roleOf is the role that holds the work of a task action, and none for any other action.
+func roleOf(a Action) workflow.Role {
+	if a.Task == nil {
+		return ""
+	}
+	for _, k := range workflow.Kinds() {
+		if k.Name == a.Task.Kind {
+			return k.Holder
 		}
 	}
-	return append(out, gateNeeds(v, p)...)
+	return ""
 }
 
-func allDone(done map[string]bool, ids []string) bool {
-	for _, id := range ids {
-		if !done[id] {
-			return false
+// subjectOf is who or what a need is about: the seat of a review, the finding of a verification.
+func subjectOf(ra RowAction) string {
+	switch {
+	case ra.Row == "review" && ra.Task != nil:
+		return ra.Task.Subject
+	case ra.Row == "verify" && ra.Job != nil:
+		if p, ok := ra.Job.Payload.(VerifyEvidencePayload); ok {
+			return p.FindingRef.String()
 		}
 	}
-	return true
+	return ""
 }
 
-// rowRule is when one workflow row is done and what it needs when it is not.
-type rowRule struct {
-	done  func(View) bool
-	needs func(View) []Need
-}
-
-// rowTable is the done rule and the need of every workflow row that can be a need (view README, "Missing").
-func rowTable() map[string]rowRule {
-	say := func(text string) func(View) []Need { return func(View) []Need { return []Need{{Text: text}} } }
-	return map[string]rowRule{
-		"open_room":   {func(v View) bool { return v.Room != "" }, say("the change's room is opened")},
-		"branch":      {func(v View) bool { return v.Branch != nil }, say("the ticket branch is created")},
-		"write_tests": {func(v View) bool { return v.Tests != nil }, say("the test author submits tests")},
-		"test_qa":     {func(v View) bool { return v.Tests != nil && v.Tests.Verified != nil }, say("the sandbox verifies the tests")},
-		"signoff":     {signedOff, say("a person approves the tests (sensitive domain)")},
-		"commit":      {func(v View) bool { return v.Tests != nil && v.Tests.Committed != nil }, say("the tests are committed to the branch")},
-		"wait_pr": {func(v View) bool { return v.PR != nil }, func(v View) []Need {
-			return []Need{{Text: "a pull request for " + string(v.Trigger.Ticket) + " is opened"}}
-		}},
-		"slop":   {slopPassedOnHead, func(v View) []Need { return []Need{slopNeed(v.PR)} }},
-		"pick":   {func(v View) bool { return v.PR != nil && v.PR.Picked != nil }, say("reviewers are picked")},
-		"review": {func(v View) bool { return v.PR != nil && v.PR.Picked != nil && len(unreviewed(v)) == 0 }, reviewNeeds},
-		"verify": {func(v View) bool { return len(unchecked(v)) == 0 }, verifyNeeds},
+// rowOfJob is the row whose job each effect kind is; `heimdall resume <change> <row>` runs it again.
+func rowOfJob(k EffectKind) string {
+	switch k {
+	case EffectRoomOpen:
+		return "open_room"
+	case EffectGitHubBranch:
+		return "branch"
+	case EffectTestQuality:
+		return "test_qa"
+	case EffectGitHubCommitTests:
+		return "commit"
+	case EffectRunChecks:
+		return "checks"
+	case EffectVerifyEvidence:
+		return "verify"
+	case EffectAcceptance:
+		return "acceptance"
+	case EffectGitHubCheck:
+		return "gate"
+	case EffectGitHubComment, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign:
+		return ""
 	}
+	return ""
 }
 
-// signedOff: the sign-off row is done when the verified tests need none (its `when` does not hold) or have one.
-func signedOff(v View) bool {
-	t := v.Tests
-	return t != nil && t.Verified != nil && (!t.Verified.NeedsSignoff || t.ApprovedBy != "")
-}
-
-func slopPassedOnHead(v View) bool {
-	return v.PR != nil && v.PR.Slop != nil && v.PR.Slop.SHA == v.PR.HeadSHA && v.PR.Slop.Pass
-}
-
-func reviewNeeds(v View) []Need {
+// deadNeeds are the jobs that failed for good or are in doubt. Nothing retries them by itself: a person decides.
+func deadNeeds(in In) []Need {
 	var out []Need
-	for _, r := range unreviewed(v) {
-		out = append(out, Need{Subject: r, Text: r + " reviews " + short(string(v.PR.HeadSHA))})
-	}
-	return out
-}
-
-func verifyNeeds(v View) []Need {
-	var out []Need
-	for _, ref := range unchecked(v) {
-		out = append(out, Need{Subject: ref, Text: ref + " evidence is verified (" + string(v.Findings[ref].Tier) + ")"})
-	}
-	return out
-}
-
-func slopNeed(pr *PRInfo) Need {
-	h := short(string(pr.HeadSHA))
-	if pr.Slop != nil && pr.Slop.SHA == pr.HeadSHA {
-		return Need{Text: "the slop rules pass on " + h + " (failing: " + strings.Join(pr.Slop.FailingRules, ", ") + ")"}
-	}
-	return Need{Text: "the slop rules are evaluated on " + h}
-}
-
-// unreviewed are the picked reviewers with no review on the current head, in pick order.
-func unreviewed(v View) []string {
-	var out []string
-	for _, r := range v.PR.Picked.People {
-		if v.Reviews[string(r)].HeadSHA != v.PR.HeadSHA {
-			out = append(out, string(r))
+	for _, d := range in.Dead {
+		row := rowOfJob(d.Kind)
+		text := string(d.Kind) + " failed " + strconv.Itoa(d.Attempts) + " times: " + d.LastError
+		if d.InDoubt {
+			text = string(d.Kind) + " may or may not have run (it was interrupted)"
 		}
-	}
-	return out
-}
-
-// unchecked are the E1 to E3 findings no verifier has checked, by ref number. E4 has no verification.
-func unchecked(v View) []string {
-	var out []string
-	for _, ref := range findingRefs(v) {
-		f := v.Findings[ref]
-		if !f.Checked && f.Tier != finding.TierE4 {
-			out = append(out, ref)
+		if row != "" {
+			text += "; `heimdall resume " + string(in.Change) + " " + row + "` runs it again"
 		}
+		out = append(out, Need{Step: row, Text: text})
 	}
 	return out
 }

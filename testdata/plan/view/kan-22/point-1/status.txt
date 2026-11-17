@@ -1,6 +1,6 @@
-KAN-22 · 1 need
+KAN-22 · 0 needs
 Tests     2 tests for AC1, AC2 · submitted on 4a0f699 · verified · committed 4c14494
 PR        none yet
 Reviews   not picked
 Findings  none
-Next      a pull request for KAN-22 is opened
+Next      nothing

@@ -44,6 +44,12 @@
       ]
     },
     "rejected": [],
+    "files": [
+      {
+        "path": "tests/heimdall/KAN-22/healthz_test.go",
+        "blob": ""
+      }
+    ],
     "approved_by": "",
     "committed": {
       "sha": "4c14494e2221a8535c67db50b4fb77d2e4c44020",

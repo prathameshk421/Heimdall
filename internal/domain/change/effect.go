@@ -29,13 +29,15 @@ const (
 	EffectVerifyEvidence    EffectKind = "verify_evidence"
 	// EffectAcceptance runs every Heimdall test on a pull request head and reports heimdall/acceptance (TECH_SPEC 12.4).
 	EffectAcceptance EffectKind = "acceptance"
+	// EffectRunChecks runs the profile's checks on a pull request head and records checks.reported (HARNESS_DESIGN B7).
+	EffectRunChecks EffectKind = "run_checks"
 )
 
 // Valid reports whether k is an effect kind.
 func (k EffectKind) Valid() bool {
 	return slices.Contains([]EffectKind{EffectGitHubCheck, EffectGitHubComment, EffectGitHubBranch,
 		EffectRoomOpen, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign,
-		EffectGitHubCommitTests, EffectTestQuality, EffectVerifyEvidence, EffectAcceptance}, k)
+		EffectGitHubCommitTests, EffectTestQuality, EffectVerifyEvidence, EffectAcceptance, EffectRunChecks}, k)
 }
 
 // EffectKey is the deterministic idempotency key of an outbox row (TECH_SPEC 2.4). An external system that sees the

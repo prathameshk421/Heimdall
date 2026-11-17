@@ -50,6 +50,12 @@
       ]
     },
     "rejected": [],
+    "files": [
+      {
+        "path": "tests/heimdall/KAN-23/refund_test.go",
+        "blob": ""
+      }
+    ],
     "approved_by": "",
     "committed": {
       "sha": "b464e91a9901fb554310aca728ed83eebc4f462c",
@@ -61,6 +67,7 @@
     "author": "prathameshk421",
     "ticket": "KAN-23",
     "head_sha": "619a8f493a48c0628cde6743c766a1d3ad4b5a03",
+    "repo": "aarush323/heimdall-fixture-pay",
     "base": "",
     "slop_at": "2026-11-08T05:53:08.249505Z",
     "suggested": [],
@@ -171,7 +178,13 @@
       "changed_by": "",
       "checked": false,
       "claim": "POST /payments no longer returns merchant_id: the JSON tag was changed to `merchant`, while api/openapi.yaml still requires merchant_id, so any client that reads merchant_id from the create-payment response now gets an empty field. The change is unrelated to the refund feature.",
-      "fingerprint": "5150d86bfb33e1cbece01d7c65e54d449cedb8780c3f50d8e040b834a0470009"
+      "fingerprint": "5150d86bfb33e1cbece01d7c65e54d449cedb8780c3f50d8e040b834a0470009",
+      "rechecks": 0,
+      "repro_test": {
+        "path": "tests/heimdall/KAN-23/merchant_field_test.go",
+        "name": "TestCreatePaymentResponseUsesDocumentedMerchantIDField",
+        "content": "// Ticket: KAN-23\npackage kan23_test\n\nimport (\n\t\"encoding/json\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"strings\"\n\t\"testing\"\n\t\"time\"\n\n\t\"github.com/aarush323/heimdall-fixture-pay/internal/app\"\n)\n\nfunc TestCreatePaymentResponseUsesDocumentedMerchantIDField(t *testing.T) {\n\tmfFixedNow := time.Date(2026, 11, 8, 10, 0, 0, 0, time.UTC)\n\th := app.New(app.Config{Now: func() time.Time { return mfFixedNow }})\n\n\treq := httptest.NewRequest(http.MethodPost, \"/payments\", strings.NewReader(`{\"amount\": 1000, \"currency\": \"USD\"}`))\n\treq.Header.Set(\"X-Merchant-ID\", \"m-1\")\n\treq.Header.Set(\"Content-Type\", \"application/json\")\n\trec := httptest.NewRecorder()\n\th.ServeHTTP(rec, req)\n\tif rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"status %d, want 201; body %s\", rec.Code, rec.Body)\n\t}\n\n\tvar body map[string]json.RawMessage\n\tif err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {\n\t\tt.Fatal(err)\n\t}\n\traw, ok := body[\"merchant_id\"]\n\tif !ok {\n\t\tt.Fatalf(\"response has no merchant_id field as api/openapi.yaml documents: body %s\", rec.Body)\n\t}\n\tvar got string\n\tif err := json.Unmarshal(raw, &got); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif got != \"m-1\" {\n\t\tt.Errorf(\"merchant_id = %q, want m-1\", got)\n\t}\n}\n"
+      }
     },
     "F2": {
       "id": "fnd_01M6WVT8651V53W8DVG4J9BYH2",
@@ -183,7 +196,8 @@
       "changed_by": "",
       "checked": false,
       "claim": "The new POST /payments/{id}/refunds route is served but api/openapi.yaml still documents only /payments and /healthz, and README still lists only POST /payments, so the published wire contract does not cover the endpoint this change adds.",
-      "fingerprint": "f7af4c2a4254d31e0d311e17cc1c9f40146c0cda60aff7ce9e1451bb9890e467"
+      "fingerprint": "f7af4c2a4254d31e0d311e17cc1c9f40146c0cda60aff7ce9e1451bb9890e467",
+      "rechecks": 0
     },
     "F3": {
       "id": "fnd_01M6WVT8651V53W8DVG4J9BYH3",
@@ -195,7 +209,8 @@
       "changed_by": "",
       "checked": false,
       "claim": "Two concurrent refunds on one payment can both pass the cap: Refund calls refunds.total() and then refunds.add() in separate lock acquisitions, so two 60 refunds on a payment of 100 can both be accepted and refund 120.",
-      "fingerprint": "78358567ada5a61b648faa2327e714a76c69502598910a572236c606f128a1c9"
+      "fingerprint": "78358567ada5a61b648faa2327e714a76c69502598910a572236c606f128a1c9",
+      "rechecks": 0
     }
   },
   "decisions": [],

@@ -40,7 +40,8 @@ type RoomOpenPayload struct {
 // Validate returns every problem with the payload.
 func (p RoomOpenPayload) Validate() error {
 	var v problems
-	v.add("ticket", checkTicket(p.Ticket))
+	_, err := id.ParseChangeID(string(p.Ticket)) // a pull request without a ticket has a room too (D146)
+	v.add("ticket", err)
 	v.require("invite", len(p.Invite) <= maxInvite, fmt.Sprintf("has more than %d entries", maxInvite))
 	v.each("invite", p.Invite, checkInviteEntry)
 	return v.join()

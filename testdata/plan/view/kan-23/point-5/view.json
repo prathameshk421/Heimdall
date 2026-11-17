@@ -50,6 +50,12 @@
       ]
     },
     "rejected": [],
+    "files": [
+      {
+        "path": "tests/heimdall/KAN-23/refund_test.go",
+        "blob": ""
+      }
+    ],
     "approved_by": "",
     "committed": {
       "sha": "b464e91a9901fb554310aca728ed83eebc4f462c",
@@ -61,6 +67,7 @@
     "author": "prathameshk421",
     "ticket": "KAN-23",
     "head_sha": "619a8f493a48c0628cde6743c766a1d3ad4b5a03",
+    "repo": "aarush323/heimdall-fixture-pay",
     "base": "",
     "slop_at": "2026-11-08T05:53:08.249505Z",
     "suggested": [],
@@ -195,7 +202,13 @@
       "changed_by": "heimdall",
       "checked": true,
       "claim": "POST /payments no longer returns merchant_id: the JSON tag was changed to `merchant`, while api/openapi.yaml still requires merchant_id, so any client that reads merchant_id from the create-payment response now gets an empty field. The change is unrelated to the refund feature.",
-      "fingerprint": "5150d86bfb33e1cbece01d7c65e54d449cedb8780c3f50d8e040b834a0470009"
+      "fingerprint": "5150d86bfb33e1cbece01d7c65e54d449cedb8780c3f50d8e040b834a0470009",
+      "rechecks": 0,
+      "repro_test": {
+        "path": "tests/heimdall/KAN-23/merchant_field_test.go",
+        "name": "TestCreatePaymentResponseUsesDocumentedMerchantIDField",
+        "content": "// Ticket: KAN-23\npackage kan23_test\n\nimport (\n\t\"encoding/json\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"strings\"\n\t\"testing\"\n\t\"time\"\n\n\t\"github.com/aarush323/heimdall-fixture-pay/internal/app\"\n)\n\nfunc TestCreatePaymentResponseUsesDocumentedMerchantIDField(t *testing.T) {\n\tmfFixedNow := time.Date(2026, 11, 8, 10, 0, 0, 0, time.UTC)\n\th := app.New(app.Config{Now: func() time.Time { return mfFixedNow }})\n\n\treq := httptest.NewRequest(http.MethodPost, \"/payments\", strings.NewReader(`{\"amount\": 1000, \"currency\": \"USD\"}`))\n\treq.Header.Set(\"X-Merchant-ID\", \"m-1\")\n\treq.Header.Set(\"Content-Type\", \"application/json\")\n\trec := httptest.NewRecorder()\n\th.ServeHTTP(rec, req)\n\tif rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"status %d, want 201; body %s\", rec.Code, rec.Body)\n\t}\n\n\tvar body map[string]json.RawMessage\n\tif err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {\n\t\tt.Fatal(err)\n\t}\n\traw, ok := body[\"merchant_id\"]\n\tif !ok {\n\t\tt.Fatalf(\"response has no merchant_id field as api/openapi.yaml documents: body %s\", rec.Body)\n\t}\n\tvar got string\n\tif err := json.Unmarshal(raw, &got); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif got != \"m-1\" {\n\t\tt.Errorf(\"merchant_id = %q, want m-1\", got)\n\t}\n}\n"
+      }
     },
     "F10": {
       "id": "fnd_01M6WWPX26T6TVV4T5VEC16XCR",
@@ -207,7 +220,8 @@
       "changed_by": "",
       "checked": false,
       "claim": "The refund cap reads refunds.total() and then adds in two separate lock acquisitions, so two concurrent refunds of 600 on a payment of 1000 both pass the check and are both logged, over-refunding the payment by 200.",
-      "fingerprint": "b9e4d2e87348d55b4816bf43654ba47487715d6a6dbe33cb3aaefba0419fcb01"
+      "fingerprint": "b9e4d2e87348d55b4816bf43654ba47487715d6a6dbe33cb3aaefba0419fcb01",
+      "rechecks": 0
     },
     "F11": {
       "id": "fnd_01M6WWPX26T6TVV4T5VEC16XCS",
@@ -219,7 +233,8 @@
       "changed_by": "",
       "checked": false,
       "claim": "The new POST /payments/{id}/refunds route is registered but api/openapi.yaml and the README still document only /payments (and healthz), so spec-driven clients and generated SDKs cannot see the refund endpoint; the same drift was upheld for healthz in KAN-22.",
-      "fingerprint": "8444efb8dfb84f74a693bf3400f0e6615a31d5e750a47a988c8afb0d68ff2574"
+      "fingerprint": "8444efb8dfb84f74a693bf3400f0e6615a31d5e750a47a988c8afb0d68ff2574",
+      "rechecks": 0
     },
     "F2": {
       "id": "fnd_01M6WVT8651V53W8DVG4J9BYH2",
@@ -231,7 +246,8 @@
       "changed_by": "",
       "checked": false,
       "claim": "The new POST /payments/{id}/refunds route is served but api/openapi.yaml still documents only /payments and /healthz, and README still lists only POST /payments, so the published wire contract does not cover the endpoint this change adds.",
-      "fingerprint": "f7af4c2a4254d31e0d311e17cc1c9f40146c0cda60aff7ce9e1451bb9890e467"
+      "fingerprint": "f7af4c2a4254d31e0d311e17cc1c9f40146c0cda60aff7ce9e1451bb9890e467",
+      "rechecks": 0
     },
     "F3": {
       "id": "fnd_01M6WVT8651V53W8DVG4J9BYH3",
@@ -243,7 +259,8 @@
       "changed_by": "",
       "checked": false,
       "claim": "Two concurrent refunds on one payment can both pass the cap: Refund calls refunds.total() and then refunds.add() in separate lock acquisitions, so two 60 refunds on a payment of 100 can both be accepted and refund 120.",
-      "fingerprint": "78358567ada5a61b648faa2327e714a76c69502598910a572236c606f128a1c9"
+      "fingerprint": "78358567ada5a61b648faa2327e714a76c69502598910a572236c606f128a1c9",
+      "rechecks": 0
     },
     "F4": {
       "id": "fnd_01M6WW58EPPP2FNB5B584YAJVQ",
@@ -255,7 +272,13 @@
       "changed_by": "heimdall",
       "checked": true,
       "claim": "The new refund response omits refund_ref: refundJSON carries only id, payment_id and amount, so the ledger that keys each posting by refund_ref (INC-031) cannot parse it and will skip postings, skewing the daily balance.",
-      "fingerprint": "c051de583a9fa29cf2c7711f671303ca0de437569192b51a89d09eae32bdd689"
+      "fingerprint": "c051de583a9fa29cf2c7711f671303ca0de437569192b51a89d09eae32bdd689",
+      "rechecks": 0,
+      "repro_test": {
+        "path": "tests/heimdall/KAN-23/refund_ref_test.go",
+        "name": "TestRefundResponseCarriesRefundRef",
+        "content": "package kan23_test\n\nimport (\n\t\"encoding/json\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"strings\"\n\t\"testing\"\n\t\"time\"\n\n\t\"github.com/aarush323/heimdall-fixture-pay/internal/app\"\n)\n\nfunc TestRefundResponseCarriesRefundRef(t *testing.T) {\n\th := app.New(app.Config{Now: func() time.Time { return time.Date(2026, 11, 8, 10, 0, 0, 0, time.UTC) }})\n\n\tpayReq := httptest.NewRequest(http.MethodPost, \"/payments\", strings.NewReader(`{\"amount\": 1000, \"currency\": \"USD\"}`))\n\tpayReq.Header.Set(\"X-Merchant-ID\", \"m-1\")\n\tpayReq.Header.Set(\"Content-Type\", \"application/json\")\n\tpayRec := httptest.NewRecorder()\n\th.ServeHTTP(payRec, payReq)\n\tif payRec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"create payment: status %d, want 201; body %s\", payRec.Code, payRec.Body)\n\t}\n\tvar created struct {\n\t\tID string `json:\"id\"`\n\t}\n\tif err := json.Unmarshal(payRec.Body.Bytes(), &created); err != nil {\n\t\tt.Fatalf(\"payment response is not JSON: %v\", err)\n\t}\n\n\trefReq := httptest.NewRequest(http.MethodPost, \"/payments/\"+created.ID+\"/refunds\", strings.NewReader(`{\"amount\": 300}`))\n\trefReq.Header.Set(\"X-Merchant-ID\", \"m-1\")\n\trefReq.Header.Set(\"Content-Type\", \"application/json\")\n\trefRec := httptest.NewRecorder()\n\th.ServeHTTP(refRec, refReq)\n\tif refRec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"refund: status %d, want 201; body %s\", refRec.Code, refRec.Body)\n\t}\n\n\tvar body struct {\n\t\tRefundRef string `json:\"refund_ref\"`\n\t}\n\tif err := json.Unmarshal(refRec.Body.Bytes(), &body); err != nil {\n\t\tt.Fatalf(\"refund response is not JSON: %v\", err)\n\t}\n\tif body.RefundRef == \"\" {\n\t\tt.Errorf(\"refund response has no refund_ref field; the ledger keys postings by it: %s\", refRec.Body)\n\t}\n}\n"
+      }
     },
     "F5": {
       "id": "fnd_01M6WW58ER4H096EJRN21JNB9X",
@@ -267,7 +290,13 @@
       "changed_by": "heimdall",
       "checked": true,
       "claim": "Rename of the payment response field merchant_id to merchant breaks the wire contract: api/openapi.yaml still requires and documents merchant_id, and any consumer reading merchant_id now gets an empty value for every POST /payments response.",
-      "fingerprint": "2e333326c2f352b896db75a694cf38d1caeb16cd92097e8365604c1797d42121"
+      "fingerprint": "2e333326c2f352b896db75a694cf38d1caeb16cd92097e8365604c1797d42121",
+      "rechecks": 0,
+      "repro_test": {
+        "path": "tests/heimdall/KAN-23/payment_wire_test.go",
+        "name": "TestPaymentResponseKeepsMerchantIDWireField",
+        "content": "package kan23_test\n\nimport (\n\t\"encoding/json\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"strings\"\n\t\"testing\"\n\t\"time\"\n\n\t\"github.com/aarush323/heimdall-fixture-pay/internal/app\"\n)\n\nfunc TestPaymentResponseKeepsMerchantIDWireField(t *testing.T) {\n\th := app.New(app.Config{Now: func() time.Time { return time.Date(2026, 11, 8, 10, 0, 0, 0, time.UTC) }})\n\treq := httptest.NewRequest(http.MethodPost, \"/payments\", strings.NewReader(`{\"amount\": 1200, \"currency\": \"USD\"}`))\n\treq.Header.Set(\"X-Merchant-ID\", \"m-1\")\n\treq.Header.Set(\"Content-Type\", \"application/json\")\n\trec := httptest.NewRecorder()\n\th.ServeHTTP(rec, req)\n\tif rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"status %d, want 201; body %s\", rec.Code, rec.Body)\n\t}\n\tvar body struct {\n\t\tMerchantID string `json:\"merchant_id\"`\n\t}\n\tif err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {\n\t\tt.Fatalf(\"payment response is not JSON: %v\", err)\n\t}\n\tif body.MerchantID == \"\" {\n\t\tt.Errorf(\"payment response no longer carries merchant_id as api/openapi.yaml documents; body %s\", rec.Body)\n\t}\n}\n"
+      }
     },
     "F6": {
       "id": "fnd_01M6WW58ER4H096EJRN21JNB9Y",
@@ -279,7 +308,8 @@
       "changed_by": "",
       "checked": false,
       "claim": "The refund cap is checked and then recorded under separate lock acquisitions, so two concurrent refunds on one payment can both read the same total and both be accepted, over-refunding (e.g. two 60 refunds on a 100 payment).",
-      "fingerprint": "b0391b8fd1577cefa9e77b12d810811dcb4780df9d3149263ba613202a9a5c38"
+      "fingerprint": "b0391b8fd1577cefa9e77b12d810811dcb4780df9d3149263ba613202a9a5c38",
+      "rechecks": 0
     },
     "F7": {
       "id": "fnd_01M6WW58ER4H096EJRN21JNB9Z",
@@ -291,7 +321,8 @@
       "changed_by": "",
       "checked": false,
       "claim": "The new POST /payments/{id}/refunds route is registered on the router but api/openapi.yaml still documents only /payments and /healthz, so the served surface has a refund endpoint with no schema or path and spec-driven clients/tooling cannot discover or validate it.",
-      "fingerprint": "f230d2da14624b8fc5242a57743ce169ae65c7544307a3dbdf56ac3c9f8a383c"
+      "fingerprint": "f230d2da14624b8fc5242a57743ce169ae65c7544307a3dbdf56ac3c9f8a383c",
+      "rechecks": 0
     },
     "F8": {
       "id": "fnd_01M6WWPX26T6TVV4T5VEC16XCP",
@@ -303,7 +334,13 @@
       "changed_by": "heimdall",
       "checked": true,
       "claim": "POST /payments now serialises the merchant as JSON key \"merchant\" instead of \"merchant_id\", so every client following api/openapi.yaml (which declares merchant_id required) loses the field and the response no longer matches the documented contract. The existing api test decodes into paymentJSON, so it does not notice.",
-      "fingerprint": "3af7d46cefa22afc001ad2a1b6135c66e7f85731e1e4e65eb68e1dca3ee0305f"
+      "fingerprint": "3af7d46cefa22afc001ad2a1b6135c66e7f85731e1e4e65eb68e1dca3ee0305f",
+      "rechecks": 0,
+      "repro_test": {
+        "path": "tests/heimdall/KAN-23/payment_wire/payment_wire_test.go",
+        "name": "TestCreatePaymentResponseUsesMerchantIDKey",
+        "content": "package paymentwire_test\n\nimport (\n\t\"encoding/json\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"strings\"\n\t\"testing\"\n\n\t\"github.com/aarush323/heimdall-fixture-pay/internal/app\"\n)\n\nfunc TestCreatePaymentResponseUsesMerchantIDKey(t *testing.T) {\n\th := app.New(app.Config{})\n\treq := httptest.NewRequest(http.MethodPost, \"/payments\", strings.NewReader(`{\"amount\": 500, \"currency\": \"USD\"}`))\n\treq.Header.Set(\"X-Merchant-ID\", \"m-1\")\n\treq.Header.Set(\"Content-Type\", \"application/json\")\n\trec := httptest.NewRecorder()\n\th.ServeHTTP(rec, req)\n\tif rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"status = %d, want 201; body %s\", rec.Code, rec.Body)\n\t}\n\tvar body map[string]json.RawMessage\n\tif err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {\n\t\tt.Fatalf(\"response is not JSON: %v\", err)\n\t}\n\tif _, ok := body[\"merchant_id\"]; !ok {\n\t\tt.Errorf(\"POST /payments body %s has no merchant_id, which api/openapi.yaml declares required\", rec.Body)\n\t}\n}\n"
+      }
     },
     "F9": {
       "id": "fnd_01M6WWPX26T6TVV4T5VEC16XCQ",
@@ -315,7 +352,13 @@
       "changed_by": "heimdall",
       "checked": true,
       "claim": "POST /payments/{id}/refunds ignores the Idempotency-Key header entirely: a client retry after a timeout creates a second refund and pays out twice, instead of returning the original refund with 200 as ADR-004 requires.",
-      "fingerprint": "830a7ff43cbca2f1acf6b49419e9f8dcabe92ef2cc515eff9503ea79b6fd0913"
+      "fingerprint": "830a7ff43cbca2f1acf6b49419e9f8dcabe92ef2cc515eff9503ea79b6fd0913",
+      "rechecks": 0,
+      "repro_test": {
+        "path": "tests/heimdall/KAN-23/idempotency/idempotency_test.go",
+        "name": "TestRepeatRefundWithSameIdempotencyKeyReturnsOriginal",
+        "content": "package idempotency_test\n\nimport (\n\t\"encoding/json\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"strings\"\n\t\"testing\"\n\n\t\"github.com/aarush323/heimdall-fixture-pay/internal/app\"\n)\n\nfunc doRefund(t *testing.T, h http.Handler, paymentID, key string) *httptest.ResponseRecorder {\n\tt.Helper()\n\treq := httptest.NewRequest(http.MethodPost, \"/payments/\"+paymentID+\"/refunds\", strings.NewReader(`{\"amount\": 300}`))\n\treq.Header.Set(\"Content-Type\", \"application/json\")\n\treq.Header.Set(\"X-Merchant-ID\", \"m-1\")\n\tif key != \"\" {\n\t\treq.Header.Set(\"Idempotency-Key\", key)\n\t}\n\trec := httptest.NewRecorder()\n\th.ServeHTTP(rec, req)\n\treturn rec\n}\n\nfunc TestRepeatRefundWithSameIdempotencyKeyReturnsOriginal(t *testing.T) {\n\th := app.New(app.Config{})\n\treq := httptest.NewRequest(http.MethodPost, \"/payments\", strings.NewReader(`{\"amount\": 1000, \"currency\": \"USD\"}`))\n\treq.Header.Set(\"Content-Type\", \"application/json\")\n\treq.Header.Set(\"X-Merchant-ID\", \"m-1\")\n\trec := httptest.NewRecorder()\n\th.ServeHTTP(rec, req)\n\tif rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"create payment: status %d, want 201; body %s\", rec.Code, rec.Body)\n\t}\n\tvar payment struct {\n\t\tID string `json:\"id\"`\n\t}\n\tif err := json.Unmarshal(rec.Body.Bytes(), &payment); err != nil {\n\t\tt.Fatal(err)\n\t}\n\n\tfirst := doRefund(t, h, payment.ID, \"k-1\")\n\tif first.Code != http.StatusCreated {\n\t\tt.Fatalf(\"first refund: status %d, want 201; body %s\", first.Code, first.Body)\n\t}\n\tvar firstRefund struct {\n\t\tID string `json:\"id\"`\n\t}\n\tif err := json.Unmarshal(first.Body.Bytes(), &firstRefund); err != nil {\n\t\tt.Fatal(err)\n\t}\n\n\tsecond := doRefund(t, h, payment.ID, \"k-1\")\n\tif second.Code != http.StatusOK {\n\t\tt.Fatalf(\"repeat refund with the same Idempotency-Key: status %d, want 200; body %s\", second.Code, second.Body)\n\t}\n\tvar secondRefund struct {\n\t\tID string `json:\"id\"`\n\t}\n\tif err := json.Unmarshal(second.Body.Bytes(), &secondRefund); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif secondRefund.ID != firstRefund.ID {\n\t\tt.Errorf(\"repeat refund id = %q, want the original %q\", secondRefund.ID, firstRefund.ID)\n\t}\n}\n"
+      }
     }
   },
   "decisions": [],

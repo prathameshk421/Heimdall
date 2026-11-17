@@ -44,6 +44,12 @@
       ]
     },
     "rejected": [],
+    "files": [
+      {
+        "path": "tests/heimdall/KAN-22/healthz_test.go",
+        "blob": ""
+      }
+    ],
     "approved_by": "",
     "committed": {
       "sha": "4c14494e2221a8535c67db50b4fb77d2e4c44020",
@@ -55,6 +61,7 @@
     "author": "prathameshk421",
     "ticket": "KAN-22",
     "head_sha": "59effae547d768799972d6e54eff32e82dbb7912",
+    "repo": "aarush323/heimdall-fixture-pay",
     "base": "",
     "slop_at": "2026-11-07T17:31:26.811908Z",
     "suggested": [],
@@ -221,7 +228,8 @@
       "changed_by": "slack_owner",
       "checked": false,
       "claim": "GET /healthz is implemented and registered on the router but api/openapi.yaml still documents only /payments, so the documented wire contract no longer matches the served surface and spec-driven clients/tooling won't see the new endpoint.",
-      "fingerprint": "2d50610075886eda57aaea42ad31292c6dbb35f6267dd522696b7ce25ee97b42"
+      "fingerprint": "2d50610075886eda57aaea42ad31292c6dbb35f6267dd522696b7ce25ee97b42",
+      "rechecks": 0
     },
     "F2": {
       "id": "fnd_01M6VGW33HKJF1NBPJFJ5PJR57",
@@ -233,7 +241,8 @@
       "changed_by": "",
       "checked": false,
       "claim": "The new GET /healthz endpoint is missing from api/openapi.yaml. Downstream consumers and integration tooling that rely on the spec will not discover the health check, and the file is now stale relative to the implementation.",
-      "fingerprint": "ab6612689897e28e0c458b737227e5668bcd31d1eecdcdcec40b59eedbdead66"
+      "fingerprint": "ab6612689897e28e0c458b737227e5668bcd31d1eecdcdcec40b59eedbdead66",
+      "rechecks": 0
     }
   },
   "decisions": [

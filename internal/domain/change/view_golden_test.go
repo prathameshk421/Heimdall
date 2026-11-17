@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
 )
 
@@ -39,7 +41,7 @@ func TestFoldAndMissingMatchTheGoldens(t *testing.T) {
 				v, err := change.Fold(readEvents(t, src))
 				require.NoError(t, err, "a recorded fact is never refused")
 				require.Equal(t, string(read(t, filepath.Join(pt, "view.json"))), encode(t, v))
-				require.Equal(t, string(read(t, filepath.Join(pt, "missing.json"))), encode(t, change.Missing(v, p)))
+				require.Equal(t, string(read(t, filepath.Join(pt, "missing.json"))), encode(t, change.Missing(goldenIn(v, p))))
 			})
 		}
 	}
@@ -83,4 +85,17 @@ func read(t *testing.T, path string) []byte {
 	b, err := os.ReadFile(path)
 	require.NoError(t, err)
 	return b
+}
+
+// goldenIn is the In the board builds for a recorded log: the policy at the merge base, the attempt budget the product
+// runs with, and the pick wait of one minute.
+func goldenIn(v change.View, p policy.Policy) change.In {
+	var c id.ChangeID
+	switch {
+	case v.Trigger != nil:
+		c = v.Trigger.Ticket
+	case v.PR != nil:
+		c = v.PR.Ticket
+	}
+	return change.In{Change: c, View: v, Policy: p, Settings: change.Settings{TestAttempts: 3, PickWait: time.Minute}}
 }

@@ -44,6 +44,12 @@
       ]
     },
     "rejected": [],
+    "files": [
+      {
+        "path": "tests/heimdall/KAN-22/healthz_test.go",
+        "blob": ""
+      }
+    ],
     "approved_by": "",
     "committed": {
       "sha": "4c14494e2221a8535c67db50b4fb77d2e4c44020",
@@ -55,6 +61,7 @@
     "author": "prathameshk421",
     "ticket": "KAN-22",
     "head_sha": "ee4539de10978ffa251f60d7340f35275ebec665",
+    "repo": "aarush323/heimdall-fixture-pay",
     "base": "",
     "slop_at": "2026-11-07T17:09:13.905021Z",
     "suggested": [],

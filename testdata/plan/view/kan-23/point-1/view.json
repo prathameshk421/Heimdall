@@ -42,6 +42,12 @@
     "expected_paths": [],
     "verified": null,
     "rejected": [],
+    "files": [
+      {
+        "path": "tests/heimdall/KAN-23/refund_test.go",
+        "blob": ""
+      }
+    ],
     "approved_by": "",
     "committed": null
   },

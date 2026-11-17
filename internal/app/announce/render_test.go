@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -37,7 +38,7 @@ func TestRenderMatchesTheStatusGoldens(t *testing.T) {
 				}
 				v, err := change.Fold(loadEvents(t, src))
 				require.NoError(t, err)
-				require.Equal(t, string(read(t, filepath.Join(pt, "status.txt"))), Render(v, change.Missing(v, p)))
+				require.Equal(t, string(read(t, filepath.Join(pt, "status.txt"))), Render(v, change.Missing(change.In{View: v, Policy: p, Settings: change.Settings{TestAttempts: 3, PickWait: time.Minute}})))
 			})
 		}
 	}

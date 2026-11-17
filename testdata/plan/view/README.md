@@ -170,7 +170,7 @@ When each row is done, and the need it gives when it is not:
 | `test_qa` | `tests.verified` is set | `the sandbox verifies the tests` |
 | `signoff` | `tests.verified` is set and either `needs_signoff` is false (the row's `when` does not hold, TECH_SPEC 3.2) or `approved_by` is set | `a person approves the tests (sensitive domain)` |
 | `commit` | `tests.committed` is set | `the tests are committed to the branch` |
-| `wait_pr` | `pr` is set | `a pull request for <ticket> is opened` |
+| `wait_pr` | deleted (D170): the Review rows start on `pr.opened` and need nothing from the Tests rows | none |
 | `slop` | `pr.slop` is about the current head and passed | `the slop rules pass on <head> (failing: <rules, comma separated>)` when it failed on head; `the slop rules are evaluated on <head>` when it has not run on head |
 | `pick` | `pr.picked` is set | `reviewers are picked` |
 | `review` | every picked person has a review whose `head_sha` is the current head | one need per such person, in pick order: `<reviewer> reviews <head>`, subject the reviewer |

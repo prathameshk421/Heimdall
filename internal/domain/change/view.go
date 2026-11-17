@@ -74,16 +74,18 @@ type PlanInfo struct{}
 type TestsInfo struct {
 	// Ref is the blob of the submission's first file (the event's first blob reference); Attempts counts every
 	// tests.submitted and is never reset; TaskID and BaseSHA are what the submission named.
-	Ref        workflow.BlobRef    `json:"ref"`
-	Attempts   int                 `json:"attempts"`
-	TaskID     id.TaskID           `json:"task_id"`
-	BaseSHA    id.SHA              `json:"base_sha"`
-	SHA        id.SHA              `json:"sha"`
-	Refs       []string            `json:"refs"`
-	ACMap      map[string][]string `json:"ac_map"`
-	Expected   []string            `json:"expected_paths"`
-	Verified   *TestsVerifiedInfo  `json:"verified"`
-	Rejected   []string            `json:"rejected"`
+	Ref      workflow.BlobRef    `json:"ref"`
+	Attempts int                 `json:"attempts"`
+	TaskID   id.TaskID           `json:"task_id"`
+	BaseSHA  id.SHA              `json:"base_sha"`
+	SHA      id.SHA              `json:"sha"`
+	Refs     []string            `json:"refs"`
+	ACMap    map[string][]string `json:"ac_map"`
+	Expected []string            `json:"expected_paths"`
+	Verified *TestsVerifiedInfo  `json:"verified"`
+	Rejected []string            `json:"rejected"`
+	// Files are the submitted test files: the new shape's files, or the old shape's paths with the event's blobs.
+	Files      []TestFile          `json:"files,omitempty"`
 	ApprovedBy ActorID             `json:"approved_by"`
 	Committed  *TestsCommittedInfo `json:"committed"`
 }
@@ -107,6 +109,7 @@ type PRInfo struct {
 	Author  ActorID     `json:"author"`
 	Ticket  id.ChangeID `json:"ticket"`
 	HeadSHA id.SHA      `json:"head_sha"`
+	Repo    Repo        `json:"repo"`
 	Base    id.SHA      `json:"base"`
 	// SlopAt is when the slop rule last ran on the current head; the reviewer pick waits from then.
 	SlopAt time.Time `json:"slop_at"`
@@ -200,6 +203,12 @@ type FindingInfo struct {
 	Claim      string             `json:"claim"`
 	// Fingerprint is what consensus compares between reviewers; only finding.filed sets it.
 	Fingerprint string `json:"fingerprint"`
+	// Rechecks counts finding.recheck_requested; each makes the evidence due again. ReproTest, ToolResult and
+	// MemoryRef are the proof the filing event carried, which verification repeats.
+	Rechecks   int                 `json:"rechecks"`
+	ReproTest  *finding.ReproTest  `json:"repro_test,omitempty"`
+	ToolResult *finding.ToolResult `json:"tool_result,omitempty"`
+	MemoryRef  *string             `json:"memory_ref,omitempty"`
 }
 
 // DecisionInfo is one human decision.
@@ -266,7 +275,7 @@ func (v *View) apply(e Event, p Payload) {
 		v.applyReview(p)
 	case CaseOpened, VerdictSubmitted, VerdictApplied, VerdictEscalated:
 		v.applyCase(e, p)
-	case StepResumed, ChecksReported:
+	case StepResumed, ChecksReported, FindingRecheckRequested:
 		v.applyRecords(p)
 	case FindingFiled, FindingVerified, FindingStateChanged:
 		v.applyFindingEvent(e, p)
@@ -328,7 +337,7 @@ func (v *View) applyTests(e Event, p Payload) {
 		if len(e.BlobRefs) > 0 {
 			ref = e.BlobRefs[0]
 		}
-		v.Tests = &TestsInfo{Ref: ref, Attempts: attempts, TaskID: s.TaskID, BaseSHA: s.BaseSHA, SHA: s.SHA,
+		v.Tests = &TestsInfo{Files: submittedFiles(s, e.BlobRefs), Ref: ref, Attempts: attempts, TaskID: s.TaskID, BaseSHA: s.BaseSHA, SHA: s.SHA,
 			Refs: nonNil(s.Refs), ACMap: nonNilMap(s.ACMap), Expected: nonNil(s.ExpectedPaths), Rejected: []string{}}
 		v.endTask(s.TaskID)
 		return
@@ -350,7 +359,7 @@ func (v *View) applyTests(e Event, p Payload) {
 
 func (v *View) applyPR(e Event, p Payload) {
 	if o, ok := p.(PROpened); ok {
-		v.PR = &PRInfo{Number: o.Number, Author: o.Author, Ticket: o.Ticket, HeadSHA: o.HeadSHA, Base: o.BaseSHA,
+		v.PR = &PRInfo{Repo: o.Repo, Number: o.Number, Author: o.Author, Ticket: o.Ticket, HeadSHA: o.HeadSHA, Base: o.BaseSHA,
 			Suggested: nonNil(o.SuggestedReviewers), CI: map[id.SHA]map[string]CIConclusion{}}
 		return
 	}
@@ -365,6 +374,7 @@ func (v *View) applyPR(e Event, p Payload) {
 	case PRPushed:
 		v.PR.HeadSHA = p.HeadSHA
 		v.PR.Base = orKeep(p.BaseSHA, v.PR.Base)
+		v.uncheckLiveFindings()
 	case PRLinked:
 		v.PR.Ticket = p.Ticket
 	case SlopEvaluated:
@@ -401,10 +411,46 @@ func (v *View) applyRecords(p Payload) {
 		v.Resumes[p.Step]++
 	case ChecksReported:
 		v.Checks[p.Head] = CheckInfo{Ran: true, Results: nonNil(p.Results), Errors: nonNil(p.Errors), More: p.More}
+	case FindingRecheckRequested:
+		if f, ok := v.Findings[p.Ref.String()]; ok {
+			f.Rechecks++
+			f.Checked = false
+			v.Findings[p.Ref.String()] = f
+		}
+	}
+}
+
+// uncheckLiveFindings makes the evidence of every live finding due again: the head moved, so what was verified on the
+// old head says nothing about the new one.
+func (v *View) uncheckLiveFindings() {
+	for ref, f := range v.Findings {
+		if f.State.CanBlock() {
+			f.Checked = false
+			v.Findings[ref] = f
+		}
 	}
 }
 
 // applyReview folds how a seat ended on the current head.
+// submittedFiles are the files of a submission: Files when the writer set them, else the old paths with the blob
+// references of the event (the first blob for a path with none of its own).
+func submittedFiles(s TestsSubmitted, blobs []workflow.BlobRef) []TestFile {
+	if len(s.Files) > 0 {
+		return s.Files
+	}
+	var out []TestFile
+	for i, path := range s.Refs {
+		blob := workflow.BlobRef("")
+		if i < len(blobs) {
+			blob = blobs[i]
+		} else if len(blobs) > 0 {
+			blob = blobs[0]
+		}
+		out = append(out, TestFile{Path: path, Blob: blob})
+	}
+	return out
+}
+
 func (v *View) applyReview(p Payload) {
 	switch p := p.(type) {
 	case ReviewSubmitted:
@@ -454,7 +500,8 @@ func (v *View) applyFinding(e Event, p FindingRecord) {
 	ref := p.Ref.String()
 	if e.Type == EventFindingFiled {
 		v.Findings[ref] = FindingInfo{ID: p.FindingID, Tier: p.Tier, Severity: p.Severity, Confidence: p.Confidence,
-			State: p.State, By: p.By, Claim: p.Claim, Fingerprint: p.Fingerprint}
+			State: p.State, By: p.By, Claim: p.Claim, Fingerprint: p.Fingerprint,
+			ReproTest: p.ReproTest, ToolResult: p.ToolResult, MemoryRef: p.MemoryRef}
 		return
 	}
 	f, ok := v.Findings[ref]

@@ -24,7 +24,6 @@ func TestRoomOpenPayloadRefusesMissingUnknownAndTrailing(t *testing.T) {
 		"trailing data":   `{"ticket":"KAN-7","invite":[]} {}`,
 		"null":            `null`,
 		"not an object":   `["KAN-7"]`,
-		"pr stream":       `{"ticket":"pr-a-b-4","invite":[]}`,
 		"placeholder":     `{"ticket":"KAN-7","invite":["person:$assignee"]}`,
 		"bad invite":      `{"ticket":"KAN-7","invite":["admin:root"]}`,
 		"too many invite": `{"ticket":"KAN-7","invite":[` + strings.Repeat(`"role:x",`, 32) + `"role:x"]}`,
@@ -80,4 +79,11 @@ func TestInviteWithAssigneeReplacesOnlyThePlaceholderAndCopies(t *testing.T) {
 	out := change.InviteWithAssignee(in, "ana")
 	require.Equal(t, []string{"role:test-author", "person:ana", "person:bob"}, out)
 	require.Equal(t, "person:$assignee", in[1], "the input list is not changed")
+}
+
+// A pull request that names no ticket has a room too (D146, HARNESS_DESIGN B1): the room payload names the change.
+func TestRoomOpenPayloadAcceptsAPullRequestChange(t *testing.T) {
+	p, err := change.DecodeRoomOpenPayload([]byte(`{"ticket":"pr-a-b-4","invite":[]}`))
+	require.NoError(t, err)
+	require.Equal(t, "pr-a-b-4", string(p.Ticket))
 }
