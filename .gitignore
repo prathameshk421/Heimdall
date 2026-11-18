@@ -9,3 +9,7 @@ opencode.json
 .heimdall/
 node_modules/
 /heimdall-server
+
+# Build outputs (never commit binaries)
+/cmd/heimdall-server/heimdall-server
+/cmd/heimdall-testagent/heimdall-testagent
