@@ -29,6 +29,9 @@ at the moved `liveness`/`questions` packages; `docs/harness/golangci.yml` now ca
 `make harness-check` passes; the accidentally committed server and testagent binaries are removed from the index and
 ignored.
 
+The branch was pushed to `origin/heimdall-build` on Nov 18, 2026 (81 commits over the previous remote tip).
+`git log -1 origin/heimdall-build` is the docs commit on top of H7 `506fad5`.
+
 ## Start here: finish H8
 
 The saved patch is a complete diff against H7 for the files it touches. It is **not** a compiling tree.
