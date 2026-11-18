@@ -308,3 +308,13 @@ fbe1d7d6e6813e600e156318beab608b3ec5c94f:internal/adapters/tracker/jira/jira_tes
 fbe1d7d6e6813e600e156318beab608b3ec5c94f:internal/pack/redact_test.go:generic-api-key:44
 fbe1d7d6e6813e600e156318beab608b3ec5c94f:internal/testkit/record/record_test.go:generic-api-key:19
 fbe1d7d6e6813e600e156318beab608b3ec5c94f:internal/testkit/record/record_test.go:slack-bot-token:26
+# False positives: fake values in tests and a generated SARIF fixture (reviewed Nov 18, 2026).
+0dc2a9e70dc986edb97da5a12c047e774a64bc4e:testdata/plan/sarif/pair2/new.json:generic-api-key:13
+4352fd4d567e31399ce31bb81238baa76b3b5935:cmd/heimdall-server/card_upload_test.go:aws-access-token:81
+4352fd4d567e31399ce31bb81238baa76b3b5935:cmd/heimdall-server/card_upload_test.go:aws-access-token:84
+7b846de4e6c0a4c826075899bb40623af1dd1964:cmd/heimdall-server/card_upload_test.go:aws-access-token:81
+7b846de4e6c0a4c826075899bb40623af1dd1964:cmd/heimdall-server/card_upload_test.go:aws-access-token:84
+1fdb168caf6cbf76526a3b6cfcfbf477d74a98a8:cmd/heimdall-server/card_upload_test.go:aws-access-token:81
+1fdb168caf6cbf76526a3b6cfcfbf477d74a98a8:cmd/heimdall-server/card_upload_test.go:aws-access-token:84
+aa21ec7320426c4f0ee8bd5ce7dd750d81845095:cmd/heimdall-server/card_upload_test.go:aws-access-token:81
+aa21ec7320426c4f0ee8bd5ce7dd750d81845095:cmd/heimdall-server/card_upload_test.go:aws-access-token:84
