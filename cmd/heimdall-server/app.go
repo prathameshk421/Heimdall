@@ -69,6 +69,8 @@ const (
 	runnerSocketPath = "/run/heimdall-runner/runner.sock"
 	// graphitiEndpoint is the team-memory MCP endpoint on the Compose network.
 	graphitiEndpoint = "http://graphiti:8000/mcp"
+	// openRouterAPI is the model provider the liveness probe asks for one token.
+	openRouterAPI = "https://openrouter.ai/api/v1"
 )
 
 // deps is what build needs that differs between production and a test: the database, the adapter endpoints, the HTTP
@@ -164,6 +166,8 @@ type endpoints struct {
 	// runnerSocket is the runner's Unix socket and graphitiURL the team-memory endpoint; the boot self-check calls both.
 	runnerSocket string
 	graphitiURL  string
+	// openRouterURL is the model provider's API root; the reconciler's liveness probe calls it.
+	openRouterURL string
 }
 
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
@@ -298,6 +302,7 @@ func productionDeps(cfg config.Config, logger *slog.Logger) (deps, error) {
 			switchBridgeID:  cfg.Switch.BridgeID,
 			runnerSocket:    runnerSocketPath,
 			graphitiURL:     graphitiEndpoint,
+			openRouterURL:   openRouterAPI,
 		},
 		pollEvery: pollInterval,
 		syncEvery: syncInterval,
@@ -422,35 +427,25 @@ func checkAdapterSecrets(cfg config.Config) error {
 // validate refuses a deps value that cannot run. It names each field.
 func (d deps) validate() error {
 	var problems []string
-	if d.databaseURL == "" {
-		problems = append(problems, "database url is empty")
-	}
-	if d.httpClient == nil {
-		problems = append(problems, "http client is nil")
-	}
-	if d.logger == nil {
-		problems = append(problems, "logger is nil")
-	}
-	if d.pollEvery <= 0 {
-		problems = append(problems, "poll interval must be positive")
-	}
-	if d.syncEvery <= 0 {
-		problems = append(problems, "sync interval must be positive")
-	}
-	if d.drainTick <= 0 {
-		problems = append(problems, "drain tick must be positive")
-	}
-	if d.openPool == nil {
-		problems = append(problems, "database opener is nil")
-	}
-	if d.migrate == nil {
-		problems = append(problems, "migration function is nil")
-	}
-	if d.endpoints.runnerSocket == "" {
-		problems = append(problems, "runner socket is empty")
-	}
-	if d.endpoints.graphitiURL == "" {
-		problems = append(problems, "graphiti endpoint is empty")
+	for _, c := range []struct {
+		bad     bool
+		problem string
+	}{
+		{d.databaseURL == "", "database url is empty"},
+		{d.httpClient == nil, "http client is nil"},
+		{d.logger == nil, "logger is nil"},
+		{d.pollEvery <= 0, "poll interval must be positive"},
+		{d.syncEvery <= 0, "sync interval must be positive"},
+		{d.drainTick <= 0, "drain tick must be positive"},
+		{d.openPool == nil, "database opener is nil"},
+		{d.migrate == nil, "migration function is nil"},
+		{d.endpoints.runnerSocket == "", "runner socket is empty"},
+		{d.endpoints.graphitiURL == "", "graphiti endpoint is empty"},
+		{d.endpoints.openRouterURL == "", "model provider endpoint is empty"},
+	} {
+		if c.bad {
+			problems = append(problems, c.problem)
+		}
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("server deps: %s", strings.Join(problems, "; "))
@@ -509,7 +504,7 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 		}
 	}
 	gen := ids.New()
-	prober := openrouter.Prober{Secrets: keyReader{cfg: d.configuration}, KeyName: openRouterKey, Model: probeModel}
+	prober := openrouter.Prober{BaseURL: d.endpoints.openRouterURL, Secrets: keyReader{cfg: d.configuration}, KeyName: openRouterKey, Model: probeModel}
 	rec, err := newReconciler(ad, store, prober, gen, clk, d.logger)
 	if err != nil {
 		return nil, fmt.Errorf("build reconciler: %w", err)

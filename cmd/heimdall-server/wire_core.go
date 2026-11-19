@@ -164,8 +164,9 @@ func assembleMCP(
 		Cards:    cards,
 		Files:    newKnowledgeFileManager(files, ad.vcs),
 		Profiles: profiles,
-		// run_check runs its fixed static check through the runner, never in this process.
-		Sandbox:  rootlessRunnerSandbox{client: ad.runner(blobs)},
+		// run_check runs a profile check through the runner, never in this process. The job names the repository's
+		// promoted profile, as every executor's job does; without it the runner refuses the check (found in H10).
+		Sandbox:  profileSandbox{Sandbox: rootlessRunnerSandbox{client: ad.runner(blobs)}, Profiles: profileStore},
 		Briefs:   moat.briefs,
 		Graph:    moat.graph,
 		Proposer: commands,

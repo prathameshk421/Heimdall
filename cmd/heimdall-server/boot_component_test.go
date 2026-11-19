@@ -68,7 +68,7 @@ func TestBootReconcileRecordsPRMergedWhileDown(t *testing.T) {
 				switchAgentName: acceptanceAgentName,
 				switchBridgeID:  acceptanceBridgeID,
 				runnerSocket:    testRunnerSocket,
-				graphitiURL:     testGraphitiURL,
+				graphitiURL:     testGraphitiURL, openRouterURL: testOpenRouterURL,
 			},
 			httpClient: &http.Client{},
 			logger:     slog.New(slog.NewTextHandler(os.Stderr, nil)),

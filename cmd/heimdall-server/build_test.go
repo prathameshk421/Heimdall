@@ -52,6 +52,8 @@ func discardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 const (
 	testRunnerSocket = "/nonexistent/heimdall-runner/runner.sock"
 	testGraphitiURL  = "http://127.0.0.1:1/mcp"
+	// testOpenRouterURL answers nothing, so a test that reaches the liveness probe fails loudly.
+	testOpenRouterURL = "http://127.0.0.1:1/api/v1"
 )
 
 // testDeps is a valid deps value that never reaches the database when a config is refused first.
@@ -59,7 +61,7 @@ func testDeps() deps {
 	return deps{
 		databaseURL: testDatabaseURL,
 		endpoints: endpoints{jiraBaseURL: "http://127.0.0.1:1", githubAPI: "http://127.0.0.1:1", switchBaseURL: "http://127.0.0.1:1",
-			runnerSocket: testRunnerSocket, graphitiURL: testGraphitiURL},
+			runnerSocket: testRunnerSocket, graphitiURL: testGraphitiURL, openRouterURL: testOpenRouterURL},
 		httpClient: &http.Client{},
 		logger:     discardLogger(),
 		pollEvery:  time.Second,
