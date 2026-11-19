@@ -7,7 +7,7 @@ export PATH := $(HOME)/.local/go/bin:$(HOME)/go/bin:$(PATH)
 TOOL := go tool -modfile=tools.mod
 # Every build tag the repo uses; vet and lint see files behind them (keep in step with run.build-tags in .golangci.yml).
 TAGS := e2e,component,drift,eval,soak,rehearse
-GOFILES = find . -name '*.go' -not -path './testdata/*' -not -path './.git/*'
+GOFILES = find . -name '*.go' -not -path './testdata/*' -not -path './.git/*' -not -path './.claude/*'
 
 .DEFAULT_GOAL := help
 .PHONY: help
