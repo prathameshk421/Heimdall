@@ -40,7 +40,7 @@ const profileJobScript = `set -u
 extract() {
   strip=0
   top=$(tar -tzf "$1" | cut -d/ -f1 | sort -u)
-  if [ "$(printf '%s\n' "$top" | wc -l)" = 1 ] && [ "$top" != . ] && tar -tzf "$1" | grep -qxF "$top/"; then strip=1; fi
+  if [ "$(printf '%s\n' "$top" | wc -l | tr -d ' ')" = 1 ] && [ "$top" != . ] && tar -tzf "$1" | grep -qxF "$top/"; then strip=1; fi
   tar -xzf "$1" -C "$2" --strip-components="$strip" --no-same-owner --no-same-permissions
 }
 mkdir -p /work /base
