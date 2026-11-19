@@ -23,12 +23,6 @@ import (
 
 // Settings of the reconciler: how many test submissions a rejection may use, how long the PR author has to pick
 // reviewers, and how long an agent may hold each kind of task. The liveness windows are the two waits of 6.3.
-// probeModel is the model the provider probe asks for one token; openRouterKey is the secret file holding the key.
-const (
-	probeModel    = "deepseek/deepseek-v4-flash"
-	openRouterKey = "openrouter_api_key"
-)
-
 const (
 	testAttempts   = 3
 	pickWait       = time.Minute
@@ -91,7 +85,7 @@ func (r reconcileInputs) Profile(ctx context.Context, repo change.Repo) (change.
 	return out, nil
 }
 
-// keyReader lets the OpenRouter prober read its key through the configuration.
+// keyReader lets the model provider prober read its key through the configuration.
 type keyReader struct{ cfg config.Config }
 
 // Get reads one named key.

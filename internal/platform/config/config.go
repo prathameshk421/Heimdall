@@ -827,6 +827,15 @@ func checkProject(where string, p fileProject) []error {
 	return errs
 }
 
+// AgentModel is the model id the role agents run (`agent_runtime.model`, `<provider>/<model>`), or the default model
+// the agent runtime installs when the section does not name one.
+func (c Config) AgentModel() string {
+	if c.AgentRuntime.Model != "" {
+		return c.AgentRuntime.Model
+	}
+	return defaultAgentModel
+}
+
 // Selection returns the adapter name selected for kind ("vcs", "tracker", "chat", "agent_runtime" or
 // "memory"; chat's name comes from chat.bridge). ok is false when the section or key is absent.
 func (c Config) Selection(kind string) (string, bool) {

@@ -168,7 +168,7 @@ func newFlowRig(t *testing.T) *flowRig {
 	r.model = newFakeModelProvider(t)
 	profile, socket := r.startRunner()
 	secrets := writeAcceptanceSecrets(t)
-	for name, value := range map[string]string{"agent_token_reviewer-3": "agent-token-reviewer-3-value", "openrouter_api_key": flowOpenRouterKey} {
+	for name, value := range map[string]string{"agent_token_reviewer-3": "agent-token-reviewer-3-value", "deploy_api_key": flowModelKey} {
 		require.NoError(t, os.WriteFile(filepath.Join(secrets, name), []byte(value+"\n"), 0o600))
 	}
 	cfg, err := config.Load(writeFlowConfig(t, secrets))
@@ -178,7 +178,7 @@ func newFlowRig(t *testing.T) *flowRig {
 		databaseURL: dsn, configuration: cfg,
 		endpoints: endpoints{jiraBaseURL: r.jira.srv.URL, githubAPI: r.gh.srv.URL, switchBaseURL: r.sw.srv.URL,
 			switchAgentID: acceptanceAgentID, switchAgentName: acceptanceAgentName, switchBridgeID: acceptanceBridgeID,
-			runnerSocket: socket, graphitiURL: testGraphitiURL, openRouterURL: r.model.srv.URL},
+			runnerSocket: socket, graphitiURL: testGraphitiURL, modelURL: r.model.srv.URL},
 		httpClient: &http.Client{}, logger: logger,
 		pollEvery: time.Second, syncEvery: time.Second, drainTick: time.Second,
 		openPool: pgxpool.New, migrate: postgres.Migrate,

@@ -42,6 +42,8 @@ services:
     # is a secret file too, so the DSN (and its password) is never written in this file or in the TOML.
     secrets:
       - database_url
+      # The model provider key: the reconciler's liveness probe asks the agents' provider for one token.
+      - deploy_api_key
       - jira_email
       - jira_api_token
       - github_app_id
@@ -58,6 +60,10 @@ services:
     networks: [core, memory, switch]
     depends_on:
       postgres:
+        condition: service_healthy
+      # The boot self-check asks Graphiti once and withholds ask_knowledge for the life of the process when it does not
+      # answer (H9). Without this wait the server won that race on every restart (found live in H11).
+      graphiti:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "printf 'GET /healthz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' | nc -w 3 127.0.0.1 8080 | grep -q '\"status\":\"ok\"'"]

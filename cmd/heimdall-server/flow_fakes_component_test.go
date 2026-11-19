@@ -539,7 +539,7 @@ type flowArchive struct {
 	Files map[string]string `json:"files"`
 }
 
-// fakeModelProvider answers the liveness probe like a healthy OpenRouter, and counts the probes.
+// fakeModelProvider answers the liveness probe like a healthy model provider, and counts the probes.
 type fakeModelProvider struct {
 	srv    *httptest.Server
 	mu     sync.Mutex
@@ -553,7 +553,7 @@ func newFakeModelProvider(t *testing.T) *fakeModelProvider {
 		f.mu.Lock()
 		f.probes++
 		f.mu.Unlock()
-		if r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer "+flowOpenRouterKey {
+		if r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer "+flowModelKey {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "bad key or route"})
 			return
 		}
@@ -569,7 +569,7 @@ func (f *fakeModelProvider) probeCount() int {
 	return f.probes
 }
 
-const flowOpenRouterKey = "openrouter-key-value"
+const flowModelKey = "model-provider-key-value"
 
 // flowContainers is the container runtime under the real runner: it reads the commit from the staged archive and the
 // submitted tests from the staged overlays, and answers as the tools would. Everything around it (the runner's HTTP

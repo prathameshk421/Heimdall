@@ -69,8 +69,6 @@ const (
 	runnerSocketPath = "/run/heimdall-runner/runner.sock"
 	// graphitiEndpoint is the team-memory MCP endpoint on the Compose network.
 	graphitiEndpoint = "http://graphiti:8000/mcp"
-	// openRouterAPI is the model provider the liveness probe asks for one token.
-	openRouterAPI = "https://openrouter.ai/api/v1"
 )
 
 // deps is what build needs that differs between production and a test: the database, the adapter endpoints, the HTTP
@@ -166,8 +164,8 @@ type endpoints struct {
 	// runnerSocket is the runner's Unix socket and graphitiURL the team-memory endpoint; the boot self-check calls both.
 	runnerSocket string
 	graphitiURL  string
-	// openRouterURL is the model provider's API root; the reconciler's liveness probe calls it.
-	openRouterURL string
+	// modelURL is the agents' model provider API root (modelProviderOf); the reconciler's liveness probe calls it.
+	modelURL string
 }
 
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
@@ -288,6 +286,10 @@ func productionDeps(cfg config.Config, logger *slog.Logger) (deps, error) {
 	if err := checkAdapterSecrets(cfg); err != nil {
 		return deps{}, err
 	}
+	provider, err := modelProviderOf(cfg.AgentModel())
+	if err != nil {
+		return deps{}, fmt.Errorf("agent_runtime.model: %w", err)
+	}
 	return deps{
 		databaseURL:   databaseURL,
 		httpClient:    &http.Client{},
@@ -302,7 +304,7 @@ func productionDeps(cfg config.Config, logger *slog.Logger) (deps, error) {
 			switchBridgeID:  cfg.Switch.BridgeID,
 			runnerSocket:    runnerSocketPath,
 			graphitiURL:     graphitiEndpoint,
-			openRouterURL:   openRouterAPI,
+			modelURL:        provider.url,
 		},
 		pollEvery: pollInterval,
 		syncEvery: syncInterval,
@@ -441,7 +443,7 @@ func (d deps) validate() error {
 		{d.migrate == nil, "migration function is nil"},
 		{d.endpoints.runnerSocket == "", "runner socket is empty"},
 		{d.endpoints.graphitiURL == "", "graphiti endpoint is empty"},
-		{d.endpoints.openRouterURL == "", "model provider endpoint is empty"},
+		{d.endpoints.modelURL == "", "model provider endpoint is empty"},
 	} {
 		if c.bad {
 			problems = append(problems, c.problem)
@@ -504,7 +506,11 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 		}
 	}
 	gen := ids.New()
-	prober := openrouter.Prober{BaseURL: d.endpoints.openRouterURL, Secrets: keyReader{cfg: d.configuration}, KeyName: openRouterKey, Model: probeModel}
+	provider, err := modelProviderOf(d.configuration.AgentModel())
+	if err != nil {
+		return nil, fmt.Errorf("liveness probe: %w", err)
+	}
+	prober := openrouter.Prober{BaseURL: d.endpoints.modelURL, Secrets: keyReader{cfg: d.configuration}, KeyName: provider.keyFile, Model: provider.model}
 	rec, err := newReconciler(ad, store, prober, gen, clk, d.logger)
 	if err != nil {
 		return nil, fmt.Errorf("build reconciler: %w", err)

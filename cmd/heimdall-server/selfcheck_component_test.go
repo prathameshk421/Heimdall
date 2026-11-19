@@ -59,7 +59,7 @@ func TestAServerWithoutARunnerStartsWithoutRunCheck(t *testing.T) {
 		databaseURL: dsn,
 		endpoints: endpoints{jiraBaseURL: jira.srv.URL, githubAPI: gh.srv.URL, switchBaseURL: sw.srv.URL,
 			switchAgentID: acceptanceAgentID, switchAgentName: acceptanceAgentName, switchBridgeID: acceptanceBridgeID,
-			runnerSocket: testRunnerSocket, graphitiURL: testGraphitiURL, openRouterURL: testOpenRouterURL},
+			runnerSocket: testRunnerSocket, graphitiURL: testGraphitiURL, modelURL: testModelURL},
 		httpClient: &http.Client{},
 		logger:     logger,
 		pollEvery:  time.Second,
