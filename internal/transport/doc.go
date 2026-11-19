@@ -15,6 +15,8 @@
 //   - NewRouter(logger, checkers...) (http.Handler, error): GET /healthz. The logger is injected; a nil one is refused. It returns 200 with {"status":"ok"} when
 //     every checker passes. When any fails it returns 503 with {"status":"unavailable","failing":[names]},
 //     in registration order. A checker with an empty or duplicate name, or a nil Check, is refused.
+//   - NewDegradedRouter(logger, degraded, checkers...): the same, and every answer also carries
+//     "degraded": ["run_check: runner unreachable"], the tools the boot self-check withheld (HARNESS_DESIGN B8).
 //
 // # Invariants
 //

@@ -66,7 +66,7 @@ func anyFileMatches(globs, files []string) bool {
 }
 
 func rowChecks() Row {
-	return Row{ID: "checks", Flow: FlowReview, After: []string{"slop"},
+	return Row{ID: "checks", Flow: FlowReview, After: []string{"slop"}, Jobs: []EffectKind{EffectRunChecks},
 		Done: func(in In) bool { return in.View.Checks[in.View.PR.HeadSHA].Ran || len(applicableChecks(in)) == 0 },
 		Next: func(in In) []Action {
 			pr := in.View.PR
@@ -133,7 +133,7 @@ func unchecked(v View) []string {
 }
 
 func rowVerify() Row {
-	return Row{ID: "verify", Flow: FlowReview, After: []string{"review"},
+	return Row{ID: "verify", Flow: FlowReview, After: []string{"review"}, Jobs: []EffectKind{EffectVerifyEvidence},
 		Done: func(in In) bool { return len(unchecked(in.View)) == 0 },
 		Next: func(in In) []Action {
 			pr := in.View.PR
@@ -194,7 +194,7 @@ func openCases(v View) []id.CaseID {
 }
 
 func rowAcceptance() Row {
-	return Row{ID: "acceptance", Flow: FlowReview, After: []string{"slop"},
+	return Row{ID: "acceptance", Flow: FlowReview, After: []string{"slop"}, Jobs: []EffectKind{EffectAcceptance},
 		Done: func(in In) bool {
 			return in.View.Trigger == nil || in.View.PR.CI[in.View.PR.HeadSHA][acceptanceCheck] != ""
 		},
@@ -215,7 +215,7 @@ const gateCheckName = "heimdall/gate"
 // rowGate is never done while the PR is open. It publishes the merge rule's decision whenever it differs from the last
 // one recorded for the head: a fact (gate.evaluated) and the heimdall/gate check, keyed by what they say.
 func rowGate() Row {
-	return Row{ID: "gate", Flow: FlowReview,
+	return Row{ID: "gate", Flow: FlowReview, Jobs: []EffectKind{EffectGitHubCheck},
 		Done: func(In) bool { return false },
 		Next: func(in In) []Action {
 			pr := in.View.PR

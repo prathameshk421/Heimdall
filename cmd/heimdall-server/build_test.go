@@ -47,18 +47,26 @@ func loadTestConfig(t *testing.T, body string) config.Config {
 
 func discardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
+// The test endpoints of the boot self-check: no runner listens on the socket and nothing answers the Graphiti address,
+// so a test server boots with the runner and knowledge tools withheld, as a VM without them would.
+const (
+	testRunnerSocket = "/nonexistent/heimdall-runner/runner.sock"
+	testGraphitiURL  = "http://127.0.0.1:1/mcp"
+)
+
 // testDeps is a valid deps value that never reaches the database when a config is refused first.
 func testDeps() deps {
 	return deps{
 		databaseURL: testDatabaseURL,
-		endpoints:   endpoints{jiraBaseURL: "http://127.0.0.1:1", githubAPI: "http://127.0.0.1:1", switchBaseURL: "http://127.0.0.1:1"},
-		httpClient:  &http.Client{},
-		logger:      discardLogger(),
-		pollEvery:   time.Second,
-		syncEvery:   time.Second,
-		drainTick:   time.Second,
-		openPool:    pgxpool.New,
-		migrate:     postgres.Migrate,
+		endpoints: endpoints{jiraBaseURL: "http://127.0.0.1:1", githubAPI: "http://127.0.0.1:1", switchBaseURL: "http://127.0.0.1:1",
+			runnerSocket: testRunnerSocket, graphitiURL: testGraphitiURL},
+		httpClient: &http.Client{},
+		logger:     discardLogger(),
+		pollEvery:  time.Second,
+		syncEvery:  time.Second,
+		drainTick:  time.Second,
+		openPool:   pgxpool.New,
+		migrate:    postgres.Migrate,
 	}
 }
 

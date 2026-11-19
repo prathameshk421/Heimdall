@@ -10,6 +10,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/github"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/registry"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	switchchat "github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/switch"
 	filetracker "github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/tracker/file"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/tracker/jira"
@@ -66,6 +67,13 @@ type adapters struct {
 	standingRooms     []change.RoomID
 	provisioner       ports.AgentProvisioner
 	agentSetupHandler func(ports.AgentReceiptLedger) (http.Handler, func(context.Context) error, error)
+	// runnerSocket is the runner's Unix socket (endpoints.runnerSocket).
+	runnerSocket string
+}
+
+// runner is the client of the sandbox runner: every check, test and profile job goes through it.
+func (ad adapters) runner(blobs ports.BlobStore) rootlessrunner.Client {
+	return rootlessrunner.Client{Socket: ad.runnerSocket, Source: ad.vcs, Blobs: blobs}
 }
 
 // projectRepos maps a tracker project key to its repository (trigger.Projects).
@@ -117,7 +125,7 @@ func selectAdapters(cfg config.Config, d deps) (adapters, error) {
 		return adapters{}, fmt.Errorf("heimdall.toml: %w", errors.Join(problems...))
 	}
 	trackerProvider, _ := cfg.Selection(string(registry.KindTracker))
-	out := adapters{projects: projects, projectKeys: keys, repos: repos, agents: cfg.Agents, trackerProvider: trackerProvider,
+	out := adapters{projects: projects, projectKeys: keys, repos: repos, agents: cfg.Agents, trackerProvider: trackerProvider, runnerSocket: d.endpoints.runnerSocket,
 		testsRoom: change.RoomID(cfg.Rooms.Tests), reviewsRoom: change.RoomID(cfg.Rooms.Reviews), standingRooms: standingRoomsOf(cfg)}
 	if out.projectTickets, err = projectTicketReaders(cfg, f, keys); err != nil {
 		return adapters{}, err

@@ -78,6 +78,7 @@ func TestVerifyCheckConfirmsALocatedResult(t *testing.T) {
 	require.Equal(t, ports.SandboxCheck, sb.jobs[0].Kind)
 	require.Equal(t, "patterns", sb.jobs[0].CheckID)
 	require.Equal(t, veHead, sb.jobs[0].SHA)
+	require.Equal(t, ports.PriorityGate, sb.jobs[0].Priority(), "the gate waits on a verification, so it runs in the gate lane")
 }
 
 // A result somewhere else, or none, does not confirm the claim: the finding drops to E4 and never blocks.

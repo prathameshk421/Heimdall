@@ -5,16 +5,15 @@ Read this first, then `AGENTS.md`, the top of `docs/PROGRESS.md`, `docs/HARNESS_
 
 ## State in one paragraph
 
-Branch `heimdall-build` (never `main`). H0 to H8 of the harness overhaul are committed and `make fast` is green
-(3,384 tests). `make verify` passes every step except `secrets`, which flags a fake key quoted in an old docs commit;
-the owner must add one fingerprint to `.gitleaksignore` (see `docs/PROGRESS.md`, Noticed H8). H9 to H12 are not
-started. The server runs the reconciler; the old workflow engine is deleted. Nothing ran live: no VM deploy, no
+Branch `heimdall-build` (never `main`). H0 to H9 of the harness overhaul are committed; `make fast` is green
+(3,401 tests) and `make verify` passes. H10 to H12 are not started. The server runs the reconciler; the old workflow engine is deleted. Nothing ran live: no VM deploy, no
 OpenCode/Switch/Jira/GitHub call, no model spend. Every "not verified" line below is deliberate.
 
 Commits, newest first:
 
 | Step | Commit | What landed |
 |---|---|---|
+| H9 | `H9:` in git log | boot self-check withholds tools, start-up wiring check, runner contract tests, E2 jobs gate priority |
 | H8 | `H8:` in git log | profile checks: `run_checks`, `run_check(check_id)`, `leads`, E2 on profile checks, the go vet static path deleted |
 | H7 | `506fad5` | kinds, `get_task`, tool table, skills, whole submissions, bundle deleted |
 | H6 | `8b2445d`, `633ffe5` | executors record facts only; the gate is computed once; intake and prsync record facts |
@@ -33,24 +32,25 @@ ignored.
 The branch was pushed to `origin/heimdall-build` on Nov 18, 2026 (81 commits over the previous remote tip).
 `git log -1 origin/heimdall-build` is the docs commit on top of H7 `506fad5`.
 
-## Start here: H9 wiring proofs
+## Start here: H10 component end-to-end checks
 
-Design: `docs/HARNESS_DESIGN.md` Part B section B8 and Part C "H9. Wiring proofs".
+Design: `docs/HARNESS_DESIGN.md` Part B section B9 items 1 and 2 and Part C "H10".
 
-- `cmd/heimdall-server/selfcheck.go` and its test; run `CheckKinds` and "every row job kind has an executor" at
-  start-up, not only in a test.
-- The runner contract test: the client against its handler for `check` and `test` jobs.
-- Done when a missing runner logs `run_check withheld: runner unreachable` and a reviewer's tool list lacks `run_check`.
+- `tests_flow_component_test.go` and `review_flow_component_test.go` on the real wiring (`build` with the fakes in
+  `fakes_component_test.go`), a scripted agent over the MCP HTTP handler, a fake clock, `rec.Sweep` instead of waiting.
+- Retire `e2e/stories/` and its Makefile target (owner approval is in Part A of the design).
+- Done when both pass in `make verify`, each under 20 s.
 
-What H8 leaves for H9 (details in the "Notes for H9" list in `docs/PROGRESS.md`):
+What H9 leaves for H10:
 
-- `run_checks` and `verify_evidence` need `ports.ProfileStore`; `executors(...)` refuses a nil one.
-- `run_check` exists only when `mcp.Deps.Sandbox` and `Checks` are set: the withheld path goes there.
-- An E2 verification is a background-priority check job in the runner queue; decide whether it should be gate priority.
-- `aarush323/heimdall-fixture-pay` must have a promoted profile with at least one check before H11 (not verified). The
-  scripted reviewer cites the check id `patterns`.
-- On this Mac, `scripts/check-owned.sh` needs bash 4+ (Homebrew bash 5 is installed). H8 ran `make` with
-  `PATH=/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/bin:$PATH`.
+- `selfcheck_component_test.go` shows how to boot `build` with the fakes and read `tools/list` as a reviewer. Test
+  deps must set `endpoints.runnerSocket` and `endpoints.graphitiURL` (`testRunnerSocket`, `testGraphitiURL` in
+  `build_test.go`); with them the runner and knowledge tools are withheld. A review flow that calls `run_check` needs a
+  runner on a socket: start `rootlessrunner.Listen` with a fake executor, as `contract_test.go` does.
+- `read_card` is off unless the config sets `cards_dir`.
+- E2 verification jobs are gate priority (`SandboxJob.Verify`). Deploy the server and the runner together in H11: an
+  old runner refuses a verification job and has no `/v1/health`.
+- `review.submitted.lead_checks` is still not set; `finding.runCited` reads leads.
 
 ## Then, in order
 
@@ -150,11 +150,11 @@ The owner wants Heimdall proven as a genuinely great, sellable product, not mere
 - No live run, no model spend, no Switch/Jira/GitHub call in the H0–H7 work.
 - The OpenRouter prober only ran against a fake server; the first real probe is one tiny paid request.
 - `EffectAgentReset` has no executor (Switch session reset); `EffectRunChecks`'s executor exists only in the H8 patch.
-- H8 is incomplete (above). H9–H12 are untouched.
+- H10–H12 are untouched.
 - `taskinput` renderers for `profile`, `stack_hints` and `prior_decisions` are still notes; `pr` shows only repository,
   change, base and head (no title/body); `review.submitted.lead_checks` is not set until H8; the no-task answer does
   not say how the last task ended; round-trip tests exist for tests submissions only.
-- `CheckKinds` runs in a test, not at server start (H9); agents may hold a stale MCP tool list after a deploy (H9/H11).
+- Agents may hold a stale MCP tool list after a deploy (H11). The boot self-check runs once; a recovered dependency is offered again only after a restart.
 - The H6 note stands: without an "already done" check, a crash between a side effect and its recorded fact can repeat
   that side effect once on retry. The fold is idempotent; the side effect may not be.
 

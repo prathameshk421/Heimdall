@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -187,12 +188,18 @@ type Deps struct {
 	Needs func(ctx context.Context, change id.ChangeID) ([]string, error)
 	// Calls is the record of tool calls. Without it nothing is recorded and repeats are not detected.
 	Calls ports.ToolCalls
+	// Withheld names the registered tools that are not offered, each with the reason: the boot self-check found the
+	// dependency the tool calls unreachable (HARNESS_DESIGN B8). A withheld tool is not listed and a call to it is
+	// answered like a call to an unknown tool. It still counts as registered for the kind-table check.
+	Withheld map[string]string
 }
 
 // Server answers MCP requests for the agents' tools.
 type Server struct {
 	deps  Deps
 	tools []tool
+	// registered are the names of every tool the server built, withheld ones included.
+	registered []string
 
 	// progressMu guards progressLast, the time of each task's last accepted progress report. It is held in memory
 	// per process (TECH_SPEC 6.5), so a restart opens the window again.
@@ -235,8 +242,30 @@ func NewServer(d Deps) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build mcp tools: %w", err)
 	}
-	s.tools = tools
+	s.tools, s.registered, err = withhold(tools, d.Withheld)
+	if err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// withhold removes the withheld tools from the offered ones. A withheld name that is no registered tool is refused: it
+// would hide a typo in the wiring.
+func withhold(tools []tool, withheld map[string]string) ([]tool, []string, error) {
+	registered := make([]string, 0, len(tools))
+	offered := make([]tool, 0, len(tools))
+	for _, t := range tools {
+		registered = append(registered, t.name)
+		if _, ok := withheld[t.name]; !ok {
+			offered = append(offered, t)
+		}
+	}
+	for name := range withheld {
+		if !slices.Contains(registered, name) {
+			return nil, nil, fmt.Errorf("mcp server: withheld tool %q is not registered", name)
+		}
+	}
+	return offered, registered, nil
 }
 
 // Handler returns the http.Handler for /mcp: POST only. The bearer token is checked inside the handler.

@@ -128,6 +128,8 @@ func TestSliceOpensOneRoomAndOneBranchAcrossARestart(t *testing.T) {
 			switchAgentID:   acceptanceAgentID,
 			switchAgentName: acceptanceAgentName,
 			switchBridgeID:  acceptanceBridgeID,
+			runnerSocket:    testRunnerSocket,
+			graphitiURL:     testGraphitiURL,
 		},
 		jira:  jira,
 		sw:    sw,
@@ -198,7 +200,7 @@ func TestFileTrackerProductionWiringReplaysThroughDurableCursor(t *testing.T) {
 	s := &scenario{
 		t: t, dsn: dsn, cfgPath: writeFileAcceptanceConfig(t, writeAcceptanceSecrets(t), ticketsDir),
 		endpoint: endpoints{githubAPI: gh.srv.URL, switchBaseURL: sw.srv.URL, switchAgentID: acceptanceAgentID,
-			switchAgentName: acceptanceAgentName, switchBridgeID: acceptanceBridgeID},
+			switchAgentName: acceptanceAgentName, switchBridgeID: acceptanceBridgeID, runnerSocket: testRunnerSocket, graphitiURL: testGraphitiURL},
 		sw: sw, gh: gh, store: postgres.NewStore(pool),
 	}
 

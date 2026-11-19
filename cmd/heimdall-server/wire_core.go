@@ -12,7 +12,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/profileyaml"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agenttools"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
@@ -127,7 +126,8 @@ func newAgentTools(ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.
 func assembleMCP(
 	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
 	commands mcp.Proposer, needs func(context.Context, id.ChangeID) ([]string, error), profileStore ports.ProfileStore,
-) (http.Handler, *cardProposer, error) {
+	withheld map[string]string,
+) (*mcp.Server, *cardProposer, error) {
 	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk, store)
 	if err != nil {
 		return nil, nil, err
@@ -165,7 +165,7 @@ func assembleMCP(
 		Files:    newKnowledgeFileManager(files, ad.vcs),
 		Profiles: profiles,
 		// run_check runs its fixed static check through the runner, never in this process.
-		Sandbox:  rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
+		Sandbox:  rootlessRunnerSandbox{client: ad.runner(blobs)},
 		Briefs:   moat.briefs,
 		Graph:    moat.graph,
 		Proposer: commands,
@@ -173,17 +173,18 @@ func assembleMCP(
 		Paths:    ad.vcs,
 		Needs:    needs,
 		Checks:   profileChecks{profiles: profileStore},
+		Withheld: withheld,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("build mcp server: %w", err)
 	}
-	return mcpSrv.Handler(), moat.proposer, nil
+	return mcpSrv, moat.proposer, nil
 }
 
 // newKnowledgeSearch builds the team-memory search service. The same service answers agent questions, checks the
 // memory references a review cites, and re-queries them when an E3 finding is verified.
 func newKnowledgeSearch(d deps, ad adapters, clk ports.Clock, trust ports.EpisodeSourceTrust) (*knowledge.SearchService, error) {
-	graphitiCaller, err := graphiti.NewHTTPCaller("http://graphiti:8000/mcp", d.httpClient)
+	graphitiCaller, err := graphiti.NewHTTPCaller(d.endpoints.graphitiURL, d.httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("build Graphiti caller: %w", err)
 	}
@@ -199,7 +200,7 @@ func newKnowledgeSearch(d deps, ad adapters, clk ports.Clock, trust ports.Episod
 }
 
 func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports.BlobStore, clk ports.Clock) (mcp.Profiles, error) {
-	client := rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}
+	client := ad.runner(blobs)
 	service, err := appprofile.New(appprofile.Config{
 		Store: store, Parser: profileyaml.Parser{}, Policy: client, Trials: client, Syncer: client,
 		Warmer: client, Authorizer: profileAuthorizer{code: ad.vcs, repos: ad.vcs}, Clock: clk,

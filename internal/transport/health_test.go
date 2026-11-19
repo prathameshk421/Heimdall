@@ -65,6 +65,15 @@ func TestHealthzReportsFailingChecksByName(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "401", "a checker's error text must never reach the client")
 }
 
+// A server that withholds a tool still serves, so it stays ok, and says which tool is gone and why (HARNESS_DESIGN B8).
+func TestHealthzNamesTheWithheldToolsAndStaysOK(t *testing.T) {
+	h, err := NewDegradedRouter(discard(), []string{"run_check: runner unreachable"})
+	require.NoError(t, err)
+	rec := get(t, h, http.MethodGet, "/healthz")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"status":"ok","degraded":["run_check: runner unreachable"]}`, rec.Body.String())
+}
+
 func TestHealthzRejectsOtherMethods(t *testing.T) {
 	rec := get(t, mustRouter(t), http.MethodPost, "/healthz")
 	require.Equal(t, http.StatusMethodNotAllowed, rec.Code)

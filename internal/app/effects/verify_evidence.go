@@ -263,7 +263,7 @@ func (v VerifyEvidence) checkResults(ctx context.Context, p change.VerifyEvidenc
 // checkAt runs the check at sha. head is set for a baseline run, which runs on the base for that head.
 func (v VerifyEvidence) checkAt(ctx context.Context, p change.VerifyEvidencePayload, row ports.ProfileCheck, sha, head id.SHA) ([]sarif.Result, error) {
 	res, err := v.deps.Sandbox.Run(ctx, ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: row.ID, Repo: p.Repo, SHA: sha,
-		Change: p.Ticket, Head: head, Timeout: checkTimeout})
+		Change: p.Ticket, Head: head, Timeout: checkTimeout, Verify: true})
 	if err != nil {
 		return nil, fmt.Errorf("the check did not run: %w", err)
 	}

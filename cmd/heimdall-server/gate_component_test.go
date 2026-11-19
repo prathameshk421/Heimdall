@@ -558,6 +558,8 @@ func TestMergeGateEndToEnd(t *testing.T) {
 				switchAgentID:   acceptanceAgentID,
 				switchAgentName: acceptanceAgentName,
 				switchBridgeID:  acceptanceBridgeID,
+				runnerSocket:    testRunnerSocket,
+				graphitiURL:     testGraphitiURL,
 			},
 			httpClient: &http.Client{},
 			logger:     slog.New(slog.NewTextHandler(os.Stderr, nil)),

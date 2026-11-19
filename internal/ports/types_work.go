@@ -83,6 +83,9 @@ type SandboxJob struct {
 	TestKind string `json:"test_kind,omitempty"`
 	// OnDemand marks a check job a person or agent asked for (run_check) rather than one the pipeline ran by itself.
 	OnDemand bool `json:"on_demand,omitempty"`
+	// Verify marks a check job that verifies the evidence of a filed finding (E2). The gate waits on its answer, so it
+	// waits in the gate lane, not behind the pipeline's own checks.
+	Verify bool `json:"verify,omitempty"`
 	// Change is the ticket or pull request this job serves. Only a job with a Change can be superseded by a new head.
 	Change id.ChangeID `json:"change,omitempty"`
 	// Head is the pull-request head this job serves, when it differs from SHA (a baseline run of a check at the merge
@@ -96,7 +99,7 @@ type Priority int
 // The priorities, highest first. A preview is the lowest: it is a running process a person is waiting on only
 // while an agent explores, never a gate.
 const (
-	PriorityGate       Priority = iota // acceptance, red-first, evidence verification, profile trials
+	PriorityGate       Priority = iota // acceptance, red-first, evidence verification (E2 checks), profile trials
 	PriorityOnDemand                   // a check an agent or person asked for, a cache warm
 	PriorityBackground                 // checks and mutants the pipeline runs by itself
 	PriorityPreview
@@ -110,6 +113,9 @@ func (j SandboxJob) Priority() Priority {
 	case SandboxWarm:
 		return PriorityOnDemand
 	case SandboxCheck:
+		if j.Verify {
+			return PriorityGate
+		}
 		if j.OnDemand {
 			return PriorityOnDemand
 		}
@@ -151,6 +157,8 @@ func (j SandboxJob) Validate() error {
 		v.add("change", func() error { _, err := id.ParseChangeID(string(j.Change)); return err }())
 	}
 	v.require("on_demand", !j.OnDemand || j.Kind == SandboxCheck, "only a check job is asked for on demand")
+	v.require("verify", !j.Verify || j.Kind == SandboxCheck, "only a check job verifies evidence")
+	v.require("verify", !j.Verify || !j.OnDemand, "a verification is not on demand")
 	v.add("check_id", j.validateName(j.CheckID, SandboxCheck))
 	v.add("test_kind", j.validateName(j.TestKind, SandboxTest))
 	return v.join()

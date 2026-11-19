@@ -11,7 +11,7 @@ const defaultTestsDir = "tests/heimdall"
 
 // rowOpenRoom: the room exists. It starts with the first fact of the change, whichever flow that is.
 func rowOpenRoom() Row {
-	return Row{ID: "open_room", Flow: FlowBoth,
+	return Row{ID: "open_room", Flow: FlowBoth, Jobs: []EffectKind{EffectRoomOpen},
 		Done: func(in In) bool { return in.View.Room != "" },
 		Next: func(in In) []Action {
 			p := RoomOpenPayload{Ticket: in.Change, Invite: roomInvite(in)}
@@ -49,7 +49,7 @@ func testsRows() []Row {
 }
 
 func rowBranch() Row {
-	return Row{ID: "branch", Flow: FlowTests, After: []string{"open_room"},
+	return Row{ID: "branch", Flow: FlowTests, After: []string{"open_room"}, Jobs: []EffectKind{EffectGitHubBranch},
 		Done: func(in In) bool { return in.View.Branch != nil },
 		Next: func(in In) []Action {
 			t := in.View.Trigger
@@ -104,7 +104,7 @@ func operators(in In) []ActorID {
 }
 
 func rowTestQA() Row {
-	return Row{ID: "test_qa", Flow: FlowTests, After: []string{"write_tests"},
+	return Row{ID: "test_qa", Flow: FlowTests, After: []string{"write_tests"}, Jobs: []EffectKind{EffectTestQuality},
 		Done: func(in In) bool { return in.View.Tests != nil && in.View.Tests.Verified != nil },
 		Next: func(in In) []Action {
 			v := in.View
@@ -140,7 +140,7 @@ func rowSignoff() Row {
 }
 
 func rowCommit() Row {
-	return Row{ID: "commit", Flow: FlowTests, After: []string{"test_qa", "signoff"},
+	return Row{ID: "commit", Flow: FlowTests, After: []string{"test_qa", "signoff"}, Jobs: []EffectKind{EffectGitHubCommitTests},
 		Done: func(in In) bool { return in.View.Tests != nil && in.View.Tests.Committed != nil },
 		Next: func(in In) []Action {
 			v := in.View

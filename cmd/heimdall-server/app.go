@@ -15,7 +15,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/blobfs"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/openrouter"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/announce"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
@@ -66,6 +65,10 @@ const (
 	blobStoreRoot = ".heimdall/blobs"
 	// githubAPIRoot is the production GitHub API, which is not site-specific and so needs no config key.
 	githubAPIRoot = "https://api.github.com"
+	// runnerSocketPath is the runner's Unix socket on the VM (deploy/heimdall-runner); cmd/heimdall-runner listens on it.
+	runnerSocketPath = "/run/heimdall-runner/runner.sock"
+	// graphitiEndpoint is the team-memory MCP endpoint on the Compose network.
+	graphitiEndpoint = "http://graphiti:8000/mcp"
 )
 
 // deps is what build needs that differs between production and a test: the database, the adapter endpoints, the HTTP
@@ -158,6 +161,9 @@ type endpoints struct {
 	switchAgentID   string
 	switchAgentName string
 	switchBridgeID  string
+	// runnerSocket is the runner's Unix socket and graphitiURL the team-memory endpoint; the boot self-check calls both.
+	runnerSocket string
+	graphitiURL  string
 }
 
 // app is the running slice: the ticket poller, the outbox drainer and the database they share.
@@ -177,7 +183,9 @@ type app struct {
 	// operatorRecheck repeats one finding's evidence on the current head after a run that gave a wrong answer.
 	operatorRecheck http.Handler
 	operatorRoom    http.Handler
-	narrator        *announce.Narrator
+	// degraded names each tool the boot self-check withheld, with the reason; /healthz reports it.
+	degraded []string
+	narrator *announce.Narrator
 	// reconciler starts all work of every change (HARNESS_DESIGN B3).
 	reconciler     *reconcile.Reconciler
 	cardsUpload    http.Handler
@@ -288,6 +296,8 @@ func productionDeps(cfg config.Config, logger *slog.Logger) (deps, error) {
 			switchAgentID:   cfg.Switch.AgentID,
 			switchAgentName: cfg.Switch.AgentName,
 			switchBridgeID:  cfg.Switch.BridgeID,
+			runnerSocket:    runnerSocketPath,
+			graphitiURL:     graphitiEndpoint,
 		},
 		pollEvery: pollInterval,
 		syncEvery: syncInterval,
@@ -436,6 +446,12 @@ func (d deps) validate() error {
 	if d.migrate == nil {
 		problems = append(problems, "migration function is nil")
 	}
+	if d.endpoints.runnerSocket == "" {
+		problems = append(problems, "runner socket is empty")
+	}
+	if d.endpoints.graphitiURL == "" {
+		problems = append(problems, "graphiti endpoint is empty")
+	}
 	if len(problems) > 0 {
 		return fmt.Errorf("server deps: %s", strings.Join(problems, "; "))
 	}
@@ -503,21 +519,25 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 	if err != nil {
 		return nil, fmt.Errorf("open blob store: %w", err)
 	}
-	a, err := assembleWithBlobs(rec, d, ad, store, pool, blobStore, eng, gen, clk, setupHandler)
-	if err == nil {
-		a.reconciler = rec
-	}
+	check, err := bootSelfCheck(ctx, d, ad, blobStore)
 	if err != nil {
 		_ = blobStore.Close()
 		return nil, err
 	}
+	a, err := assembleWithBlobs(rec, d, ad, store, pool, blobStore, eng, gen, clk, setupHandler, check)
+	if err != nil {
+		_ = blobStore.Close()
+		return nil, err
+	}
+	a.reconciler = rec
+	a.degraded = check.degraded
 	a.agentSync = syncAgents
 	return a, nil
 }
 
 func assembleWithBlobs(
 	rec *reconcile.Reconciler, d deps, ad adapters, store *postgres.Store, pool *pgxpool.Pool, blobs ports.BlobStore,
-	eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, setupHandler http.Handler,
+	eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, setupHandler http.Handler, check selfCheck,
 ) (*app, error) {
 	profileManager, err := assembleProfileLifecycle(ad, store, blobs, clk)
 	if err != nil {
@@ -531,16 +551,9 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	box, err := outbox.New(outbox.Config{
-		Outbox: store, Executors: execs, Logger: d.logger,
-		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
-		KindTimeouts: map[change.EffectKind]time.Duration{
-			change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout,
-			change.EffectVerifyEvidence: verifyEvidenceTimeout,
-		},
-	})
+	box, err := newDrainer(d, store, execs)
 	if err != nil {
-		return nil, fmt.Errorf("build outbox drainer: %w", err)
+		return nil, err
 	}
 	// One poller per project, each with its own cursor source provider:project (A10 item 10).
 	pollers, err := newTicketPollers(ad, store, eng, blobs, gen, clk)
@@ -559,31 +572,60 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	mcpH, proposer, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager, runtime, rec.Needs, store)
+	mcpSrv, proposer, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager, runtime, rec.Needs, store, check.withheld)
 	if err != nil {
 		return nil, err
 	}
-	cardsUpload, err := newUploadHandlers(d, ad)
-	if err != nil {
+	// A wiring problem stops the server here, before any loop starts, with every problem named.
+	if err := checkWiring(mcpSrv, execs, check.off); err != nil {
 		return nil, err
 	}
-	narrator, err := assembleNarrator(d, ad, store)
+	cardsUpload, narrator, err := assembleHumanEdges(d, ad, store)
 	if err != nil {
 		return nil, err
 	}
 	return &app{
 		narrator: narrator,
-		pool:     pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpH, agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
+		pool:     pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpSrv.Handler(), agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
+}
+
+// assembleHumanEdges builds what people meet: the card upload handler and the room narrator.
+func assembleHumanEdges(d deps, ad adapters, store *postgres.Store) (http.Handler, *announce.Narrator, error) {
+	cardsUpload, err := newUploadHandlers(d, ad)
+	if err != nil {
+		return nil, nil, err
+	}
+	narrator, err := assembleNarrator(d, ad, store)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cardsUpload, narrator, nil
+}
+
+// newDrainer builds the outbox drainer over the executors, with the longer timeouts of the sandbox effects.
+func newDrainer(d deps, store *postgres.Store, execs map[change.EffectKind]outbox.Executor) (*outbox.Drainer, error) {
+	box, err := outbox.New(outbox.Config{
+		Outbox: store, Executors: execs, Logger: d.logger,
+		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
+		KindTimeouts: map[change.EffectKind]time.Duration{
+			change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout,
+			change.EffectVerifyEvidence: verifyEvidenceTimeout,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build outbox drainer: %w", err)
+	}
+	return box, nil
 }
 
 // executors maps each effect kind to its executor. Each area builds its own (wire_<area>.go). Each executor checks the
 // kind of the effect it receives, so a swapped entry fails every effect it is given.
 func executors(ad adapters, store ports.EventStore, profiles ports.ProfileStore, blobs ports.BlobStore, in effects.Ingest, gen ports.IDs, clk ports.Clock, recheck effects.MemoryRecheck) (map[change.EffectKind]outbox.Executor, error) {
 	sandbox := profileSandbox{
-		Sandbox:  rootlessRunnerSandbox{client: rootlessrunner.Client{Socket: "/run/heimdall-runner/runner.sock", Source: ad.vcs, Blobs: blobs}},
+		Sandbox:  rootlessRunnerSandbox{client: ad.runner(blobs)},
 		Profiles: profiles,
 	}
 	core, err := coreExecutors(ad, store, in, gen, clk)

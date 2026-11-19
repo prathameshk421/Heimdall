@@ -69,6 +69,12 @@ func (c *HTTPCaller) Call(ctx context.Context, name string, args map[string]any)
 	}
 }
 
+// Ping opens an MCP session, which proves the endpoint answers. The boot self-check calls it once.
+func (c *HTTPCaller) Ping(ctx context.Context) error {
+	_, err := c.ensureSession(ctx)
+	return err
+}
+
 // rpc is one JSON-RPC message. A notification has no id.
 type rpc struct {
 	JSONRPC string  `json:"jsonrpc"`

@@ -56,7 +56,7 @@ func assembleKnowledgeRetention(d deps, ad adapters, store knowledgeStore, blobs
 
 // knowledgeGraphiti builds the Graphiti adapter that receives knowledge and workflow memory episodes.
 func knowledgeGraphiti(d deps) (*graphiti.Adapter, error) {
-	caller, err := graphiti.NewHTTPCaller("http://graphiti:8000/mcp", d.httpClient)
+	caller, err := graphiti.NewHTTPCaller(d.endpoints.graphitiURL, d.httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("build knowledge Graphiti caller: %w", err)
 	}

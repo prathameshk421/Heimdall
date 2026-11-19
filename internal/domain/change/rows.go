@@ -2,6 +2,7 @@ package change
 
 import (
 	"reflect"
+	"slices"
 	"strconv"
 	"time"
 
@@ -28,6 +29,8 @@ type Row struct {
 	ID    string
 	Flow  Flow
 	After []string // row ids that must be done first
+	// Jobs are the effect kinds Next may start. The server checks at start-up that each one has an executor.
+	Jobs []EffectKind
 	// Done reports whether the row's work is finished. Next is called only when the flow has started, every After row is
 	// done and Done is false.
 	Done func(In) bool
@@ -147,6 +150,19 @@ func Rows() []Row {
 	out := []Row{rowOpenRoom()}
 	out = append(out, testsRows()...)
 	return append(out, reviewRows()...)
+}
+
+// RowJobKinds are the effect kinds the rows may start, each once, in table order.
+func RowJobKinds() []EffectKind {
+	var out []EffectKind
+	for _, r := range Rows() {
+		for _, k := range r.Jobs {
+			if !slices.Contains(out, k) {
+				out = append(out, k)
+			}
+		}
+	}
+	return out
 }
 
 // Open returns the rows that have work to do: the flow started, every After row is done and the row is not done itself.

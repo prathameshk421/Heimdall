@@ -54,16 +54,18 @@ func run(
 	if err != nil {
 		return err
 	}
-	handler, err := transport.NewRouter(logger)
-	if err != nil {
-		return fmt.Errorf("build router: %w", err)
-	}
 	a, err := openApp(ctx, cfg, logger)
 	if err != nil {
 		return err
 	}
+	var degraded []string
 	if a != nil {
 		defer a.close()
+		degraded = a.degraded
+	}
+	handler, err := transport.NewDegradedRouter(logger, degraded)
+	if err != nil {
+		return fmt.Errorf("build router: %w", err)
 	}
 	handler = mountHTTP(handler, a)
 	if a != nil {

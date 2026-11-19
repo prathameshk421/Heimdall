@@ -287,3 +287,44 @@ func TestJobsCarryWhatTheirExecutorsNeed(t *testing.T) {
 	require.True(t, verify.Reverify, "verified on the first head, so this is a re-run")
 	require.Equal(t, id.SHA(fBase), verify.BaseSHA)
 }
+
+// Every job a row starts is of a kind the row declares, and every declared kind is started somewhere, so the start-up
+// check that each declared kind has an executor covers every job the rows can start (HARNESS_DESIGN B8).
+func TestEachRowDeclaresTheJobKindsItStarts(t *testing.T) {
+	rec := change.FindingRecord{FindingID: "fnd_01HZX3K9QW7M2P5R8T0V4YB6CD", Ref: 1, Tier: "E1", Severity: "high", State: "open", By: "rev-1"}
+	tests := []change.Event{triggered(t), ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
+		ev(t, 3, change.EventBranchEnsured, change.BranchEnsured{Repo: "acme/pay", Branch: "KAN-5-x", BaseSHA: fBase}),
+		submission(t, 4, blobA),
+		ev(t, 5, change.EventTestsVerified, change.TestsVerified{RunIDs: []id.RunID{"run_01HZX3K9QW7M2P5R8T0V4YB6CD"}, SHA: fHead, TreeHash: fBase}),
+		opened(t), ev(t, 7, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true})}
+	review := []change.Event{opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
+		ev(t, 3, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1"}, By: "heimdall", Method: change.PickDefault}),
+		ev(t, 4, change.EventChecksReported, change.ChecksReported{Head: fHead}),
+		ev(t, 5, change.EventReviewSubmitted, change.ReviewSubmitted{Reviewer: "rev-1", PackDate: "2026-11-04"}),
+		ev(t, 6, change.EventFindingFiled, withRepro(rec))}
+	declared := map[string][]change.EffectKind{}
+	for _, r := range change.Rows() {
+		declared[r.ID] = r.Jobs
+	}
+	seen := map[change.EffectKind]bool{}
+	for _, flow := range []struct {
+		change string
+		events []change.Event
+	}{{"KAN-5", tests}, {"pr-acme-pay-7", review}} {
+		for n := 1; n <= len(flow.events); n++ {
+			in := inOf(flow.change, fold(t, flow.events[:n]...), t0)
+			in.Profile = change.Profile{Checks: []change.ProfileCheck{{ID: "lint"}}}
+			in.Outside = change.Outside{ChangedFiles: []string{"a.go"}}
+			for _, ra := range change.Next(in) {
+				if ra.Job == nil {
+					continue
+				}
+				require.Contains(t, declared[ra.Row], ra.Job.Kind, "row %s starts a %s job it does not declare", ra.Row, ra.Job.Kind)
+				seen[ra.Job.Kind] = true
+			}
+		}
+	}
+	for _, k := range change.RowJobKinds() {
+		require.True(t, seen[k], "no row started a declared %s job", k)
+	}
+}

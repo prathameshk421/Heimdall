@@ -36,6 +36,8 @@ func TestCheckAndTestJobsValidate(t *testing.T) {
 		{"a malformed base sha", func() SandboxJob { j := check; j.BaseSHA = "xyz"; return j }, "base_sha", ""},
 		{"the removed contract kind", func() SandboxJob { j := check; j.Kind = "contract"; return j }, "kind", "known"},
 		{"the removed mutation kind", func() SandboxJob { j := check; j.Kind = "mutation"; return j }, "kind", "known"},
+		{"a verification on a test job", func() SandboxJob { j := test; j.Verify = true; return j }, "verify", "only a check job"},
+		{"a verification asked for on demand", func() SandboxJob { j := check; j.Verify, j.OnDemand = true, true; return j }, "verify", "not on demand"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -65,6 +67,7 @@ func TestTheQueuePriorityIsDataOnTheJobKind(t *testing.T) {
 		{"a cache warm", SandboxJob{Kind: SandboxWarm}, PriorityOnDemand},
 		{"a pipeline check", SandboxJob{Kind: SandboxCheck}, PriorityBackground},
 		{"a check asked for on demand", SandboxJob{Kind: SandboxCheck, OnDemand: true}, PriorityOnDemand},
+		{"a check that verifies a finding's evidence", SandboxJob{Kind: SandboxCheck, Verify: true}, PriorityGate},
 	}
 	for _, tt := range tests {
 		require.Equal(t, tt.want, tt.job.Priority(), tt.name)

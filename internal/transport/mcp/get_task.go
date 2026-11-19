@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reviewbrief"
@@ -114,21 +115,18 @@ func (s *Server) needs(ctx context.Context, a Assignment) []string {
 	return lines
 }
 
-// ToolNames are the names of every tool this server registered, for the check of the kind table.
+// ToolNames are the names of every tool this server registered, withheld ones included, for the check of the kind
+// table: a withheld tool is wired, only its dependency is down.
 func (s *Server) ToolNames() []string {
-	names := make([]string, 0, len(s.tools))
-	for _, t := range s.tools {
-		names = append(names, t.name)
-	}
-	return names
+	return slices.Clone(s.registered)
 }
 
 // SchemaNames are the output schemas whose submit tool is registered.
 func (s *Server) SchemaNames() []string {
 	bySubmit := map[string]string{"submit_tests": "TestSubmission@1", "submit_review": "Review@2", "submit_verdict": "Verdict@1", "propose_profile": "Profile@1"}
 	var out []string
-	for _, t := range s.tools {
-		if schema, ok := bySubmit[t.name]; ok {
+	for _, name := range s.registered {
+		if schema, ok := bySubmit[name]; ok {
 			out = append(out, schema)
 		}
 	}

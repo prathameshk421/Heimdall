@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -62,13 +63,23 @@ type profileView struct {
 	Names []string `json:"names"`
 }
 
+// healthView is the GET /v1/health body: the job kinds /v1/run accepts.
+type healthView struct {
+	Kinds []ports.SandboxKind `json:"kinds"`
+}
+
+// runKinds are the job kinds /v1/run executes. checkJobKind refuses every other kind.
+func runKinds() []ports.SandboxKind {
+	return []ports.SandboxKind{ports.SandboxCheck, ports.SandboxTest, ports.SandboxRedFirst, ports.SandboxRepro, ports.SandboxProfileTrial}
+}
+
 // policyView is the GET /v1/policy body: the image allowlist the runner enforces.
 type policyView struct {
 	Images []string `json:"images"`
 }
 
 // Handler exposes the narrow job API to the Unix socket only: isolated runs, proposed-profile
-// trials, durable profile promotion, the policy allowlist, warm jobs and supersession of stale jobs.
+// trials, durable profile promotion, the policy allowlist, its health, warm jobs and supersession of stale jobs.
 //
 // One job runs at a time: run, promotion and warm all stage files in the same module cache and job directory scope,
 // so the queue serializes the durable-state touches too. A caller that arrives while another job runs waits for its
@@ -80,6 +91,9 @@ func (r *Runner) Handler() http.Handler {
 		out, status := r.handleRun(req)
 		writeResponse(w, status, out)
 	}))
+	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, healthView{Kinds: runKinds()})
+	})
 	mux.HandleFunc("GET /v1/profiles", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, profileView{Names: r.Names()})
 	})
@@ -277,7 +291,7 @@ func isProfileCommandJob(kind ports.SandboxKind) bool {
 // checkJobKind refuses a job kind the runner does not execute through /v1/run, and the inputs a kind may not carry.
 func checkJobKind(in request) (int, error) {
 	kind := in.Job.Kind
-	if !isProfileCommandJob(kind) && kind != ports.SandboxRedFirst && kind != ports.SandboxRepro && kind != ports.SandboxProfileTrial {
+	if !slices.Contains(runKinds(), kind) {
 		return http.StatusBadRequest, errors.New("the runner does not run this job kind")
 	}
 	if len(in.BaseArchive) > 0 && !isProfileCommandJob(kind) {
@@ -550,6 +564,26 @@ func (c Client) Trial(ctx context.Context, j ports.ProfileTrialJob) (ports.Sandb
 	}
 	defer func() { _ = resp.Body.Close() }()
 	return c.result(ctx, job, resp)
+}
+
+// Health asks the runner which job kinds it runs. An error means the runner is unreachable or answered badly.
+func (c Client) Health(ctx context.Context) ([]ports.SandboxKind, error) {
+	if c.Socket == "" {
+		return nil, errors.New("runner socket path is required")
+	}
+	resp, err := c.get(ctx, "/v1/health")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("runner health: status %d", resp.StatusCode)
+	}
+	var view healthView
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&view); err != nil {
+		return nil, fmt.Errorf("decode runner health: %w", err)
+	}
+	return view.Kinds, nil
 }
 
 // Profiles lists the profile names the runner can currently run.
