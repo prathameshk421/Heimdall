@@ -47,7 +47,8 @@ cfg = {
                 "deepseek-ai/deepseek-v4.1-flash-1017": {
                     "name": "DeepSeek V4.1 Flash",
                     "tool_call": True,
-                    "limit": {"context": 200000, "output": 8000},
+                    # 8000 ended two H11 reviews: the model spent all of it on reasoning and wrote nothing.
+                    "limit": {"context": 200000, "output": 32000},
                 }
             },
         }

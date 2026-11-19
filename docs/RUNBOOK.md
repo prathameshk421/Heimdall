@@ -166,3 +166,26 @@ ssh heimdall-vm 'systemctl status heimdall-runner --no-pager'
 
 After the server stops or crashes, nothing is replayed by hand. At boot the server starts the pull request sync and the ticket poll immediately (no wait before the first pass). The sync reads open pull requests, checks, and reviews from GitHub and appends what the event log lacks, through the normal ingest path. The room stream restarts from the durable per-room cursors. A second boot appends nothing, because every append is keyed by its source. Check after a restart: the server log shows `pull requests synced` with `appended` counts, and a repeated boot shows zero.
 
+
+## Hot deploy of the server and the runner (H11)
+
+Build both Linux binaries, copy them to the VM and run the script as root. It backs up Postgres to
+`/opt/heimdall/backups`, keeps a `.prev` copy of each file it replaces (only when the new file differs), restarts
+`heimdall-runner` and `heimdall-compose` together, and prints the hashes inside the container and `/healthz`:
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /tmp/hs ./cmd/heimdall-server
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /tmp/hr ./cmd/heimdall-runner
+scp /tmp/hs heimdall-vm:/tmp/heimdall-server.new
+scp /tmp/hr heimdall-vm:/tmp/heimdall-runner.new
+scp deploy/compose.yaml heimdall-vm:/tmp/heimdall-compose.yaml.new   # only when compose changed
+ssh heimdall-vm 'sudo sh -s' < scripts/ops/hot-deploy.sh
+```
+
+Rollback: `ssh heimdall-vm 'sudo sh -s rollback' < scripts/ops/hot-deploy.sh`. Expect `{"status":"ok"}` with no
+`degraded` list. The server needs `deploy_api_key` (the agents' model provider key) for its liveness probe.
+
+After any restart of `switch-agent-controller-1000`, restart every agent unit too
+(`sudo systemctl restart switch-agent-1000@03 ... @07`) and check one "isolated agent host connected to the hub" line
+per agent in the controller journal. Found in H11: the agent hosts kept running without a hub for two days, and
+Switch queued every mention unseen.

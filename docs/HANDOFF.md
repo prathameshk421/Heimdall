@@ -5,7 +5,7 @@ Read this first, then `AGENTS.md`, the top of `docs/PROGRESS.md`, `docs/HARNESS_
 
 ## State in one paragraph
 
-Branch `heimdall-build` (never `main`). H0 to H9 of the harness overhaul and the H10 flow checks are committed; `make fast` is green
+Branch `heimdall-build` (never `main`). H0 to H9 of the harness overhaul, the H10 flow checks and the H11 deploy and live tests flow are committed (reviews, approval and merge wait for owner steps, see below); `make fast` is green
 (3,401 tests) and `make verify` passes (3,508 race/component tests). The H10 stories retirement waits for the owner; H11 and H12 are not started. The server runs the reconciler; the old workflow engine is deleted. Nothing ran live: no VM deploy, no
 OpenCode/Switch/Jira/GitHub call, no model spend. Every "not verified" line below is deliberate.
 
@@ -33,30 +33,34 @@ ignored.
 The branch was pushed to `origin/heimdall-build` on Nov 18, 2026 (81 commits over the previous remote tip).
 `git log -1 origin/heimdall-build` is the docs commit on top of H7 `506fad5`.
 
-## Start here: H11 deploy and live run
+## Start here: H12, and the H11 owner steps
 
-Design: `docs/HARNESS_DESIGN.md` Part C "H11". H10's flow checks are committed (`e8a8548`); `make verify` runs both
-(`TestTheTestsFlowRunsFromTicketToCommittedTests`, `TestTheReviewFlowRunsFromPullRequestToMergeReady`, each under 4 s).
+H11 (Nov 19 to 20) deployed the overhaul build and ran KAN-26 live: the tests flow works end to end on the VM
+(trigger, room, branch, a correct red-first rejection, verified, committed `ab0d649`), and PR #16 got slop, CI,
+acceptance, the default pick and three review tasks. Read `docs/LIVE_RUN_H11.md` for the timeline, the cost (about
+$0.24, estimated) and defects D1 to D7. Code fixes: `b20e758` (probe the agents' provider, mount `deploy_api_key`,
+wait for Graphiti) and `92bf94c` (skills: stop after submitting; join boundary cases to failing ones).
 
-- **Deploy the server and the runner together.** The VM runner has no `/v1/health` until it is redeployed, so a server
-  deployed alone withholds `run_check` and the profile tools, and an old runner refuses an E2 verification job (gate
-  priority since H9).
-- The server now needs the model provider endpoint (`endpoints.openRouterURL`, production `https://openrouter.ai/api/v1`)
-  and the `openrouter_api_key` secret for the liveness probe; without the key the probe errors and a quiet task stalls
-  the Run of its change.
-- H10 fixed `run_check` (it ignored the promoted profile, so the runner refused every call). The fixture repository
-  needs a promoted profile with a `patterns` check before the live review run (H8 note).
-- `agent_reset` still has no executor: a reset only re-wakes the agent.
-- Open from H10: retiring `e2e/stories` means retiring the product board (`make prototype`, `make demo-check`,
-  `e2e/scenarios`), which `CLAUDE.md` and `AGENTS.md` still name. The owner must decide; see the H10 row in PROGRESS.
+The VM runs server `00a892f2` and runner `c44c04c7`; `/healthz` is `{"status":"ok"}`. Rollback copies are
+`/opt/heimdall/heimdall-server.prev`, `/usr/local/bin/heimdall-runner.prev` and `/opt/heimdall/deploy/compose.yaml.prev`
+(`ssh heimdall-vm 'sudo sh -s rollback' < scripts/ops/hot-deploy.sh`). Deploy steps are in `docs/RUNBOOK.md`.
+
+Owner steps before re-running the review half of H11:
+
+1. **D6:** run `ssh heimdall-vm 'bash -s' < scripts/ops/install-agent-configs.sh` (it writes the agents' configs and
+   tokens, so only the owner runs it). It raises the agents' output limit from 8000 to 32000; then restart the agent
+   units. Not verified that Deploy accepts 32000 for this model. The test-author's config (slot 03) is not in the
+   installer's list; raise it the same way.
+2. **B1:** a promoted profile with a `patterns` check on `aarush323/heimdall-fixture-pay`. No profiler agent exists,
+   and approve/promote need a policy owner (`heimdall approve-profile <id>`, `heimdall promote-profile <id>` in chat).
+3. **B2:** a `rekdfr` token in the gh keyring (`gh auth login`), so the approval can be made with that login.
+4. **D7:** decide whether a ticketless PR is reviewed before slop passes, or the check uses `require_ticket: false`.
+5. Then reopen PR #16 (KAN-26) and watch reviews, verify, gate, approval and merge.
 
 ## Then, in order
 
 - **H10 stories** (owner decision first): retire `e2e/stories/` with the board that reads it, or keep the board.
-- **H11 Deploy and live run** (`:580`): state the cost first (DeepSeek v4 flash via OpenRouter, about $0.30–$1 per run;
-  cap **$3**), close fixture PRs #13/#14, write `scripts/ops/hot-deploy.sh`, deploy, then run the ticket → room →
-  branch → tests → commit → PR → checks → reviews → verify → gate → approval → merge journey and one ticketless PR.
-  Record everything in `docs/LIVE_RUN_H11.md`; fix defects in code with a failing test first, never on the VM.
+- **H11 rest** (owner steps above), then **H12**.
 - **H12 Specs and leftovers** (`:599`): rewrite TECH_SPEC 5, 6.2 and 12.4; update RUNBOOK and `doc.go`s; then policy v2
   conversion, `Missing` for an undecodable policy, and the path-redaction fix in `internal/app/record`.
 
