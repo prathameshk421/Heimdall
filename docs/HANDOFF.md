@@ -5,14 +5,15 @@ Read this first, then `AGENTS.md`, the top of `docs/PROGRESS.md`, `docs/HARNESS_
 
 ## State in one paragraph
 
-Branch `heimdall-build` (never `main`). H0 to H9 of the harness overhaul are committed; `make fast` is green
-(3,401 tests) and `make verify` passes. H10 to H12 are not started. The server runs the reconciler; the old workflow engine is deleted. Nothing ran live: no VM deploy, no
+Branch `heimdall-build` (never `main`). H0 to H9 of the harness overhaul and the H10 flow checks are committed; `make fast` is green
+(3,401 tests) and `make verify` passes (3,508 race/component tests). The H10 stories retirement waits for the owner; H11 and H12 are not started. The server runs the reconciler; the old workflow engine is deleted. Nothing ran live: no VM deploy, no
 OpenCode/Switch/Jira/GitHub call, no model spend. Every "not verified" line below is deliberate.
 
 Commits, newest first:
 
 | Step | Commit | What landed |
 |---|---|---|
+| H10 | `e8a8548` | tests and review flow component checks on the real wiring; `run_check` uses the promoted profile; stories not retired (owner) |
 | H9 | `H9:` in git log | boot self-check withholds tools, start-up wiring check, runner contract tests, E2 jobs gate priority |
 | H8 | `H8:` in git log | profile checks: `run_checks`, `run_check(check_id)`, `leads`, E2 on profile checks, the go vet static path deleted |
 | H7 | `506fad5` | kinds, `get_task`, tool table, skills, whole submissions, bundle deleted |
@@ -32,31 +33,26 @@ ignored.
 The branch was pushed to `origin/heimdall-build` on Nov 18, 2026 (81 commits over the previous remote tip).
 `git log -1 origin/heimdall-build` is the docs commit on top of H7 `506fad5`.
 
-## Start here: H10 component end-to-end checks
+## Start here: H11 deploy and live run
 
-Design: `docs/HARNESS_DESIGN.md` Part B section B9 items 1 and 2 and Part C "H10".
+Design: `docs/HARNESS_DESIGN.md` Part C "H11". H10's flow checks are committed (`e8a8548`); `make verify` runs both
+(`TestTheTestsFlowRunsFromTicketToCommittedTests`, `TestTheReviewFlowRunsFromPullRequestToMergeReady`, each under 4 s).
 
-- `tests_flow_component_test.go` and `review_flow_component_test.go` on the real wiring (`build` with the fakes in
-  `fakes_component_test.go`), a scripted agent over the MCP HTTP handler, a fake clock, `rec.Sweep` instead of waiting.
-- Retire `e2e/stories/` and its Makefile target (owner approval is in Part A of the design).
-- Done when both pass in `make verify`, each under 20 s.
-
-What H9 leaves for H10:
-
-- `selfcheck_component_test.go` shows how to boot `build` with the fakes and read `tools/list` as a reviewer. Test
-  deps must set `endpoints.runnerSocket` and `endpoints.graphitiURL` (`testRunnerSocket`, `testGraphitiURL` in
-  `build_test.go`); with them the runner and knowledge tools are withheld. A review flow that calls `run_check` needs a
-  runner on a socket: start `rootlessrunner.Listen` with a fake executor, as `contract_test.go` does.
-- `read_card` is off unless the config sets `cards_dir`.
-- E2 verification jobs are gate priority (`SandboxJob.Verify`). Deploy the server and the runner together in H11: an
-  old runner refuses a verification job and has no `/v1/health`.
-- `review.submitted.lead_checks` is still not set; `finding.runCited` reads leads.
+- **Deploy the server and the runner together.** The VM runner has no `/v1/health` until it is redeployed, so a server
+  deployed alone withholds `run_check` and the profile tools, and an old runner refuses an E2 verification job (gate
+  priority since H9).
+- The server now needs the model provider endpoint (`endpoints.openRouterURL`, production `https://openrouter.ai/api/v1`)
+  and the `openrouter_api_key` secret for the liveness probe; without the key the probe errors and a quiet task stalls
+  the Run of its change.
+- H10 fixed `run_check` (it ignored the promoted profile, so the runner refused every call). The fixture repository
+  needs a promoted profile with a `patterns` check before the live review run (H8 note).
+- `agent_reset` still has no executor: a reset only re-wakes the agent.
+- Open from H10: retiring `e2e/stories` means retiring the product board (`make prototype`, `make demo-check`,
+  `e2e/scenarios`), which `CLAUDE.md` and `AGENTS.md` still name. The owner must decide; see the H10 row in PROGRESS.
 
 ## Then, in order
 
-- **H10 Component end-to-end** (`:571`): `tests_flow_component_test.go` and `review_flow_component_test.go` on the real
-  wiring with the component fakes and a scripted agent; fake clock, `rec.Sweep` instead of waiting. Retire
-  `e2e/stories/` and its Makefile target (owner approval is in Part A of the design).
+- **H10 stories** (owner decision first): retire `e2e/stories/` with the board that reads it, or keep the board.
 - **H11 Deploy and live run** (`:580`): state the cost first (DeepSeek v4 flash via OpenRouter, about $0.30–$1 per run;
   cap **$3**), close fixture PRs #13/#14, write `scripts/ops/hot-deploy.sh`, deploy, then run the ticket → room →
   branch → tests → commit → PR → checks → reviews → verify → gate → approval → merge journey and one ticketless PR.
@@ -150,7 +146,7 @@ The owner wants Heimdall proven as a genuinely great, sellable product, not mere
 - No live run, no model spend, no Switch/Jira/GitHub call in the H0–H7 work.
 - The OpenRouter prober only ran against a fake server; the first real probe is one tiny paid request.
 - `EffectAgentReset` has no executor (Switch session reset); `EffectRunChecks`'s executor exists only in the H8 patch.
-- H10–H12 are untouched.
+- H11 and H12 are untouched; the H10 stories retirement is not done (owner decision).
 - `taskinput` renderers for `profile`, `stack_hints` and `prior_decisions` are still notes; `pr` shows only repository,
   change, base and head (no title/body); `review.submitted.lead_checks` is not set until H8; the no-task answer does
   not say how the last task ended; round-trip tests exist for tests submissions only.
