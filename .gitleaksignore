@@ -318,3 +318,5 @@ fbe1d7d6e6813e600e156318beab608b3ec5c94f:internal/testkit/record/record_test.go:
 1fdb168caf6cbf76526a3b6cfcfbf477d74a98a8:cmd/heimdall-server/card_upload_test.go:aws-access-token:84
 aa21ec7320426c4f0ee8bd5ce7dd750d81845095:cmd/heimdall-server/card_upload_test.go:aws-access-token:81
 aa21ec7320426c4f0ee8bd5ce7dd750d81845095:cmd/heimdall-server/card_upload_test.go:aws-access-token:84
+# The H7 handoff quoted the same made-up AWS key in an already pushed docs commit (owner approved, Nov 19, 2026).
+86c405768503aac15116608a7e6c057eb35874cb:docs/HANDOFF.md:aws-access-token:163
