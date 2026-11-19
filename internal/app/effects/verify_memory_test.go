@@ -47,7 +47,7 @@ func runMemory(t *testing.T, recheck effects.MemoryRecheck) (*fakeIngest, error)
 	t.Helper()
 	ingest := &fakeIngest{}
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: &overlaySandboxFake{}, Memory: recheck, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Source: &fakeSource{}, Sandbox: &overlaySandboxFake{}, Profiles: profileFake{}, Memory: recheck, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
 	return ingest, exec.Execute(context.Background(), memoryEffect(t))

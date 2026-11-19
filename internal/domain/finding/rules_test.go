@@ -121,7 +121,7 @@ func TestBlankRequiredFieldsOfPayloadsAreRefused(t *testing.T) {
 	cases := map[string]func(*finding.Input){
 		"repro test name of spaces":    func(f *finding.Input) { f.Evidence[0].ReproTest.Name = "   " },
 		"repro test content of spaces": func(f *finding.Input) { f.Evidence[0].ReproTest.Content = " \n\t " },
-		"tool name of spaces":          func(f *finding.Input) { f.Evidence[1].ToolResult.Tool = "  " },
+		"check id of spaces":           func(f *finding.Input) { f.Evidence[1].ToolResult.CheckID = "  " },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

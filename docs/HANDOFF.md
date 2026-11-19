@@ -5,16 +5,17 @@ Read this first, then `AGENTS.md`, the top of `docs/PROGRESS.md`, `docs/HARNESS_
 
 ## State in one paragraph
 
-Branch `heimdall-build` (never `main`). H0 to H7 of the harness overhaul are committed and `make fast` is green
-(3,375 tests). H8 (checks) was started but is **not committed and does not compile**; the exact diff is saved at
-`docs/patches/H8-partial.patch`. H9 to H12 are not started. The server now runs the new reconciler; the old workflow
-engine is deleted. Nothing in this session ran live: no VM deploy, no OpenCode/Switch/Jira/GitHub call, no model spend.
-Every "not verified" line below is deliberate.
+Branch `heimdall-build` (never `main`). H0 to H8 of the harness overhaul are committed and `make fast` is green
+(3,384 tests). `make verify` passes every step except `secrets`, which flags a fake key quoted in an old docs commit;
+the owner must add one fingerprint to `.gitleaksignore` (see `docs/PROGRESS.md`, Noticed H8). H9 to H12 are not
+started. The server runs the reconciler; the old workflow engine is deleted. Nothing ran live: no VM deploy, no
+OpenCode/Switch/Jira/GitHub call, no model spend. Every "not verified" line below is deliberate.
 
 Commits, newest first:
 
 | Step | Commit | What landed |
 |---|---|---|
+| H8 | `H8:` in git log | profile checks: `run_checks`, `run_check(check_id)`, `leads`, E2 on profile checks, the go vet static path deleted |
 | H7 | `506fad5` | kinds, `get_task`, tool table, skills, whole submissions, bundle deleted |
 | H6 | `8b2445d`, `633ffe5` | executors record facts only; the gate is computed once; intake and prsync record facts |
 | H5 | `5211432` | the reconciler runs the product; `internal/app/engine`, `slice.go`, `timers.go`, `nudge.go`, `workflow.Default` deleted |
@@ -32,50 +33,27 @@ ignored.
 The branch was pushed to `origin/heimdall-build` on Nov 18, 2026 (81 commits over the previous remote tip).
 `git log -1 origin/heimdall-build` is the docs commit on top of H7 `506fad5`.
 
-## Start here: finish H8
+## Start here: H9 wiring proofs
 
-The saved patch is a complete diff against H7 for the files it touches. It is **not** a compiling tree.
+Design: `docs/HARNESS_DESIGN.md` Part B section B8 and Part C "H9. Wiring proofs".
 
-```sh
-git apply docs/patches/H8-partial.patch
-go build ./...   # five errors in three files, listed below
-```
+- `cmd/heimdall-server/selfcheck.go` and its test; run `CheckKinds` and "every row job kind has an executor" at
+  start-up, not only in a test.
+- The runner contract test: the client against its handler for `check` and `test` jobs.
+- Done when a missing runner logs `run_check withheld: runner unreachable` and a reviewer's tool list lacks `run_check`.
 
-What the patch already has:
+What H8 leaves for H9 (details in the "Notes for H9" list in `docs/PROGRESS.md`):
 
-- `internal/app/effects/checks.go` and tests: one `run_checks` effect, the promoted profile's checks, a baseline run
-  when the row asks for one (`SHA: base, Head: head`), only the new SARIF results, per-check `errors` entries.
-- `run_check` rewritten: input is `check_id`, the list comes from the profile, unknown id is refused with the list, the
-  5-call-per-task budget stays.
-- `leads` renderer and the `get_task`/agenttools plumbing that carries check output to the reviewer.
-- `finding.ToolResult` uses `check_id` instead of `tool`/`args`; the submit rule and the E2 payload row follow it.
-
-What still has to be written (design H8, `docs/HARNESS_DESIGN.md:547`):
-
-1. Fix the compile sites:
-   - `internal/app/review/review.go:195` uses `result.Tool` (now `CheckID`). Replace `Refs.RunExists` (a tool name) with
-     the check-id rule: the cited check must be one of the profile's checks offered on this head.
-   - `internal/app/effects/verify_evidence.go:211` and `:215` use `p.Check.Name` (now `p.Check.ID`).
-   - `cmd/heimdall-testagent/scenarios_review.go:179` builds `Tool`/`Args`; use a real profile `check_id` from the fixture.
-2. Move `verify_evidence` E2 onto profile checks. Add `ports.ProfileStore` to `VerifyEvidenceDeps`; load the row by
-   `p.Check.ID`; run `ports.SandboxCheck` with `CheckID` (a baseline row runs the base too and filters through
-   `sarif.New`). Confirmed E2 = a new result in the same file whose `[Lines]` intersects the finding's range. A
-   re-verify with a result still there stays open; no result resolves it. A check that cannot run stays an error so the
-   outbox retries; do not turn it into E4.
-3. Delete the old static path completely: `ports.SandboxStatic`, `ports.CheckGoVet`, `SandboxJob.Check`,
-   `internal/domain/verify/vet.go` and `vet_test.go`, the rootless runner's static branch and tests, and any go-vet text.
-   `grep -rn "SandboxStatic\|CheckGoVet\|ParseVet"` must find nothing.
-4. Tests the design asks for: baseline + head gives only new results; a failing check becomes an `errors` entry and the
-   job finishes; `run_check` unknown id and budget; E2 located confirms, none leaves E4.
-
-Then `make fast`, `make verify`, and update the H8 row in `docs/PROGRESS.md` with the real evidence. Do not mark it done
-from this handoff.
+- `run_checks` and `verify_evidence` need `ports.ProfileStore`; `executors(...)` refuses a nil one.
+- `run_check` exists only when `mcp.Deps.Sandbox` and `Checks` are set: the withheld path goes there.
+- An E2 verification is a background-priority check job in the runner queue; decide whether it should be gate priority.
+- `aarush323/heimdall-fixture-pay` must have a promoted profile with at least one check before H11 (not verified). The
+  scripted reviewer cites the check id `patterns`.
+- On this Mac, `scripts/check-owned.sh` needs bash 4+ (Homebrew bash 5 is installed). H8 ran `make` with
+  `PATH=/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/bin:$PATH`.
 
 ## Then, in order
 
-- **H9 Wiring proofs** (`HARNESS_DESIGN.md:562`): `cmd/heimdall-server/selfcheck.go` + test; `CheckKinds` and "every row
-  job kind has an executor" at start-up; the runner contract test (client against its handler for `check` and `test`).
-  Done when a missing runner logs `run_check withheld: runner unreachable` and a reviewer's tool list lacks `run_check`.
 - **H10 Component end-to-end** (`:571`): `tests_flow_component_test.go` and `review_flow_component_test.go` on the real
   wiring with the component fakes and a scripted agent; fake clock, `rec.Sweep` instead of waiting. Retire
   `e2e/stories/` and its Makefile target (owner approval is in Part A of the design).
@@ -163,7 +141,7 @@ The owner wants Heimdall proven as a genuinely great, sellable product, not mere
   evidence that still names it is historical.
 - Tracked build binaries were removed from the index; both paths are now ignored. The two large blobs remain in the
   H5/H7 history; removing them would need a history rewrite, which the owner has not asked for.
-- The nine gitleaks hits were reviewed: a generated SARIF fixture and the deliberately fake `AKIAABCDEFGHIJKLMNOP` test
+- The nine gitleaks hits were reviewed: a generated SARIF fixture and the deliberately fake AWS example key test
   value in `card_upload_test.go`. Their exact fingerprints are in `.gitleaksignore` with a comment, so the secret scan
   is meaningful again (`make secrets`: no leaks).
 

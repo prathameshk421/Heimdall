@@ -22,7 +22,17 @@ const dateLayout = "2006-01-02"
 var (
 	reACID   = regexp.MustCompile(`^AC[1-9][0-9]{0,2}$`)
 	reBranch = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+	// reCheckID is the shape of a profile check id (the profile name rule of ports).
+	reCheckID = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 )
+
+// checkCheckID requires the shape of a profile check id.
+func checkCheckID(s string) error {
+	if !reCheckID.MatchString(s) {
+		return errors.New("must be a profile check id: one to 64 lowercase name characters")
+	}
+	return nil
+}
 
 // problems collects every field error of one Validate call, so the caller sees all of them at once.
 type problems []error

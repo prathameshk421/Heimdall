@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/review"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -22,7 +23,7 @@ const (
 
 type refs struct {
 	files     map[string]int
-	runs      map[string]bool
+	checks    []change.ProfileCheck
 	memory    map[string]bool
 	packs     map[string]bool
 	lookupErr error
@@ -31,7 +32,7 @@ type refs struct {
 func newRefs() *refs {
 	return &refs{
 		files:  map[string]int{"internal/refunds/refunds.go": 8, "internal/compat/legacy.go": 4},
-		runs:   map[string]bool{"run-vet-1": true},
+		checks: []change.ProfileCheck{{ID: "patterns", When: []string{"**/*.go"}}, {ID: "migrations", When: []string{"**/*.sql"}}},
 		memory: map[string]bool{"memory:refund-limit": true},
 		packs:  map[string]bool{"pack:refunds:17": true},
 	}
@@ -52,8 +53,8 @@ func (r *refs) LineCount(_ context.Context, _ workflow.ChangeRef, path string) (
 	return r.files[path], nil
 }
 
-func (r *refs) RunExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentName, ref string) (bool, error) {
-	return r.runs[ref], r.lookupErr
+func (r *refs) ProfileChecks(_ context.Context, _ workflow.ChangeRef) ([]change.ProfileCheck, error) {
+	return r.checks, r.lookupErr
 }
 
 func (r *refs) MemoryExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentName, ref string) (bool, error) {
@@ -74,7 +75,7 @@ func TestSubmitReturnsAllProblemsWithFieldPaths(t *testing.T) {
 	f.Location.File = "missing.go"
 	f.Location.Lines = [2]int{2, 99}
 	f.Evidence = []finding.Evidence{
-		{Type: finding.EvidenceToolResult, ToolResult: &finding.ToolResult{Tool: "missing-run", Location: finding.Location{File: "missing-tool.go", Lines: [2]int{1, 2}}}},
+		{Type: finding.EvidenceToolResult, ToolResult: &finding.ToolResult{CheckID: "missing-check", Location: finding.Location{File: "missing-tool.go", Lines: [2]int{1, 2}}}},
 		{Type: finding.EvidenceMemory, MemoryRef: ptr("memory:missing")},
 		{Type: finding.EvidencePackRef, PackRef: ptr("pack:missing")},
 	}
@@ -84,7 +85,7 @@ func TestSubmitReturnsAllProblemsWithFieldPaths(t *testing.T) {
 	text := problemText(got)
 	for _, want := range []string{
 		"findings[0].location.file", "findings[0].location.lines",
-		"findings[0].evidence[0].tool_result.tool", "findings[0].evidence[1].memory_ref",
+		"findings[0].evidence[0].tool_result.check_id", "findings[0].evidence[1].memory_ref",
 		"findings[0].evidence[2].pack_ref",
 	} {
 		require.Contains(t, text, want)
@@ -251,4 +252,41 @@ func TestSubmitRefusesACardCitationForAnotherFile(t *testing.T) {
 	got, err := review.Submit(context.Background(), newRefs(), submission(f))
 	require.NoError(t, err)
 	require.Contains(t, problemText(got), "must name the file of location.file")
+}
+
+func toolResultFinding(checkID string) finding.Input {
+	f := validFinding()
+	f.Evidence = []finding.Evidence{{Type: finding.EvidenceToolResult, ToolResult: &finding.ToolResult{CheckID: checkID, Location: f.Location}}}
+	return f
+}
+
+// E2 evidence cites a profile check that runs on this change: verify_evidence re-runs exactly that check on the head.
+func TestSubmitAcceptsAToolResultThatCitesACheckOfferedOnTheChange(t *testing.T) {
+	got, err := review.Submit(context.Background(), newRefs(), submission(toolResultFinding("patterns")))
+	require.NoError(t, err)
+	require.Empty(t, got.Problems)
+	require.Equal(t, finding.TierE2, got.Findings[0].Tier)
+}
+
+// A check the profile does not hold, or one whose when matches no changed file, cannot be repeated on this head. The
+// refusal lists the checks the reviewer may cite.
+func TestSubmitRefusesAToolResultWhoseCheckIsNotOfferedAndListsTheOffered(t *testing.T) {
+	for _, checkID := range []string{"go vet", "migrations"} {
+		got, err := review.Submit(context.Background(), newRefs(), submission(toolResultFinding(checkID)))
+		require.NoError(t, err)
+		require.Empty(t, got.Findings, checkID)
+		text := problemText(got)
+		require.Contains(t, text, "findings[0].evidence[0].tool_result.check_id")
+		require.Contains(t, text, "use one of patterns", checkID)
+	}
+}
+
+// Without a promoted profile no check runs, so no finding can claim E2 and the refusal says to use other evidence.
+func TestSubmitRefusesAToolResultWhenTheRepositoryHasNoProfileChecks(t *testing.T) {
+	r := newRefs()
+	r.checks = nil
+	got, err := review.Submit(context.Background(), r, submission(toolResultFinding("patterns")))
+	require.NoError(t, err)
+	require.Empty(t, got.Findings)
+	require.Contains(t, problemText(got), "no profile check runs on this change")
 }

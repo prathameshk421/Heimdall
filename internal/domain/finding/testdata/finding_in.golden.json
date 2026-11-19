@@ -16,8 +16,7 @@
     {
       "type": "tool_result",
       "tool_result": {
-        "tool": "oasdiff",
-        "args": ["breaking", "base/api/openapi.yaml", "head/api/openapi.yaml"],
+        "check_id": "api-break",
         "location": {"file": "api/openapi.yaml", "lines": [40, 52]}
       }
     },

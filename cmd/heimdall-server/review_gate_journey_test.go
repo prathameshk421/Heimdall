@@ -41,7 +41,7 @@ func (reviewJourneyValidator) Submit(_ context.Context, submission agenttools.Re
 	var result agenttools.ReviewResult
 	for _, input := range submission.Review.Findings {
 		// An E2 claim carries the tool result the server repeats to verify it (A2).
-		input.Evidence = []finding.Evidence{{Type: finding.EvidenceToolResult, ToolResult: &finding.ToolResult{Tool: "go vet", Location: input.Location}}}
+		input.Evidence = []finding.Evidence{{Type: finding.EvidenceToolResult, ToolResult: &finding.ToolResult{CheckID: "patterns", Location: input.Location}}}
 		result.Findings = append(result.Findings, agenttools.ReviewFinding{Input: input, Tier: finding.TierE2})
 	}
 	return result, nil
@@ -294,9 +294,16 @@ func (journeySource) Fetch(context.Context, change.Repo, id.SHA) error { return 
 
 type journeySandbox struct{}
 
-// Run reports the located vet failure the E2 findings of the journey cite (internal/refunds/refunds.go, lines 40 to 41).
+// Run reports the located result of the patterns check the E2 findings of the journey cite (internal/refunds/refunds.go,
+// lines 40 to 41).
 func (journeySandbox) Run(context.Context, ports.SandboxJob) (ports.SandboxResult, error) {
-	return ports.SandboxResult{Failed: 1, Output: "./internal/refunds/refunds.go:40:2: unchecked error\n"}, nil
+	return ports.SandboxResult{Sarif: []byte(`{"runs":[{"results":[{"ruleId":"unchecked-error","level":"error","message":{"text":"unchecked error"},` +
+		`"locations":[{"physicalLocation":{"artifactLocation":{"uri":"internal/refunds/refunds.go"},"region":{"startLine":40,"endLine":41,"snippet":{"text":"pay(r)"}}}}]}]}]}`)}, nil
+}
+
+// journeyProfiles is the promoted profile of the journey: it holds the patterns check the findings cite.
+func journeyProfiles() selectedProfileStore {
+	return selectedProfileStore{found: true, proposal: ports.ProfileProposal{Spec: ports.ProfileSpec{Checks: []ports.ProfileCheck{{ID: "patterns", Lens: "security"}}}}}
 }
 
 // runJourneyVerification runs the verify_evidence effects the engine committed, through the real executor with a
@@ -307,7 +314,7 @@ func runJourneyVerification(ctx context.Context, t *testing.T, runtime *commandR
 	mem, ok := runtime.events.(*memStore)
 	require.True(t, ok)
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: journeySource{}, Sandbox: journeySandbox{}, Ingest: ingestor{eng: runtime.engine}, IDs: ids.New(), Clock: clock.System{},
+		Source: journeySource{}, Sandbox: journeySandbox{}, Profiles: journeyProfiles(), Ingest: ingestor{eng: runtime.engine}, IDs: ids.New(), Clock: clock.System{},
 	})
 	require.NoError(t, err)
 	mem.mu.Lock()

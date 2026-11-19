@@ -498,6 +498,7 @@ func toMCPAssignment(a agenttools.Assignment) mcp.Assignment {
 		History:    a.History,
 		Rejection:  a.Rejection,
 		Attempt:    a.Attempt,
+		Leads:      a.Leads,
 	}
 }
 

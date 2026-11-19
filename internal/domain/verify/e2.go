@@ -1,6 +1,9 @@
 package verify
 
-import "github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
+import (
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/sarif"
+)
 
 // TierForE2 returns the tier of an E2 finding (a deterministic tool result, TECH_SPEC 11.1). The finding is confirmed
 // (E2) only when the check fails on the head and the failure is at the location the finding names. Any other outcome
@@ -26,4 +29,15 @@ func ResolvedE2(fixed Status, located bool) bool {
 	default:
 		return false
 	}
+}
+
+// Located reports whether a check result is in file with its line range touching first to last, inclusive. It is the
+// location rule that confirms an E2 finding (HARNESS_DESIGN B7).
+func Located(results []sarif.Result, file string, first, last int) bool {
+	for _, r := range results {
+		if r.File == file && r.Lines[0] <= last && r.Lines[1] >= first {
+			return true
+		}
+	}
+	return false
 }

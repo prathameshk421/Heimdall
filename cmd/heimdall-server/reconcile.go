@@ -18,6 +18,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
 // Settings of the reconciler: how many test submissions a rejection may use, how long the PR author has to pick
@@ -132,4 +133,20 @@ func newReconciler(ad adapters, store *postgres.Store, openrouter ports.ModelHea
 			Timeouts: map[string]time.Duration{"tests": testsTimeout, "review": reviewTimeout, "verdict": verdictTimeout}},
 		Windows: liveness.Windows{Ack: ackWindow, Stall: stallWindow},
 	})
+}
+
+// profileChecks reads the checks of a repository's promoted profile for run_check.
+type profileChecks struct{ profiles ports.ProfileStore }
+
+// ChecksOf returns the profile's check rows, or none when the repository has no promoted profile.
+func (p profileChecks) ChecksOf(ctx context.Context, repo change.Repo) ([]mcp.CheckRow, error) {
+	prof, ok, err := p.profiles.ActiveProfile(ctx, string(repo))
+	if err != nil || !ok {
+		return nil, err
+	}
+	rows := make([]mcp.CheckRow, 0, len(prof.Spec.Checks))
+	for _, c := range prof.Spec.Checks {
+		rows = append(rows, mcp.CheckRow{ID: c.ID, Lens: c.Lens, Baseline: c.Baseline})
+	}
+	return rows, nil
 }

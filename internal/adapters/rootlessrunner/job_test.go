@@ -313,7 +313,7 @@ func TestTheHandlerRefusesJobsOutsideTheContract(t *testing.T) {
 		job    ports.SandboxJob
 		mutate func(*request)
 	}{
-		{"the removed static job", ports.SandboxJob{Kind: ports.SandboxStatic, Check: ports.CheckGoVet, Dir: "tests"}, nil},
+		{"the removed static job kind", ports.SandboxJob{Kind: ports.SandboxKind("static"), Dir: "tests"}, nil},
 		{"a check with staged files", check, func(r *request) { r.Overlays = []ports.File{{Path: "a_test.go", Content: []byte("x")}} }},
 		{"a red-first job with a base tree", ports.SandboxJob{Kind: ports.SandboxRedFirst, Dir: "tests"}, func(r *request) { r.BaseArchive = []byte("base") }},
 		{"a check id the profile does not hold", ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: "nope"}, nil},

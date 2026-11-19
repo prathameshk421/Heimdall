@@ -44,8 +44,9 @@ type memoryRecheck interface {
 }
 
 type reviewRefs struct {
-	code   ports.CodeReader
-	memory memoryRecheck
+	code     ports.CodeReader
+	memory   memoryRecheck
+	profiles ports.ProfileStore
 }
 
 func (r reviewRefs) FileExists(ctx context.Context, ref workflow.ChangeRef, path string) (bool, error) {
@@ -70,14 +71,26 @@ func (r reviewRefs) LineCount(ctx context.Context, ref workflow.ChangeRef, path 
 	return bytes.Count(content, []byte{'\n'}) + 1, nil
 }
 
-// RunExists reports whether a tool_result names a tool the harness can repeat. The harness re-runs the tool itself
-// (TECH_SPEC 11.1, E2), so a finding does not need an earlier run by the caller: it needs a supported tool.
-func (reviewRefs) RunExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentName, tool string) (bool, error) {
-	return tool == verifiableTool, nil
+// ProfileChecks returns the checks of the repository's promoted profile. A tool_result must cite one of them that runs
+// on the change, because verify_evidence re-runs that check on the head (HARNESS_DESIGN B7). Without a profile store, or
+// without a promoted profile, there are none, so no finding can claim E2.
+func (r reviewRefs) ProfileChecks(ctx context.Context, ref workflow.ChangeRef) ([]change.ProfileCheck, error) {
+	if r.profiles == nil {
+		return nil, nil
+	}
+	prof, ok, err := r.profiles.ActiveProfile(ctx, ref.Repo)
+	if err != nil {
+		return nil, fmt.Errorf("read the profile of %s: %w", ref.Repo, err)
+	}
+	if !ok {
+		return nil, nil
+	}
+	out := make([]change.ProfileCheck, 0, len(prof.Spec.Checks))
+	for _, c := range prof.Spec.Checks {
+		out = append(out, change.ProfileCheck{ID: c.ID, When: c.When})
+	}
+	return out, nil
 }
-
-// verifiableTool is the one tool_result tool the sandbox can repeat today (go vet through the runner).
-const verifiableTool = "go vet"
 
 // MemoryExists reports whether a cited memory reference is E3 evidence for the caller: found in the groups the caller
 // can see, confirmed, and not superseded. A reference that is only observed is refused at the door, so it cannot be

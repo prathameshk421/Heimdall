@@ -149,6 +149,7 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 		Acked:      acked,
 		History:    ticketHistory(events),
 		Rejection:  latestRejection(events),
+		Leads:      leadsOn(changeRef.HeadSHA, events),
 		Attempt:    submissionCount(events) + 1,
 		Task: workflow.TaskEnvelope{
 			TaskID:   latest.TaskID,
@@ -648,4 +649,43 @@ func submissionCount(events []change.Event) int {
 		}
 	}
 	return n
+}
+
+// maxLeadLines bounds the leads one task shows.
+const maxLeadLines = 60
+
+// leadsOn are the check results of the newest checks.reported on head, as "file:line check/rule: message", then the
+// checks that could not run.
+func leadsOn(head id.SHA, events []change.Event) []string {
+	if head == "" {
+		return nil
+	}
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type != change.EventChecksReported {
+			continue
+		}
+		p, err := change.Decode(events[i])
+		if err != nil {
+			return nil
+		}
+		r, ok := p.(change.ChecksReported)
+		if !ok || r.Head != head {
+			continue
+		}
+		var out []string
+		for _, res := range r.Results {
+			out = append(out, fmt.Sprintf("%s:%d %s/%s: %s", res.File, res.Lines[0], res.Check, res.Rule, res.Message))
+		}
+		for _, e := range r.Errors {
+			out = append(out, fmt.Sprintf("check %s could not run: %s", e.Check, e.Reason))
+		}
+		if r.More > 0 {
+			out = append(out, fmt.Sprintf("... %d more results", r.More))
+		}
+		if len(out) > maxLeadLines {
+			out = append(out[:maxLeadLines], fmt.Sprintf("... %d more lines", len(out)-maxLeadLines))
+		}
+		return out
+	}
+	return nil
 }

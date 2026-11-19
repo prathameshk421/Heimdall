@@ -17,8 +17,8 @@ import (
 // outsidePath is a file the change does not touch. The bad-path scenario names it in its first review.
 const outsidePath = "internal/refunds/ledger.go"
 
-// reviewClaim is the one finding the scripted reviewer files. go vet reports it: a printf verb that does not fit its
-// argument. The finding names a changed file and a line range from that file.
+// reviewClaim is the one finding the scripted reviewer files: a printf verb that does not fit its argument. The finding
+// names a changed file and a line range from that file.
 const reviewClaim = "The over-payment error formats an int with %s, so its text reads %!s(int=100) and the caller cannot read the amount."
 
 // reFindingIndex finds the index of each finding a refusal names, such as "finding 0:".
@@ -166,7 +166,12 @@ func spanIn(lines map[string]int, file string) ([2]int, error) {
 	return [2]int{1, min(2, n)}, nil
 }
 
-// findingFor returns the scripted finding on file. Its evidence is E2: a go vet report at the same location.
+// reviewCheckID is the profile check the scripted finding cites as E2 evidence: the "patterns" row of the profile in
+// docs/REVIEW_ARCH.md section 4.1 (testdata/plan/sarif/profile.yaml). The repository under test must promote a profile
+// with this check, or the server refuses the evidence.
+const reviewCheckID = "patterns"
+
+// findingFor returns the scripted finding on file. Its evidence is E2: a result of a profile check at the same location.
 func findingFor(file string, span [2]int, claim string) finding.Input {
 	loc := finding.Location{File: file, Lines: span}
 	return finding.Input{
@@ -176,8 +181,7 @@ func findingFor(file string, span [2]int, claim string) finding.Input {
 		Confidence: finding.ConfidenceHigh,
 		Location:   loc,
 		Evidence: []finding.Evidence{finding.NewToolResultEvidence(finding.ToolResult{
-			Tool:     "go vet",
-			Args:     []string{"./internal/refunds/..."},
+			CheckID:  reviewCheckID,
 			Location: loc,
 		})},
 		ContextRefs: []string{},

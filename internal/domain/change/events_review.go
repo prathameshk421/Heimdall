@@ -211,7 +211,13 @@ func (p FindingRecord) Validate() error {
 		v.add("memory_ref", checkText(*p.MemoryRef))
 	}
 	if p.ToolResult != nil {
-		v.add("tool_result.tool", checkText(p.ToolResult.Tool))
+		if p.ToolResult.Tool == "" {
+			v.add("tool_result.check_id", checkText(p.ToolResult.CheckID))
+		} else {
+			// A finding filed before profile checks names its tool instead (finding.ToolResult).
+			v.require("tool_result.check_id", p.ToolResult.CheckID == "", "an old tool result names a tool, not a check")
+			v.add("tool_result.tool", checkText(p.ToolResult.Tool))
+		}
 		v.add("tool_result.location.file", finding.CheckRepoPath(p.ToolResult.Location.File))
 		v.require("tool_result.location.lines", p.ToolResult.Location.Lines[0] >= 1 && p.ToolResult.Location.Lines[1] >= p.ToolResult.Location.Lines[0], "must be 1-based with the first at most the last")
 	}

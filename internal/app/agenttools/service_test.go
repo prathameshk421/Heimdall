@@ -244,8 +244,8 @@ func (fakeReviewRefs) LineCount(_ context.Context, _ workflow.ChangeRef, path st
 	}
 	return 0, nil
 }
-func (fakeReviewRefs) RunExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentName, tool string) (bool, error) {
-	return tool == "go vet", nil
+func (fakeReviewRefs) ProfileChecks(_ context.Context, _ workflow.ChangeRef) ([]change.ProfileCheck, error) {
+	return []change.ProfileCheck{{ID: "patterns"}}, nil
 }
 func (fakeReviewRefs) MemoryExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentName, ref string) (bool, error) {
 	return ref == "decision:refund-limit", nil
@@ -1252,7 +1252,7 @@ func TestSubmitReviewCarriesToolEvidenceInTheFindingEvent(t *testing.T) {
 	loc := finding.Location{File: "internal/refunds/refunds.go", Lines: [2]int{10, 20}}
 	review.Findings[0].Evidence = []finding.Evidence{{
 		Type:       finding.EvidenceToolResult,
-		ToolResult: &finding.ToolResult{Tool: "go vet", Location: loc},
+		ToolResult: &finding.ToolResult{CheckID: "patterns", Location: loc},
 	}}
 
 	receipt, err := h.svc.SubmitReview(context.Background(), assign, review, false)

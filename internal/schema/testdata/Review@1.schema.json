@@ -126,17 +126,10 @@
                 },
                 "tool_result": {
                   "properties": {
-                    "tool": {
+                    "check_id": {
                       "type": "string",
                       "minLength": 1,
-                      "description": "The tool that produced the report; such as go vet or oasdiff"
-                    },
-                    "args": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array",
-                      "description": "The arguments the harness passes to the tool"
+                      "description": "The id of a check of the repository profile; the one listed in your leads"
                     },
                     "location": {
                       "properties": {
@@ -167,8 +160,7 @@
                   "additionalProperties": false,
                   "type": "object",
                   "required": [
-                    "tool",
-                    "args",
+                    "check_id",
                     "location"
                   ]
                 },

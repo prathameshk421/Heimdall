@@ -75,7 +75,8 @@ func TestFindingInValidateRefusesWhatAnAgentMustFix(t *testing.T) {
 		{"repro test without a path", func(f *finding.Input) { f.Evidence[0].ReproTest.Path = "" }, "evidence[0].repro_test.path"},
 		{"repro test path escapes", func(f *finding.Input) { f.Evidence[0].ReproTest.Path = "../x_test.go" }, "evidence[0].repro_test.path"},
 		{"repro test without content", func(f *finding.Input) { f.Evidence[0].ReproTest.Content = "" }, "evidence[0].repro_test.content"},
-		{"tool result without a tool", func(f *finding.Input) { f.Evidence[1].ToolResult.Tool = "" }, "evidence[1].tool_result.tool"},
+		{"tool result without a check id", func(f *finding.Input) { f.Evidence[1].ToolResult.CheckID = "" }, "evidence[1].tool_result.check_id"},
+		{"tool result in the old shape", func(f *finding.Input) { f.Evidence[1].ToolResult.Tool = "go vet" }, "tool and args are gone"},
 		{"tool result with a bad location", func(f *finding.Input) { f.Evidence[1].ToolResult.Location.Lines = [2]int{3, 1} }, "evidence[1].tool_result.location.lines"},
 		{"empty memory ref", func(f *finding.Input) { f.Evidence[2].MemoryRef = str("") }, "evidence[2].memory_ref"},
 		{"empty pack ref", func(f *finding.Input) { f.Evidence[3].PackRef = str(" ") }, "evidence[3].pack_ref"},
@@ -159,11 +160,7 @@ func randEvidence(r *rand.Rand) finding.Evidence {
 	case 0:
 		return finding.NewReproTestEvidence(finding.ReproTest{Path: "tests/" + randToken(r) + "_test.go", Name: "Test" + randToken(r), Content: randText(r, 1, 300)})
 	case 1:
-		args := make([]string, r.IntN(4))
-		for i := range args {
-			args[i] = randToken(r)
-		}
-		return finding.NewToolResultEvidence(finding.ToolResult{Tool: randToken(r), Args: args, Location: finding.Location{File: randToken(r) + ".go", Lines: [2]int{1 + r.IntN(50), 51 + r.IntN(50)}}})
+		return finding.NewToolResultEvidence(finding.ToolResult{CheckID: randToken(r), Location: finding.Location{File: randToken(r) + ".go", Lines: [2]int{1 + r.IntN(50), 51 + r.IntN(50)}}})
 	case 2:
 		return finding.NewMemoryEvidence("mem_" + randToken(r))
 	case 3:
@@ -192,7 +189,7 @@ func TestEveryValidEvidenceRoundTripsThroughJSONToAnEqualValue(t *testing.T) {
 func TestEvidenceConstructorsSetExactlyTheirOwnPayload(t *testing.T) {
 	for _, e := range []finding.Evidence{
 		finding.NewReproTestEvidence(finding.ReproTest{Path: "a_test.go", Name: "TestA", Content: "x"}),
-		finding.NewToolResultEvidence(finding.ToolResult{Tool: "go vet", Location: finding.Location{File: "a.go", Lines: [2]int{1, 1}}}),
+		finding.NewToolResultEvidence(finding.ToolResult{CheckID: "patterns", Location: finding.Location{File: "a.go", Lines: [2]int{1, 1}}}),
 		finding.NewMemoryEvidence("mem_x"),
 		finding.NewPackRefEvidence("pack:x"),
 		finding.NewReasoningEvidence("because of reasons"),

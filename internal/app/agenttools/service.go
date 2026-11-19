@@ -47,8 +47,10 @@ type Assignment struct {
 	// Rejection holds the reasons the latest tests submission was rejected for, and Attempt is the submission this
 	// task is waiting for (1 for the first). Only the test author's task reads them.
 	Rejection []string
-	Attempt   int
-	Task      workflow.TaskEnvelope
+	// Leads are the profile check results on the current head, one line each: what to read first.
+	Leads   []string
+	Attempt int
+	Task    workflow.TaskEnvelope
 }
 
 // FindingError reports a validation failure for one finding in a review.
@@ -67,7 +69,7 @@ type Receipt struct {
 type ReviewRefs interface {
 	FileExists(context.Context, workflow.ChangeRef, string) (bool, error)
 	LineCount(context.Context, workflow.ChangeRef, string) (int, error)
-	RunExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
+	ProfileChecks(context.Context, workflow.ChangeRef) ([]change.ProfileCheck, error)
 	MemoryExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
 }
 

@@ -30,11 +30,18 @@ type ReproTest struct {
 	Content string `json:"content" jsonschema:"minLength=1,description=The whole test file"`
 }
 
-// ToolResult names a deterministic tool run the harness repeats; the finding's location must match its report.
+// ToolResult names a check of the repository profile that the harness repeats; the finding's location must match one
+// of its results.
+//
+// Tool and Args are the old shape (a tool name and its arguments, before HARNESS_DESIGN B7). Findings filed before then
+// carry them and no check id; no writer sets them now, and agents never see them in the schema.
 type ToolResult struct {
-	Tool     string   `json:"tool" jsonschema:"minLength=1,description=The tool that produced the report; such as go vet or oasdiff"`
-	Args     []string `json:"args" jsonschema:"description=The arguments the harness passes to the tool"`
+	CheckID  string   `json:"check_id" jsonschema:"minLength=1,description=The id of a check of the repository profile; the one listed in your leads"`
 	Location Location `json:"location"`
+	// Old events only.
+	Tool string `json:"tool,omitempty" jsonschema:"-"`
+	// Old events only.
+	Args []string `json:"args,omitempty" jsonschema:"-"`
 }
 
 // Evidence is a tagged union: Type names the one payload that is set.
@@ -97,8 +104,11 @@ func (r ReproTest) problems(path string) []error {
 // problems lists every problem with the tool result. path is where it sits.
 func (t ToolResult) problems(path string) []error {
 	var errs []error
-	if strings.TrimSpace(t.Tool) == "" {
-		errs = append(errs, fmt.Errorf("%s.tool must not be blank", path))
+	if strings.TrimSpace(t.CheckID) == "" {
+		errs = append(errs, fmt.Errorf("%s.check_id must not be blank", path))
+	}
+	if t.Tool != "" || len(t.Args) > 0 {
+		errs = append(errs, fmt.Errorf("%s: tool and args are gone; name the profile check in check_id", path))
 	}
 	return append(errs, t.Location.problems(path+".location")...)
 }

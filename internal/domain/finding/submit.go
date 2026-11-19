@@ -177,7 +177,7 @@ func runCited(s SubmitV2, l Lead) bool {
 	for _, f := range s.Findings {
 		for _, e := range f.Evidence {
 			if e.Type == EvidenceToolResult && e.ToolResult != nil &&
-				e.ToolResult.Tool == l.Check && e.ToolResult.Location.File == l.File {
+				e.ToolResult.CheckID == l.Check && e.ToolResult.Location.File == l.File {
 				return true
 			}
 		}

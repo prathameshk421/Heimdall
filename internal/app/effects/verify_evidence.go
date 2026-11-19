@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"path"
 	"path/filepath"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/sarif"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/verify"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
@@ -28,12 +28,13 @@ type MemoryRecheck interface {
 // VerifyEvidenceDeps are the dependencies of VerifyEvidence. Memory is optional: without it an E3 verification fails
 // and the outbox retries it, so a missing memory service never confirms a finding.
 type VerifyEvidenceDeps struct {
-	Source  Source
-	Sandbox ports.Sandbox
-	Memory  MemoryRecheck
-	Ingest  Ingest
-	IDs     ports.IDs
-	Clock   ports.Clock
+	Source   Source
+	Sandbox  ports.Sandbox
+	Profiles ports.ProfileStore
+	Memory   MemoryRecheck
+	Ingest   Ingest
+	IDs      ports.IDs
+	Clock    ports.Clock
 }
 
 // VerifyEvidence performs verify_evidence effects (TECH_SPEC 11.1).
@@ -49,6 +50,9 @@ func NewVerifyEvidence(d VerifyEvidenceDeps) (VerifyEvidence, error) {
 	}
 	if d.Sandbox == nil {
 		missing = append(missing, "sandbox")
+	}
+	if d.Profiles == nil {
+		missing = append(missing, "profiles")
 	}
 	if d.Ingest == nil {
 		missing = append(missing, "ingest")
@@ -192,29 +196,38 @@ func (v VerifyEvidence) ingestUnverified(ctx context.Context, ticket id.ChangeID
 	return nil
 }
 
-// executeCheck verifies an E2 finding: it re-runs the fixed static check on the head through the runner and applies the
-// E2 rule (domain/verify). A first run confirms the finding when the check fails at the named location and downgrades
-// it to E4 otherwise. A later run, after a push, resolves it when the diagnostic at the location is gone and keeps it
-// open when it is still there. A check that could not run is an error, so the outbox retries it: an infrastructure
-// failure is not evidence either way.
+// executeCheck verifies an E2 finding: it re-runs the cited profile check on the head (and on the base when the check
+// compares against it, keeping only the results the head added) and applies the E2 rule (domain/verify). A first run
+// confirms the finding when a new result touches the finding's file and lines, and leaves it at E4 otherwise. A later
+// run, after a push, keeps it open while such a result is still there and resolves it when none is. A check that could
+// not run is an error, so the outbox retries it: an infrastructure failure is not evidence either way.
 func (v VerifyEvidence) executeCheck(ctx context.Context, p change.VerifyEvidencePayload) error {
-	job := ports.SandboxJob{
-		Kind:    ports.SandboxStatic,
-		Check:   ports.CheckGoVet,
-		Repo:    p.Repo,
-		SHA:     p.HeadSHA,
-		Dir:     path.Dir(p.Check.File),
-		Timeout: 3 * time.Minute,
+	if p.Check.ID == "" {
+		// A finding filed before profile checks names a tool, which no check repeats: it is not evidence.
+		return v.ingestUnverified(ctx, p.Ticket, p)
 	}
-	res, err := v.deps.Sandbox.Run(ctx, job)
+	profile, ok, err := v.deps.Profiles.ActiveProfile(ctx, string(p.Repo))
 	if err != nil {
-		return failf(err, "verify_evidence %s: run %s", p.Ticket, p.Check.Name)
+		return failf(err, "verify_evidence %s: read the profile", p.Ticket)
 	}
-	status := checkStatus(res)
-	if status == verify.StatusError {
-		return failf(nil, "verify_evidence %s: %s gave no result", p.Ticket, p.Check.Name)
+	if !ok {
+		return failf(nil, "verify_evidence %s: the repository has no promoted profile, so check %s cannot run", p.Ticket, p.Check.ID)
 	}
-	located := verify.Located(verify.ParseVet([]byte(res.Output)), p.Check.File, p.Check.Lines[0], p.Check.Lines[1])
+	row, found := checkRow(profile.Spec.Checks, p.Check.ID)
+	if !found {
+		// The submit rule only accepts a check of the profile. A profile promoted since then may have dropped it: the
+		// claim can no longer be repeated, so it is not evidence and the finding stays E4.
+		return v.ingestUnverified(ctx, p.Ticket, p)
+	}
+	results, err := v.checkResults(ctx, p, row)
+	if err != nil {
+		return failf(err, "verify_evidence %s: run check %s", p.Ticket, p.Check.ID)
+	}
+	status := verify.StatusPass
+	if len(results) > 0 {
+		status = verify.StatusFail
+	}
+	located := verify.Located(results, p.Check.File, p.Check.Lines[0], p.Check.Lines[1])
 
 	if !p.Reverify {
 		if verify.TierForE2(status, located) == finding.TierE2 {
@@ -228,16 +241,37 @@ func (v VerifyEvidence) executeCheck(ctx context.Context, p change.VerifyEvidenc
 	return v.ingestVerified(ctx, p.Ticket, p, finding.TierE2)
 }
 
-// checkStatus reads a static check result: exit 0 passes, a non-zero exit fails, anything else is no result.
-func checkStatus(res ports.SandboxResult) verify.Status {
-	switch {
-	case res.Failed > 0:
-		return verify.StatusFail
-	case res.Passed > 0 && res.Errored == 0:
-		return verify.StatusPass
-	default:
-		return verify.StatusError
+// checkResults runs one profile check on the head and, with a baseline, on the base, and returns what the head added.
+func (v VerifyEvidence) checkResults(ctx context.Context, p change.VerifyEvidencePayload, row ports.ProfileCheck) ([]sarif.Result, error) {
+	head, err := v.checkAt(ctx, p, row, p.HeadSHA, "")
+	if err != nil {
+		return nil, err
 	}
+	if !row.Baseline || p.BaseSHA == "" {
+		return head, nil
+	}
+	if err := v.deps.Source.Fetch(ctx, p.Repo, p.BaseSHA); err != nil {
+		return nil, fmt.Errorf("fetch base source: %w", err)
+	}
+	base, err := v.checkAt(ctx, p, row, p.BaseSHA, p.HeadSHA)
+	if err != nil {
+		return nil, err
+	}
+	return sarif.New(base, head), nil
+}
+
+// checkAt runs the check at sha. head is set for a baseline run, which runs on the base for that head.
+func (v VerifyEvidence) checkAt(ctx context.Context, p change.VerifyEvidencePayload, row ports.ProfileCheck, sha, head id.SHA) ([]sarif.Result, error) {
+	res, err := v.deps.Sandbox.Run(ctx, ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: row.ID, Repo: p.Repo, SHA: sha,
+		Change: p.Ticket, Head: head, Timeout: checkTimeout})
+	if err != nil {
+		return nil, fmt.Errorf("the check did not run: %w", err)
+	}
+	results, err := sarif.Parse(res.Sarif, row.ID, row.Lens)
+	if err != nil {
+		return nil, fmt.Errorf("the check wrote no valid SARIF: %w", err)
+	}
+	return results, nil
 }
 
 func (v VerifyEvidence) ingestResolved(ctx context.Context, ticket id.ChangeID, p change.VerifyEvidencePayload, tier finding.Tier) error {

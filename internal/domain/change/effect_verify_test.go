@@ -160,16 +160,16 @@ func TestEffectKindVerifyEvidence(t *testing.T) {
 func checkPayload() change.VerifyEvidencePayload {
 	p := validVerifyEvidencePayload()
 	p.TestPath, p.TestSource, p.TestName = "", "", ""
-	p.Check = &change.VerifyCheck{Name: change.CheckGoVet, File: "internal/pay/refund.go", Lines: [2]int{10, 12}}
+	p.Check = &change.VerifyCheck{ID: "patterns", File: "internal/pay/refund.go", Lines: [2]int{10, 12}}
 	return p
 }
 
-// A check verification (E2) names a known check and a location, and carries no repro test.
+// A check verification (E2) names a profile check id and a location, and carries no repro test.
 func TestVerifyEvidencePayloadCheckMode(t *testing.T) {
 	require.NoError(t, checkPayload().Validate())
 
 	cases := map[string]func(*change.VerifyEvidencePayload){
-		"an unknown check":       func(p *change.VerifyEvidencePayload) { p.Check.Name = "rm -rf" },
+		"an id that is no check": func(p *change.VerifyEvidencePayload) { p.Check.ID = "rm -rf" },
 		"a path that escapes":    func(p *change.VerifyEvidencePayload) { p.Check.File = "../x.go" },
 		"lines out of order":     func(p *change.VerifyEvidencePayload) { p.Check.Lines = [2]int{12, 10} },
 		"a zero first line":      func(p *change.VerifyEvidencePayload) { p.Check.Lines = [2]int{0, 3} },
@@ -189,15 +189,24 @@ func TestFindingRecordProofs(t *testing.T) {
 	rec := change.FindingRecord{
 		FindingID: id.FindingID("fnd_01HZX3K9QW7M2P5R8T0V4YB6CD"), Ref: id.FindingRef(1), Tier: finding.TierE2, Severity: finding.SeverityHigh,
 		State: finding.StateOpen, By: "bob-reviewer",
-		ToolResult: &finding.ToolResult{Tool: "go vet", Location: finding.Location{File: "internal/pay/refund.go", Lines: [2]int{10, 12}}},
+		ToolResult: &finding.ToolResult{CheckID: "patterns", Location: finding.Location{File: "internal/pay/refund.go", Lines: [2]int{10, 12}}},
 	}
 	require.NoError(t, rec.Validate())
 
 	bad := rec
-	bad.ToolResult = &finding.ToolResult{Tool: "go vet", Location: finding.Location{File: "/etc/passwd", Lines: [2]int{1, 1}}}
+	bad.ToolResult = &finding.ToolResult{CheckID: "patterns", Location: finding.Location{File: "/etc/passwd", Lines: [2]int{1, 1}}}
 	require.Error(t, bad.Validate())
-	bad.ToolResult = &finding.ToolResult{Tool: "go vet", Location: finding.Location{File: "a.go", Lines: [2]int{5, 2}}}
+	bad.ToolResult = &finding.ToolResult{CheckID: "patterns", Location: finding.Location{File: "a.go", Lines: [2]int{5, 2}}}
 	require.Error(t, bad.Validate())
+
+	// A finding filed before profile checks names a tool and no check id; it still validates, so the change folds.
+	old := rec
+	old.ToolResult = &finding.ToolResult{Tool: "go vet", Args: []string{"./..."}, Location: finding.Location{File: "a.go", Lines: [2]int{1, 1}}}
+	require.NoError(t, old.Validate())
+	old.ToolResult.CheckID = "patterns"
+	require.Error(t, old.Validate(), "a tool result is the old shape or the new one, not both")
+	bad.ToolResult = &finding.ToolResult{Location: finding.Location{File: "a.go", Lines: [2]int{1, 1}}}
+	require.Error(t, bad.Validate(), "a new tool result names its check")
 
 	rec.ToolResult = nil
 	rec.ReproTest = &finding.ReproTest{Path: "tests/heimdall/repro_test.go", Name: "TestRepro", Content: "package x"}
@@ -215,7 +224,7 @@ func TestVerifyEvidencePayloadMemoryMode(t *testing.T) {
 	require.NoError(t, p.Validate())
 
 	both := p
-	both.Check = &change.VerifyCheck{Name: change.CheckGoVet, File: "a.go", Lines: [2]int{1, 1}}
+	both.Check = &change.VerifyCheck{ID: "patterns", File: "a.go", Lines: [2]int{1, 1}}
 	require.Error(t, both.Validate(), "a check and a memory re-query together are refused")
 
 	noRef := p

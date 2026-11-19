@@ -57,10 +57,7 @@ const (
 	// SandboxCheck runs one profile check (CheckID) and returns its SARIF result.
 	SandboxCheck SandboxKind = "check"
 	// SandboxTest runs one profile test kind (TestKind) over Dir and returns its JUnit result.
-	SandboxTest SandboxKind = "test"
-	// SandboxStatic is the old single-purpose go vet job. The runner no longer executes it; the constant stays only
-	// until its last callers (the verify effect and the run_check tool, both M3's) move to SandboxCheck.
-	SandboxStatic       SandboxKind = "static"
+	SandboxTest         SandboxKind = "test"
 	SandboxProfileTrial SandboxKind = "profile_trial"
 	// SandboxWarm is the read-only module-cache fetch job (TECH_SPEC 12.2, D153). It never runs
 	// repository code and its egress is allowlisted by the runner's fetch boundary.
@@ -91,8 +88,6 @@ type SandboxJob struct {
 	// Head is the pull-request head this job serves, when it differs from SHA (a baseline run of a check at the merge
 	// base serves the head it will be compared with). Empty means SHA is the head.
 	Head id.SHA `json:"head,omitempty"`
-	// Check names the fixed deterministic check of the old static job (CheckGoVet). It is empty for every other kind.
-	Check string `json:"check,omitempty"`
 }
 
 // Priority orders the runner's queue (TEST_AGENT_ARCH 8): a lower value runs first. It is data on the job kind.
@@ -110,7 +105,7 @@ const (
 // Priority returns where the job waits in the runner's queue.
 func (j SandboxJob) Priority() Priority {
 	switch j.Kind {
-	case SandboxRedFirst, SandboxRepro, SandboxTest, SandboxProfileTrial, SandboxStatic:
+	case SandboxRedFirst, SandboxRepro, SandboxTest, SandboxProfileTrial:
 		return PriorityGate
 	case SandboxWarm:
 		return PriorityOnDemand
@@ -130,10 +125,7 @@ func (j SandboxJob) HeadSHA() id.SHA {
 	return j.SHA
 }
 
-// CheckGoVet is the old static check that ran go vet. See SandboxStatic: it goes with its last callers.
-const CheckGoVet = "go_vet"
-
-// MaxCheckOutput bounds the text output a static check returns.
+// MaxCheckOutput bounds the text output a job returns.
 const MaxCheckOutput = 64 << 10
 
 // MaxJobResult bounds the result file (SARIF or JUnit) a check or test job returns.
@@ -143,7 +135,7 @@ const MaxJobResult = 2 << 20
 func (j SandboxJob) Validate() error {
 	var v problems
 	switch j.Kind {
-	case SandboxRedFirst, SandboxRepro, SandboxStatic, SandboxProfileTrial, SandboxWarm, SandboxCheck, SandboxTest:
+	case SandboxRedFirst, SandboxRepro, SandboxProfileTrial, SandboxWarm, SandboxCheck, SandboxTest:
 	default:
 		v.require("kind", false, "must be a known sandbox job kind")
 	}
@@ -161,11 +153,6 @@ func (j SandboxJob) Validate() error {
 	v.require("on_demand", !j.OnDemand || j.Kind == SandboxCheck, "only a check job is asked for on demand")
 	v.add("check_id", j.validateName(j.CheckID, SandboxCheck))
 	v.add("test_kind", j.validateName(j.TestKind, SandboxTest))
-	if j.Kind == SandboxStatic {
-		v.require("check", j.Check == CheckGoVet, "a static job must name a known check")
-	} else {
-		v.require("check", j.Check == "", "only a static job names a check")
-	}
 	return v.join()
 }
 

@@ -678,9 +678,6 @@ func (c Client) validateJob(job ports.SandboxJob) error {
 	if err := job.Validate(); err != nil {
 		return fmt.Errorf("invalid sandbox job: %w", err)
 	}
-	if job.Kind == ports.SandboxStatic {
-		return errors.New("the runner no longer runs the static job; submit a check job")
-	}
 	if c.Source == nil || c.Blobs == nil {
 		return errors.New("runner source and blob store are required")
 	}

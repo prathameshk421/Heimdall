@@ -17,6 +17,7 @@ func fullRig(t *testing.T) *rig {
 	r.server.deps.Cards = &fakeCards{}
 	r.server.deps.Profiles = &fakeProfiles{}
 	r.server.deps.Sandbox = &fakeCheckSandbox{}
+	r.server.deps.Checks = fakeChecks{}
 	r.server.deps.Proposer = noProposals{}
 	tools, err := r.server.buildTools()
 	require.NoError(t, err)

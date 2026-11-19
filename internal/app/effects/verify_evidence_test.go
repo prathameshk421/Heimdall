@@ -81,11 +81,12 @@ func TestVerifyEvidenceAssertionFailureVerifiesE1(t *testing.T) {
 	source := &fakeSource{}
 
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source:  source,
-		Sandbox: sandbox,
-		Ingest:  ingest,
-		IDs:     &fakeIDs{},
-		Clock:   fixedClock{},
+		Source:   source,
+		Sandbox:  sandbox,
+		Profiles: profileFake{},
+		Ingest:   ingest,
+		IDs:      &fakeIDs{},
+		Clock:    fixedClock{},
 	})
 	require.NoError(t, err)
 
@@ -123,11 +124,12 @@ func TestVerifyEvidencePassDoesNotVerifyE1(t *testing.T) {
 	source := &fakeSource{}
 
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source:  source,
-		Sandbox: sandbox,
-		Ingest:  ingest,
-		IDs:     &fakeIDs{},
-		Clock:   fixedClock{},
+		Source:   source,
+		Sandbox:  sandbox,
+		Profiles: profileFake{},
+		Ingest:   ingest,
+		IDs:      &fakeIDs{},
+		Clock:    fixedClock{},
 	})
 	require.NoError(t, err)
 
@@ -159,11 +161,12 @@ func TestVerifyEvidenceCompileErrorNeverVerifies(t *testing.T) {
 	source := &fakeSource{}
 
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source:  source,
-		Sandbox: sandbox,
-		Ingest:  ingest,
-		IDs:     &fakeIDs{},
-		Clock:   fixedClock{},
+		Source:   source,
+		Sandbox:  sandbox,
+		Profiles: profileFake{},
+		Ingest:   ingest,
+		IDs:      &fakeIDs{},
+		Clock:    fixedClock{},
 	})
 	require.NoError(t, err)
 
@@ -186,7 +189,7 @@ func TestVerifyEvidenceRetriesWhenTheSandboxGivesNoResult(t *testing.T) {
 	sandbox := &overlaySandboxFake{err: errors.New("runner rejected job: runner is busy")}
 	ingest := &fakeIngest{}
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: sandbox, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Source: &fakeSource{}, Sandbox: sandbox, Profiles: profileFake{}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
 
@@ -200,7 +203,7 @@ func TestVerifyEvidenceTestThatErrorsInsteadOfFailingNeverVerifies(t *testing.T)
 	sandbox := &overlaySandboxFake{res: ports.SandboxResult{Errored: 1, Tests: []ports.TestResult{{Name: "TestReproErrors", Outcome: ports.OutcomeError}}}}
 	ingest := &fakeIngest{}
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: sandbox, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Source: &fakeSource{}, Sandbox: sandbox, Profiles: profileFake{}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
 

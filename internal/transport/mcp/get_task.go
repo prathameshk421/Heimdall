@@ -62,7 +62,7 @@ func (s *Server) getTask(ctx context.Context, p Principal, args json.RawMessage)
 	v.Task.Case = string(a.Task.CaseID)
 	v.Instructions = "This task is for " + v.Task.Change + ". Work only on " + v.Task.Change + ": earlier work is finished, so ignore what you remember about it. " +
 		"Start your messages in the channel with " + v.Task.Change + ".\n\n" + skills.For(kind)
-	v.Inputs = taskinput.Render(ctx, kind, taskinput.Source{Task: a.Task, Rejection: a.Rejection, Attempt: a.Attempt}, s.inputDeps(p, a))
+	v.Inputs = taskinput.Render(ctx, kind, taskinput.Source{Task: a.Task, Rejection: a.Rejection, Attempt: a.Attempt, Leads: a.Leads}, s.inputDeps(p, a))
 	v.Needs = s.needs(ctx, a)
 	return marshalText(v)
 }

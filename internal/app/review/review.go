@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -16,7 +17,8 @@ import (
 type Refs interface {
 	FileExists(context.Context, workflow.ChangeRef, string) (bool, error)
 	LineCount(context.Context, workflow.ChangeRef, string) (int, error)
-	RunExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
+	// ProfileChecks are the checks of the repository's promoted profile, or none when it has no promoted profile.
+	ProfileChecks(context.Context, workflow.ChangeRef) ([]change.ProfileCheck, error)
 	MemoryExists(context.Context, workflow.ChangeRef, id.AgentName, string) (bool, error)
 }
 
@@ -192,12 +194,17 @@ func checkToolResult(ctx context.Context, refs Refs, sub Submission, at string, 
 	if err != nil {
 		return nil, err
 	}
-	exists, err := refs.RunExists(ctx, sub.Change, sub.Caller, result.Tool)
+	checks, err := refs.ProfileChecks(ctx, sub.Change)
 	if err != nil {
-		return nil, fmt.Errorf("look up %s.tool_result.tool: %w", at, err)
+		return nil, fmt.Errorf("look up %s.tool_result.check_id: %w", at, err)
 	}
-	if !exists {
-		problems = append(problems, Problem{Message: at + ".tool_result.tool does not exist for this change and caller"})
+	offered := change.ApplicableChecks(checks, sub.FilesChanged)
+	switch {
+	case len(offered) == 0:
+		problems = append(problems, Problem{Message: at + ".tool_result.check_id: no profile check runs on this change, so use other evidence"})
+	case !slices.Contains(offered, result.CheckID):
+		problems = append(problems, Problem{Message: fmt.Sprintf("%s.tool_result.check_id %q is not a profile check on this change; use one of %s",
+			at, result.CheckID, strings.Join(offered, ", "))})
 	}
 	return problems, nil
 }

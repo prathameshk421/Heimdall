@@ -126,7 +126,7 @@ func newAgentTools(ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.
 // proposal worker, which is nil when no cards directory is configured.
 func assembleMCP(
 	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
-	commands mcp.Proposer, needs func(context.Context, id.ChangeID) ([]string, error),
+	commands mcp.Proposer, needs func(context.Context, id.ChangeID) ([]string, error), profileStore ports.ProfileStore,
 ) (http.Handler, *cardProposer, error) {
 	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk, store)
 	if err != nil {
@@ -136,7 +136,7 @@ func assembleMCP(
 	if err != nil {
 		return nil, nil, err
 	}
-	toolsSvc, err := newAgentTools(ad, store, pool, blobs, eng, gen, clk, reviewRefs{code: ad.vcs, memory: evidence})
+	toolsSvc, err := newAgentTools(ad, store, pool, blobs, eng, gen, clk, reviewRefs{code: ad.vcs, memory: evidence, profiles: profileStore})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -172,6 +172,7 @@ func assembleMCP(
 		Calls:    store,
 		Paths:    ad.vcs,
 		Needs:    needs,
+		Checks:   profileChecks{profiles: profileStore},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("build mcp server: %w", err)

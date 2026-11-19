@@ -31,7 +31,7 @@ type VerifyEvidencePayload struct {
 	TestPath   string `json:"test_path,omitempty"`
 	TestSource string `json:"test_source,omitempty"`
 	TestName   string `json:"test_name,omitempty"`
-	// Check, when set, makes this an E2 verification: a fixed static check re-run on the head. The repro test fields
+	// Check, when set, makes this an E2 verification: a profile check re-run on the head. The repro test fields
 	// stay empty then.
 	Check *VerifyCheck `json:"check,omitempty"`
 	// Memory, when set, makes this an E3 verification: the cited memory reference is looked up again.
@@ -52,20 +52,20 @@ func (m VerifyMemory) Validate() error {
 	return v.join()
 }
 
-// VerifyCheck names the static check an E2 verification re-runs and the location the finding is about.
+// VerifyCheck names the profile check an E2 verification re-runs and the location the finding is about. ID is empty only
+// for a finding filed before profile checks (its tool result names a tool): no check repeats it, so it ends at E4.
 type VerifyCheck struct {
-	Name  string `json:"name"`
+	ID    string `json:"id"`
 	File  string `json:"file"`
 	Lines [2]int `json:"lines"`
 }
 
-// CheckGoVet is the name of the go vet check (ports.CheckGoVet).
-const CheckGoVet = "go_vet"
-
 // Validate returns every problem with the check.
 func (c VerifyCheck) Validate() error {
 	var v problems
-	v.require("name", c.Name == CheckGoVet, "must be a known check")
+	if c.ID != "" {
+		v.add("id", checkCheckID(c.ID))
+	}
 	v.add("file", finding.CheckRepoPath(c.File))
 	v.require("lines", c.Lines[0] >= 1 && c.Lines[1] >= c.Lines[0], "must be 1-based with the first at most the last")
 	return v.join()

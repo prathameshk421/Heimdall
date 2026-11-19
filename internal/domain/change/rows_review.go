@@ -37,11 +37,17 @@ func slopText(pr *PRInfo) string {
 	return "the slop rules are evaluated on " + h
 }
 
-// applicableChecks are the ids of the profile checks whose `when` matches a changed file (all when `when` is empty).
+// applicableChecks are the ids of the profile checks that run on this head.
 func applicableChecks(in In) []string {
+	return ApplicableChecks(in.Profile.Checks, in.Outside.ChangedFiles)
+}
+
+// ApplicableChecks are the ids of the checks whose `when` matches one of files (every check with an empty `when`). They
+// are the checks offered on a head: run_checks runs them, and E2 evidence must cite one of them.
+func ApplicableChecks(checks []ProfileCheck, files []string) []string {
 	var ids []string
-	for _, c := range in.Profile.Checks {
-		if len(c.When) == 0 || anyFileMatches(c.When, in.Outside.ChangedFiles) {
+	for _, c := range checks {
+		if len(c.When) == 0 || anyFileMatches(c.When, files) {
 			ids = append(ids, c.ID)
 		}
 	}
@@ -156,20 +162,11 @@ func attachProof(p *VerifyEvidencePayload, f FindingInfo) {
 	case f.Tier == finding.TierE3 && f.MemoryRef != nil:
 		p.Memory = &VerifyMemory{Ref: *f.MemoryRef, Agent: string(f.By)}
 	case f.Tier == finding.TierE2 && f.ToolResult != nil:
-		p.Check = &VerifyCheck{Name: checkNameFor(f.ToolResult.Tool), File: f.ToolResult.Location.File, Lines: f.ToolResult.Location.Lines}
+		p.Check = &VerifyCheck{ID: f.ToolResult.CheckID, File: f.ToolResult.Location.File, Lines: f.ToolResult.Location.Lines}
 	case f.ReproTest != nil:
 		p.TestPath, p.TestName = f.ReproTest.Path, f.ReproTest.Name
 		p.TestSource = base64.StdEncoding.EncodeToString([]byte(f.ReproTest.Content))
 	}
-}
-
-// checkNameFor maps the tool a reviewer names in tool_result evidence to the fixed check the runner knows. It goes with
-// the static job when profile checks replace it (HARNESS_DESIGN B7, H8).
-func checkNameFor(tool string) string {
-	if tool == "go vet" {
-		return CheckGoVet
-	}
-	return tool
 }
 
 func rowDeliberate() Row {

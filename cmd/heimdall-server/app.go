@@ -559,7 +559,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	mcpH, proposer, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager, runtime, rec.Needs)
+	mcpH, proposer, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager, runtime, rec.Needs, store)
 	if err != nil {
 		return nil, err
 	}
@@ -594,7 +594,7 @@ func executors(ad adapters, store ports.EventStore, profiles ports.ProfileStore,
 	if err != nil {
 		return nil, err
 	}
-	review, err := reviewExecutors(ad, sandbox, in, gen, clk, recheck)
+	review, err := reviewExecutors(ad, profiles, sandbox, in, gen, clk, recheck)
 	if err != nil {
 		return nil, err
 	}

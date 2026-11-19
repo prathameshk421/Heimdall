@@ -42,6 +42,8 @@ type Assignment struct {
 	// Rejection and Attempt are the test author's: why the last submission was refused, and which attempt this is.
 	Rejection []string
 	Attempt   int
+	// Leads are the profile check results on the head, one line each.
+	Leads []string
 }
 
 // ErrInvalidSubmission marks a problem the application found in what the agent submitted. Its message names only the
@@ -169,8 +171,10 @@ type Deps struct {
 	Cards     Cards
 	Files     KnowledgeFiles
 	Profiles  Profiles
-	// Sandbox runs the fixed static checks of heimdall_run_check through the runner. The tool exists only when it is set.
+	// Sandbox runs the profile checks of run_check through the runner.
 	Sandbox ports.Sandbox
+	// Checks lists the checks of the repository profile for run_check. The tool exists only when Sandbox and Checks are set.
+	Checks Checks
 	// Briefs adds the compiled brief to get_task. Without it, get_task falls to Cards.ForTask for personal_context.
 	Briefs Briefs
 	// Graph backs search_code and find_symbol. The tools exist only when it is set.
