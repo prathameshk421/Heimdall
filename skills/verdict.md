@@ -13,4 +13,4 @@
 
 **What is accepted.** `decision` is uphold, dismiss, amend, spec_change or needs_human. `rationale` is 10 to 1000 characters. `citations` are 1 to 16, each of kind run, memory, decision or finding, with a ref the case contains and a quote of at most 300 characters; the server re-verifies every one, and an invented ref fails the verdict. `confidence` is yours in the verdict, not the finding.
 
-**How to finish.** Call `submit_verdict` once with `case_id` as the task gives it. A new run or a new challenge round gives you a new task: count only new evidence.
+**How to finish.** Call `submit_verdict` once with `case_id` as the task gives it. Then stop; do not post in the room. A new run or a new challenge round gives you a new task: count only new evidence.

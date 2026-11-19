@@ -13,4 +13,4 @@
 
 **What is accepted.** `head_sha` is the head you read. `files_reviewed` lists files you read. Every path and line range exists at head. An E2 finding names a check id of the profile. `claim` 10 to 600 characters; `category` correctness, security, compat, ops, spec_drift, tests or style; `severity`; `confidence`. A finding outside the diff must be compat, ops or security. `rule_checks` has one entry per obligation card (violated, holds or not_applicable). At most 50 findings.
 
-**How to finish.** Call `submit_review` once. A push gives you a new task for the new head; a disputed finding goes to the resolver.
+**How to finish.** Call `submit_review` once. Then stop; do not post in the room. A push gives you a new task for the new head; a disputed finding goes to the resolver.
