@@ -29,3 +29,7 @@ in the shared checkout. This track works on `product-build` in its own worktree
 |---|---|---|---|---|
 | P1.7 any OpenAI-compatible endpoint | Claude Personal / Sonnet | `p1.7-model-endpoint` | merged into `heimdall-build` at `6237729` | make fast exit 0, 3440 tests; make verify and live model not verified; http to a named LAN host still refused |
 | A0 / P2.1a Proof Bench dataset and validator | Claude Personal / Opus | `p2.1-proof-bench` | running | |
+| Critic 3 on draft 2 | OpenCode / DeepSeek free | `CRITIC-v2.md` | running | |
+| A1 Action mode design | Claude Personal / Opus | `a1-action-design` | running | design doc only |
+| A9 board login and roles | Claude Personal / Opus | `a9-board-auth` | running | |
+| B1 OpenCode and Cursor session readers | Claude Personal / Sonnet | `b1-session-readers` | running | |
