@@ -87,3 +87,27 @@ The core promise, in one line: **nothing merges without proof, and the proof is 
 | F2 | Red-first bench: issue plus fix pairs; the test must fail before the fix and pass after (SWT-bench style) |
 | F3 | Nightly run on a fixed set of 20 repos in 5 languages, results in `docs/sota/RUNS.md` and on the site |
 | F4 | Dogfood: Heimdall gates its own repo on every PR |
+
+## G. Beyond the merge gate: what we would sell to make money (owner ask, Nov 21)
+
+Thesis under test (`research/08`): the asset is not the gate. It is a machine that proves agent work on the company's
+own VM: a no-network sandbox, red-first tests, evidence tiers, a deterministic gate, a person on the exact commit, and
+cheap models. Buyers pay for agent jobs whose result a machine can check. The merge gate is the trust layer every job
+passes through, for human PRs and agent PRs alike.
+
+One product line: **Heimdall, the company's own agents that only hand over work with proof.**
+
+| # | Job (each ends as a PR through the gate) | Machine-checkable proof | First guess |
+|---|---|---|---|
+| G1 | Fix broken dependency and CVE upgrade PRs (Dependabot/Renovate backlog) | Build and tests green, scanner shows the CVE gone | strong wedge candidate: backlog pain is common, outcome is binary |
+| G2 | CI failure triage, flaky test detection and fix | N reruns green, flake rate before and after | strong: CI pain [02 rank 8], cheap to verify |
+| G3 | Missing-test backfill on changed or legacy code | Mutation score and diff coverage up, tests fail on a planted mutant | reuses the test agent directly |
+| G4 | Version and framework migrations | Build and tests green on the new version | crowded (Moderne, OpenRewrite); later |
+| G5 | Evidence-backed PR review and merge gate (today's product) | E1/E2/E3 per finding | the trust layer |
+| G6 | Incident to repro test: from a stack trace or bug report, write the failing test first | The test fails on main | strong demo, fits red-first |
+| G7 | Security finding autofix (SARIF in, fix PR out) | Scanner clean and tests green | competes with Copilot Autofix, Snyk |
+| G8 | Lint and type debt burn-down at night | Lint count down, tests green | cheap, boring, sellable to platform teams |
+| G9 | Sell the sandbox runtime itself (rootless, no network, signed results) to other agent builders | Escape tests, provenance | different buyer; probably a distraction |
+
+Ways to charge that fit outcome jobs: per merged proof-carrying PR, per repo per month, or per VM licence. To test in
+`research/08` against Snyk/Mend autofix, Moderne, Devin, Factory and Copilot coding agent prices.
