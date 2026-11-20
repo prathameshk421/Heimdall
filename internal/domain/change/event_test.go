@@ -18,7 +18,7 @@ var catalog = []string{
 	"question.asked", "question.answered", "command.proposed", "command.confirmed",
 	"tests.submitted", "tests.verified", "tests.rejected", "tests.committed", "tests.approved",
 	"ticket.changed",
-	"pr.opened", "pr.pushed", "pr.linked", "pr.closed",
+	"pr.opened", "pr.pushed", "pr.linked", "pr.closed", "pr.reopened",
 	"slop.evaluated",
 	"reviewers.picked",
 	"review.submitted", "review.unavailable", "review.waived",
@@ -32,7 +32,7 @@ var catalog = []string{
 }
 
 func TestAllEventTypesMatchTheSpecCatalogInOrder(t *testing.T) {
-	require.Len(t, catalog, 50)
+	require.Len(t, catalog, 51)
 	var got []string
 	for _, et := range change.All() {
 		require.True(t, et.Valid(), et)

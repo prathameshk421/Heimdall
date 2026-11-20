@@ -49,7 +49,7 @@ type Outbox interface {
 // ErrEffectLeased is returned when a keyed effect is held by another worker's live lease.
 var ErrEffectLeased = errors.New("effect has a live lease")
 
-// OpenPRStream is one change whose latest pull request has no pr.closed event in the log.
+// OpenPRStream is one change whose latest pull request has no pr.closed event in the log, or a pr.reopened after it.
 type OpenPRStream struct {
 	Change id.ChangeID
 	Repo   change.Repo

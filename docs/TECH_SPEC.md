@@ -285,6 +285,7 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 | `tests.approved` | approver, tree hash (sensitive domains, D33) | Room or GitHub command |
 | `ticket.changed` | changed fields | Jira poller |
 | `pr.opened` / `pr.pushed` / `pr.linked` / `pr.closed` | number, head sha, author, ticket, merged | GitHub poller |
+| `pr.reopened` | repo, number, head sha. A PR closed without a merge is open again; the change resumes. A merged change stays merged (H11) | GitHub poller |
 | `slop.evaluated` | pass, failing rules | Rule |
 | `reviewers.picked` | people, by, method (dashboard, command, default) | Dashboard, command, timer |
 | `review.submitted` / `review.unavailable` / `review.waived` | reviewer, finding refs, pack date / reason / approver | Agent, engine, decision |

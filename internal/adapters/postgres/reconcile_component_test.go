@@ -72,12 +72,23 @@ func TestOpenChangesMatchesView_Over(t *testing.T) {
 		change.DecisionRecorded{Kind: change.DecisionReject, Target: "change", Login: "dev-alice", Reason: "no", SourceRef: "sw_1"}))
 	app("PAY-6", prEvent(t, "PAY-6", 1, change.EventDecisionRecorded,
 		change.DecisionRecorded{Kind: change.DecisionUphold, Target: "F1", Login: "dev-alice", Reason: "ok", SourceRef: "sw_2"}))
+	reopened := func(n int) change.PRReopened {
+		return change.PRReopened{Repo: "acme/pay", Number: n, HeadSHA: "1111111111111111111111111111111111111111"}
+	}
+	merged := closed(8)
+	merged.Merged = true
+	app("PAY-7", prEvent(t, "PAY-7", 1, change.EventPROpened, pr(7)), prEvent(t, "PAY-7", 2, change.EventPRClosed, closed(7)),
+		prEvent(t, "PAY-7", 3, change.EventPRReopened, reopened(7)))
+	app("PAY-8", prEvent(t, "PAY-8", 1, change.EventPROpened, pr(8)), prEvent(t, "PAY-8", 2, change.EventPRClosed, merged),
+		prEvent(t, "PAY-8", 3, change.EventPRReopened, reopened(8)))
+	app("PAY-9", prEvent(t, "PAY-9", 1, change.EventPROpened, pr(9)), prEvent(t, "PAY-9", 2, change.EventPRClosed, closed(9)),
+		prEvent(t, "PAY-9", 3, change.EventPRReopened, reopened(9)), prEvent(t, "PAY-9", 4, change.EventPRClosed, closed(9)))
 
 	got, err := s.OpenChanges(ctx)
 	require.NoError(t, err)
 
 	var want []id.ChangeID
-	for _, cid := range []id.ChangeID{"PAY-1", "PAY-2", "PAY-3", "PAY-4", "PAY-5", "PAY-6"} {
+	for _, cid := range []id.ChangeID{"PAY-1", "PAY-2", "PAY-3", "PAY-4", "PAY-5", "PAY-6", "PAY-7", "PAY-8", "PAY-9"} {
 		evs, err := s.Load(ctx, cid)
 		require.NoError(t, err)
 		v, err := change.Fold(evs)
@@ -87,7 +98,7 @@ func TestOpenChangesMatchesView_Over(t *testing.T) {
 		}
 	}
 	require.Equal(t, want, got, "the SQL and the fold agree on which changes are over")
-	require.Equal(t, []id.ChangeID{"PAY-1", "PAY-3", "PAY-6"}, got)
+	require.Equal(t, []id.ChangeID{"PAY-1", "PAY-3", "PAY-6", "PAY-7"}, got, "a reopen undoes an unmerged close only")
 }
 
 func TestDeadEffects(t *testing.T) {

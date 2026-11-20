@@ -12,16 +12,17 @@ import (
 
 var _ ports.PRStreams = (*Store)(nil)
 
-// openPRSQL selects the latest pr.opened of each change, and only when no pr.closed follows it (D56). A change with no
-// pr.opened is not selected. The version check keeps a change whose pull request closed from being listed again.
+// openPRSQL selects the latest pr.opened of each change, and only when each pr.closed after it has a later
+// pr.reopened (D56). A change with no pr.opened is not selected. The version check keeps a change whose pull request closed from being listed again.
 const openPRSQL = `
 SELECT o.change_id, o.payload
 FROM event o
 WHERE o.type = 'pr.opened'
   AND NOT EXISTS (SELECT 1 FROM event n
                   WHERE n.change_id = o.change_id AND n.type = 'pr.opened' AND n.version > o.version)
-  AND NOT EXISTS (SELECT 1 FROM event c
-                  WHERE c.change_id = o.change_id AND c.type = 'pr.closed' AND c.version > o.version)
+  AND NOT EXISTS (SELECT 1 FROM event x
+                  WHERE x.change_id = o.change_id AND x.type = 'pr.closed' AND x.version > o.version
+                    AND NOT EXISTS (` + reopenedAfterSQL + `))
 ORDER BY o.change_id`
 
 // OpenPRStreams implements ports.PRStreams. It reads the event log only.

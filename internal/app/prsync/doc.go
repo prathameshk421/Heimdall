@@ -22,7 +22,8 @@
 //
 //  1. Intake.HandlePR is called to register the pull request and evaluate slop.
 //  2. Closed pull requests: if the PR state is closed, pr.closed is appended once with the merged flag. Reviews and check
-//     runs are skipped for closed PRs.
+//     runs are skipped for closed PRs. An open PR that the stream last recorded as closed without a merge gets one
+//     pr.reopened, and the change resumes; a later close appends pr.closed again (found live in H11).
 //  3. Reviews: for open pull requests, reviews on the current head commit from logins other than the PR author in state
 //     "approved" produce approval.recorded events. Invariant 1 prohibits agents from recording approvals. If an
 //     approver later dismisses their review or requests changes, approval.invalidated is appended. Reviews for old heads

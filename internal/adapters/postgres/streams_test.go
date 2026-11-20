@@ -55,10 +55,15 @@ func TestOpenPRStreamsListsOnlyPullRequestsStillOpen(t *testing.T) {
 	// PAY-3: a room only, no pull request. Not listed.
 	_, err = store.Append(ctx, "PAY-3", 0, roomEvents("PAY-3", 0, "room-3"), nil)
 	require.NoError(t, err)
+	// PAY-4: closed without a merge, then reopened (H11). Listed again.
+	_, err = store.Append(ctx, "PAY-4", 0, []change.Event{prEvent(t, "PAY-4", 1, change.EventPROpened, opened(4)),
+		prEvent(t, "PAY-4", 2, change.EventPRClosed, change.PRClosed{Repo: repo, Number: 4, HeadSHA: "1111111111111111111111111111111111111111"}),
+		prEvent(t, "PAY-4", 3, change.EventPRReopened, change.PRReopened{Repo: repo, Number: 4, HeadSHA: "1111111111111111111111111111111111111111"})}, nil)
+	require.NoError(t, err)
 
 	got, err := store.OpenPRStreams(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []ports.OpenPRStream{{Change: "PAY-1", Repo: repo, Number: 1}}, got)
+	require.Equal(t, []ports.OpenPRStream{{Change: "PAY-1", Repo: repo, Number: 1}, {Change: "PAY-4", Repo: repo, Number: 4}}, got)
 
 	// A restart is a new Store on the same database. It reads the same streams.
 	again, err := NewStore(db.pool).OpenPRStreams(ctx)

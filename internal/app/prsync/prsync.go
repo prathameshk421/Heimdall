@@ -264,6 +264,12 @@ func (s *Syncer) syncPR(ctx context.Context, repo change.Repo, pr ports.PR, res 
 		return nil
 	}
 
+	reopened, err := s.appendReopenedOnce(ctx, changeID, repo, pr)
+	if err != nil {
+		return err
+	}
+	res.Appended += reopened
+
 	reviews, err := s.reviews.PRReviews(ctx, repo, pr.Number)
 	if err != nil {
 		return fmt.Errorf("read reviews for %s#%d: %w", repo, pr.Number, err)
@@ -282,26 +288,34 @@ func (s *Syncer) syncPR(ctx context.Context, repo change.Repo, pr ports.PR, res 
 	return nil
 }
 
-func hasClosedEvent(events []change.Event, repo change.Repo, number int) bool {
+// prClosedState reports how the stream last recorded pull request number of repo: closed (true) after its newest
+// pr.closed, open again after a later pr.reopened, and whether that close was a merge.
+func prClosedState(events []change.Event, repo change.Repo, number int) (closed, merged bool) {
 	for _, e := range events {
 		if e.Type == change.EventPRClosed {
 			var p change.PRClosed
 			if err := json.Unmarshal(e.Payload, &p); err == nil && p.Repo == repo && p.Number == number {
-				return true
+				closed, merged = true, p.Merged
+			}
+		}
+		if e.Type == change.EventPRReopened && !merged {
+			var p change.PRReopened
+			if err := json.Unmarshal(e.Payload, &p); err == nil && p.Repo == repo && p.Number == number {
+				closed = false
 			}
 		}
 	}
-	return false
+	return closed, merged
 }
 
-// appendClosedOnce ensures a closed pull request has exactly one pr.closed event appended.
+// appendClosedOnce ensures a closed pull request has one pr.closed event after its last reopen.
 func (s *Syncer) appendClosedOnce(ctx context.Context, changeID id.ChangeID, repo change.Repo, pr ports.PR) (int, error) {
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		events, err := s.events.Load(ctx, changeID)
 		if err != nil {
 			return 0, fmt.Errorf("load stream %s: %w", changeID, err)
 		}
-		if hasClosedEvent(events, repo, pr.Number) {
+		if closed, _ := prClosedState(events, repo, pr.Number); closed {
 			return 0, nil
 		}
 
@@ -330,19 +344,51 @@ func (s *Syncer) appendClosedOnce(ctx context.Context, changeID id.ChangeID, rep
 	return 0, ports.ErrVersionConflict
 }
 
-func (s *Syncer) buildClosedEvent(changeID id.ChangeID, repo change.Repo, pr ports.PR, expected int64) (change.Event, error) {
-	payload := change.PRClosed{
-		Repo:    repo,
-		Number:  pr.Number,
-		HeadSHA: pr.HeadSHA,
-		Merged:  pr.Merged,
+// appendReopenedOnce appends pr.reopened when GitHub lists a pull request as open that the stream last recorded as
+// closed without a merge (found live in H11: a reopened PR left its change over). A merged PR is never reopened.
+func (s *Syncer) appendReopenedOnce(ctx context.Context, changeID id.ChangeID, repo change.Repo, pr ports.PR) (int, error) {
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		events, err := s.events.Load(ctx, changeID)
+		if err != nil {
+			return 0, fmt.Errorf("load stream %s: %w", changeID, err)
+		}
+		if closed, merged := prClosedState(events, repo, pr.Number); !closed || merged {
+			return 0, nil
+		}
+		var expected int64
+		if len(events) > 0 {
+			expected = events[len(events)-1].Version
+		}
+		ev, err := s.buildPREvent(changeID, change.EventPRReopened,
+			change.PRReopened{Repo: repo, Number: pr.Number, HeadSHA: pr.HeadSHA}, expected)
+		if err != nil {
+			return 0, err
+		}
+		_, err = s.events.Append(ctx, changeID, expected, []change.Event{ev}, nil)
+		if errors.Is(err, ports.ErrVersionConflict) && attempt < maxRetries {
+			continue
+		}
+		if err != nil {
+			return 0, fmt.Errorf("append pr.reopened to %s: %w", changeID, err)
+		}
+		return 1, nil
 	}
+	return 0, ports.ErrVersionConflict
+}
+
+func (s *Syncer) buildClosedEvent(changeID id.ChangeID, repo change.Repo, pr ports.PR, expected int64) (change.Event, error) {
+	return s.buildPREvent(changeID, change.EventPRClosed,
+		change.PRClosed{Repo: repo, Number: pr.Number, HeadSHA: pr.HeadSHA, Merged: pr.Merged}, expected)
+}
+
+// buildPREvent builds one checked GitHub event of type typ at the version after expected.
+func (s *Syncer) buildPREvent(changeID id.ChangeID, typ change.EventType, payload change.Payload, expected int64) (change.Event, error) {
 	if err := payload.Validate(); err != nil {
-		return change.Event{}, fmt.Errorf("payload of pr.closed: %w", err)
+		return change.Event{}, fmt.Errorf("payload of %s: %w", typ, err)
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		return change.Event{}, fmt.Errorf("encode pr.closed: %w", err)
+		return change.Event{}, fmt.Errorf("encode %s: %w", typ, err)
 	}
 
 	eid := s.ids.NewEvent()
@@ -350,17 +396,17 @@ func (s *Syncer) buildClosedEvent(changeID id.ChangeID, repo change.Repo, pr por
 		ID:            eid,
 		ChangeID:      changeID,
 		Version:       expected + 1,
-		Type:          change.EventPRClosed,
+		Type:          typ,
 		Actor:         change.Actor{Kind: change.ActorGitHub, ID: githubActorID},
 		OccurredAt:    s.clock.Now().UTC(),
 		CorrelationID: change.CorrelationID(eid.String()),
 		Payload:       raw,
 	}
 	if err := ev.Validate(); err != nil {
-		return change.Event{}, fmt.Errorf("pr.closed for %s: %w", changeID, err)
+		return change.Event{}, fmt.Errorf("%s for %s: %w", typ, changeID, err)
 	}
 	if _, err := change.Decode(ev); err != nil {
-		return change.Event{}, fmt.Errorf("decode pr.closed for %s: %w", changeID, err)
+		return change.Event{}, fmt.Errorf("decode %s for %s: %w", typ, changeID, err)
 	}
 	return ev, nil
 }
