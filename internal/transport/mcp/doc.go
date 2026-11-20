@@ -7,20 +7,27 @@
 //
 // # Purpose
 //
-// Turn an agent's tool call into a checked request: authenticate the agent token, check the agent's role against
-// the tool, check the call against the agent's one active task, bound what goes back, and hand the rest to the
-// application. Tool table: TECH_SPEC 14.1. Wire tool names are bare: the server lists and accepts get_task, not
+// Turn an agent's tool call into a checked request: authenticate the agent token, offer only the tools of the kind
+// of task the agent holds, check the call against the agent's one active task, bound what goes back, and hand the
+// rest to the application. Tool table: TECH_SPEC 14.1. Wire tool names are bare: the server lists and accepts get_task, not
 // heimdall_get_task. OpenCode adds the heimdall_ prefix on the model side, from the server key heimdall.
 //
-// Tools built here: get_task, ack, get_change, read_untrusted, read_code, submit_tests, submit_review,
-// submit_verdict, ask_humans, report_progress, propose_command. The rest of the table (ask_knowledge, run_check,
-// challenge) belongs to later tasks.
+// Tools are offered by the kind table (workflow.Kind.Tools, H7) plus the shared ones (get_task, report_progress,
+// propose_command): tests hold read_code, search_code, ask_humans and submit_tests; review holds the code tools,
+// run_check, ask_knowledge, read_card, stage_knowledge and submit_review; verdict holds read_code, run_check, read_card,
+// ask_knowledge and submit_verdict; profile holds the profile tools. approve_profile, promote_profile,
+// approve_knowledge and forget_knowledge are for people only. A tool whose dependency failed the boot self-check is
+// withheld (Deps.Withheld, H9): not listed, and a call gets the unknown-tool answer. The ack, get_change and
+// read_untrusted tools are deleted (H7).
 //
-// When their dependency is set, the server also has search_code and find_symbol (Deps.Graph), for a reviewer or a
-// resolver, always at the head commit of the assignment. get_task adds the brief (Deps.Briefs): personal_context,
-// change_map, prior_findings, team_memory and your_record. Each section comes inside its own untrusted wrapper, and a
-// failed section or brief never costs the task. A test author gets no brief and no code tools, because it reads only
-// the base commit. submit_review names the obligation cards that rule_checks left out. This is a nudge and never a
+// get_task answers one JSON object: the task, the kind's skill text, every input rendered at call time
+// (internal/app/taskinput; untrusted text wrapped once) and the change's needs. Its first call of a task records
+// task.acked.
+//
+// search_code and find_symbol need their dependency (Deps.Graph) and work at the commit of the assignment. A review
+// task's inputs include the brief sections (Deps.Briefs): obligations, prior findings, team memory and the record.
+// Each section comes inside its own untrusted wrapper, and a failed section becomes a note and never costs the task.
+// A test author reads only the base commit. submit_review names the obligation cards that rule_checks left out. This is a nudge and never a
 // refusal. The last brief of a task is held in memory, and a partial one is compiled again on the next get_task.
 //
 // # API
@@ -30,8 +37,7 @@
 //     leaves this package (to Tokens.Resolve).
 //   - Tokens.Resolve(ctx, hash): the principal of a stored hash, or ports.ErrUnauthorized when unknown or revoked.
 //   - Tasks: the application side of the agent's task. Current returns the agent's one active Assignment, or
-//     ErrNoTask. Ack, SubmitTests, AskHumans and Progress carry out the effects. The app package does not exist
-//     yet, so this interface is the contract it will satisfy (T23, T30).
+//     ErrNoTask. Ack, SubmitTests, AskHumans and Progress carry out the effects (internal/app/agenttools).
 //   - Reviews: the application side of reviews and verdicts. SubmitReview and SubmitVerdict record the outputs.
 //     SubmitReceipt carries per-finding errors for invalid findings so the reviewer can correct them.
 //   - Code and Blobs: narrow read-side ports (ReadFile, Get) the edge needs, declared here as consumer interfaces.
@@ -46,17 +52,16 @@
 //     or put in an error. The logger sees one INFO "mcp request" line per /mcp request (method, tool, role, agent,
 //     status, duration_ms), one WARN per refused token (remote address, no token), the tool name, agent, role and
 //     outcome of each tool call, never arguments.
-//   - A tool is listed and callable only for the roles of TECH_SPEC 14.1. A call to a tool the role does not have
+//   - A tool is listed and callable only for the kind the role holds. A call to a tool the kind does not hold
 //     gets the same answer as an unknown tool (JSON-RPC invalid params), so the list is not an oracle.
 //   - Every tool except the protocol methods works on the agent's own active task. The envelope's role must equal
 //     the token's role, or the call is refused.
 //   - Text that someone outside the system wrote, and repository code (the head can be an outsider's PR), comes back
 //     only inside an untrusted wrapper: a fixed preface, a random 128-bit boundary generated per response, and the
 //     content between two boundary lines. The output is capped at ports.MaxUntrustedText bytes and says so when cut.
-//   - read_untrusted only reads a blob the agent's own envelope names (its diff, its criteria or its untrusted
-//     inputs). read_code only reads the base SHA for test-author, and base or head for the other roles.
-//   - Acknowledgement must come within 60 s of the assignment (TECH_SPEC 6.2); a later ack is refused. A repeat ack
-//     is accepted and changes nothing.
+//   - read_code only reads the base SHA for test-author, and base or head for the other roles.
+//   - The first get_task of a task records task.acked, once, before the deadline (TECH_SPEC 6.2). A repeat call
+//     records nothing.
 //   - submit_tests validates with testset.Submission.Validate against the envelope's acceptance criteria and the
 //     tests directory tests/heimdall/<change id> (D150). A submission after the deadline is passed on as late.
 //   - submit_review validates with finding.Review.Validate, checks head_sha, and passes to Reviews.SubmitReview.
@@ -84,11 +89,10 @@
 //   - No SDK: the JSON-RPC surface is small (initialize, ping, tools/list, tools/call), so it is written here with the
 //     standard library and no new dependency.
 //   - Progress rate limit is held in memory per process. A restart resets it. Persisting it belongs to the app.
-//   - read_code and read_untrusted both wrap their text, and read_code allows the head SHA for every role except
+//   - read_code wraps its text, and read_code allows the head SHA for every role except
 //     test-author, because the head is the change under review. read_code numbers the lines ("12: text") so an
 //     agent can cite file:line. The wrapper preface and the cut note are fixed server text.
 //   - Protocol revisions: the server speaks 2025-06-18 and 2025-03-26. An unknown revision gets 2025-06-18.
-//   - get_change answers from the envelope only, because the Tasks port has no other read of the change.
 //   - submit_tests checks the tests directory tests/heimdall/<change id> (D150). Its schema is generated from
 //     testset.Submission, so the wire form and the validator cannot drift.
 //   - ask_humans takes 1 to 3 questions of at most 400 characters each. The spec gives the count only; the length

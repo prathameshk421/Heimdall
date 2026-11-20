@@ -17,7 +17,8 @@
 //   - Kicking: an event store that kicks after each successful append.
 //   - Recorder.Record(ctx, change, build): the one way any other component appends; loads, folds, calls build,
 //     numbers the events, retries a conflict.
-//   - InputSource: what the rows need from outside the log (policy, outside facts, profile, the old bundle).
+//   - InputSource: what the rows need from outside the log (the policy at a commit, the gate's outside facts, the
+//     promoted profile), cached for a minute.
 //
 // # Invariants
 //

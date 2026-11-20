@@ -5,8 +5,8 @@
 //
 // # Purpose
 //
-// Roles and kinds are data in one place, so the bundle, the wake line, the board and the reconciler read one table and
-// nothing switches on a role. The package does no I/O.
+// Roles and kinds are data in one place, so get_task, the tool table, the wake line, the board and the reconciler
+// read one table and nothing switches on a role. The package does no I/O.
 //
 // # API
 //

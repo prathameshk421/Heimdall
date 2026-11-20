@@ -141,7 +141,7 @@ The answer is `{"status":"ok"}`. `docker compose ps heimdall-server` shows `heal
 
 - `changes triggered` — a Jira poll found a status move to In Progress on a human-assigned ticket and started changes. A healthy poll with nothing to do logs nothing, so this line appears only when a ticket moves.
 - `ticket poll failed; the next poll retries` — the Jira poll failed; the server keeps the cursor and retries. A healthy poll is the absence of this line.
-- `outbox effect failed` — one effect (room open or branch create) failed and will retry; the `kind` and `key` fields name it.
+- `outbox effect failed` — one job failed and will retry, up to 8 times; the `kind` and `key` fields name it.
 - `outbox drain failed; retrying on the next wake or tick` — a batch could not be claimed or recorded; the loop carries on.
 - `outbox drainer stopped` — the drain loop ended; the server is shutting down or the loop hit a fatal error.
 - `heimdall-server did not run` — startup failed; the `error` field names the bad key or secret file, never its value.
@@ -161,6 +161,39 @@ The server hands test jobs to `heimdall-runner` over `/run/heimdall-runner/runne
 ```bash
 ssh heimdall-vm 'systemctl status heimdall-runner --no-pager'
 ```
+
+## How work moves: the reconciler, the sweep and dead jobs (H5, H12)
+
+There is no workflow engine, no timer loop, no gate refresher and no nudge loop any more. One component, the
+reconciler, starts all work (TECH_SPEC 5.2). Every writer only records facts.
+
+- **Kicks.** Each successful append to a change kicks that change, and the reconciler runs it at once. A kick can be
+  dropped when the queue is full; nothing depends on it.
+- **The sweep.** Every 30 s the reconciler runs every change that is not over. This is the guarantee: a lost kick, a
+  restart or a transient error is picked up within 30 s. A change that sits still for longer than a minute is waiting
+  on something, and `Missing` says what.
+- **Where to look.** `Missing` (every open need in plain words, the person or agent it waits on, the unmet gate
+  clauses and the dead jobs) reaches agents through `get_task` today. No page or room message shows it to people yet
+  (one status message per change is A7, Later). The `heimdall/gate` check on the PR shows the unmet gate clauses. For
+  dead and stuck jobs read the `outbox_dead` and `outbox_in_doubt` views in Postgres. The server log has `reconcile failed` (one change, with
+  the error) and `sweep failed` (the whole pass). A `reconcile failed` line that repeats every 30 s for one change
+  means an input could not be read (the policy at the merge base, the promoted profile, or a GitHub read for the
+  gate). Fix the cause; the next sweep picks it up. Do not restart the server for it.
+- **Quiet agents.** The reconciler wakes a quiet agent again after 3 minutes without an ack or 10 minutes without a
+  call, probes the model provider, resets the agent, and then fails the task and assigns a fresh one. Each step is a
+  fact on the change (`task.rewoken`, `provider.probed`, `task.failed`). If the provider refuses, `Missing` says "the
+  model provider refuses" and nothing is posted until it answers again. Note: `agent_reset` has no executor yet, so
+  that job fails and the ladder goes on.
+- **Dead jobs.** An outbox job that fails 8 times is dead; a job that started and lost its claim is in doubt. Neither
+  is retried by itself. Each one is a need in `Missing`: "<kind> failed <n> times: <last error>; `heimdall resume
+  <change> <row>` runs it again". Fix the cause first (credentials, a GitHub permission, the runner), then a person in
+  `people:` sends `heimdall resume <change> <row>` in the room. The resume appends `step.resumed`, every job key of
+  that row ends in a new `/r<n>`, and the next Run starts the job again. For `write_tests` a resume also allows three
+  more test attempts.
+- **Known defect (H12, not fixed).** The resume command still refuses a row that has no `step.escalated` event, and
+  the reconciler never writes that event. So today `heimdall resume` answers "step <row> is not escalated, so there is
+  nothing to resume" for a dead job. Until that is fixed, a dead job needs an operator: reset that one outbox row's
+  `attempts` to 0 by SQL on its key, as on KAN-9. See `docs/PROGRESS.md` H12.
 
 ## Boot reconciliation (A5)
 

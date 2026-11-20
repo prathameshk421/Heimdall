@@ -1,6 +1,6 @@
 // Package liveness decides what to do about a quiet agent (AGENT_INTERACTION_ARCH 6.3, H6). Next is a pure function
 // of facts: when the task began, when this agent last called Heimdall, what the board already did, and the model
-// provider's health. No ladder is stored; the nudge loop only carries out what Next returns.
+// provider's health. No ladder is stored; the reconciler carries out what Next returns on each Run (TECH_SPEC 6.2).
 package liveness
 
 import "time"

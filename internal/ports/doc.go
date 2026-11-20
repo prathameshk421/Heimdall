@@ -11,15 +11,22 @@
 //	BranchWriter        test-author flow                 adapters/github             T24
 //	CheckWriter         gate                             adapters/github             T24
 //	CodeReader          test pin, sandbox source         adapters/github             T24
-//	AgentRuntime        task engine                      adapters/switchroom         T26 (runtime T27)
+//	AgentRuntime        reconciler tasks (6.2)           adapters/switchroom         T26 (runtime T27)
 //	Sandbox             red-first, repro flows           adapters/docker (runner)    T15, jobs T29
 //	Memory              decisions, ask_knowledge         adapters/graphiti           T49
 //	Chat                rooms, Switch stream, milestones adapters/switch             T26
 //	TicketReader        trigger poll, AC parsing         adapters/jira, adapters/file T25
 //	TicketWriter        outbox drainer (policy-gated)    adapters/jira, adapters/file T25
-//	BlobStore           sandbox logs, bundles, packs     adapters/blobfs            T42 (first user)
+//	BlobStore           sandbox logs, submissions, packs adapters/blobfs            T42 (first user)
 //	Clock               every use case                   internal/platform          T17
 //	IDs                 every use case that makes ids    internal/platform          T17
+//	EffectEnsurer       reconciler (jobs with no fact)   adapters/postgres           H3
+//	OpenChanges         reconciler sweep                 adapters/postgres           H3
+//	DeadEffects         reconciler, Missing              adapters/postgres           H3
+//	ToolCalls           reconciler liveness              adapters/postgres           H3
+//	ModelHealth         reconciler provider probe        adapters/openrouter         H3
+//	TaskIndex           get_task (the active task)       adapters/postgres           T23
+//	ProfileStore        run_checks, verify, run_check    adapters/postgres           H8
 //
 // Public API. The value types the ports exchange (PR, ChangedFile, File, Check, AgentRef, WakeResult, Liveness,
 // SandboxJob, SandboxResult, TestResult, Episode, MemoryQuery, MemoryItem, Ticket, Criterion, TicketChange,
@@ -32,8 +39,8 @@
 // caller: MemoryQuery.Groups must be set, and a Memory adapter never widens them (TECH_SPEC 9.4). Untrusted text
 // (PR bodies, ticket descriptions, room messages) is bounded by MaxUntrustedText. Jira acceptance criteria are the
 // deliberate exception to event omission: the trigger captures their immutable text, SHA-256 and blob ref so replay
-// preserves the source. Bundles and task envelopes carry only refs, and MCP returns the text only through
-// read_untrusted (TECH_SPEC 6.3).
+// preserves the source. Events carry only refs to untrusted text; get_task renders the text at call time inside an
+// untrusted wrapper (TECH_SPEC 6.2, 6.3).
 //
 // Deliberate differences from TECH_SPEC 2.3. The spec's VCS interface has seven methods, so it is split by consumer
 // into PRReader, PRComments, BranchWriter, CheckWriter and CodeReader; the same methods, in the same signatures

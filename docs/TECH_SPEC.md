@@ -277,8 +277,8 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 |---|---|---|
 | `change.triggered` | ticket, repo, assignee, trigger source; Jira acceptance criteria as ordered `{id, text, hash, ref}` values | Jira webhook or fallback |
 | `room.opened`, `branch.ensured` | room id; branch, base sha | Adapters |
-| `task.assigned` / `task.acked` / `task.timed_out` / `task.failed` / `task.progress` | task id, agent, role, deadline, bundle hash, reason or bounded progress text | Engine / agent tool |
-| `step.retried` / `step.escalated` / `step.resumed` | step id, attempt, reasons / attempts, reason / step id, by | Engine (on_fail, 5.1); `step.resumed` is a person releasing an escalated step (A10 item 5) |
+| `task.assigned` / `task.acked` / `task.superseded` / `task.rewoken` / `task.timed_out` / `task.failed` / `task.progress` | task id, agent, role, kind, subject, input, deadline (old events: bundle hash); reason; wake count; bounded progress text | Reconciler (6.2) / agent tool |
+| `step.retried` / `step.escalated` / `step.resumed` | step id, attempt, reasons / attempts, reason / step id, by | Old events only for `step.retried` and `step.escalated` (the engine is deleted, 5.1); `step.resumed` is a person re-arming a row (`heimdall resume`, 5.1) |
 | `question.asked` / `question.answered` | ids, refs, sender, message id | test-author, room sync |
 | `command.proposed` / `command.confirmed` | trigger message, sender, person, command text, verb, proposing agent, head sha / trigger, sender, message id | Board, for an agent's `propose_command` (AGENT_INTERACTION_ARCH 5.3) |
 | `tests.submitted` / `tests.verified` / `tests.rejected` / `tests.committed` | refs, AC map, run ids, reasons, sha, tree hash; `tests.verified` also carries `needs_signoff`, set by the engine from policy (sensitive paths and labels, D131, D33): true sends the change to AWAITING_TEST_SIGNOFF, false to TESTS_READY | Agent, sandbox, GitHub, engine |
@@ -309,7 +309,7 @@ fails only on a payload that does not decode.
 
 - **A request is refused before it becomes an event**, by a predicate on the current view: `CanSubmitTests`,
   `CanApproveTests`, `CanReview`, `CanReportOnTask`, joined by `CanAppend`. A refusal wraps `ErrRefused`.
-- **What a change still needs is `Missing(view, policy)`**: a workflow row (5.1) whose `after` rows are done and which
+- **What a change still needs is `Missing(view, policy)`**: a row (5.1) whose `after` rows are done and which
   is not done itself, in workflow order, then the clauses of the merge rule (12.4) that the view can decide.
 - `Stage(view)` is a label for people. Nothing branches on it.
 - The JSON shape of the view, every fold rule and the words of every need are specified in
@@ -376,52 +376,88 @@ Nightly `pg_dump` and blob rsync off-box, plus a nightly FalkorDB RDB snapshot. 
 
 ---
 
-## 5. Workflow engine
+## 5. Rows and the reconciler (D170)
 
-### 5.1 Workflow shape (a Go value in the build, D54; the YAML loader is Later)
+The workflow engine, its timers, the gate refresher and the nudger are deleted (H5). What a change needs is a table of
+rows in the domain, and one component, the reconciler, starts all work. The design is `HARNESS_DESIGN.md` Part B
+sections B1 to B3; this section is the contract.
 
-```yaml
-workflow:
-  version: 1
-  steps:
-    - { id: open_room,   on: "jira.transitioned{to:'In Progress',assignee:human}", do: switch.open_room, with: { invite: [role:test-author, person:$assignee] } }
-    - { id: branch,      after: open_room,   do: github.ensure_branch, with: { name: "{ticket}-{slug}" } }
-    - { id: write_tests, after: branch,      do: agent.task, with: { role: test-author, output: TestSubmission@1, deadline: 2h } }
-    - { id: test_qa,     after: write_tests, do: sandbox.test_quality, with: { checks: [red_first, ac_coverage, flake, contracts] },
-        on_fail: { retry: write_tests, until: task_budget, then: escalate } }
-    - { id: commit,      after: [test_qa, signoff], do: github.commit_tests, with: { dir: "tests/heimdall/{ticket}" } }
-    - { id: wait_pr,     after: commit,      do: wait, with: { event: pr.opened } }
-    - { id: slop,        after: wait_pr,     do: rule.slop, on_fail: reject }
-    - { id: pick,        after: slop,        do: human.pick_reviewers, with: { default: suggest, timeout: 1m } }
-    - { id: review,      after: pick,        do: agent.fanout, with: { role: reviewer, from: review_requests, output: Review@1, deadline: 30m } }
-    - { id: verify,      after: review,      do: sandbox.verify_evidence }
-    - { id: signoff,     after: test_qa,     do: human.approve_tests, when: sensitive_domain }   # D33
-    - { id: mutation,    after: review,      do: sandbox.mutation, with: { scope: changed_lines } }   # Later
-    - { id: deliberate,  after: verify,      do: deliberation.run, with: { resolver: role:resolver, max_rounds: 2 } }
-    - { id: gate,        on: any,            do: rule.merge_allowed }
-```
+### 5.1 Two flows, one row table
 
-The same shape becomes YAML later. Whether built in Go or loaded from YAML, the workflow is validated at start:
-- the graph is a DAG apart from declared retries;
-- every `after` and every role exists;
-- every output schema is registered;
-- every timeout is bounded.
+A change is one event stream: a ticket key, or `pr-<repo>-<n>` for a pull request that names no ticket (D146). It
+carries up to two flows. Each flow starts on its own fact and needs nothing from the other.
 
-An invalid workflow fails closed with `policy_invalid`. Adding a stage, such as a performance reviewer, is one step plus a skill.
+| Flow | Starts on | Rows |
+|---|---|---|
+| tests | `change.triggered` (a ticket moved to In Progress) | `branch`, `write_tests`, `test_qa`, `signoff`, `commit` |
+| review | `pr.opened` | `slop`, `checks`, `pick`, `review`, `verify`, `deliberate`, `acceptance`, `gate` |
+| both | the first fact of the change | `open_room` |
 
-### 5.2 Step contract
+The table is `internal/domain/change/rows.go`, `rows_tests.go` and `rows_review.go`:
 
 ```go
-type Step interface {
-    Type() string
-    Start(ctx context.Context, c ChangeView, with json.RawMessage) (Result, error)
-    OnEvent(ctx context.Context, c ChangeView, e domain.Event) (Result, error)
-    OnTimeout(ctx context.Context, c ChangeView) (Result, error)
+type Row struct {
+    ID    string
+    Flow  Flow
+    After []string          // rows that must be done first
+    Jobs  []EffectKind      // the job kinds this row may start (checked at start-up, H9)
+    Done  func(In) bool
+    Next  func(In) []Action // asked only when the flow has started, every After row is done and Done is false
 }
-type Result struct { Events []domain.Event; Effects []domain.Effect; Timers []Timer }
+
+// In is everything a row may read: the folded view, the policy at the merge base, the outside facts of the gate,
+// the promoted profile, the settings, the dead jobs of this change and the time. Rows do no I/O.
+type In struct { View View; Policy policy.Policy; Outside Outside; Profile Profile; Settings Settings; Dead []DeadJob; Now time.Time }
+
+// Action is exactly one of Job (an outbox effect), Fact (an event the server decides from In alone), Task (agent
+// work of a kind, for a subject, on an input) or Ask (a person must act). Text is the need in plain words.
+type Action struct { Job *Job; Fact Payload; Task *Task; Ask *Ask; Text string }
 ```
 
-Steps do no I/O themselves. They return events, effects and timers; the engine persists them in one transaction, and the outbox and River dispatch them. That makes every run replayable and every step unit-testable.
+- A PR that names a ticket with no change starts that change; the trigger later adds `change.triggered` and the tests
+  rows open. A PR opened before its tests are committed is reviewed at once; its gate names the unmet test clauses.
+- A ticketless PR runs the review flow like any other. The policy's `require_ticket` decides whether slop fails it.
+- **Retries are rows.** A rejected submission leaves `write_tests` open with a new input (`attempt-<n>`). A new head
+  leaves `review` open for every seat with a new input (`head-<sha>`). There is no `on_fail`, no `step.retried` and no
+  `step.escalated` any more; old events of those types still decode.
+- **Job keys name their input** (submission ref, head, resume count). A new input is a new job; the same input runs
+  once. Payloads hold only values from `In`, never the clock or a fresh id, so one key always means one content.
+- **`Missing(in) []Need`** is the board, the status line and the `needs` of `get_task`: for each open row in table
+  order the `Text` of its actions, then the unmet gate clauses (12.4), then one need per dead job. There is no second
+  table.
+- **Re-arming.** `View.Resumes` counts `step.resumed` events per row. Every job key ends with `/r<n>`, so
+  `heimdall resume <change> <row>` makes a new key and the job runs again. A resume of `write_tests` also allows
+  `Settings.TestAttempts` more attempts.
+
+### 5.2 The reconciler
+
+`internal/app/reconcile` is the only component that starts work.
+
+```
+Run(ctx, change):                 // serialized per change
+  up to 5 times:
+    load the log; build In (fold, policy, outside facts, profile, settings, dead jobs, now)
+    actions := Next of every open row, plus the task decisions (6.2)
+    if there are facts: Append(change, version, facts, jobs)   // the jobs attach to the last fact
+    else if there are jobs: EnsureEffects(change, jobs)       // attached to the newest event
+    on ErrVersionConflict: load again and decide again
+```
+
+- **When it runs.** After every successful append to the change: `reconcile.Kicking` wraps the event store of every
+  writer and kicks the change once `Append` returns nil. A kick is a non-blocking send to one worker; a full queue drops
+  the kick. Every 30 s `Sweep` runs every change that is not over (`ports.OpenChanges`). The sweep is the guarantee;
+  kicks only make it fast. Nothing else calls `Run`.
+- **Writers record facts only.** Intake, prsync, the trigger, the agent tools, operator commands and the executors
+  append through `Recorder.Record(ctx, change, build)`: load, fold, build, number the events, fill causation and
+  correlation, append, retry a conflict up to 5 times. They decide nothing and start nothing.
+- **Executors** perform one outbox job and record its fact. They hold no "already done" check: a fact recorded twice
+  folds to the same view. A crash between the outside action and its fact can repeat the action once on retry.
+- **Failures are needs, not silence.** If `In` cannot be built (policy, profile or outside facts unreadable), `Run`
+  logs the error and returns it, and the sweep retries. No row sees an empty default in place of an unread input. A
+  job that is dead or in doubt is a need with its last error and the resume line; nothing loops on it.
+- **Start-up check (H9).** The server refuses to start unless every job kind a row may start has an executor and every
+  kind in the kind table (6.1) has its tools. A dependency that fails the boot self-check withholds its tools and shows
+  in `/healthz` `degraded`.
 
 ---
 
@@ -439,14 +475,46 @@ Steps do no I/O themselves. They return events, effects and timers; the engine p
 
 Each LLM role is a skill plus the `heimdall` MCP tools. **VM agents run on OpenCode with OpenRouter (D72)**: Switch supports OpenCode agents (V18), OpenCode talks to OpenRouter natively, and Claude Code is not used on the VM because it only officially supports Anthropic models. No Anthropic API is used anywhere. Under OpenCode the model id carries the provider, `openrouter/deepseek/deepseek-v4-flash`, because Switch splits it at the first slash (D143). The skills stay portable to Claude Code and Codex for developers' own laptops.
 
-### 6.2 Task lifecycle
+### 6.2 Task lifecycle and the task index
 
-1. `task.assigned` (deadline, budget, bundle hash) → the outbox posts an addressed room message: `@bob-reviewer you have a new task. Call heimdall_get_task.` The task id is not posted, because the agent's token finds it (D156). An agent has at most one active task; others queue (D80).
-2. The agent calls `heimdall_get_task` (its token is bound to agent and role) and receives the envelope.
-3. `heimdall_ack` within 60 s. Otherwise `task.timed_out` follows and the request is marked `unavailable` (gate red, waivable by an approver, D43). Switch's own "unavailable" auto-reply (V16) does the same at once. Switch restarts a crashed agent itself; Heimdall holds no gateway login and restarts nothing (D145).
-4. The agent submits with its role's tool. Schema and semantic validation run (6.5). On failure the agent gets structured errors and keeps working inside the task's time and cost budget; running out of budget means `task.failed` (D122).
-5. A late submission is accepted but marked late. The first valid submission wins; later ones are attached as supplementary.
-6. Sessions are per room, so no context crosses from one change to another. A re-review in the same room keeps its context (D145).
+A task is agent work of one **kind** (`tests`, `review`, `verdict`, `profile`; the kind table is
+`internal/domain/workflow/kinds.go`) for one **subject** (the change, a review seat, a case) on one **input**
+(`attempt-<n>`, `head-<sha>`, a case's last event id). A row asks for a task (5.1); the reconciler decides what to do
+with it on every Run.
+
+1. **Assign.** With no live task (status `assigned` or `acked`) of that kind and subject, the reconciler records
+   `task.assigned{task_id, agent, role, kind, subject, input, deadline}` and the job `task_assign`, keyed
+   `<change>/task/<task id>`. The agent is the kind's holder from config (tests: the test author; verdict: the
+   resolver) or, for a review, the seat. A task is assigned only once the room exists. The job posts an addressed
+   room message (`@bob-reviewer you have a new task. Call heimdall_get_task.`); the task id is not posted, because the
+   agent's token finds it (D156). New tasks carry no bundle; `bundle_ref` is old events only.
+2. **Supersede.** A live task on another input gets `task.superseded{task_id, reason: "new input <input>"}`, and a
+   fresh task is assigned in the same append. A new head supersedes every live review task.
+3. **Acknowledge.** The agent calls `get_task` (its token is bound to agent and role). The answer is one JSON object:
+   the task, the kind's skill text, every input rendered at call time (`internal/app/taskinput`; untrusted text is
+   wrapped) and the change's `Missing` texts. The first call of a task before its deadline records `task.acked`.
+   There is no `ack` tool. With no active task, `get_task` says so plainly.
+4. **Liveness.** For a live task on the same input, `liveness.Next` decides from the view (`Since`, `Acked`, `Wakes`,
+   `ResetAt`) and the agent's last tool call (`ports.ToolCalls`), with two windows: ack 3 minutes, stall 10 minutes.
+   `wait` does nothing; `repeat_wake` posts the wake again and records `task.rewoken`; `probe_provider` asks the model
+   provider once with the server's key and records `provider.probed`; `provider_blocked` posts nothing and `Missing`
+   says "the model provider refuses"; `reset_and_repeat` starts `agent_reset` and records `task.rewoken`; `fail`
+   records `task.failed{reason: unresponsive}`, after which the row is open again and the next Run assigns a fresh
+   task. Past its deadline a live task gets `task.timed_out`, and the row reassigns. Switch restarts a crashed agent
+   itself; Heimdall holds no gateway login (D145).
+5. **Submit.** The agent submits with its kind's tool. Schema and semantic validation run (6.5). On failure the agent
+   gets structured errors and keeps working inside the task's time and cost budget. A submission is stored whole and
+   names its `task_id`, which ends the task in the view (status `done`). A test submission after the task timed out is
+   refused as late.
+6. Sessions are per room, so no context crosses from one change to another. A re-review in the same room keeps its
+   context (D145).
+
+**The task index** (`postgres.TaskIndex`, `ports.TaskIndex`) finds an agent's one active task from the log, with no
+table of its own. The active task is the newest `task.assigned` for that agent and role on a change that is not
+rejected, with no later event that ends it: `task.timed_out` or `task.failed` with its task id, or a submission of its
+role (`tests.submitted`; `review.submitted` by that reviewer; `verdict.submitted`). A superseded task is replaced in
+the same append, so the replacement is the newest assignment; the index does not read `task.superseded` itself. When an agent holds several, the oldest comes first,
+and a task waiting on an unanswered human question comes after every task that is not waiting.
 
 ### 6.3 Task envelope
 
@@ -941,6 +1009,21 @@ ok ⇔ ticket linked
 ```
 
 `heimdall/acceptance` runs all of `tests.dir`, so earlier tickets' tests guard against regressions, while each pin covers only its own ticket (D150). `covered(r, head)` means r's last review was on a SHA whose diff to head touches none of the files r reviewed. The check summary lists every unmet clause in plain language, and a table test flips each clause.
+
+**The gate path (H6): the rule is computed once, in the domain.**
+
+- `change.GateFacts(view, outside)` turns the folded view and the outside facts into `gate.Facts`. It is the only place
+  the log is read for the gate. A fact the view cannot give stays zero, and a zero fact fails the clause that needs it.
+- `change.Outside` holds the facts that need I/O: the policy at the merge base and at the head, the changed files, the
+  head's test tree hash and the policy owner's approval. `gateuse.RepoSource` fills it; the reconciler reads it through
+  its `InputSource` before each Run. An unreadable outside fact stops the Run with an error (5.2), never an empty value.
+- `change.EvaluateGate` applies `gate.Evaluate` and builds the outcome: ok, pending, the unmet clauses, their reasons
+  in plain words (`gate.Reasons`) and the check summary (`gate.Summary`). It is pure.
+- The `gate` row (5.1) is never done while the PR is open. When the outcome differs from the last `gate.evaluated` on
+  the head, it records `gate.evaluated` and starts the `heimdall/gate` check job, keyed by head, a digest of the result
+  and a count, so a result that comes back is posted again.
+- `Missing` names the same unmet clauses from the same rule, so the board, the room and the GitHub check never
+  disagree. Intake and prsync only record facts; any new fact kicks the change, and the next Run re-decides the gate.
 
 ---
 

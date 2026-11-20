@@ -10,8 +10,8 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
-// Ingest hands the events of an executor to the engine. The engine stores them in one append, numbers them, and runs
-// the steps that follow (TECH_SPEC 2.4). The executor leaves Version and the hash fields to the engine.
+// Ingest hands the events of an executor to the log through reconcile.Recorder, which numbers them, appends them in
+// one append and kicks the change (TECH_SPEC 5.2). The executor leaves Version and the hash fields to the recorder.
 type Ingest interface {
 	Ingest(ctx context.Context, changeID id.ChangeID, evs []change.Event) error
 }
