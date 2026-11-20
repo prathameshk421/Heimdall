@@ -1,0 +1,42 @@
+{
+  "id": "chatcmpl-9xL0aB2cD3",
+  "object": "chat.completion",
+  "created": 1732200100,
+  "model": "deepseek/deepseek-v4-flash",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_01Hq",
+            "type": "function",
+            "function": {
+              "name": "read_code",
+              "arguments": "{\"path\":\"payments/refund.go\",\"start_line\":40,\"end_line\":90}"
+            }
+          },
+          {
+            "id": "call_01Hr",
+            "type": "function",
+            "function": {
+              "name": "search_code",
+              "arguments": "{\"query\":\"RefundNotFound\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2400,
+    "completion_tokens": 64,
+    "total_tokens": 2464,
+    "prompt_tokens_details": {
+      "cached_tokens": 2048
+    }
+  }
+}

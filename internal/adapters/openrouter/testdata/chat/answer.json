@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-9xK2mQ7pR1",
+  "object": "chat.completion",
+  "created": 1732200000,
+  "model": "deepseek/deepseek-v4-flash",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The change adds a null check before the refund lookup. I would test the missing-refund path first."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1204,
+    "completion_tokens": 86,
+    "total_tokens": 1290
+  }
+}
