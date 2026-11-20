@@ -27,6 +27,7 @@ func (p Policy) Validate() error {
 	p.checkDecisions(c)
 	p.checkRunners(c)
 	p.checkServices(c)
+	p.checkAction(c)
 	return c.err()
 }
 

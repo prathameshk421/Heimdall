@@ -1,0 +1,30 @@
+{
+  "mode": "shadow",
+  "budget": {
+    "per_pr_usd": 0.5,
+    "per_pr_tokens": { "input": 800000, "output": 40000 },
+    "call_output_tokens": 4000,
+    "monthly_usd": 50
+  },
+  "trivial": [
+    "**/*.md",
+    "docs/**",
+    "go.sum",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "Cargo.lock",
+    "poetry.lock",
+    "Gemfile.lock",
+    "**/*.pb.go",
+    "**/*_generated.go",
+    "**/*.generated.*"
+  ],
+  "analyzers": { "source": "code_scanning", "min_severity": "medium" },
+  "sources": [
+    "coderabbitai[bot]",
+    "copilot-pull-request-reviewer[bot]",
+    "cursor[bot]",
+    "greptile-apps[bot]"
+  ]
+}
