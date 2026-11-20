@@ -43,3 +43,24 @@ func TestRepeatedRefusals(t *testing.T) {
 	require.Equal(t, 0, RepeatedRefusals([]ports.ToolCall{other, same}, same.Tool, same.Refusal))
 	require.Equal(t, 0, RepeatedRefusals([]ports.ToolCall{same}, same.Tool, "another reason"))
 }
+
+// A long run with a slash or a dot is a file path or a qualified name, never a key (B9): a reviewer's read_code path
+// must stay readable in the record even when it mixes digits and both letter cases.
+func TestSummarizeKeepsFilePaths(t *testing.T) {
+	for _, path := range []string{
+		"internal/api/v2/RefundHandlerV2PartialRefunds.go",
+		"cmd/heimdall-server/Flow2ComponentTestHelpers.go",
+		"refund.RefundServiceV2CreatePartialRefundOnce",
+		"web/review-report/src/Report2Page.Component.tsx",
+	} {
+		args, err := json.Marshal(map[string]string{"path": path})
+		require.NoError(t, err)
+		require.Equal(t, string(args), Summarize(args), path)
+	}
+	jwt, err := json.Marshal(map[string]string{"auth": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJyZXZpZXdlci0xIn0.Qm9ndXNTaWduYXR1cmVWYWx1ZTEyMw"})
+	require.NoError(t, err)
+	require.NotContains(t, Summarize(jwt), "eyJhbGci", "a dot does not make a JWT a path: it is a known credential shape")
+	key, err := json.Marshal(map[string]string{"v": "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA5"})
+	require.NoError(t, err)
+	require.Contains(t, Summarize(key), "[redacted]", "a random run with no slash or dot is still redacted")
+}

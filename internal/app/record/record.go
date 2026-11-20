@@ -14,15 +14,20 @@ import (
 // MaxSummary bounds the stored argument summary in runes.
 const MaxSummary = 300
 
-// credentialLike matches the known credential shapes: forge, chat and model tokens and private keys.
-var credentialLike = regexp.MustCompile(`(?i)(gh[pousr]_[A-Za-z0-9_]{10,}|github_pat_[A-Za-z0-9_]{10,}|xox[abprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[^"]*)`)
+// credentialLike matches the known credential shapes: forge, chat and model tokens, JWTs and private keys.
+var credentialLike = regexp.MustCompile(`(?i)(gh[pousr]_[A-Za-z0-9_]{10,}|github_pat_[A-Za-z0-9_]{10,}|xox[abprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[^"]*)`)
 
-// longRun is a long unbroken run of key characters. It is redacted only when it looks random (randomLooking): a
-// commit SHA or a test name is not (the live KAN-24 record had hidden both).
-var longRun = regexp.MustCompile(`[A-Za-z0-9+/=_-]{32,}`)
+// longRun is a long unbroken run of key characters, dots included. It is redacted only when it looks random
+// (randomLooking): a commit SHA or a test name is not (the live KAN-24 record had hidden both), and a run with a slash or
+// a dot is a file path or a qualified name (B9).
+var longRun = regexp.MustCompile(`[A-Za-z0-9+/=_.-]{32,}`)
 
-// randomLooking: digits and both letter cases together, as base64 and API keys have; hex SHAs are lower case only.
+// randomLooking: digits and both letter cases together, as base64 and API keys have; hex SHAs are lower case only. A
+// path or a dotted name is not random, whatever its letters.
 func randomLooking(s string) bool {
+	if strings.ContainsAny(s, "/.") {
+		return false
+	}
 	return strings.ContainsAny(s, "0123456789") && strings.ToLower(s) != s && strings.ToUpper(s) != s
 }
 
