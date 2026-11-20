@@ -279,3 +279,15 @@ command) that assigns the `profile` task.
 
 D7 (ticketless PRs under `require_ticket: true`), B1, B4, and the unbounded reassignment of a failing seat. KAN-26
 waits on B4: reviewer-3's review, then the gate, the approval and the merge.
+
+## B4 resolved (Nov 21, 2026)
+
+- The owner's first B4 step added `DEPLOY_API_KEY` to `/etc/switch/agents.env`. It did not reach the agents. The Switch 0.31
+  controller writes each unit's environment file only at launch, and only for an allowlist of names (`OPENAI_API_KEY`,
+  `OPENROUTER_API_KEY`). So `{env:DEPLOY_API_KEY}` can never reach an agent on this controller. D163 is wrong on that point.
+- Fix: `scripts/ops/install-agent-configs.sh` now writes the Deploy key from the server's `deploy_api_key` file into each
+  config, as it already did for the MCP bearer. This matches the configs that worked before D6 (key in the file).
+- Live check: the resolver and reviewer-1 to reviewer-3 configs hold the key inline; a `GET /api/v1/models` with each
+  config's key returned 200. The test author already had the key inline. Values were never printed.
+- Open: `deploy/agents/install.sh` and the templates still use `{env:DEPLOY_API_KEY}`, so a fresh install has the same gap.
+  Its checks live in the guarded `docs/harness/test-install.sh`; the change needs the owner's edit there.
