@@ -33,7 +33,7 @@ ignored.
 The branch was pushed to `origin/heimdall-build` on Nov 18, 2026 (81 commits over the previous remote tip).
 `git log -1 origin/heimdall-build` is the docs commit on top of H7 `506fad5`.
 
-## Start here: H12, and the H11 owner steps
+## Start here: the H11 owner steps (H12 is done)
 
 H11 (Nov 19 to 20) deployed the overhaul build and ran KAN-26 live: the tests flow works end to end on the VM
 (trigger, room, branch, a correct red-first rejection, verified, committed `ab0d649`), and PR #16 got slop, CI,
@@ -59,10 +59,11 @@ Owner steps before re-running the review half of H11:
 
 ## Then, in order
 
-- **H10 stories** (owner decision first): retire `e2e/stories/` with the board that reads it, or keep the board.
-- **H11 rest** (owner steps above), then **H12**.
-- **H12 Specs and leftovers** (`:599`): rewrite TECH_SPEC 5, 6.2 and 12.4; update RUNBOOK and `doc.go`s; then policy v2
-  conversion, `Missing` for an undecodable policy, and the path-redaction fix in `internal/app/record`.
+- **Docker:** give Docker Desktop access to `/Volumes/SSD` (its disk folder is there), then run `make verify` on the
+  tip. It last passed at `e213e02`; the board and H12 commits ran only `make fast`.
+- **H11 rest:** after the owner steps above, rerun the review half on KAN-26 and record it in `docs/LIVE_RUN_H11.md`.
+- **Open items:** D7 (ticketless PRs) and the unbounded reassignment of a failing seat (PROGRESS, Noticed H11).
+- **Then the SOTA quality programme** (`docs/SOTA_QUALITY_PLAN.md`).
 
 ## Owner directive: real-world hardening and SOTA polish
 

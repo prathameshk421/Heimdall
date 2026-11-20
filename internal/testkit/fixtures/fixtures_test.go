@@ -136,9 +136,9 @@ func TestManifestLocatesEachDefect(t *testing.T) {
 	}
 }
 
-// TestManifestAgreesWithStory checks the manifest against the Story the board reads (read-only).
+// TestManifestAgreesWithStory checks the manifest against the fixture the board reads (read-only).
 func TestManifestAgreesWithStory(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join(fixtures.ModuleRoot(), "e2e", "stories", "fixture-pay.yaml"))
+	raw, err := os.ReadFile(filepath.Join(fixtures.ModuleRoot(), "e2e", "scenarios", "testdata", "fixture-pay.yaml"))
 	require.NoError(t, err)
 	var s struct {
 		GoodPR      string `yaml:"good_pr"`
