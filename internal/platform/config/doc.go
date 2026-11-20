@@ -26,6 +26,10 @@
 //   - Config.Selection(kind) (string, bool): the adapter name chosen in [vcs] provider, [tracker] provider,
 //     [chat] bridge, [agent_runtime] provider or [memory] provider. Absent means unset; an empty value is
 //     refused at Load. The registry package checks the name exists (registry.ValidateSelections).
+//   - [[model_providers]] name, base_url, key_file, allow_private_http, headers: the OpenAI-compatible model
+//     endpoints. Config.ModelProvider(name) resolves a name to a configured entry, else to a shipped default
+//     (deploy, openrouter). Config.ModelProviderNames() lists them for an error message. An absent key_file
+//     means the endpoint takes no key.
 //   - OnceSet.First(key) bool: true only the first time a key is offered. The caller uses it to log an
 //     unmapped project once. The zero value is ready to use and it is safe for concurrent use.
 //   - FilePath(args, getenv) (string, error): the --config value, else HEIMDALL_CONFIG. This package is
@@ -41,6 +45,11 @@
 //   - A present [database], [jira], [switch] or [github] section has every key. A base URL is absolute
 //     https, or http only when the host is loopback. A project key matches ^[A-Z][A-Z0-9_]*$ and the list
 //     has no duplicates. Every secret key is a single path element.
+//   - A model provider has a unique name that matches ^[a-z0-9][a-z0-9._-]{0,63}$ and an absolute base_url
+//     without credentials, query or fragment. The URL is https, or http for a loopback host, or http for a
+//     private IP address when allow_private_http is true. A hostname other than localhost needs https. A
+//     key_file is a single path element. Extra headers have valid names, no control character in a value, and
+//     never name Authorization, Content-Type, Content-Length or Host.
 //   - Secret names are single path elements: no separators, no "..". A secret is a regular file whose
 //     real location (after symlinks) stays inside SecretsDir. The read goes through os.Root, which
 //     enforces the escape check.
@@ -69,6 +78,9 @@
 // FilePath, and the provider selections (read, absent, empty and unknown keys refused).
 // sections_test.go covers the live sections: every key read, every missing or invalid key named, https and
 // loopback-http URLs, project key shape and duplicates, secret file names, and every problem reported at once.
+// model_providers_test.go covers the model providers: the shipped defaults, a configured entry, replacement of a
+// default, every refusal (http on a public host, a hostname over http, credentials in the URL, a bad key file
+// or header) and duplicate names.
 // secret_multiline_test.go covers SecretMultiline: a three-line PEM shape, owner-only modes accepted,
 // group and world modes refused, a symlink out of the directory, the 16 KiB limit, and canary checks.
 // Board: the server start in cmd/heimdall-server (run_test.go, live_config_test.go).

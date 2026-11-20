@@ -17,23 +17,26 @@ import (
 
 var _ ports.ModelHealth = Prober{}
 
-// Prober asks OpenRouter whether it answers, with the server's own key and one minimal request (HARNESS_DESIGN B3).
+// Prober asks an OpenAI-compatible endpoint whether it answers, with one minimal request (HARNESS_DESIGN B3). It sends
+// the server's key when KeyName is set. An empty KeyName sends no Authorization header, for a local endpoint.
 type Prober struct {
 	BaseURL string
 	Secrets Secrets
 	KeyName string
 	Model   string
+	// Headers are extra, non-secret request headers.
+	Headers map[string]string
 	HTTP    *http.Client
 }
 
 // Probe implements ports.ModelHealth. A provider that refuses (401, 402, 429, a 5xx, or no answer at all) is
 // liveness.Refusing with no error; only a probe that could not be made (no key, no model) is an error.
 func (p Prober) Probe(parent context.Context) (liveness.Health, error) {
-	if p.Secrets == nil || strings.TrimSpace(p.Model) == "" {
+	if strings.TrimSpace(p.Model) == "" {
 		return liveness.Unprobed, errors.New("model probe configuration is incomplete")
 	}
-	key, err := p.Secrets.Get(p.KeyName)
-	if err != nil || strings.TrimSpace(key) == "" {
+	key, err := bearerKey(p.Secrets, p.KeyName)
+	if err != nil {
 		return liveness.Unprobed, errors.New("model probe credential is unavailable")
 	}
 	body, err := json.Marshal(map[string]any{
@@ -50,8 +53,7 @@ func (p Prober) Probe(parent context.Context) (liveness.Health, error) {
 	if err != nil {
 		return liveness.Unprobed, fmt.Errorf("build model probe: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
-	req.Header.Set("Content-Type", "application/json")
+	setModelHeaders(req, key, p.Headers)
 	client := p.HTTP
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}

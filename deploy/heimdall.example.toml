@@ -59,6 +59,27 @@ machine = "heimdall-vm"
 mcp_endpoint = "http://127.0.0.1:8080/mcp"
 model = "deploy/deepseek-ai/deepseek-v4.1-flash-1017"
 
+# Optional model endpoints. The prefix of agent_runtime.model ("<name>/<model>") picks the endpoint that the
+# server's liveness probe and room digest call. Any OpenAI-compatible /chat/completions API works: Ollama, vLLM,
+# llama.cpp server, LM Studio, LiteLLM, OpenRouter, DeepSeek or a company gateway. The names "deploy" and
+# "openrouter" work without an entry. An entry with the same name replaces them.
+#   base_url            API root. https is required. http is allowed on a loopback host, and on a private IP
+#                       address when allow_private_http = true.
+#   key_file            Secret file name under secrets_dir. Leave it out for an endpoint with no key.
+#   headers             Extra request headers. Not secret: keep keys in key_file.
+#
+# Ollama on the same host, no key (agent_runtime.model = "ollama/qwen2.5-coder:14b"):
+# [[model_providers]]
+# name = "ollama"
+# base_url = "http://127.0.0.1:11434/v1"
+#
+# LiteLLM gateway with a key (agent_runtime.model = "litellm/gpt-4o"):
+# [[model_providers]]
+# name = "litellm"
+# base_url = "https://litellm.example.com/v1"
+# key_file = "litellm_api_key"
+# headers = { "X-Team" = "platform" }
+
 # MCP agent identities. Each name needs secrets_dir/agent_token_<name> (0600).
 [agents]
 test_author = "test-author"

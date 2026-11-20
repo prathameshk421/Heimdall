@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/blobfs"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/openrouter"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/announce"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
@@ -286,7 +285,7 @@ func productionDeps(cfg config.Config, logger *slog.Logger) (deps, error) {
 	if err := checkAdapterSecrets(cfg); err != nil {
 		return deps{}, err
 	}
-	provider, err := modelProviderOf(cfg.AgentModel())
+	provider, err := modelProviderOf(cfg, cfg.AgentModel())
 	if err != nil {
 		return deps{}, fmt.Errorf("agent_runtime.model: %w", err)
 	}
@@ -506,11 +505,12 @@ func assemble(ctx context.Context, d deps, ad adapters, pool *pgxpool.Pool, clk 
 		}
 	}
 	gen := ids.New()
-	provider, err := modelProviderOf(d.configuration.AgentModel())
+	provider, err := modelProviderOf(d.configuration, d.configuration.AgentModel())
 	if err != nil {
 		return nil, fmt.Errorf("liveness probe: %w", err)
 	}
-	prober := openrouter.Prober{BaseURL: d.endpoints.modelURL, Secrets: keyReader{cfg: d.configuration}, KeyName: provider.keyFile, Model: provider.model}
+	prober := proberFor(provider, keyReader{cfg: d.configuration})
+	prober.BaseURL = d.endpoints.modelURL // deps carry the URL so a test can point the probe at a fake
 	rec, err := newReconciler(ad, store, prober, gen, clk, d.logger)
 	if err != nil {
 		return nil, fmt.Errorf("build reconciler: %w", err)

@@ -18,18 +18,21 @@ import (
 type RoomDigestClient struct {
 	BaseURL string
 	Secrets Secrets
+	// KeyName is the key's secret name. Empty means the endpoint takes no key.
 	KeyName string
+	// Headers are extra, non-secret request headers.
+	Headers map[string]string
 	HTTP    *http.Client
 }
 
 // SummarizeRoom sends the redacted room messages to model and returns the trimmed summary text.
 func (c RoomDigestClient) SummarizeRoom(ctx context.Context, model string, messages []ports.Message) (string, error) {
-	if c.Secrets == nil || model == "" || len(messages) == 0 {
+	if model == "" || len(messages) == 0 {
 		return "", errors.New("room digest model configuration is incomplete")
 	}
-	key, err := c.Secrets.Get(c.KeyName)
-	if err != nil || strings.TrimSpace(key) == "" {
-		return "", errors.New("room digest OpenRouter credential is unavailable")
+	key, err := bearerKey(c.Secrets, c.KeyName)
+	if err != nil {
+		return "", errors.New("room digest model credential is unavailable")
 	}
 	body, err := roomDigestRequestBody(model, messages)
 	if err != nil {
@@ -66,8 +69,7 @@ func (c RoomDigestClient) post(ctx context.Context, key string, body []byte) ([]
 	if err != nil {
 		return nil, fmt.Errorf("build room digest request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
-	req.Header.Set("Content-Type", "application/json")
+	setModelHeaders(req, key, c.Headers)
 	client := c.HTTP
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}

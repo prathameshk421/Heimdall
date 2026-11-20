@@ -78,6 +78,9 @@ type Config struct {
 	GitHub         GitHub
 	Agents         Agents
 	AgentRuntime   AgentRuntimeConfig
+	// ModelProviders are the configured [[model_providers]]. Use ModelProvider to resolve a name: it also knows
+	// the two shipped defaults.
+	ModelProviders []ModelProvider
 	byTracker      map[string]Project
 	selections     map[string]string
 }
@@ -160,6 +163,7 @@ type fileConfig struct {
 	Chat           *fileChat                   `toml:"chat"`
 	AgentRuntime   *fileAgentRuntime           `toml:"agent_runtime"`
 	Memory         *fileProvider               `toml:"memory"`
+	ModelProviders []fileModelProvider         `toml:"model_providers"`
 }
 
 type filePackIdentity struct {
@@ -288,6 +292,7 @@ func build(raw fileConfig) (Config, error) {
 	errs = append(errs, addLiveSections(&cfg, raw)...)
 	errs = append(errs, addKnowledgeSecrets(&cfg, raw)...)
 	errs = append(errs, addPaths(&cfg, raw)...)
+	errs = append(errs, addModelProviders(&cfg, raw.ModelProviders)...)
 	firstIndex := map[string]int{}
 	for i, p := range raw.Projects {
 		where := fmt.Sprintf("projects[%d]", i)
