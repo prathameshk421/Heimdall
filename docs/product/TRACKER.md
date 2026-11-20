@@ -34,3 +34,9 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | A9 board login and roles | Claude Personal / Opus | `a9-board-auth` | running | |
 | B1 OpenCode and Cursor session readers | Claude Personal / Sonnet | `b1-session-readers` | merged into `product-build` | make fast exit 0, 3557 tests after merge; e2e cards scan on a synthetic HOME with a real worktree; real OpenCode/Cursor files not read (schema drift not verified) |
 | 11 MergeHarbor and rivals | Claude Personal / Sonnet | `research/11-mergeharbor-and-rivals.md` | done | MergeHarbor claims true in its docs; no users found; Heal fail-twice rule |
+| A1 Action mode design | Claude Personal / Opus | `a1-action-design` | merged `c1f662b` | design only; GitHub facts not verified until spike S1; Q1 to Q10 take the doc's recommendations until the owner says otherwise |
+| AM1, AM2, AM4 verdict, action policy, fast check | Claude Personal / Sonnet | `am-fastcheck` | running | |
+| AM8 git-ref event store | Claude Personal / Sonnet | `am8-gitlog` | running | |
+| AM6 coverage parsers | OpenCode / DeepSeek free | `am6-coverage` | running | |
+| AM10 model chat with tools | OpenCode / DeepSeek free | `am10-model-chat` | running | |
+| S1 GitHub spike | waiting | | blocked | needs the owner's yes for throwaway workflows on `aarush323/heimdall-fixture-pay` |
