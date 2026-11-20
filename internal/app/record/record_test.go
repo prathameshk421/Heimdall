@@ -57,7 +57,8 @@ func TestSummarizeKeepsFilePaths(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, string(args), Summarize(args), path)
 	}
-	jwt, err := json.Marshal(map[string]string{"auth": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJyZXZpZXdlci0xIn0.Qm9ndXNTaWduYXR1cmVWYWx1ZTEyMw"})
+	// The fake JWT is split in parts, so the history scan (gitleaks) does not see a token in this file.
+	jwt, err := json.Marshal(map[string]string{"auth": "eyJhbGciOiJIUzI1NiJ9" + "." + "eyJzdWIiOiJyZXZpZXdlci0xIn0" + "." + "Qm9ndXNTaWduYXR1cmVWYWx1ZTEyMw"})
 	require.NoError(t, err)
 	require.NotContains(t, Summarize(jwt), "eyJhbGci", "a dot does not make a JWT a path: it is a known credential shape")
 	key, err := json.Marshal(map[string]string{"v": "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA5"})

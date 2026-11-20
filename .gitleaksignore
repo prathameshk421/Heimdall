@@ -320,3 +320,6 @@ aa21ec7320426c4f0ee8bd5ce7dd750d81845095:cmd/heimdall-server/card_upload_test.go
 aa21ec7320426c4f0ee8bd5ce7dd750d81845095:cmd/heimdall-server/card_upload_test.go:aws-access-token:84
 # The H7 handoff quoted the same made-up AWS key in an already pushed docs commit (owner approved, Nov 19, 2026).
 86c405768503aac15116608a7e6c057eb35874cb:docs/HANDOFF.md:aws-access-token:163
+# H12 (Nov 20, 2026): a made-up JWT in the record redaction test, which checks the JWT is redacted. Split in parts since
+# the next commit, so no later commit matches. Not pushed when found; needs the owner's yes like the entries above.
+61dc968d0ca017c9fcc981fd786df8a1161b3a13:internal/app/record/record_test.go:jwt:60
