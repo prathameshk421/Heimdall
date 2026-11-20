@@ -11,9 +11,9 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/e2e"
 )
 
-// ticketOf is the tracker ticket for a story's ticket spec, assigned to the developer.
+// ticketOf is the tracker ticket for a fixture's ticket spec, assigned to the developer.
 func ticketOf(e *e2e.Env, spec e2e.TicketSpec) e2e.Ticket {
-	return e2e.Ticket{Title: spec.Title, Description: spec.Description, AC: spec.AC, Assignee: e.Story.Author().Chat}
+	return e2e.Ticket{Title: spec.Title, Description: spec.Description, AC: spec.AC, Assignee: e.Fixture.Author().Chat}
 }
 
 // createTicket writes the ticket in the tracker and leaves it where it is.
@@ -33,12 +33,12 @@ func startTicket(ctx context.Context, e *e2e.Env, spec e2e.TicketSpec) (string, 
 	return key, nil
 }
 
-// ensureStarted returns the scenario's ticket key, starting the story's ticket if no step has yet.
+// ensureStarted returns the scenario's ticket key, starting the fixture's ticket if no step has yet.
 func ensureStarted(ctx context.Context, e *e2e.Env) (string, error) {
 	if key, ok := e2e.Get[string](e, keyTicket); ok {
 		return key, nil
 	}
-	key, err := startTicket(ctx, e, e.Story.Ticket)
+	key, err := startTicket(ctx, e, e.Fixture.Ticket)
 	if err != nil {
 		return "", err
 	}
@@ -84,7 +84,7 @@ func ensureRoom(ctx context.Context, e *e2e.Env) (string, error) {
 
 // openPR opens a pull request from a branch as the developer and remembers it.
 func openPR(ctx context.Context, e *e2e.Env, branch, title string) (e2e.PR, error) {
-	pr, err := e.World.GitHub().OpenPR(ctx, e.Story.Repo, branch, e.Story.BaseBranch, title, "", e.Story.Author().GitHub)
+	pr, err := e.World.GitHub().OpenPR(ctx, e.Fixture.Repo, branch, e.Fixture.BaseBranch, title, "", e.Fixture.Author().GitHub)
 	if err != nil {
 		return e2e.PR{}, err
 	}
@@ -101,7 +101,7 @@ func ensureGoodPR(ctx context.Context, e *e2e.Env) (e2e.PR, error) {
 	if err != nil {
 		return e2e.PR{}, err
 	}
-	return openPR(ctx, e, e.Story.GoodPR, key+": "+e.Story.Ticket.Title)
+	return openPR(ctx, e, e.Fixture.GoodPR, key+": "+e.Fixture.Ticket.Title)
 }
 
 // freshPR closes the scenario's PR and opens good_pr again for the same ticket, so a new review round starts.
@@ -118,8 +118,8 @@ func freshPR(ctx context.Context, e *e2e.Env) (e2e.PR, error) {
 	return ensureGoodPR(ctx, e)
 }
 
-// reviewerHandles are the chat handles of the story's reviewers, in order.
-func reviewerHandles(s *e2e.Story) []string {
+// reviewerHandles are the chat handles of the fixture's reviewers, in order.
+func reviewerHandles(s *e2e.Fixture) []string {
 	var out []string
 	for _, name := range s.Reviewers() {
 		out = append(out, s.Person(name).Chat)
@@ -127,7 +127,7 @@ func reviewerHandles(s *e2e.Story) []string {
 	return out
 }
 
-func reviewCommand(s *e2e.Story) string {
+func reviewCommand(s *e2e.Fixture) string {
 	parts := []string{"heimdall review"}
 	for _, h := range reviewerHandles(s) {
 		parts = append(parts, mention(h))
@@ -138,7 +138,7 @@ func reviewCommand(s *e2e.Story) string {
 var reAsked = regexp.MustCompile(`(?i)\bask`)
 
 // listsReviewers accepts the product's message that lists every reviewer and says they were asked.
-func listsReviewers(s *e2e.Story) func(e2e.Message) bool {
+func listsReviewers(s *e2e.Fixture) func(e2e.Message) bool {
 	return func(m e2e.Message) bool {
 		if !reAsked.MatchString(m.Text) {
 			return false
@@ -154,7 +154,7 @@ func listsReviewers(s *e2e.Story) func(e2e.Message) bool {
 
 // requestReview has the author ask for the review in the room and waits for the product's listing of the reviewers.
 func requestReview(ctx context.Context, e *e2e.Env, room string) (e2e.Message, error) {
-	m, err := converse(ctx, e, room, e.Story.Author().Chat, reviewCommand(e.Story), listsReviewers(e.Story))
+	m, err := converse(ctx, e, room, e.Fixture.Author().Chat, reviewCommand(e.Fixture), listsReviewers(e.Fixture))
 	if err == nil {
 		e.Set(keyAsked, true)
 	}

@@ -18,7 +18,7 @@ func TestAQualityViolationMakesTheBoardNotGreen(t *testing.T) {
 		return nil
 	}}
 	// The cost is measured (scripted $0), so the only thing that can fail strict is the quality violation.
-	sc := runOne(t, &fakeWorld{spend: []float64{0, 0}}, story(), e2e.Scenario{ID: "P2", Steps: []e2e.Step{chatty}, Budget: e2e.Budget{Milestones: 5}})
+	sc := runOne(t, &fakeWorld{spend: []float64{0, 0}}, fixture(), e2e.Scenario{ID: "P2", Steps: []e2e.Step{chatty}, Budget: e2e.Budget{Milestones: 5}})
 	require.Equal(t, e2e.StatusPass, sc.Results[0].Status, "the step itself passed")
 	require.NotEmpty(t, sc.Quality, "the scenario's quiet check must have failed")
 
@@ -72,7 +72,7 @@ func TestDemoBeatIsNotRealWhileItsScenarioHasAQualityViolation(t *testing.T) {
 
 func TestAPanickingStepIsRedWithTheValueAndTheRunGoesOn(t *testing.T) {
 	boom := e2e.Step{ID: "P3.1", Run: func(context.Context, *e2e.Env) error { panic("nil map in the room") }}
-	sc := runOne(t, &fakeWorld{}, story(), e2e.Scenario{ID: "P3", Steps: []e2e.Step{boom, okStep("P3.2")}})
+	sc := runOne(t, &fakeWorld{}, fixture(), e2e.Scenario{ID: "P3", Steps: []e2e.Step{boom, okStep("P3.2")}})
 	require.Len(t, sc.Results, 2, "the scenario must keep running after a panic")
 	require.Equal(t, e2e.StatusRed, sc.Results[0].Status)
 	require.Contains(t, sc.Results[0].Why, "nil map in the room")
@@ -84,7 +84,7 @@ func TestAStepThatOverrunsItsBarIsRedAndNotAnInternalError(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}}
-	r := runOne(t, &fakeWorld{}, story(), e2e.Scenario{ID: "P3", Steps: []e2e.Step{slow}}).Results[0]
+	r := runOne(t, &fakeWorld{}, fixture(), e2e.Scenario{ID: "P3", Steps: []e2e.Step{slow}}).Results[0]
 	require.Equal(t, e2e.StatusRed, r.Status)
 	require.Contains(t, r.Why, "within 20ms")
 	require.NotContains(t, r.Why, "deadline exceeded")
@@ -95,7 +95,7 @@ func TestAStepWithNoBarStillHasABoardMaximum(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}}
-	b := &e2e.Board{World: &fakeWorld{}, Story: story(), Now: ticker(time.Millisecond), Scripted: true, MaxStep: 20 * time.Millisecond}
+	b := &e2e.Board{World: &fakeWorld{}, Fixture: fixture(), Now: ticker(time.Millisecond), Scripted: true, MaxStep: 20 * time.Millisecond}
 	r := b.Run(context.Background(), []e2e.Scenario{{ID: "P3", Steps: []e2e.Step{hang}}})[0].Results[0]
 	require.Equal(t, e2e.StatusRed, r.Status, "a hung step must end red, not hang the board")
 	require.Contains(t, r.Why, "within 20ms")
@@ -103,14 +103,14 @@ func TestAStepWithNoBarStillHasABoardMaximum(t *testing.T) {
 
 func TestASpendErrorThatIsNotNotBuiltIsAQualityViolation(t *testing.T) {
 	w := &fakeWorld{spendErr: errors.New("spend API returned 500")}
-	r := runOne(t, w, story(), e2e.Scenario{ID: "P2", Steps: []e2e.Step{okStep("P2.2")}}).Results[0]
+	r := runOne(t, w, fixture(), e2e.Scenario{ID: "P2", Steps: []e2e.Step{okStep("P2.2")}}).Results[0]
 	require.Equal(t, e2e.StatusRed, r.Status, "a broken cost reading must not pass as scripted $0")
 	require.Contains(t, r.Why, "cannot read the spend")
 	require.Len(t, r.Violations, 1)
 }
 
 func TestASpendNotBuiltIsRecordedAsUnmeasuredNotDropped(t *testing.T) {
-	r := runOne(t, &fakeWorld{}, story(), e2e.Scenario{ID: "P2", Steps: []e2e.Step{okStep("P2.2")}}).Results[0]
+	r := runOne(t, &fakeWorld{}, fixture(), e2e.Scenario{ID: "P2", Steps: []e2e.Step{okStep("P2.2")}}).Results[0]
 	require.Equal(t, e2e.StatusPass, r.Status)
 	require.Len(t, r.Unmeasured, 1)
 	require.Contains(t, r.Unmeasured[0], "T19")
@@ -121,7 +121,7 @@ func TestASpendNotBuiltIsRecordedAsUnmeasuredNotDropped(t *testing.T) {
 func TestAManualStepIsBlockedOnManualAndNeverGreen(t *testing.T) {
 	man := e2e.Step{ID: "P9.3", Needs: []e2e.Need{e2e.NeedManual}, Run: func(context.Context, *e2e.Env) error { return nil }}
 	w := &fakeWorld{missing: map[e2e.Need]string{e2e.NeedManual: "a person must do this step by hand"}}
-	r := runOne(t, w, story(), e2e.Scenario{ID: "P9", Steps: []e2e.Step{man}}).Results[0]
+	r := runOne(t, w, fixture(), e2e.Scenario{ID: "P9", Steps: []e2e.Step{man}}).Results[0]
 	require.Equal(t, e2e.StatusBlocked, r.Status)
 	require.Equal(t, e2e.NeedManual, r.BlockedOn)
 	require.Equal(t, 0, e2e.Summarize([]e2e.ScenarioResult{{ID: "P9", Results: []e2e.Result{r}}}).Green)

@@ -39,10 +39,10 @@ func (s Status) String() string {
 	return "unknown"
 }
 
-// Env is what a step gets: the world, the story it runs on, and the capture it adds what a person saw to.
+// Env is what a step gets: the world, the fixture it runs on, and the capture it adds what a person saw to.
 type Env struct {
 	World   World
-	Story   *Story
+	Fixture *Fixture
 	Capture *Capture
 	// Vars holds what the steps of one scenario share, such as the ticket key, the room and the PR. The board
 	// makes a new map for each scenario, so two scenarios never see each other's values.
@@ -71,11 +71,11 @@ type Step struct {
 	Tags  []string      // local, vm, scripted, live, manual
 	Needs []Need        // prerequisites, probed before the step runs
 	Bar   time.Duration // the spec's latency bar; zero means none is stated
-	// NoStory marks a step that never reads the story (the command line, configuration), so an incomplete story does
+	// NoFixture marks a step that never reads the fixture (the command line, configuration), so an incomplete fixture does
 	// not block it.
-	NoStory bool
-	After   string // id of the earlier step in this scenario whose result this one depends on; empty if independent
-	Run     func(ctx context.Context, e *Env) error
+	NoFixture bool
+	After     string // id of the earlier step in this scenario whose result this one depends on; empty if independent
+	Run       func(ctx context.Context, e *Env) error
 }
 
 // Scenario is an ordered list of steps (P1 to P9).
@@ -112,10 +112,10 @@ type ScenarioResult struct {
 	Unmeasured []string
 }
 
-// Board runs scenarios against a world and a story.
+// Board runs scenarios against a world and a fixture.
 type Board struct {
-	World World
-	Story *Story
+	World   World
+	Fixture *Fixture
 	// Now is the clock for latency; tests inject a fake.
 	Now func() time.Time
 	// Scripted says the agents are scripted, so every step must cost $0 (quality check 8).
@@ -168,7 +168,7 @@ func (b *Board) scenarioChecks(ctx context.Context, sc Scenario, c *Capture) (vi
 	for _, p := range QuietProblems(msgs, sc.Budget) {
 		violations = append(violations, Violation{CheckQuiet, p})
 	}
-	for _, p := range AgentLeakProblems(msgs, b.Story.Canaries, c.AllSubmitted()) {
+	for _, p := range AgentLeakProblems(msgs, b.Fixture.Canaries, c.AllSubmitted()) {
 		violations = append(violations, Violation{CheckAgentsStay, p})
 	}
 	obs := b.World.Server()
@@ -208,7 +208,7 @@ func (b *Board) runStep(ctx context.Context, st Step, done map[string]Status, ca
 	before := capture.Len()
 	spent0, began := b.readSpend(stepCtx, &r)
 	started := b.Now()
-	err := runGuarded(stepCtx, st, &Env{World: b.World, Story: b.Story, Capture: capture, Vars: vars})
+	err := runGuarded(stepCtx, st, &Env{World: b.World, Fixture: b.Fixture, Capture: capture, Vars: vars})
 	r.Elapsed = b.Now().Sub(started)
 	if began {
 		if spent1, ok := b.readSpend(stepCtx, &r); ok {
@@ -252,8 +252,8 @@ func (b *Board) readSpend(ctx context.Context, r *Result) (float64, bool) {
 	return 0, false
 }
 
-// blocked fills r and returns true when a prerequisite is missing or the story is incomplete. The label is the first
-// missing prerequisite in the step's own order (the story last), and the reason also lists every other one, so the
+// blocked fills r and returns true when a prerequisite is missing or the fixture is incomplete. The label is the first
+// missing prerequisite in the step's own order (the fixture last), and the reason also lists every other one, so the
 // board shows all that is missing rather than only the first. Every step reports its own blockers, whatever happened
 // to the steps before it.
 func (b *Board) blocked(ctx context.Context, st Step, r *Result) bool {
@@ -268,10 +268,10 @@ func (b *Board) blocked(ctx context.Context, st Step, r *Result) bool {
 			gaps = append(gaps, gap{need: need, why: av.Why})
 		}
 	}
-	if b.Story.Pending != "" && !st.NoStory {
+	if b.Fixture.Pending != "" && !st.NoFixture {
 		gaps = append(gaps, gap{
-			need: Need("story"), task: b.Story.Pending,
-			why: fmt.Sprintf("story %s is incomplete until %s", b.Story.Name, b.Story.Pending),
+			need: Need("fixture"), task: b.Fixture.Pending,
+			why: fmt.Sprintf("fixture %s is incomplete until %s", b.Fixture.Name, b.Fixture.Pending),
 		})
 	}
 	if len(gaps) == 0 {

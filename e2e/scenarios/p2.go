@@ -21,7 +21,7 @@ func p21() e2e.Step {
 		Does: "Open `bad_pr` (very large, no ticket)",
 		Sees: "`heimdall/gate` is `failure` within 15 s (p95, D155) and its summary names the rule(s) in a sentence a developer understands",
 		Tags: []string{"local"},
-		// server: the gate is the product's; github-user and fixture-repo: the person opens the story's bad PR.
+		// server: the gate is the product's; github-user and fixture-repo: the person opens the fixture's bad PR.
 		Needs: []e2e.Need{e2e.NeedServer, e2e.NeedGitHubUser, e2e.NeedFixtureRepo},
 		Bar:   gateBar,
 		Run:   runP21,
@@ -30,7 +30,7 @@ func p21() e2e.Step {
 
 func runP21(ctx context.Context, e *e2e.Env) error {
 	e.Set(keyQuiet, snapshotQuiet(ctx, e))
-	pr, err := openPR(ctx, e, e.Story.BadPR, noTicketTitle)
+	pr, err := openPR(ctx, e, e.Fixture.BadPR, noTicketTitle)
 	if err != nil {
 		return err
 	}
@@ -126,22 +126,22 @@ func runP23(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	key, err := createTicket(ctx, e, e.Story.Ticket)
+	key, err := createTicket(ctx, e, e.Fixture.Ticket)
 	if err != nil {
 		return err
 	}
 	e.Set(keyTicket, key)
 	gh := e.World.GitHub()
-	bad, err := gh.ChangedFiles(ctx, e.Story.Repo, e.Story.BaseBranch, e.Story.BadPR)
+	bad, err := gh.ChangedFiles(ctx, e.Fixture.Repo, e.Fixture.BaseBranch, e.Fixture.BadPR)
 	if err != nil {
 		return err
 	}
-	good, err := gh.ChangedFiles(ctx, e.Story.Repo, e.Story.BaseBranch, e.Story.GoodPR)
+	good, err := gh.ChangedFiles(ctx, e.Fixture.Repo, e.Fixture.BaseBranch, e.Fixture.GoodPR)
 	if err != nil {
 		return err
 	}
-	sha, err := gh.Push(ctx, e.Story.Repo, pr.Head, e.Story.Author().GitHub, e2e.Change{
-		Delete: without(bad, good), Message: key + ": " + e.Story.Ticket.Title,
+	sha, err := gh.Push(ctx, e.Fixture.Repo, pr.Head, e.Fixture.Author().GitHub, e2e.Change{
+		Delete: without(bad, good), Message: key + ": " + e.Fixture.Ticket.Title,
 	})
 	if err != nil {
 		return err
@@ -170,7 +170,7 @@ func p24() e2e.Step {
 		Sees: "`heimdall/gate` is `in_progress` (not failure) within 15 s and `heimdall/acceptance` runs",
 		Tags: []string{"local"},
 		// server: the checks are the product's; tracker: good_pr belongs to a started ticket; github-user and
-		// fixture-repo: the person opens the story's good PR.
+		// fixture-repo: the person opens the fixture's good PR.
 		Needs: []e2e.Need{e2e.NeedServer, e2e.NeedTracker, e2e.NeedGitHubUser, e2e.NeedFixtureRepo},
 		Bar:   gateBar,
 		Run:   runP24,

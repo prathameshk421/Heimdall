@@ -15,8 +15,8 @@ import (
 // just enough of a "product" (a gate that follows the rules, a room that obeys commands) to show that a step
 // passes against a correct one and is red, in plain words, against a wrong one. The quirks switch on the wrong ones.
 type memWorld struct {
-	story *e2e.Story
-	q     quirks
+	fixture *e2e.Fixture
+	q       quirks
 
 	now      time.Time
 	nextPR   int
@@ -67,15 +67,15 @@ const (
 	linesInAny = 120
 )
 
-func newMemWorld(story *e2e.Story) *memWorld {
+func newMemWorld(fx *e2e.Fixture) *memWorld {
 	return &memWorld{
-		story: story,
-		now:   time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC),
+		fixture: fx,
+		now:     time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC),
 		branches: map[string]map[string]string{
-			baseBranch:      {"README.md": "x"},
-			story.BadPR:     {"README.md": "x", "a.go": "1", "b.go": "2", "c.go": "3"},
-			story.GoodPR:    {"README.md": "x", "refund.go": "1"},
-			story.FixBranch: {"README.md": "x", "refund.go": "2"},
+			baseBranch:   {"README.md": "x"},
+			fx.BadPR:     {"README.md": "x", "a.go": "1", "b.go": "2", "c.go": "3"},
+			fx.GoodPR:    {"README.md": "x", "refund.go": "1"},
+			fx.FixBranch: {"README.md": "x", "refund.go": "2"},
 		},
 		tasks: map[string]int{},
 	}
@@ -190,7 +190,7 @@ func (w *memWorld) changed(base, branch string) []string {
 }
 
 func (w *memWorld) Review(_ context.Context, pr e2e.PR, as, state, sha string) error {
-	if as == w.story.Author().GitHub && w.q.githubRefusesSelf {
+	if as == w.fixture.Author().GitHub && w.q.githubRefusesSelf {
 		return &e2e.ReviewRefusedError{Reason: "Can not approve your own pull request"}
 	}
 	if state == "APPROVED" {
@@ -276,7 +276,7 @@ func (w *memWorld) turnedAway(g e2e.GateState, reasons []e2e.Reason) e2e.GateSta
 
 func (w *memWorld) counts(p *memPR) bool {
 	for _, a := range p.approvals {
-		author := a.login == w.story.Author().GitHub
+		author := a.login == w.fixture.Author().GitHub
 		fresh := a.sha == p.SHA
 		if (!author || w.q.countAuthorAppr) && (fresh || w.q.countStaleApproval) {
 			return true
@@ -294,7 +294,7 @@ func (w *memWorld) approvalClauses(g e2e.GateState, p *memPR) e2e.GateState {
 	g.Reasons = []e2e.Reason{{Code: "no_approval", Text: "Ask someone other than the author to approve this commit."}}
 	for _, a := range p.approvals {
 		switch {
-		case a.login == w.story.Author().GitHub:
+		case a.login == w.fixture.Author().GitHub:
 			g.Reasons = append(g.Reasons, e2e.Reason{Code: "no_approval", Text: "The author's own approval does not count; ask someone else to approve."})
 		case a.sha != p.SHA:
 			g.Reasons = append(g.Reasons, e2e.Reason{Code: "no_approval", Text: "The approval is for an older commit; approve again on this one."})

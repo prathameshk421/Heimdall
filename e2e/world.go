@@ -57,7 +57,7 @@ type PR struct {
 type GitHubUser interface {
 	// Push commits a change to a branch as a login and returns the new head commit.
 	Push(ctx context.Context, repo, branch, as string, c Change) (sha string, err error)
-	// SetHead moves the PR's head branch to the tip of fromBranch (the story's fix) and returns the PR with its new head.
+	// SetHead moves the PR's head branch to the tip of fromBranch (the fixture's fix) and returns the PR with its new head.
 	SetHead(ctx context.Context, pr PR, fromBranch, as string) (PR, error)
 	// Comments lists the comments on a PR in order.
 	Comments(ctx context.Context, pr PR) ([]PRComment, error)

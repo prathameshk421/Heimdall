@@ -42,11 +42,11 @@ func runP51(ctx context.Context, e *e2e.Env) error {
 		return err
 	}
 	gh := e.World.GitHub()
-	if err := gh.Review(ctx, pr, e.Story.Approver().GitHub, reviewApproved, pr.SHA); err != nil {
+	if err := gh.Review(ctx, pr, e.Fixture.Approver().GitHub, reviewApproved, pr.SHA); err != nil {
 		return err
 	}
 	e.Set(keyOldHead, pr.SHA)
-	fixed, err := gh.SetHead(ctx, pr, e.Story.FixBranch, e.Story.Author().GitHub)
+	fixed, err := gh.SetHead(ctx, pr, e.Fixture.FixBranch, e.Fixture.Author().GitHub)
 	if err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func runP52(ctx context.Context, e *e2e.Env) error {
 	if g.State == "success" {
 		return &e2e.Red{Expected: "the gate not to be green before the approval", Saw: describeGate(g)}
 	}
-	if err := gh.Review(ctx, pr, e.Story.Approver().GitHub, reviewApproved, pr.SHA); err != nil {
+	if err := gh.Review(ctx, pr, e.Fixture.Approver().GitHub, reviewApproved, pr.SHA); err != nil {
 		return err
 	}
 	if _, err := awaitGate(ctx, e, pr, "the gate to become success on the fix", gateWait, gateIs("success")); err != nil {
@@ -152,7 +152,7 @@ var reOlder = regexp.MustCompile(`(?i)older commit`)
 // only thing the gate still asks for is an approval. Without that, a gate red for another reason would hide a
 // product that wrongly counts the approval.
 func pushNewHead(ctx context.Context, e *e2e.Env, pr e2e.PR) (e2e.PR, error) {
-	sha, err := e.World.GitHub().Push(ctx, e.Story.Repo, pr.Head, e.Story.Author().GitHub, e2e.Change{
+	sha, err := e.World.GitHub().Push(ctx, e.Fixture.Repo, pr.Head, e.Fixture.Author().GitHub, e2e.Change{
 		Files: map[string]string{"NOTES.txt": "A note for the reviewers, written on " + shortSHA(pr.SHA) + ".\n"}, Message: "Add a note for the reviewers",
 	})
 	if err != nil {
@@ -184,7 +184,7 @@ func runP53(ctx context.Context, e *e2e.Env) error {
 	if pr, err = pushNewHead(ctx, e, pr); err != nil {
 		return err
 	}
-	if err := e.World.GitHub().Review(ctx, pr, e.Story.Approver().GitHub, reviewApproved, old); err != nil {
+	if err := e.World.GitHub().Review(ctx, pr, e.Fixture.Approver().GitHub, reviewApproved, old); err != nil {
 		return err
 	}
 	g, err := awaitGate(ctx, e, pr, "the gate to answer the old approval", gateWait, func(g e2e.GateState) bool {
@@ -225,7 +225,7 @@ func runP54(ctx context.Context, e *e2e.Env) error {
 		return err
 	}
 	var refused *e2e.ReviewRefusedError
-	err = e.World.GitHub().Review(ctx, pr, e.Story.Author().GitHub, reviewApproved, pr.SHA)
+	err = e.World.GitHub().Review(ctx, pr, e.Fixture.Author().GitHub, reviewApproved, pr.SHA)
 	if err != nil && !errors.As(err, &refused) {
 		return err
 	}
@@ -269,7 +269,7 @@ func runP55(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	commits, err := e.World.GitHub().Commits(ctx, e.Story.Repo, pr.Head)
+	commits, err := e.World.GitHub().Commits(ctx, e.Fixture.Repo, pr.Head)
 	if err != nil {
 		return err
 	}
@@ -289,7 +289,7 @@ func runP55(ctx context.Context, e *e2e.Env) error {
 			return err
 		}
 	}
-	back, err := e.World.GitHub().SetHead(ctx, pr, e.Story.FixBranch, e.Story.Author().GitHub)
+	back, err := e.World.GitHub().SetHead(ctx, pr, e.Fixture.FixBranch, e.Fixture.Author().GitHub)
 	if err != nil {
 		return err
 	}
@@ -298,7 +298,7 @@ func runP55(ctx context.Context, e *e2e.Env) error {
 }
 
 func pushCheat(ctx context.Context, e *e2e.Env, pr e2e.PR, code string, c e2e.Change) (e2e.PR, error) {
-	sha, err := e.World.GitHub().Push(ctx, e.Story.Repo, pr.Head, e.Story.Author().GitHub, c)
+	sha, err := e.World.GitHub().Push(ctx, e.Fixture.Repo, pr.Head, e.Fixture.Author().GitHub, c)
 	if err != nil {
 		return pr, err
 	}
@@ -365,7 +365,7 @@ func openOrFirst(fs []e2e.Finding) e2e.Finding {
 
 // editIntoUphold posts a harmless comment as the approver and edits it into an uphold command.
 func editIntoUphold(ctx context.Context, e *e2e.Env, pr e2e.PR, id string) error {
-	who := e.Story.Approver().GitHub
+	who := e.Fixture.Approver().GitHub
 	gh := e.World.GitHub()
 	cid, err := gh.Comment(ctx, pr, who, "Reading the findings now.")
 	if err != nil {
@@ -404,7 +404,7 @@ func runP57(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	who := e.Story.Approver().GitHub
+	who := e.Fixture.Approver().GitHub
 	if err := e.World.GitHub().Review(ctx, pr, who, reviewApproved, pr.SHA); err != nil {
 		return err
 	}

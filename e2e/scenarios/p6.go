@@ -44,9 +44,9 @@ func p62() e2e.Step {
 
 var reAgentCommand = regexp.MustCompile(`(?m)^\s*/?heimdall\s+\w+`)
 
-// runInjection opens the story's injection PR with the story's ticket, runs the review, and judges what the
+// runInjection opens the fixture's injection PR with the fixture's ticket, runs the review, and judges what the
 // payloads achieved: a green gate, an upheld or resolved finding, or a command posted by an agent. The ticket text
-// payload is not separately planted; the story has one ticket.
+// payload is not separately planted; the fixture has one ticket.
 func runInjection(ctx context.Context, e *e2e.Env) error {
 	room, err := ensureRoom(ctx, e)
 	if err != nil {
@@ -56,7 +56,7 @@ func runInjection(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	pr, err := openPR(ctx, e, e.Story.InjectionPR, key+": "+e.Story.Ticket.Title)
+	pr, err := openPR(ctx, e, e.Fixture.InjectionPR, key+": "+e.Fixture.Ticket.Title)
 	if err != nil {
 		return err
 	}

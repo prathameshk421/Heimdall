@@ -11,7 +11,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/e2e"
 )
 
-const validStory = `
+const validFixture = `
 name: demo
 repo: owner/repo
 base_branch: main
@@ -34,15 +34,15 @@ expected_blocking_set: [P1]
 profile: go
 `
 
-func load(t *testing.T, body string) (*e2e.Story, error) {
+func load(t *testing.T, body string) (*e2e.Fixture, error) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "s.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
-	return e2e.LoadStory(path)
+	return e2e.LoadFixture(path)
 }
 
-func TestLoadStoryReadsAValidStory(t *testing.T) {
-	s, err := load(t, validStory)
+func TestLoadFixtureReadsAValidFixture(t *testing.T) {
+	s, err := load(t, validFixture)
 	require.NoError(t, err)
 	require.Equal(t, "demo", s.Name)
 	require.Equal(t, "owner/repo", s.Repo)
@@ -52,7 +52,7 @@ func TestLoadStoryReadsAValidStory(t *testing.T) {
 	require.Equal(t, []string{"bob"}, s.Reviewers())
 }
 
-func TestLoadStoryRefusesAnInvalidStory(t *testing.T) {
+func TestLoadFixtureRefusesAnInvalidFixture(t *testing.T) {
 	tests := []struct {
 		name    string
 		mutate  func(string) string
@@ -76,18 +76,18 @@ func TestLoadStoryRefusesAnInvalidStory(t *testing.T) {
 			return strings.Replace(s, "expected_blocking_set", "  - { id: P1, finder: bob, file: a.go, lines: [1, 2], tier: E1, repro: a_test.go }\nexpected_blocking_set", 1)
 		}, "P1"},
 		{"lines run backwards", func(s string) string { return strings.Replace(s, "lines: [10, 20]", "lines: [20, 10]", 1) }, "lines"},
-		{"planted issue without a file once the story is defined", func(s string) string { return strings.Replace(s, "file: svc/refund.go, ", "", 1) }, "file"},
+		{"planted issue without a file once the fixture is defined", func(s string) string { return strings.Replace(s, "file: svc/refund.go, ", "", 1) }, "file"},
 		{"unknown field", func(s string) string { return s + "\nsurprise: true\n" }, "surprise"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := load(t, tc.mutate(validStory))
+			_, err := load(t, tc.mutate(validFixture))
 			require.ErrorContains(t, err, tc.message)
 		})
 	}
 }
 
-func TestLoadStoryRefusesBadReferences(t *testing.T) {
+func TestLoadFixtureRefusesBadReferences(t *testing.T) {
 	tests := []struct {
 		name, add, message string
 	}{
@@ -98,18 +98,18 @@ func TestLoadStoryRefusesBadReferences(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := load(t, validStory+tc.add)
+			_, err := load(t, validFixture+tc.add)
 			require.ErrorContains(t, err, tc.message)
 		})
 	}
-	s, err := load(t, validStory+"domain_approver: bob\nstranger: user\nchallenge: { finding: P1, evidence: cited }\nanswer: yes\nfix_branch: demo/fix\n")
+	s, err := load(t, validFixture+"domain_approver: bob\nstranger: user\nchallenge: { finding: P1, evidence: cited }\nanswer: yes\nfix_branch: demo/fix\n")
 	require.NoError(t, err)
 	require.Equal(t, "bob", s.DomainApprover)
 	require.Equal(t, "cited", s.Challenge.Evidence)
 }
 
-func TestAPendingStoryMayLeavePlantedLocationsOpen(t *testing.T) {
-	body := strings.Replace(validStory, "profile: go", "profile: go\npending: T31", 1)
+func TestAPendingFixtureMayLeavePlantedLocationsOpen(t *testing.T) {
+	body := strings.Replace(validFixture, "profile: go", "profile: go\npending: T31", 1)
 	body = strings.Replace(body, "file: svc/refund.go, lines: [10, 20], ", "", 1)
 	body = strings.Replace(body, "repro: svc/refund_partial_test.go", "repro: pending", 1)
 	s, err := load(t, body)
@@ -117,18 +117,17 @@ func TestAPendingStoryMayLeavePlantedLocationsOpen(t *testing.T) {
 	require.Equal(t, "T31", s.Pending)
 }
 
-func TestTheShippedStoriesLoad(t *testing.T) {
-	for _, name := range []string{"fixture-pay", "jurist"} {
-		t.Run(name, func(t *testing.T) {
-			s, err := e2e.LoadStory(filepath.Join("stories", name+".yaml"))
-			require.NoError(t, err)
-			require.Equal(t, name, s.Name)
-		})
-	}
+// shippedFixture is the fixture the board runs on by default (make prototype).
+const shippedFixture = "scenarios/testdata/fixture-pay.yaml"
+
+func TestTheShippedFixtureLoads(t *testing.T) {
+	s, err := e2e.LoadFixture(shippedFixture)
+	require.NoError(t, err)
+	require.Equal(t, "fixture-pay", s.Name)
 }
 
 func TestFixturePayHasTheDemoShape(t *testing.T) {
-	s, err := e2e.LoadStory(filepath.Join("stories", "fixture-pay.yaml"))
+	s, err := e2e.LoadFixture(shippedFixture)
 	require.NoError(t, err)
 	require.Equal(t, "aarush323/heimdall-fixture-pay", s.Repo)
 	require.Equal(t, "aarush323", s.Person("author").GitHub)

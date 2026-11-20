@@ -44,21 +44,21 @@ func runP31(ctx context.Context, e *e2e.Env) error {
 	if _, err := ensureGoodPR(ctx, e); err != nil {
 		return err
 	}
-	if e.Story.Stranger == "" {
-		return storyGap("a stranger")
+	if e.Fixture.Stranger == "" {
+		return fixtureGap("a stranger")
 	}
 	if _, err := requestReview(ctx, e, room); err != nil {
 		return err
 	}
 	// A command from a chat user mapped to nobody is ignored, and the reply says how to link.
-	if _, err := converse(ctx, e, room, e.Story.Stranger, reviewCommand(e.Story), matching(reLink)); err != nil {
+	if _, err := converse(ctx, e, room, e.Fixture.Stranger, reviewCommand(e.Fixture), matching(reLink)); err != nil {
 		return err
 	}
 	ms, err := readRoom(ctx, e, room)
 	if err != nil {
 		return err
 	}
-	if n := count(ms, listsReviewers(e.Story)); n != 1 {
+	if n := count(ms, listsReviewers(e.Fixture)); n != 1 {
 		return &e2e.Red{Expected: "the stranger's command to be ignored, so one listing of the reviewers", Saw: fmt.Sprintf("%d listings", n)}
 	}
 	return nil
@@ -80,7 +80,7 @@ func p32() e2e.Step {
 }
 
 // runP32 fixes the contract for the progress line: "N of M reviews in", a milestone, where M is the number of
-// reviewers the story names. Findings never appear in it; the capture's check 9 fails any that do.
+// reviewers the fixture names. Findings never appear in it; the capture's check 9 fails any that do.
 func runP32(ctx context.Context, e *e2e.Env) error {
 	room, err := earlier[string](e, "P3.1", keyRoom)
 	if err != nil {
@@ -95,7 +95,7 @@ func runP32(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	want := len(e.Story.Reviewers())
+	want := len(e.Fixture.Reviewers())
 	for _, m := range ms {
 		if _, total, ok := progressOf(m); ok && total != want {
 			return &e2e.Red{Expected: fmt.Sprintf("progress lines out of %d reviewers", want), Saw: m.Text}
@@ -108,7 +108,7 @@ func p33() e2e.Step {
 	return e2e.Step{
 		ID:   "P3.3",
 		Does: "nothing",
-		Sees: "the summary contains every id in the Story's `expected_blocking_set`, and any other blocking finding has evidence the code verified (scripted runs: exactly the set; D156), each finding with file:line, the claim, the evidence tier and a link to the evidence (run, memory fact or tool output)",
+		Sees: "the summary contains every id in the fixture's `expected_blocking_set`, and any other blocking finding has evidence the code verified (scripted runs: exactly the set; D156), each finding with file:line, the claim, the evidence tier and a link to the evidence (run, memory fact or tool output)",
 		Tags: []string{"scripted"},
 		// server: the summary is the product's; github-user and fixture-repo: each finding's file is read at the head;
 		// scripted: the findings come from the scripted reviewers.
@@ -131,10 +131,10 @@ func runP33(ctx context.Context, e *e2e.Env) error {
 	}
 	var missing []string
 	expected := map[string]bool{}
-	for _, id := range e.Story.ExpectedBlockingSet {
-		p, ok := planted(e.Story, id)
+	for _, id := range e.Fixture.ExpectedBlockingSet {
+		p, ok := planted(e.Fixture, id)
 		if !ok {
-			return storyGap("a planted issue " + id)
+			return fixtureGap("a planted issue " + id)
 		}
 		f, found := findingFor(p, fs)
 		if !found || !f.Blocking {
@@ -143,7 +143,7 @@ func runP33(ctx context.Context, e *e2e.Env) error {
 		expected[f.ID] = found
 	}
 	if len(missing) > 0 {
-		return &e2e.Red{Expected: "a blocking finding for each of " + strings.Join(e.Story.ExpectedBlockingSet, ", "), Saw: "none for " + strings.Join(missing, "; ")}
+		return &e2e.Red{Expected: "a blocking finding for each of " + strings.Join(e.Fixture.ExpectedBlockingSet, ", "), Saw: "none for " + strings.Join(missing, "; ")}
 	}
 	for _, f := range fs {
 		if f.Blocking && !expected[f.ID] && !f.Confirmed {
@@ -178,7 +178,7 @@ func runP34(ctx context.Context, e *e2e.Env) error {
 		return err
 	}
 	checked := 0
-	for _, p := range e.Story.Planted {
+	for _, p := range e.Fixture.Planted {
 		if !p.NeedsMemory {
 			continue
 		}
@@ -189,7 +189,7 @@ func runP34(ctx context.Context, e *e2e.Env) error {
 		}
 	}
 	if checked == 0 {
-		return storyGap("a planted issue that needs memory")
+		return fixtureGap("a planted issue that needs memory")
 	}
 	for _, f := range fs {
 		if !f.Confirmed && f.Blocking {
@@ -288,16 +288,16 @@ func runP36(ctx context.Context, e *e2e.Env) (err error) {
 	if err != nil {
 		return err
 	}
-	names := e.Story.Reviewers()
+	names := e.Fixture.Reviewers()
 	if len(names) == 0 {
-		return storyGap("reviewers")
+		return fixtureGap("reviewers")
 	}
-	agent, chat := reviewerAgent(names[0]), e.Story.Person(names[0]).Chat
+	agent, chat := reviewerAgent(names[0]), e.Fixture.Person(names[0]).Chat
 	if err := e.World.Agents().Stop(ctx, agent); err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, e.World.Agents().Start(context.WithoutCancel(ctx), agent)) }()
-	if _, err := converse(ctx, e, room, e.Story.Author().Chat, reviewCommand(e.Story), func(m e2e.Message) bool {
+	if _, err := converse(ctx, e, room, e.Fixture.Author().Chat, reviewCommand(e.Fixture), func(m e2e.Message) bool {
 		return reUnavailable.MatchString(m.Text) && strings.Contains(m.Text, chat)
 	}); err != nil {
 		return err
@@ -312,7 +312,7 @@ func runP36(ctx context.Context, e *e2e.Env) (err error) {
 // no longer waits for that reviewer.
 func waive(ctx context.Context, e *e2e.Env, pr e2e.PR, room, chat string) error {
 	text := "heimdall waive-reviewer " + mention(chat) + " the agent is down and the others covered the change"
-	if _, err := converse(ctx, e, room, e.Story.Approver().Chat, text, matching(reWaived)); err != nil {
+	if _, err := converse(ctx, e, room, e.Fixture.Approver().Chat, text, matching(reWaived)); err != nil {
 		return err
 	}
 	_, err := awaitGate(ctx, e, pr, "the gate to stop waiting for the reviewer", gateWait, func(g e2e.GateState) bool {

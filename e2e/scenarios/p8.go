@@ -47,12 +47,12 @@ func runP81(ctx context.Context, e *e2e.Env) error {
 	if doc.ExitCode != 0 {
 		return &e2e.Red{Expected: "heimdall doctor to be green", Saw: fmt.Sprintf("exit %d: %s", doc.ExitCode, doc.Stdout+doc.Stderr)}
 	}
-	if err := room.WriteFile(ctx, "tickets/"+slug(e.Story.Ticket.Title)+".md", ticketFile(e.Story.Ticket)); err != nil {
+	if err := room.WriteFile(ctx, "tickets/"+slug(e.Fixture.Ticket.Title)+".md", ticketFile(e.Fixture.Ticket)); err != nil {
 		return err
 	}
 	return e.World.Clock().Until(ctx, "the ticket file to create a change", roomWait, func(ctx context.Context) (bool, string, error) {
 		res, err := room.Exec(ctx, "heimdall", "changes")
-		return strings.Contains(res.Stdout, e.Story.Ticket.Title), res.Stdout, err
+		return strings.Contains(res.Stdout, e.Fixture.Ticket.Title), res.Stdout, err
 	})
 }
 
@@ -69,7 +69,7 @@ func p82() e2e.Step {
 		Sees: "red-then-green in under 20 minutes total with real agents on the reader's own OpenRouter key, and the dashboard shows the same story",
 		Tags: []string{"container", "live"},
 		// container: the product runs in it; live: real agents; github-user and fixture-repo: the PR is pushed to the
-		// story's repository and approved there.
+		// fixture's repository and approved there.
 		Needs: []e2e.Need{e2e.NeedContainer, e2e.NeedLive, e2e.NeedGitHubUser, e2e.NeedFixtureRepo},
 		Bar:   20 * time.Minute,
 		After: "P8.1",
@@ -82,18 +82,18 @@ var reGreen = regexp.MustCompile(`(?i)\b(green|success|passed)\b`)
 // runP82 reads the product in the container as the one that watches the PR: it needs no review request, it runs
 // the review itself. Red is the gate failing on the findings; green is the gate after the fix and an approval.
 func runP82(ctx context.Context, e *e2e.Env) error {
-	pr, err := openPR(ctx, e, e.Story.GoodPR, e.Story.Ticket.Title)
+	pr, err := openPR(ctx, e, e.Fixture.GoodPR, e.Fixture.Ticket.Title)
 	if err != nil {
 		return err
 	}
 	if _, err := awaitGate(ctx, e, pr, "the gate to go red", 20*time.Minute, gateIs("failure")); err != nil {
 		return err
 	}
-	fixed, err := e.World.GitHub().SetHead(ctx, pr, e.Story.FixBranch, e.Story.Author().GitHub)
+	fixed, err := e.World.GitHub().SetHead(ctx, pr, e.Fixture.FixBranch, e.Fixture.Author().GitHub)
 	if err != nil {
 		return err
 	}
-	if err := e.World.GitHub().Review(ctx, fixed, e.Story.Approver().GitHub, reviewApproved, fixed.SHA); err != nil {
+	if err := e.World.GitHub().Review(ctx, fixed, e.Fixture.Approver().GitHub, reviewApproved, fixed.SHA); err != nil {
 		return err
 	}
 	if _, err := awaitGate(ctx, e, fixed, "the gate to go green", 20*time.Minute, gateIs("success")); err != nil {

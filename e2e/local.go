@@ -15,7 +15,7 @@ import (
 
 // LocalConfig configures the world that runs on the laptop against real systems.
 type LocalConfig struct {
-	Story          *Story
+	Fixture        *Fixture
 	Agents         string // scripted or live
 	ServerURL      string // heimdall-server, for example http://127.0.0.1:8080; empty means none is configured
 	ForwardAddrs   []string
@@ -50,7 +50,7 @@ func NewLocalWorld(cfg LocalConfig) *LocalWorld {
 
 // ghToken asks the gh keyring for one login's token. The login is always named, so the active account is irrelevant.
 func ghToken(login string) (string, error) {
-	out, err := exec.CommandContext(context.Background(), "gh", "auth", "token", "--user", login).Output() // #nosec G204 -- login comes from a story file in the repo
+	out, err := exec.CommandContext(context.Background(), "gh", "auth", "token", "--user", login).Output() // #nosec G204 -- login comes from a fixture file in the repo
 	if err != nil {
 		return "", fmt.Errorf("no gh token for %s (gh auth login as that user): %w", login, err)
 	}
@@ -174,7 +174,7 @@ func (w *LocalWorld) probeForward(ctx context.Context) Availability {
 }
 
 func (w *LocalWorld) probeFixtureRepo(ctx context.Context) Availability {
-	st := w.cfg.Story
+	st := w.cfg.Fixture
 	login := st.Author().GitHub
 	token, err := w.cfg.Token(login)
 	if err != nil {

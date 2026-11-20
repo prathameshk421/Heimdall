@@ -15,9 +15,9 @@ So the tests are organised around that story:
 
 Unit, component and contract tests (layers L0 to L3) stay exactly as `TEST_STRATEGY.md` says. They are how a step gets fixed quickly. The scenarios are how we know it matters.
 
-## 1. Stories: the data a scenario runs on
+## 1. The fixture: the data a scenario runs on
 
-A scenario is written once and run against a **Story**. A Story is plain data (`e2e/stories/<name>.yaml`):
+A scenario is written once and run against a **fixture**: plain data (`e2e/scenarios/testdata/<name>.yaml`, read as `e2e.Fixture`). The `e2e/stories` folder and the `jurist` story were retired on Nov 20, 2026 (owner: "Make the board again" means keep the board on a plain fixture):
 
 | Field | Meaning |
 |---|---|
@@ -29,12 +29,11 @@ A scenario is written once and run against a **Story**. A Story is plain data (`
 | `expected_blocking_set` | the ids that must block, nothing else |
 | `profile` | the sandbox profile the repo uses |
 
-| Story | Repo | Used for |
+| Fixture | Repo | Used for |
 |---|---|---|
 | `fixture-pay` | `aarush323/heimdall-fixture-pay`, published from `testdata/repos/pay-demo` by `make fixtures-push` (hermetic Go service, D57, D149: "Add refunds", planted bugs for bob, eli, ana) | CI, scripted runs, chaos, soak. Cheap and repeatable |
-| `jurist` | Jurist AI, base branch `heimdall-demo`, never `main` (T75, D101, D154) | the live run, the D60 check, rehearsal, the video |
 
-Rule: **a scenario never mentions a repo, a ticket or a person directly.** It reads them from the Story. That is what lets the same script run in CI on the fixture and live on Jurist AI, and it is what stops the product being hard-wired to one demo.
+Rule: **a scenario never mentions a repo, a ticket or a person directly.** It reads them from the fixture. That is what stops the product being hard-wired to one demo.
 
 ## 2. The user simulator and the board (task T98)
 
@@ -58,10 +57,10 @@ Rules for it:
 
 **Two test identities (done Nov 4, T07).** `aarush323` (author, opens PRs and pushes) and `rekdfr` (approver, collaborator with write on `aarush323/PBL_TOS_RISK_ANALYZER`). Verified on a throwaway PR: `rekdfr` APPROVED on the PR's head commit, and the author's own approval was refused by GitHub (422), so P5.2 and P5.4 can run for real. Both logins are held by `gh` in the keyring; the simulator must always pass the token explicitly per call (`GH_TOKEN=$(gh auth token --user <login>)`) and never rely on the active `gh` account. All test PRs use branches named `heimdall-test/<run-id>` and are closed and deleted afterwards. A repo-limited fine-grained token for `rekdfr` is a later tightening, not a blocker. Other collaborators on the repo can approve too, so assertions name the login and never count approvals in general.
 
-**`make prototype`** runs P1 to P9 in order against the chosen Story and world and prints:
+**`make prototype`** runs P1 to P9 in order against the chosen fixture and world and prints:
 
 ```
-Heimdall prototype board   story=fixture-pay   agents=scripted   2026-11-05 14:02
+Heimdall prototype board   fixture=fixture-pay   agents=scripted   2026-11-05 14:02
 P1 Ticket to red tests     P1.1 ✔  P1.2 ✔  P1.3 ✘ blocked(vm)  P1.4 ·  P1.5 ·
 P2 The door                P2.1 ✔  P2.2 ✔  P2.3 ✔
 P3 Three reviewers         P3.1 ✘ red: expected 3 tasks assigned, saw 0  ...
@@ -69,7 +68,7 @@ P3 Three reviewers         P3.1 ✘ red: expected 3 tasks assigned, saw 0  ...
 steps 11/41 green · 3 blocked · 27 red · 0 manual         cost $0.00
 ```
 
-`✔` passed, `✘ red` failed with the expected-versus-seen line, `✘ blocked(x)` cannot run because a named prerequisite (forward, tunnel, key) is missing, `·` not reached because an earlier step in the same scenario failed. **Blocked is never counted as green.** Options: `STORY=`, `AGENTS=scripted|live`, `ONLY=P3`, `JSON=1`. A run appends a line to `docs/PROGRESS.md`'s board history.
+`✔` passed, `✘ red` failed with the expected-versus-seen line, `✘ blocked(x)` cannot run because a named prerequisite (forward, tunnel, key) is missing, `·` not reached because an earlier step in the same scenario failed. **Blocked is never counted as green.** Options: `FIXTURE=`, `AGENTS=scripted|live`, `ONLY=P3`, `JSON=1`. A run appends a line to `docs/PROGRESS.md`'s board history.
 
 Two worlds, same scenarios:
 - **`local`**: the server and the scripted agent run on the laptop. Postgres, Docker, the GitHub App and Jira `KAN` are real, and the VM's real Switch and Mattermost are reached through the SSH port-forward in `RUNBOOK.md`. A step shows `blocked(forward)` if the forward is down. Most progress happens here.

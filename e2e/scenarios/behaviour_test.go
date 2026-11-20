@@ -35,8 +35,8 @@ func stepByID(t *testing.T, id string) e2e.Step {
 	return e2e.Step{}
 }
 
-// withLocations gives the story's planted issues the files and lines the fixture will have (T31).
-func withLocations(st *e2e.Story) *e2e.Story {
+// withLocations gives the fixture's planted issues the files and lines the fixture will have (T31).
+func withLocations(st *e2e.Fixture) *e2e.Fixture {
 	files := []string{"internal/refund/service.go", "api/openapi.yaml", "internal/refund/handler.go"}
 	for i := range st.Planted {
 		st.Planted[i].File = files[i]
@@ -47,7 +47,7 @@ func withLocations(st *e2e.Story) *e2e.Story {
 
 // runSteps runs the named steps, in order, as one scenario on the world. setup stands in for the steps before
 // them; a step whose predecessor is not in the list is treated as independent.
-func runSteps(t *testing.T, w e2e.World, st *e2e.Story, setup func(e *e2e.Env), ids ...string) map[string]e2e.Result {
+func runSteps(t *testing.T, w e2e.World, st *e2e.Fixture, setup func(e *e2e.Env), ids ...string) map[string]e2e.Result {
 	t.Helper()
 	listed := map[string]bool{}
 	for _, id := range ids {
@@ -67,7 +67,7 @@ func runSteps(t *testing.T, w e2e.World, st *e2e.Story, setup func(e *e2e.Env), 
 		steps = append(steps, step)
 	}
 	now := time.Date(2026, 11, 5, 14, 0, 0, 0, time.UTC)
-	board := &e2e.Board{World: w, Story: st, Scripted: true, Now: func() time.Time { now = now.Add(time.Second); return now }}
+	board := &e2e.Board{World: w, Fixture: st, Scripted: true, Now: func() time.Time { now = now.Add(time.Second); return now }}
 	res := board.Run(context.Background(), []e2e.Scenario{{ID: "T", Steps: steps}})[0]
 	out := map[string]e2e.Result{}
 	for _, r := range res.Results {
@@ -145,7 +145,7 @@ func TestP23ThePushedFixMovesTheCheckOnTheNewHead(t *testing.T) {
 // reviewedPR opens good_pr in the double with its review done and nothing open but the approval.
 func reviewedPR(w *memWorld) func(e *e2e.Env) {
 	return func(e *e2e.Env) {
-		pr, _ := w.OpenPR(context.Background(), w.story.Repo, w.story.GoodPR, w.story.BaseBranch, "KAN-1: Add refunds", "", w.story.Author().GitHub)
+		pr, _ := w.OpenPR(context.Background(), w.fixture.Repo, w.fixture.GoodPR, w.fixture.BaseBranch, "KAN-1: Add refunds", "", w.fixture.Author().GitHub)
 		w.pr(pr.Number).reviewed = true
 		e.Set(varPR, pr)
 		e.Set(varOldHead, "sha-before-the-fix")
@@ -195,7 +195,7 @@ func TestP54TheAuthorsOwnApprovalDoesNotCount(t *testing.T) {
 
 // ---- P3.3: the blocking set ----
 
-func findingAt(st *e2e.Story, i int, id string) e2e.Finding {
+func findingAt(st *e2e.Fixture, i int, id string) e2e.Finding {
 	p := st.Planted[i]
 	return e2e.Finding{
 		FindingView: e2e.FindingView{ID: id, File: p.File, Line: p.Lines[0], Tier: p.Tier, Claim: "the claim for " + p.ID, EvidenceRef: "run 7"},
@@ -205,7 +205,7 @@ func findingAt(st *e2e.Story, i int, id string) e2e.Finding {
 
 func openedPR(w *memWorld) func(e *e2e.Env) {
 	return func(e *e2e.Env) {
-		pr, _ := w.OpenPR(context.Background(), w.story.Repo, w.story.GoodPR, w.story.BaseBranch, "KAN-1: Add refunds", "", w.story.Author().GitHub)
+		pr, _ := w.OpenPR(context.Background(), w.fixture.Repo, w.fixture.GoodPR, w.fixture.BaseBranch, "KAN-1: Add refunds", "", w.fixture.Author().GitHub)
 		e.Set(varPR, pr)
 	}
 }
@@ -249,7 +249,7 @@ func TestP33TheBlockingSetIsTheExpectedSet(t *testing.T) {
 func disputedFinding(w *memWorld) func(e *e2e.Env) {
 	return func(e *e2e.Env) {
 		openedPR(w)(e)
-		w.findings = []e2e.Finding{findingAt(w.story, 0, "F1")}
+		w.findings = []e2e.Finding{findingAt(w.fixture, 0, "F1")}
 		e.Set(varRoom, roomName)
 		e.Set(varFinding, "F1")
 		e.Capture.MarkAllSubmitted(w.now.Add(-time.Hour))
@@ -279,11 +279,11 @@ printf 'Integration  Status     Needs\n'
 printf 'github       connected  a token file\n'
 printf 'jira         untested   a token file\n'`
 
-func connectWorld(t *testing.T, st *e2e.Story, body string) e2e.World {
+func connectWorld(t *testing.T, st *e2e.Fixture, body string) e2e.World {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "heimdall")
 	require.NoError(t, os.WriteFile(bin, []byte("#!/bin/sh\n"+body+"\n"), 0o700)) // #nosec G306 -- a script this test runs
-	return e2e.NewLocalWorld(e2e.LocalConfig{Story: st, Agents: "scripted", HeimdallBinary: bin})
+	return e2e.NewLocalWorld(e2e.LocalConfig{Fixture: st, Agents: "scripted", HeimdallBinary: bin})
 }
 
 func TestP91ConnectPrintsATableAndNeverEchoesASecret(t *testing.T) {

@@ -1,4 +1,4 @@
-// Command prototype runs the prototype board: every step of scenarios P1 to P9 against a story, and prints one cell
+// Command prototype runs the prototype board: every step of scenarios P1 to P9 against a fixture, and prints one cell
 // per step (MVP_SCENARIOS section 2). It is the progress bar for the whole project. Run it through `make prototype`.
 package main
 
@@ -26,7 +26,7 @@ func main() {
 }
 
 type options struct {
-	story     string
+	fixture   string
 	agents    string
 	only      string
 	json      bool
@@ -40,7 +40,7 @@ type options struct {
 
 func parseFlags() options {
 	var o options
-	flag.StringVar(&o.story, "story", envOr("STORY", "fixture-pay"), "story name under e2e/stories")
+	flag.StringVar(&o.fixture, "fixture", envOr("FIXTURE", "fixture-pay"), "fixture name under e2e/scenarios/testdata")
 	flag.StringVar(&o.agents, "agents", envOr("AGENTS", "scripted"), "scripted or live")
 	flag.StringVar(&o.only, "only", os.Getenv("ONLY"), "run one scenario, for example P3")
 	flag.BoolVar(&o.json, "json", os.Getenv("JSON") == "1", "print the board as JSON")
@@ -67,7 +67,7 @@ func run() (int, error) {
 	if o.agents != "scripted" && o.agents != "live" {
 		return 0, fmt.Errorf("-agents must be scripted or live, got %q", o.agents)
 	}
-	story, err := e2e.LoadStory(filepath.Join("e2e", "stories", o.story+".yaml"))
+	fixture, err := e2e.LoadFixture(filepath.Join("e2e", "scenarios", "testdata", o.fixture+".yaml"))
 	if err != nil {
 		return 0, err
 	}
@@ -76,7 +76,7 @@ func run() (int, error) {
 		return 0, err
 	}
 	world := e2e.NewLocalWorld(e2e.LocalConfig{
-		Story:          story,
+		Fixture:        fixture,
 		Agents:         o.agents,
 		ServerURL:      os.Getenv("HEIMDALL_URL"),
 		ForwardAddrs:   []string{"127.0.0.1:8000", "127.0.0.1:8065"},
@@ -85,9 +85,9 @@ func run() (int, error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	board := &e2e.Board{World: world, Story: story, Now: time.Now, Scripted: o.agents == "scripted"}
+	board := &e2e.Board{World: world, Fixture: fixture, Now: time.Now, Scripted: o.agents == "scripted"}
 	results := board.Run(ctx, scs)
-	meta := e2e.Meta{Story: story.Name, Agents: o.agents, At: time.Now()}
+	meta := e2e.Meta{Fixture: fixture.Name, Agents: o.agents, At: time.Now()}
 	if o.demo {
 		return runDemo(results)
 	}
@@ -142,6 +142,6 @@ func recordHistory(o options, meta e2e.Meta, results []e2e.ScenarioResult) error
 	if o.noHistory || o.only != "" || o.demo {
 		return nil
 	}
-	row := e2e.HistoryRow{Date: meta.At, Task: o.task, Story: meta.Story, Agents: meta.Agents, Totals: e2e.Summarize(results)}
+	row := e2e.HistoryRow{Date: meta.At, Task: o.task, Fixture: meta.Fixture, Agents: meta.Agents, Totals: e2e.Summarize(results)}
 	return e2e.AppendHistory(o.progress, row)
 }

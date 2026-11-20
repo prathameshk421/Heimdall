@@ -12,7 +12,7 @@ type Need string
 const (
 	NeedServer      Need = "server"       // heimdall-server answers its health check
 	NeedForward     Need = "forward"      // the SSH port-forward to the VM's Switch and Mattermost is up
-	NeedFixtureRepo Need = "fixture-repo" // the Story's repository has its base branch and PR branches
+	NeedFixtureRepo Need = "fixture-repo" // the Fixture's repository has its base branch and PR branches
 	NeedTracker     Need = "tracker"      // a Jira driver that can create and move tickets
 	NeedGitHubUser  Need = "github-user"  // a GitHub driver that can push, open PRs and review
 	NeedChatUser    Need = "chat-user"    // a chat driver that can speak as a person and read a room

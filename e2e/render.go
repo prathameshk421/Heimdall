@@ -13,9 +13,9 @@ import (
 
 // Meta describes a board run.
 type Meta struct {
-	Story  string
-	Agents string
-	At     time.Time
+	Fixture string
+	Agents  string
+	At      time.Time
 }
 
 const titleWidth = 26
@@ -47,7 +47,7 @@ func blockedLabel(r Result) string {
 // Render prints the board: one line per scenario, then why every step that is not green is not, then the totals.
 func Render(w io.Writer, m Meta, results []ScenarioResult) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Heimdall prototype board   story=%s   agents=%s   %s\n", m.Story, m.Agents, m.At.Format("2006-01-02 15:04"))
+	fmt.Fprintf(&b, "Heimdall prototype board   fixture=%s   agents=%s   %s\n", m.Fixture, m.Agents, m.At.Format("2006-01-02 15:04"))
 	width := titleWidth
 	for _, sc := range results {
 		width = max(width, len(sc.ID+" "+sc.Title)+2) // at least two spaces between the title and the first cell
@@ -107,12 +107,12 @@ type jsonScenario struct {
 // RenderJSON prints the board as JSON, for tools.
 func RenderJSON(w io.Writer, m Meta, results []ScenarioResult) error {
 	out := struct {
-		Story     string         `json:"story"`
+		Fixture   string         `json:"fixture"`
 		Agents    string         `json:"agents"`
 		At        time.Time      `json:"at"`
 		Scenarios []jsonScenario `json:"scenarios"`
 		Totals    Totals         `json:"totals"`
-	}{Story: m.Story, Agents: m.Agents, At: m.At, Totals: Summarize(results)}
+	}{Fixture: m.Fixture, Agents: m.Agents, At: m.At, Totals: Summarize(results)}
 	for _, sc := range results {
 		js := jsonScenario{ID: sc.ID, Title: sc.Title, Unmeasured: sc.Unmeasured}
 		for _, r := range sc.Results {
@@ -133,12 +133,12 @@ func RenderJSON(w io.Writer, m Meta, results []ScenarioResult) error {
 
 // HistoryRow is one line of the board history in docs/PROGRESS.md.
 type HistoryRow struct {
-	Date                time.Time
-	Task, Story, Agents string
-	Totals              Totals
+	Date                  time.Time
+	Task, Fixture, Agents string
+	Totals                Totals
 }
 
-const historyHeader = "| Date | Task | Story / agents | Green / blocked / red |"
+const historyHeader = "| Date | Task | Fixture / agents | Green / blocked / red |"
 
 // AppendHistory adds a row to the Board history table of the progress file. It refuses a file without the
 // table, so a renamed heading is noticed instead of the history silently stopping.
@@ -169,7 +169,7 @@ func AppendHistory(path string, r HistoryRow) error {
 	for end < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[end]), "|") {
 		end++
 	}
-	row := fmt.Sprintf("| %s | %s | %s / %s | %d / %d / %d |", r.Date.Format("2006-01-02"), r.Task, r.Story, r.Agents,
+	row := fmt.Sprintf("| %s | %s | %s / %s | %d / %d / %d |", r.Date.Format("2006-01-02"), r.Task, r.Fixture, r.Agents,
 		r.Totals.Green, r.Totals.Blocked, r.Totals.Red)
 	lines = append(lines[:end], append([]string{row}, lines[end:]...)...)
 	return root.WriteFile(name, []byte(strings.Join(lines, "\n")), 0o600)

@@ -149,7 +149,7 @@ heimdall-bin: ## build the command-line binary the board's CLI steps run
 	@mkdir -p .cache
 	go build -o .cache/heimdall ./cmd/heimdall
 
-prototype: heimdall-bin ## the board: make prototype [STORY=fixture-pay] [AGENTS=scripted|live] [ONLY=P3] [JSON=1] [TASK=T##]
+prototype: heimdall-bin ## the board: make prototype [FIXTURE=fixture-pay] [AGENTS=scripted|live] [ONLY=P3] [JSON=1] [TASK=T##]
 	go run ./e2e/cmd/prototype
 
 demo-check: heimdall-bin ## the demo script as a test: every beat of the three-minute video, in order (MVP_SCENARIOS section 6)

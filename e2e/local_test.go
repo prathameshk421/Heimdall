@@ -22,10 +22,10 @@ import (
 func newWorld(t *testing.T, mutate func(*e2e.LocalConfig)) *e2e.LocalWorld {
 	t.Helper()
 	cfg := e2e.LocalConfig{
-		Story:  &e2e.Story{Name: "s", Repo: "o/r", BaseBranch: "main", GoodPR: "good", BadPR: "bad", InjectionPR: "inj", People: map[string]e2e.Person{"author": {Chat: "a", GitHub: "alice", Role: "author"}}},
-		Agents: "scripted",
-		Poll:   time.Millisecond,
-		Token:  func(login string) (string, error) { return "token-for-" + login, nil },
+		Fixture: &e2e.Fixture{Name: "s", Repo: "o/r", BaseBranch: "main", GoodPR: "good", BadPR: "bad", InjectionPR: "inj", People: map[string]e2e.Person{"author": {Chat: "a", GitHub: "alice", Role: "author"}}},
+		Agents:  "scripted",
+		Poll:    time.Millisecond,
+		Token:   func(login string) (string, error) { return "token-for-" + login, nil },
 	}
 	if mutate != nil {
 		mutate(&cfg)
@@ -91,7 +91,7 @@ func githubStub(t *testing.T, branches map[string]int) *httptest.Server {
 	return srv
 }
 
-func TestPrereqFixtureRepoChecksTheBaseAndEveryStoryBranch(t *testing.T) {
+func TestPrereqFixtureRepoChecksTheBaseAndEveryFixtureBranch(t *testing.T) {
 	all := githubStub(t, map[string]int{"main": 200, "good": 200, "bad": 200, "inj": 200})
 	w := newWorld(t, func(c *e2e.LocalConfig) { c.GitHubAPI = all.URL })
 	require.True(t, w.Prereq(t.Context(), e2e.NeedFixtureRepo).OK)

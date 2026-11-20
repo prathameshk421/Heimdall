@@ -81,9 +81,9 @@ func TestEveryScenarioIsNamedAfterItsSteps(t *testing.T) {
 	}
 }
 
-func fixture(t *testing.T) *e2e.Story {
+func fixture(t *testing.T) *e2e.Fixture {
 	t.Helper()
-	st, err := e2e.LoadStory("../stories/fixture-pay.yaml")
+	st, err := e2e.LoadFixture("testdata/fixture-pay.yaml")
 	require.NoError(t, err)
 	st.Pending = ""
 	return st
@@ -91,9 +91,9 @@ func fixture(t *testing.T) *e2e.Story {
 
 func TestWithNothingBuiltEveryStepIsBlockedAndNoneIsGreen(t *testing.T) {
 	st := fixture(t)
-	w := e2e.NewLocalWorld(e2e.LocalConfig{Story: st, Agents: "scripted"})
+	w := e2e.NewLocalWorld(e2e.LocalConfig{Fixture: st, Agents: "scripted"})
 	now := time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
-	b := &e2e.Board{World: w, Story: st, Now: func() time.Time { return now }, Scripted: true}
+	b := &e2e.Board{World: w, Fixture: st, Now: func() time.Time { return now }, Scripted: true}
 	steps := 0
 	for _, sc := range b.Run(context.Background(), scenarios.All()) {
 		for _, r := range sc.Results {
@@ -110,7 +110,7 @@ func TestWithNothingBuiltEveryStepIsBlockedAndNoneIsGreen(t *testing.T) {
 // is run directly reaches a driver that no task has built yet, and that is "blocked on a driver", never red.
 func TestAStepThatStartsAScenarioMeetsAnUnbuiltDriverNotAFailure(t *testing.T) {
 	st := fixture(t)
-	w := e2e.NewLocalWorld(e2e.LocalConfig{Story: st, Agents: "scripted"})
+	w := e2e.NewLocalWorld(e2e.LocalConfig{Fixture: st, Agents: "scripted"})
 	starts := map[string]bool{}
 	for _, id := range []string{
 		"P1.1", "P1.6", "P2.1", "P2.4", "P3.1", "P3.6", "P4.1", "P4.4", "P5.1", "P5.6", "P6.1", "P6.2",
@@ -123,7 +123,7 @@ func TestAStepThatStartsAScenarioMeetsAnUnbuiltDriverNotAFailure(t *testing.T) {
 			if !starts[step.ID] {
 				continue
 			}
-			env := &e2e.Env{World: w, Story: st, Capture: &e2e.Capture{}, Vars: map[string]any{}}
+			env := &e2e.Env{World: w, Fixture: st, Capture: &e2e.Capture{}, Vars: map[string]any{}}
 			err := step.Run(context.Background(), env)
 			task, ok := e2e.IsNotBuilt(err)
 			require.True(t, ok, "%s should be blocked on an unbuilt driver, got %v", step.ID, err)

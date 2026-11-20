@@ -217,7 +217,7 @@ func awaitUnverified(ctx context.Context, e *e2e.Env, pr e2e.PR) error {
 			return false, "", err
 		}
 		checked := 0
-		for _, p := range e.Story.Planted {
+		for _, p := range e.Fixture.Planted {
 			if !p.NeedsMemory {
 				continue
 			}
@@ -228,7 +228,7 @@ func awaitUnverified(ctx context.Context, e *e2e.Env, pr e2e.PR) error {
 			}
 		}
 		if checked == 0 {
-			return false, "", storyGap("a planted issue that needs memory")
+			return false, "", fixtureGap("a planted issue that needs memory")
 		}
 		return true, "", nil
 	})
@@ -257,7 +257,7 @@ func runP74(ctx context.Context, e *e2e.Env) error {
 	}
 	w := &watcher{}
 	err = outage(ctx, e, e2e.ComponentRunner, func(ctx context.Context) error {
-		sha, err := e.World.GitHub().Push(ctx, e.Story.Repo, pr.Head, e.Story.Author().GitHub, e2e.Change{
+		sha, err := e.World.GitHub().Push(ctx, e.Fixture.Repo, pr.Head, e.Fixture.Author().GitHub, e2e.Change{
 			Files: map[string]string{"NOTES.txt": "A note written while the runner is down.\n"}, Message: "Add a note",
 		})
 		if err != nil {
@@ -328,16 +328,16 @@ func runP75(ctx context.Context, e *e2e.Env) (err error) {
 	if err != nil {
 		return err
 	}
-	gh, approver := e.World.GitHub(), e.Story.Approver().GitHub
-	orig, err := gh.ReadFile(ctx, e.Story.Repo, e.Story.BaseBranch, "heimdall.yaml")
+	gh, approver := e.World.GitHub(), e.Fixture.Approver().GitHub
+	orig, err := gh.ReadFile(ctx, e.Fixture.Repo, e.Fixture.BaseBranch, "heimdall.yaml")
 	if err != nil {
 		return err
 	}
 	if !reBrokenValue.MatchString(orig) {
-		return &e2e.Red{Expected: "the base policy to set " + brokenKey, Saw: "heimdall.yaml on " + e.Story.BaseBranch + " does not"}
+		return &e2e.Red{Expected: "the base policy to set " + brokenKey, Saw: "heimdall.yaml on " + e.Fixture.BaseBranch + " does not"}
 	}
 	broken := reBrokenValue.ReplaceAllString(orig, brokenKey+": many")
-	if _, err := gh.Push(ctx, e.Story.Repo, e.Story.BaseBranch, approver, e2e.Change{Files: map[string]string{"heimdall.yaml": broken}, Message: "Break the policy"}); err != nil {
+	if _, err := gh.Push(ctx, e.Fixture.Repo, e.Fixture.BaseBranch, approver, e2e.Change{Files: map[string]string{"heimdall.yaml": broken}, Message: "Break the policy"}); err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, restorePolicy(context.WithoutCancel(ctx), e, orig)) }()
@@ -349,14 +349,14 @@ func runP75(ctx context.Context, e *e2e.Env) (err error) {
 
 // restorePolicy puts the base policy back and makes sure the server runs.
 func restorePolicy(ctx context.Context, e *e2e.Env, orig string) error {
-	_, err := e.World.GitHub().Push(ctx, e.Story.Repo, e.Story.BaseBranch, e.Story.Approver().GitHub, e2e.Change{
+	_, err := e.World.GitHub().Push(ctx, e.Fixture.Repo, e.Fixture.BaseBranch, e.Fixture.Approver().GitHub, e2e.Change{
 		Files: map[string]string{"heimdall.yaml": orig}, Message: "Put the policy back",
 	})
 	return errors.Join(err, e.World.Faults().Start(ctx, e2e.ComponentServer))
 }
 
 func failsClosed(ctx context.Context, e *e2e.Env, pr e2e.PR) error {
-	sha, err := e.World.GitHub().Push(ctx, e.Story.Repo, pr.Head, e.Story.Author().GitHub, e2e.Change{
+	sha, err := e.World.GitHub().Push(ctx, e.Fixture.Repo, pr.Head, e.Fixture.Author().GitHub, e2e.Change{
 		Files: map[string]string{"NOTES.txt": "A note pushed under a broken policy.\n"}, Message: "Add a note",
 	})
 	if err != nil {

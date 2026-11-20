@@ -27,7 +27,7 @@ func p11() e2e.Step {
 		Sees: "within 45 s: a change exists, and a branch `<KEY>-<slug>` exists on GitHub",
 		Tags: []string{"local"},
 		// server: the poller makes the change; tracker: the person works in Jira; github-user and fixture-repo:
-		// the branch is read on the story's repository.
+		// the branch is read on the fixture's repository.
 		Needs: []e2e.Need{e2e.NeedServer, e2e.NeedTracker, e2e.NeedGitHubUser, e2e.NeedFixtureRepo},
 		Bar:   45 * time.Second,
 		Run:   runP11,
@@ -36,14 +36,14 @@ func p11() e2e.Step {
 
 // runP11 is read as: the change is seen through its branch (the room follows in P1.2).
 func runP11(ctx context.Context, e *e2e.Env) error {
-	key, err := startTicket(ctx, e, e.Story.Ticket)
+	key, err := startTicket(ctx, e, e.Fixture.Ticket)
 	if err != nil {
 		return err
 	}
 	e.Set(keyTicket, key)
 	var branch string
 	err = e.World.Clock().Until(ctx, "a branch for "+key, 45*time.Second, func(ctx context.Context) (bool, string, error) {
-		branches, err := e.World.GitHub().Branches(ctx, e.Story.Repo)
+		branches, err := e.World.GitHub().Branches(ctx, e.Fixture.Repo)
 		if err != nil {
 			return false, "", err
 		}
@@ -89,7 +89,7 @@ func runP12(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	for _, want := range []string{e.Story.Author().Chat, testAuthor} {
+	for _, want := range []string{e.Fixture.Author().Chat, testAuthor} {
 		if !contains(members, want) {
 			return &e2e.Red{Expected: want + " in the room", Saw: "members " + strings.Join(members, ", ")}
 		}
@@ -134,7 +134,7 @@ func contains(list []string, want string) bool {
 func p13() e2e.Step {
 	return e2e.Step{
 		ID:   "P1.3",
-		Does: "answer the one question in the room (if the Story has one)",
+		Does: "answer the one question in the room (if the fixture has one)",
 		Sees: "the question was a single message with concrete options and an @-mention of the developer; after the answer, no second question is asked",
 		Tags: []string{"vm"},
 		// server: the product asks; chat-user and forward: the person answers in the room. Live agents may play the
@@ -153,13 +153,13 @@ func runP13(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	if e.Story.Question == "" {
+	if e.Fixture.Question == "" {
 		ms, err := readRoom(ctx, e, room)
 		if err != nil {
 			return err
 		}
 		if n := count(ms, ofKind(e2e.KindQuestion)); n > 0 {
-			return &e2e.Red{Expected: "no question, because the story has none", Saw: fmt.Sprintf("%d questions", n)}
+			return &e2e.Red{Expected: "no question, because the fixture has none", Saw: fmt.Sprintf("%d questions", n)}
 		}
 		return nil
 	}
@@ -167,8 +167,8 @@ func runP13(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	if !mentions(q, e.Story.Author().Chat) {
-		return &e2e.Red{Expected: "the question to @-mention the developer " + e.Story.Author().Chat, Saw: fmt.Sprintf("mentions %v", q.Mentions)}
+	if !mentions(q, e.Fixture.Author().Chat) {
+		return &e2e.Red{Expected: "the question to @-mention the developer " + e.Fixture.Author().Chat, Saw: fmt.Sprintf("mentions %v", q.Mentions)}
 	}
 	if !reOptions.MatchString(q.Text) {
 		return &e2e.Red{Expected: "concrete options in the question", Saw: q.Text}
@@ -186,7 +186,7 @@ func answerOnce(ctx context.Context, e *e2e.Env, room string) error {
 	if n := count(before, ofKind(e2e.KindQuestion)); n != 1 {
 		return &e2e.Red{Expected: "a single question", Saw: fmt.Sprintf("%d questions", n)}
 	}
-	if err := e.World.Chat().Say(ctx, room, e.Story.Author().Chat, e.Story.Answer); err != nil {
+	if err := e.World.Chat().Say(ctx, room, e.Fixture.Author().Chat, e.Fixture.Answer); err != nil {
 		return err
 	}
 	_, err = awaitMessage(ctx, e, room, "the product to carry on after the answer", testsWait, func(m e2e.Message) bool {
@@ -235,14 +235,14 @@ func runP14(ctx context.Context, e *e2e.Env) error {
 	if err := judgeTestCommits(ctx, e, key, branch); err != nil {
 		return err
 	}
-	runs, err := e.World.Runner().RunOnBase(ctx, e.Story.Repo, e.Story.BaseBranch, branch)
+	runs, err := e.World.Runner().RunOnBase(ctx, e.Fixture.Repo, e.Fixture.BaseBranch, branch)
 	if err != nil {
 		return err
 	}
-	if err := judgeRuns(runs, len(e.Story.Ticket.AC)); err != nil {
+	if err := judgeRuns(runs, len(e.Fixture.Ticket.AC)); err != nil {
 		return err
 	}
-	return judgeReady(ready, len(runs), len(e.Story.Ticket.AC))
+	return judgeReady(ready, len(runs), len(e.Fixture.Ticket.AC))
 }
 
 func changeFacts(e *e2e.Env, step string) (key, branch, room string, err error) {
@@ -258,7 +258,7 @@ func changeFacts(e *e2e.Env, step string) (key, branch, room string, err error) 
 
 // judgeTestCommits checks the commits under the tests directory exist and are the App's.
 func judgeTestCommits(ctx context.Context, e *e2e.Env, key, branch string) error {
-	commits, err := e.World.GitHub().Commits(ctx, e.Story.Repo, branch)
+	commits, err := e.World.GitHub().Commits(ctx, e.Fixture.Repo, branch)
 	if err != nil {
 		return err
 	}
@@ -332,7 +332,7 @@ func runP15(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	commits, err := e.World.GitHub().Commits(ctx, e.Story.Repo, branch)
+	commits, err := e.World.GitHub().Commits(ctx, e.Fixture.Repo, branch)
 	if err != nil {
 		return err
 	}
@@ -340,14 +340,14 @@ func runP15(ctx context.Context, e *e2e.Env) error {
 	if target == "" {
 		return &e2e.Red{Expected: "a heimdall test on the branch to edit", Saw: "none under tests/heimdall/" + key + "/"}
 	}
-	author := e.Story.Author().GitHub
-	sha, err := e.World.GitHub().Push(ctx, e.Story.Repo, branch, author, e2e.Change{
+	author := e.Fixture.Author().GitHub
+	sha, err := e.World.GitHub().Push(ctx, e.Fixture.Repo, branch, author, e2e.Change{
 		Files: map[string]string{target: "// edited by a person\n"}, Message: key + ": edit a test",
 	})
 	if err != nil {
 		return err
 	}
-	pr, err := openPR(ctx, e, branch, key+": "+e.Story.Ticket.Title)
+	pr, err := openPR(ctx, e, branch, key+": "+e.Fixture.Ticket.Title)
 	if err != nil {
 		return err
 	}
@@ -373,7 +373,7 @@ func testFile(commits []e2e.Commit, prefix string) string {
 func p16() e2e.Step {
 	return e2e.Step{
 		ID:   "P1.6",
-		Does: "Move a ticket in a sensitive domain (Story `tenant_ticket`)",
+		Does: "Move a ticket in a sensitive domain (fixture `tenant_ticket`)",
 		Sees: "the room says tests need sign-off and **nobody is told to build** until `heimdall approve-tests` by the domain approver; a non-approver's command is refused with a clear reason",
 		Tags: []string{"vm"},
 		// server and tracker: a sensitive ticket moves; chat-user and forward: the room and both commands.
@@ -386,9 +386,9 @@ var reSignoff = regexp.MustCompile(`(?i)sign[- ]?off`)
 
 // runP16 reads "nobody is told to build" as: no "failing tests ready" line before the domain approver acts.
 func runP16(ctx context.Context, e *e2e.Env) error {
-	spec, domain := e.Story.TenantTicket, e.Story.Person(e.Story.DomainApprover)
+	spec, domain := e.Fixture.TenantTicket, e.Fixture.Person(e.Fixture.DomainApprover)
 	if spec == nil || domain.Chat == "" {
-		return storyGap("a tenant_ticket and a domain_approver")
+		return fixtureGap("a tenant_ticket and a domain_approver")
 	}
 	key, err := startTicket(ctx, e, *spec)
 	if err != nil {
@@ -404,7 +404,7 @@ func runP16(ctx context.Context, e *e2e.Env) error {
 	if err := noBuildYet(ctx, e, room); err != nil {
 		return err
 	}
-	if _, err := converse(ctx, e, room, e.Story.Author().Chat, "heimdall approve-tests", refusal(domain.Chat)); err != nil {
+	if _, err := converse(ctx, e, room, e.Fixture.Author().Chat, "heimdall approve-tests", refusal(domain.Chat)); err != nil {
 		return err
 	}
 	if err := noBuildYet(ctx, e, room); err != nil {

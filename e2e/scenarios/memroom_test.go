@@ -17,7 +17,7 @@ const roomName = "kan-1-add-refunds"
 func (w *memWorld) Rooms(context.Context) ([]string, error) { return []string{roomName}, nil }
 
 func (w *memWorld) Members(context.Context, string) ([]string, error) {
-	return []string{w.story.Author().Chat}, nil
+	return []string{w.fixture.Author().Chat}, nil
 }
 
 func (w *memWorld) Transcript(context.Context, string) ([]e2e.Message, error) {
@@ -44,16 +44,16 @@ func (w *memWorld) Say(_ context.Context, _, as, text string) error {
 
 // uphold is the product's handling of the command: only the approver may, and the others are told who may.
 func (w *memWorld) uphold(as string, agent bool, id, reason string) {
-	approver := w.story.Approver()
+	approver := w.fixture.Approver()
 	switch {
-	case as == approver.Chat, as == w.story.Author().Chat && w.q.authorCanUphold, agent && w.q.agentCanUphold:
+	case as == approver.Chat, as == w.fixture.Author().Chat && w.q.authorCanUphold, agent && w.q.agentCanUphold:
 		w.markUpheld(id)
 		w.comments = append(w.comments, e2e.PRComment{ID: 1, Author: "heimdall[bot]",
 			Body: fmt.Sprintf("%s upheld by %s on %s: %s", id, approver.GitHub, w.now.Format("2006-01-02"), reason)})
 		w.post("heimdall", true, e2e.KindOther, id+" is upheld by "+approver.Chat+".")
 	case agent:
 		return // commands from unmapped senders, agents among them, are ignored
-	case as == w.story.Author().Chat:
+	case as == w.fixture.Author().Chat:
 		w.post("heimdall", true, e2e.KindOther, "You cannot uphold a finding on your own change; only @"+approver.Chat+" may.")
 	default:
 		w.post("heimdall", true, e2e.KindOther, "I do not know you yet, so I cannot take that. Only @"+approver.Chat+" may uphold a finding; ask them to link your account.")

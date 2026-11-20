@@ -10,14 +10,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Story is the data a scenario runs on (MVP_SCENARIOS section 1). A scenario never names a repo, a ticket
-// or a person directly; it reads them from the Story, so the same script runs on the fixture and on Jurist AI.
-type Story struct {
+// Fixture is the plain data a scenario runs on: the repository, the ticket, the people and the planted issues of
+// one fixture repository (e2e/scenarios/testdata/<name>.yaml). A scenario never names a repo, a ticket or a person
+// directly; it reads them from the Fixture.
+type Fixture struct {
 	Name       string `yaml:"name"`
 	Repo       string `yaml:"repo"`
 	BaseBranch string `yaml:"base_branch"`
-	// Pending is the task that finishes the story's repository content (T31 for fixture-pay, T75 for jurist).
-	// While it is set the story is incomplete on purpose: its steps are blocked on it, never guessed.
+	// Pending is the task that finishes the fixture's repository content (T31 for fixture-pay).
+	// While it is set the fixture is incomplete on purpose: its steps are blocked on it, never guessed.
 	Pending string `yaml:"pending"`
 
 	Ticket       TicketSpec        `yaml:"ticket"`
@@ -57,7 +58,7 @@ type TicketSpec struct {
 	AC          []string `yaml:"ac"`
 }
 
-// Person is one human in a story.
+// Person is one human in a fixture.
 type Person struct {
 	Chat   string `yaml:"chat"`
 	GitHub string `yaml:"github"`
@@ -75,7 +76,7 @@ type Planted struct {
 	NeedsMemory bool   `yaml:"needs_memory"`
 }
 
-// The roles a person can have in a story.
+// The roles a person can have in a fixture.
 const (
 	RoleAuthor         = "author"
 	RoleApprover       = "approver"
@@ -84,13 +85,13 @@ const (
 )
 
 // Person returns the named person, or the zero Person when there is none.
-func (s *Story) Person(name string) Person { return s.People[name] }
+func (s *Fixture) Person(name string) Person { return s.People[name] }
 
 // Reviewers lists the names of the people with the reviewer role, sorted.
-func (s *Story) Reviewers() []string { return s.named(RoleReviewer) }
+func (s *Fixture) Reviewers() []string { return s.named(RoleReviewer) }
 
 // named lists the people with a role, sorted, so board output is stable.
-func (s *Story) named(role string) []string {
+func (s *Fixture) named(role string) []string {
 	var out []string
 	for name, p := range s.People {
 		if p.Role == role {
@@ -102,12 +103,12 @@ func (s *Story) named(role string) []string {
 }
 
 // Author is the person who opens pull requests.
-func (s *Story) Author() Person { return s.byRole(RoleAuthor) }
+func (s *Fixture) Author() Person { return s.byRole(RoleAuthor) }
 
 // Approver is the person whose review can unlock the merge.
-func (s *Story) Approver() Person { return s.byRole(RoleApprover) }
+func (s *Fixture) Approver() Person { return s.byRole(RoleApprover) }
 
-func (s *Story) byRole(role string) Person {
+func (s *Fixture) byRole(role string) Person {
 	if names := s.named(role); len(names) > 0 {
 		return s.People[names[0]]
 	}
@@ -115,7 +116,7 @@ func (s *Story) byRole(role string) Person {
 }
 
 // PlantedIDs lists the ids of the planted issues in file order.
-func (s *Story) PlantedIDs() []string {
+func (s *Fixture) PlantedIDs() []string {
 	ids := make([]string, 0, len(s.Planted))
 	for _, p := range s.Planted {
 		ids = append(ids, p.ID)
@@ -123,20 +124,20 @@ func (s *Story) PlantedIDs() []string {
 	return ids
 }
 
-// LoadStory reads a story file and refuses it unless it is complete and consistent.
-func LoadStory(path string) (*Story, error) {
-	raw, err := os.ReadFile(path) // #nosec G304 -- story paths come from the board's own command line
+// LoadFixture reads a fixture file and refuses it unless it is complete and consistent.
+func LoadFixture(path string) (*Fixture, error) {
+	raw, err := os.ReadFile(path) // #nosec G304 -- fixture paths come from the board's own command line
 	if err != nil {
-		return nil, fmt.Errorf("read story: %w", err)
+		return nil, fmt.Errorf("read fixture: %w", err)
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true)
-	var s Story
+	var s Fixture
 	if err := dec.Decode(&s); err != nil {
-		return nil, fmt.Errorf("parse story %s: %w", path, err)
+		return nil, fmt.Errorf("parse fixture %s: %w", path, err)
 	}
 	if err := s.validate(); err != nil {
-		return nil, fmt.Errorf("story %s: %w", path, err)
+		return nil, fmt.Errorf("fixture %s: %w", path, err)
 	}
 	return &s, nil
 }
@@ -147,7 +148,7 @@ func validRole(r string) bool {
 	return r == RoleAuthor || r == RoleApprover || r == RoleReviewer || r == RoleDomainApprover
 }
 
-func (s *Story) validate() error {
+func (s *Fixture) validate() error {
 	var errs []error
 	need := func(field, value string) {
 		if value == "" {
@@ -173,11 +174,11 @@ func (s *Story) validate() error {
 	return errors.Join(errs...)
 }
 
-func (s *Story) validateRefs() []error {
+func (s *Fixture) validateRefs() []error {
 	var errs []error
 	if s.DomainApprover != "" {
 		if _, ok := s.People[s.DomainApprover]; !ok {
-			errs = append(errs, fmt.Errorf("domain_approver %q is not a person in the story", s.DomainApprover))
+			errs = append(errs, fmt.Errorf("domain_approver %q is not a person in the fixture", s.DomainApprover))
 		}
 	}
 	if c := s.Challenge; c != nil {
@@ -199,7 +200,7 @@ func (s *Story) validateRefs() []error {
 	return errs
 }
 
-func (s *Story) validatePeople() []error {
+func (s *Fixture) validatePeople() []error {
 	var errs []error
 	for name, p := range s.People {
 		if !validRole(p.Role) {
@@ -227,7 +228,7 @@ func (s *Story) validatePeople() []error {
 	return errs
 }
 
-func (s *Story) validatePlanted() []error {
+func (s *Fixture) validatePlanted() []error {
 	var errs []error
 	seen := map[string]bool{}
 	for _, p := range s.Planted {
@@ -249,12 +250,12 @@ func (s *Story) validatePlanted() []error {
 	return errs
 }
 
-// validateOnePlanted checks one planted issue. Its location is only required once the story is defined, because a
-// pending story's files do not exist yet.
-func (s *Story) validateOnePlanted(p Planted) []error {
+// validateOnePlanted checks one planted issue. Its location is only required once the fixture is defined, because a
+// pending fixture's files do not exist yet.
+func (s *Fixture) validateOnePlanted(p Planted) []error {
 	var errs []error
 	if _, ok := s.People[p.Finder]; !ok {
-		errs = append(errs, fmt.Errorf("planted %s: finder %q is not a person in the story", p.ID, p.Finder))
+		errs = append(errs, fmt.Errorf("planted %s: finder %q is not a person in the fixture", p.ID, p.Finder))
 	}
 	if !validTier(p.Tier) {
 		errs = append(errs, fmt.Errorf("planted %s: tier %q is not E1 to E4", p.ID, p.Tier))
@@ -263,13 +264,13 @@ func (s *Story) validateOnePlanted(p Planted) []error {
 		return errs
 	}
 	if p.File == "" {
-		errs = append(errs, fmt.Errorf("planted %s: file is required once the story is defined", p.ID))
+		errs = append(errs, fmt.Errorf("planted %s: file is required once the fixture is defined", p.ID))
 	}
 	if p.Lines[0] < 1 || p.Lines[1] < p.Lines[0] {
 		errs = append(errs, fmt.Errorf("planted %s: lines %v must be a 1-based range, first <= last", p.ID, p.Lines))
 	}
 	if p.Repro == "" {
-		errs = append(errs, fmt.Errorf("planted %s: repro test is required once the story is defined (MVP_SCENARIOS 8.6)", p.ID))
+		errs = append(errs, fmt.Errorf("planted %s: repro test is required once the fixture is defined (MVP_SCENARIOS 8.6)", p.ID))
 	}
 	return errs
 }

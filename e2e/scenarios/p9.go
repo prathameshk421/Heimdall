@@ -23,11 +23,11 @@ const probeValue = "hd-probe-value-5d2c8e7a"
 func p91() e2e.Step {
 	return e2e.Step{
 		ID: "P9.1",
-		// NoStory: the command line and its credentials do not read the story.
-		NoStory: true,
-		Does:    "`heimdall connect`",
-		Sees:    "a table of integrations with status and what each needs; no secret is ever accepted as an argument or echoed",
-		Tags:    []string{"local"},
+		// NoFixture: the command line and its credentials do not read the fixture.
+		NoFixture: true,
+		Does:      "`heimdall connect`",
+		Sees:      "a table of integrations with status and what each needs; no secret is ever accepted as an argument or echoed",
+		Tags:      []string{"local"},
 		// cli: the person types at the built command line; nothing else is touched.
 		Needs: []e2e.Need{e2e.NeedCLI},
 		Run:   runP91,
@@ -96,11 +96,11 @@ func runP91(ctx context.Context, e *e2e.Env) error {
 func p92() e2e.Step {
 	return e2e.Step{
 		ID: "P9.2",
-		// NoStory: the command line and its credentials do not read the story.
-		NoStory: true,
-		Does:    "Connect GitHub and Jira with real test credentials, follow the prompts",
-		Sees:    "both `connected`; a wrong token gives an error that names the secret file to fix",
-		Tags:    []string{"local"},
+		// NoFixture: the command line and its credentials do not read the fixture.
+		NoFixture: true,
+		Does:      "Connect GitHub and Jira with real test credentials, follow the prompts",
+		Sees:      "both `connected`; a wrong token gives an error that names the secret file to fix",
+		Tags:      []string{"local"},
 		// cli: the command line; github-user and tracker: the real test credentials it checks live.
 		Needs: []e2e.Need{e2e.NeedCLI, e2e.NeedGitHubUser, e2e.NeedTracker},
 		Run:   runP92,
@@ -166,11 +166,11 @@ func wrongToken(ctx context.Context, e *e2e.Env, dir, kind string) error {
 func p93() e2e.Step {
 	return e2e.Step{
 		ID: "P9.3",
-		// NoStory: the command line and its credentials do not read the story.
-		NoStory: true,
-		Does:    "Someone who did not write it connects all three systems using only the prompts",
-		Sees:    "under 15 minutes, no questions asked of the author (a recorded manual run, T72)",
-		Tags:    []string{"manual"},
+		// NoFixture: the command line and its credentials do not read the fixture.
+		NoFixture: true,
+		Does:      "Someone who did not write it connects all three systems using only the prompts",
+		Sees:      "under 15 minutes, no questions asked of the author (a recorded manual run, T72)",
+		Tags:      []string{"manual"},
 		// manual: only a person who did not write it can do this; the run is recorded by hand (T72).
 		Needs: []e2e.Need{e2e.NeedManual},
 		Run:   runP93,
@@ -184,11 +184,11 @@ func runP93(context.Context, *e2e.Env) error {
 func p94() e2e.Step {
 	return e2e.Step{
 		ID: "P9.4",
-		// NoStory: the command line and its credentials do not read the story.
-		NoStory: true,
-		Does:    "`heimdall connect <kind>` for every other integration, stopped partway and run again",
-		Sees:    "each shows its manual steps and resumes where it stopped; a live check proves the result; one without a real run shows `untested` (T99)",
-		Tags:    []string{"local"},
+		// NoFixture: the command line and its credentials do not read the fixture.
+		NoFixture: true,
+		Does:      "`heimdall connect <kind>` for every other integration, stopped partway and run again",
+		Sees:      "each shows its manual steps and resumes where it stopped; a live check proves the result; one without a real run shows `untested` (T99)",
+		Tags:      []string{"local"},
 		// cli: the command line.
 		Needs: []e2e.Need{e2e.NeedCLI},
 		Run:   runP94,

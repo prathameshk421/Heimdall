@@ -60,19 +60,19 @@ func cardProblem(m e2e.Message, approverChat string) string {
 }
 
 func runP41(ctx context.Context, e *e2e.Env) error {
-	ch := e.Story.Challenge
+	ch := e.Fixture.Challenge
 	if ch == nil {
-		return storyGap("a challenge")
+		return fixtureGap("a challenge")
 	}
 	pr, room, f, err := disputed(ctx, e)
 	if err != nil {
 		return err
 	}
-	card, err := converse(ctx, e, room, e.Story.Author().Chat, "heimdall challenge "+f.ID+" "+ch.Evidence, ofKind(e2e.KindDecision))
+	card, err := converse(ctx, e, room, e.Fixture.Author().Chat, "heimdall challenge "+f.ID+" "+ch.Evidence, ofKind(e2e.KindDecision))
 	if err != nil {
 		return err
 	}
-	if p := cardProblem(card, e.Story.Approver().Chat); p != "" {
+	if p := cardProblem(card, e.Fixture.Approver().Chat); p != "" {
 		return &e2e.Red{Expected: "a decision card with one recommendation and citations", Saw: p + ": " + card.Text}
 	}
 	fs, err := readFindings(ctx, e, pr)
@@ -86,7 +86,7 @@ func runP41(ctx context.Context, e *e2e.Env) error {
 	return nil
 }
 
-// disputed finishes the review and finds the finding the story's challenge is about.
+// disputed finishes the review and finds the finding the fixture's challenge is about.
 func disputed(ctx context.Context, e *e2e.Env) (e2e.PR, string, e2e.Finding, error) {
 	pr, err := reviewedPR(ctx, e)
 	if err != nil {
@@ -100,9 +100,9 @@ func disputed(ctx context.Context, e *e2e.Env) (e2e.PR, string, e2e.Finding, err
 	if err != nil {
 		return pr, room, e2e.Finding{}, err
 	}
-	p, ok := planted(e.Story, e.Story.Challenge.Finding)
+	p, ok := planted(e.Fixture, e.Fixture.Challenge.Finding)
 	if !ok {
-		return pr, room, e2e.Finding{}, storyGap("the planted issue the challenge is about")
+		return pr, room, e2e.Finding{}, fixtureGap("the planted issue the challenge is about")
 	}
 	f, found := findingFor(p, fs)
 	if !found {
@@ -144,8 +144,8 @@ func runP42(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	text := "heimdall challenge " + id + " " + e.Story.Challenge.Evidence
-	if _, err := converse(ctx, e, room, e.Story.Author().Chat, text, func(m e2e.Message) bool {
+	text := "heimdall challenge " + id + " " + e.Fixture.Challenge.Evidence
+	if _, err := converse(ctx, e, room, e.Fixture.Author().Chat, text, func(m e2e.Message) bool {
 		return reRefusal.MatchString(m.Text) && reEvidence.MatchString(m.Text)
 	}); err != nil {
 		return err
@@ -211,16 +211,16 @@ func runP43(ctx context.Context, e *e2e.Env) error {
 	if err != nil {
 		return err
 	}
-	names := e.Story.Reviewers()
-	if len(names) == 0 || e.Story.Stranger == "" {
-		return storyGap("reviewers and a stranger")
+	names := e.Fixture.Reviewers()
+	if len(names) == 0 || e.Fixture.Stranger == "" {
+		return fixtureGap("reviewers and a stranger")
 	}
 	cmd := "heimdall uphold " + id + " " + upholdReason
 	if err := e.World.Chat().Say(ctx, room, reviewerAgent(names[0]), cmd); err != nil {
 		return err
 	}
-	who := e.Story.Approver()
-	for _, as := range []string{e.Story.Stranger, e.Story.Author().Chat} {
+	who := e.Fixture.Approver()
+	for _, as := range []string{e.Fixture.Stranger, e.Fixture.Author().Chat} {
 		if _, err := converse(ctx, e, room, as, cmd, refusal(who.Chat)); err != nil {
 			return err
 		}
@@ -278,9 +278,9 @@ func scriptSameIssue(plantedID string) string { return "flag:" + plantedID + ":h
 // runP44 starts a new review round. "No model can clear it" is read as: the gate stays red and the card goes to
 // the approver, a human; nothing here lets a model clear it, so only the hold and the card are asserted.
 func runP44(ctx context.Context, e *e2e.Env) error {
-	names := e.Story.Reviewers()
-	if len(names) < 2 || len(e.Story.Planted) == 0 {
-		return storyGap("two reviewers and a planted issue")
+	names := e.Fixture.Reviewers()
+	if len(names) < 2 || len(e.Fixture.Planted) == 0 {
+		return fixtureGap("two reviewers and a planted issue")
 	}
 	room, err := ensureRoom(ctx, e)
 	if err != nil {
@@ -291,7 +291,7 @@ func runP44(ctx context.Context, e *e2e.Env) error {
 		return err
 	}
 	for _, name := range names[:2] {
-		if err := e.World.Scripted().Script(ctx, reviewerAgent(name), scriptSameIssue(e.Story.Planted[0].ID)); err != nil {
+		if err := e.World.Scripted().Script(ctx, reviewerAgent(name), scriptSameIssue(e.Fixture.Planted[0].ID)); err != nil {
 			return err
 		}
 	}
@@ -307,7 +307,7 @@ func runP44(ctx context.Context, e *e2e.Env) error {
 		return err
 	}
 	_, err = awaitMessage(ctx, e, room, "a human card", replyWait, func(m e2e.Message) bool {
-		return m.Kind == e2e.KindDecision && mentions(m, e.Story.Approver().Chat)
+		return m.Kind == e2e.KindDecision && mentions(m, e.Fixture.Approver().Chat)
 	})
 	return err
 }

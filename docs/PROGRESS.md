@@ -728,7 +728,7 @@ OpenRouter: $0.149 of the $3 testing cap, read Nov 4 after T03. No live model ru
 
 ## Board history
 
-| Date | Task | Story / agents | Green / blocked / red |
+| Date | Task | Fixture / agents | Green / blocked / red |
 |---|---|---|---|
 | 2026-11-04 | T98 | fixture-pay / scripted | 0 / 38 / 2 |
 | 2026-11-04 |  | fixture-pay / scripted | 0 / 38 / 2 |

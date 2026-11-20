@@ -54,8 +54,8 @@ func earlier[T any](e *e2e.Env, step, key string) (T, error) {
 	return v, nil
 }
 
-func storyGap(what string) error {
-	return &e2e.Red{Expected: "the story to define " + what, Saw: "nothing, so this step cannot run on it"}
+func fixtureGap(what string) error {
+	return &e2e.Red{Expected: "the fixture to define " + what, Saw: "nothing, so this step cannot run on it"}
 }
 
 func mention(chat string) string { return "@" + chat }
@@ -233,7 +233,7 @@ func readFindings(ctx context.Context, e *e2e.Env, pr e2e.PR) ([]e2e.Finding, er
 	for _, f := range fs {
 		view := f.FindingView
 		if view.File != "" {
-			n, err := e.World.GitHub().FileLines(ctx, e.Story.Repo, pr.Head, view.File)
+			n, err := e.World.GitHub().FileLines(ctx, e.Fixture.Repo, pr.Head, view.File)
 			if err != nil {
 				return nil, err
 			}
@@ -244,8 +244,8 @@ func readFindings(ctx context.Context, e *e2e.Env, pr e2e.PR) ([]e2e.Finding, er
 	return fs, nil
 }
 
-// planted finds a planted issue of the story by its id.
-func planted(s *e2e.Story, id string) (e2e.Planted, bool) {
+// planted finds a planted issue of the fixture by its id.
+func planted(s *e2e.Fixture, id string) (e2e.Planted, bool) {
 	for _, p := range s.Planted {
 		if p.ID == id {
 			return p, true
