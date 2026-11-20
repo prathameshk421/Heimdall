@@ -90,8 +90,11 @@ func (f *fakeEvents) OpenPRStreams(_ context.Context) ([]ports.OpenPRStream, err
 		}
 		closed := false
 		for _, e := range evs {
-			if e.Type == change.EventPRClosed && e.Version > opened.Version {
-				closed = true
+			if e.Version <= opened.Version {
+				continue
+			}
+			if e.Type == change.EventPRClosed || e.Type == change.EventPRReopened {
+				closed = e.Type == change.EventPRClosed
 			}
 		}
 		if closed {

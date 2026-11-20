@@ -35,6 +35,7 @@ const (
 	EventPRPushed            EventType = "pr.pushed"
 	EventPRLinked            EventType = "pr.linked"
 	EventPRClosed            EventType = "pr.closed"
+	EventPRReopened          EventType = "pr.reopened"
 	EventDecisionRecorded    EventType = "decision.recorded"
 	EventApprovalRecorded    EventType = "approval.recorded"
 	EventApprovalInvalidated EventType = "approval.invalidated"
@@ -65,6 +66,7 @@ func corePayloads() map[EventType]payloadEntry {
 		EventPRPushed:            entry[PRPushed](),
 		EventPRLinked:            entry[PRLinked](),
 		EventPRClosed:            entry[PRClosed](),
+		EventPRReopened:          entry[PRReopened](),
 		EventDecisionRecorded:    entry[DecisionRecorded](),
 		EventApprovalRecorded:    entry[ApprovalRecorded](),
 		EventApprovalInvalidated: entry[ApprovalInvalidated](),
@@ -248,6 +250,23 @@ type PRClosed struct {
 
 // Validate returns every problem with the payload.
 func (p PRClosed) Validate() error {
+	var v problems
+	v.add("repo", checkRepo(p.Repo))
+	v.add("number", checkAtLeastOne(p.Number))
+	v.add("head_sha", checkSHA(p.HeadSHA))
+	return v.join()
+}
+
+// PRReopened is a pull request that was closed without a merge and is open again on GitHub. It resumes the change that
+// the close ended; a merged change stays merged (found live in H11).
+type PRReopened struct {
+	Repo    Repo   `json:"repo"`
+	Number  int    `json:"number"`
+	HeadSHA id.SHA `json:"head_sha"`
+}
+
+// Validate returns every problem with the payload.
+func (p PRReopened) Validate() error {
 	var v problems
 	v.add("repo", checkRepo(p.Repo))
 	v.add("number", checkAtLeastOne(p.Number))

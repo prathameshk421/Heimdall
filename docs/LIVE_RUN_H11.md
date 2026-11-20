@@ -198,3 +198,84 @@ or the H11 check uses a policy with `require_ticket: false`.
 - The PRs are authored by `prathameshk421` (not `aarush323`, whose token is not on this Mac). GitHub calls used the
   active `gh` account, because the hook blocks `gh auth token` and so a per-call token cannot be passed.
 - The deploy script ran through `ssh heimdall-vm 'sudo sh -s'` (passwordless sudo), not the owner's Terminal panel.
+
+## Second half, Nov 20, 2026 (UTC): the review rerun
+
+The owner did D6 (output limit 32000 for the five agents, agent units restarted at 18:32) and named
+`temporaryhameshakagroup-alt` as the approver for B2. B1 and D7 stay open. Expected extra cost, stated in PROGRESS
+before the run: $0.30 to $1, cap $3.
+
+### Result per row
+
+| Row | Outcome | Minutes |
+|---|---|---|
+| Reopen PR #16 | GitHub reopened it; Heimdall appended nothing, so the change stayed over (D8) | 0.1 |
+| D8 fix, test first, `make fast` and `make verify`, hot deploy | done, `bb04269`; server `8b8fa65e`, runner `d581f0d0`, `/healthz` ok | 20 (18:45 to 19:05) |
+| Change resumes | `pr.reopened` at 19:05:24, one second after the deploy | 0.1 |
+| Reviews | already 2 of 3 from Nov 19: reviewer-2 and reviewer-1 (20:38:46, after its third task), both no findings. reviewer-3's old task timed out and a new one was assigned at 19:05:55 | 0.5 |
+| reviewer-3 runs | **blocked (B4):** every model call fails with `Unauthorized: Authorization header missing`; no ack, `task.rewoken` at 19:09:19 | 3.4 |
+| Does 32000 work on Deploy | **not verified:** no agent reached the model | |
+| Profile, `run_check`, E2 | not run (B1, see below) | |
+| Verify E1/E2/E3 | not run: no finding was filed | |
+| Gate, approval as `temporaryhameshakagroup-alt`, merge | not reached (B4) | |
+| Close again | PR #16 closed at 19:11:39 to stop the ladder; `pr.closed` at 19:15:36 by the reconcile pass. This proves the second half of D8 live: a close after a reopen is recorded again | 4 |
+| Ticketless PR | skipped (D7, owner decision) | |
+
+### Timeline
+
+| UTC | What | Source |
+|---|---|---|
+| 18:32:22 to 18:32:35 | owner's D6 run: configs rewritten, agent units 03 to 07 restarted, five "agent host connected" lines | journal |
+| 18:44:32 | PR #16 reopened (as `prathameshk421`, token per call) | GitHub |
+| 18:44 to 18:47 | `pull requests synced synced=3 appended=0`; no event on KAN-26 | server log, event |
+| 19:04:52 | hot deploy of `bb04269` (backup, `.prev` copies, hashes match inside the container) | `hot-deploy.sh` |
+| 19:05:24 | `pr.reopened` | event |
+| 19:05:27 | `task.timed_out` for reviewer-3's Nov 19 task | event |
+| 19:05:55 | `task.assigned` review to reviewer-3 | event |
+| 19:06:01 | reviewer-3's session: `APIError Unauthorized: Authorization header missing` | OpenCode DB |
+| 19:09:19 | `task.rewoken` n=1; the rewake fails the same way at 19:09:20 | event, OpenCode DB |
+| 19:11:39 | PR #16 closed with a comment | GitHub |
+| 19:15:36 | `pr.closed` (reconcile pass) | event |
+
+### Tool calls, cost
+
+No Heimdall tool call and no model token in this half: `tool_call` has no row after 18:44, and the agents' OpenCode
+databases hold 0 input and 0 output tokens since then. **Spent: $0.00** (the run total stays about $0.24, estimated).
+
+### D8. A reopened pull request never resumed its change (fixed, `bb04269`)
+
+**Seen.** PR #16 was closed on Nov 19 to stop a paid loop. Reopened on GitHub, it got no event: intake saw the same
+head and appended nothing, the fold kept `closed`, and the reconciler never ran the change again. A fresh PR for
+KAN-26 would land on the same ended stream, so the brief's fallback had the same defect.
+**Fix.** A new fact `pr.reopened` (TECH_SPEC 3.2). prsync appends it once when GitHub lists a PR as open that the
+stream last recorded as closed without a merge. The fold clears the close only for the change's own PR; a merged
+change stays merged. `OpenChanges` and `OpenPRStreams` read the same rule in SQL, and a later close appends
+`pr.closed` again. Tests first: `TestAReopenedPullRequestResumesTheChange`, `TestAReopenDoesNotUndoAMergeOrAnotherPullRequest`
+(domain), `TestAReopenedPullRequestIsRecordedOnceAndCanCloseAgain`, `TestAMergedPullRequestIsNeverReopened` (prsync),
+and the two SQL component tests, which failed on the old SQL. **Live:** reopen at 19:05:24, close again at 19:15:36.
+**Not covered:** a second, new PR for a ticket whose first PR closed still folds into the ended change (Noticed).
+
+### B4. The D6 configs read the Deploy key from a variable the agents do not have (needs the owner)
+
+The installer (`scripts/ops/install-agent-configs.sh`, and `deploy/agents/install.sh` by design, D163) writes
+`"apiKey": "{env:DEPLOY_API_KEY}"`. The agent units' environment holds `OPENROUTER_API_KEY` only (variable names
+checked in `/proc/<pid>/environ`; no value was read). D163 says the controller installer
+(`deploy/agents/install-controller.sh`) writes `DEPLOY_API_KEY` into `/etc/switch/agents.env`, but that step never ran
+on this VM: the Nov 19 configs must have held the key another way. **Owner step:** add `DEPLOY_API_KEY` to
+`/etc/switch/agents.env` (the controller installer does it from `deploy_api_key`), restart the controller and agent
+units 03 to 07, check one "agent host connected" line each, then reopen PR #16. The reopen now resumes the change.
+
+### B1. No product path to a promoted profile (unchanged, now traced)
+
+`propose_profile` and `trial_profile` need a principal of role `profiler` holding an active `profile` task
+(`internal/transport/mcp/tools_core.go`). No agent of that role is provisioned (`cmd/heimdall-server/adapters.go`
+provisions test-author, resolver and the reviewers only), and no row assigns a `profile` task
+(`internal/domain/change/rows*.go` assigns `review` and `verdict`; tests are assigned by the tests row). So no proposal
+id can exist, and `/heimdall approve-profile <id>` by `temporaryhameshakagroup-alt` (a policy owner as `approver`) has
+nothing to approve. Forging rows is not allowed. **Needs a design step:** a profiler seat and a row (or an operator
+command) that assigns the `profile` task.
+
+### Still open
+
+D7 (ticketless PRs under `require_ticket: true`), B1, B4, and the unbounded reassignment of a failing seat. KAN-26
+waits on B4: reviewer-3's review, then the gate, the approval and the merge.

@@ -19,7 +19,7 @@ type EffectEnsurer interface {
 
 // OpenChanges lists the changes the reconciler's sweep must visit.
 type OpenChanges interface {
-	// OpenChanges returns the changes that are not over: no pr.closed, no change.rejected and no reject decision in
+	// OpenChanges returns the changes that are not over: no pr.closed without a later pr.reopened, no change.rejected and no reject decision in
 	// the log (the same rule as change.View.Over), in id order.
 	OpenChanges(ctx context.Context) ([]id.ChangeID, error)
 }
