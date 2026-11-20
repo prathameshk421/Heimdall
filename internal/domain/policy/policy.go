@@ -23,6 +23,7 @@ type Policy struct {
 	Pack       Pack      `yaml:"pack" json:"pack"`
 	TalkArea   `yaml:",inline"`
 	ChecksArea `yaml:",inline"`
+	ActionArea `yaml:",inline"`
 	GitHub     GitHub  `yaml:"github" json:"github"`
 	Tracker    Tracker `yaml:"tracker" json:"tracker"`
 	Agents     Agents  `yaml:"agents" json:"agents"`
