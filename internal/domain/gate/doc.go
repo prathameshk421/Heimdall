@@ -27,9 +27,15 @@
 // The gate fails closed. A missing check, a check that has not reported on head, a pinned tree hash that does not
 // match head, and an unknown policy each make a clause unmet with a reason that says which fact is missing.
 //
+// # Verdict
+//
+// verdict.go adds a third state next to Decision (ACTION_MODE 1.2). VerdictOf returns fail when any unmet clause is
+// known false, unknown when every unmet clause has Clause.Unknown set, and pass when nothing is unmet. Evaluate never
+// sets Unknown, so for the merge rule every unmet clause is still a fail. The fast check of Action mode sets it.
+//
 // # Tests
 //
-// gate_test.go starts from an all-green Facts and flips one fact per case. Each case asserts that exactly that clause
+// verdict_test.go pins the verdict table. gate_test.go starts from an all-green Facts and flips one fact per case. Each case asserts that exactly that clause
 // is unmet and no other. Further tests cover the zero value, the reasons for a bad approval, the owner exception,
 // every single flip refused, and BlockingSet's severity, tier, state and E4 rules. Mutation checks were run on the
 // clauses, the approval conditions and BlockingSet; see the report.

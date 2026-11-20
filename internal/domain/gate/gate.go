@@ -100,10 +100,13 @@ type Facts struct {
 	PolicyOwnerApproved bool
 }
 
-// Clause is one clause that is not met, with the reason a person can act on.
+// Clause is one clause that is not met, with the reason a person can act on. Unknown says the clause is unmet because
+// a fact is not known, not because the fact is false (see VerdictOf). Evaluate leaves it false: it reports every
+// unmet clause as a fail, as the merge rule needs. Callers that know the difference, such as the fast check, set it.
 type Clause struct {
-	ID     ClauseID
-	Reason string
+	ID      ClauseID
+	Reason  string
+	Unknown bool
 }
 
 // Decision is the outcome. OK is true exactly when no clause is unmet.
