@@ -38,5 +38,5 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | AM1, AM2, AM4 verdict, action policy, fast check | Claude Personal / Sonnet | `am-fastcheck` | running | |
 | AM8 git-ref event store | Claude Personal / Sonnet | `am8-gitlog` | running | |
 | AM6 coverage parsers | OpenCode / DeepSeek free | `am6-coverage` | running | |
-| AM10 model chat with tools | OpenCode / DeepSeek free | `am10-model-chat` | running | |
+| AM10 model chat with tools | OpenCode / DeepSeek free | `am10-model-chat` | merged | reviewed by coordinator (cost math, bounded body, no key in errors); lint 0 issues, unit 3579 tests; no live model call |
 | S1 GitHub spike | waiting | | blocked | needs the owner's yes for throwaway workflows on `aarush323/heimdall-fixture-pay` |
