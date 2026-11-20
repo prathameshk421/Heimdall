@@ -323,3 +323,5 @@ aa21ec7320426c4f0ee8bd5ce7dd750d81845095:cmd/heimdall-server/card_upload_test.go
 # H12 (Nov 20, 2026): a made-up JWT in the record redaction test, which checks the JWT is redacted. Split in parts since
 # the next commit, so no later commit matches. Not pushed when found; needs the owner's yes like the entries above.
 61dc968d0ca017c9fcc981fd786df8a1161b3a13:internal/app/record/record_test.go:jwt:60
+# The split commit itself: the scan still reads the joined parts on its line as a generic key. Owner approved (Nov 21).
+cdcfcf22545fe357eea47ca6398ca6f2e22478d9:internal/app/record/record_test.go:generic-api-key:61
