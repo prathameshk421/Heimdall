@@ -1,8 +1,33 @@
-# Heimdall: product strategy (draft 2)
+# Heimdall: product strategy (draft 3)
 
-Status: draft 2, Nov 21 2026. Replaces draft 1 after two critics (`CRITIC-deepseek.md`, `CRITIC-grok.md`) and four more
-research passes (`research/06` to `research/10`). Owner decisions still open are in section 9. Claims without a run
-say `not verified`.
+Status: draft 3, Nov 21 2026. Draft 2 plus the changes in section 0, after critic 3 (`CRITIC-v2.md`) and the rival
+check (`research/11`). Owner decisions are in section 9. Claims without a run say `not verified`.
+
+## 0. Draft 3 changes (read first)
+
+1. **A direct rival exists.** MergeHarbor (domain registered Oct 18 2026) documents proof runs, a merge gate with
+   `proven_findings: block`, merge-base rule files, a regulated preset, self-hosting on Enterprise, 11 hosts, at $45 to
+   $70 per developer per month. It has 0 GitHub stars, no customers, no funding and no launch we could find
+   (`research/11`). Heal proves bugs with a test that fails twice and passes after the fix, without a gate. So the
+   market shape is real and nobody owns it yet. Speed and distribution decide it.
+2. **Our position is the open, model-free referee.** MergeHarbor's own verifier model confirms its findings and the
+   gate uses a model confidence score. Heimdall puts no model in the gate, and it referees every reviewer, its own
+   and any third-party bot's (MergeHarbor's included): proven findings block, unproven ones are not shown and are
+   counted. The proof check is source-available (FSL, turning Apache-2.0 after two years, the Sentry model) and runs
+   in the customer's own CI with their own key. Closed rivals cannot follow us there.
+3. **Honest words.** A test can prove a bug is real, never that a finding is false. "Dropped" becomes "unproven, not
+   shown", and a person can open the list.
+4. **Stricter proof.** A finding's test must fail twice on the PR head and pass on a tree where the suspected lines are
+   reverted or fixed (Heal's rule). One red run is not proof.
+5. **Money first.** Shadow mode stays free for open-source repos. For companies, the first sale is a paid pilot: $5k for
+   30 days on one repo, ending with two printed numbers (proven findings per PR, p95 check time).
+6. **Memory is trimmed, not cut.** The owner made it a priority. We keep what only we can do: approved rule cards that
+   are signed, scoped at the merge base and enforced at merge with their history as proof. Session readers and
+   redaction stay. The local MCP server and rule-file export wait.
+7. **Jobs wait for a self-hosted partner, and they lose the independence claim.** A job PR is written by Heimdall, so
+   it is reviewed by a different model and approved by a person, and we never call it independent.
+8. **Claims removed.** "Rules from the merge base" is not unique (MergeHarbor does it). "Nobody ties blocking to
+   proof" is false.
 
 ## 1. The one sentence
 
@@ -76,8 +101,10 @@ judged. Each part makes the others stronger. Nothing here is a separate app.
   (`research/06`: a DeepSeek-flash pipeline matched CodeRabbit on a 50-PR bench for about $7, not verified by us).
 - **Independent of the writer.** Cursor, Devin and Factory review their own output. We are the second opinion with
   evidence, next to whatever agent the team picked.
-- **Rules from the merge base.** Policy and memory cards come from the base branch, so a PR cannot rewrite its own
-  review. One tool in the survey reads rules from the PR head (`research/10` #13, not verified by us).
+- **No model in the gate, and every reviewer refereed.** Rivals let a verifier model or a confidence score decide.
+  We let only proof decide, and we referee other bots' findings too (`research/11`).
+- **Open.** The proof check is source-available and runs in the customer's CI. MergeHarbor, CodeRabbit and Greptile
+  are closed.
 - **Runs where the code lives.** The customer's CI runner or their own VM. Self-hosted review from rivals needs an
   enterprise contract (`research/01 §3`).
 - **Memory that is enforced.** Memory tools remember. We check, at merge, with the card's history as proof.
@@ -112,7 +139,8 @@ while a task runs; the customer's runner already has the toolchain in Action mod
 
 | Plan | Price | Includes |
 |---|---|---|
-| Free | $0 | `heimdall memory` (open source); proof check in shadow mode on any number of repos, BYO model key |
+| Free | $0 | `heimdall memory`; the source-available proof check on open-source repos, BYO model key |
+| Pilot | $5k for 30 days, one repo | Hands-on setup; ends with proven findings per PR and p95 check time on their repo |
 | Team | $15 per active committer per month | Required check, break-glass, memory sync and enforcement, proof summary history |
 | Jobs | 50 merged proof PRs a month included per VM; then $6 per simple upgrade, $30 per breaking-change fix; failed, unmerged or reverted-in-7-days work is free | Upgrade, repro and test jobs on the company VM |
 | Regulated | $35 per active committer per month, $20k a year floor | Self-hosted git adapters, signed record and verifier, Vanta/Drata export, retention and legal hold, SSO, SLA |
@@ -129,6 +157,8 @@ Every PR prints its model cost. A monthly cap per repo is a setting.
 | O4 | No per-person score for managers, ever | yes |
 | O5 | Rename `cards` to `memory` in the CLI | yes |
 | O6 | Switch becomes one optional adapter | yes |
+| O7 | Source-available proof check under FSL (Apache-2.0 after two years); `heimdall memory` Apache-2.0 | yes |
+| O8 | First company sale is a $5k 30-day paid pilot, not free shadow mode | yes |
 
 ## 10. What we refuse to build (for now)
 

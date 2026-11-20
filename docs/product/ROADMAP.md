@@ -1,6 +1,6 @@
-# Heimdall roadmap (draft 2)
+# Heimdall roadmap (draft 3)
 
-Strategy: `STRATEGY.md` (draft 2). Delegation log: `TRACKER.md`. Rules for delegates: `DELEGATE_PREAMBLE.md`.
+Strategy: `STRATEGY.md` (draft 3; read its section 0). Delegation log: `TRACKER.md`. Rules for delegates: `DELEGATE_PREAMBLE.md`.
 
 Build order follows the loop in `STRATEGY.md §3`: prove it on real code, make the proof check land on any PR, open the
 memory door, then the VM with jobs, then the regulated upsell. Each work package (WP) is one concern, one branch, with
@@ -28,9 +28,12 @@ Product WPs avoid the packages that session is changing (`internal/domain/change
 | A7 | **`heimdall action` and a composite GitHub Action.** One static binary, BYO model key, no database | Sonnet after A1 | A public fixture repo gets a proof summary in under 10 minutes from install |
 | A8 | **Break-glass.** Bypass needs a reason and a named person, is recorded, shows as open until reviewed | Opus | Unit tests; shows in the summary and the record |
 | A9 | **Board auth.** OIDC login (GitHub, generic OIDC), roles viewer / approver / admin; no route readable without a session | Opus (security) | Security tests on every route |
+| A11 | **Stricter proof rule.** A finding's test fails twice on the head and passes on a tree with the suspected lines reverted or fixed; one red run is not proof; "unproven, not shown" wording | Opus | Unit tests on the rule; bench evidence rate before and after |
+| A12 | **p95 and misses report.** Fast check and proof run p95 on the bench; a "what we did not check" section in every summary and a weekly misses report from bench and pilot data | Sonnet | Numbers in `docs/sota/BENCH.md`; golden test of the section |
+| A13 | **Test selection for big repos.** Run only tests affected by the change (Go package graph first; `go list -deps`), full suite nightly | Sonnet | p95 on a large Go repo before and after |
 | A10 | **Cost line and cap.** Per-PR token budget, `budget hit` status, cost in the summary, monthly cap per repo; deterministic skip for trivial PRs | Sonnet | Unit tests; $0 on docs-only bench PRs |
 
-## Stage B: memory, the free door (weeks 3 to 8)
+## Stage B: memory, enforced (weeks 3 to 8; B4, B6, B7 wait until a pilot asks)
 
 | WP | What | Owner | Accept |
 |---|---|---|---|
@@ -42,7 +45,7 @@ Product WPs avoid the packages that session is changing (`internal/domain/change
 | B6 | **Card outcomes.** Kept, dismissed, overridden per card, shown to the card's owner only | Sonnet | Unit tests; no manager view exists |
 | B7 | **Open-source split.** `heimdall memory` builds and ships alone, Apache-2.0 | Haiku | Separate build target and README |
 
-## Stage C: the company VM and proof jobs (weeks 6 to 12)
+## Stage C: the company VM and proof jobs (starts only with one signed self-hosted partner)
 
 | WP | What | Owner | Accept |
 |---|---|---|---|
@@ -68,7 +71,7 @@ Product WPs avoid the packages that session is changing (`internal/domain/change
 
 | Step | When |
 |---|---|
-| Five calls with platform leads mid agent rollout; offer a shadow-mode pilot | week 2 |
+| Five calls with platform leads mid agent rollout; offer the $5k 30-day pilot | week 2 |
 | Landing page with measured numbers only (drop count, p95, cost, bench recall) | after A0 and A3 |
 | Show HN: "we drop AI review comments that cannot prove themselves, and print the count" | after A7 |
 | Open-source `heimdall memory` launch | after B4 |
