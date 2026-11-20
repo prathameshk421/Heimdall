@@ -33,9 +33,9 @@ func TestTheActionGoldenDecodesAndValidates(t *testing.T) {
 	a := p.Action
 	require.Equal(t, policy.ActionModeEnforce, a.Mode)
 	require.True(t, a.ProofRequired)
-	require.Equal(t, 0.75, a.Budget.PerPRUSD)
+	require.InDelta(t, 0.75, a.Budget.PerPRUSD, 1e-9)
 	require.Equal(t, 600000, a.Budget.PerPRTokens.Input)
-	require.Equal(t, 80.0, a.DiffCoverage.Min)
+	require.InDelta(t, 80.0, a.DiffCoverage.Min, 1e-9)
 	require.Equal(t, finding.SeverityHigh, a.Analyzers.MinSeverity)
 	require.Equal(t, []string{"alice", "ana"}, a.BreakGlass)
 }
@@ -64,8 +64,8 @@ func TestAnAbsentActionAreaIsShadowWithDefaults(t *testing.T) {
 func TestEffectiveKeepsWhatIsSetAndFillsTheRest(t *testing.T) {
 	a := policy.Action{Mode: policy.ActionModeEnforce, Budget: policy.ActionBudget{PerPRUSD: 1}}.Effective()
 	require.True(t, a.Enforcing())
-	require.Equal(t, 1.0, a.Budget.PerPRUSD)
-	require.Equal(t, 50.0, a.Budget.MonthlyUSD)
+	require.InDelta(t, 1.0, a.Budget.PerPRUSD, 1e-9)
+	require.InDelta(t, 50.0, a.Budget.MonthlyUSD, 1e-9)
 	require.Equal(t, 4000, a.Budget.CallOutputTokens)
 	require.Equal(t, 800000, a.Budget.PerPRTokens.Input)
 
