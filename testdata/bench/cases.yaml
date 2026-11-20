@@ -1,0 +1,300 @@
+# Proof Bench dataset (internal/bench doc.go has the rules; docs/sota/BENCH.md has the last validate run).
+# change: the intro change (bug) or the merged PR (clean), as the commit on the default branch and its first parent.
+# fix: the commit on the default branch that fixed the bug, and its first parent.
+# truth: the fix's old-side line spans in Go source, on the fix parent tree (heimdall-bench truth computes them).
+# Every SHA was checked with read-only gh api on 2026-11-21, and validate fetches each one again.
+version: 1
+cases:
+  - id: testify-1207
+    repo: https://github.com/stretchr/testify
+    language: go
+    kind: bug
+    status: valid
+    change: {sha: 3c33e07c4c233bf61e1414f5acb3cda06ffef1d1, parent: e2b56b3a384eb40136b2cff13e07e932dd95bf28, url: https://github.com/stretchr/testify/pull/1182}
+    fix: {sha: 48391ba5eb8c5f49132138e67ec112d180b88f63, parent: 840cb801497147a6d30a568e0874dfefb10867a9, url: https://github.com/stretchr/testify/pull/1207}
+    test_command: go test ./...
+    timeout: 5m
+    description: AssertExpectations panics on a nil mutex when a mock has no expectations.
+    truth:
+      - file: mock/mock.go
+        lines: ["510-511"]
+    sources: [https://github.com/stretchr/testify/pull/1207, https://github.com/stretchr/testify/pull/1182]
+
+  - id: testify-1795
+    repo: https://github.com/stretchr/testify
+    language: go
+    kind: bug
+    status: valid
+    change: {sha: b5ce16571001d6e96e1693ac891fed5c2510c651, parent: c206b2e823e70c1e4e7ca8eded9e410acc8f71be, url: https://github.com/stretchr/testify/pull/1212}
+    fix: {sha: a0ac157f0b1f801f449e5ae43d6cce3385bc704f, parent: 5fa984a7595bec3f65a1874f6e5a085545121508, url: https://github.com/stretchr/testify/pull/1795}
+    test_command: go test ./...
+    timeout: 5m
+    description: AssertExpectationsForObjects panics when a test object is a mock passed by value.
+    truth:
+      - file: mock/mock.go
+        lines: ["606-608", "610"]
+    sources: [https://github.com/stretchr/testify/pull/1795, https://github.com/stretchr/testify/pull/1212]
+
+  - id: cobra-1001
+    repo: https://github.com/spf13/cobra
+    language: go
+    kind: bug
+    status: invalid
+    reason: "The fix changes no Go test. The bug is in the generated bash script, and no Go test covers it."
+    change: {sha: 21f39ca07ee7bf0c29e1bbdb2ab35df70c64b4b2, parent: f2b07da1e2c38d5f12845a4f607e2e1018cbb1f5, url: https://github.com/spf13/cobra/pull/889}
+    fix: {sha: bf268956645942d536f2faef6d53f1951f9522a4, parent: 447f182a9da843c53fa3dd6acfbd043a857e152e, url: https://github.com/spf13/cobra/pull/1001}
+    test_command: go test ./...
+    timeout: 5m
+    description: The bash completion script no longer sets the global $c before it calls a custom func.
+    truth:
+      - file: bash_completions.go
+        lines: ["63-64", "75-76", "127-128", "132-133"]
+    sources: [https://github.com/spf13/cobra/pull/1001, https://github.com/spf13/cobra/pull/889]
+
+  - id: gin-4702
+    repo: https://github.com/gin-gonic/gin
+    language: go
+    kind: bug
+    status: valid
+    change: {sha: a4baac6e5e030ca707e519a3bf209d25699e3902, parent: 1eb827240e520804ea83b1aafcbaf7ba728b81dd, url: https://github.com/gin-gonic/gin/pull/4181}
+    fix: {sha: d9307dbcbbe796a64d9e0ef23452da888dd7f904, parent: da1e108614ecbbadfa5736b1b297b16121d23b9b, url: https://github.com/gin-gonic/gin/pull/4702}
+    test_command: go test ./...
+    timeout: 5m
+    description: SaveUploadedFile runs chmod on a directory that already exists and fails when the process does not own it.
+    truth:
+      - file: context.go
+        lines: ["728-729", "740-741", "744-745"]
+    sources: [https://github.com/gin-gonic/gin/pull/4702, https://github.com/gin-gonic/gin/pull/4181, https://github.com/gin-gonic/gin/issues/4622]
+
+  - id: etcd-19221
+    repo: https://github.com/etcd-io/etcd
+    language: go
+    kind: bug
+    status: invalid
+    reason: "The fix changes no Go test, so there is no fail-to-pass test for the race."
+    change: {sha: 75f2ae1b6280cd16dde122ae55e815e3fce5a4e8, parent: 3d562c357fe8bd23ce00b76ccce1c87cdf857345, url: https://github.com/etcd-io/etcd/pull/19139}
+    fix: {sha: 43431bd6f83b60d13a29ef9df53d7f04fe63fcfd, parent: c9045d650e6c1cb2e5361723adf3bb8c6ea22ee0, url: https://github.com/etcd-io/etcd/pull/19221}
+    test_command: go test ./server/embed/...
+    timeout: 10m
+    description: The deadlock fix in embed Close brings in a race condition on server shutdown.
+    truth:
+      - file: server/embed/etcd.go
+        lines: ["82-84", "85-86", "87", "390-391", "609-610", "610-611", "776-777", "777-778", "861-862", "862-863", "875-877"]
+      - file: server/embed/serve.go
+        lines: ["63-64", "69-70", "184-185", "185-186", "190-191", "191-192", "240", "251-253", "254-255", "255-256", "268", "336-337", "337-338"]
+    sources: [https://github.com/etcd-io/etcd/pull/19221, https://github.com/etcd-io/etcd/pull/19139]
+
+  - id: client-golang-576
+    repo: https://github.com/prometheus/client_golang
+    language: go
+    kind: bug
+    status: invalid
+    reason: "The fix changes no Go test, so there is no fail-to-pass test for the panic."
+    change: {sha: 1173d734050af725504a9b2fbe93bff0b16f1b53, parent: deade0365a1841693f25d0bebbc7f844bef0b65b, url: https://github.com/prometheus/client_golang/commit/1173d734050af725504a9b2fbe93bff0b16f1b53}
+    fix: {sha: 7f346068718e348964cfd19557f83bdbb2f8327b, parent: b0f4d8e1d513eb4dcb62defe0a3cdaed60672fcb, url: https://github.com/prometheus/client_golang/pull/576}
+    test_command: go test ./...
+    timeout: 5m
+    description: The promhttp response writer delegator panics after the Go 1.9 cleanup removed its push function.
+    truth:
+      - file: prometheus/promhttp/delegator.go
+        lines: ["97-98", "200-201"]
+    sources: [https://github.com/prometheus/client_golang/pull/576, https://github.com/prometheus/client_golang/issues/574]
+
+  - id: echo-1799
+    repo: https://github.com/labstack/echo
+    language: go
+    kind: bug
+    status: valid
+    change: {sha: 2d79ff3d6c27592d01a820d93d0fd7887a87a4b4, parent: cf2fcad01b833d4bac6deb916940759cef3fb376, url: https://github.com/labstack/echo/pull/1628}
+    fix: {sha: 5622ecc1808899388fb24aeee70d6ced353a731e, parent: cffd3efa91c8cb95d104ec1cbebd2e1c0a8981c0, url: https://github.com/labstack/echo/pull/1799}
+    test_command: go test ./...
+    timeout: 5m
+    description: ServeHTTP escapes the request path on every request, a performance regression.
+    truth:
+      - file: echo.go
+        lines: ["632", "637", "911-912"]
+      - file: middleware/middleware.go
+        lines: ["4-5", "53-56"]
+    sources: [https://github.com/labstack/echo/pull/1799, https://github.com/labstack/echo/issues/1777]
+
+  - id: chi-1185
+    repo: https://github.com/go-chi/chi
+    language: go
+    kind: bug
+    status: valid
+    change: {sha: 67be7d9cafdaeb4e04e887ff78d09e030ee43b00, parent: 7957c0d4ddaee560a01110145dbf2809ffdb6663, url: https://github.com/go-chi/chi/pull/926}
+    fix: {sha: 3d1777a1ef8881f7d1da0b02c76ca8f0a29cd2bc, parent: b1c9ab47626cc46b34393ad4d35779c4363c4e1e, url: https://github.com/go-chi/chi/pull/1185}
+    test_command: go test ./...
+    timeout: 5m
+    description: Flush on the wrapped response writer ignores Discard and still writes to the client.
+    truth:
+      - file: middleware/wrap_writer.go
+        lines: ["65-66", "121-122", "148-150", "173-175", "195-197", "240-242"]
+    sources: [https://github.com/go-chi/chi/pull/1185, https://github.com/go-chi/chi/pull/926]
+
+  - id: echo-3004
+    repo: https://github.com/labstack/echo
+    language: go
+    kind: bug
+    status: invalid
+    reason: "The fix test calls BindingError.MarshalJSON, which the fix adds, so it does not build before the fix."
+    change: {sha: fbfe2167f1d20a2febe59770ca0500652df6c27e, parent: 8e425c04311cc1efb896e7d5a7d7cbcafbf03a60, url: https://github.com/labstack/echo/pull/2456}
+    fix: {sha: dba8ff62ea1903956ba4c77ddc37c578c3ae2e48, parent: 4f5ac600f8fb69a33c45430ea8263de02ed0b494, url: https://github.com/labstack/echo/pull/3004}
+    test_command: go test ./...
+    timeout: 5m
+    description: DefaultHTTPErrorHandler writes a BindingError as a bare Bad Request and drops the field and message.
+    truth:
+      - file: binder.go
+        lines: ["68-69", "90-91"]
+    sources: [https://github.com/labstack/echo/pull/3004, https://github.com/labstack/echo/pull/2456, https://github.com/labstack/echo/issues/2771]
+
+  - id: cli-2455
+    repo: https://github.com/urfave/cli
+    language: go
+    kind: bug
+    status: valid
+    change: {sha: b75f9c0bda65162771dd68b53c50be3c728f4f13, parent: 2799fd43bd5cf6996cc5f1af206175b543c640e1, url: https://github.com/urfave/cli/pull/2163}
+    fix: {sha: 26bd9a28850d7276700f83bd6bf0b8c763f12cdc, parent: ba57e8cf9708810b8cbd557e7ca65e2c202315fb, url: https://github.com/urfave/cli/pull/2455}
+    test_command: go test ./...
+    timeout: 5m
+    description: StopOnNthArg handles empty args and "--" before it checks the boundary, so it stops at the wrong arg.
+    truth:
+      - file: command_parse.go
+        lines: ["81-82", "97-103"]
+    sources: [https://github.com/urfave/cli/pull/2455, https://github.com/urfave/cli/pull/2163]
+
+  - id: logrus-1564
+    repo: https://github.com/sirupsen/logrus
+    language: go
+    kind: bug
+    status: valid
+    change: {sha: f96066e3bf3d336a86255321d5436a30265c31f8, parent: 89b6d460f0048bd1591d723b483f89b127257dbb, url: https://github.com/sirupsen/logrus/commit/f96066e3bf3d336a86255321d5436a30265c31f8}
+    fix: {sha: 4dffc93e185dfc8ef2c001582502412f5bac4966, parent: ed957d512a86b08ac978d64f65ae256a1b56263f, url: https://github.com/sirupsen/logrus/pull/1564}
+    test_command: go test ./...
+    timeout: 5m
+    description: Entry.Log at PanicLevel panics, but only the Panic methods should panic.
+    truth:
+      - file: entry.go
+        lines: ["301", "340-343", "389-390", "391-392", "393-399", "437", "441-442", "442-443", "444", "482", "486-487", "487-488", "489", "527", "530-537", "540-541"]
+      - file: logger.go
+        lines: ["159-160", "204", "209-210", "218-219", "263", "302", "304-305", "349"]
+    sources: [https://github.com/sirupsen/logrus/pull/1564]
+
+  # Clean cases: no issue or PR cross-references them as a fix or revert (GitHub timeline, checked 2026-11-21).
+  - id: chi-1051-clean
+    repo: https://github.com/go-chi/chi
+    language: go
+    kind: clean
+    status: valid
+    change: {sha: 3328d4d3ab8a08547fa419ed657017355e6d3c4d, parent: be60b2ec5755a9072cdf27af3ba3034e84781d12, url: https://github.com/go-chi/chi/pull/1051}
+    test_command: go test ./...
+    timeout: 5m
+    description: Modernizer refactor to strings.CutPrefix in the compress middleware.
+    sources: [https://github.com/go-chi/chi/pull/1051]
+
+  - id: echo-2969-clean
+    repo: https://github.com/labstack/echo
+    language: go
+    kind: clean
+    status: invalid
+    reason: "go test ./... fails at the merge commit on go1.27.4: TestHandlerName_differentFuncSameName in the root package."
+    change: {sha: 46f2b8be7b66aada47660feb94c9834d579a5272, parent: 7d1fed0542fc7f4189adc2b92cc1e0eda4640f06, url: https://github.com/labstack/echo/pull/2969}
+    test_command: go test ./...
+    timeout: 5m
+    description: Refactor that replaces strings.Split in loops with strings.SplitSeq.
+    sources: [https://github.com/labstack/echo/pull/2969]
+
+  - id: echo-2822-clean
+    repo: https://github.com/labstack/echo
+    language: go
+    kind: clean
+    status: valid
+    change: {sha: 52d2bff1b9ebb7c581304ed2e5d72397ec40ca6d, parent: f1ebc67c5654f3c6edebd295ed4554ba645802ee, url: https://github.com/labstack/echo/pull/2822}
+    test_command: go test ./...
+    timeout: 5m
+    description: Modernizer refactor that replaces interface{} with any in context.go.
+    sources: [https://github.com/labstack/echo/pull/2822]
+
+  - id: client-golang-2021-clean
+    repo: https://github.com/prometheus/client_golang
+    language: go
+    kind: clean
+    status: invalid
+    reason: "go test ./... does not build at the merge commit on go1.27.4: undefined defaultRuntimeMetrics in prometheus/collectors tests."
+    change: {sha: 74560058a7af7a695db8196c8e84a0754032c6af, parent: 6601282b8b063cd32031186bb8b4874448e59ec7, url: https://github.com/prometheus/client_golang/pull/2021}
+    test_command: go test ./...
+    timeout: 5m
+    description: Modernizer refactor that replaces interface{} with any across 12 files.
+    sources: [https://github.com/prometheus/client_golang/pull/2021]
+
+  - id: cobra-1643-clean
+    repo: https://github.com/spf13/cobra
+    language: go
+    kind: clean
+    status: valid
+    change: {sha: 70e53f62be77e03f376be845efacbd99c00024ca, parent: 2e8ba6f3087bda425da42af31f7373cd2c2c08c5, url: https://github.com/spf13/cobra/pull/1643}
+    test_command: go test ./...
+    timeout: 5m
+    description: Deprecates ExactValidArgs and adds tests for combinations of argument validators.
+    sources: [https://github.com/spf13/cobra/pull/1643]
+
+  # Cases in other languages: SHAs checked, but no runner yet, so they stay pending and have no truth.
+  - id: requests-6716
+    repo: https://github.com/psf/requests
+    language: python
+    kind: bug
+    status: pending
+    change: {sha: a58d7f2ffb4d00b46dca2d70a3932a0b37e22fac, parent: eea3bbf9ac635f465ee6c9903dc57c677952dafd, url: https://github.com/psf/requests/pull/6655}
+    fix: {sha: 145b5399486b56e00250204f033441f3fdf2f3c9, parent: 88dce9d854797c05d0ff296b70e0430535ef8aaf, url: https://github.com/psf/requests/pull/6716}
+    test_command: pytest tests
+    timeout: 10m
+    description: Pool selection with TLS settings ignores a custom SSLContext set on the adapter.
+    sources: [https://github.com/psf/requests/pull/6716, https://github.com/psf/requests/pull/6655, https://github.com/psf/requests/issues/6715]
+
+  - id: jackson-databind-5099
+    repo: https://github.com/FasterXML/jackson-databind
+    language: java
+    kind: bug
+    status: pending
+    change: {sha: d7adffa7bd9f1882ec3db3c431f74d92502049ab, parent: c2aee19643a5128e6554928c45ec35a70f2e3a02, url: https://github.com/FasterXML/jackson-databind/commit/d7adffa7bd9f1882ec3db3c431f74d92502049ab}
+    fix: {sha: 21a11f4fe8b85a7c7fd69465c13f0c5805689201, parent: 3ff375f6cafa9696f43c5ba6f1d607cbd4ea20da, url: https://github.com/FasterXML/jackson-databind/pull/5099}
+    test_command: mvn -q test
+    timeout: 20m
+    description: The null checks for ObjectNode keys break ObjectNode.with().
+    sources: [https://github.com/FasterXML/jackson-databind/pull/5099]
+
+  - id: commander-2014
+    repo: https://github.com/tj/commander.js
+    language: javascript
+    kind: bug
+    status: pending
+    change: {sha: 384f17b7660d474f44136c75d25eb8f6b796e9c8, parent: 58820a47b3d8cd7a336346861bffc3848502352e, url: https://github.com/tj/commander.js/pull/2013}
+    fix: {sha: 14edbca77567d451fa6dd3bc43a9af0ce6277dbe, parent: 384f17b7660d474f44136c75d25eb8f6b796e9c8, url: https://github.com/tj/commander.js/pull/2014}
+    test_command: npm test
+    timeout: 10m
+    description: The factory function re-export gives a TypeScript circular alias error.
+    sources: [https://github.com/tj/commander.js/pull/2014, https://github.com/tj/commander.js/pull/2013]
+
+  - id: zod-6438
+    repo: https://github.com/colinhacks/zod
+    language: typescript
+    kind: bug
+    status: pending
+    change: {sha: a38ab4a8699e33593749e971e805beba672941f4, parent: c9ec89e0025775eabc1528a311ad1c0e8b2051b9, url: https://github.com/colinhacks/zod/pull/6432}
+    fix: {sha: 11c9268b6025be7f2220ee83a1c3f28238a50b84, parent: a38ab4a8699e33593749e971e805beba672941f4, url: https://github.com/colinhacks/zod/pull/6438}
+    test_command: pnpm test
+    timeout: 10m
+    description: A prototype hunk in the discriminator fix changes which inputs exactOptional accepts.
+    sources: [https://github.com/colinhacks/zod/pull/6438, https://github.com/colinhacks/zod/pull/6432]
+
+  - id: zod-5959
+    repo: https://github.com/colinhacks/zod
+    language: typescript
+    kind: bug
+    status: pending
+    change: {sha: 89ba70f2d50d33a70549bedbd5c79785810ee21b, parent: 54902cb794f24f4ceb0cf8830e5a27b3490191f7, url: https://github.com/colinhacks/zod/pull/5689}
+    fix: {sha: 2715c12e76cf022d7dbdeb5852c09fddfe91a481, parent: 81d9fc6cf47da97ad4ef2c43de02276fba249790, url: https://github.com/colinhacks/zod/pull/5959}
+    test_command: pnpm test
+    timeout: 10m
+    description: sideEffects false on the stub package.json files lets bundlers drop the default English locale.
+    sources: [https://github.com/colinhacks/zod/pull/5959, https://github.com/colinhacks/zod/pull/5689, https://github.com/colinhacks/zod/issues/5953]

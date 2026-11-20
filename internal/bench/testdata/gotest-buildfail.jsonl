@@ -1,0 +1,6 @@
+{"ImportPath":"ex.com/b [ex.com/b.test]","Action":"build-output","Output":"# ex.com/b [ex.com/b.test]\n"}
+{"ImportPath":"ex.com/b [ex.com/b.test]","Action":"build-output","Output":"./b_test.go:5:28: undefined: Missing\n"}
+{"ImportPath":"ex.com/b [ex.com/b.test]","Action":"build-fail"}
+{"Time":"2026-11-21T00:15:26.414058+05:30","Action":"start","Package":"ex.com/b"}
+{"Time":"2026-11-21T00:15:26.414109+05:30","Action":"output","Package":"ex.com/b","Output":"FAIL\tex.com/b [build failed]\n","OutputType":"frame"}
+{"Time":"2026-11-21T00:15:26.414118+05:30","Action":"fail","Package":"ex.com/b","Elapsed":0,"FailedBuild":"ex.com/b [ex.com/b.test]"}
