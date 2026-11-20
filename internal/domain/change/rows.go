@@ -39,14 +39,17 @@ type Row struct {
 
 // In is everything a row may read. The reconciler builds it; rows never do I/O.
 type In struct {
-	Change   id.ChangeID
-	View     View
-	Policy   policy.Policy // at the PR's base SHA when there is a PR, else at the branch base
-	Outside  Outside       // facts that need I/O; zero before a PR
-	Profile  Profile       // the repo's promoted profile; zero when none
-	Settings Settings
-	Dead     []DeadJob // outbox rows of this change that are dead or in doubt
-	Now      time.Time
+	Change id.ChangeID
+	View   View
+	Policy policy.Policy // at the PR's base SHA when there is a PR, else at the branch base
+	// PolicyProblem says why the policy at that commit cannot be used (it does not decode, names an unknown version or
+	// fails Validate). While it is set no row is open, and Missing names it.
+	PolicyProblem string
+	Outside       Outside // facts that need I/O; zero before a PR
+	Profile       Profile // the repo's promoted profile; zero when none
+	Settings      Settings
+	Dead          []DeadJob // outbox rows of this change that are dead or in doubt
+	Now           time.Time
 }
 
 // Outside is what the log cannot say and a row needs from the repository.
@@ -168,6 +171,9 @@ func RowJobKinds() []EffectKind {
 // Open returns the rows that have work to do: the flow started, every After row is done and the row is not done itself.
 // A row of a flow that has not started is neither open nor done, so Done never reads a fact that cannot exist yet.
 func Open(in In) []Row {
+	if in.PolicyProblem != "" {
+		return nil // no row decides on a policy the server cannot read
+	}
 	rows := Rows()
 	done := make(map[string]bool, len(rows))
 	for _, r := range rows {

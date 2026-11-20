@@ -149,7 +149,7 @@ func TestNewRefusesSenderIDOutsidePrintableASCII(t *testing.T) {
 
 func TestNewRefusesPolicyThatDoesNotValidate(t *testing.T) {
 	p := specPolicy(t)
-	p.Version = 2
+	p.Version = 1 // the domain policy is version 2; version 1 exists only in files, which the adapter converts
 	_, err := New(p)
 	require.Error(t, err)
 }

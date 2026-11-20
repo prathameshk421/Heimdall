@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -268,4 +269,26 @@ type brokenInputs struct{ fakeInputs }
 
 func (brokenInputs) Policy(context.Context, change.Repo, id.SHA) (policy.Policy, error) {
 	return policy.Policy{}, context.DeadlineExceeded
+}
+
+// A policy that does not decode is a fact about the repository, not a failed read: retrying cannot fix it. The Run
+// starts nothing and the change's needs say why, on every change whose base has that policy (B10).
+func TestAPolicyThatCannotBeUsedIsANeedAndStartsNothing(t *testing.T) {
+	r := newRig(t)
+	r.trigger(t)
+	r.rec.cfg.Inputs = invalidPolicyInputs{}
+	require.NoError(t, r.rec.Run(context.Background(), tkt), "a bad policy file is not an error to retry")
+	require.Empty(t, r.store.keys(), "no row ran on an empty default")
+	needs, err := r.rec.Needs(context.Background(), tkt)
+	require.NoError(t, err)
+	require.Len(t, needs, 1)
+	require.Contains(t, needs[0], "heimdall.yaml")
+	require.Contains(t, needs[0], "version 3 is not known")
+	require.Contains(t, needs[0], "nothing runs on this change until the policy is fixed")
+}
+
+type invalidPolicyInputs struct{ fakeInputs }
+
+func (invalidPolicyInputs) Policy(context.Context, change.Repo, id.SHA) (policy.Policy, error) {
+	return policy.Policy{}, errors.Join(policy.ErrInvalid, errors.New("heimdall.yaml: version 3 is not known"))
 }

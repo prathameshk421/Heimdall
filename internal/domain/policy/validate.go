@@ -50,8 +50,8 @@ const maxChangedLines = 100000
 func builtinDomains() []string { return []string{"auth", "money_movement", "data_deletion"} }
 
 func (p Policy) checkTop(c *checker) {
-	if p.Version != 1 {
-		c.addf("version must be 1, got %d", p.Version)
+	if p.Version != CurrentVersion {
+		c.addf("version must be %d, got %d", CurrentVersion, p.Version)
 	}
 	if strings.TrimSpace(p.Workflow) == "" {
 		c.addf("workflow must not be empty")

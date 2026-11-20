@@ -328,3 +328,18 @@ func TestEachRowDeclaresTheJobKindsItStarts(t *testing.T) {
 		require.True(t, seen[k], "no row started a declared %s job", k)
 	}
 }
+
+// A policy that cannot be used stops every row, and Missing names it in plain words instead of the rows' needs.
+func TestAPolicyProblemOpensNoRowAndIsTheOneNeed(t *testing.T) {
+	v, err := change.Fold([]change.Event{triggered(t)})
+	require.NoError(t, err)
+	in := inOf("KAN-5", v, t0)
+	require.NotEmpty(t, change.Next(in), "the room is needed while the policy is fine")
+	in.Policy = policy.Policy{}
+	in.PolicyProblem = "heimdall.yaml: version 3 is not known"
+	require.Empty(t, change.Next(in), "no row runs on a policy the server cannot read")
+	needs := change.Missing(in)
+	require.Len(t, needs, 1)
+	require.Equal(t, "policy", needs[0].Step)
+	require.Equal(t, "heimdall.yaml cannot be used (heimdall.yaml: version 3 is not known); nothing runs on this change until the policy is fixed on the base branch", needs[0].Text)
+}

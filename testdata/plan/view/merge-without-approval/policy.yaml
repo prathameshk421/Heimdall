@@ -1,4 +1,4 @@
-version: 1
+version: 2
 workflow: default
 approvers: { default: [approver, discord_rush, telegram_owner, mattermost_owner, slack_owner], tenant_data: [ana], money_movement: [approver, discord_rush, telegram_owner, mattermost_owner, slack_owner] }
 policy_owners: [approver, discord_rush, telegram_owner, mattermost_owner, slack_owner]

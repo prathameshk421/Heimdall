@@ -1205,18 +1205,24 @@ Attackers: an outside PR author, a careless or malicious insider, poisoned conte
 
 ## 16. Policy file
 
+Policy versions: `version: 2` is the seats shape (`people.<p>.seat`, and the optional `seats` map). A version 1 file
+(`people.<p>.agent`) is converted to version 2 by one tested function in `internal/adapters/policyyaml`, so a policy at an
+old merge base stays readable; a version 1 file that already says `seat` converts as it is. Any other version, a key
+with no field, or a failed `Validate` is `policy.ErrInvalid`: the change's `Missing` says "heimdall.yaml cannot be used
+(...)" and no row runs until the policy is fixed on the base branch (H12).
+
 ```yaml
-version: 1
+version: 2
 workflow: default
 approvers: { default: [alice], auth: [ana], money_movement: [alice, bob] }
 policy_owners: [ana]
 people:
   # chat is the opaque Switch sender id, filled by `heimdall connect people` (D140); names here are placeholders
   alice: { github: alice, chat: alice, teams: [payments] }
-  bob:   { github: bob,   chat: bob,   agent: bob-reviewer, teams: [payments] }
+  bob:   { github: bob,   chat: bob,   seat: bob-reviewer, teams: [payments] }
   dana:  { github: dana,  chat: dana,  teams: [payments] }          # the PR author in the demo; github is required only for authors and approvers (D158)
-  ana:   { github: ana,   chat: ana,   agent: ana-reviewer, teams: [security] }
-  eli:   { github: eli,   chat: eli,   agent: eli-reviewer, teams: [consumer] }
+  ana:   { github: ana,   chat: ana,   seat: ana-reviewer, teams: [security] }
+  eli:   { github: eli,   chat: eli,   seat: eli-reviewer, teams: [consumer] }
 domains: { "internal/auth/**": auth, "internal/refunds/**": money_movement }
 reviewers: { count: 3, pick_timeout: 15m, required: { "internal/auth/**": [ana], "api/openapi.yaml": [eli] } }
 slop: { max_changed_lines: 400, require_ticket: true, ignore: ["go.sum"] }

@@ -27,7 +27,7 @@ func specPolicy(t *testing.T) policy.Policy {
 func TestTheSpecExampleDecodesAndValidates(t *testing.T) {
 	p := specPolicy(t)
 	require.NoError(t, p.Validate())
-	require.Equal(t, 1, p.Version)
+	require.Equal(t, 2, p.Version)
 	require.Equal(t, 400, p.Slop.MaxChangedLines)
 	require.Equal(t, finding.SeverityMedium, p.Blocking.MinSeverity)
 	require.Equal(t, finding.TierE3, p.Blocking.MinTier)
@@ -66,7 +66,8 @@ func TestValidateRefusesEachBrokenRuleAndNamesTheKey(t *testing.T) {
 		mutate func(*policy.Policy)
 		want   string
 	}{
-		"version 2":              {func(p *policy.Policy) { p.Version = 2 }, "version must be 1"},
+		"version 1":              {func(p *policy.Policy) { p.Version = 1 }, "version must be 2"},
+		"version 3":              {func(p *policy.Policy) { p.Version = 3 }, "version must be 2"},
 		"no workflow name":       {func(p *policy.Policy) { p.Workflow = " " }, "workflow must not be empty"},
 		"approver not in people": {func(p *policy.Policy) { p.Approvers["auth"] = []string{"zed"} }, `approvers.auth: "zed" is not in people`},
 		"approver without a github login": {func(p *policy.Policy) {
@@ -140,7 +141,7 @@ func TestValidateReportsEveryProblemAtOnce(t *testing.T) {
 	p.Pack.MaxAgeDays = 0
 	err := p.Validate()
 	require.Error(t, err)
-	for _, want := range []string{"version must be 1", "slop.max_changed_lines", "pack.max_age_days"} {
+	for _, want := range []string{"version must be 2", "slop.max_changed_lines", "pack.max_age_days"} {
 		require.Contains(t, err.Error(), want)
 	}
 }

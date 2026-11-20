@@ -197,12 +197,24 @@ func (r *Reconciler) runOnce(ctx context.Context, changeID id.ChangeID) error {
 }
 
 // buildIn reads everything the rows may need. An input that cannot be read stops the Run with an error; the sweep tries
-// again. A row never sees an empty default in place of an unread input.
+// again. A row never sees an empty default in place of an unread input. A policy that was read but cannot be used
+// (policy.ErrInvalid) is not a failed read: retrying cannot fix it, so it becomes In.PolicyProblem, no row opens and
+// Missing names it.
 func (r *Reconciler) buildIn(ctx context.Context, changeID id.ChangeID, v change.View) (change.In, error) {
 	in := change.In{Change: changeID, View: v, Settings: r.cfg.Settings, Now: r.cfg.Clock.Now()}
 	repo, base := repoAndBase(v)
 	var err error
-	if in.Policy, err = r.cache.policy(ctx, r.cfg.Inputs, repo, base); err != nil {
+	in.Policy, err = r.cache.policy(ctx, r.cfg.Inputs, repo, base)
+	switch {
+	case errors.Is(err, policy.ErrInvalid):
+		in.PolicyProblem = err.Error()
+		r.cfg.Logger.WarnContext(ctx, "the policy cannot be used; nothing runs on the change", "change", string(changeID),
+			"repo", string(repo), "sha", string(base), "error", err)
+		if in.Dead, err = r.cfg.Dead.DeadEffects(ctx, changeID); err != nil {
+			return in, fmt.Errorf("read dead jobs: %w", err)
+		}
+		return in, nil
+	case err != nil:
 		return in, fmt.Errorf("read policy at %q: %w", base, err)
 	}
 	if in.Profile, err = r.cache.profile(ctx, r.cfg.Inputs, repo); err != nil {

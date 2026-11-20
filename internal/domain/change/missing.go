@@ -22,10 +22,16 @@ type Need struct {
 
 // Missing lists what the change still needs (HARNESS_DESIGN B2): the Text of every action of every open row, in table
 // order; then the merge rule's clauses the view can decide (TECH_SPEC 12.4); then one need per job that failed for good.
+// A policy that cannot be used is the one need besides the dead jobs: no row runs on it.
 // There is no second table: the rows are the ones the reconciler runs. The words are the spec in
 // testdata/plan/view/README.md.
 func Missing(in In) []Need {
 	out := []Need{}
+	if in.PolicyProblem != "" {
+		out = append(out, Need{Step: "policy", Text: "heimdall.yaml cannot be used (" + in.PolicyProblem +
+			"); nothing runs on this change until the policy is fixed on the base branch"})
+		return append(out, deadNeeds(in)...)
+	}
 	for _, ra := range Next(in) {
 		if ra.Text == "" {
 			continue // the need is told elsewhere (the gate's clause)

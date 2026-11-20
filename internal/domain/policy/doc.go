@@ -23,13 +23,15 @@
 //     domains name approver groups, required reviewers have agents, and each approver has a GitHub login.
 //   - Confidence weights are the values the spec fixes (1, 0.5, 0.2), and reviewer count is 1 to 3.
 //   - A duration in a valid policy is positive where the spec needs a timeout, and remind < escalate < reject.
-//   - A zero Policy is invalid.
+//   - A zero Policy is invalid. Validate accepts only CurrentVersion (2, the seats shape); version 1 exists only in
+//     files, and internal/adapters/policyyaml converts it before Validate. A policy that cannot be used is ErrInvalid.
 //   - Decoding refuses a key with no field (KnownFields), so a typo cannot pass silently.
 //
 // # Failure modes
 //
-// A policy that fails to decode or validate fails closed: the caller refuses to start (boot) or gates on
-// policy_invalid (runtime). This package never repairs a value. The stronger finding tiers are not policy
+// A policy that fails to decode or validate fails closed: the caller refuses to start (boot), gates on
+// policy_invalid (slop), or, in the reconciler, opens no row and names the problem in Missing. This package never
+// repairs a value. The stronger finding tiers are not policy
 // knobs: E4 can never block, and Validate refuses it as the minimum tier.
 //
 // # Tests

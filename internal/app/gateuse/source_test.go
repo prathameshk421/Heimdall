@@ -71,7 +71,7 @@ func jsonDecoder(raw []byte) (policy.Policy, error) {
 }
 
 const goldenPolicyJSON = `{
-  "version": 1,
+  "version": 2,
   "workflow": "default",
   "approvers": {
     "auth": ["ana"],
@@ -273,7 +273,7 @@ func TestOutsideBasePolicyReadAtBaseSHA(t *testing.T) {
 	require.NoError(t, err)
 
 	require.True(t, out.PolicyKnown)
-	require.Equal(t, 1, out.PolicyVersion)
+	require.Equal(t, 2, out.PolicyVersion)
 	require.Equal(t, "1234567890abcdef1234567890abcdef12345678", out.HeadTestTreeHash)
 	require.Len(t, shaReadAtCode, 2)
 	// First read must be at BaseSHA!
@@ -378,7 +378,7 @@ func TestOutsideDecodeOrValidationFailureFailsClosed(t *testing.T) {
 
 	t.Run("validation error", func(t *testing.T) {
 		invalidPol := samplePolicy()
-		invalidPol.Version = 999 // Validate() checks version == 1
+		invalidPol.Version = 999 // Validate() checks version == 2
 		code := &fakeCodeReader{
 			readFileFn: func(_ context.Context, _ change.Repo, _ id.SHA, _ string) ([]byte, error) {
 				return policyBytes(t, invalidPol), nil

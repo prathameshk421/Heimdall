@@ -1,4 +1,4 @@
-version: 1
+version: 2
 workflow: default
 approvers: { default: [approver], tenant_data: [ana], money_movement: [approver] }
 policy_owners: [approver]
