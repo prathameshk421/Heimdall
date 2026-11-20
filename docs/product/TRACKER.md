@@ -1,18 +1,31 @@
 # Product track: who does what
 
-Coordinator: session "Make Heimdall a Sellable Product" (Opus). Stage 0 (SOTA quality plan) runs in the other session on
-`heimdall-build`; this track writes only `docs/product/` there and merges delegate branches after review.
+Coordinator: session "Make Heimdall a Sellable Product" (Opus). Stage 0 runs in the other session on `heimdall-build`
+in the shared checkout. This track works on `product-build` in its own worktree
+(`/Volumes/SSD/Projects/Hackathons/flip_switch_hackathon/heimdall-product`) and tells that session before any merge into
+`heimdall-build`.
 
-| Item | Owner (provider / model) | Branch or file | Status | Evidence |
+## Research and critics
+
+| Item | Owner (provider / model) | File | Status | Notes |
 |---|---|---|---|---|
-| Research 01 competitors | Claude / Sonnet | `research/01-competitors.md` | done | 30 searches, 5 vendor pages read |
-| Research 02 pain points | Claude / Sonnet | `research/02-pain-points.md` | done | Reddit and X blocked, see 06 |
-| Research 03 integrations | Claude / Sonnet | `research/03-integrations.md` | done | 32 searches, no page fetches |
-| Research 04 eval and real repos | Claude / Sonnet | `research/04-eval-and-real-repos.md` | done | 8 Go suites timed on this Mac |
-| Research 05 market and GTM | Claude / Sonnet | `research/05-market-gtm.md` | done | 35 searches |
-| Research 06 Reddit and X | Claude Personal / Sonnet | `research/06-reddit-x.md` | done | Reddit blocked by every method; about 60 HN comments via Algolia, about 25 X posts via search |
-| Code inventory | Claude / Sonnet (Explore) | summarized in `STRATEGY.md` §3 | done | file:line pointers |
-| Critic 1 | OpenCode / DeepSeek V4.1 Flash | `CRITIC-deepseek.md` | running | |
-| Critic 2 | Grok 4.7 | `CRITIC-grok.md` | done | wedge: proof or silence on the PR, shadow mode, Action first |
-| P1.7 any OpenAI-compatible endpoint | Claude Personal / Sonnet | `p1.7-model-endpoint` | merged `6237729` | make fast exit 0, 3440 tests; make verify and live model not verified; http to a named LAN host (ollama:11434) still needs https, follow-up |
-| P2.1a Proof Bench dataset and validator | Claude Personal / Opus | `p2.1-proof-bench` | running | |
+| 01 competitors | Claude / Sonnet | `research/01-competitors.md` | done | 30 searches, 5 vendor pages read |
+| 02 pain points | Claude / Sonnet | `research/02-pain-points.md` | done | Reddit and X blocked |
+| 03 integrations | Claude / Sonnet | `research/03-integrations.md` | done | |
+| 04 eval and real repos | Claude / Sonnet | `research/04-eval-and-real-repos.md` | done | 8 Go suites timed |
+| 05 market and GTM | Claude / Sonnet | `research/05-market-gtm.md` | done | |
+| 06 Reddit and X | Claude Personal / Sonnet | `research/06-reddit-x.md` | done | Reddit refused every method; about 60 HN, about 25 X posts |
+| 07 X deep | Grok 4.7 | none | failed | Grok usage limit; harness gives Grok no X search tool |
+| 08 proof agent jobs | Claude Personal / Opus | `research/08-proof-agent-jobs.md` | done | wedge job: upgrade PRs green with proof, self-hosted git |
+| 09 context packs | Claude Personal / Opus | `research/09-context-packs.md` | done | memory as the free door; no manager scores |
+| 10 context OSS | OpenCode / DeepSeek V4.1 Flash free | `research/10-context-oss.md` | done | SpecStory, gitleaks, ferret-scan, age, AGENTS.md |
+| Critic 1 | OpenCode / DeepSeek V4.1 Flash (paid) | `CRITIC-deepseek.md` | done (run ended with HTTP 400 after the file was written) | Action plus shadow mode first; fast/slow split; break-glass |
+| Critic 2 | Grok 4.7 | `CRITIC-grok.md` | done | proof or silence on the PR |
+| Critic 3 on draft 2 | OpenCode / DeepSeek free | `CRITIC-v2.md` | next | |
+
+## Build
+
+| WP | Owner | Branch | Status | Evidence |
+|---|---|---|---|---|
+| P1.7 any OpenAI-compatible endpoint | Claude Personal / Sonnet | `p1.7-model-endpoint` | merged into `heimdall-build` at `6237729` | make fast exit 0, 3440 tests; make verify and live model not verified; http to a named LAN host still refused |
+| A0 / P2.1a Proof Bench dataset and validator | Claude Personal / Opus | `p2.1-proof-bench` | running | |

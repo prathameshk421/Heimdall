@@ -1,125 +1,151 @@
-# Heimdall: product strategy (founder view)
+# Heimdall: product strategy (draft 2)
 
-Status: draft 1, Nov 21 2026, before the critic pass. Evidence: `research/01` to `research/05`, the code inventory in
-section 3, and `docs/LIVE_RUN_H11.md`. Claims without a run say `not verified`.
+Status: draft 2, Nov 21 2026. Replaces draft 1 after two critics (`CRITIC-deepseek.md`, `CRITIC-grok.md`) and four more
+research passes (`research/06` to `research/10`). Owner decisions still open are in section 9. Claims without a run
+say `not verified`.
 
 ## 1. The one sentence
 
-**Heimdall is a self-hosted merge gate: nothing merges without proof, and the proof is on record.**
+**Heimdall gives every AI-written change its proof before a person spends time on it.**
 
-Proof means three things a person or an auditor can check without trusting a model:
+Proof is what a machine can check: a test that failed and now passes, a tool result, a recorded team rule. A finding
+without proof is dropped and counted. A person then judges only what proof cannot settle, and approves the exact
+commit.
 
-1. A test, written from the ticket before the code, that failed and now passes.
-2. Every blocking finding carries evidence: a failing test (E1), a tool result (E2) or a recorded team fact (E3).
-   Reasoning alone (E4) never blocks and never reaches a person as a blocker.
-3. A named person approved this exact commit. A new push voids the approval. The record is hash-chained.
+Category: the proof layer for code that agents write. Not a review bot, not a coding agent, not a compliance tool.
 
-Everything we build must make one of these three stronger, cheaper or easier to adopt. Anything else waits.
+## 2. What changed from draft 1, and why
 
-## 2. Why this wins (the market in five facts)
-
-| Fact | Source |
-|---|---|
-| LLM reviewers comment; they do not gate. Copilot and Claude review cannot fail a check. Static tools gate but do not read intent. Nobody gates on "model finding with attached proof" | `research/01 §4, §6` |
-| The top complaint about AI review is speculative noise. "I'd trust AI more if it brought proof instead of speculation" | `research/02 T1` |
-| Review cannot keep up with AI PR volume (PR size up 154%, review time up 91%, vendor data) | `research/02 T2` |
-| Change-control evidence is a paid requirement: SOC 2 CC8.1, ISO 27001 A.8.32, PCI DSS 6.2.3.1 and 6.5.1, DORA | `research/05 §3` |
-| Self-host from CodeRabbit or Greptile needs an enterprise contract (CodeRabbit lists about $15k a month). The free self-host tools (PR-Agent, Kodus) have no gate | `research/01 §3`, `research/05 §2` |
-
-**Positioning:** change assurance for teams that ship AI-written code. Sell the outcome (less review work, audit
-evidence, code stays inside), not the mechanism ("deterministic gate"). Engineers get: "a PR only shows you what is
-proven and what still needs your judgement." Security and compliance get: "an evidence record per merge, mapped to
-your controls, and nothing leaves your network."
-
-**First buyer:** the platform or security lead at a 30 to 500 developer company that already uses coding agents and has
-an audit (SOC 2, PCI, DORA) or a rule against sending code to SaaS. Fintech, payments, EU finance, health tech, gov
-suppliers.
-
-**What we are not:** another comment bot, an auto-fixer, a coding agent, or a generic agent orchestrator.
-
-## 3. Where the product really is (Nov 21, code inventory)
-
-| Area | Fact | Pointer |
+| Draft 1 | Draft 2 | Evidence |
 |---|---|---|
-| Live journey | Tests flow worked live. Review, approval and merge did not finish (D6 output limit, D7 ticketless PR never reviewed) | `docs/HANDOFF.md`, `docs/LIVE_RUN_H11.md` |
-| Switch coupling | Chat, agent runtime, identity and room membership are Switch-only; config requires `agent_runtime.provider == "switchroom"` | `internal/platform/config/config.go:551, 683` |
-| Agents | 5 resident OpenCode seats, each a Unix user, managed by Switch's controller. No per-task jobs | `testdata/agents/agents.json`, `deploy/agents/` |
-| Footprint | 6 compose containers + runner unit + controller + 5 to 6 agent units + firewall + an external Switch stack | `deploy/compose.yaml` |
-| Model port | OpenAI-compatible HTTP already, but provider names are hardcoded to `deploy` and `openrouter` | `cmd/heimdall-server/model_provider.go:18` |
-| VCS | GitHub App, polling, narrowed tokens. No merge queue, no GitLab | `internal/adapters/github` |
-| Tracker | Jira only (plus a test file adapter). Ticket-first by design | `internal/adapters/tracker` |
-| Sandbox | Rootless Podman, no network, strong flags. Only a Go profile ships | `internal/adapters/rootlessrunner/policy.go` |
-| Install | About 15 commands across 9 steps, "an afternoon", needs Switch and Jira | `docs/SETUP.md`, `docs/COMPANY_SETUP.md:65` |
-| Board | Read-only HTML + SSE, review report page. **No authentication** | `internal/transport/dashboard` |
-| Cost | One partial live run: about $0.24 estimated, model calls not counted | `docs/LIVE_RUN_H11.md:89` |
+| First buyer: compliance lead at a regulated firm | First buyer: platform or DevEx lead in the middle of a coding-agent rollout | Both critics; no grassroots post ties AI review to SOC 2 (`research/06`); Vanta and Drata already own CC8.1 evidence (`CRITIC-deepseek §5`) |
+| First surface: a VM install | First surface: the pull request, through a GitHub Action in shadow mode; the VM comes when the team wants jobs, memory sync or self-hosted git | Install friction; the real rival is a half-day DIY setup (`research/06`) |
+| One blocking gate | A fast required check (deterministic, under 2 minutes) and a slow proof run that may say `unknown` and never blocks on a timeout | "A slow or flaky gate gets switched off" (`CRITIC-deepseek §6`) |
+| Compete with AI reviewers | Ingest their findings and prove or drop each one | Teams keep the tool they like; incumbents cannot copy "we prove their comments" (`CRITIC-deepseek §3.6`) |
+| Merge gate only | Three parts of one loop: the proof check, memory, proof jobs | `research/08`, `research/09` |
+| Context packs later | Memory is the free open-source door | Demand is real (claude-mem 118k stars, Copilot Memory GA); remembering is not following (TellOnce: 57.5% of applicable preferences still broken) (`research/09`) |
+| Audit pack as the wedge | Audit evidence as an upsell, exported into Vanta or Drata | `CRITIC-deepseek §5` |
 
-The engine is good: event-sourced, a reconciler, an outbox, a pure-Go gate, a strong sandbox, narrowed GitHub tokens.
-The shell around it is a hackathon demo. A buyer cannot install it without Switch, Jira and an afternoon, and cannot run
-it on a non-Go repo.
+## 3. The product: one loop, three parts
 
-## 4. The five strategic moves
+```
+ developer laptop              pull request (any author: person, agent, bot)            company VM (optional)
+ heimdall memory  ---rules--->  fast check  --->  proof run  --->  proof summary  <---  proof jobs
+ (free, local)                  (required,        (async,         proven / dropped /    (upgrades, bug repro,
+                                 < 2 min)          may be          needs you             missing tests)
+                                                   unknown)              |
+                                                                  person approves the exact commit
+```
 
-1. **Finish the proof loop on real repos before anything else.** The live journey must reach a merged PR with no
-   manual repair, and the reviewers must be measured on real open-source bugs (Proof Bench). This is the SOTA quality
-   plan already under way; it is the floor, not a feature.
-2. **Make Switch one adapter, not the platform.** The primary surface becomes the pull request itself (check run,
-   proof summary comment, `/heimdall` commands) plus a native Slack app and a webhook notifier. Switch stays supported
-   for teams that run it.
-3. **Agents become short sandboxed jobs.** One task, one process, one container, then exit. Any CLI agent with a
-   headless mode can run it (OpenCode, Claude Code, Codex, Goose, Aider). This deletes the controller, the resident
-   seats and the firewall unit, and it lets idle cost go to zero.
-4. **Install in ten minutes on any VM.** `heimdall init` plus one compose file with three services (server, Postgres,
-   runner). Memory stack is an opt-in profile. Ticketless PR is the default path; Jira, Linear and GitHub Issues add
-   context when present. Python, Node/TS, Java and Rust runner profiles ship in the box.
-5. **Sell evidence to the people who pay for it.** Signed per-merge record, offline verifier, control-mapped audit
-   pack, SSO on the board, shadow mode for trust before blocking. Then GitLab self-managed, the second-largest
-   self-hosted host.
+1. **The proof check, on every PR.** The product.
+   - Fast check (required): secrets, analyzers (SARIF), pinned-test guard, diff coverage, approval bound to the head
+     SHA, memory rules that apply to the changed paths. Deterministic, cached, under 2 minutes p95.
+   - Proof run (async): red-first tests from the ticket or PR intent; every reviewer finding, ours or CodeRabbit's,
+     Copilot's, Bugbot's, must get a failing test or a tool result, or it is dropped and counted.
+   - One proof summary comment, updated in place: what is proven, what was dropped and why, what needs a person, what
+     we did not check, and the cost.
+   - Shadow mode first: two weeks of "would block because", then the team turns the check to required.
+   - Break-glass: a bypass needs a reason and a named person, is recorded, and shows as open until reviewed.
+2. **Memory, the free door.** `heimdall memory` is an open-source local CLI. It reads the developer's own agent
+   sessions (Claude Code, Codex, OpenCode, Cursor), redacts secrets on the laptop, and turns repeated corrections into
+   rule cards the developer approves. Every agent the developer uses gets them (local MCP server, generated
+   AGENTS.md / CLAUDE.md / Cursor rules). With a Heimdall server, approved cards are signed, scoped to code their owner
+   approves at the merge base, and checked on every PR as E3 evidence. Hard rule: no per-person scores for managers.
+3. **Proof jobs, on the company VM.** The same sandbox and the same gate do work whose result a machine can check,
+   and hand it over only with proof. First job: dependency and CVE upgrade PRs that arrive green (fix the red
+   Renovate/Dependabot PR, prove tests pass and the vulnerability is gone, test files unchanged). Next: bug report to
+   failing repro test to fix; tests for changed code that must catch planted mutants.
 
-## 5. The cost claim, done honestly
+Why the three are one product: memory supplies rules, jobs supply changes, the proof check is the one place both are
+judged. Each part makes the others stronger. Nothing here is a separate app.
 
-"Cheaper than all alternatives" is a claim we must measure, not write.
+## 4. Who buys, and why now
 
-Targets to measure on Proof Bench (not verified today):
+| Buyer | Trigger | What they get | Proof we must show |
+|---|---|---|---|
+| Platform / DevEx lead (first) | Rolling out coding agents; review queue grows; agent PRs need a policy | Agent PRs arrive with proof or get dropped; one page per PR | Drop count and p95 time on their own repo in shadow mode |
+| Engineering manager | AI review noise; seniors stuck reviewing | Comments cut to the proven ones | "40 comments in, 4 proven out" on their repo |
+| Developer (free door) | "I told the agent that already" | Their rules follow them to every agent | Fewer repeated corrections, measured locally |
+| Security / platform at self-hosted git shops (VM) | Code cannot leave; GitHub Enterprise Server, GitLab self-managed | Proof check plus upgrade jobs on their VM | Upgrade PRs merged with proof, CVE count down |
+| Compliance (upsell, after 90 days) | Audit | Evidence per change exported to Vanta/Drata, break-glass records | A sample export an auditor accepts (not verified) |
 
-| Metric | Target | Compare |
+## 5. Why we win
+
+- **Proof as the unit.** LLM reviewers comment; static tools gate without intent. Nobody drops unproven findings and
+  prints the count (`research/01 §6`). Cheap models are good enough when a machine checks the result
+  (`research/06`: a DeepSeek-flash pipeline matched CodeRabbit on a 50-PR bench for about $7, not verified by us).
+- **Independent of the writer.** Cursor, Devin and Factory review their own output. We are the second opinion with
+  evidence, next to whatever agent the team picked.
+- **Rules from the merge base.** Policy and memory cards come from the base branch, so a PR cannot rewrite its own
+  review. One tool in the survey reads rules from the PR head (`research/10` #13, not verified by us).
+- **Runs where the code lives.** The customer's CI runner or their own VM. Self-hosted review from rivals needs an
+  enterprise contract (`research/01 §3`).
+- **Memory that is enforced.** Memory tools remember. We check, at merge, with the card's history as proof.
+
+What is not a moat: mining sessions (five open tools do it), approval on the head SHA (a GitHub setting), the word
+"governance" (CodeRabbit and Qodo use it).
+
+## 6. Where the product really is (Nov 21)
+
+The engine is solid: event-sourced Go server, reconciler, outbox, pure-Go gate, rootless no-network sandbox, narrowed
+GitHub App tokens, card ranker and learning loop. The shell is a hackathon demo: Switch is the only chat and agent
+runtime (`internal/platform/config/config.go:551`), agents are 5 resident seats, only a Go runner profile ships, the
+board has no auth, install takes an afternoon, and the live run (H11) reached tests but not a merge (`docs/HANDOFF.md`).
+Full inventory: `research/` notes and draft 1 section 3.
+
+## 7. Lightweight by design (claims to measure, not to write)
+
+| Metric | Target | Today |
 |---|---|---|
-| Model cost per reviewed PR, median | under $0.30 | Bugbot about $1 to $1.50 per run; Claude review $15 to $25; CodeRabbit $24 to $48 per seat |
-| Model cost per trivial PR (docs, lockfiles, under 20 lines) | $0 (deterministic skip) | everyone else charges a run |
-| Server RAM idle | under 64 MiB | measured 42 MiB on Nov 7 |
-| Whole Lite stack RAM idle | under 400 MiB | today about 1.5 GB+ with memory stack and resident agents, not verified |
-| VM | 2 vCPU / 4 GB for a 50-dev team | today the reference is 2 vCPU / 16 GB |
-| Time from install to first gated PR | under 15 minutes | today "an afternoon" |
+| Fast check p95 | under 2 minutes on a 10-repo bench | not measured |
+| Proof run p95 | under 15 minutes, `unknown` after the cap | not measured |
+| Model cost per reviewed PR (median) | under $0.30, $0 on trivial PRs | one partial run, about $0.24, not verified |
+| Action mode footprint | one static binary in the customer's runner, no database | does not exist |
+| Server Lite stack RAM idle | under 400 MiB, 2 vCPU / 4 GB VM for 50 developers | server 42 MiB, whole stack not measured |
+| Install to first proof summary | Action under 10 minutes; VM under 30 minutes | an afternoon |
 
-How we get there: deterministic analyzers before any model call, a skip list for trivial changes, prompt prefix
-caching by design, a hard per-PR token budget, flash models for triage and refute, a stronger model only for writing
-proof, and agents that exist only while a task runs.
+How: deterministic checks before any model call; skip models on trivial changes; prompt prefix caching; a hard
+per-PR token budget; flash models for triage and refute, a stronger model only to write proof; agents that exist only
+while a task runs; the customer's runner already has the toolchain in Action mode.
 
-## 6. Pricing (proposal, to test with design partners)
+## 8. Pricing (proposal, to test with design partners)
 
-| Tier | Price | For |
+| Plan | Price | Includes |
 |---|---|---|
-| Community | Free, source-available. Up to 10 active committers | Trials, small teams, OSS |
-| Team | $15 per active committer per month, BYO model key | Most companies |
-| Regulated | $35 per active committer per month, $20k a year floor | Audit pack, SSO, signed export, offline bundle, local models, SLA |
-| Design partner | $5k for 90 days, credited to year one | First three logos |
+| Free | $0 | `heimdall memory` (open source); proof check in shadow mode on any number of repos, BYO model key |
+| Team | $15 per active committer per month | Required check, break-glass, memory sync and enforcement, proof summary history |
+| Jobs | 50 merged proof PRs a month included per VM; then $6 per simple upgrade, $30 per breaking-change fix; failed, unmerged or reverted-in-7-days work is free | Upgrade, repro and test jobs on the company VM |
+| Regulated | $35 per active committer per month, $20k a year floor | Self-hosted git adapters, signed record and verifier, Vanta/Drata export, retention and legal hold, SSO, SLA |
 
-The customer pays for the VM and the tokens. We print the token cost on every PR, so the bill is never a surprise.
+Every PR prints its model cost. A monthly cap per repo is a setting.
 
-## 7. What we refuse to build (for now)
+## 9. Owner decisions (I made a call; overrule any)
 
-- Auto-fix PRs and a coding agent of our own: crowded, and it breaks "independent of the writer".
-- Our own LLM leaderboard from blog numbers.
-- A Teams bot before a buyer asks.
-- Bitbucket and Azure DevOps before a buyer asks.
-- A hosted SaaS version before the self-hosted product has three paying users.
-- Personal context packs as the headline. They stay as a later moat once the core is proven.
+| # | Decision | My call |
+|---|---|---|
+| O1 | Change the first buyer from compliance to the platform lead in an agent rollout | yes |
+| O2 | Lead with a GitHub Action in shadow mode; the VM is the upgrade | yes |
+| O3 | Open-source `heimdall memory` (licence: Apache-2.0 for the CLI, server source-available) | yes, after the core loop works |
+| O4 | No per-person score for managers, ever | yes |
+| O5 | Rename `cards` to `memory` in the CLI | yes |
+| O6 | Switch becomes one optional adapter | yes |
 
-## 8. Risks
+## 10. What we refuse to build (for now)
+
+Auto-fix of reviewer findings and our own coding agent; flaky-test fixing as a product (Trunk retreated,
+`research/08`); a sandbox-as-a-service business; canary analysis and rollback (Argo Rollouts, Harness, LaunchDarkly own
+it; `research/09 §6`); a Teams bot, Bitbucket or Azure DevOps before a buyer asks; a hosted SaaS before three paying
+users; a leaderboard from blog numbers.
+
+Deployment work that does fit: release evidence (what shipped, with which proof), and agent-run smoke tests against
+staging as one more proof source (`research/09 §6`).
+
+## 11. Risks
 
 | Risk | Answer |
 |---|---|
-| GitHub or Anthropic adds a real gate to their reviewer | Self-host, audit record and exact-commit approval are where bundles do not go. Move fast on the audit pack |
-| CodeRabbit and Qodo already use "governance" words | Show it: a tampered record fails the offline verifier on stage; a finding without proof is dropped live |
-| Cheap models miss bugs | Measure on Proof Bench and say what we do not catch. Let buyers switch the model per role |
-| The proof loop is slow (tests in a container per PR) | Cache toolchains, run only affected tests, budget the runner time and print it |
-| We are a small team | One coherent loop, few integrations, done well. The roadmap is ordered by that |
+| The check is slow or flaky and gets bypassed | Fast/slow split, `unknown` never passes silently, p95 published, break-glass recorded |
+| Generated tests from tickets are weak (23.6% to 37% in benches, `CRITIC-deepseek §7`) | Red-first bench before claims; test integrity checks; never count a weak test as proof |
+| Incumbents ship "agent fixes until green" | Proof and independence, self-hosted git, merge-base rules |
+| Memory feels like surveillance | Local-first, developer approves every card, no manager scores, works-council friendly |
+| Small team, wide surface | One loop. Build order follows the loop. Cut anything that does not feed it |

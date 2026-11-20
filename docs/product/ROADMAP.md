@@ -1,76 +1,75 @@
-# Heimdall roadmap (draft 1, before the critic)
+# Heimdall roadmap (draft 2)
 
-Strategy: `STRATEGY.md`. Ideas: `IDEAS.md`. Critic verdicts: `CRITIC.md`. Delegation log: `TRACKER.md`.
+Strategy: `STRATEGY.md` (draft 2). Delegation log: `TRACKER.md`. Rules for delegates: `DELEGATE_PREAMBLE.md`.
 
-Each work package (WP) is one concern and one branch. It names its owner model, its acceptance check and its files, so
-two delegates never touch the same package. Order inside a stage is the build order.
+Build order follows the loop in `STRATEGY.md §3`: prove it on real code, make the proof check land on any PR, open the
+memory door, then the VM with jobs, then the regulated upsell. Each work package (WP) is one concern, one branch, with
+named files so two delegates never collide. Integration branch: `product-build` (own worktree). Merges into
+`heimdall-build` only after telling the Stage 0 session.
 
-## Stage 0: the proof loop works on real systems (in flight, other session)
+## Stage 0: the loop works live (other session, in flight)
 
-The SOTA quality plan (`docs/SOTA_QUALITY_PLAN.md`) on `heimdall-build`. Exit: fresh ticket to merged PR and a
-ticketless PR on the real VM with no manual repair; D6 (reviewer output limit) and D7 (ticketless PR never reviewed)
-fixed; the unbounded seat reassignment bounded.
+The SOTA quality plan on `heimdall-build`: a fresh ticket and a ticketless PR reach a merge on the real VM with no
+manual repair; D6 (reviewer output limit) and D7 (ticketless PR never reviewed) fixed; seat reassignment bounded.
+Product WPs avoid the packages that session is changing (`internal/domain/change`, `internal/adapters/postgres`,
+`internal/app/knowledge`, `internal/app/reconcile` until it says otherwise).
 
-Product work below starts in parallel only where it does not touch the packages Stage 0 is changing.
-
-## Stage 1: anyone can install it (adoption)
-
-| WP | What | Owner | Accept | Touches |
-|---|---|---|---|---|
-| 1.1 | **Job runtime for agents.** A new `ports.AgentRuntime` adapter that runs one task as one headless CLI process (OpenCode `run`, Claude Code `-p`, Codex `exec`) inside the rootless runner, with the MCP token scoped to the task, then exits | Opus design, DeepSeek build | A test task and a review task complete through the new adapter on a fixture repo; no resident unit | `internal/adapters/jobagent` (new), `cmd/heimdall-runner` |
-| 1.2 | **Config: Switch optional.** `agent_runtime.provider` accepts `job`; `switch.*` required only when Switch is used | Sonnet | Config tests for both modes | `internal/platform/config` |
-| 1.3 | **PR as the primary surface.** Proof summary comment (one page, updated in place), `/heimdall` commands from PR comments by mapped GitHub logins | Opus design, Sonnet build | Component test with the GitHub fake; summary has proven / not proven / needs a person | `internal/app/announce`, `internal/adapters/github` |
-| 1.4 | **Native Slack app (Socket Mode) and a generic webhook notifier** behind `ports.Chat` | Sonnet | Contract tests shared with the Switch adapter | `internal/adapters/slack`, `internal/adapters/webhook` (new) |
-| 1.5 | **Ticketless default.** `require_ticket=false` default; a ticket adds context when the PR names one | Opus (gate rules) | Golden flow for a ticketless PR reaches review | `internal/domain/change`, policy |
-| 1.6 | **Lite compose and `heimdall init`.** Three services; memory stack as a compose profile; `init` writes config, makes the GitHub App by manifest, checks the model key, runs doctor | Sonnet | Fresh Ubuntu VM to first gated PR in under 15 minutes, timed | `deploy/`, `cmd/heimdall` |
-| 1.7 | **Any OpenAI-compatible model endpoint.** Remove the two hardcoded provider names; a base URL plus key per role | Haiku | Config and probe tests against an httptest server | `cmd/heimdall-server/model_provider.go`, `internal/adapters/openrouter` (rename `openai`) |
-| 1.8 | **Language profiles.** Python (pytest), Node/TS (vitest/jest), Java (maven/gradle), Rust (cargo) runner profiles with pinned images and cached deps | Sonnet | Each profile runs a fixture repo's suite red then green in the sandbox | `deploy/runner-profiles` (new), `internal/adapters/rootlessrunner` |
-| 1.9 | **GitHub merge queue.** Answer `merge_group` with a check run on its head SHA | Sonnet | Component test with a recorded `merge_group` payload | `internal/adapters/github`, `internal/app/prsync` |
-| 1.10 | **Shadow mode.** Gate reports `neutral` and comments "would block because"; weekly digest of what it would have blocked | Sonnet | Golden test of the shadow check run | `internal/app/gateuse` |
-
-## Stage 2: it is provably good and cheap (quality and cost)
+## Stage A: proof on any PR (weeks 1 to 4)
 
 | WP | What | Owner | Accept |
 |---|---|---|---|
-| 2.1 | **Proof Bench.** Replay bug-introducing PRs from real OSS repos and clean merged PRs; score recall, precision, evidence rate, cost per PR, wall time | Opus design, DeepSeek runs | First run on 10 repos, results in `docs/sota/RUNS.md` |
-| 2.2 | **Red-first bench.** Issue plus fix pairs; the generated test must fail before the fix and pass after | Opus design, DeepSeek runs | First run, numbers recorded |
-| 2.3 | **Deterministic skip.** No model call for docs-only, lockfile-only, generated, or under-N-line changes; policy-configurable | Sonnet | Unit tests on the classifier; bench shows $0 on those PRs |
-| 2.4 | **Token budget and cost line.** Hard per-PR budget, `budget hit` status, cost printed in the check summary | Sonnet | Unit tests; cost line visible on a bench PR |
-| 2.5 | **Prompt shape for caching.** Stable prefix (skill, repo map, rules), variable suffix (diff); record cache hit rate | Opus | Bench shows cache-read share and cost before/after |
-| 2.6 | **Analyzers first.** Bundled SARIF tools per language (Opengrep, gitleaks, Trivy, golangci-lint, ruff, eslint) run before any model and feed E2 | Sonnet | Profile tests; E2 findings on a planted bug |
-| 2.7 | **Test integrity checks.** Pinned red tests are read-only to the author; mock-of-subject detector; diff coverage; mutation score on changed lines as optional E2 | Opus (rules), Sonnet (build) | Unit tests on each detector with real tautological test samples |
-| 2.8 | **Model routing per role.** Flash for triage and refute, stronger model for proof writing; per-role config | Sonnet | Bench cost and recall per routing choice |
-| 2.9 | **Footprint budget.** Measure RAM and CPU of the Lite stack idle and under a 10-PR burst; fix the top 3 hot spots | Opus | Numbers in `docs/sota/performance.md` with machine and commit |
+| A0 | **Proof Bench smoke, week 1.** Dataset of real OSS bugs and clean PRs, each case proven real (fail before, pass after); then a 20-PR reviewer run with recall, precision, evidence rate, cost, p95 time | Opus design (P2.1a running), DeepSeek runs | `docs/sota/BENCH.md` with numbers, cost stated before the run (cap $3) |
+| A1 | **Action mode design.** How the existing engine runs as a stateless step in the customer's CI: inputs, where state lives (check runs, PR comment, artifact), which packages are reused, the fast check / proof run split, the `unknown` verdict, model key handling, cost cap | Opus | `docs/product/design/ACTION_MODE.md` reviewed |
+| A2 | **Fast check.** Deterministic, cached, under 2 minutes: secrets, SARIF analyzers, pinned-test guard, diff coverage, approval on head SHA, memory rules for changed paths | Opus rules, Sonnet build | p95 on the bench under 2 minutes |
+| A3 | **Proof summary comment.** One comment updated in place: proven, dropped (count and reason), needs a person, not checked, cost. Pure renderer from the view | Sonnet | Golden tests on 5 real bench cases |
+| A4 | **Shadow mode.** Check reports neutral with "would block because"; weekly digest | Sonnet | Golden test of the shadow check run |
+| A5 | **Prove or drop third-party findings.** Read CodeRabbit, Copilot, Bugbot, Greptile review comments; each becomes a candidate finding that must earn E1 or E2 or is dropped and counted | Opus | Component test with recorded comments from each tool |
+| A6 | **Test integrity.** Pinned red tests read-only to the author; flag a test that mocks a file the PR changed; a rerun-pass is never a clean pass | Opus rules, Sonnet build | Unit tests on real tautological test samples |
+| A7 | **`heimdall action` and a composite GitHub Action.** One static binary, BYO model key, no database | Sonnet after A1 | A public fixture repo gets a proof summary in under 10 minutes from install |
+| A8 | **Break-glass.** Bypass needs a reason and a named person, is recorded, shows as open until reviewed | Opus | Unit tests; shows in the summary and the record |
+| A9 | **Board auth.** OIDC login (GitHub, generic OIDC), roles viewer / approver / admin; no route readable without a session | Opus (security) | Security tests on every route |
+| A10 | **Cost line and cap.** Per-PR token budget, `budget hit` status, cost in the summary, monthly cap per repo; deterministic skip for trivial PRs | Sonnet | Unit tests; $0 on docs-only bench PRs |
 
-## Stage 3: the regulated buyer says yes (trust and compliance)
+## Stage B: memory, the free door (weeks 3 to 8)
 
 | WP | What | Owner | Accept |
 |---|---|---|---|
-| 3.1 | **Board auth.** OIDC login (GitHub, Google, Okta via generic OIDC), roles: viewer, approver, admin | Opus (security) | Security tests: no route readable without a session |
-| 3.2 | **Signed change record and offline verifier.** One export per merge (events, evidence, approver, SHAs) signed with cosign-compatible keys; `heimdall verify record.json` | Opus | A tampered record fails verify in a test |
-| 3.3 | **Audit pack.** Control-mapped report per period: SOC 2 CC8.1, ISO 27001 A.8.32/A.8.29, PCI DSS 6.2.3.1/6.5.1, DORA | Opus writes, a GRC reviewer checks | Sample pack reviewed by one auditor (not verified until then) |
-| 3.4 | **Threat model and self-audit.** Prompt injection, sandbox escape, token scope, board, supply chain; Go fuzzing on parsers; escape tests in CI | Opus | Threat model doc; fuzz targets in `make verify` |
-| 3.5 | **Release hygiene.** SBOM, cosign-signed images, SLSA provenance, offline bundle | Sonnet | Release workflow produces all four |
-| 3.6 | **AI provenance.** Detect agent-written commits (trailers, session ids) and require E1 for their blocking areas | Opus | Unit tests on detection |
-| 3.7 | **Observability.** Prometheus metrics, slog JSON, Grafana dashboard JSON | Haiku | Metrics endpoint test |
+| B1 | **Session readers.** OpenCode (SQLite, CGO-free) and Cursor readers next to the Claude Code and Codex ones; worktree-aware | Sonnet | Reader tests on recorded fixtures (no real user data in the repo) |
+| B2 | **Redaction on the laptop.** gitleaks rules plus PII redaction before any text leaves the reader; a redaction report | Opus (security) | Tests with planted secrets and PII |
+| B3 | **Approve flow.** Terminal UI to accept, edit or reject each candidate card; nothing is shared unapproved | Sonnet | Test of the state rules |
+| B4 | **Local MCP server and rule-file export.** Agents read approved cards (MCP); export to AGENTS.md, CLAUDE.md, Cursor rules | Sonnet | Contract test with an MCP client |
+| B5 | **Signed sync to the server.** DSSE envelope with ed25519; cards scoped to code their owner approves at the merge base; E3 check in the fast check | Opus | Tampered card rejected in a test |
+| B6 | **Card outcomes.** Kept, dismissed, overridden per card, shown to the card's owner only | Sonnet | Unit tests; no manager view exists |
+| B7 | **Open-source split.** `heimdall memory` builds and ships alone, Apache-2.0 | Haiku | Separate build target and README |
 
-## Stage 4: wider reach (only what the core needs)
+## Stage C: the company VM and proof jobs (weeks 6 to 12)
+
+| WP | What | Owner | Accept |
+|---|---|---|---|
+| C1 | **Agents as jobs.** One task, one headless CLI process in the sandbox, task-scoped token, then exit; Switch optional | Opus design, DeepSeek build | Test and review task complete on a fixture with no resident unit |
+| C2 | **Lite compose and `heimdall init`.** Server, Postgres, runner; memory stack as a profile; GitHub App by manifest | Sonnet | Fresh VM to first proof summary under 30 minutes, timed |
+| C3 | **Runner profiles.** Python and Node/TS first, pinned images, cached deps, package mirror fetch step | Sonnet | Fixture suites red then green in the sandbox |
+| C4 | **Upgrade job.** Take a red Renovate/Dependabot PR, fix it in the sandbox, prove tests green, CVE gone, test files unchanged | Opus design, DeepSeek build | Merge rate on 20 real red upgrade PRs recorded |
+| C5 | **GitLab self-managed.** Commit status, external status checks on Ultimate, MR notes | Sonnet | Contract tests against a recorded API |
+| C6 | **Bug to repro test to fix job** | Opus | Red-first bench numbers |
+| C7 | **Webhook mode** next to polling, for latency | Sonnet | Component test |
+
+## Stage D: the regulated upsell (after the first design partners)
 
 | WP | What |
 |---|---|
-| 4.1 | GitLab self-managed adapter (commit status, external status checks on Ultimate, MR notes) |
-| 4.2 | Heimdall MCP server for coding agents: "what proof is missing on my PR" |
-| 4.3 | AGENTS.md / CLAUDE.md / CONTRIBUTING rules read as rule cards |
-| 4.4 | Linear and GitHub Issues behind a `WorkItem` port |
-| 4.5 | Forgejo/Gitea adapter |
-| 4.6 | Helm chart |
-| 4.7 | Personal context packs, live (the later moat) |
+| D1 | Signed change record per merge and an offline verifier (`heimdall verify`) |
+| D2 | Evidence export to Vanta and Drata; break-glass and bypass report |
+| D3 | Retention, legal hold, export per year, offboarding |
+| D4 | Threat model, Go fuzzing on parsers, sandbox escape tests in CI, SBOM and signed releases |
+| D5 | GitHub Enterprise Server and Bitbucket Data Center on request |
 
-## Go-to-market track (runs beside the build)
+## Go-to-market beside the build
 
 | Step | When |
 |---|---|
-| Landing page with measured numbers only (cost per PR, RAM, recall on Proof Bench) | after 2.1 |
-| Show HN: "a merge gate that drops AI review findings without proof"; demo a tampered record failing verify | after 1.6 and 3.2 |
-| Three design partners in fintech or EU finance at $5k for 90 days | after Stage 1 |
-| Free for OSS maintainers via shadow mode on public repos | after 1.10 |
+| Five calls with platform leads mid agent rollout; offer a shadow-mode pilot | week 2 |
+| Landing page with measured numbers only (drop count, p95, cost, bench recall) | after A0 and A3 |
+| Show HN: "we drop AI review comments that cannot prove themselves, and print the count" | after A7 |
+| Open-source `heimdall memory` launch | after B4 |
+| Three paid design partners ($5k for 90 days) | after A7 |
