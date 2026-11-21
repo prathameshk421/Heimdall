@@ -48,6 +48,13 @@
 //   - IntroEvidence(intro, introParent) labels the extra intro check.
 //   - CommitParents(raw commit object) returns the parent SHAs, so the manifest parents can be checked.
 //   - Reconcile(status, verdict) says whether a run contradicts the status that the manifest records.
+//   - CostCap (NewCostCap, Reserve and its settle function, Allow, Add, CaseBudget, Share, Covers) is the hard spend
+//     limit of a run. One cap is shared by every worker of a parallel run: Reserve holds the most a call can cost until
+//     the call settles, so the total never passes the cap. Share gives a starting case what other calls do not hold,
+//     and says when only those holds cut it below the per-case budget; it refuses only when the cap cannot cover
+//     another case at all. Covers leaves holds out, because each returns to the cap when its call settles. Its cases are in score_test.go, with the concurrent Reserve test.
+//   - Summarize(cases) scores a run; TurnSummary(cases) adds up its model-turn and tool-call latencies, so a slow turn
+//     is visible in the results file and in docs/sota/BENCH.md.
 //
 // # Invariants (the manifest rules)
 //
@@ -77,6 +84,8 @@
 //   - verdict_test.go: the fail-to-pass decision from recorded outcomes, intro evidence and reconcile.
 //   - runners_test.go: real cargo test and Vite+ (vitest) output from pingdotgg/t3code (testdata/bench/samples).
 //   - toolchain_test.go and truth_test.go: the toolchain rules, the Rust splice and the truth of each toolchain.
+//   - score_test.go: the score of a run, its percentiles, and the cost cap, including eight workers that reserve at
+//     once so the shared cap holds.
 //
 // This package does no I/O. cmd/heimdall-bench runs git, go test, cargo and pnpm.
 package bench

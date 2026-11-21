@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -47,58 +48,83 @@ type script struct {
 	} `json:"turns"`
 }
 
-// scriptedModel plays one script per case, in case order. A conversation with no assistant message starts the next
-// script. It answers with an error when a tool result lacks what the script expects.
+// scriptedModel plays one script per case. It picks the script by the repository slug in the conversation, so several
+// cases can run at once: each case's own conversation drives its own script. It answers with an error when a tool
+// result lacks what the script expects.
 type scriptedModel struct {
+	mu      sync.Mutex
 	scripts []script
-	cur     int
-	turn    int
+	byRepo  map[string]int // repository slug to script index
+	turn    map[int]int    // script index to the turns already played
 }
 
 func loadScripts(t *testing.T, ids ...string) *scriptedModel {
 	t.Helper()
-	m := &scriptedModel{cur: -1}
-	for _, id := range ids {
+	m, err := loadManifest(filepath.Join("..", "..", "testdata", "bench", "cases.yaml"))
+	require.NoError(t, err)
+	slug := map[string]string{}
+	for _, c := range m.Cases {
+		slug[c.ID] = c.RepoSlug()
+	}
+	sm := &scriptedModel{byRepo: map[string]int{}, turn: map[int]int{}}
+	for i, id := range ids {
 		b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "scripts", id+".json"))
 		require.NoError(t, err)
 		var s script
 		require.NoError(t, json.Unmarshal(b, &s))
 		require.Equal(t, id, s.Case)
-		m.scripts = append(m.scripts, s)
+		require.NotEmpty(t, slug[id], "the manifest names %s", id)
+		sm.scripts = append(sm.scripts, s)
+		sm.byRepo[slug[id]] = i
 	}
-	return m
+	return sm
 }
 
 func (m *scriptedModel) Complete(_ context.Context, req ports.ModelRequest) (ports.ModelResponse, error) {
-	if !hasAssistant(req.Messages) {
-		m.cur, m.turn = m.cur+1, 0
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, err := m.scriptFor(req.Messages)
+	if err != nil {
+		return ports.ModelResponse{}, err
 	}
-	if m.cur >= len(m.scripts) || m.turn >= len(m.scripts[m.cur].Turns) {
+	s := m.scripts[cur]
+	turn := m.turn[cur]
+	if turn >= len(s.Turns) {
 		return ports.ModelResponse{}, errors.New("scripted model: no recorded turn left")
 	}
-	s := m.scripts[m.cur]
-	turn := s.Turns[m.turn]
-	m.turn++
-	if turn.Expect != "" && !strings.Contains(lastToolResults(req.Messages), turn.Expect) {
+	t := s.Turns[turn]
+	m.turn[cur] = turn + 1
+	if t.Expect != "" && !strings.Contains(lastToolResults(req.Messages), t.Expect) {
 		return ports.ModelResponse{}, fmt.Errorf("scripted model %s turn %d: the tool results lack %q:\n%s",
-			s.Case, m.turn, turn.Expect, lastToolResults(req.Messages))
+			s.Case, turn+1, t.Expect, lastToolResults(req.Messages))
 	}
-	resp := ports.ModelResponse{Finish: ports.ModelFinishToolCalls, CostUSD: turn.CostUSD,
-		Usage: ports.ModelUsage{InputTokens: turn.Usage.Input, CachedInputTokens: turn.Usage.Cached, OutputTokens: turn.Usage.Output}}
-	for i, c := range turn.Calls {
-		resp.ToolCalls = append(resp.ToolCalls, ports.ModelToolCall{ID: fmt.Sprintf("%s-%d-%d", s.Case, m.turn, i),
+	resp := ports.ModelResponse{Finish: ports.ModelFinishToolCalls, CostUSD: t.CostUSD,
+		Usage: ports.ModelUsage{InputTokens: t.Usage.Input, CachedInputTokens: t.Usage.Cached, OutputTokens: t.Usage.Output}}
+	for i, c := range t.Calls {
+		resp.ToolCalls = append(resp.ToolCalls, ports.ModelToolCall{ID: fmt.Sprintf("%s-%d-%d", s.Case, turn+1, i),
 			Name: c.Name, Arguments: string(c.Arguments)})
 	}
 	return resp, nil
 }
 
-func hasAssistant(msgs []ports.ModelMessage) bool {
-	for _, m := range msgs {
-		if m.Role == ports.ModelRoleAssistant {
-			return true
+// scriptFor picks the script of the case whose repository the conversation names.
+func (m *scriptedModel) scriptFor(msgs []ports.ModelMessage) (int, error) {
+	user := firstUser(msgs)
+	for repo, i := range m.byRepo {
+		if strings.Contains(user, "Repository: "+repo+".") {
+			return i, nil
 		}
 	}
-	return false
+	return 0, fmt.Errorf("scripted model: no script for the conversation %q", user)
+}
+
+func firstUser(msgs []ports.ModelMessage) string {
+	for _, m := range msgs {
+		if m.Role == ports.ModelRoleUser {
+			return m.Content
+		}
+	}
+	return ""
 }
 
 // lastToolResults joins the tool messages after the last assistant message.
@@ -250,6 +276,47 @@ func TestReplayAT3codeCargoCaseWithAScriptedModel(t *testing.T) {
 	require.Equal(t, 1, rs.Proven, "the discovery test fails twice on the head and passes on the fix")
 	require.True(t, rs.Hit, "main.rs 400 overlaps the truth mapped onto the head")
 	require.Len(t, rs.Findings[0].Runs, 3)
+}
+
+func TestReplayTwoRealCasesInParallelWithAScriptedModel(t *testing.T) {
+	// The same two real cases as the serial check, at two workers. Each case keeps its own cache, sandbox and worktrees,
+	// the results file keeps the manifest order, and the one cost cap covers both workers.
+	o := replayOptions(t, "testify-1207,chi-1185", testingCapUSD)
+	o.parallel = 2
+	model := loadScripts(t, "testify-1207", "chi-1185")
+	var stderr strings.Builder
+	code, err := reviewRun(context.Background(), o, execRunner{}, model, &stderr)
+	require.NoError(t, err)
+	require.Equal(t, exitAgrees, code)
+
+	rep := readReport(t, o.out)
+	require.Len(t, rep.Cases, 2)
+	for _, c := range rep.Cases {
+		t.Logf("case %s: turns=%d stop=%s scored=%v err=%q", c.ID, c.Turns, c.Stop, c.Scored, c.Error)
+	}
+	require.Equal(t, "testify-1207", rep.Cases[0].ID, "the results keep the manifest order")
+	require.Equal(t, "chi-1185", rep.Cases[1].ID)
+	for _, c := range rep.Cases {
+		require.True(t, c.Scored, c.Error)
+		require.Equal(t, 1, c.Proven)
+		require.Equal(t, 6, c.Turns, "each case played its own six-turn script")
+		require.Len(t, c.TurnSeconds, 6, "the model latency of every turn is recorded")
+		require.NotEmpty(t, c.ToolSeconds, "the tool latency is recorded")
+	}
+	require.Positive(t, rep.Turns.Turns)
+	require.InDelta(t, 6, rep.Turns.PerCase, 1e-12)
+	require.LessOrEqual(t, rep.Summary.CostUSD, testingCapUSD)
+
+	// The progress lines are the operator's only view of a long run, so they must name both cases and both kinds of
+	// line: a turn, a test run and the end of the case.
+	log := stderr.String()
+	for _, id := range []string{"testify-1207", "chi-1185"} {
+		require.Contains(t, log, "bench case="+id+" start kind=bug")
+		require.Contains(t, log, "bench case="+id+" turn=1 tool=list_changes")
+		require.Contains(t, log, "bench case="+id+" test=")
+		require.Contains(t, log, "bench case="+id+" end scored=yes")
+	}
+	require.Contains(t, log, "done pass=")
 }
 
 func TestReplayStopsAtTheCostCap(t *testing.T) {

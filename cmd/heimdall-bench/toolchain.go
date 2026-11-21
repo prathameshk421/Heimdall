@@ -21,8 +21,10 @@ import (
 
 // plainTree checks sha out into a fresh directory named label and unlinks it from the cache. The caller removes it.
 func (rp *repo) plainTree(ctx context.Context, sha, label string, sparse []string) (string, error) {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
 	dir := filepath.Join(rp.work, label)
-	if err := rp.remove(ctx, dir); err != nil {
+	if err := rp.removeLocked(ctx, dir); err != nil {
 		return "", err
 	}
 	if len(sparse) == 0 {

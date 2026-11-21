@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"sync"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agentloop"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/bench"
@@ -23,11 +24,17 @@ const stopProviderFailing = "provider failing"
 
 // providerBreaker counts the model calls in a row that failed after their retries. One case's loop is a run of good
 // calls, and then at most one failed call that ends it, so the case's result says where the run of failures stands.
-type providerBreaker struct{ failed int }
+// The workers of a parallel run share one breaker, so it locks itself; "in a row" is then the order the cases end in.
+type providerBreaker struct {
+	mu     sync.Mutex
+	failed int
+}
 
 // observe reads one case's loop result. A good call resets the count; a call that failed with a rate limit or a server
 // error after its retries adds one. Any other end (an ordinary 4xx, the budget, the turn cap) adds nothing.
 func (b *providerBreaker) observe(res ports.AgentResult) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if len(res.Turns) > 0 {
 		b.failed = 0
 	}
@@ -41,7 +48,11 @@ func (b *providerBreaker) observe(res ports.AgentResult) {
 }
 
 // tripped reports whether breakerLimit calls in a row failed.
-func (b *providerBreaker) tripped() bool { return b.failed >= breakerLimit }
+func (b *providerBreaker) tripped() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.failed >= breakerLimit
+}
 
 // retryWiring is the waiter and the jitter source of the loop's retry rule.
 type retryWiring struct {

@@ -5,6 +5,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/bench"
 )
 
 // reviewMarkdown writes a review run as a BENCH.md section: the run, one row per case and the summary.
@@ -24,8 +26,8 @@ func reviewMarkdown(rep reviewReport) string {
 	if rep.Stopped != "" {
 		fmt.Fprintf(&b, "| Stopped | %s |\n", rep.Stopped)
 	}
-	b.WriteString("\n| Case | Kind | Scored | Stop | Turns | Retries | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("\n| Case | Kind | Scored | Stop | Turns | Retries | Turn s p50/p95 | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	retries := 0
 	for _, c := range rep.Cases {
 		retries += c.Retries
@@ -33,12 +35,13 @@ func reviewMarkdown(rep reviewReport) string {
 		if note == "" {
 			note = countList(c.Unproven)
 		}
-		fmt.Fprintf(&b, "| %s | %s | %s | %s | %d | %d | %d | %d | %s | %s | %s | %d/%d | $%.4f | %.1f s | %s |\n",
-			c.ID, c.Kind, yes(c.Scored), c.Stop, c.Turns, c.Retries, c.Proposed, c.Proven, bugOnly(c.Kind == "bug", c.Hit),
-			bugOnly(c.Kind == "bug", c.Located), bugOnly(c.Kind == "clean", c.FalsePositive),
+		fmt.Fprintf(&b, "| %s | %s | %s | %s | %d | %d | %s | %d | %d | %s | %s | %s | %d/%d | $%.4f | %.1f s | %s |\n",
+			c.ID, c.Kind, yes(c.Scored), c.Stop, c.Turns, c.Retries, turnLatency(c.TurnSeconds), c.Proposed, c.Proven,
+			bugOnly(c.Kind == "bug", c.Hit), bugOnly(c.Kind == "bug", c.Located), bugOnly(c.Kind == "clean", c.FalsePositive),
 			c.InputTokens, c.OutputTokens, c.CostUSD, c.Seconds, escapeCell(note))
 	}
 	s := rep.Summary
+	t := rep.Turns
 	b.WriteString("\n| Measure | Value |\n|---|---|\n")
 	fmt.Fprintf(&b, "| Recall (bug cases with a proven finding on the truth) | %s |\n", s.Recall)
 	fmt.Fprintf(&b, "| False positives (clean cases with a proven blocking finding) | %s |\n", s.FalsePositives)
@@ -49,6 +52,8 @@ func reviewMarkdown(rep reviewReport) string {
 	fmt.Fprintf(&b, "| Tokens | %d input (%d cached), %d output |\n", s.InputTokens, s.CachedTokens, s.OutputTokens)
 	fmt.Fprintf(&b, "| Wall time per case | p50 %.1f s, p95 %.1f s |\n", s.WallP50, s.WallP95)
 	fmt.Fprintf(&b, "| Retries | %d |\n", retries)
+	fmt.Fprintf(&b, "| Model turns | %d total, %.1f per case; %.1f s median, %.1f s p95 |\n", t.Turns, t.PerCase, t.TurnP50, t.TurnP95)
+	fmt.Fprintf(&b, "| Tool calls | %.1f s total, %.1f s median, %.1f s p95 |\n", t.ToolSecs, t.ToolP50, t.ToolP95)
 	return b.String()
 }
 
@@ -57,6 +62,14 @@ func yes(v bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// turnLatency writes the median and p95 seconds of one model turn, or "n/a" for a case with no recorded turn.
+func turnLatency(seconds []float64) string {
+	if len(seconds) == 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.1f/%.1f", bench.Percentile(seconds, 50), bench.Percentile(seconds, 95))
 }
 
 // bugOnly writes a measure only for the kind it applies to.

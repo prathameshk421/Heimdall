@@ -45,6 +45,24 @@ func TestParseReviewFlagsRefusesABadOnlyList(t *testing.T) {
 	require.ErrorContains(t, err, "-only")
 }
 
+func TestParseReviewFlagsRefusesABadParallel(t *testing.T) {
+	// The workers share one machine and one cost cap, so a count outside the allowed range is a usage error, not a
+	// silent clamp that hides a typo.
+	base := []string{"-out", "r.json", "-model", "deepseek/deepseek-v4-flash", "-key-file", "/tmp/k"}
+	o, err := parseReviewFlags(base, &bytes.Buffer{})
+	require.NoError(t, err)
+	require.Equal(t, 1, o.parallel, "one case at a time by default")
+
+	o, err = parseReviewFlags(append(base, "-parallel", "8"), &bytes.Buffer{})
+	require.NoError(t, err)
+	require.Equal(t, 8, o.parallel)
+
+	for _, n := range []string{"0", "-1", "9"} {
+		_, err := parseReviewFlags(append(base, "-parallel", n), &bytes.Buffer{})
+		require.ErrorContains(t, err, "-parallel", n)
+	}
+}
+
 func mustIDs(t *testing.T, s string) []string {
 	t.Helper()
 	ids, err := parseCaseIDs(s)

@@ -1,7 +1,10 @@
 package bench
 
 import (
+	"errors"
 	"math"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -256,6 +259,34 @@ func seq(n int) []float64 {
 	return out
 }
 
+func TestTurnSummaryCountsEveryTurnAndIgnoresUnfinishedCases(t *testing.T) {
+	// A run of three cases: one finished case with two turns, one finished case with no recorded turn, and one case the
+	// cost cap never started. Every recorded turn counts, and the per-case mean is over the cases that ran a turn.
+	cases := []CaseScore{
+		{ID: "a", Scored: true, TurnSeconds: []float64{1, 3},
+			ToolSeconds: []TurnToolLatency{{Turn: 1, Tool: "read_code", Seconds: 0.5}, {Turn: 2, Tool: "run_test", Seconds: 4}}},
+		{ID: "b", Scored: true},
+		{ID: "c", Scored: false},
+	}
+	s := TurnSummary(cases)
+	require.Equal(t, 2, s.Turns)
+	require.InDelta(t, 1, s.TurnP50, 1e-12, "nearest rank: the lower of two turns is the median")
+	require.InDelta(t, 3, s.TurnP95, 1e-12)
+	require.InDelta(t, 2, s.PerCase, 1e-12, "two turns over the one case that ran a turn")
+	require.InDelta(t, 0.5, s.ToolP50, 1e-12, "nearest rank over two tool calls")
+	require.InDelta(t, 4, s.ToolP95, 1e-12)
+	require.InDelta(t, 4.5, s.ToolSecs, 1e-12, "the tool time of both calls")
+}
+
+func TestTurnSummaryOfARunWithNoTurn(t *testing.T) {
+	// A run the cost cap stopped before the first call has no timing to report, not a zero that looks like a fast run.
+	s := TurnSummary([]CaseScore{{ID: "a"}, {ID: "b"}})
+	require.Zero(t, s.Turns)
+	require.Zero(t, s.PerCase)
+	require.Zero(t, s.TurnP50)
+	require.Zero(t, s.ToolP95)
+}
+
 func TestCallBoundIsAnUpperBoundOnOneAnswer(t *testing.T) {
 	p := Price{InputPerM: 0.10, CachedInputPerM: 0.01, OutputPerM: 0.20}
 	// 9,000 request bytes plus the 1,000-token framing allowance at the input price, and the full output cap at the
@@ -298,6 +329,81 @@ func TestCostCapFailsClosed(t *testing.T) {
 	}
 }
 
+func TestCostCapHoldsUnderConcurrentReserve(t *testing.T) {
+	// A parallel review asks the one shared cap for money from many workers at once. Each worker reserves the most its
+	// call can cost before the call and settles the real cost after it, so the spend can never pass the cap. The bound
+	// is a power of two, so the money adds up exactly and the count is not a float tolerance.
+	const (
+		capUSD = 1.0
+		bound  = 0.0625
+	)
+	c, err := NewCostCap(capUSD)
+	require.NoError(t, err)
+	var wg sync.WaitGroup
+	var admitted atomic.Int64
+	var refused atomic.Int64
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 25 {
+				settle, err := c.Reserve(bound)
+				if err != nil {
+					if errors.Is(err, ErrCostCap) {
+						refused.Add(1)
+					}
+					continue
+				}
+				admitted.Add(1)
+				_ = settle(bound)
+			}
+		}()
+	}
+	wg.Wait()
+	require.LessOrEqual(t, c.Spent(), capUSD, "the spend never passes the cap")
+	require.InDelta(t, capUSD, c.Spent(), 1e-12, "every worker spends until the cap is reached")
+	require.EqualValues(t, 16, admitted.Load(), "the cap admits exactly as many calls as it can pay for")
+	require.EqualValues(t, 184, refused.Load(), "every other call is refused, not dropped")
+	require.InDelta(t, 0, c.Remaining(), 1e-12, "nothing is left held after every call settled")
+}
+
+func TestCostCapSettlesAReleasedCallWithoutChargingIt(t *testing.T) {
+	// A call that fails is not billed: the worker settles it with zero, so the held money returns to the cap.
+	c, err := NewCostCap(1)
+	require.NoError(t, err)
+	settle, err := c.Reserve(0.4)
+	require.NoError(t, err)
+	require.InDelta(t, 0.6, c.Remaining(), 1e-12, "a held call cannot be spent twice")
+	require.NoError(t, settle(0))
+	require.InDelta(t, 1, c.Remaining(), 1e-12, "a call that never billed returns its hold")
+	require.InDelta(t, 0, c.Spent(), 1e-12)
+}
+
+func TestCostCapIsSafeUnderConcurrentAllowAndAdd(t *testing.T) {
+	// Allow and Add stay the two-step pair the loop's budget uses. Many workers may hold them at once without a data
+	// race, and the spend only ever grows.
+	c, err := NewCostCap(1)
+	require.NoError(t, err)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 25 {
+				if c.Allow(0.001) == nil {
+					_ = c.Add(0.001)
+				}
+				_ = c.Spent()
+				_ = c.Remaining()
+				_, _ = c.CaseBudget(0.1)
+			}
+		}()
+	}
+	wg.Wait()
+	require.Positive(t, c.Spent(), "some calls were admitted")
+	require.LessOrEqual(t, c.Spent(), 1.0)
+}
+
 func TestCostCapCaseBudget(t *testing.T) {
 	c, err := NewCostCap(1)
 	require.NoError(t, err)
@@ -313,4 +419,90 @@ func TestCostCapCaseBudget(t *testing.T) {
 	require.ErrorIs(t, err, ErrCostCap)
 	_, err = c.CaseBudget(0)
 	require.Error(t, err)
+}
+
+func TestCostCapShareGivesTheFullBudgetWhenNothingIsHeld(t *testing.T) {
+	c, err := NewCostCap(1)
+	require.NoError(t, err)
+	s, err := c.Share(0.5)
+	require.NoError(t, err)
+	require.Equal(t, CaseShare{Budget: 0.5}, s)
+}
+
+func TestCostCapShareMarksABudgetCutOnlyByOtherHolds(t *testing.T) {
+	// Two other workers hold $0.70 between them. Only $0.30 is free, but the unspent cap ($1.00) covers a full $0.50
+	// case: the holds alone cut this budget, and they return to the cap when their calls settle.
+	c, err := NewCostCap(1)
+	require.NoError(t, err)
+	_, err = c.Reserve(0.3)
+	require.NoError(t, err)
+	_, err = c.Reserve(0.4)
+	require.NoError(t, err)
+	s, err := c.Share(0.5)
+	require.NoError(t, err)
+	require.InDelta(t, 0.3, s.Budget, 1e-12, "only what the other calls do not hold is free")
+	require.True(t, s.Held, "the unspent cap covers a full case, so only the holds cut this budget")
+}
+
+func TestCostCapShareDoesNotBlameHoldsWhenTheCapRunsOut(t *testing.T) {
+	// $0.80 is spent: the unspent $0.20 cannot cover a $0.50 case whatever the other workers hold.
+	c, err := NewCostCap(1)
+	require.NoError(t, err)
+	require.NoError(t, c.Add(0.8))
+	_, err = c.Reserve(0.05)
+	require.NoError(t, err)
+	s, err := c.Share(0.5)
+	require.NoError(t, err)
+	require.InDelta(t, 0.15, s.Budget, 1e-12)
+	require.False(t, s.Held, "the cap itself is short")
+}
+
+func TestCostCapShareWithEverythingHeldByOthers(t *testing.T) {
+	// Other calls hold all that is unspent, but the unspent cap covers a case: the case gets nothing now and the run
+	// is not over, so this is no ErrCostCap.
+	c, err := NewCostCap(1)
+	require.NoError(t, err)
+	_, err = c.Reserve(1)
+	require.NoError(t, err)
+	s, err := c.Share(0.5)
+	require.NoError(t, err)
+	require.Zero(t, s.Budget)
+	require.True(t, s.Held)
+}
+
+func TestCostCapShareRefusesWhenTheCapCannotCoverACase(t *testing.T) {
+	c, err := NewCostCap(1)
+	require.NoError(t, err)
+	require.NoError(t, c.Add(0.9))
+	_, err = c.Reserve(0.1)
+	require.NoError(t, err)
+	_, err = c.Share(0.5)
+	require.ErrorIs(t, err, ErrCostCap, "nothing is free and the unspent cap cannot cover a case")
+
+	spent, err := NewCostCap(1)
+	require.NoError(t, err)
+	require.NoError(t, spent.Add(1))
+	_, err = spent.Share(0.5)
+	require.ErrorIs(t, err, ErrCostCap)
+
+	broken, err := NewCostCap(1)
+	require.NoError(t, err)
+	require.Error(t, broken.Add(-1))
+	_, err = broken.Share(0.5)
+	require.ErrorIs(t, err, ErrCostCap)
+
+	_, err = c.Share(0)
+	require.Error(t, err)
+}
+
+func TestCostCapCoversIgnoresHolds(t *testing.T) {
+	c, err := NewCostCap(1)
+	require.NoError(t, err)
+	_, err = c.Reserve(0.9)
+	require.NoError(t, err)
+	require.True(t, c.Covers(0.5), "a hold is not spend: it returns to the cap when its call settles")
+	require.NoError(t, c.Add(0.6))
+	require.False(t, c.Covers(0.5))
+	require.Error(t, c.Add(-1))
+	require.False(t, c.Covers(0), "a broken cap covers nothing")
 }

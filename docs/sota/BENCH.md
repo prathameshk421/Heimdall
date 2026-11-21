@@ -238,6 +238,75 @@ real model finds, and it is not a recall result.
 - Python, Java, JavaScript and TypeScript cases (at P2.1b): `review` took valid Go cases only, for the same reason `validate`
   does (there is no runner for those languages).
 
+## Progress lines, parallel cases and turn timing (P-2.1c)
+
+A live run was slow and silent: a reasoning model takes 20 to 60 s per turn, a case takes about eight turns, and ten
+cases ran in sequence. Nothing was printed until the end. Three changes fix that.
+
+1. **Progress lines.** `review` writes one line to stderr per case start, per model turn, per test run and per case end.
+   The writer is shared by the workers and locks itself, so two lines never interleave. The existing `writeDiagnostic`
+   writer is reused; no new output path and no `fmt.Print` in product code.
+2. **`-parallel N`** (default 1, at most 8) reviews N cases at once. One `bench.CostCap` is shared by every worker. A
+   worker now reserves the most its call can cost (`CostCap.Reserve`) and settles the real cost after it, and a call
+   that failed settles with zero. The reservation holds until the call settles, so two workers cannot both pass the
+   check and together pass the cap. The spend therefore never passes `-max-cost`. Each case keeps its own repository
+   cache, sandbox and worktree counter, and the results file keeps the manifest order whatever order the cases end in.
+3. **Turn timing.** Every case in the JSON records `turns`, `turn_seconds` (one model latency per answer) and
+   `tool_seconds` (one latency per tool call, with its turn and name). The run records `turns` with median and p95 for
+   model turns and tool calls, and turns per case. Both appear in the Markdown table.
+
+### Harness check at `-parallel 2`, fake model
+
+| Item | Value |
+|---|---|
+| Command | `CGO_ENABLED=0 go test -tags benchreplay -count=1 -run 'TestReplayTwoRealCasesInParallelWithAScriptedModel' ./cmd/heimdall-bench` |
+| Model | scripted fake from `testdata/bench/scripts`, no network call to a model |
+| Cost cap | $3.00 for the run, $0.50 per case (neither was reached) |
+| Exit status | 0: both cases scored |
+| Case order in JSON | testify-1207, chi-1185 (manifest order, not completion order) |
+| Wall time | 107.1 s, against 105.7 s for the same two cases in sequence |
+
+### What the timing says, and what it does not
+
+- The scripted model answers in microseconds, so its model-turn latency is 0.0 s after rounding to the millisecond.
+  That number is an artifact of the fake model and says nothing about a live turn. It is recorded so the live run has
+  a column to fill.
+- The tool latency is real: `run_test` on chi-1185 took 26.3 s on this machine, because that package's suite is slow.
+  The two tool-call percentiles separate a fast tool from the one slow call.
+- `-parallel 2` saved almost nothing here, because chi-1185's 107 s is one slow `run_test` and the two cases share a
+  machine, a disk and a Go build cache. The gain is real on turns that wait on the model; this run waits on `go test`.
+
+### Not verified in this check
+
+- A live model at `-parallel 2`: no live call was made. The parallel proof uses the scripted model only.
+- A correctness rate under real concurrency: two cases share one reserve-aware cap by construction, and the unit test
+  proves the cap holds across eight workers under the race detector. A run of ten cases at eight workers is not
+  measured.
+- The model-turn latency of a real reasoning model. Only the scripted model ran.
+
+### Merged with the robust loop and the retries (bench-integrate)
+
+P-2.1c was built before AM12b (the product loop with transcripts and nudges), AM12c (retries and the breaker) and
+P2.1d (cargo and vitest). The merge keeps all four. What changed in the merge:
+
+- A failed call settles with what the provider billed for it, often zero, not always zero. AM12c bills a failed call
+  the provider charged; the reservation still returns the rest of its hold to the other workers.
+- One breaker is shared by every worker and locks itself. Calls that fail in a row on any worker trip it, and no new
+  case starts after that.
+- The cases of one repository share one cache (`repoSet`). Its writes (fetch, worktree add, remove, prune) take a
+  lock, and every sandbox tree is named `sbx-<case>-<n>`. Before this, two cases of one repository at `-parallel 2`
+  both wrote `sbx-1` in the same parent, so one could delete the other's tree during a test run.
+- The per-turn latencies sit in the score (`turn_seconds`, `tool_seconds`). AM12b's summed tool time moved from
+  `tool_seconds` to `tool_seconds_sum`, because the two names clashed in the JSON; `model_seconds` keeps its name.
+- The Markdown case table has both columns: `Turns | Retries | Turn s p50/p95`.
+
+The shared cap rule at `-parallel N`. A case starts with what the other workers do not hold (`CostCap.Share`), so a
+case that starts late can get less than `-per-case-cost`. The run stops only when the cap cannot cover another case
+at all: the unspent cap, holds left out, is below `-per-case-cost`. A case cut short only because other workers held
+part of the cap is not scored, its error starts `cut short by the shared cost cap`, and the run goes on. With
+`-parallel 1` nothing is ever held by another worker, so the rule is the old one: a case that the cap cut short stops
+the run. Tests: `internal/bench/score_test.go` (Share, Covers) and `cmd/heimdall-bench/sharedcap_test.go`.
+
 ## Cost estimate for the live run
 
 The live run is all 10 valid Go cases (7 bug and 3 clean) on `deepseek/deepseek-v4-flash` through OpenRouter, at

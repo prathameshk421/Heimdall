@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/openrouter"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/bench"
@@ -45,14 +46,18 @@ func liveModel(o reviewOptions) (ports.ModelChat, error) {
 	}, nil
 }
 
-// cappedModel holds the run's hard cost cap in front of any model. Before each call it bounds the call's cost
-// (bench.Price.CallBound) and refuses with bench.ErrCostCap when the spend could pass the cap. After each call it adds
-// the cost the adapter reports, also for a failed call that the provider billed. It sees every attempt of a retried
-// call, so a retry passes the same cap.
+// cappedModel holds the run's hard cost cap in front of any model. Before each call it reserves the call's bound
+// (bench.Price.CallBound) and refuses with bench.ErrCostCap when the spend could pass the cap. After each call it
+// settles the cost the adapter reports, also for a failed call that the provider billed. The cap is shared by every
+// worker of a parallel run, and the reservation holds until the call settles, so two workers can never both pass the
+// check and together pass the cap. It sees every attempt of a retried call, so a retry passes the same cap.
+//
+// prog, when set, gets one line per answer: the turn, the tools, the tokens, the spend and the elapsed time.
 type cappedModel struct {
 	inner ports.ModelChat
 	cap   *bench.CostCap
 	price bench.Price
+	prog  *caseProgress
 }
 
 func (m cappedModel) Complete(ctx context.Context, req ports.ModelRequest) (ports.ModelResponse, error) {
@@ -60,20 +65,36 @@ func (m cappedModel) Complete(ctx context.Context, req ports.ModelRequest) (port
 	if err != nil {
 		return ports.ModelResponse{}, fmt.Errorf("size the model request: %w", err)
 	}
-	if err := m.cap.Allow(m.price.CallBound(len(body), req.MaxOutputTokens)); err != nil {
+	settle, err := m.cap.Reserve(m.price.CallBound(len(body), req.MaxOutputTokens))
+	if err != nil {
 		return ports.ModelResponse{}, err
 	}
-	resp, err := m.inner.Complete(ctx, req)
-	if err != nil {
-		if resp.CostUSD != 0 {
-			if addErr := m.cap.Add(resp.CostUSD); addErr != nil {
-				return ports.ModelResponse{}, fmt.Errorf("%w: %w", bench.ErrCostCap, addErr)
-			}
+	start := time.Now()
+	resp, callErr := m.inner.Complete(ctx, req)
+	seconds := time.Since(start).Seconds()
+	if callErr != nil {
+		// A failed call settles with what the provider billed for it, often zero. The rest of its hold returns to the
+		// cap for the other workers.
+		if err := settle(resp.CostUSD); err != nil {
+			return ports.ModelResponse{}, fmt.Errorf("%w: %w", bench.ErrCostCap, err)
 		}
-		return resp, err
+		return resp, callErr
 	}
-	if err := m.cap.Add(resp.CostUSD); err != nil {
+	if err := settle(resp.CostUSD); err != nil {
 		return ports.ModelResponse{}, fmt.Errorf("%w: %w", bench.ErrCostCap, err)
 	}
+	if m.prog != nil {
+		m.prog.modelTurn(benchTurn{tools: callNames(resp.ToolCalls), input: resp.Usage.InputTokens,
+			output: resp.Usage.OutputTokens, cost: resp.CostUSD, seconds: seconds}, m.cap.Spent(), m.prog.elapsed())
+	}
 	return resp, nil
+}
+
+// callNames names the tools of one answer, in the order the model asked for them.
+func callNames(calls []ports.ModelToolCall) []string {
+	out := make([]string, len(calls))
+	for i, c := range calls {
+		out[i] = c.Name
+	}
+	return out
 }
