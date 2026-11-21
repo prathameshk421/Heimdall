@@ -88,12 +88,19 @@ func serve(t testing.TB, logs map[id.ChangeID][]change.Event, opts dashboard.Opt
 	router, err := transport.NewRouter(logger())
 	require.NoError(t, err)
 	opts.NewTicker = systemTicker
+	if opts.Access == nil {
+		opts.Access = open
+	}
 	handler, err := dashboard.Mount(router, h, logger(), opts)
 	require.NoError(t, err)
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 	return ts, h
 }
+
+// open is the access guard of tests that read the pages: it lets every request through. The sign-in itself is tested
+// in internal/transport/auth.
+func open(next http.Handler) http.Handler { return next }
 
 // reply is one HTTP answer. get reads and closes the body, so no test holds a response.
 type reply struct {
@@ -227,7 +234,7 @@ func TestOtherRoutesKeepTheirAnswers(t *testing.T) {
 func TestMountRefusesNilHistoryLoggerAndTicker(t *testing.T) {
 	router, err := transport.NewRouter(logger())
 	require.NoError(t, err)
-	good := dashboard.Options{NewTicker: systemTicker}
+	good := dashboard.Options{NewTicker: systemTicker, Access: open}
 
 	_, err = dashboard.Mount(router, nil, logger(), good)
 	require.Error(t, err)
@@ -240,11 +247,46 @@ func TestMountRefusesNilHistoryLoggerAndTicker(t *testing.T) {
 	_, err = dashboard.Mount(router, history, nil, good)
 	require.Error(t, err)
 
-	_, err = dashboard.Mount(router, history, logger(), dashboard.Options{})
+	_, err = dashboard.Mount(router, history, logger(), dashboard.Options{Access: open})
 	require.Error(t, err, "the server must supply the ticker")
 
-	_, err = dashboard.Mount(router, history, logger(), dashboard.Options{NewTicker: systemTicker, PollEvery: -time.Second})
+	_, err = dashboard.Mount(router, history, logger(), dashboard.Options{NewTicker: systemTicker})
+	require.Error(t, err, "the server must decide who may read the board")
+
+	_, err = dashboard.Mount(router, history, logger(), dashboard.Options{NewTicker: systemTicker, Access: open, PollEvery: -time.Second})
 	require.Error(t, err)
+
+	_, err = dashboard.Mount(router, history, logger(), good)
+	require.NoError(t, err)
+}
+
+// Access wraps every dashboard route, the assets and the stream among them, and no other path.
+func TestAccessGuardsEveryDashboardRouteAndNothingElse(t *testing.T) {
+	deny := func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "sign in required", http.StatusUnauthorized)
+		})
+	}
+	ts, _ := serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{Access: deny})
+	for _, path := range []string{
+		"/", "/changes/PAY-7", "/changes/PAY-7/report", "/changes/PAY-7/report.json", "/sse/changes/PAY-7",
+		"/assets/dashboard.css", "/assets/dashboard.js", "/assets/report.css", "/assets/report.js", "/changes/NOPE-1",
+		"/assets/missing", "/changes/", "/sse/changes/PAY-7?after=x",
+	} {
+		resp := get(t, ts, path)
+		require.Equal(t, http.StatusUnauthorized, resp.Status, path)
+		require.NotContains(t, resp.Body, "PAY-7", path)
+	}
+	require.Equal(t, http.StatusOK, get(t, ts, "/healthz").Status, "routes outside the board keep their own rules")
+}
+
+func TestSignOutLinkShowsOnlyWhenSet(t *testing.T) {
+	ts, _ := serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{})
+	require.NotContains(t, get(t, ts, "/").Body, "Sign out")
+	ts, _ = serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{SignOut: "/auth/logout"})
+	for _, path := range []string{"/", "/changes/PAY-7"} {
+		require.Contains(t, get(t, ts, path).Body, `<a href="/auth/logout">Sign out</a>`, path)
+	}
 }
 
 // sseFrame is one server-sent event as the client reads it.
