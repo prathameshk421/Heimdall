@@ -1,0 +1,116 @@
+{
+  "case": "chi-1185",
+  "note": "Recorded tool-call sequence for the harness check. It is not model output: it proves the tools, the sandbox, the proof rule and the scoring on a real case. The bug is real: the intro added Discard to WrapResponseWriter, and Flush on the same wrapper still writes to the client.",
+  "turns": [
+    {
+      "calls": [
+        {
+          "name": "list_changes",
+          "arguments": {}
+        }
+      ],
+      "usage": {
+        "input_tokens": 1500,
+        "cached_input_tokens": 0,
+        "output_tokens": 40
+      },
+      "cost_usd": 0.0001422
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "middleware/wrap_writer.go",
+            "start_line": 78,
+            "end_line": 140
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 6100,
+        "cached_input_tokens": 0,
+        "output_tokens": 70
+      },
+      "cost_usd": 0.0005616,
+      "expect": "middleware/wrap_writer.go (modified"
+    },
+    {
+      "calls": [
+        {
+          "name": "search_code",
+          "arguments": {
+            "query": "f.wroteHeader = true",
+            "path_prefix": "middleware/"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 7200,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0006588,
+      "expect": "discard     bool"
+    },
+    {
+      "calls": [
+        {
+          "name": "run_test",
+          "arguments": {
+            "test_path": "middleware/heimdall_bench_discard_flush_test.go",
+            "test_source": "package middleware\n\nimport (\n\t\"bytes\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"testing\"\n)\n\nfunc TestHeimdallBenchDiscardFlushDoesNotReachTheOriginal(t *testing.T) {\n\toriginal := &httptest.ResponseRecorder{HeaderMap: make(http.Header), Body: new(bytes.Buffer)}\n\tvar wrap WrapResponseWriter = &flushWriter{basicWriter{ResponseWriter: original}}\n\twrap.Discard()\n\twrap.(http.Flusher).Flush()\n\tif original.Flushed {\n\t\tt.Fatalf(\"Flush on a discarded writer still flushed the original writer\")\n\t}\n\tif got := wrap.Status(); got != http.StatusOK {\n\t\tt.Fatalf(\"Status after Flush = %d, want %d\", got, http.StatusOK)\n\t}\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 8300,
+        "cached_input_tokens": 0,
+        "output_tokens": 430
+      },
+      "cost_usd": 0.0008298,
+      "expect": "middleware/wrap_writer.go:145: f.wroteHeader = true"
+    },
+    {
+      "calls": [
+        {
+          "name": "propose_finding",
+          "arguments": {
+            "file": "middleware/wrap_writer.go",
+            "start_line": 144,
+            "end_line": 148,
+            "severity": "medium",
+            "claim": "The change added Discard to the wrapper, and Write now honours it. Flush does not: it sets wroteHeader and calls Flush on the original writer, so a handler that discarded its body still commits the status and flushes the client.",
+            "test_path": "middleware/heimdall_bench_discard_flush_test.go",
+            "test_name": "TestHeimdallBenchDiscardFlushDoesNotReachTheOriginal",
+            "test_source": "package middleware\n\nimport (\n\t\"bytes\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"testing\"\n)\n\nfunc TestHeimdallBenchDiscardFlushDoesNotReachTheOriginal(t *testing.T) {\n\toriginal := &httptest.ResponseRecorder{HeaderMap: make(http.Header), Body: new(bytes.Buffer)}\n\tvar wrap WrapResponseWriter = &flushWriter{basicWriter{ResponseWriter: original}}\n\twrap.Discard()\n\twrap.(http.Flusher).Flush()\n\tif original.Flushed {\n\t\tt.Fatalf(\"Flush on a discarded writer still flushed the original writer\")\n\t}\n\tif got := wrap.Status(); got != http.StatusOK {\n\t\tt.Fatalf(\"Status after Flush = %d, want %d\", got, http.StatusOK)\n\t}\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 9400,
+        "cached_input_tokens": 0,
+        "output_tokens": 500
+      },
+      "cost_usd": 0.000936,
+      "expect": "TestHeimdallBenchDiscardFlushDoesNotReachTheOriginal: failure"
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_review",
+          "arguments": {
+            "summary": "One Discard hole in the Flush paths, proven by a test."
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 10100,
+        "cached_input_tokens": 0,
+        "output_tokens": 30
+      },
+      "cost_usd": 0.0009144,
+      "expect": "recorded as F1"
+    }
+  ]
+}
