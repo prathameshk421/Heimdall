@@ -271,6 +271,58 @@ func TestReplayStopsAtTheCostCap(t *testing.T) {
 	require.LessOrEqual(t, rep.Summary.CostUSD, 0.001, "the spend never passes the cap")
 }
 
+// flakyModel answers its failOn-th call with the HTTP 500 the Deploy endpoint gave in live run 2, and passes every other
+// call to the script. The failed call does not use up a scripted turn.
+type flakyModel struct {
+	inner  ports.ModelChat
+	failOn int
+	calls  int
+}
+
+func (m *flakyModel) Complete(ctx context.Context, req ports.ModelRequest) (ports.ModelResponse, error) {
+	m.calls++
+	if m.calls == m.failOn {
+		return ports.ModelResponse{}, &ports.ModelError{Kind: ports.ModelErrorServer, Status: 500,
+			ContentType: "application/json", Message: `{"status_code":500,"message":"Internal Server Error"}`}
+	}
+	return m.inner.Complete(ctx, req)
+}
+
+func TestReplayRecoversFromAServerErrorOnTheSecondCall(t *testing.T) {
+	// Live run 2 lost each case to its first HTTP 500. Here the second call fails once, the loop waits on the real
+	// clock (at most 2 s of jitter) and sends it again, and the case ends as the clean script run does.
+	o := replayOptions(t, "testify-1207", testingCapUSD)
+	model := &flakyModel{inner: loadScripts(t, "testify-1207"), failOn: 2}
+	code, err := reviewRun(context.Background(), o, execRunner{}, model, testWriter{t})
+	require.NoError(t, err)
+	require.Equal(t, exitAgrees, code)
+
+	rep := readReport(t, o.out)
+	require.Empty(t, rep.Stopped)
+	require.Len(t, rep.Cases, 1)
+	c := rep.Cases[0]
+	require.True(t, c.Scored, c.Error)
+	require.Equal(t, string(ports.AgentStopDone), string(c.Stop))
+	require.Equal(t, 1, c.Retries)
+	require.Empty(t, c.FailedCall, "the call that failed was sent again and answered")
+	require.Equal(t, 1, c.Proven, "the recovered run proves the same finding as the clean script run")
+	require.True(t, c.Hit)
+	require.GreaterOrEqual(t, len(c.Transcript), 2)
+	require.Equal(t, 1, c.Transcript[0].Attempts)
+	require.Equal(t, 2, c.Transcript[1].Attempts)
+	require.Len(t, c.Transcript[1].Failed, 1)
+	require.Equal(t, "server", c.Transcript[1].Failed[0].Kind)
+	require.Equal(t, 500, c.Transcript[1].Failed[0].Status)
+	require.LessOrEqual(t, c.Transcript[1].Failed[0].WaitSeconds, 2.0, "the first backoff draws from [0, 2 s]")
+	require.Equal(t, model.calls, c.Turns+1, "every call answered once, and one failed")
+
+	md, err := os.ReadFile(o.md)
+	require.NoError(t, err)
+	require.Contains(t, string(md), "| testify-1207 | bug | yes | done | "+fmt.Sprint(c.Turns)+" | 1 |")
+	require.Contains(t, string(md), "| Retries | 1 |")
+	t.Log("\n" + string(md))
+}
+
 // testWriter sends the progress lines to the test log.
 type testWriter struct{ t *testing.T }
 
