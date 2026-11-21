@@ -2,7 +2,6 @@ package fastcheck
 
 import (
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 
@@ -83,9 +82,8 @@ func checkHeimdallFiles(f Facts) Clause {
 		return unknown(ClauseHeimdallFiles, "the changed files are not known")
 	}
 	var hits []string
-	declared := declaredWorkflows(f.Action)
 	for _, file := range f.ChangedFiles {
-		if isHeimdallFile(file) || slices.Contains(declared, file) {
+		if f.Action.Protects(file) {
 			hits = append(hits, file)
 		}
 	}
@@ -93,25 +91,6 @@ func checkHeimdallFiles(f Facts) Clause {
 		return met(ClauseHeimdallFiles, "the change touches no Heimdall workflow, policy or declared input")
 	}
 	return exempt(ClauseHeimdallFiles, f, "the change edits Heimdall files: "+strings.Join(hits, ", "))
-}
-
-func isHeimdallFile(file string) bool {
-	return file == "heimdall.yaml" || file == "heimdall.yml" ||
-		policy.MatchGlob(".heimdall/**", file) ||
-		policy.MatchGlob(".github/workflows/heimdall-*.yml", file) ||
-		policy.MatchGlob(".github/workflows/heimdall-*.yaml", file)
-}
-
-// declaredWorkflows are the workflows the policy names as the producers of an input in use.
-func declaredWorkflows(a policy.Action) []string {
-	var out []string
-	if a.Analyzers.Source == policy.AnalyzerSourceSARIFArtifact && a.Analyzers.Workflow != "" {
-		out = append(out, a.Analyzers.Workflow)
-	}
-	if a.DiffCoverage.Min > 0 && a.DiffCoverage.Workflow != "" {
-		out = append(out, a.DiffCoverage.Workflow)
-	}
-	return out
 }
 
 func matchesAny(globs []string, name string) bool {
