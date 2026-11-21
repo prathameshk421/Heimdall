@@ -62,6 +62,44 @@ func TestNewRefusesAnUnsafeConfig(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func githubConfig() auth.Config {
+	cfg := validConfig()
+	cfg.OIDC, cfg.GitHub, cfg.People = nil, &auth.GitHub{}, githubPeople()
+	return cfg
+}
+
+// GitHub people are matched by the numeric id. A person without one is refused at startup, by name, and the login is
+// never a fallback.
+func TestNewRefusesAGitHubPersonWithoutAStableId(t *testing.T) {
+	cases := map[string]struct {
+		people []auth.Person
+		want   string
+	}{
+		"no id":            {[]auth.Person{{Name: "ana", Role: auth.RoleViewer}}, "person ana needs a github_id"},
+		"login but no id":  {[]auth.Person{{Name: "ana", Login: "ana-gh", Role: auth.RoleViewer}}, "person ana needs a github_id"},
+		"negative id":      {[]auth.Person{{Name: "ana", GitHubID: -5, Role: auth.RoleViewer}}, "person ana needs a github_id"},
+		"id and a login":   {[]auth.Person{{Name: "ana", GitHubID: 5, Login: "ana-gh", Role: auth.RoleViewer}}, "person ana: the login is not used"},
+		"id shared":        {append(githubPeople(), auth.Person{Name: "ana2", GitHubID: 1002, Role: auth.RoleAdmin}), "person ana2 has the GitHub id of person ana"},
+		"second one lacks": {[]auth.Person{{Name: "ana", GitHubID: 5, Role: auth.RoleViewer}, {Name: "bob", Role: auth.RoleViewer}}, "person bob needs a github_id"},
+	}
+	for name, c := range cases {
+		cfg := githubConfig()
+		cfg.People = c.people
+		_, err := auth.New(cfg)
+		require.ErrorContains(t, err, c.want, name)
+		require.NotContains(t, err.Error(), clientSecret, name)
+	}
+	_, err := auth.New(githubConfig())
+	require.NoError(t, err)
+}
+
+func TestNewRefusesAGitHubIdOutsideGitHubMode(t *testing.T) {
+	cfg := validConfig()
+	cfg.People = []auth.Person{{Name: "vera", Login: "vera@example.com", GitHubID: 7, Role: auth.RoleViewer}}
+	_, err := auth.New(cfg)
+	require.ErrorContains(t, err, "person vera: the GitHub id is used only with GitHub sign-in")
+}
+
 func TestParseRole(t *testing.T) {
 	for in, want := range map[string]auth.Role{"viewer": auth.RoleViewer, "approver": auth.RoleApprover, "admin": auth.RoleAdmin} {
 		got, err := auth.ParseRole(in)

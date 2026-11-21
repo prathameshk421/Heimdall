@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -48,25 +49,32 @@ func (r Role) String() string {
 	return "none"
 }
 
-// Person is one entry of the role map: a person of the people map, the login that proves them, and their role.
+// Person is one entry of the role map: a person of the people map, the stable identity that proves them, and their
+// role. With GitHub sign-in the identity is GitHubID and Login must be empty. With OIDC it is Login, the value of the
+// ID token claim, and GitHubID must be zero. A GitHub login is never matched: it can be renamed, and a freed login
+// can be claimed by another account.
 type Person struct {
-	Name  string
-	Login string
-	Role  Role
+	Name     string
+	Login    string
+	GitHubID int64
+	Role     Role
 }
 
 // OIDC selects a generic OpenID Connect provider (Okta, Google, Keycloak, Entra ID). Claim names the ID token claim
-// that is matched against Person.Login: "email" (only when email_verified is true) or "sub".
+// that is matched against Person.Login: "sub" (the default when empty) or "email". An email counts only when
+// email_verified is true, and only when the config chooses it: an email can be reassigned to another person, while
+// the subject is stable for one issuer.
 type OIDC struct {
 	Issuer string
 	Claim  string
 }
 
-// GitHub selects GitHub OAuth on github.com. GitHub is not an OpenID Connect provider, so the login comes from its
-// user API. The endpoints are fixed, not configured: GitHub Enterprise Server is a later work package (D5).
+// GitHub selects GitHub OAuth on github.com. GitHub is not an OpenID Connect provider, so the identity comes from its
+// user API: the numeric id. The endpoints are fixed, not configured: GitHub Enterprise Server is a later work
+// package (D5).
 type GitHub struct{}
 
-// githubUserURL is the GitHub user API. The board reads the login of the signed-in user there.
+// githubUserURL is the GitHub user API. The board reads the numeric id and the login of the signed-in user there.
 const githubUserURL = "https://api.github.com/user"
 
 // Paths the gate serves. SignOutPath is the page a board links to.
@@ -113,8 +121,10 @@ type Config struct {
 // Principal is the signed-in person of a request. Read it with FromContext.
 type Principal struct {
 	Person string
-	Login  string
-	Role   Role
+	// Login is the name the provider showed at sign-in (a GitHub login, an email or a subject). It is for display only:
+	// it can change, and the board never grants access by it.
+	Login string
+	Role  Role
 	// CSRF is the token an unsafe request of this session must carry, in the X-CSRF-Token header or the csrf form
 	// field. It is empty in dev mode.
 	CSRF string
@@ -148,10 +158,15 @@ type Gate struct {
 // New checks cfg and builds the gate. It does not call the provider: an OIDC issuer is discovered on the first
 // sign-in, so a provider outage closes the board but never stops the server. Errors never hold the client secret.
 func New(cfg Config) (*Gate, error) {
+	if cfg.OIDC != nil && cfg.OIDC.Claim == "" {
+		oc := *cfg.OIDC
+		oc.Claim = claimSub
+		cfg.OIDC = &oc
+	}
 	if err := checkConfig(cfg); err != nil {
 		return nil, fmt.Errorf("board auth: %w", err)
 	}
-	people, err := newRoleMap(cfg.People, foldLogins(cfg))
+	people, err := newRoleMap(cfg.People, matchModeOf(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("board auth: %w", err)
 	}
@@ -203,65 +218,122 @@ func checkProviderChoice(cfg Config) []error {
 	if cfg.OIDC.Issuer == "" {
 		errs = append(errs, errors.New("the OIDC issuer is required"))
 	}
-	if cfg.OIDC.Claim != "email" && cfg.OIDC.Claim != "sub" {
+	if cfg.OIDC.Claim != claimEmail && cfg.OIDC.Claim != claimSub {
 		errs = append(errs, fmt.Errorf("the OIDC login claim %q must be email or sub", cfg.OIDC.Claim))
 	}
 	return errs
 }
 
-// foldLogins reports whether logins match without regard to case: GitHub logins and emails do, OIDC subjects do not.
-func foldLogins(cfg Config) bool {
-	return cfg.GitHub != nil || (cfg.OIDC != nil && cfg.OIDC.Claim == "email")
+// matchMode says what a proven identity is matched against.
+type matchMode int
+
+const (
+	matchGitHubID matchMode = iota + 1 // the numeric GitHub user id
+	matchSubject                       // the OIDC subject, with its case
+	matchEmail                         // the OIDC email, without regard to case
+)
+
+func matchModeOf(cfg Config) matchMode {
+	switch {
+	case cfg.GitHub != nil:
+		return matchGitHubID
+	case cfg.OIDC.Claim == claimEmail:
+		return matchEmail
+	}
+	return matchSubject
 }
 
-// roleMap finds a person by login or by name.
+// roleMap finds a person by the stable key of their identity, or by name.
 type roleMap struct {
-	fold    bool
-	byLogin map[string]Person
-	byName  map[string]Person
+	mode   matchMode
+	byKey  map[string]Person
+	byName map[string]Person
 }
 
-func newRoleMap(people []Person, fold bool) (*roleMap, error) {
+func newRoleMap(people []Person, mode matchMode) (*roleMap, error) {
 	if len(people) == 0 {
 		return nil, errors.New("the role map must name at least one person")
 	}
-	m := &roleMap{fold: fold, byLogin: map[string]Person{}, byName: map[string]Person{}}
+	m := &roleMap{mode: mode, byKey: map[string]Person{}, byName: map[string]Person{}}
 	for _, p := range people {
-		switch {
-		case p.Name == "" || p.Login == "":
-			return nil, errors.New("every person needs a name and a login")
-		case p.Role < RoleViewer || p.Role > RoleAdmin:
+		if p.Name == "" {
+			return nil, errors.New("every person needs a name")
+		}
+		if p.Role < RoleViewer || p.Role > RoleAdmin {
 			return nil, fmt.Errorf("person %s has no valid role", p.Name)
+		}
+		key, err := m.personKey(p)
+		if err != nil {
+			return nil, err
 		}
 		if _, dup := m.byName[p.Name]; dup {
 			return nil, fmt.Errorf("person %s is listed twice", p.Name)
 		}
-		key := m.key(p.Login)
-		if other, dup := m.byLogin[key]; dup {
-			return nil, fmt.Errorf("person %s has the login of person %s", p.Name, other.Name)
+		if other, dup := m.byKey[key]; dup {
+			return nil, fmt.Errorf("person %s has the %s of person %s", p.Name, m.identityName(), other.Name)
 		}
-		m.byLogin[key], m.byName[p.Name] = p, p
+		m.byKey[key], m.byName[p.Name] = p, p
 	}
 	return m, nil
 }
 
-func (m *roleMap) key(login string) string {
-	if m.fold {
-		return strings.ToLower(login)
+func (m *roleMap) identityName() string {
+	if m.mode == matchGitHubID {
+		return "GitHub id"
 	}
-	return login
+	return "login"
 }
 
-// byProof returns the person a proven login belongs to.
-func (m *roleMap) byProof(login string) (Person, bool) {
-	p, ok := m.byLogin[m.key(login)]
+// personKey is the stable key of a listed person. GitHub people are keyed by id alone: a login is refused, so it
+// can never become a fallback.
+func (m *roleMap) personKey(p Person) (string, error) {
+	if m.mode == matchGitHubID {
+		switch {
+		case p.GitHubID <= 0:
+			return "", fmt.Errorf("person %s needs a github_id (the number of their GitHub account; "+
+				"a GitHub login can be renamed and then claimed by another account, so it is never matched)", p.Name)
+		case p.Login != "":
+			return "", fmt.Errorf("person %s: the login is not used with GitHub sign-in; name the person by github_id only", p.Name)
+		}
+		return githubKey(p.GitHubID), nil
+	}
+	switch {
+	case p.GitHubID != 0:
+		return "", fmt.Errorf("person %s: the GitHub id is used only with GitHub sign-in", p.Name)
+	case p.Login == "":
+		return "", fmt.Errorf("person %s needs a login", p.Name)
+	}
+	return m.key(p.Login), nil
+}
+
+// githubKey is the key of a GitHub id: its decimal text, the same text the gate puts in a session.
+func githubKey(id int64) string {
+	return strconv.FormatInt(id, 10)
+}
+
+// key folds an email to lower case and leaves a subject or a GitHub id as it is.
+func (m *roleMap) key(identity string) string {
+	if m.mode == matchEmail {
+		return strings.ToLower(identity)
+	}
+	return identity
+}
+
+// byProof returns the person a proven identity belongs to.
+func (m *roleMap) byProof(id identity) (Person, bool) {
+	p, ok := m.byKey[m.key(id.key)]
 	return p, ok
 }
 
-// current returns the person a session names, but only while the map still gives them the login the session proved.
-func (m *roleMap) current(name, login string) (Person, bool) {
+// current returns the person a session names, but only while the map still gives them the identity the session
+// proved.
+func (m *roleMap) current(name, key string) (Person, bool) {
 	p, ok := m.byName[name]
-	if !ok || subtle.ConstantTimeCompare([]byte(m.key(p.Login)), []byte(m.key(login))) != 1 {
+	if !ok || key == "" {
+		return Person{}, false
+	}
+	want, err := m.personKey(p)
+	if err != nil || subtle.ConstantTimeCompare([]byte(want), []byte(m.key(key))) != 1 {
 		return Person{}, false
 	}
 	return p, true

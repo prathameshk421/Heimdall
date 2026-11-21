@@ -73,7 +73,7 @@ func newBoardGate(cfg config.Config, logger *slog.Logger) (*auth.Gate, error) {
 		if err != nil {
 			return nil, fmt.Errorf("board_auth.people.%s: %w", p.Name, err)
 		}
-		people = append(people, auth.Person{Name: p.Name, Login: p.Login, Role: role})
+		people = append(people, auth.Person{Name: p.Name, Login: p.Login, GitHubID: p.GitHubID, Role: role})
 	}
 	ac := auth.Config{
 		ClientID: b.ClientID, ClientSecret: secret, RedirectURL: b.RedirectURL, SessionKey: key,

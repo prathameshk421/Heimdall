@@ -383,22 +383,113 @@ func TestSubjectClaimIsMatchedExactly(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, r.finish(s, grant{claims: c}).Status, "a subject is matched with its case")
 }
 
-func TestGitHubLoginMapsTheLoginWithoutCase(t *testing.T) {
-	people := []auth.Person{{Name: "ana", Login: "Ana-GH", Role: auth.RoleApprover}}
-	r := newRig(t, rigOptions{github: true, people: people})
+func TestGitHubSignInMapsTheNumericId(t *testing.T) {
+	r := newRig(t, rigOptions{github: true})
 	s := r.start("/changes/PAY-7")
 	require.Equal(t, "https://github.com/login/oauth/authorize", s.authURL.Scheme+"://"+s.authURL.Host+s.authURL.Path)
 	require.Equal(t, "S256", s.authURL.Query().Get("code_challenge_method"))
-	resp := r.finish(s, grant{login: "ana-gh"})
+	resp := r.finish(s, grant{login: "ana-gh", githubID: 1002})
 	require.Equal(t, http.StatusSeeOther, resp.Status, resp.Body)
 	require.Equal(t, "/changes/PAY-7", resp.Header.Get("Location"))
 	session := cookieNamed(resp.Cookies, sessionCookie)
 	require.Equal(t, http.StatusOK, r.get("/test/approver", session).Status)
+	require.True(t, strings.HasPrefix(r.get("/test/whoami", session).Body, "ana approver "))
 
 	s = r.start("/")
-	resp = r.finish(s, grant{login: "mallory"})
+	resp = r.finish(s, grant{login: "mallory", githubID: 9999})
 	require.Equal(t, http.StatusForbidden, resp.Status)
 	require.Nil(t, cookieNamed(resp.Cookies, sessionCookie))
+}
+
+// A renamed GitHub account keeps its id, so it keeps its person, whatever its login is now.
+func TestGitHubRenamedLoginKeepsThePerson(t *testing.T) {
+	r := newRig(t, rigOptions{github: true})
+	before := r.loginGitHub("ana-old-name", 1002)
+	after := r.loginGitHub("ana-new-name", 1002)
+	for _, c := range []*http.Cookie{before, after} {
+		require.True(t, strings.HasPrefix(r.get("/test/whoami", c).Body, "ana approver "))
+	}
+	require.True(t, strings.HasPrefix(r.get("/test/whoami", r.loginGitHub("vera-gh", 1001)).Body, "vera viewer "),
+		"another id is another person")
+}
+
+// A freed login can be claimed by another account. That account has another id, so it gets no person, even when its
+// login is the one a listed person used to have.
+func TestGitHubReusedLoginWithAnotherIdIsRefused(t *testing.T) {
+	r := newRig(t, rigOptions{github: true})
+	require.NotNil(t, r.loginGitHub("ana-gh", 1002), "the real owner signs in under the old login")
+	for _, login := range []string{"ana-gh", "Ana-GH", "ana"} {
+		s := r.start("/")
+		resp := r.finish(s, grant{login: login, githubID: 424242})
+		require.Equal(t, http.StatusForbidden, resp.Status, login)
+		require.Nil(t, cookieNamed(resp.Cookies, sessionCookie), login)
+		require.NotContains(t, resp.Body, login, "the page does not echo the login")
+	}
+}
+
+// The user API must prove an id: a missing, zero, negative, text, fractional or oversized id gives no session.
+func TestGitHubWithoutAUsableIdIsRefused(t *testing.T) {
+	cases := map[string]string{
+		"no id":               `{"login":"ana-gh"}`,
+		"null id":             `{"login":"ana-gh","id":null}`,
+		"zero id":             `{"login":"ana-gh","id":0}`,
+		"negative id":         `{"login":"ana-gh","id":-1002}`,
+		"id as text":          `{"login":"ana-gh","id":"1002"}`,
+		"fractional id":       `{"login":"ana-gh","id":1002.5}`,
+		"exponent id":         `{"login":"ana-gh","id":1.002e3}`,
+		"id beyond int64":     `{"login":"ana-gh","id":9223372036854775808}`,
+		"huge id":             `{"login":"ana-gh","id":1` + strings.Repeat("0", 400) + `}`,
+		"id as array":         `{"login":"ana-gh","id":[1002]}`,
+		"login but no id key": `{"login":"ana-gh","node_id":"MDQ6VXNlcjEwMDI="}`,
+	}
+	r := newRig(t, rigOptions{github: true})
+	for name, body := range cases {
+		s := r.start("/")
+		resp := r.finish(s, grant{login: "ana-gh", userBody: body})
+		require.Equal(t, http.StatusUnauthorized, resp.Status, name)
+		require.Nil(t, cookieNamed(resp.Cookies, sessionCookie), name)
+	}
+}
+
+// The largest id the board accepts is a whole int64, read without a float rounding it onto another account.
+func TestGitHubIdIsReadAsAnExactInteger(t *testing.T) {
+	const big = int64(9007199254740993) // 2^53 + 1: a float64 would turn it into 2^53
+	people := []auth.Person{{Name: "ana", GitHubID: big - 1, Role: auth.RoleViewer}}
+	r := newRig(t, rigOptions{github: true, people: people})
+	s := r.start("/")
+	resp := r.finish(s, grant{login: "x", githubID: big})
+	require.Equal(t, http.StatusForbidden, resp.Status, "a neighbour id is another account")
+	s = r.start("/")
+	resp = r.finish(s, grant{login: "x", githubID: big - 1})
+	require.Equal(t, http.StatusSeeOther, resp.Status)
+}
+
+// The session names the proven id. A person whose id changes in the map loses a session sealed for the old id.
+func TestGitHubSessionIsCheckedAgainstTheIdInTheMap(t *testing.T) {
+	idp := newFakeIDP(t)
+	r := newRig(t, rigOptions{github: true, idp: idp})
+	session := r.loginGitHub("ana-gh", 1002)
+	require.Equal(t, http.StatusOK, r.get("/", session).Status)
+
+	moved := newRig(t, rigOptions{github: true, idp: idp, clock: r.clock, people: []auth.Person{
+		{Name: "ana", GitHubID: 2002, Role: auth.RoleAdmin},
+	}})
+	require.Equal(t, http.StatusForbidden, moved.get("/", session).Status, "the person now has another id")
+}
+
+func TestOIDCDefaultClaimIsTheSubject(t *testing.T) {
+	people := []auth.Person{{Name: "vera", Login: "sub-vera", Role: auth.RoleViewer}}
+	r := newRig(t, rigOptions{claim: "default", people: people})
+	s := r.start("/")
+	c := r.claimsFor(s, "vera@example.com")
+	c["sub"] = "sub-vera"
+	require.Equal(t, http.StatusSeeOther, r.finish(s, grant{claims: c}).Status, "an empty claim means sub")
+
+	// The email of a listed person is not a way in: it is not the identity this gate matches.
+	people = []auth.Person{{Name: "vera", Login: "vera@example.com", Role: auth.RoleViewer}}
+	r = newRig(t, rigOptions{claim: "default", people: people})
+	s = r.start("/")
+	require.Equal(t, http.StatusForbidden, r.finish(s, grant{claims: r.claimsFor(s, "vera@example.com")}).Status)
 }
 
 func TestUnreachableProviderFailsClosed(t *testing.T) {

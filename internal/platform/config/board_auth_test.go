@@ -37,7 +37,7 @@ session_key_secret = "board_session_key"
 redirect_url = "https://heimdall.example.com/auth/callback"
 
 [board_auth.people.ana]
-login = "Ana-GH"
+github_id = 1002
 role = "approver"
 `
 
@@ -78,14 +78,59 @@ func TestBoardAuthReadsGitHubWithDefaults(t *testing.T) {
 	require.Equal(t, 8*time.Hour, cfg.BoardAuth.SessionTTL, "the default session lasts one work day")
 	require.Empty(t, cfg.BoardAuth.Issuer)
 	require.Empty(t, cfg.BoardAuth.LoginClaim, "github logins come from the user API, not a claim")
-	require.Equal(t, []BoardPerson{{Name: "ana", Login: "Ana-GH", Role: "approver"}}, cfg.BoardAuth.People)
+	require.Equal(t, []BoardPerson{{Name: "ana", GitHubID: 1002, Role: "approver"}}, cfg.BoardAuth.People)
 }
 
-func TestBoardAuthOIDCDefaultsToTheVerifiedEmailClaim(t *testing.T) {
+// An email can be reassigned to another person. A subject is stable per issuer, so it is the default.
+func TestBoardAuthOIDCDefaultsToTheSubjectClaim(t *testing.T) {
 	section := strings.Replace(oidcBoard, "login_claim = \"sub\"\n", "", 1)
 	cfg, err := loadBoard(t, "0.0.0.0:8080", section)
 	require.NoError(t, err)
+	require.Equal(t, "sub", cfg.BoardAuth.LoginClaim)
+}
+
+func TestBoardAuthOIDCEmailClaimIsAnExplicitChoice(t *testing.T) {
+	section := strings.Replace(oidcBoard, "login_claim = \"sub\"", "login_claim = \"email\"", 1)
+	cfg, err := loadBoard(t, "0.0.0.0:8080", section)
+	require.NoError(t, err)
 	require.Equal(t, "email", cfg.BoardAuth.LoginClaim)
+}
+
+// A GitHub login can be renamed and then claimed by another account, so a GitHub person is named by the numeric id.
+// A person without one is refused, and the login is never a fallback.
+func TestBoardAuthGitHubPeopleNeedTheNumericId(t *testing.T) {
+	cases := []struct {
+		name, from, to, want string
+	}{
+		{"no id", "github_id = 1002\n", "", "board_auth.people.ana.github_id is required"},
+		{"login instead of id", "github_id = 1002\n", "login = \"ana-gh\"\n", "board_auth.people.ana.github_id is required"},
+		{"login beside the id", "github_id = 1002\n", "github_id = 1002\nlogin = \"ana-gh\"\n", "board_auth.people.ana.login is not used in github mode"},
+		{"zero id", "github_id = 1002", "github_id = 0", "board_auth.people.ana.github_id must be a positive whole number"},
+		{"negative id", "github_id = 1002", "github_id = -4", "board_auth.people.ana.github_id must be a positive whole number"},
+		{"id as text", "github_id = 1002", `github_id = "1002"`, "GitHubID"},
+		{"id as float", "github_id = 1002", "github_id = 1002.5", "GitHubID"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Contains(t, githubBoard, c.from)
+			_, err := loadBoard(t, "0.0.0.0:8080", strings.Replace(githubBoard, c.from, c.to, 1))
+			require.ErrorContains(t, err, c.want)
+		})
+	}
+	both := githubBoard + "\n[board_auth.people.bob]\nrole = \"viewer\"\n"
+	_, err := loadBoard(t, "0.0.0.0:8080", both)
+	require.ErrorContains(t, err, "board_auth.people.bob.github_id is required", "the message names the person")
+}
+
+func TestBoardAuthGitHubIdsMustBeDistinct(t *testing.T) {
+	section := githubBoard + "\n[board_auth.people.anna]\ngithub_id = 1002\nrole = \"viewer\"\n"
+	_, err := loadBoard(t, "0.0.0.0:8080", section)
+	require.ErrorContains(t, err, "board_auth.people.anna.github_id is also the github_id of board_auth.people.ana")
+}
+
+func TestBoardAuthOIDCRefusesAGitHubId(t *testing.T) {
+	_, err := loadBoard(t, "0.0.0.0:8080", strings.Replace(oidcBoard, `login = "00u2efgh"`, "login = \"00u2efgh\"\ngithub_id = 5", 1))
+	require.ErrorContains(t, err, "board_auth.people.bob.github_id is used only when mode is github")
 }
 
 func TestBoardAuthDevModeNeedsALoopbackListener(t *testing.T) {
@@ -155,9 +200,10 @@ func TestBoardAuthGitHubRefusesOIDCKeys(t *testing.T) {
 	require.ErrorContains(t, err, "board_auth.login_claim is used only when mode is oidc")
 }
 
-// A GitHub login and an email are matched without regard to case, so two people may not differ only in case.
-func TestBoardAuthLoginsDifferingOnlyInCaseClashForGitHub(t *testing.T) {
-	section := githubBoard + "\n[board_auth.people.anna]\nlogin = \"ana-gh\"\nrole = \"viewer\"\n"
+// An email is matched without regard to case, so two people may not differ only in case.
+func TestBoardAuthEmailsDifferingOnlyInCaseClash(t *testing.T) {
+	section := strings.Replace(oidcBoard, "login_claim = \"sub\"", "login_claim = \"email\"", 1) +
+		"\n[board_auth.people.carol]\nlogin = \"00U1ABCD\"\nrole = \"viewer\"\n"
 	_, err := loadBoard(t, "0.0.0.0:8080", section)
 	require.ErrorContains(t, err, "is also the login of")
 }
