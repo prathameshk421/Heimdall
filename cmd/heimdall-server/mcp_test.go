@@ -122,6 +122,7 @@ func TestEveryEffectKindEmittedByWorkflowHasAnExecutor(t *testing.T) {
 		change.EffectVerifyEvidence:    true,
 		change.EffectAcceptance:        true, // emitted by PR intake
 		change.EffectRunChecks:         true, // the checks row of the review flow
+		change.EffectProfileTrial:      true, // the profile row of the review flow (D175)
 	}
 
 	store := newMemStore()

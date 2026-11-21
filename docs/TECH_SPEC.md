@@ -392,7 +392,7 @@ carries up to two flows. Each flow starts on its own fact and needs nothing from
 | Flow | Starts on | Rows |
 |---|---|---|
 | tests | `change.triggered` (a ticket moved to In Progress) | `branch`, `write_tests`, `test_qa`, `signoff`, `commit` |
-| review | `pr.opened` | `slop`, `checks`, `pick`, `review`, `verify`, `deliberate`, `acceptance`, `gate` |
+| review | `pr.opened` | `slop`, `checks`, `pick`, `review`, `verify`, `deliberate`, `acceptance`, `gate`, `profile` (D175; nothing waits on it) |
 | both | the first fact of the change | `open_room` |
 
 The table is `internal/domain/change/rows.go`, `rows_tests.go` and `rows_review.go`:

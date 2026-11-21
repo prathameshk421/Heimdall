@@ -149,7 +149,7 @@ func TestATicketlessPullRequestRunsTheReviewFlow(t *testing.T) {
 	for _, r := range change.Open(in) {
 		open = append(open, r.ID)
 	}
-	require.Equal(t, []string{"open_room", "checks", "pick", "gate"}, open, "the gate row is open as long as the PR is")
+	require.Equal(t, []string{"open_room", "checks", "pick", "gate", "profile"}, open, "the gate row is open as long as the PR is")
 	require.NotContains(t, got, "acceptance", "no ticket, so no acceptance tests to run")
 	for _, row := range []string{"branch", "write_tests", "test_qa", "signoff", "commit"} {
 		require.NotContains(t, got, row, row)
@@ -313,7 +313,8 @@ func TestEachRowDeclaresTheJobKindsItStarts(t *testing.T) {
 	}{{"KAN-5", tests}, {"pr-acme-pay-7", review}} {
 		for n := 1; n <= len(flow.events); n++ {
 			in := inOf(flow.change, fold(t, flow.events[:n]...), t0)
-			in.Profile = change.Profile{Checks: []change.ProfileCheck{{ID: "lint"}}}
+			in.Profile = change.Profile{Checks: []change.ProfileCheck{{ID: "lint"}},
+				Latest: &change.ProfileProposal{ID: strings.Repeat("c", 64), State: "approved"}} // the profile row starts its trial
 			in.Outside = change.Outside{ChangedFiles: []string{"a.go"}}
 			for _, ra := range change.Next(in) {
 				if ra.Job == nil {

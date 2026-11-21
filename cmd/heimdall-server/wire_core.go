@@ -201,6 +201,16 @@ func newKnowledgeSearch(d deps, ad adapters, clk ports.Clock, trust ports.Episod
 }
 
 func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports.BlobStore, clk ports.Clock) (mcp.Profiles, error) {
+	service, err := newProfileService(ad, store, blobs, clk)
+	if err != nil {
+		return nil, err
+	}
+	return profileAPI{service: service}, nil
+}
+
+// newProfileService builds the sandbox profile lifecycle on the runner. The MCP tools and the profile_trial executor
+// share its rules.
+func newProfileService(ad adapters, store ports.ProfileStore, blobs ports.BlobStore, clk ports.Clock) (*appprofile.Service, error) {
 	client := ad.runner(blobs)
 	service, err := appprofile.New(appprofile.Config{
 		Store: store, Parser: profileyaml.Parser{}, Policy: client, Trials: client, Syncer: client,
@@ -209,7 +219,7 @@ func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports
 	if err != nil {
 		return nil, fmt.Errorf("build sandbox profile lifecycle: %w", err)
 	}
-	return profileAPI{service: service}, nil
+	return service, nil
 }
 
 // assembleSyncer wires the policy decoder, intake and the PR syncer. Their events go through the kicking store, so the

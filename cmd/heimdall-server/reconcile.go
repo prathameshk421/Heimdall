@@ -29,6 +29,7 @@ const (
 	testsTimeout   = 2 * time.Hour
 	reviewTimeout  = 30 * time.Minute
 	verdictTimeout = 30 * time.Minute
+	profileTimeout = time.Hour // workflow.Kinds: the profiler reads the repository and proposes one artifact
 	ackWindow      = 3 * time.Minute
 	stallWindow    = 10 * time.Minute
 )
@@ -134,8 +135,8 @@ func newReconciler(ad adapters, store *postgres.Store, openrouter ports.ModelHea
 		Store: store, Effects: store, Open: store, Dead: store, Calls: store, Health: openrouter,
 		Inputs: reconcileInputs{code: ad.vcs, gate: gate, profiles: store},
 		Agents: agentFor(ad.agents), IDs: gen, Clock: clk, Logger: logger, Wait: clock.Wait,
-		Settings: change.Settings{Reviewers: reviewers, TestAttempts: testAttempts, PickWait: pickWait,
-			Timeouts: map[string]time.Duration{"tests": testsTimeout, "review": reviewTimeout, "verdict": verdictTimeout}},
+		Settings: change.Settings{Reviewers: reviewers, TestAttempts: testAttempts, PickWait: pickWait, Profiler: ad.agents.Profiler,
+			Timeouts: map[string]time.Duration{"tests": testsTimeout, "review": reviewTimeout, "verdict": verdictTimeout, "profile": profileTimeout}},
 		Windows: liveness.Windows{Ack: ackWindow, Stall: stallWindow},
 	})
 }

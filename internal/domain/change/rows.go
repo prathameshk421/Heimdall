@@ -107,6 +107,7 @@ type Settings struct {
 	PickWait       time.Duration
 	BranchTemplate string // empty means DefaultBranchTemplate
 	Timeouts       map[string]time.Duration
+	Profiler       string // the agent that holds profile tasks; empty when none is configured (D175)
 }
 
 // DeadJob is an outbox row of the change that failed for good or is in doubt. Row is the row that made it.

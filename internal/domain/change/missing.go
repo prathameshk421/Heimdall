@@ -96,6 +96,8 @@ func rowOfJob(k EffectKind) string {
 		return "commit"
 	case EffectRunChecks:
 		return "checks"
+	case EffectProfileTrial:
+		return "profile"
 	case EffectVerifyEvidence:
 		return "verify"
 	case EffectAcceptance:

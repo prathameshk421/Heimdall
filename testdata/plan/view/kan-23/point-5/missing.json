@@ -1,5 +1,12 @@
 [
   {
+    "step": "profile",
+    "role": "",
+    "clause": "",
+    "subject": "",
+    "text": "aarush323/heimdall-fixture-pay has no sandbox profile, and no profiler is configured in [agents] to propose one"
+  },
+  {
     "step": "gate",
     "role": "",
     "clause": "blocking",

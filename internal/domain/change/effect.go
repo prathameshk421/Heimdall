@@ -31,13 +31,15 @@ const (
 	EffectAcceptance EffectKind = "acceptance"
 	// EffectRunChecks runs the profile's checks on a pull request head and records checks.reported (HARNESS_DESIGN B7).
 	EffectRunChecks EffectKind = "run_checks"
+	// EffectProfileTrial runs an approved profile proposal once in the isolated runner and records the trial (D175).
+	EffectProfileTrial EffectKind = "profile_trial"
 )
 
 // Valid reports whether k is an effect kind.
 func (k EffectKind) Valid() bool {
 	return slices.Contains([]EffectKind{EffectGitHubCheck, EffectGitHubComment, EffectGitHubBranch,
 		EffectRoomOpen, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign,
-		EffectGitHubCommitTests, EffectTestQuality, EffectVerifyEvidence, EffectAcceptance, EffectRunChecks}, k)
+		EffectGitHubCommitTests, EffectTestQuality, EffectVerifyEvidence, EffectAcceptance, EffectRunChecks, EffectProfileTrial}, k)
 }
 
 // EffectKey is the deterministic idempotency key of an outbox row (TECH_SPEC 2.4). An external system that sees the

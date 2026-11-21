@@ -1,6 +1,6 @@
-KAN-22 · 2 needs
+KAN-22 · 3 needs
 Tests     2 tests for AC1, AC2 · submitted on 4a0f699 · verified · committed 4c14494
 PR        #10 by prathameshk421 · head 59effae · slop passed · acceptance not reported
 Reviews   reviewer-1 clean on 59effae · reviewer-2 clean on 19ba050 · reviewer-3 clean on 59effae
 Findings  F1 E4 low upheld · F2 E4 low unverified
-Next      reviewer-2 reviews 59effae; check heimdall/acceptance has not reported on head
+Next      reviewer-2 reviews 59effae; aarush323/heimdall-fixture-pay has no sandbox profile, and no profiler is configured in [agents] to propose one; check heimdall/acceptance has not reported on head

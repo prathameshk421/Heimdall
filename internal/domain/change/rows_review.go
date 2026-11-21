@@ -17,7 +17,7 @@ import (
 const acceptanceCheck = "heimdall/acceptance"
 
 func reviewRows() []Row {
-	return []Row{rowSlop(), rowChecks(), rowPick(), rowReview(), rowVerify(), rowDeliberate(), rowAcceptance(), rowGate()}
+	return []Row{rowSlop(), rowChecks(), rowPick(), rowReview(), rowVerify(), rowDeliberate(), rowAcceptance(), rowGate(), rowProfile()}
 }
 
 func rowSlop() Row {
@@ -85,6 +85,42 @@ func rowChecks() Row {
 			p := RunChecksPayload{Repo: pr.Repo, Change: in.Change, Head: pr.HeadSHA, Base: pr.Base, CheckIDs: applicableChecks(in)}
 			return []Action{{Text: "the profile checks run on " + short(string(pr.HeadSHA)),
 				Job: &Job{Kind: EffectRunChecks, Key: in.jobKey("checks", string(pr.HeadSHA)), Target: string(pr.Repo), Payload: p}}}
+		}}
+}
+
+// rowProfile walks the repository to a promoted sandbox profile (D175): the profiler proposes, an owner approves,
+// Heimdall runs the trial, an owner promotes. No row waits on it, so review never blocks on a profile, and it is last
+// in the table so a status lists the pull request's own merge work first. The proposal's
+// state lives in the profile store and comes in through In.Profile.Latest.
+func rowProfile() Row {
+	return Row{ID: "profile", Flow: FlowReview, After: []string{"slop"}, Jobs: []EffectKind{EffectProfileTrial},
+		Done: func(in In) bool { return in.Profile.Promoted },
+		Next: func(in In) []Action {
+			repo := in.View.PR.Repo
+			latest := in.Profile.Latest
+			switch {
+			case latest == nil || (latest.State == "approved" && latest.Trial == "failed"):
+				if in.Settings.Profiler == "" {
+					return []Action{say(string(repo) + " has no sandbox profile, and no profiler is configured in [agents] to propose one")}
+				}
+				input := "first"
+				if latest != nil {
+					input = "after-" + latest.ID
+				}
+				return []Action{{Task: &Task{Kind: "profile", Subject: string(repo), Input: input},
+					Text: "the profiler proposes a sandbox profile for " + string(repo)}}
+			case latest.State == "proposed":
+				text := "approve the sandbox profile " + short(latest.ID) + " for " + string(repo) + ": `heimdall approve-profile " + latest.ID + "`"
+				return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
+			case latest.State == "approved" && latest.Trial == "":
+				p := ProfileTrialPayload{Repo: repo, ProposalID: latest.ID, SHA: in.View.PR.HeadSHA}
+				return []Action{{Text: "the sandbox profile " + short(latest.ID) + " runs its trial on " + short(string(in.View.PR.HeadSHA)),
+					Job: &Job{Kind: EffectProfileTrial, Key: in.jobKey("profile", latest.ID), Target: string(repo), Payload: p}}}
+			case latest.State == "approved" && latest.Trial == "passed":
+				text := "the sandbox profile " + short(latest.ID) + " passed its trial; promote it: `heimdall promote-profile " + latest.ID + "`"
+				return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
+			}
+			return []Action{say("the sandbox profile " + short(latest.ID) + " is " + latest.State + " but not active for " + string(repo))}
 		}}
 }
 

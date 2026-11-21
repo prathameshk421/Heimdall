@@ -84,7 +84,7 @@ A change carries up to two flows; each starts on its own fact and needs nothing 
 | Flow | Starts on | Rows | Ends when |
 |---|---|---|---|
 | **Tests** | `change.triggered` (a ticket moved to In Progress) | `branch`, `write_tests`, `test_qa`, `signoff`, `commit` | the verified tests are committed to the ticket branch; CI runs them on every push (`heimdall/acceptance`) |
-| **Review** | `pr.opened` | `slop`, `checks`, `pick`, `review`, `verify`, `deliberate`, `acceptance`, `gate` | the PR closes |
+| **Review** | `pr.opened` | `slop`, `checks`, `pick`, `review`, `verify`, `deliberate`, `acceptance`, `gate`, `profile` | the PR closes |
 | both | the first fact of the change | `open_room` | the room exists |
 
 - `wait_pr` is deleted. Review rows wait only for a PR. A PR opened before its tests are committed is reviewed at once;
@@ -158,6 +158,7 @@ Tests rows need `v.Trigger != nil`; Review rows need `v.PR != nil`; when `v.Over
 | `commit` | tests | `test_qa`, `signoff` | `v.Tests.Committed != nil` | Job `github_commit_tests` | `<c>/commit/<v.Tests.Ref>` |
 | `slop` | review | – | slop passed on head, or only `ticket_linked` failed (D174) | Text only: "the slop rules pass on <head> (failing: …)"; intake records slop on every head, a push fixes it | |
 | `checks` | review | `slop` | `v.Checks[head]` exists, or the profile has no check whose `when` matches a changed file | Job `run_checks` (B7) | `<c>/checks/<head>` |
+| `profile` | review | `slop` | the repository has a promoted profile | no proposal, or the newest failed its trial: Task `profile` (subject the repo, input `first` or `after-<id>`); `proposed`: Ask the owners `heimdall approve-profile <id>`; approved, no trial: Job `profile_trial` keyed `<c>/profile/<id>/r<n>`; trial passed: Ask `heimdall promote-profile <id>`; no profiler configured: text only (D175) | `profile_trial` |
 | `pick` | review | `slop` | `v.PR.Picked != nil` | before `v.PR.SlopAt + Settings.PickWait`: Ask the PR author "pick reviewers with `heimdall review`"; after: Fact `reviewers.picked{people: v.PR.Suggested or Settings.Reviewers, by: heimdall, method: default}` | |
 | `review` | review | `pick`, `checks` | every picked seat has an outcome (review, unavailable, waived) on head | Task `review` per seat without one; subject = seat; input `head-<head>` | |
 | `verify` | review | `review` | no E1 to E3 finding is unchecked | Job `verify_evidence` per unchecked finding | `<c>/verify/<ref>/<head>` |
