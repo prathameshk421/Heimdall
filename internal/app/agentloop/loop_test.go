@@ -105,7 +105,10 @@ func newHarness(t *testing.T, steps ...modelStep) *harness {
 		clock: clock,
 		read:  &fakeTool{name: "read_code", run: func(json.RawMessage) (string, error) { return "package x", nil }},
 		sub:   &fakeSubmitter{name: "submit_plan", verdicts: []Verdict{{Accepted: true}}},
-		cfg:   Config{Model: "m", MaxOutputTokens: 4000, BudgetUSD: 0.50, Deadline: clock.now.Add(15 * time.Minute), MaxTurns: 10},
+		cfg: Config{
+			Model: "m", MaxOutputTokens: 4000, BudgetUSD: 0.50, InputTokenCap: 800_000, OutputTokenCap: 40_000,
+			Deadline: clock.now.Add(15 * time.Minute), MaxTurns: 10,
+		},
 	}
 }
 
@@ -219,6 +222,42 @@ func TestBudgetStopsBeforeTheNextCall(t *testing.T) {
 	assert.Equal(t, 2, res.Turns)
 	assert.InDelta(t, 0.55, res.CostUSD, 1e-9)
 	assert.Len(t, h.model.requests, 2, "no third call after the budget is reached")
+}
+
+// ACTION_MODE section 7: the per-PR token cap stops the run like the cost budget. Each scripted answer reads 100
+// input tokens (cached ones included) and writes 10.
+func TestInputTokenCapStopsBeforeTheNextCall(t *testing.T) {
+	h := newHarness(t,
+		answer(0.01, call("c1", "read_code", `{}`)),
+		answer(0.01, call("c2", "read_code", `{}`)),
+	)
+	h.cfg.InputTokenCap = 150
+	res, err := h.run(context.Background(), t)
+	require.NoError(t, err)
+	assert.Equal(t, StopBudget, res.Reason)
+	assert.Equal(t, int64(200), res.Usage.InputTokens)
+	assert.Len(t, h.model.requests, 2, "no third call after the input token cap is reached")
+}
+
+func TestOutputTokenCapStopsBeforeTheNextCall(t *testing.T) {
+	h := newHarness(t,
+		answer(0.01, call("c1", "read_code", `{}`)),
+		answer(0.01, call("c2", "read_code", `{}`)),
+	)
+	h.cfg.OutputTokenCap = 15
+	res, err := h.run(context.Background(), t)
+	require.NoError(t, err)
+	assert.Equal(t, StopBudget, res.Reason)
+	assert.Equal(t, int64(20), res.Usage.OutputTokens)
+	assert.Len(t, h.model.requests, 2, "no third call after the output token cap is reached")
+}
+
+func TestEachCallCarriesTheOutputCap(t *testing.T) {
+	h := newHarness(t, answer(0.01, call("s1", "submit_plan", `{}`)))
+	_, err := h.run(context.Background(), t)
+	require.NoError(t, err)
+	require.Len(t, h.model.requests, 1)
+	assert.Equal(t, 4000, h.model.requests[0].MaxOutputTokens)
 }
 
 func TestDeadlineStopsBeforeTheNextCall(t *testing.T) {
@@ -349,6 +388,9 @@ func TestNewRefusesABadRegistryOrConfig(t *testing.T) {
 		func(c *Config) { c.BudgetUSD = 0 },
 		func(c *Config) { c.MaxTurns = 0 },
 		func(c *Config) { c.Deadline = time.Time{} },
+		func(c *Config) { c.MaxOutputTokens = 0 },
+		func(c *Config) { c.InputTokenCap = 0 },
+		func(c *Config) { c.OutputTokenCap = 0 },
 	} {
 		cfg := h.cfg
 		mutate(&cfg)

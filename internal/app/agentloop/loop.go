@@ -17,15 +17,32 @@ const retriesAfterRefusal = 1
 
 // Config holds the limits of one run. Every field is required, so a run always has an end.
 type Config struct {
-	Model           string
+	Model string
+	// MaxOutputTokens caps each answer (ACTION_MODE section 7, proposed 4k).
 	MaxOutputTokens int
 	// BudgetUSD is checked before each model call. The call that crosses it is not stopped, so the final cost can
 	// pass the budget by one answer.
 	BudgetUSD float64
+	// InputTokenCap and OutputTokenCap are the per-run token caps of ACTION_MODE section 7 (proposed 800k and 40k).
+	// Input counts every prompt token, cached ones included. Like BudgetUSD they are checked before each model call,
+	// stop the run with StopBudget, and may be passed by one answer.
+	InputTokenCap  int64
+	OutputTokenCap int64
 	// Deadline is read against the clock before each model call and each tool call. It also bounds a call in flight.
 	Deadline time.Time
 	// MaxTurns is the number of model answers allowed.
 	MaxTurns int
+}
+
+// check refuses a config that would let a run go on without an end.
+func (cfg Config) check() error {
+	if strings.TrimSpace(cfg.Model) == "" || cfg.BudgetUSD <= 0 || cfg.MaxTurns <= 0 || cfg.Deadline.IsZero() {
+		return errors.New("agent loop config needs a model, a positive budget, a positive turn cap and a deadline")
+	}
+	if cfg.MaxOutputTokens <= 0 || cfg.InputTokenCap <= 0 || cfg.OutputTokenCap <= 0 {
+		return errors.New("agent loop config needs a positive output cap per answer and positive input and output token caps per run")
+	}
+	return nil
 }
 
 // Loop runs the model against a fixed set of tools. It holds no state between runs.
@@ -44,8 +61,8 @@ func New(model ports.ModelChat, clock ports.Clock, cfg Config, tools []Tool, sub
 	if model == nil || clock == nil {
 		return nil, errors.New("agent loop needs a model and a clock")
 	}
-	if strings.TrimSpace(cfg.Model) == "" || cfg.BudgetUSD <= 0 || cfg.MaxTurns <= 0 || cfg.Deadline.IsZero() {
-		return nil, errors.New("agent loop config needs a model, a positive budget, a positive turn cap and a deadline")
+	if err := cfg.check(); err != nil {
+		return nil, err
 	}
 	if len(submitters) == 0 {
 		return nil, errors.New("agent loop needs at least one submitter")
@@ -156,7 +173,9 @@ func (r *run) stopBeforeCall() bool {
 		return true
 	}
 	switch {
-	case r.res.CostUSD >= r.l.cfg.BudgetUSD:
+	case r.res.CostUSD >= r.l.cfg.BudgetUSD,
+		r.res.Usage.InputTokens >= r.l.cfg.InputTokenCap,
+		r.res.Usage.OutputTokens >= r.l.cfg.OutputTokenCap:
 		r.res.Reason = StopBudget
 	case r.res.Turns >= r.l.cfg.MaxTurns:
 		r.res.Reason = StopTurnCap

@@ -20,8 +20,9 @@
 //
 // # Invariants
 //
-// A turn is one model answer. The checks before each model call run in this order: cancellation, deadline, cost
-// budget, turn cap. The budget uses the cost the model port reports, so the last answer can pass it by one call.
+// A turn is one model answer. The checks before each model call run in this order: cancellation, deadline, budget,
+// turn cap. The budget is the cost and the input and output token caps of ACTION_MODE section 7; each uses what the
+// model port reports, so the last answer can pass it by one call. Each answer is also capped by MaxOutputTokens.
 // The deadline is read from the Clock port before each model call and each tool call, and it also bounds a call in
 // flight through a context timeout made from the clock. Time never comes from the system clock.
 // A refused submission goes back to the model as a tool result with the caller's reason. The model gets one retry
@@ -41,6 +42,6 @@
 // # Tests
 //
 // loop_test.go uses a scripted fake model and a fake clock: tool dispatch, one retry after a refusal, a second
-// refusal, malformed submission arguments, budget stop, deadline stop (before a call and between tool calls), turn cap,
+// refusal, malformed submission arguments, budget stop, input and output token caps, the per-answer output cap, deadline stop (before a call and between tool calls), turn cap,
 // unknown tool, bad arguments, tool error, no submission, cancellation and a model error.
 package agentloop

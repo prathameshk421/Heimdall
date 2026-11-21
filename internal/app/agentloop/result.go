@@ -11,7 +11,8 @@ const (
 	StopSubmitted StopReason = "submitted"
 	// StopRefused means the model's retry was refused too, so the run gave up on a valid submission.
 	StopRefused StopReason = "refused"
-	// StopBudget means the cost so far reached Config.BudgetUSD before the next model call.
+	// StopBudget means the cost so far reached Config.BudgetUSD, or the tokens so far reached Config.InputTokenCap or
+	// Config.OutputTokenCap, before the next model call.
 	StopBudget StopReason = "budget"
 	// StopDeadline means the clock reached Config.Deadline.
 	StopDeadline StopReason = "deadline"
