@@ -49,6 +49,13 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | AM11 isolated sandbox + escape probes | Claude Personal / Opus | `am11-sandbox` | running | owner yes ("go with everything") for throwaway runs on the fixture repo, S1 guardrails |
 | AM9 GitHub adapter additions | Claude Personal / Sonnet | `am9-github` | merged | `40b792d`: static token, comments by marker and author, artifact zip (streaming cap, entry count, per-entry limit read through, path escape, symlink and duplicate refusal), code scanning, Git Data (no CAS claimed). New ports in `internal/ports/vcs_action.go`. Coordinator kept 422 untyped: the shared adapter's test asserts it on purpose and the live gate uses it; AM8 calls GetRef instead. Lint 0 issues, unit 4109 after merge. Live GitHub calls, cross-host artifact redirect, comment size limit not verified |
 
+## Merge into heimdall-build (owner yes, Nov 21 2026)
+
+`product-build` at `35f7c6e` holds heimdall-build up to `f2c16ab`, no conflicts; on the merged tree lint 0 issues,
+archcheck holds (109 packages), `make unit` 4326 tests. The Stage 0 session was asked (queued message) to merge
+`product-build` into heimdall-build at its next clean point and run `make fast`; it reports back here on a conflict.
+Not pushed.
+
 ## Owner decisions (Nov 21 2026: "go with your recommendations")
 
 - ACTION_MODE Q1 to Q10 take the doc's recommendations; Q3 closed by S1: the ref `refs/heimdall/state`.
