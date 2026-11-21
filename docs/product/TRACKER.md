@@ -40,6 +40,10 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | AM6 coverage parsers | OpenCode / DeepSeek free, rework on DeepSeek paid | `am6-coverage` | rework | coordinator review of `11b7b5c`: (1) hand-written XML tokenizer in domain because depguard forbids `encoding/xml`; Cobertura moves to `internal/adapters/coverage` on `encoding/xml` behind a domain builder (deviation from the AM6 row, which put all three parsers in domain); (2) fail-open: a changed file absent from the report counted as not instrumented, so a wrong prefix gave 100%; adds `Missing` and `Measurable()`, caller treats not measurable as unknown. Free tier hit its limit; rework runs on paid Flash, expected under $0.50 |
 | AM10 model chat with tools | OpenCode / DeepSeek free | `am10-model-chat` | merged | reviewed by coordinator (cost math, bounded body, no key in errors); lint 0 issues, unit 3579 tests; no live model call |
 | S1 GitHub spike | Claude Personal / Sonnet | `s1-github-spike` | running (resumed) | owner said yes Nov 21. First run interrupted at the usage limit after creating `heimdall-test/s1-k7*` branches on the fixture repo; the resumed run finishes and cleans up |
+| AM5 proof outcome and trivial skip | Claude Personal / Sonnet | `am5-proof` | running | |
+| AM12 agent loop | Claude Personal / Sonnet | `am12-agentloop` | running | |
+| AM3 Action events | waiting | | blocked | needs Stage 0 to release `change` |
+| AM9 GitHub adapter additions | next | | queued | paid DeepSeek, after the AM6 rework frees the slot |
 
 ## Follow-ups and noticed
 
