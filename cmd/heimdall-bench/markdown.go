@@ -24,15 +24,17 @@ func reviewMarkdown(rep reviewReport) string {
 	if rep.Stopped != "" {
 		fmt.Fprintf(&b, "| Stopped | %s |\n", rep.Stopped)
 	}
-	b.WriteString("\n| Case | Kind | Scored | Stop | Turns | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("\n| Case | Kind | Scored | Stop | Turns | Retries | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	retries := 0
 	for _, c := range rep.Cases {
+		retries += c.Retries
 		note := c.Error
 		if note == "" {
 			note = countList(c.Unproven)
 		}
-		fmt.Fprintf(&b, "| %s | %s | %s | %s | %d | %d | %d | %s | %s | %s | %d/%d | $%.4f | %.1f s | %s |\n",
-			c.ID, c.Kind, yes(c.Scored), c.Stop, c.Turns, c.Proposed, c.Proven, bugOnly(c.Kind == "bug", c.Hit),
+		fmt.Fprintf(&b, "| %s | %s | %s | %s | %d | %d | %d | %d | %s | %s | %s | %d/%d | $%.4f | %.1f s | %s |\n",
+			c.ID, c.Kind, yes(c.Scored), c.Stop, c.Turns, c.Retries, c.Proposed, c.Proven, bugOnly(c.Kind == "bug", c.Hit),
 			bugOnly(c.Kind == "bug", c.Located), bugOnly(c.Kind == "clean", c.FalsePositive),
 			c.InputTokens, c.OutputTokens, c.CostUSD, c.Seconds, escapeCell(note))
 	}
@@ -46,6 +48,7 @@ func reviewMarkdown(rep reviewReport) string {
 	fmt.Fprintf(&b, "| Cost | $%.4f total; per case p50 $%.4f, p95 $%.4f |\n", s.CostUSD, s.CostP50, s.CostP95)
 	fmt.Fprintf(&b, "| Tokens | %d input (%d cached), %d output |\n", s.InputTokens, s.CachedTokens, s.OutputTokens)
 	fmt.Fprintf(&b, "| Wall time per case | p50 %.1f s, p95 %.1f s |\n", s.WallP50, s.WallP95)
+	fmt.Fprintf(&b, "| Retries | %d |\n", retries)
 	return b.String()
 }
 

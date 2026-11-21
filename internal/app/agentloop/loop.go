@@ -50,6 +50,8 @@ type Config struct {
 	RequireToolCall bool
 	// Nudge is the fixed message sent after an answer with no tool call. Empty means one that names the submitters.
 	Nudge string
+	// Retry is how a model call that failed for now is sent again (retry.go). The zero value retries nothing.
+	Retry Retry
 }
 
 // check refuses a config that would let a run go on without an end.
@@ -63,7 +65,7 @@ func (cfg Config) check() error {
 	if !cfg.Price.Valid() {
 		return errors.New("agent loop config needs a positive price for the model: without it the caps cannot see the spend")
 	}
-	return nil
+	return cfg.Retry.check()
 }
 
 // Loop runs the model against a fixed set of tools. It holds no state between runs.
@@ -131,6 +133,8 @@ type run struct {
 	refusalsLeft int
 	// autoOnly is set once the model port reported that the endpoint refused tool_choice "required".
 	autoOnly bool
+	// failed holds the failed attempts of the model call in progress.
+	failed []ports.AgentAttempt
 }
 
 // Run sends the conversation to the model and executes its tool calls until a stop condition holds. The returned
@@ -158,11 +162,9 @@ func (r *run) loop() error {
 		if r.stopBeforeCall() {
 			return r.cancelErr()
 		}
-		started := r.l.clock.Now()
-		resp, err := r.l.model.Complete(r.ctx, r.request())
-		modelTime := r.l.clock.Now().Sub(started)
-		if err != nil {
-			return r.modelFailed(err)
+		resp, modelTime, ended, err := r.complete()
+		if ended {
+			return err
 		}
 		calls, fromText := r.calls(resp)
 		if err := r.record(resp, calls, fromText, modelTime); err != nil {
@@ -176,10 +178,10 @@ func (r *run) loop() error {
 			r.nudge()
 			continue
 		}
-		started = r.l.clock.Now()
-		ended := r.dispatch(calls)
+		started := r.l.clock.Now()
+		done := r.dispatch(calls)
 		r.res.Turn[len(r.res.Turn)-1].ToolLatency = r.l.clock.Now().Sub(started)
-		if ended {
+		if done {
 			return r.cancelErr()
 		}
 	}
@@ -271,12 +273,88 @@ func (r *run) overBudget() bool {
 		r.res.Usage.OutputTokens+int64(cfg.MaxOutputTokens) > cfg.OutputTokenCap
 }
 
-func (r *run) modelFailed(err error) error {
-	if r.interrupted() {
-		return r.cancelErr()
+// complete makes one model call and sends it again after a failure that may pass (Config.Retry). modelTime is the time
+// of the attempt that answered. ended is true when the run stopped instead: the stop reason is set, err is what Run
+// returns, and Result.FailedCall holds the call's failed attempts.
+func (r *run) complete() (resp ports.ModelResponse, modelTime time.Duration, ended bool, err error) {
+	r.failed = nil
+	for attempt := 1; ; attempt++ {
+		started := r.l.clock.Now()
+		resp, callErr := r.l.model.Complete(r.ctx, r.request())
+		modelTime = r.l.clock.Now().Sub(started)
+		if callErr == nil {
+			return resp, modelTime, false, nil
+		}
+		r.failed = append(r.failed, attemptOf(callErr))
+		if ended, err := r.retry(resp, callErr, attempt); ended {
+			r.res.FailedCall = r.failed
+			return ports.ModelResponse{}, modelTime, true, err
+		}
 	}
-	r.res.Reason = StopModelError
-	return fmt.Errorf("agent loop model call: %w", err)
+}
+
+// retry handles one failed attempt. It charges what the provider billed for it, then waits and reports false when the
+// call may be sent again. It reports true with the run's error when the run ends: the caller or the deadline
+// interrupted it, the failure may not pass, the wait would reach the deadline, or the worst case of the next attempt
+// could pass a cap. A wait never runs past the deadline, and the next attempt passes the same guard as a new call.
+func (r *run) retry(billed ports.ModelResponse, callErr error, attempt int) (bool, error) {
+	if r.interrupted() {
+		return true, r.cancelErr()
+	}
+	if err := r.charge(billed); err != nil {
+		return true, err
+	}
+	wait, ok := r.l.cfg.Retry.delay(callErr, attempt)
+	if !ok {
+		r.res.Reason = StopModelError
+		return true, fmt.Errorf("agent loop model call: %w", callErr)
+	}
+	if !r.l.clock.Now().Add(wait).Before(r.l.cfg.Deadline) {
+		r.res.Reason = StopDeadline
+		return true, nil
+	}
+	if r.overBudget() {
+		r.res.Reason = StopBudget
+		return true, nil
+	}
+	r.failed[len(r.failed)-1].Wait = wait
+	if err := r.l.cfg.Retry.Wait(r.ctx, wait); err != nil && !r.interrupted() {
+		r.res.Reason = StopModelError
+		return true, fmt.Errorf("agent loop wait before a model retry: %w", err)
+	}
+	if r.interrupted() {
+		return true, r.cancelErr()
+	}
+	r.res.Retries++
+	return false, nil
+}
+
+// charge adds what the provider billed for a failed attempt. Most failures bill nothing and report nothing, so nothing
+// is added; a billed failure is counted once, so the next attempt is sized against the true spend.
+func (r *run) charge(billed ports.ModelResponse) error {
+	if err := r.usageErr(billed); err != nil {
+		return err
+	}
+	r.addUsage(billed)
+	return nil
+}
+
+// usageErr ends the run on a cost or a token count that cannot be true: a missing measure must never look like a
+// cheap one.
+func (r *run) usageErr(resp ports.ModelResponse) error {
+	if !(resp.CostUSD >= 0) || math.IsInf(resp.CostUSD, 0) || resp.Usage.InputTokens < 0 || resp.Usage.CachedInputTokens < 0 || resp.Usage.OutputTokens < 0 {
+		r.res.Reason = StopBudget
+		return fmt.Errorf("agent loop: %w: a cost of %v and %d/%d tokens", ports.ErrAgentUsage, resp.CostUSD,
+			resp.Usage.InputTokens, resp.Usage.OutputTokens)
+	}
+	return nil
+}
+
+func (r *run) addUsage(resp ports.ModelResponse) {
+	r.res.CostUSD += resp.CostUSD
+	r.res.Usage.InputTokens += resp.Usage.InputTokens
+	r.res.Usage.CachedInputTokens += resp.Usage.CachedInputTokens
+	r.res.Usage.OutputTokens += resp.Usage.OutputTokens
 }
 
 // record adds one answer to the conversation and the tally. A cost or a token count that cannot be true ends the run:
@@ -284,22 +362,18 @@ func (r *run) modelFailed(err error) error {
 // text, the conversation holds them as real calls with no text, so the model sees its call in the wire form and the
 // text is not sent back.
 func (r *run) record(resp ports.ModelResponse, calls []ports.ModelToolCall, fromText bool, modelTime time.Duration) error {
-	if !(resp.CostUSD >= 0) || math.IsInf(resp.CostUSD, 0) || resp.Usage.InputTokens < 0 || resp.Usage.CachedInputTokens < 0 || resp.Usage.OutputTokens < 0 {
-		r.res.Reason = StopBudget
-		return fmt.Errorf("agent loop: %w: a cost of %v and %d/%d tokens", ports.ErrAgentUsage, resp.CostUSD,
-			resp.Usage.InputTokens, resp.Usage.OutputTokens)
+	if err := r.usageErr(resp); err != nil {
+		return err
 	}
 	r.res.Turns++
 	r.res.Turn = append(r.res.Turn, ports.AgentTurn{Usage: resp.Usage, CostUSD: resp.CostUSD, ModelLatency: modelTime,
 		ToolCalls: len(calls), Text: clipText(resp.Content, turnTextBytes), Calls: briefs(calls), Finish: resp.Finish,
-		TextCalls: fromText, ToolChoice: resp.ToolChoice, Fallback: clipText(resp.Fallback, turnTextBytes)})
+		TextCalls: fromText, ToolChoice: resp.ToolChoice, Fallback: clipText(resp.Fallback, turnTextBytes),
+		Attempts: len(r.failed) + 1, Failed: r.failed})
 	if resp.Fallback != "" {
 		r.autoOnly = true
 	}
-	r.res.CostUSD += resp.CostUSD
-	r.res.Usage.InputTokens += resp.Usage.InputTokens
-	r.res.Usage.CachedInputTokens += resp.Usage.CachedInputTokens
-	r.res.Usage.OutputTokens += resp.Usage.OutputTokens
+	r.addUsage(resp)
 	r.res.LastText = resp.Content
 	content := resp.Content
 	if fromText {
