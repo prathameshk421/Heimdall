@@ -98,3 +98,75 @@ Each run used a copy of the manifest in a scratch directory.
   validated. They also have no truth yet.
 - Flakiness: each verdict held on two runs. I did not run the before and after trees more than once per run.
 - The race detector: `go test` runs without `-race` (CGO is off on this Mac), so a race-only bug cannot show red here.
+
+## Test selection
+
+Work package A13. `internal/domain/testselect` picks the packages whose tests a change can affect: the changed
+packages and, through the reverse import closure, every package that imports them. A changed `_test.go` file selects
+only its own package. A trigger file (go.mod, go.sum, go.work, vendor/, and the policy's list), an unknown graph, or a
+file that belongs to no package runs everything. `internal/adapters/gograph` builds the graph from
+`go list -deps -test -json ./...`.
+
+### Run
+
+| Item | Value |
+|---|---|
+| Machine | darwin/arm64, Apple M3, 8 CPUs, 16 GB, go1.27.4, `CGO_ENABLED=0`, network on |
+| Heimdall tree | `ed289b6f8da6ce3f69f4c5f32ed77ea34845e1a1` (`product-build`) plus the A13 code (not committed when measured) |
+| Commits | The 5 newest first-parent commits of each repo, each diffed against its first parent |
+| Repos | this repository (to `ed289b6`), labstack/echo (to `59aacdd`, 2026-11-20), prometheus/client_golang (to `ce65098`, 2026-11-19). Both OSS repos are in `testdata/bench/cases.yaml`; each was cloned to a scratch directory and only read |
+| Policy | `full_triggers`: `.github/workflows/**`, `Makefile`, `*.mk`. `ignore`: `*.md`, `LICENSE*`. No `always_run` |
+| Timing | One run per cell. `go test -count=1 ./...` against `go test -count=1 <selected packages>`. The build cache was warmed first (`go test -run '^$' ./...`, not timed), so the times are test execution and link time, not compile time |
+| Selection cost | `go list -deps -test -json ./...` took 0.2 to 0.6 s. `gograph.Parse` plus `Select` took 11 to 21 ms |
+
+"Packages" counts packages with tests. "Full" says the selection fell back to everything (it never did here).
+"Fails" is failing packages in the full run and the selected run.
+
+| Repo | Commit | Changed files | Selected / with tests (all packages) | Full run (s) | Selected run (s) | Fails |
+|---|---|---|---|---|---|---|
+| heimdall | ed289b6 | 23 | 52 / 94 (111) | 21.6 | 12.3 | 0 / 0 |
+| heimdall | 3181e8e | 1 (a `.md` file) | 0 / 94 (111) | 20.4 | 0.0 (no test run) | 0 / 0 |
+| heimdall | 060608d | 23 | 1 / 94 (111) | 20.9 | 0.5 | 0 / 0 |
+| heimdall | 07d59a5 | 1 (a `.md` file) | 0 / 93 (110) | 21.7 | 0.0 (no test run) | 0 / 0 |
+| heimdall | 443c641 | 25 | 1 / 93 (110) | 22.1 | 0.3 | 0 / 0 |
+| echo | 59aacdd | 13 | 3 / 3 (3) | 1.7 | 1.7 | 0 / 0 |
+| echo | fb1d59d | 7 | 3 / 3 (3) | 1.7 | 1.7 | 0 / 0 |
+| echo | 390f278 | 3 | 3 / 3 (3) | 1.7 | 1.7 | 0 / 0 |
+| echo | fbd734f | 2 | 3 / 3 (3) | 1.7 | 1.6 | 0 / 0 |
+| echo | f275a6b | 4 | 3 / 3 (3) | 1.7 | 1.7 | 0 / 0 |
+| client_golang | ce65098 | 3 | 8 / 15 (27) | 10.5 | 10.7 | 0 / 0 |
+| client_golang | 745c9bf | 2 | 8 / 15 (27) | 10.3 | 10.8 | 0 / 0 |
+| client_golang | c86c247 | 2 | 1 / 15 (27) | 10.0 | 0.6 | 0 / 0 |
+| client_golang | b5382cc | 1 | 8 / 15 (27) | 10.2 | 10.3 | 0 / 0 |
+| client_golang | 803393d | 2 | 8 / 15 (27) | 10.7 | 10.8 | 0 / 0 |
+
+### What the numbers say
+
+- Heimdall: 5 commits took 106.7 s in full runs and 13.1 s on the selection (8 times less). Commits that touch a leaf
+  domain package select 1 package. The commit that changed `internal/domain/change` selects 52 packages, because most
+  of the code imports it.
+- echo: no gain. The root package is imported by `middleware` and `echotest`, and the root's own tests import
+  `middleware`. So a change to the root or to `middleware` selects all 3 test packages. Commit 390f278 touched only
+  `middleware/` and still selected 3 of 3 for that reason. The whole suite takes 1.7 s, so there is little to save.
+- client_golang: 4 of 5 commits select 8 of 15 packages and save nothing, because the changed package is
+  `prometheus` (or `promhttp`), which holds the slow tests. The push-only commit selects 1 package and runs in
+  0.6 s against 10.0 s.
+- The selection is a ceiling on time saved, not a promise. When the changed package is the heavy, widely imported
+  one, selection cannot help. A shared core package is the common case in a small repo and the rare case in a
+  monorepo.
+
+### Not verified
+
+- A large repository. None of the three repos is a monorepo: the largest has 111 packages and a 22 s suite. The
+  claim in the roadmap (p95 on a large Go repo before and after) is not measured. The 45 minute monorepo figure in
+  `CRITIC-deepseek.md` is not reproduced.
+- Recall. All 15 commits were green in the full run, so no commit shows a failure that the selection missed. These
+  runs cannot show a missed test. The reverse closure is sound for Go imports. It does not see a test that reads
+  another package's files, code generation, or a service the test calls.
+- One run per cell, no p95, and no repeat. Differences under about 0.5 s are noise (client_golang 10.5 against 10.7).
+- Compile time. The build cache was warm, so a cold CI run would add compile time to both columns.
+- Other languages. Only Go has a graph adapter. Python, Java, JavaScript and TypeScript run everything until a
+  second adapter fills `testselect.Graph`.
+- Nested modules. `./...` covers the main module only, so client_golang's `exp` and the tutorials were not run in
+  either column.
+- The nightly full run is not built here. This package only returns the selection.
