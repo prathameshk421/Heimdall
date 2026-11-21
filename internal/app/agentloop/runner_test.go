@@ -93,8 +93,9 @@ func TestContractAFinalToolEndsTheRunAsDone(t *testing.T) {
 }
 
 func TestContractATextAnswerIsDoneWithNoSubmission(t *testing.T) {
-	c := newContract(t, modelStep{resp: ports.ModelResponse{Content: "nothing to report", Finish: ports.ModelFinishStop,
-		Usage: ports.ModelUsage{InputTokens: 10, OutputTokens: 5}, CostUSD: 0.001}})
+	text := modelStep{resp: ports.ModelResponse{Content: "nothing to report", Finish: ports.ModelFinishStop,
+		Usage: ports.ModelUsage{InputTokens: 10, OutputTokens: 5}, CostUSD: 0.001}}
+	c := newContract(t, text, text, text)
 	res, err := c.do(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, ports.AgentStopDone, res.Stop)

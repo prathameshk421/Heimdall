@@ -15,7 +15,7 @@
 // the loop that ships. The caller implements ports.ToolDispatcher and names its final tools; a dispatcher error from a
 // final tool that is a *ports.AgentRefusal is a refusal. The result is a ports.AgentResult: the stop (done, budget,
 // deadline, turns, refused, cancelled, error), the final text, the submission, and usage, cost and latency per turn.
-// A text-only answer is a done run with no submission.
+// A run that keeps answering with text after two nudges is a done run with no submission.
 //
 // Underneath, New(model, clock, Config, []Tool, []Submitter) returns a Loop. Loop.Run(ctx, messages) returns a Result and an error.
 // A Tool has Spec and Run. A Submitter is a final-answer tool: its Submit method holds the caller's validator and
@@ -43,10 +43,34 @@
 // never panics on them, and each one costs the turn that carried it. When one answer holds several calls, they run in
 // order, and the run ends at the first accepted submission. The loop holds no state between runs.
 //
+// # Answers with no tool call
+//
+// Some models (DeepSeek among them) answer in text, or write a tool call as text. The loop handles this in three steps.
+//
+// 1. Config.RequireToolCall asks the model port for tool_choice "required". When the port reports a fallback to
+// "auto" (ModelResponse.Fallback), the rest of the run asks for "auto", so the endpoint is not refused on every turn.
+//
+// 2. An answer with no tool call is read for calls written as text (textcall.go): DeepSeek DSML invoke blocks, the
+// DeepSeek V3 tool tokens, <tool_call> tags and fenced JSON call objects, tried in that order. A call is accepted only
+// when it names one of the run's tools and its arguments are a JSON object that fits the tool's schema (required
+// properties, declared types, no unknown property when the schema forbids them). When one call fails the checks, the
+// whole answer is text. The parse is bounded: an answer over 64 KB is not read, and more than 8 calls is text. It
+// never panics (FuzzTextCalls). Accepted calls go into the conversation as real tool calls with no text, so the
+// model sees the wire form and the raw text is not sent back.
+//
+// 3. An answer that is still only text gets one fixed user message (Config.Nudge, or "Call a tool now. When you are
+// done, call <final tools>."), at most twice a run. The next text answer after the second nudge ends the run with
+// StopNoSubmission. Each nudge costs a turn and goes through the same budget, token and deadline checks as any call.
+// The nudge is a fixed protocol message about the tool interface. It does not tell the model what to think or what
+// to find, so it is not scripted reasoning (CODING_STANDARDS 12).
+//
+// Each turn keeps a bounded transcript in ports.AgentTurn: the first 2 KB of the text, the first 16 calls (name and
+// argument size), the finish reason, the tool choice and fallback the port reported, and whether the calls were read
+// from text or the loop nudged after the answer.
+//
 // # Failure modes
 //
-// A model answer with no tool call ends the run with StopNoSubmission, because the loop has no way to ask again
-// without scripting the model (CODING_STANDARDS 12). A context cancel ends the run at the next check, or at once when
+// A context cancel ends the run at the next check, or at once when
 // the model or tool call honours the context. A tool that ignores its context can delay the stop until it returns.
 // The loop does not cap the size of a tool result. Each tool bounds its own output.
 //
@@ -56,5 +80,7 @@
 // refusal, malformed submission arguments, budget stop, the worst-case guard for cost and for the input and output token
 // caps, usage that cannot be true, per-turn latency, the per-answer output cap, deadline stop (before a call and between
 // tool calls), turn cap, unknown tool, bad arguments, tool error, no submission, cancellation and a model error.
+// robust_test.go covers text calls, nudges against the turn and budget caps, the tool choice and its fallback, and
+// the bounded transcript. textcall_test.go covers each text format, the refusals, the bounds and a fuzz target.
 // runner_test.go is the contract test of ports.AgentLoop, run through the port only.
 package agentloop

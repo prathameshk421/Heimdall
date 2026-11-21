@@ -19,7 +19,7 @@ const (
 	StopDeadline StopReason = "deadline"
 	// StopTurnCap means the model used Config.MaxTurns answers without a final submission.
 	StopTurnCap StopReason = "turn_cap"
-	// StopNoSubmission means the model answered with text and no tool call, so it cannot make progress.
+	// StopNoSubmission means the model answered with text and no tool call after the loop had asked again twice.
 	StopNoSubmission StopReason = "no_submission"
 	// StopCancelled means the caller's context ended. Run also returns the context error.
 	StopCancelled StopReason = "cancelled"
@@ -42,6 +42,8 @@ type Result struct {
 	Turns int
 	// Refusals is the number of refused submissions.
 	Refusals int
+	// Nudges is the number of times the loop asked again after an answer with no tool call.
+	Nudges int
 	// Usage is the token count of every model answer, added up.
 	Usage ports.ModelUsage
 	// Turn holds the usage, cost and latency of each model answer, in order.

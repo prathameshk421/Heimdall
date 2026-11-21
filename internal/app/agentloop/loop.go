@@ -8,8 +8,19 @@ import (
 	"math"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
+)
+
+// maxNudges is the number of times a run asks again after an answer with no tool call. The answer after the last
+// nudge that still has no tool call ends the run with StopNoSubmission.
+const maxNudges = 2
+
+// The bounds of the per-turn transcript (ports.AgentTurn).
+const (
+	turnTextBytes  = 2 << 10
+	turnCallBriefs = 16
 )
 
 // retriesAfterRefusal is the number of retries the model gets after a refused submission (ACTION_MODE 4.1: refused
@@ -35,6 +46,10 @@ type Config struct {
 	Deadline time.Time
 	// MaxTurns is the number of model answers allowed.
 	MaxTurns int
+	// RequireToolCall asks the model port for tool_choice "required" until the port reports a fallback to auto.
+	RequireToolCall bool
+	// Nudge is the fixed message sent after an answer with no tool call. Empty means one that names the submitters.
+	Nudge string
 }
 
 // check refuses a config that would let a run go on without an end.
@@ -59,6 +74,8 @@ type Loop struct {
 	tools      map[string]Tool
 	submitters map[string]Submitter
 	specs      []ports.ModelTool
+	byName     map[string]ports.ModelTool
+	finals     []string
 }
 
 // New checks the config and the registry and returns a Loop. Tool names must be non-empty and unique across tools
@@ -73,7 +90,8 @@ func New(model ports.ModelChat, clock ports.Clock, cfg Config, tools []Tool, sub
 	if len(submitters) == 0 {
 		return nil, errors.New("agent loop needs at least one submitter")
 	}
-	l := &Loop{model: model, clock: clock, cfg: cfg, tools: map[string]Tool{}, submitters: map[string]Submitter{}}
+	l := &Loop{model: model, clock: clock, cfg: cfg, tools: map[string]Tool{}, submitters: map[string]Submitter{},
+		byName: map[string]ports.ModelTool{}}
 	for _, t := range tools {
 		if err := l.register(t.Spec(), func() { l.tools[t.Spec().Name] = t }); err != nil {
 			return nil, err
@@ -83,6 +101,7 @@ func New(model ports.ModelChat, clock ports.Clock, cfg Config, tools []Tool, sub
 		if err := l.register(s.Spec(), func() { l.submitters[s.Spec().Name] = s }); err != nil {
 			return nil, err
 		}
+		l.finals = append(l.finals, s.Spec().Name)
 	}
 	return l, nil
 }
@@ -98,6 +117,7 @@ func (l *Loop) register(spec ports.ModelTool, add func()) error {
 	}
 	add()
 	l.specs = append(l.specs, spec)
+	l.byName[spec.Name] = spec
 	return nil
 }
 
@@ -109,6 +129,8 @@ type run struct {
 	res          Result
 	messages     []ports.ModelMessage
 	refusalsLeft int
+	// autoOnly is set once the model port reported that the endpoint refused tool_choice "required".
+	autoOnly bool
 }
 
 // Run sends the conversation to the model and executes its tool calls until a stop condition holds. The returned
@@ -142,15 +164,20 @@ func (r *run) loop() error {
 		if err != nil {
 			return r.modelFailed(err)
 		}
-		if err := r.record(resp, modelTime); err != nil {
+		calls, fromText := r.calls(resp)
+		if err := r.record(resp, calls, fromText, modelTime); err != nil {
 			return err
 		}
-		if len(resp.ToolCalls) == 0 {
-			r.res.Reason = StopNoSubmission
-			return nil
+		if len(calls) == 0 {
+			if r.res.Nudges >= maxNudges {
+				r.res.Reason = StopNoSubmission
+				return nil
+			}
+			r.nudge()
+			continue
 		}
 		started = r.l.clock.Now()
-		ended := r.dispatch(resp.ToolCalls)
+		ended := r.dispatch(calls)
 		r.res.Turn[len(r.res.Turn)-1].ToolLatency = r.l.clock.Now().Sub(started)
 		if ended {
 			return r.cancelErr()
@@ -160,7 +187,35 @@ func (r *run) loop() error {
 
 // request is the next model call. The same value sizes the call before it starts and is sent after.
 func (r *run) request() ports.ModelRequest {
-	return ports.ModelRequest{Model: r.l.cfg.Model, Messages: r.messages, Tools: r.l.specs, MaxOutputTokens: r.l.cfg.MaxOutputTokens}
+	req := ports.ModelRequest{Model: r.l.cfg.Model, Messages: r.messages, Tools: r.l.specs, MaxOutputTokens: r.l.cfg.MaxOutputTokens}
+	switch {
+	case r.l.cfg.RequireToolCall && r.autoOnly:
+		req.ToolChoice = ports.ModelToolChoiceAuto
+	case r.l.cfg.RequireToolCall:
+		req.ToolChoice = ports.ModelToolChoiceRequired
+	}
+	return req
+}
+
+// calls returns the answer's tool calls. An answer with none is read for calls written as text (textCalls), and
+// fromText reports that it was.
+func (r *run) calls(resp ports.ModelResponse) (calls []ports.ModelToolCall, fromText bool) {
+	if len(resp.ToolCalls) > 0 {
+		return resp.ToolCalls, false
+	}
+	calls = textCalls(resp.Content, r.l.byName, fmt.Sprintf("text-%d", r.res.Turns+1))
+	return calls, len(calls) > 0
+}
+
+// nudge asks the model once more for a tool call, with the fixed protocol message of the run.
+func (r *run) nudge() {
+	r.res.Nudges++
+	r.res.Turn[len(r.res.Turn)-1].Nudged = true
+	msg := r.l.cfg.Nudge
+	if msg == "" {
+		msg = "Call a tool now. When you are done, call " + strings.Join(r.l.finals, " or ") + "."
+	}
+	r.messages = append(r.messages, ports.ModelMessage{Role: ports.ModelRoleUser, Content: msg})
 }
 
 // cancelErr is the error that goes with the stop reason: the context error for StopCancelled, otherwise nil.
@@ -225,8 +280,10 @@ func (r *run) modelFailed(err error) error {
 }
 
 // record adds one answer to the conversation and the tally. A cost or a token count that cannot be true ends the run:
-// a missing measure must never look like a cheap one.
-func (r *run) record(resp ports.ModelResponse, modelTime time.Duration) error {
+// a missing measure must never look like a cheap one. calls are the answer's tool calls; when they were read from the
+// text, the conversation holds them as real calls with no text, so the model sees its call in the wire form and the
+// text is not sent back.
+func (r *run) record(resp ports.ModelResponse, calls []ports.ModelToolCall, fromText bool, modelTime time.Duration) error {
 	if !(resp.CostUSD >= 0) || math.IsInf(resp.CostUSD, 0) || resp.Usage.InputTokens < 0 || resp.Usage.CachedInputTokens < 0 || resp.Usage.OutputTokens < 0 {
 		r.res.Reason = StopBudget
 		return fmt.Errorf("agent loop: %w: a cost of %v and %d/%d tokens", ports.ErrAgentUsage, resp.CostUSD,
@@ -234,14 +291,43 @@ func (r *run) record(resp ports.ModelResponse, modelTime time.Duration) error {
 	}
 	r.res.Turns++
 	r.res.Turn = append(r.res.Turn, ports.AgentTurn{Usage: resp.Usage, CostUSD: resp.CostUSD, ModelLatency: modelTime,
-		ToolCalls: len(resp.ToolCalls)})
+		ToolCalls: len(calls), Text: clipText(resp.Content, turnTextBytes), Calls: briefs(calls), Finish: resp.Finish,
+		TextCalls: fromText, ToolChoice: resp.ToolChoice, Fallback: clipText(resp.Fallback, turnTextBytes)})
+	if resp.Fallback != "" {
+		r.autoOnly = true
+	}
 	r.res.CostUSD += resp.CostUSD
 	r.res.Usage.InputTokens += resp.Usage.InputTokens
 	r.res.Usage.CachedInputTokens += resp.Usage.CachedInputTokens
 	r.res.Usage.OutputTokens += resp.Usage.OutputTokens
 	r.res.LastText = resp.Content
-	r.messages = append(r.messages, ports.ModelMessage{Role: ports.ModelRoleAssistant, Content: resp.Content, ToolCalls: resp.ToolCalls})
+	content := resp.Content
+	if fromText {
+		content = ""
+	}
+	r.messages = append(r.messages, ports.ModelMessage{Role: ports.ModelRoleAssistant, Content: content, ToolCalls: calls})
 	return nil
+}
+
+// briefs is the bounded record of the calls: the first turnCallBriefs names and argument sizes.
+func briefs(calls []ports.ModelToolCall) []ports.AgentCallBrief {
+	var out []ports.AgentCallBrief
+	for _, c := range calls[:min(len(calls), turnCallBriefs)] {
+		out = append(out, ports.AgentCallBrief{Name: c.Name, ArgumentBytes: len(c.Arguments)})
+	}
+	return out
+}
+
+// clipText keeps at most limit bytes of s, cut at a rune boundary.
+func clipText(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 // dispatch runs the tool calls of one answer in order. It reports true when the run ended: a submission was accepted,

@@ -77,6 +77,12 @@ type AgentRun struct {
 	MaxTurns int
 	// Deadline is read against the clock before each model call and each tool call. It also bounds a call in flight.
 	Deadline time.Time
+	// RequireToolCall asks the model port for tool_choice "required" on every call. The adapter may send "auto"
+	// instead (see ModelResponse.Fallback); the run then stops asking for it.
+	RequireToolCall bool
+	// Nudge is the fixed user message the loop sends after an answer with no tool call, at most twice a run. Empty
+	// means a default that names the final tools. It is a protocol message, never reasoning for the model.
+	Nudge string
 }
 
 // ToolDispatcher is what the caller implements: it runs one tool call and returns the text the model sees.
@@ -105,8 +111,8 @@ type AgentStop string
 
 // The ways a run ends.
 const (
-	// AgentStopDone means a final tool accepted an answer, or the model answered with text and no tool call. Submission
-	// tells the two apart: it is nil for a text answer.
+	// AgentStopDone means a final tool accepted an answer, or the model kept answering with text and no tool call
+	// after the loop asked again. Submission tells the two apart: it is nil for a text answer.
 	AgentStopDone AgentStop = "done"
 	// AgentStopBudget means the next call could pass a cap, so it was not made. It also covers a usage report that
 	// cannot be true.
@@ -139,6 +145,23 @@ type AgentTurn struct {
 	ToolLatency  time.Duration
 	// ToolCalls is the number of tool calls the answer held.
 	ToolCalls int
+	// The bounded transcript of the turn, so a failed run explains itself. Text is the first 2 KB of the answer's
+	// text, Calls the first 16 tool calls (name and argument size, never the arguments), and Finish the provider's
+	// finish reason. TextCalls is set when the calls were read from the text, and Nudged when the loop asked again
+	// after this answer. ToolChoice and Fallback are what the model port reported.
+	Text       string
+	Calls      []AgentCallBrief
+	Finish     ModelFinish
+	TextCalls  bool
+	Nudged     bool
+	ToolChoice ModelToolChoice
+	Fallback   string
+}
+
+// AgentCallBrief is one tool call in the bounded transcript: its name and the size of its arguments in bytes.
+type AgentCallBrief struct {
+	Name          string
+	ArgumentBytes int
 }
 
 // AgentResult is the typed end of a run. It is always filled, also when Run returns an error.
@@ -150,8 +173,10 @@ type AgentResult struct {
 	Submission *AgentSubmission
 	// Turns holds one entry per model answer, in order.
 	Turns []AgentTurn
-	// Refusals is the number of refused final answers.
+	// Refusals is the number of refused final answers, and Nudges the number of times the loop asked again after an
+	// answer with no tool call.
 	Refusals int
+	Nudges   int
 	// Usage and CostUSD are the sums over Turns.
 	Usage   ModelUsage
 	CostUSD float64

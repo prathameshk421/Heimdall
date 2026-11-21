@@ -45,7 +45,7 @@ func (r *Runner) Run(ctx context.Context, req ports.AgentRun) (ports.AgentResult
 	}
 	l, err := New(r.model, r.clock, Config{Model: req.Model, MaxOutputTokens: req.MaxOutputTokens, BudgetUSD: req.Budget.USD,
 		InputTokenCap: req.Budget.InputTokens, OutputTokenCap: req.Budget.OutputTokens, Price: r.price,
-		Deadline: req.Deadline, MaxTurns: req.MaxTurns}, tools, finals)
+		Deadline: req.Deadline, MaxTurns: req.MaxTurns, RequireToolCall: req.RequireToolCall, Nudge: req.Nudge}, tools, finals)
 	if err != nil {
 		return ports.AgentResult{}, err
 	}
@@ -117,7 +117,7 @@ func (f dispatchFinal) Submit(ctx context.Context, args json.RawMessage) (Verdic
 // port says.
 func portResult(res Result) ports.AgentResult {
 	out := ports.AgentResult{Stop: portStop(res.Reason), FinalText: res.LastText, Turns: res.Turn, Refusals: res.Refusals,
-		Usage: res.Usage, CostUSD: res.CostUSD, Transcript: res.Transcript}
+		Nudges: res.Nudges, Usage: res.Usage, CostUSD: res.CostUSD, Transcript: res.Transcript}
 	if res.Submission != nil {
 		out.Submission = &ports.AgentSubmission{Tool: res.Submission.Tool, Arguments: res.Submission.Arguments}
 	}

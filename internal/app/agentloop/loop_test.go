@@ -399,12 +399,15 @@ func TestErrorsCountTowardTheTurnCap(t *testing.T) {
 	assert.Equal(t, StopTurnCap, res.Reason)
 }
 
-func TestTextOnlyAnswerEndsWithNoSubmission(t *testing.T) {
-	h := newHarness(t, modelStep{resp: ports.ModelResponse{Content: "I am done", Finish: ports.ModelFinishStop}})
+func TestTextOnlyAnswerEndsWithNoSubmissionAfterTheNudges(t *testing.T) {
+	text := modelStep{resp: ports.ModelResponse{Content: "I am done", Finish: ports.ModelFinishStop}}
+	h := newHarness(t, text, text, text)
 	res, err := h.run(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, StopNoSubmission, res.Reason)
 	assert.Equal(t, "I am done", res.LastText)
+	assert.Equal(t, 3, res.Turns, "two nudges, then the third text answer ends the run")
+	assert.Equal(t, 2, res.Nudges)
 }
 
 func TestCancellationStopsTheRun(t *testing.T) {
