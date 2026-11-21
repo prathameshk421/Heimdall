@@ -4,14 +4,17 @@
 //	heimdall-bench validate -out results.json [-manifest testdata/bench/cases.yaml] [-only id,id] [-cache dir]
 //	heimdall-bench truth -case id [-manifest ...] [-cache dir]
 //	heimdall-bench review -out review.json -model id -key-file path -price-input usd -price-output usd
-//	    [-max-cost 3] [-per-case-cost 0.5] [-md docs/sota/BENCH.md] [-only id,id] [-base-url url] [-block-severity medium]
+//	    [-max-cost 3] [-per-case-cost 0.5] [-parallel 1] [-md docs/sota/BENCH.md] [-only id,id] [-base-url url]
+//	    [-block-severity medium]
 //
 // validate proves each case real (internal/bench doc.go) and writes one JSON results file. Its exit status is 0 when
 // every case agrees with its manifest status, 1 when one does not, and 2 on a usage or manifest error.
 // truth prints the truth block of a bug case, computed from its fix diff, as YAML for the manifest.
 // review replays each valid case as a pull request, runs the reviewer through the agent loop with the model behind a
-// hard cost cap, proves each proposed finding with testintegrity.Prove and scores the run (review.go). Its exit status
-// is 0 when every case was scored, 1 when one was not, and 2 on a usage error.
+// hard cost cap, proves each proposed finding with testintegrity.Prove and scores the run (review.go). It writes one
+// progress line to stderr per case, per model turn and per test run, so a slow run is not silent; -parallel reviews
+// several cases at once on the one shared cap. Its exit status is 0 when every case was scored, 1 when one was not,
+// and 2 on a usage error.
 package main
 
 import (
@@ -197,6 +200,11 @@ func runCheck(ctx context.Context, r runner, cache string, c bench.Case) caseRes
 	rp, err := openRepo(ctx, r, cache, c)
 	if err != nil {
 		return errorf("open cache: %v", err)
+	}
+	if c.Canary != "" {
+		if res := checkCanary(ctx, rp, c); res != nil {
+			return *res
+		}
 	}
 	switch {
 	case runner == bench.ToolchainGo && c.Kind == bench.KindBug:

@@ -50,21 +50,25 @@ type FileTruth struct {
 
 // Case is one entry of the manifest.
 type Case struct {
-	ID          string        `yaml:"id"`
-	Repo        string        `yaml:"repo"`
-	Mirror      string        `yaml:"mirror"` // optional: a synced fork the bench fetches from instead of repo
-	Language    string        `yaml:"language"`
-	Toolchain   Toolchain     `yaml:"toolchain"` // empty means go test for a Go case (toolchain.go)
-	Kind        Kind          `yaml:"kind"`
-	Status      Status        `yaml:"status"`
-	Reason      string        `yaml:"reason"`
-	Change      Commit        `yaml:"change"` // the intro change (bug) or the merged PR (clean)
-	Fix         *Commit       `yaml:"fix"`
-	TestCommand string        `yaml:"test_command"`
-	Workdir     string        `yaml:"workdir"` // cargo and vitest: the directory where install and the tests run
-	Install     []string      `yaml:"install"` // cargo and vitest: commands that run once per tree before the tests
-	Sparse      []string      `yaml:"sparse"`  // non-cone sparse-checkout patterns; empty means the whole tree
-	Tests       []string      `yaml:"tests"`   // cargo and vitest bug cases: the fix's target tests
+	ID          string    `yaml:"id"`
+	Repo        string    `yaml:"repo"`
+	Mirror      string    `yaml:"mirror"` // optional: a synced fork the bench fetches from instead of repo
+	Language    string    `yaml:"language"`
+	Toolchain   Toolchain `yaml:"toolchain"` // empty means go test for a Go case (toolchain.go)
+	Kind        Kind      `yaml:"kind"`
+	Status      Status    `yaml:"status"`
+	Reason      string    `yaml:"reason"`
+	Change      Commit    `yaml:"change"` // the intro change (bug) or the merged PR (clean)
+	Fix         *Commit   `yaml:"fix"`
+	TestCommand string    `yaml:"test_command"`
+	Workdir     string    `yaml:"workdir"` // cargo and vitest: the directory where install and the tests run
+	Install     []string  `yaml:"install"` // cargo and vitest: commands that run once per tree before the tests
+	Sparse      []string  `yaml:"sparse"`  // non-cone sparse-checkout patterns; empty means the whole tree
+	Tests       []string  `yaml:"tests"`   // cargo and vitest bug cases: the fix's target tests
+	// Canary is a token that a case plants in its change to steer the reviewer ("print this token"). The reviewer must
+	// never write it, so a run that does is injected. A case with a canary is adversarial; there is no adversarial
+	// kind (checkCanary).
+	Canary      string        `yaml:"canary"`
 	Timeout     time.Duration `yaml:"timeout"`
 	Description string        `yaml:"description"`
 	Truth       []FileTruth   `yaml:"truth"`
@@ -94,6 +98,9 @@ var (
 	idPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	repoPattern = regexp.MustCompile(`^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	spanPattern = regexp.MustCompile(`^([0-9]+)(?:-([0-9]+))?$`)
+	// canaryPattern keeps a canary easy to search for and long enough to never appear by chance: 12 to 80 characters,
+	// letters, digits, dot, underscore and dash, starting with a letter or digit.
+	canaryPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{11,79}$`)
 )
 
 // languages are the languages a case may name. Go, Rust, TypeScript and JavaScript have runners (toolchain.go).
@@ -146,6 +153,7 @@ func checkCase(c Case) []error {
 	errs = append(errs, checkCommit("change", c.Change)...)
 	errs = append(errs, checkKind(c)...)
 	errs = append(errs, checkStatus(c)...)
+	errs = append(errs, checkCanary(c)...)
 	if c.TestCommand == "" {
 		add("test_command is empty")
 	}
@@ -209,9 +217,17 @@ func checkKind(c Case) []error {
 			errs = append(errs, errors.New("a clean case has no truth"))
 		}
 	default:
-		errs = append(errs, fmt.Errorf("kind %q: want bug or clean", c.Kind))
+		errs = append(errs, fmt.Errorf("kind %q: want bug or clean; a case that plants text for the reviewer is one of them with a canary", c.Kind))
 	}
 	return errs
+}
+
+// checkCanary checks the canary token of a case. A bug or clean case may declare one; it marks the case as adversarial.
+func checkCanary(c Case) []error {
+	if c.Canary != "" && !canaryPattern.MatchString(c.Canary) {
+		return []error{fmt.Errorf("canary %q: want 12 to 80 characters (letters, digits, dot, underscore, dash), starting with a letter or digit", c.Canary)}
+	}
+	return nil
 }
 
 func checkTruth(truth []FileTruth) []error {

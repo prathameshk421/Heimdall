@@ -41,10 +41,17 @@ func newLocalSandbox() *localSandbox {
 	return &localSandbox{repos: map[string]*repo{}, cases: map[string]bench.Case{}}
 }
 
-// add registers the case under review and its cache. Cases run one at a time, so the newest case of a repository is
-// the one its jobs serve.
+// add registers the case under review and its cache. Each case of a review has its own sandbox, so the newest case of
+// a repository is the one its jobs serve.
 func (s *localSandbox) add(c bench.Case, rp *repo) {
 	s.repos[c.RepoSlug()], s.cases[c.RepoSlug()] = rp, c
+}
+
+// nextLabel names the tree of the next run: the case and the run's number in this sandbox. The cases of one repository
+// share its worktree parent in a parallel run, so the case id keeps their trees apart.
+func (s *localSandbox) nextLabel(repo string) string {
+	s.seq++
+	return "sbx-" + s.cases[repo].ID + "-" + strconv.Itoa(s.seq)
 }
 
 // Run runs the job's package tests at the job's commit, with no overlay.
@@ -66,11 +73,11 @@ func (s *localSandbox) RunOverlay(ctx context.Context, j ports.SandboxJob, overl
 	if !ok {
 		return ports.SandboxResult{}, fmt.Errorf("sandbox: no cache for %s", j.Repo)
 	}
-	s.seq++
+	label := s.nextLabel(string(j.Repo))
 	if c := s.cases[string(j.Repo)]; c.Runner() == bench.ToolchainCargo || c.Runner() == bench.ToolchainVitest {
-		return s.runTool(ctx, rp, c, j, overlays)
+		return s.runTool(ctx, rp, c, j, overlays, label)
 	}
-	dir, err := rp.worktree(ctx, string(j.SHA), "sbx-"+strconv.Itoa(s.seq))
+	dir, err := rp.worktree(ctx, string(j.SHA), label)
 	if err != nil {
 		return ports.SandboxResult{}, err
 	}
@@ -194,8 +201,9 @@ func boundTail(s string, n int) string {
 
 // runTool runs the overlay tests of a cargo or vitest case at the job's commit, in a fresh plain tree: write the
 // overlays, declare a Rust test module in the crate root, install, and run only the reviewer's tests.
-func (s *localSandbox) runTool(ctx context.Context, rp *repo, c bench.Case, j ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error) {
-	tree, err := rp.plainTree(ctx, string(j.SHA), "sbx-"+strconv.Itoa(s.seq), c.Sparse)
+func (s *localSandbox) runTool(ctx context.Context, rp *repo, c bench.Case, j ports.SandboxJob, overlays []ports.File,
+	label string) (ports.SandboxResult, error) {
+	tree, err := rp.plainTree(ctx, string(j.SHA), label, c.Sparse)
 	if err != nil {
 		return ports.SandboxResult{}, err
 	}
@@ -218,7 +226,7 @@ func (s *localSandbox) runTool(ctx context.Context, rp *repo, c bench.Case, j po
 		return ports.SandboxResult{}, err
 	}
 	c.Timeout = j.Timeout
-	tr, err := rp.runOverlayTests(ctx, c, tree, "sbx-"+strconv.Itoa(s.seq), files, modules)
+	tr, err := rp.runOverlayTests(ctx, c, tree, label, files, modules)
 	if err != nil {
 		return ports.SandboxResult{}, err
 	}

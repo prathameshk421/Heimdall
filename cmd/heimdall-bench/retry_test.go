@@ -71,7 +71,7 @@ func TestTheCaseRecordsTheRetriesOfItsLoop(t *testing.T) {
 	rc.recordLoop(ports.AgentResult{Stop: ports.AgentStopError, Retries: 3,
 		Turns: []ports.AgentTurn{{Attempts: 1}, {Attempts: 2, Failed: []ports.AgentAttempt{
 			{Kind: ports.ModelErrorRateLimited, Status: 429, Wait: 1500 * time.Millisecond}}}},
-		FailedCall: serverFailure()})
+		FailedCall: serverFailure()}, newCaseProgress(newProgress(nil), "a"))
 	assert.Equal(t, 3, rc.Retries)
 	require.Len(t, rc.Transcript, 2)
 	assert.Equal(t, 1, rc.Transcript[0].Attempts)
@@ -84,7 +84,7 @@ func TestTheCaseRecordsTheRetriesOfItsLoop(t *testing.T) {
 
 func TestTheMarkdownShowsRetriesPerCaseAndTheBreakerStop(t *testing.T) {
 	rep := reviewReport{Stopped: stopProviderFailing, Cases: []reviewCase{
-		{CaseScore: bench.CaseScore{ID: "a", Kind: "bug"}, Stop: ports.AgentStopDone, Turns: 4, Retries: 2},
+		{CaseScore: bench.CaseScore{ID: "a", Kind: "bug", Turns: 4}, Stop: ports.AgentStopDone, Retries: 2},
 		{CaseScore: bench.CaseScore{ID: "b", Kind: "bug"}, Error: "not run: " + stopProviderFailing},
 	}}
 	md := reviewMarkdown(rep)
