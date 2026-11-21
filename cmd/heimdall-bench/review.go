@@ -200,8 +200,10 @@ type reviewCase struct {
 // status is 0 when every case was scored, and 1 when one was not (an error, or the cost cap stopped the run).
 //
 // With -parallel N the cases are reviewed N at a time. One cost cap is shared by every worker, so the run's spend never
-// passes -max-cost. Every case keeps its own repository cache, sandbox and worktrees, and the results file keeps the
-// manifest order whatever order the cases end in.
+// passes -max-cost: a worker reserves the most its call can cost until the call settles. Every case keeps its own
+// repository cache, sandbox and worktrees, and the results file keeps the manifest order whatever order the cases end
+// in. The per-case budget is read from what is left at the moment a case starts, so a run near its cap gives the cases
+// that start late a smaller budget rather than passing the cap.
 func reviewRun(ctx context.Context, o reviewOptions, r runner, model ports.ModelChat, stderr io.Writer) (int, error) {
 	cases, err := reviewCases(o)
 	if err != nil {
