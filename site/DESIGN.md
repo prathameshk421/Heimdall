@@ -1,4 +1,4 @@
-# Heimdall site: design brief (v6)
+# Heimdall site: design brief (v6, mood v7)
 
 The founders said v5 looks generic and AI-made. They want a cleaner logo, a smoother feel and a stronger identity. They
 like the Thinking Machines pages. This brief records what we measured there, what we take, and what we leave.
@@ -120,3 +120,87 @@ is no third web font.
   which parts are illustration.
 - Motion: color and opacity fades of 0.2 to 0.3 s. The hero demo is the only sequence. Under
   `prefers-reduced-motion: reduce`, nothing moves and the demo shows its final state.
+
+## 5. Mood v7: periwinkle mist
+
+The owner sent two mood references in November 2026: third-party paintings of a Greek temple in blue mist. Their
+licence is unknown. We use them only as a mood. Nothing from them is copied, traced, embedded or kept in the
+repository. The v6 page structure, type, content and truth rules stay as they are; v7 changes color, texture and art.
+
+### What we take from the mood
+
+- One periwinkle monochrome: sky about `#7f8ce8`, deep indigo shadows about `#2b2f8f`, pale pink-white light about
+  `#f3e6f0`.
+- Heavy grain in the art, a light grain on the page.
+- Mist and depth: far hills that fade into the sky, a lit haze at the horizon.
+- Quiet classical architecture. Columns catch a pale light.
+- A tiny figure for scale, and a lot of empty sky. Calm, with nothing urgent.
+
+### Color (replaces the v6 table in section 4)
+
+The accent changes from vermilion to a rose that comes from the pale pink light in the mood. It still marks only
+proven things: the finding that blocks, its proof, and the focus ring. In the art the same light is the "check".
+
+| Token | Light (periwinkle paper) | Dark (indigo night) | Use |
+|---|---|---|---|
+| `--paper` | `#eceefb` | `#11133a` | Page background |
+| `--fill` | `#e0e3f7` | `#191c4a` | Figure panels, table header band |
+| `--rule` | `#c3c8ee` | `#2f3474` | 1 px rules and borders |
+| `--muted` | `#4b5096` | `#a6abe8` | Captions, dates, footnotes, UI labels |
+| `--text` | `#242862` | `#d8dbf7` | Body text |
+| `--ink` | `#161946` | `#f3e6f0` | Headings, logo, primary button |
+| `--accent` | `#a3245f` | `#f4a9cf` | Rose. Proven findings, proof labels, focus ring |
+
+Contrast (WCAG 2.1 ratio, computed from the hex values):
+
+| Pair | Light on paper | Light on fill | Dark on paper | Dark on fill |
+|---|---|---|---|---|
+| `--muted` | 6.30 | 5.72 | 8.16 | 7.36 |
+| `--text` | 11.70 | 10.61 | 13.07 | 11.79 |
+| `--ink` | 14.42 | 13.08 | 14.76 | 13.31 |
+| `--accent` | 6.11 | 5.55 | 9.70 | 8.74 |
+
+The art has its own tokens (`--sky0` to `--sky2`, `--glow`, `--hill-far`, `--hill-near`, `--ground`, `--col-dark`,
+`--col-mid`, `--col-lit`, `--figure`). They switch with the theme, so the same SVG is a day scene on light paper and a
+night scene on dark. No text sits on the art.
+
+### Grain
+
+- The page grain is an inline SVG `feTurbulence` noise (a data URI, about 0.5 KB), tiled at 180 px on a fixed
+  `body::before` layer with `pointer-events: none`.
+- It sits under the content (`z-index: -1`), so it changes only the page color. Text is never drawn through it.
+- Opacity is 7% in light and 6% in dark. The worst case, every grain pixel pure black (light) or pure white (dark) at
+  that opacity, keeps the lowest pair (accent on fill, light theme) at 4.86:1 with 6% and above 4.5:1 with 7%.
+- Under `prefers-reduced-transparency: reduce` the grain is off.
+- Panels (`--fill`) cover the grain, so tables and the demo stay flat and crisp.
+
+### Hero art: "The gate at first light"
+
+An original inline SVG above the title. It shows the Gateposts mark as two tall fluted columns on a misty plain. A pale
+pink-white light comes through the gap between them, and the check from the logo floats in that gap as light. Soft
+hills and a faint distant colonnade sit behind. One tiny figure walks toward the gate.
+
+- Depth comes from layered gradients, Gaussian blur on the far layers and the mist, and a grain overlay.
+- The SVG uses the art tokens, so it follows the theme. The ground fades into `--paper`, so the art has no bottom edge.
+- It scales with `preserveAspectRatio="xMidYMax slice"`: wide screens see the whole plain, a 360 px phone sees the
+  gate and the figure.
+- The mist drifts 24 px over 40 s and the glow breathes slowly. Under `prefers-reduced-motion: reduce` both stop.
+- It has a `<title>` and `<desc>` as its text alternative.
+- The logo files in `site/brand/` do not change. The art is an illustration of the mark, not a new mark.
+
+### Page changes
+
+- Section heads get a short rule in `--rule` above them. Table headers sit on a `--fill` band.
+- Figure 1 keeps its content. Its panel takes a faint sky gradient, and the proven row glows in the rose accent.
+- The og:image is `site/shots/og-v7.png`, made from the hero art and the title.
+
+### Checks (22 November 2026, headless Chromium 1223)
+
+- 1440, 834 and 360 px, light and dark: 0 px horizontal overflow. Every visible text element passes AA with the
+  worst-case grain added: lowest ratio 5.24:1 in light, 6.94:1 in dark. No text sits over the art.
+- Keyboard: a visible 2 px focus ring on 40 of 40 tab stops in both themes (`site/shots/v7-focus-demo.png`).
+- Reduced motion: the mist and glow animations stop. Reduced transparency: the grain is off.
+- Weight: the HTML with all inline assets is 62,862 bytes (16,356 gzip), up from 53,606 (13,675 gzip) in v6. The art
+  is 6.4 KB of it. Total transfer with fonts is 232 KB, up from 223 KB.
+- LCP on a local server with 150 ms latency, 1.6 Mbit/s and 4x CPU slowdown, 3 runs: v7 516 to 584 ms at 1440 px and
+  504 to 556 ms at 360 px; v6 500 to 548 ms and 492 to 536 ms. The LCP element is the lede paragraph in both.

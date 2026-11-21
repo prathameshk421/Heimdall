@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Heimdall: proof before review</title>
+<meta name="description" content="Heimdall checks AI review comments against a real test. A proven finding blocks the merge. Unproven ones are not shown, and you see the count. Early results, with their limits.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Heimdall: proof before review">
+<meta property="og:description" content="A proven finding blocks the merge. Unproven ones are not shown, and you see the count. Early results, with their limits.">
+<meta property="og:type" content="article">
+<meta property="og:image" content="shots/og-v6.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Site v6. A reading page in the identity of site/DESIGN.md: Newsreader for reading, IBM Plex Sans for UI,
+   neutrals plus one accent that marks only proven things. Every number links to its source (site/CLAIMS.md). */
+:root {
+  color-scheme: light;
+  --paper: #fbfaf7;
+  --fill: #f2f0eb;
+  --rule: #e4e1da;
+  --muted: #67645e;
+  --text: #2c2b28;
+  --ink: #1d1c1a;
+  --accent: #b3341b;
+  --accent-soft: rgba(179, 52, 27, .07);
+  --serif: Newsreader, "Iowan Old Style", Georgia, serif;
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #121211; --fill: #1b1a18; --rule: #2d2b28;
+    --muted: #a29e95; --text: #d9d6cf; --ink: #eeece7;
+    --accent: #f0805f; --accent-soft: rgba(240, 128, 95, .09);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #121211; --fill: #1b1a18; --rule: #2d2b28;
+  --muted: #a29e95; --text: #d9d6cf; --ink: #eeece7;
+  --accent: #f0805f; --accent-soft: rgba(240, 128, 95, .09);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 24px; }
+body {
+  margin: 0; background: var(--paper); color: var(--text);
+  font: 400 18px/1.65 var(--serif); -webkit-font-smoothing: antialiased;
+  font-optical-sizing: auto;
+}
+p { margin: 0 0 16px; }
+a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+    text-decoration-color: color-mix(in srgb, currentColor 32%, transparent); transition: color .25s, text-decoration-color .25s; }
+a:hover { text-decoration-color: currentColor; color: var(--ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+code, .mono { font-family: var(--mono); font-size: .8em; }
+.skip { position: absolute; left: 16px; top: -64px; z-index: 10; background: var(--ink); color: var(--paper);
+        padding: 10px 14px; font: 500 14px/1 var(--sans); border-radius: 2px; text-decoration: none; }
+.skip:focus { top: 12px; }
+.ui { font-family: var(--sans); }
+
+/* Top bar */
+.top { max-width: 1240px; margin: 0 auto; padding: 24px 32px; display: flex; align-items: center; gap: 24px; font: 400 14px/1.5 var(--sans); }
+.logo { display: inline-flex; color: var(--ink); text-decoration: none; }
+.logo svg { display: block; }
+.top nav { margin-left: auto; display: flex; gap: 24px; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--ink); }
+
+/* Layout: a sticky contents column on wide screens, one reading column */
+.layout { max-width: 1240px; margin: 0 auto; padding: 0 32px; display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 680px) minmax(0, 1fr); column-gap: 48px; }
+.col { grid-column: 2; min-width: 0; }
+.aside { grid-column: 1; grid-row: 1 / span 99; }
+.toc-side { position: sticky; top: 32px; margin-top: 168px; max-width: 220px; margin-left: auto; font: 400 13px/1.45 var(--sans); }
+.toc-side p { margin: 0 0 12px; color: var(--muted); font-weight: 500; }
+.toc-side ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.toc-side a { display: block; position: relative; padding-left: 14px; color: var(--muted); text-decoration: none; }
+.toc-side a::before { content: ""; position: absolute; left: 0; top: .55em; width: 5px; height: 5px; border-radius: 50%;
+                      background: var(--ink); opacity: 0; transition: opacity .25s; }
+.toc-side a:hover, .toc-side a.on { color: var(--ink); }
+.toc-side a.on::before { opacity: 1; }
+
+/* Head */
+header.head { text-align: center; padding: 56px 0 8px; }
+h1, h2, h3 { color: var(--ink); font-family: var(--serif); font-weight: 600; margin: 0; }
+h1 { font-size: 34px; line-height: 1.2; letter-spacing: -.005em; }
+.date { margin: 12px 0 0; font: 400 15px/1.5 var(--sans); color: var(--muted); }
+.lede { margin: 40px 0 16px; text-align: left; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin: 28px 0 0; font: 400 15px/1.4 var(--sans); }
+.btn { display: inline-block; padding: 11px 18px; border-radius: 2px; background: var(--ink); color: var(--paper);
+       text-decoration: none; font-weight: 500; transition: opacity .25s; }
+.btn:hover { color: var(--paper); opacity: .86; }
+.more { color: var(--text); text-decoration: none; }
+.more::after { content: " \203A"; }
+.more:hover { color: var(--ink); text-decoration: underline; }
+
+/* Compact contents under the lede (narrow screens) */
+.toc-inline { margin: 40px 0 0; padding: 16px 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); font: 400 14px/1.5 var(--sans); }
+.toc-inline p { margin: 0 0 8px; color: var(--muted); font-weight: 500; }
+.toc-inline ol { margin: 0; padding-left: 20px; columns: 2; column-gap: 32px; }
+.toc-inline li { break-inside: avoid; padding: 2px 0; }
+.toc-inline a { text-decoration: none; color: var(--text); }
+.toc-inline a:hover { text-decoration: underline; }
+
+/* Sections */
+section { padding-top: 64px; }
+h2 { font-size: 24px; line-height: 1.3; margin: 0 0 16px; position: relative; }
+h3 { font-size: 19px; line-height: 1.4; margin: 32px 0 8px; }
+.anchor { position: absolute; left: -1.1em; width: 1em; color: var(--muted); text-decoration: none; opacity: 0; font-weight: 400; transition: opacity .2s; }
+h2:hover .anchor, .anchor:focus-visible { opacity: 1; }
+.back { font: 400 13px/1.5 var(--sans); margin: 24px 0 0; }
+.back a { color: var(--muted); text-decoration: none; }
+.back a:hover { color: var(--ink); text-decoration: underline; }
+ol.steps { padding-left: 24px; margin: 0 0 16px; }
+ol.steps li { margin: 0 0 12px; padding-left: 4px; }
+ol.steps b { color: var(--ink); font-weight: 600; }
+
+/* Figures */
+figure { margin: 32px 0; }
+.panel { background: var(--fill); border: 1px solid var(--rule); border-radius: 2px; padding: 24px; }
+figcaption { margin-top: 12px; font: 400 14px/1.5 var(--sans); color: var(--muted); }
+figcaption b { color: var(--ink); font-weight: 500; }
+
+/* Figure 1: the PR demo */
+.fig-wide { margin-left: -60px; margin-right: -60px; }
+.pr { background: var(--paper); border: 1px solid var(--rule); border-radius: 2px; font: 400 13.5px/1.45 var(--sans); }
+.pr-top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--rule); color: var(--muted); }
+.pr-top b { color: var(--ink); font-weight: 500; }
+.pr-top code { margin-left: auto; font-size: 12px; color: var(--text); }
+.thread { list-style: none; margin: 0; padding: 4px 0; }
+.c { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 2px 12px; padding: 7px 16px; color: var(--text);
+     max-height: 80px; overflow: hidden;
+     transition: opacity .3s ease, max-height .45s ease, padding .45s ease; }
+.c .who { color: var(--muted); font-size: 12.5px; }
+.c code { font-size: 12px; color: var(--muted); }
+.c.pre { opacity: 0; }
+.c.gone { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+.c.keep { max-height: 360px; padding-top: 12px; padding-bottom: 12px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 4px 0; transition: opacity .3s, background-color .3s; }
+.c.keep .what { color: var(--ink); }
+.c.keep.won { background: var(--accent-soft); }
+.f1 { font-weight: 600; color: var(--accent); margin-right: 6px; }
+.proofs { grid-column: 2; display: grid; gap: 4px; margin-top: 8px; font-size: 12.5px; }
+.proof { color: var(--accent); font-weight: 500; transition: opacity .3s; }
+.proof::before { content: "\2713\00a0"; }
+.proof.pre { opacity: 0; }
+.proof code { color: inherit; overflow-wrap: anywhere; }
+.count { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--rule); color: var(--muted); transition: opacity .3s; }
+.count.pre { opacity: 0; }
+.count b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.linkbtn { margin-left: auto; font: 500 13px/1 var(--sans); color: var(--ink); background: none; border: 1px solid var(--rule);
+           border-radius: 2px; padding: 7px 10px; cursor: pointer; white-space: nowrap; transition: border-color .25s; }
+.linkbtn:hover { border-color: var(--muted); }
+.merge { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--rule); background: var(--fill); }
+.merge svg { flex: none; color: var(--ink); }
+.merge p { margin: 0; color: var(--text); }
+.merge p b { color: var(--ink); font-weight: 600; }
+.merge .mbtn { margin-left: auto; flex: none; padding: 7px 12px; border: 1px solid var(--rule); border-radius: 2px; color: var(--muted); cursor: not-allowed; }
+.fig-foot { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; margin-top: 12px; }
+.fig-foot figcaption { margin: 0; }
+
+/* Tables */
+.tbl { overflow-x: auto; margin: 24px 0 0; }
+.tbl:focus-visible { outline-offset: 4px; }
+table { width: 100%; border-collapse: collapse; font: 400 14px/1.45 var(--sans); font-variant-numeric: tabular-nums; color: var(--text); }
+caption { caption-side: bottom; text-align: left; padding-top: 12px; font-size: 14px; color: var(--muted); }
+caption b { color: var(--ink); font-weight: 500; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+th:first-child, td:first-child { padding-left: 0; }
+th:last-child, td:last-child { padding-right: 0; }
+thead th { color: var(--ink); font-weight: 500; border-bottom-color: var(--muted); white-space: nowrap; }
+td.n, th.n { text-align: right; white-space: nowrap; }
+td a { text-decoration-color: color-mix(in srgb, currentColor 28%, transparent); }
+tr.lead td { color: var(--ink); }
+tr.lead td.hit, .hit { color: var(--accent); font-weight: 500; }
+.barcell { width: 34%; }
+.bar { display: block; height: 6px; margin-top: .55em; background: var(--fill); border: 1px solid var(--rule); }
+.bar i { display: block; height: 100%; background: var(--muted); }
+sup { font: 500 .62em/0 var(--sans); vertical-align: super; }
+sup a { text-decoration: none; color: var(--muted); padding: 0 1px; }
+sup a:hover { color: var(--ink); }
+
+/* Notes */
+.notes { margin: 24px 0 0; padding: 12px 0 0; border-top: 1px solid var(--rule); font: 400 12.5px/1.5 var(--sans); color: var(--muted); }
+.notes ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.notes a { color: var(--muted); }
+.notes a:hover { color: var(--ink); }
+.notes :target { color: var(--text); }
+.ret { text-decoration: none; margin-left: 4px; }
+
+/* Before and after */
+.ba { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; font: 400 13.5px/1.5 var(--sans); }
+.ba h4 { margin: 0 0 12px; font: 500 13px/1.4 var(--sans); color: var(--muted); }
+.ba > div { min-width: 0; }
+.raw { list-style: none; margin: 0; padding: 0; }
+.raw li { padding: 8px 0; border-top: 1px solid var(--rule); }
+.raw li:last-child { border-bottom: 1px solid var(--rule); }
+.raw .who { color: var(--muted); margin-right: 8px; }
+.sum { background: var(--paper); border: 1px solid var(--rule); border-radius: 2px; padding: 14px; }
+.sum .h { margin: 0 0 10px; color: var(--ink); font-weight: 500; }
+.sum .fin { border-left: 2px solid var(--accent); padding-left: 10px; margin: 0 0 10px; color: var(--ink); }
+.sum .fin b { color: var(--accent); }
+.sum .quiet { color: var(--muted); font-size: 12.5px; }
+.sum details { border-top: 1px solid var(--rule); padding-top: 8px; margin-top: 8px; }
+.sum summary { cursor: pointer; color: var(--ink); }
+.sum p { margin: 0 0 6px; }
+
+/* Definition list for trust */
+dl.facts { margin: 16px 0 0; }
+dl.facts dt { color: var(--ink); font-weight: 600; margin-top: 20px; }
+dl.facts dd { margin: 4px 0 0; }
+
+/* Questions */
+.qa details { border-top: 1px solid var(--rule); }
+.qa details:last-child { border-bottom: 1px solid var(--rule); }
+.qa summary { cursor: pointer; padding: 14px 0; color: var(--ink); font-weight: 600; list-style: none; display: flex; gap: 12px; }
+.qa summary::-webkit-details-marker { display: none; }
+.qa summary::after { content: "+"; margin-left: auto; font: 400 18px/1.3 var(--sans); color: var(--muted); }
+.qa details[open] summary::after { content: "\2212"; }
+.qa .a { padding: 0 0 12px; }
+
+/* Preview block */
+.tag { display: inline-block; font: 500 12px/1 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+       border: 1px solid var(--rule); border-radius: 2px; padding: 5px 7px; margin-right: 8px; vertical-align: 2px; }
+pre.yaml { margin: 0; overflow-x: auto; font: 13px/1.7 var(--mono); color: var(--text); }
+pre.yaml .cm { color: var(--muted); }
+
+footer { max-width: 680px; margin: 96px auto 0; padding: 24px 0 64px; border-top: 1px solid var(--rule);
+         display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; font: 400 13px/1.5 var(--sans); color: var(--muted); }
+footer .logo { color: var(--ink); }
+footer span { flex: 1 1 260px; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+@media (min-width: 1101px) { .toc-inline { display: none; } }
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: minmax(0, 1fr); max-width: 744px; }
+  .col { grid-column: 1; }
+  .aside { display: none; }
+  .fig-wide { margin-left: 0; margin-right: 0; }
+}
+@media (max-width: 600px) {
+  body { font-size: 17px; }
+  .top, .layout { padding-left: 16px; padding-right: 16px; }
+  .top nav { gap: 16px; }
+  .top nav .opt { display: none; }
+  header.head { padding-top: 32px; }
+  h1 { font-size: 28px; }
+  .lede { margin-top: 28px; }
+  .merge p { flex: 1 1 200px; }
+  .toc-inline ol { columns: 1; }
+  .panel { padding: 12px; }
+  .c { grid-template-columns: minmax(0, 1fr); padding-left: 12px; padding-right: 12px; }
+  .proofs { grid-column: 1; }
+  .pr-top, .count, .merge { padding-left: 12px; padding-right: 12px; }
+  .pr-top { flex-wrap: wrap; }
+  .merge { flex-wrap: wrap; align-items: flex-start; }
+  .fig-foot { flex-direction: column; }
+  .ba { grid-template-columns: minmax(0, 1fr); }
+  .anchor { display: none; }
+  footer { margin-left: 16px; margin-right: 16px; }
+  .hide-sm { display: none; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="top">
+  <a class="logo" href="#top" aria-label="Heimdall, back to top">
+    <svg viewBox="0 0 99 24" width="124" height="30" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-linecap="butt" stroke-linejoin="miter"><g stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g><g transform="translate(31 6.5) scale(0.92)" stroke-width="1.7" stroke-miterlimit="3"><path d="M0.8 0V12M7.8 0V12M0.8 6H7.8"/><path d="M17.6 0.8H11.8V11.2H17.6M11.8 6H16.6"/><path d="M21.6 0V12"/><path d="M25.6 12V0.8L29.85 9L34.1 0.8V12"/><path d="M38.1 0.8H41.4A3.9 5.2 0 0 1 41.4 11.2H38.1Z"/><path d="M48.4 12L52.4 0.6L56.4 12M49.9 7.8H54.9"/><path d="M60.4 0V11.2H71.6M66.2 0V11.2"/></g></g></svg>
+  </a>
+  <nav aria-label="Site">
+    <a class="opt" href="#results">Results</a>
+    <a class="opt" href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1">Bench</a>
+    <a href="https://github.com/prathameshk421/Heimdall/tree/product-build">GitHub</a>
+  </nav>
+</div>
+
+<div class="layout">
+  <aside class="aside" aria-label="Contents">
+    <nav class="toc-side" id="tocSide">
+      <p>Contents</p>
+      <ol>
+        <li><a href="#problem">The problem</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#results">Results so far</a></li>
+        <li><a href="#trust">Built to be trusted</a></li>
+        <li><a href="#built">What is built</a></li>
+        <li><a href="#questions">Questions</a></li>
+        <li><a href="#next">What comes next</a></li>
+      </ol>
+    </nav>
+  </aside>
+
+<main class="col" id="main">
+  <article>
+  <header class="head" id="top">
+    <h1>Heimdall: proof before review</h1>
+    <p class="date"><time datetime="2026-11-22">22 November 2026</time></p>
+  </header>
+
+  <p class="lede">Heimdall checks AI review comments against a real test. A finding blocks the merge only when a test fails twice on the pull request and passes on the fix. Unproven findings are not shown, and you see how many there were. A person then approves the exact commit.</p>
+  <p>This is early work, and we state its limits. In our latest live run Heimdall proved 1 of 3 scored bug cases, with no false positive on 3 clean cases. A provider refusal ended 7 other cases; we know the cause, and the fix is in progress. The GitHub Action is not shipped. Every number on this page links to its source.</p>
+
+  <div class="actions">
+    <a class="btn" href="https://github.com/prathameshk421/Heimdall/tree/product-build">Read the code</a>
+    <a class="more" href="#results">See the results</a>
+    <a class="more" href="https://github.com/prathameshk421/Heimdall/blob/product-build/site/CLAIMS.md?plain=1">Every claim and its source</a>
+  </div>
+
+  <nav class="toc-inline" aria-label="Contents">
+    <p>Contents</p>
+    <ol>
+      <li><a href="#problem">The problem</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#results">Results so far</a></li>
+      <li><a href="#trust">Built to be trusted</a></li>
+      <li><a href="#built">What is built</a></li>
+      <li><a href="#questions">Questions</a></li>
+      <li><a href="#next">What comes next</a></li>
+    </ol>
+  </nav>
+
+  <figure class="fig-wide" id="fig1">
+    <div class="panel">
+      <div class="pr" role="group" aria-label="Figure 1, an example pull request thread">
+        <div class="pr-top">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="4" cy="12.5" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12.5" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4 5.3v5.4M12 10.7V7a3 3 0 0 0-3-3H7" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+          <span><b>Retry refunds on timeout</b> · #412</span>
+          <code>a1b2c3d</code>
+        </div>
+        <ul class="thread" id="thread">
+          <li class="c" data-u><span class="who">Copilot</span><span class="what">Consider a clearer name for <code>r</code>.</span></li>
+          <li class="c" data-u><span class="who">Macroscope</span><span class="what">This call may return a nil client on the error path.</span></li>
+          <li class="c" data-u><span class="who">Bugbot</span><span class="what">Possible race on the retry counter.</span></li>
+          <li class="c keep" id="keep"><span class="who">CodeRabbit</span><span class="what"><span class="f1" id="f1">F1</span>A refund runs twice when the retry flag is set, so the customer is paid twice. <code>internal/pay/refund.go:42-44</code></span>
+            <span class="proofs"><span class="proof" id="p1">Failing test attached: <code>TestRefundRunsOnceWhenRetried</code></span><span class="proof" id="p2">Fails twice on the PR, passes on the fix</span></span>
+          </li>
+          <li class="c" data-u><span class="who">CodeRabbit</span><span class="what">Missing error check on <code>Close()</code>.</span></li>
+          <li class="c" data-u><span class="who">Macroscope</span><span class="what">This log line may expose the refund amount.</span></li>
+          <li class="c" data-u><span class="who">Copilot</span><span class="what">Extract <code>3</code> into a named constant.</span></li>
+          <li class="c" data-u><span class="who">Bugbot</span><span class="what">The timeout value looks low for this call.</span></li>
+          <li class="c" data-u><span class="who">CodeRabbit</span><span class="what">Prefer <code>errors.Is</code> here.</span></li>
+          <li class="c" data-u><span class="who">Macroscope</span><span class="what">The parameter <code>ctx</code> is unused.</span></li>
+          <li class="c" data-u><span class="who">Copilot</span><span class="what">Add a doc comment to this exported function.</span></li>
+          <li class="c" data-u><span class="who">Bugbot</span><span class="what">This loop could be simpler.</span></li>
+        </ul>
+        <div class="count" id="count"><span>Unproven, not shown: <b>11</b></span><button type="button" class="linkbtn" id="openList" aria-expanded="false" aria-controls="thread">Show them</button></div>
+        <div class="merge">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <p><b>Merge locked.</b> A person must approve this exact commit, <code>a1b2c3d</code>.</p>
+          <span class="mbtn" aria-disabled="true">Merge</span>
+        </div>
+      </div>
+    </div>
+    <div class="fig-foot">
+      <figcaption><b>Figure 1:</b> A pull request as Heimdall leaves it. Twelve bot comments; one earns a failing test and blocks the merge, the other 11 are counted and hidden. <b>Illustration:</b> the PR title, number and the 11 other comments are made up. The F1 text, file, lines, test name and commit come from a <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/internal/domain/summary/testdata/enforce_one_e1_bug.golden.md?plain=1#L9-L10">test golden</a>; the proof rule is in <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L20-L21">STRATEGY.md</a>.</figcaption>
+      <button type="button" class="linkbtn" id="replay">Replay</button>
+    </div>
+  </figure>
+
+  <section id="problem" aria-labelledby="h-problem">
+    <h2 id="h-problem"><a class="anchor" href="#problem" aria-label="Link to this section">#</a>1. The problem</h2>
+    <p>AI review bots leave many comments, and few of them change the code. We read every bot review comment on <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L10">30 merged pull requests</a> of an active open-source repo, <code>pingdotgg/t3code</code>. There were <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L9">411 comments</a>: a <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L70">median of 10 per pull request, and at most 30</a>.</p>
+    <p>Table 1 shows how often the developer changed the code a comment pointed at.</p>
+    <div class="tbl" role="region" tabindex="0" aria-label="Table 1">
+      <table>
+        <caption><b>Table 1:</b> Bot comments on 30 merged t3code pull requests, by reviewer. "Changed" is a proxy.<sup><a href="#n1" id="r1">1</a></sup> Bars share one 0 to 100% scale.</caption>
+        <thead><tr><th scope="col">Reviewer</th><th scope="col" class="n">Comments</th><th scope="col" class="n">Code changed</th><th scope="col" class="barcell hide-sm"><span class="hide-sm">Share</span></th></tr></thead>
+        <tbody>
+          <tr><td>CodeRabbit</td><td class="n">60</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L54">29 (48%)</a></td><td class="barcell hide-sm"><span class="bar" aria-hidden="true"><i style="width:48.33%"></i></span></td></tr>
+          <tr><td>Macroscope</td><td class="n">175</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L52">75 (43%)</a></td><td class="barcell hide-sm"><span class="bar" aria-hidden="true"><i style="width:42.86%"></i></span></td></tr>
+          <tr><td>Bugbot (cursor[bot])</td><td class="n">135</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L53">32 (24%)</a></td><td class="barcell hide-sm"><span class="bar" aria-hidden="true"><i style="width:23.70%"></i></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:24px">The developer dismissed <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L63">95 of 135 Bugbot comments (70%)</a>. A reader cannot tell the real bug from the noise without checking each comment by hand.</p>
+    <div class="notes"><ol>
+      <li id="n1">"Changed" means a later commit in the same pull request touched the commented lines. A fix on a nearby line can be missed, and a change is not proof the bug was real. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L30-L41">Method and limits</a>. <a class="ret" href="#r1" aria-label="Back to the text">&#8617;</a></li>
+    </ol></div>
+    <p class="back"><a href="#top">Back to contents</a></p>
+  </section>
+
+  <section id="how" aria-labelledby="h-how">
+    <h2 id="h-how"><a class="anchor" href="#how" aria-label="Link to this section">#</a>2. How it works</h2>
+    <p>Heimdall uses one rule for every finding, its own and other bots'.</p>
+    <ol class="steps">
+      <li><b>Collect.</b> Heimdall reads every review comment on the pull request. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L13-L15">Source</a></li>
+      <li><b>Prove.</b> A finding needs a test that fails twice on the pull request and passes on the fixed tree. One red run is not proof, and a <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L423">build error is not proof</a>. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L20-L21">Source</a></li>
+      <li><b>Decide.</b> A proven finding blocks the merge. Unproven ones are not shown, and they are counted. A person approves the exact commit. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L36-L38">Source</a></li>
+    </ol>
+    <figure id="fig2">
+      <div class="panel ba">
+        <div>
+          <h4>Before: four comments, no evidence</h4>
+          <ul class="raw">
+            <li><span class="who">CodeRabbit</span>A refund runs twice when the retry flag is set.</li>
+            <li><span class="who">CodeRabbit</span>This call may return a nil client on the error path.</li>
+            <li><span class="who">CodeRabbit</span>This call may return a nil client on the error path.</li>
+            <li><span class="who">Greptile</span>This call may return a nil client on the error path.</li>
+          </ul>
+        </div>
+        <div>
+          <h4>After: one comment from Heimdall</h4>
+          <div class="sum">
+            <p class="h">Proven: 1 blocking finding · enforce · <code>a1b2c3d</code></p>
+            <p class="fin"><b>F1</b> <code>internal/pay/refund.go:42-44</code> A refund runs twice when the retry flag is set, so the customer is paid twice.<br><span class="quiet">Severity critical, blocks the merge. Evidence: failing test <code>TestRefundRunsOnceWhenRetried</code>.</span></p>
+            <details>
+              <summary>Unproven, not shown: 3 findings from 2 reviewers</summary>
+              <p class="quiet" style="margin-top:6px">No test or tool backed these, so they are not shown as findings. Unproven does not mean wrong.</p>
+              <p class="quiet">CodeRabbit 2: 1 no test reproduced, 1 refuted. Greptile 1: 1 outdated.</p>
+            </details>
+            <p class="quiet" style="margin-top:8px">Heimdall judges only what is listed here. Whatever is not listed was not looked at, so silence is not safety.</p>
+          </div>
+        </div>
+      </div>
+      <figcaption><b>Figure 2:</b> The same review before and after Heimdall. Both sides are rendered from the <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/internal/domain/summary/testdata/enforce_one_e1_bug.golden.md?plain=1#L3-L43">summary test golden</a>, not from a live pull request.</figcaption>
+    </figure>
+    <p class="back"><a href="#top">Back to contents</a></p>
+  </section>
+
+  <section id="results" aria-labelledby="h-results">
+    <h2 id="h-results"><a class="anchor" href="#results" aria-label="Link to this section">#</a>3. Results so far</h2>
+    <p>We test Heimdall on the Proof Bench: real bugs and clean changes with known answers. A case counts as valid only when its test is red before the fix and green after it, and each verdict held on <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L28-L30">two runs</a>. Table 2 lists the valid cases.</p>
+    <div class="tbl" role="region" tabindex="0" aria-label="Table 2">
+      <table>
+        <caption><b>Table 2:</b> Valid Proof Bench cases, 28 in all.</caption>
+        <thead><tr><th scope="col">Source</th><th scope="col" class="n">Bug cases</th><th scope="col" class="n">Clean cases</th></tr></thead>
+        <tbody>
+          <tr><td>Go open-source repos</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L64">7</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L64">3</a></td></tr>
+          <tr><td>t3code, TypeScript</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L623">10</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L623">2</a></td></tr>
+          <tr><td>t3code, Rust</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L624">1</a></td><td class="n">0</td></tr>
+          <tr><td>Our payment fixture<sup><a href="#n2" id="r2">2</a></sup></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L541-L545">1</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L421-L427">4</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Live runs</h3>
+    <p>We ran the reviewer three times against a live model. Table 3 gives every run, including the ones that went badly.</p>
+    <div class="tbl" role="region" tabindex="0" aria-label="Table 3">
+      <table>
+        <caption><b>Table 3:</b> Live Proof Bench runs, DeepSeek V4.1 Flash, 21 November 2026.<sup><a href="#n3" id="r3">3</a></sup> Recall is bug cases with a proven finding on the known bug. A false positive is a proven blocking finding on a clean case. "–" means not measured.</caption>
+        <thead><tr><th scope="col">Run</th><th scope="col" class="n">Cases</th><th scope="col" class="n">Scored</th><th scope="col" class="n">Proposed</th><th scope="col" class="n">Proven</th><th scope="col" class="n">Recall</th><th scope="col" class="n">False pos.</th><th scope="col" class="n">Cost</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td class="n">10</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L375">9</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L382-L386">0</a></td><td class="n">0</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L371">0 of 7</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L372">0 of 2</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L376">$0.86</a></td></tr>
+          <tr><td>2</td><td class="n">18</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L748">2</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L756-L758">2</a></td><td class="n">0</td><td class="n">–<sup><a href="#n4" id="r4">4</a></sup></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L745">0 of 1</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L749">$1.18</a></td></tr>
+          <tr class="lead"><td>3</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L831">28</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L821">6</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L819">5</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L819">2</a></td><td class="n hit"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L815">1 of 3</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L816">0 of 3</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L822">$2.92</a><sup><a href="#n5" id="r5">5</a></sup></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>What each run taught us</h3>
+    <p><b>Run 1.</b> The reviewer loop stopped on the model's first text answer, so it proposed nothing. We fixed the loop. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L380-L397">Diagnosis</a></p>
+    <p><b>Run 2.</b> The model made a real tool call on every recorded turn. But 15 calls in 14 of 18 cases failed with HTTP 500 from the provider, and the loop had no retry. The injection case proposed 2 findings; both stayed unproven, with no false positive. We added retries. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L753-L766">Diagnosis</a></p>
+    <p><b>Run 3.</b> This is the first proven hit on a live run. On <code>fixture-refunds</code> Heimdall proposed 2 findings and proved both, on the known bug. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L794">Case row</a>. The two other scored bug cases, <code>echo-1799</code> and <code>logrus-1564</code>, were missed. The injection case proposed 3 findings, proved none and wrote no canary. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L829-L834">Diagnosis</a></p>
+    <p>Most of run 3 did not finish: 22 of 28 cases have no score. Seven ended on HTTP 500 from the provider after 3 attempts each.<sup><a href="#n6" id="r6">6</a></sup> Three hit the $0.50 per-case budget. The run reached its $3.00 cap after 33 minutes, which stopped 2 cases mid-way and left 10 unrun. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L784-L811">Case table</a>. The 500s were a refusal, not an outage: in DeepSeek's thinking mode with tools, every earlier turn's <code>reasoning_content</code> must be sent back, and our adapter did not send it. The fix, AM12d, is in progress and is not verified until a live run after it. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L836-L843">Diagnosis</a>, <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L72">tracker</a></p>
+    <p>So read run 3 as a sign of life, not a score. Three scored bug cases is too few for a recall rate, and the one hit is in a fixture repo we own. We will claim a rate when a full run finishes.</p>
+    <div class="notes"><ol start="2">
+      <li id="n2"><code>aarush323/heimdall-fixture-pay</code>, a Go payments service the team owns, with planted bugs. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L401-L403">Source</a>. <code>fixture-refunds</code> became valid once each test runs on its own copy. One clean case, <code>fixture-injection</code>, holds a prompt injection and a canary. <a class="ret" href="#r2" aria-label="Back to the text">&#8617;</a></li>
+      <li id="n3">Model <code>deepseek-ai/deepseek-v4.1-flash-1017</code> on the Deploy endpoint. Cap $3.00 a run and $0.50 a case. Run 3 used <code>--parallel 3</code>. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L343">Run 1</a>, <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L708">run 2</a>, <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L768-L780">run 3</a>. Each run has its command and commit in the bench file. <a class="ret" href="#r3" aria-label="Back to the text">&#8617;</a></li>
+      <li id="n4">The bench file records 0 of 1, but only one bug case finished, so we do not read it as recall. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L744">Source</a>. <a class="ret" href="#r4" aria-label="Back to the text">&#8617;</a></li>
+      <li id="n5">Every run billed at stated prices of $0.50 per million input tokens, cached or not, and $2.00 per million output tokens (<a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L775">run 3</a>). In run 3, 91% of input tokens were cache reads, so the real bill is likely lower. Not verified. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L845-L847">Source</a>. <a class="ret" href="#r5" aria-label="Back to the text">&#8617;</a></li>
+      <li id="n6">The coordinator's diagnosis says nine cases. Its own case table and the run's JSON show seven with an HTTP 500: <code>testify-1207</code>, <code>testify-1795</code>, <code>gin-4702</code>, <code>cli-2455</code>, <code>chi-1051-clean</code>, <code>echo-2822-clean</code>, <code>cobra-1643-clean</code>. We use the table. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L784-L793">Rows</a>, <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L836">diagnosis</a>. <a class="ret" href="#r6" aria-label="Back to the text">&#8617;</a></li>
+    </ol></div>
+    <p class="back"><a href="#top">Back to contents</a></p>
+  </section>
+
+  <section id="trust" aria-labelledby="h-trust">
+    <h2 id="h-trust"><a class="anchor" href="#trust" aria-label="Link to this section">#</a>4. Built to be trusted</h2>
+    <p>Heimdall runs pull request code, so the sandbox matters. On a GitHub-hosted runner, PR code tried to escape it <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE_SPIKE.md?plain=1#L541">70 ways: 34 fetch and 36 exec probes</a>. All 70 were blocked and 0 were unknown, in <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE_SPIKE.md?plain=1#L326">run 44910812111</a>.</p>
+    <dl class="facts">
+      <dt>No model in the gate</dt>
+      <dd>A model may propose a finding. Only a test or a tool result decides. A missing fact is "unknown", never a pass. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L104-L105">Source</a></dd>
+      <dt>Your VM, then your CI</dt>
+      <dd>The server runs on your own VM. The GitHub Action for your CI is in preview. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L108-L109">Source</a></dd>
+      <dt>Your model</dt>
+      <dd>Any OpenAI-compatible endpoint works: Ollama, vLLM, LiteLLM, DeepSeek or your company gateway. A local endpoint needs no key. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/internal/adapters/openrouter/doc.go#L4-L10">Source</a></dd>
+      <dt>A signed log</dt>
+      <dd>Each change has a log on one git ref, with an HMAC over each chain head. A bad MAC fails closed. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE.md?plain=1#L196">Source</a></dd>
+    </dl>
+    <p style="margin-top:20px">Not verified yet: load stress, a fork bomb, non-Go package managers, self-hosted and ARM runners. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L49">Tracker</a></p>
+    <p class="back"><a href="#top">Back to contents</a></p>
+  </section>
+
+  <section id="built" aria-labelledby="h-built">
+    <h2 id="h-built"><a class="anchor" href="#built" aria-label="Link to this section">#</a>5. What is built</h2>
+    <p>These parts are merged and tested in the repo. The Action that wires them together is next, and no customer runs it yet. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L60">Tracker</a></p>
+    <div class="tbl" role="region" tabindex="0" aria-label="Table 4">
+      <table>
+        <caption><b>Table 4:</b> Built parts. Each row links to its evidence.</caption>
+        <thead><tr><th scope="col">Part</th><th scope="col">What it does</th><th scope="col">Evidence</th></tr></thead>
+        <tbody>
+          <tr><td>Fast check</td><td>Eight clauses with no model: secrets, analyzers, pinned tests, test integrity, diff coverage, approval, rules, Heimdall files.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/internal/domain/fastcheck/fastcheck.go#L13-L20">8 clauses</a></td></tr>
+          <tr><td>Referee for other bots</td><td>Parses review comments from other bots.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L63">383 of 383 t3code comments, 7 reviewers</a></td></tr>
+          <tr><td>Test guard</td><td>Keeps pinned tests read-only. Flags weaker asserts and mocks of the code under test.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L53">Rules</a></td></tr>
+          <tr><td>Cost guard</td><td>Checks a worst-case cost bound before every model call. Retries stay inside the cap.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L60">Guard</a>; run 3 stopped at <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L800">$2.90 of $3.00</a></td></tr>
+          <tr><td>Test selection</td><td>Runs only the tests a change can reach.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L145">106.7 s to 13.1 s, Heimdall's suite, 5 commits</a></td></tr>
+          <tr><td>Shadow mode</td><td>Two weeks of "would block because", with no block. Then your team turns it on.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L72">Plan</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="back"><a href="#top">Back to contents</a></p>
+  </section>
+
+  <section id="questions" aria-labelledby="h-questions">
+    <h2 id="h-questions"><a class="anchor" href="#questions" aria-label="Link to this section">#</a>6. Questions</h2>
+    <div class="qa">
+      <details>
+        <summary>Does it replace our AI reviewer?</summary>
+        <div class="a"><p>No. Keep CodeRabbit, Copilot, Bugbot or any other bot. Heimdall referees their findings, and its own, with the same proof rule. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L104-L105">Source</a></p></div>
+      </details>
+      <details>
+        <summary>What if Heimdall is wrong?</summary>
+        <div class="a"><p>Unproven means not shown, not false. A test can prove a bug is real, but never that a finding is false. Anyone can open the list of unproven findings and read them. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L18-L19">Source</a></p></div>
+      </details>
+      <details>
+        <summary>What about an emergency?</summary>
+        <div class="a"><p>A named person posts a break-glass with a reason. It is recorded, and it shows as open until another approver reviews it. An agent cannot use it. The record is built; the command ships with the Action. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE.md?plain=1#L428-L431">Source</a></p></div>
+      </details>
+      <details>
+        <summary>What does it cost to run?</summary>
+        <div class="a"><p>You pay your own model provider. Before every model call, Heimdall checks a worst-case cost bound against your cap. A call that could pass the cap does not run. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L60">Source</a></p></div>
+      </details>
+      <details>
+        <summary>Where does our code go?</summary>
+        <div class="a"><p>Nowhere new. Heimdall runs on your VM today, and in your CI when the Action ships. Tests run with no network. Only your chosen model endpoint sees the code it reads. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE_SPIKE.md?plain=1#L572-L576">Source</a></p></div>
+      </details>
+    </div>
+    <p class="back"><a href="#top">Back to contents</a></p>
+  </section>
+
+  <section id="next" aria-labelledby="h-next">
+    <h2 id="h-next"><a class="anchor" href="#next" aria-label="Link to this section">#</a>7. What comes next</h2>
+    <p>First, AM12d and a fourth live run on the unfinished cases. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L72">Tracker</a></p>
+    <p>Then a GitHub Action: one workflow file, your model key, and two weeks in shadow mode. It is <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/ROADMAP.md?plain=1#L28">not shipped</a>, and its inputs may change. It will run on <code>pull_request</code> with <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE.md?plain=1#L236">read-only permissions</a>, a <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE.md?plain=1#L18">15-minute cap</a>, and <code>uses:</code> <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE.md?plain=1#L241-L244">pinned by full SHA</a>, with the model key on one step only.</p>
+    <figure id="fig3">
+      <div class="panel">
+<pre class="yaml" aria-label="Preview of a workflow file. Placeholder names, not shipped."><span class="cm"># PREVIEW: placeholder names, not shipped</span>
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: heimdall/action@&lt;full-sha&gt;
+        env:
+          HEIMDALL_MODEL_KEY: ${{ secrets.MODEL_KEY }}</pre>
+      </div>
+      <figcaption><b>Figure 3:</b> <span class="tag">Preview</span>A workflow file for the planned Action. <b>Placeholder:</b> the action name <code>heimdall/action</code> and the secret name <code>MODEL_KEY</code> do not exist yet.</figcaption>
+    </figure>
+    <div class="actions">
+      <a class="btn" href="https://github.com/prathameshk421/Heimdall/tree/product-build">Watch the repo</a>
+      <a class="more" href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1">Read the full bench file</a>
+    </div>
+  </section>
+  </article>
+</main>
+</div>
+
+<footer>
+  <a class="logo" href="#top" aria-label="Heimdall, back to top"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg></a>
+  <span>Heimdall. Every number on this page links to its source. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/site/CLAIMS.md?plain=1">All claims</a>.</span>
+  <a href="https://github.com/prathameshk421/Heimdall/tree/product-build">GitHub</a>
+</footer>
+
+<script>
+(function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Contents: mark the section being read.
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocSide a'));
+  var secs = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
+  function mark() {
+    var y = window.scrollY + window.innerHeight * 0.3, cur = -1;
+    secs.forEach(function (s, i) { if (s && s.offsetTop <= y) { cur = i; } });
+    links.forEach(function (a, i) { a.classList.toggle('on', i === cur); if (i === cur) { a.setAttribute('aria-current', 'true'); } else { a.removeAttribute('aria-current'); } });
+  }
+  window.addEventListener('scroll', mark, { passive: true }); mark();
+
+  // Figure 1. Without script, or with reduced motion, it shows its final state.
+  var unproven = Array.prototype.slice.call(document.querySelectorAll('#thread [data-u]'));
+  var all = Array.prototype.slice.call(document.querySelectorAll('#thread .c'));
+  var keep = document.getElementById('keep');
+  var f1 = document.getElementById('f1');
+  var p1 = document.getElementById('p1');
+  var p2 = document.getElementById('p2');
+  var count = document.getElementById('count');
+  var openBtn = document.getElementById('openList');
+  var timers = [];
+  var listOpen = false;
+
+  function at(ms, fn) { timers.push(setTimeout(fn, ms)); }
+  function finalState() {
+    all.forEach(function (c) { c.classList.remove('pre'); });
+    unproven.forEach(function (c) { c.classList.toggle('gone', !listOpen); });
+    f1.hidden = false; keep.classList.add('won');
+    p1.classList.remove('pre'); p2.classList.remove('pre'); count.classList.remove('pre');
+  }
+  function play() {
+    timers.forEach(clearTimeout); timers = [];
+    listOpen = false; openBtn.setAttribute('aria-expanded', 'false'); openBtn.textContent = 'Show them';
+    if (reduce) { finalState(); return; }
+    all.forEach(function (c) { c.classList.add('pre'); c.classList.remove('gone'); });
+    f1.hidden = true; keep.classList.remove('won');
+    p1.classList.add('pre'); p2.classList.add('pre'); count.classList.add('pre');
+    all.forEach(function (c, i) { at(200 + i * 110, function () { c.classList.remove('pre'); }); });
+    var t = 200 + all.length * 110 + 1100;
+    unproven.forEach(function (c, i) { at(t + i * 70, function () { c.classList.add('gone'); }); });
+    t += unproven.length * 70 + 450;
+    at(t, function () { count.classList.remove('pre'); });
+    at(t + 900, function () { p1.classList.remove('pre'); });
+    at(t + 2000, function () { p2.classList.remove('pre'); f1.hidden = false; keep.classList.add('won'); });
+  }
+  openBtn.addEventListener('click', function () {
+    timers.forEach(clearTimeout); timers = [];
+    listOpen = !listOpen;
+    finalState();
+    openBtn.setAttribute('aria-expanded', String(listOpen));
+    openBtn.textContent = listOpen ? 'Hide them' : 'Show them';
+  });
+  document.getElementById('replay').addEventListener('click', play);
+
+  var pr = document.querySelector('.pr');
+  if ('IntersectionObserver' in window && !reduce) {
+    all.forEach(function (c) { c.classList.add('pre'); });
+    p1.classList.add('pre'); p2.classList.add('pre'); count.classList.add('pre'); f1.hidden = true;
+    var started = false;
+    new IntersectionObserver(function (en, obs) {
+      if (en[0].isIntersecting && !started) { started = true; obs.disconnect(); play(); }
+    }, { threshold: 0.3 }).observe(pr);
+  } else {
+    finalState();
+  }
+})();
+</script>
+</body>
+</html>

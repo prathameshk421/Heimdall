@@ -9,7 +9,7 @@
 <meta property="og:title" content="Heimdall: proof before review">
 <meta property="og:description" content="A proven finding blocks the merge. Unproven ones are not shown, and you see the count. Early results, with their limits.">
 <meta property="og:type" content="article">
-<meta property="og:image" content="shots/og-v6.png">
+<meta property="og:image" content="shots/og-v7.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
@@ -18,18 +18,25 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Site v6. A reading page in the identity of site/DESIGN.md: Newsreader for reading, IBM Plex Sans for UI,
-   neutrals plus one accent that marks only proven things. Every number links to its source (site/CLAIMS.md). */
+/* Site v7. The v6 reading page (site/DESIGN.md) in the "Periwinkle mist" mood: one blue-violet monochrome,
+   pale periwinkle paper by day, deep indigo by night, a pale rose accent that marks only proven things, and a
+   film grain under the text. Every number links to its source (site/CLAIMS.md). */
 :root {
   color-scheme: light;
-  --paper: #fbfaf7;
-  --fill: #f2f0eb;
-  --rule: #e4e1da;
-  --muted: #67645e;
-  --text: #2c2b28;
-  --ink: #1d1c1a;
-  --accent: #b3341b;
-  --accent-soft: rgba(179, 52, 27, .07);
+  --paper: #eceefb;
+  --fill: #e0e3f7;
+  --rule: #c3c8ee;
+  --muted: #4b5096;
+  --text: #242862;
+  --ink: #161946;
+  --accent: #a3245f;
+  --accent-soft: rgba(163, 36, 95, .08);
+  --grain: .07;
+  /* Hero art */
+  --sky0: #8692e8; --sky1: #a0aaef; --sky2: #d9d6f4; --glow: #fbeef6;
+  --hill-far: #aab2ef; --hill-near: #929ce8; --ground: #a7afee;
+  --col-dark: #3a3fa3; --col-mid: #7a85dc; --col-lit: #f3e6f0; --figure: #23276b;
+  --mist: #f6eef8; --mist-o: 1;
   --serif: Newsreader, "Iowan Old Style", Georgia, serif;
   --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -37,16 +44,24 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --paper: #121211; --fill: #1b1a18; --rule: #2d2b28;
-    --muted: #a29e95; --text: #d9d6cf; --ink: #eeece7;
-    --accent: #f0805f; --accent-soft: rgba(240, 128, 95, .09);
+    --paper: #11133a; --fill: #191c4a; --rule: #2f3474;
+    --muted: #a6abe8; --text: #d8dbf7; --ink: #f3e6f0;
+    --accent: #f4a9cf; --accent-soft: rgba(244, 169, 207, .09); --grain: .06;
+    --sky0: #090b2c; --sky1: #1b1f5e; --sky2: #3b3e93; --glow: #f3e6f0;
+    --hill-far: #262a73; --hill-near: #1e2265; --ground: #1b1e57;
+    --col-dark: #0f1247; --col-mid: #353a98; --col-lit: #e7d3ea; --figure: #080a2a;
+    --mist: #8e8fd6; --mist-o: .55;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --paper: #121211; --fill: #1b1a18; --rule: #2d2b28;
-  --muted: #a29e95; --text: #d9d6cf; --ink: #eeece7;
-  --accent: #f0805f; --accent-soft: rgba(240, 128, 95, .09);
+  --paper: #11133a; --fill: #191c4a; --rule: #2f3474;
+  --muted: #a6abe8; --text: #d8dbf7; --ink: #f3e6f0;
+  --accent: #f4a9cf; --accent-soft: rgba(244, 169, 207, .09); --grain: .06;
+  --sky0: #090b2c; --sky1: #1b1f5e; --sky2: #3b3e93; --glow: #f3e6f0;
+  --hill-far: #262a73; --hill-near: #1e2265; --ground: #1b1e57;
+  --col-dark: #0f1247; --col-mid: #353a98; --col-lit: #e7d3ea; --figure: #080a2a;
+    --mist: #8e8fd6; --mist-o: .55;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -56,6 +71,12 @@ body {
   font: 400 18px/1.65 var(--serif); -webkit-font-smoothing: antialiased;
   font-optical-sizing: auto;
 }
+/* Film grain. It sits under the content (z-index -1), so it shifts only the page colour, never the text.
+   The worst case (opacity 7%, every grain pixel black or white) keeps every text pair above 4.5:1. */
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: var(--grain);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='2 0 0 0 -.5 2 0 0 0 -.5 2 0 0 0 -.5 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px; }
+@media (prefers-reduced-transparency: reduce) { body::before { display: none; } }
 p { margin: 0 0 16px; }
 a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
     text-decoration-color: color-mix(in srgb, currentColor 32%, transparent); transition: color .25s, text-decoration-color .25s; }
@@ -74,6 +95,18 @@ code, .mono { font-family: var(--mono); font-size: .8em; }
 .top nav { margin-left: auto; display: flex; gap: 24px; }
 .top nav a { color: var(--muted); text-decoration: none; }
 .top nav a:hover { color: var(--ink); }
+
+/* Hero art: an original inline SVG (site/DESIGN.md section 5). No text sits on it. */
+.hero { max-width: 1440px; margin: 0 auto; height: clamp(250px, 38.9vw, 560px); overflow: hidden; }
+.hero .art { display: block; width: 100%; height: 100%; }
+.hero .mist { animation: drift 40s ease-in-out infinite alternate; }
+.hero .glow { animation: breathe 14s ease-in-out infinite alternate; transform-origin: 720px 330px; }
+@keyframes drift { from { transform: translateX(-12px); } to { transform: translateX(12px); } }
+@keyframes breathe { from { opacity: .85; } to { opacity: 1; } }
+@media (min-width: 1441px) {
+  .hero { -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+}
 
 /* Layout: a sticky contents column on wide screens, one reading column */
 .layout { max-width: 1240px; margin: 0 auto; padding: 0 32px; display: grid;
@@ -114,6 +147,7 @@ h1 { font-size: 34px; line-height: 1.2; letter-spacing: -.005em; }
 /* Sections */
 section { padding-top: 64px; }
 h2 { font-size: 24px; line-height: 1.3; margin: 0 0 16px; position: relative; }
+section > h2::before { content: ""; display: block; width: 40px; height: 2px; margin: 0 0 20px; background: var(--rule); }
 h3 { font-size: 19px; line-height: 1.4; margin: 32px 0 8px; }
 .anchor { position: absolute; left: -1.1em; width: 1em; color: var(--muted); text-decoration: none; opacity: 0; font-weight: 400; transition: opacity .2s; }
 h2:hover .anchor, .anchor:focus-visible { opacity: 1; }
@@ -126,7 +160,7 @@ ol.steps b { color: var(--ink); font-weight: 600; }
 
 /* Figures */
 figure { margin: 32px 0; }
-.panel { background: var(--fill); border: 1px solid var(--rule); border-radius: 2px; padding: 24px; }
+.panel { background: linear-gradient(180deg, color-mix(in srgb, var(--sky2) 35%, var(--fill)), var(--fill) 60%); border: 1px solid var(--rule); border-radius: 2px; padding: 24px; }
 figcaption { margin-top: 12px; font: 400 14px/1.5 var(--sans); color: var(--muted); }
 figcaption b { color: var(--ink); font-weight: 500; }
 
@@ -146,7 +180,7 @@ figcaption b { color: var(--ink); font-weight: 500; }
 .c.gone { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
 .c.keep { max-height: 360px; padding-top: 12px; padding-bottom: 12px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 4px 0; transition: opacity .3s, background-color .3s; }
 .c.keep .what { color: var(--ink); }
-.c.keep.won { background: var(--accent-soft); }
+.c.keep.won { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
 .f1 { font-weight: 600; color: var(--accent); margin-right: 6px; }
 .proofs { grid-column: 2; display: grid; gap: 4px; margin-top: 8px; font-size: 12.5px; }
 .proof { color: var(--accent); font-weight: 500; transition: opacity .3s; }
@@ -176,7 +210,9 @@ caption b { color: var(--ink); font-weight: 500; }
 th, td { padding: 8px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
 th:first-child, td:first-child { padding-left: 0; }
 th:last-child, td:last-child { padding-right: 0; }
-thead th { color: var(--ink); font-weight: 500; border-bottom-color: var(--muted); white-space: nowrap; }
+thead th { color: var(--ink); font-weight: 500; background: var(--fill); border-bottom-color: var(--muted); white-space: nowrap; }
+thead th:first-child { padding-left: 10px; }
+tbody td:first-child { padding-left: 10px; }
 td.n, th.n { text-align: right; white-space: nowrap; }
 td a { text-decoration-color: color-mix(in srgb, currentColor 28%, transparent); }
 tr.lead td { color: var(--ink); }
@@ -286,6 +322,61 @@ footer span { flex: 1 1 260px; }
     <a class="opt" href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1">Bench</a>
     <a href="https://github.com/prathameshk421/Heimdall/tree/product-build">GitHub</a>
   </nav>
+</div>
+
+<div class="hero">
+<svg class="art" viewBox="0 0 1440 560" preserveAspectRatio="xMidYMax slice" role="img" aria-labelledby="artT artD">
+<title id="artT">The gate at first light</title>
+<desc id="artD">An illustration of the Heimdall mark: two tall fluted columns stand on a misty plain. A pale light passes through the gap between them and draws a check. Soft hills and a far colonnade fade into the sky. One small figure walks toward the gate.</desc>
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--sky0)"/><stop offset=".55" style="stop-color:var(--sky1)"/><stop offset=".82" style="stop-color:var(--sky2)"/></linearGradient>
+<radialGradient id="halo" cx=".5" cy=".5" r=".5"><stop offset="0" style="stop-color:var(--glow)" stop-opacity=".95"/><stop offset=".22" style="stop-color:var(--glow)" stop-opacity=".55"/><stop offset=".5" style="stop-color:var(--glow)" stop-opacity=".18"/><stop offset=".78" style="stop-color:var(--glow)" stop-opacity=".04"/><stop offset="1" style="stop-color:var(--glow)" stop-opacity="0"/></radialGradient>
+<linearGradient id="beam" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--glow)" stop-opacity=".9"/><stop offset="1" style="stop-color:var(--glow)" stop-opacity="0"/></linearGradient>
+<linearGradient id="colL" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--col-dark)"/><stop offset=".6" style="stop-color:var(--col-mid)"/><stop offset="1" style="stop-color:var(--col-lit)"/></linearGradient>
+<linearGradient id="colR" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--col-lit)"/><stop offset=".4" style="stop-color:var(--col-mid)"/><stop offset="1" style="stop-color:var(--col-dark)"/></linearGradient>
+<linearGradient id="plain" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--ground)"/><stop offset=".5" style="stop-color:var(--ground)"/><stop offset="1" style="stop-color:var(--paper)"/></linearGradient>
+<linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--paper)" stop-opacity="0"/><stop offset="1" style="stop-color:var(--paper)"/></linearGradient>
+<filter id="b2" x="-5%" y="-20%" width="110%" height="140%"><feGaussianBlur stdDeviation="2"/></filter>
+<filter id="b8" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="8"/></filter>
+<filter id="b22" x="-30%" y="-200%" width="160%" height="500%"><feGaussianBlur stdDeviation="22"/></filter>
+<filter id="grainA" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" stitchTiles="stitch" result="n"/><feColorMatrix in="n" values="2.2 0 0 0 -.6 2.2 0 0 0 -.6 2.2 0 0 0 -.6 0 0 0 0 1"/></filter>
+</defs>
+<rect width="1440" height="560" fill="url(#sky)"/>
+<g class="glow"><ellipse cx="720" cy="340" rx="600" ry="340" fill="url(#halo)"/></g>
+<path d="M0 418C150 372 300 366 470 404C560 424 620 432 720 432C860 432 920 392 1050 366C1190 340 1320 372 1440 402V470H0Z" fill="var(--hill-far)" opacity=".85" filter="url(#b2)"/>
+<g fill="var(--hill-near)" opacity=".6" filter="url(#b2)"><rect x="230" y="386" width="102" height="6"/><rect x="236" y="392" width="6" height="30"/><rect x="251" y="392" width="6" height="30"/><rect x="266" y="392" width="6" height="30"/><rect x="281" y="392" width="6" height="30"/><rect x="296" y="392" width="6" height="30"/><rect x="311" y="392" width="6" height="30"/><rect x="326" y="392" width="6" height="30"/></g>
+<path d="M0 452C90 418 210 410 330 434C392 446 440 454 500 458H0Z" fill="var(--hill-near)" filter="url(#b2)"/>
+<path d="M880 456C990 404 1120 392 1260 420C1340 436 1400 448 1440 452V470H880Z" fill="var(--hill-near)" filter="url(#b2)"/>
+<path d="M0 448C400 440 1040 440 1440 448V560H0Z" fill="url(#plain)"/>
+<path d="M664 300L776 300L1000 560H440Z" fill="url(#beam)" opacity=".5" filter="url(#b22)"/>
+<rect x="580" y="450" width="280" height="9" fill="var(--col-mid)" opacity=".8"/>
+<rect x="570" y="458" width="300" height="5" fill="var(--col-dark)" opacity=".35"/>
+<path d="M620.0 446L622.0 176H658.0L660.0 446Z" fill="url(#colL)"/>
+<path d="M627.1 180V444M632.3 180V444M637.4 180V444M642.6 180V444M647.7 180V444M652.9 180V444" stroke="var(--col-dark)" stroke-opacity=".28" stroke-width="1.2"/>
+<path d="M621.0 176L613 163H667L659.0 176Z" fill="url(#colL)"/>
+<rect x="609" y="152" width="62" height="11" fill="url(#colL)"/>
+<rect x="613" y="444" width="54" height="8" fill="url(#colL)"/>
+<path d="M658.5 446L656.7 176" stroke="var(--col-lit)" stroke-opacity=".75" stroke-width="2"/>
+<path d="M780.0 446L782.0 176H818.0L820.0 446Z" fill="url(#colR)"/>
+<path d="M787.1 180V444M792.3 180V444M797.4 180V444M802.6 180V444M807.7 180V444M812.9 180V444" stroke="var(--col-dark)" stroke-opacity=".28" stroke-width="1.2"/>
+<path d="M781.0 176L773 163H827L819.0 176Z" fill="url(#colR)"/>
+<rect x="769" y="152" width="62" height="11" fill="url(#colR)"/>
+<rect x="773" y="444" width="54" height="8" fill="url(#colR)"/>
+<path d="M781.5 446L783.3 176" stroke="var(--col-lit)" stroke-opacity=".75" stroke-width="2"/>
+<path class="check" d="M676 300L704 328L762 262" fill="none" stroke="var(--glow)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" opacity=".55" filter="url(#b8)"/>
+<path d="M676 300L704 328L762 262" fill="none" stroke="var(--glow)" stroke-width="7" opacity=".9"/>
+<g class="mist" style="fill:var(--mist);opacity:var(--mist-o)" filter="url(#b22)"><ellipse cx="720" cy="452" rx="760" ry="26" opacity=".5"/><ellipse cx="300" cy="476" rx="420" ry="22" opacity=".35"/><ellipse cx="1150" cy="470" rx="380" ry="20" opacity=".3"/></g>
+<g fill="var(--figure)" stroke="var(--figure)" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="1012" cy="507" rx="9" ry="1.6" opacity=".25" stroke="none"/>
+<circle cx="1010.6" cy="477" r="3.3" stroke="none"/>
+<path d="M1012.6 481.5L1011.2 494" stroke-width="4.6"/>
+<path d="M1011.2 493.5L1006 506M1011.2 493.5L1016.4 505.6" stroke-width="2.6" fill="none"/>
+<path d="M1012.4 483.4L1008.4 491.6M1012.4 483.4L1015.6 491" stroke-width="2" fill="none"/>
+</g>
+<rect width="1440" height="560" filter="url(#grainA)" opacity=".3" style="mix-blend-mode:soft-light"/>
+<rect y="470" width="1440" height="90" fill="url(#fade)"/>
+<rect width="1440" height="48" fill="url(#fade)" transform="matrix(1 0 0 -1 0 48)"/>
+</svg>
 </div>
 
 <div class="layout">
