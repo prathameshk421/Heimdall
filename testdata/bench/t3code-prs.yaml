@@ -1,0 +1,279 @@
+# Real bot review comments from pingdotgg/t3code, read with read-only gh api on 2026-11-21.
+# One inline comment per line in t3code-comments.jsonl. Every PR below is merged in 2026.
+# label: acted = a later commit changed a line in the commented range;
+#        dismissed = the thread was resolved or replied with no such change; unknown = neither.
+# is_reply marks a bot reply; the per-bot counts in research/13 use top-level comments only.
+version: 1
+repo: https://github.com/pingdotgg/t3code
+language: [typescript, rust]
+prs:
+  - number: 3
+    title: "Git integration: branch picker + worktrees"
+    url: "https://github.com/pingdotgg/t3code/pull/3"
+    merged_at: "2026-02-11T23:53:31Z"
+    changed_files: 54
+    commits: 32
+    bot_comments: 25
+    acted: 4
+    bots: ["coderabbitai[bot]", "greptile-apps[bot]", "macroscopeapp[bot]"]
+  - number: 13
+    title: "feat: Commit, Push and Create PR actions"
+    url: "https://github.com/pingdotgg/t3code/pull/13"
+    merged_at: "2026-02-12T22:53:53Z"
+    changed_files: 30
+    commits: 18
+    bot_comments: 30
+    acted: 19
+    bots: ["coderabbitai[bot]", "greptile-apps[bot]", "macroscopeapp[bot]"]
+  - number: 14
+    title: "feat: Terminal"
+    url: "https://github.com/pingdotgg/t3code/pull/14"
+    merged_at: "2026-02-12T10:12:40Z"
+    changed_files: 28
+    commits: 3
+    bot_comments: 22
+    acted: 10
+    bots: ["coderabbitai[bot]", "greptile-apps[bot]", "macroscopeapp[bot]"]
+  - number: 10
+    title: "bring back electron (+ websocket/package changes)"
+    url: "https://github.com/pingdotgg/t3code/pull/10"
+    merged_at: "2026-02-10T06:15:48Z"
+    changed_files: 51
+    commits: 18
+    bot_comments: 19
+    acted: 2
+    bots: ["coderabbitai[bot]", "devin-ai-integration[bot]", "macroscopeapp[bot]"]
+  - number: 23
+    title: "Delete orphaned worktree when removing a thread"
+    url: "https://github.com/pingdotgg/t3code/pull/23"
+    merged_at: "2026-02-13T06:57:56Z"
+    changed_files: 10
+    commits: 6
+    bot_comments: 6
+    acted: 4
+    bots: ["coderabbitai[bot]", "greptile-apps[bot]"]
+  - number: 4
+    title: "light mode"
+    url: "https://github.com/pingdotgg/t3code/pull/4"
+    merged_at: "2026-02-09T09:13:43Z"
+    changed_files: 52
+    commits: 3
+    bot_comments: 7
+    acted: 2
+    bots: ["coderabbitai[bot]"]
+  - number: 128
+    title: "Persist composer drafts per thread and reuse hidden draft threads"
+    url: "https://github.com/pingdotgg/t3code/pull/128"
+    merged_at: "2026-03-02T06:36:35Z"
+    changed_files: 8
+    commits: 14
+    bot_comments: 23
+    acted: 1
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 144
+    title: "Add AI-generated semantic branch naming for git commits"
+    url: "https://github.com/pingdotgg/t3code/pull/144"
+    merged_at: "2026-03-03T04:46:05Z"
+    changed_files: 22
+    commits: 19
+    bot_comments: 23
+    acted: 9
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 1619
+    title: "[codex] fix git remote parsing, PR resolution, and sidebar PR state"
+    url: "https://github.com/pingdotgg/t3code/pull/1619"
+    merged_at: "2026-04-01T23:13:19Z"
+    changed_files: 16
+    commits: 19
+    bot_comments: 9
+    acted: 3
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 2463
+    title: "feat(scm): Azure Devops"
+    url: "https://github.com/pingdotgg/t3code/pull/2463"
+    merged_at: "2026-05-04T04:35:19Z"
+    changed_files: 13
+    commits: 9
+    bot_comments: 16
+    acted: 1
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 2473
+    title: "feat(source-control): add Bitbucket & Azure Devops providers"
+    url: "https://github.com/pingdotgg/t3code/pull/2473"
+    merged_at: "2026-05-04T07:59:58Z"
+    changed_files: 59
+    commits: 26
+    bot_comments: 17
+    acted: 9
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 2905
+    title: "feat(cloud): add headless cloud CLI control plane"
+    url: "https://github.com/pingdotgg/t3code/pull/2905"
+    merged_at: "2026-06-04T00:01:14Z"
+    changed_files: 32
+    commits: 21
+    bot_comments: 25
+    acted: 0
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 2899
+    title: "Migrate workspace to Vite+ and pnpm"
+    url: "https://github.com/pingdotgg/t3code/pull/2899"
+    merged_at: "2026-06-03T23:16:53Z"
+    changed_files: 299
+    commits: 26
+    bot_comments: 15
+    acted: 8
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 3638
+    title: "feat: scheduled tasks (automations)"
+    url: "https://github.com/pingdotgg/t3code/pull/3638"
+    merged_at: "2026-07-01T23:44:15Z"
+    changed_files: 24
+    commits: 13
+    bot_comments: 28
+    acted: 16
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 3640
+    title: "[orchestrator-v2] Fix shell cache hydration and multi-env project grouping"
+    url: "https://github.com/pingdotgg/t3code/pull/3640"
+    merged_at: "2026-07-24T14:49:21Z"
+    changed_files: 17
+    commits: 2
+    bot_comments: 22
+    acted: 2
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 3687
+    title: "fix(mobile): combined test branch — scroll, back-swipe, thread lists, computer switching"
+    url: "https://github.com/pingdotgg/t3code/pull/3687"
+    merged_at: "2026-07-04T21:28:52Z"
+    changed_files: 21
+    commits: 18
+    bot_comments: 13
+    acted: 5
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 3720
+    title: "fix: delegate OpenCode session titles to provider"
+    url: "https://github.com/pingdotgg/t3code/pull/3720"
+    merged_at: "2026-07-20T08:43:08Z"
+    changed_files: 2
+    commits: 3
+    bot_comments: 3
+    acted: 3
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 3649
+    title: "fix: detect SSH remotes with non-git user prefixes (e.g. gitlab@)"
+    url: "https://github.com/pingdotgg/t3code/pull/3649"
+    merged_at: "2026-08-15T12:26:46Z"
+    changed_files: 6
+    commits: 2
+    bot_comments: 3
+    acted: 1
+    bots: ["Copilot", "cursor[bot]", "macroscopeapp[bot]"]
+  - number: 5169
+    title: "fix(web): animate command palette when closing"
+    url: "https://github.com/pingdotgg/t3code/pull/5169"
+    merged_at: "2026-08-19T05:53:43Z"
+    changed_files: 3
+    commits: 4
+    bot_comments: 5
+    acted: 0
+    bots: ["chatgpt-codex-connector[bot]", "cursor[bot]"]
+  - number: 5176
+    title: "fix(orchestration-v2): restore generated thread titles"
+    url: "https://github.com/pingdotgg/t3code/pull/5176"
+    merged_at: "2026-08-04T11:14:00Z"
+    changed_files: 23
+    commits: 4
+    bot_comments: 5
+    acted: 1
+    bots: ["chatgpt-codex-connector[bot]", "cursor[bot]", "macroscopeapp[bot]"]
+  - number: 5260
+    title: "fix(web): better right panel (new diffs styling)"
+    url: "https://github.com/pingdotgg/t3code/pull/5260"
+    merged_at: "2026-08-04T22:00:25Z"
+    changed_files: 23
+    commits: 15
+    bot_comments: 10
+    acted: 7
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 5240
+    title: "fix(terminal): right-click paste works in the terminal"
+    url: "https://github.com/pingdotgg/t3code/pull/5240"
+    merged_at: "2026-08-15T11:44:38Z"
+    changed_files: 3
+    commits: 1
+    bot_comments: 7
+    acted: 2
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 9006
+    title: "fix(web): open PR toast actions in app"
+    url: "https://github.com/pingdotgg/t3code/pull/9006"
+    merged_at: "2026-09-02T05:34:39Z"
+    changed_files: 1
+    commits: 3
+    bot_comments: 2
+    acted: 2
+    bots: ["chatgpt-codex-connector[bot]", "cursor[bot]"]
+  - number: 9008
+    title: "test: remove static presentation snapshots"
+    url: "https://github.com/pingdotgg/t3code/pull/9008"
+    merged_at: "2026-09-01T07:44:20Z"
+    changed_files: 2
+    commits: 2
+    bot_comments: 4
+    acted: 0
+    bots: ["macroscopeapp[bot]"]
+  - number: 8994
+    title: "feat(shortcuts): copy active thread reference"
+    url: "https://github.com/pingdotgg/t3code/pull/8994"
+    merged_at: "2026-09-01T16:48:56Z"
+    changed_files: 20
+    commits: 7
+    bot_comments: 10
+    acted: 7
+    bots: ["cursor[bot]", "macroscopeapp[bot]"]
+  - number: 14527
+    title: "feat: start a new project from just a name"
+    url: "https://github.com/pingdotgg/t3code/pull/14527"
+    merged_at: "2026-10-01T07:15:29Z"
+    changed_files: 21
+    commits: 7
+    bot_comments: 7
+    acted: 4
+    bots: ["coderabbitai[bot]", "macroscopeapp[bot]"]
+  - number: 14521
+    title: "refactor(server): threads without a project run through a ScratchWorkspace service"
+    url: "https://github.com/pingdotgg/t3code/pull/14521"
+    merged_at: "2026-10-01T03:05:20Z"
+    changed_files: 64
+    commits: 17
+    bot_comments: 5
+    acted: 3
+    bots: ["macroscopeapp[bot]"]
+  - number: 28460
+    title: "fix(clients): pasting a path copied from Finder or Explorer adds that folder"
+    url: "https://github.com/pingdotgg/t3code/pull/28460"
+    merged_at: "2026-11-01T21:52:53Z"
+    changed_files: 12
+    commits: 4
+    bot_comments: 10
+    acted: 8
+    bots: ["coderabbitai[bot]", "macroscopeapp[bot]"]
+  - number: 28487
+    title: "perf(mobile): faster thread sync, connects, and reconnects on bad wifi"
+    url: "https://github.com/pingdotgg/t3code/pull/28487"
+    merged_at: "2026-11-06T00:29:50Z"
+    changed_files: 14
+    commits: 18
+    bot_comments: 8
+    acted: 5
+    bots: ["coderabbitai[bot]"]
+  - number: 40176
+    title: "fix(server): reuse an unchanged local Codex's version check across restarts"
+    url: "https://github.com/pingdotgg/t3code/pull/40176"
+    merged_at: "2026-11-21T07:53:14Z"
+    changed_files: 2
+    commits: 4
+    bot_comments: 4
+    acted: 2
+    bots: ["coderabbitai[bot]"]
