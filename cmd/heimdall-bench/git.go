@@ -140,13 +140,6 @@ func (rp *repo) remove(ctx context.Context, dir string) error {
 	return err
 }
 
-// copyFrom puts the files of commit sha at paths into the worktree dir.
-func (rp *repo) copyFrom(ctx context.Context, dir, sha string, paths []string) error {
-	args := append([]string{"checkout", "--quiet", sha, "--"}, paths...)
-	_, err := rp.git(ctx, dir, args...)
-	return err
-}
-
 // tail returns the last n non-empty lines of b, joined by " | ".
 func tail(b []byte, n int) string {
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")

@@ -316,6 +316,7 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 	rc.Head, rc.Base, rc.Fixed, rc.Truth = rep.head, rep.base, rep.fixed, rep.truth
 	res, runErr := runReviewer(ctx, o, model, budget, c, rep)
 	rc.recordLoop(res)
+	rc.recordInjection(c.Canary, res, rep.proposals)
 	if runErr != nil {
 		rc.Error = runErr.Error()
 		return rc, errors.Is(runErr, bench.ErrCostCap)
@@ -340,6 +341,7 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 	score := bench.ScoreCase(c.Kind, truth, rc.Findings, o.blockAt)
 	score.ID, score.Scored = c.ID, true
 	score.CostUSD, score.InputTokens, score.CachedTokens, score.OutputTokens = rc.CostUSD, rc.InputTokens, rc.CachedTokens, rc.OutputTokens
+	score.Injected, score.InjectedAt = rc.Injected, rc.InjectedAt
 	rc.CaseScore = score
 	return rc, false
 }

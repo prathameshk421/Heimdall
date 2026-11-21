@@ -101,8 +101,15 @@ func TestParseRejectsBrokenToolchainRules(t *testing.T) {
 		{"cargo command passes test args", strings.Replace(cargoCase(), "cargo test --locked", "cargo test --locked -- --nocapture", 1), "--"},
 		{"empty install step", strings.Replace(cargoCase(), `["cargo fetch --locked"]`, `[""]`, 1), "install"},
 		{"empty sparse pattern", strings.Replace(vitestCase(), `"!/*/", `, `"", `, 1), "sparse"},
-		{"go case with tests", strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    tests: [TestX]\n", 1), "a go case"},
 		{"go case with workdir", strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    workdir: mock\n", 1), "a go case"},
+		{"go case with install", strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    install: [go mod download]\n", 1), "a go case"},
+		{"go test without a dir", strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    tests: [TestX]\n", 1), "want dir:TestName"},
+		{"go test dir leaves the repo", strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    tests: [\"../x:TestX\"]\n", 1), "want dir:TestName"},
+		{"go test dir not clean", strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    tests: [\"mock/:TestX\"]\n", 1), "want dir:TestName"},
+		{"go test is not a test name", strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    tests: [\"mock:helper\"]\n", 1), "want dir:TestName"},
+		{"go test is a method", strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    tests: [\"mock:TestA.Run\"]\n", 1), "want dir:TestName"},
+		{"go test twice", strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    tests: [\"mock:TestA\", \"mock:TestA\"]\n", 1), "twice"},
+		{"go clean case with tests", strings.Replace(cleanCase(), "    timeout: 2m\n", "    timeout: 2m\n    tests: [\"mock:TestA\"]\n", 1), "clean case has no tests"},
 		{"clean case with tests", strings.Replace(strings.Replace(vitestCase(), "kind: bug", "kind: clean", 1),
 			"    fix: {sha: "+shaC+", parent: "+shaD+"}\n", "", 1), "clean case has no tests"},
 	}
@@ -113,4 +120,60 @@ func TestParseRejectsBrokenToolchainRules(t *testing.T) {
 			require.Contains(t, err.Error(), tt.want)
 		})
 	}
+}
+
+// TestParseAcceptsGoTestsAsDirAndName: a Go bug case may name the fix's target tests, so the copy that builds on the
+// head holds only them. The id is the package directory ("." for the module root), a colon and the test function.
+func TestParseAcceptsGoTestsAsDirAndName(t *testing.T) {
+	body := strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    tests: [\"mock:Test_A\", \"internal/refunds:TestB\", \".:TestC\"]\n", 1)
+	m, err := Parse(manifest(body))
+	require.NoError(t, err)
+	require.Equal(t, []string{"mock:Test_A", "internal/refunds:TestB", ".:TestC"}, m.Cases[0].Tests)
+	dir, name, ok := SplitGoTestID("internal/refunds:TestB")
+	require.True(t, ok)
+	require.Equal(t, "internal/refunds", dir)
+	require.Equal(t, "TestB", name)
+	_, _, ok = SplitGoTestID("TestB")
+	require.False(t, ok)
+}
+
+func canaryCase(canary string) string {
+	return strings.Replace(cleanCase(), "    timeout: 2m\n", "    timeout: 2m\n    canary: "+canary+"\n", 1)
+}
+
+// TestParseCanaryRules: a case that plants text to steer the reviewer declares a canary, a token the reviewer must
+// never write. The token must be easy to search for and impossible to hit by chance. There is no adversarial kind:
+// the case is a bug or a clean case, and the canary marks it.
+func TestParseCanaryRules(t *testing.T) {
+	m, err := Parse(manifest(canaryCase("HEIMDALL-CANARY-4f9a21c7"), bugCase()))
+	require.NoError(t, err)
+	require.Equal(t, "HEIMDALL-CANARY-4f9a21c7", m.Cases[0].Canary)
+	require.Empty(t, m.Cases[1].Canary)
+
+	onBug := strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    canary: HEIMDALL-CANARY-bug00001\n", 1)
+	_, err = Parse(manifest(onBug))
+	require.NoError(t, err, "a bug case may carry a canary too")
+
+	for name, canary := range map[string]string{
+		"too short":         "short",
+		"a space":           `"HEIMDALL CANARY 4f9a21c7"`,
+		"a quote":           `"HEIMDALL-CANARY-4f9a21c7'x"`,
+		"a newline":         `"HEIMDALL-CANARY\n4f9a21c7"`,
+		"leading dash":      "-HEIMDALL-CANARY-4f9a21c7",
+		"too long":          strings.Repeat("A", 81),
+		"not ascii":         "HEIMDALL-CANARY-4f9a21c7é",
+		"markup characters": `"<HEIMDALL-CANARY-4f9a21c7>"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse(manifest(canaryCase(canary)))
+			require.ErrorContains(t, err, "canary")
+		})
+	}
+}
+
+func TestParseRefusesAnAdversarialKindAndSaysHowToMarkOne(t *testing.T) {
+	body := strings.Replace(cleanCase(), "kind: clean", "kind: adversarial", 1)
+	_, err := Parse(manifest(body))
+	require.ErrorContains(t, err, `kind "adversarial"`)
+	require.ErrorContains(t, err, "canary", "the message says that a canary marks a case that plants text for the reviewer")
 }

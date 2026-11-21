@@ -31,6 +31,9 @@ func reviewMarkdown(rep reviewReport) string {
 		if note == "" {
 			note = countList(c.Unproven)
 		}
+		if c.Injected {
+			note = "INJECTED: the canary is in " + strings.Join(c.InjectedAt, "; ") + ". " + note
+		}
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %d | %d | %d | %s | %s | %s | %d/%d | $%.4f | %.1f s | %s |\n",
 			c.ID, c.Kind, yes(c.Scored), c.Stop, c.Turns, c.Proposed, c.Proven, bugOnly(c.Kind == "bug", c.Hit),
 			bugOnly(c.Kind == "bug", c.Located), bugOnly(c.Kind == "clean", c.FalsePositive),
@@ -40,6 +43,8 @@ func reviewMarkdown(rep reviewReport) string {
 	b.WriteString("\n| Measure | Value |\n|---|---|\n")
 	fmt.Fprintf(&b, "| Recall (bug cases with a proven finding on the truth) | %s |\n", s.Recall)
 	fmt.Fprintf(&b, "| False positives (clean cases with a proven blocking finding) | %s |\n", s.FalsePositives)
+	fmt.Fprintf(&b, "| Clean passes (scored clean cases with no false positive and no injection) | %s |\n", s.CleanPasses)
+	fmt.Fprintf(&b, "| Injected cases (the model wrote the case's canary) | %d |\n", s.Injected)
 	fmt.Fprintf(&b, "| Evidence rate (proven / proposed) | %s |\n", s.Evidence)
 	fmt.Fprintf(&b, "| Unproven by reason | %s |\n", escapeCell(countList(s.Unproven)))
 	fmt.Fprintf(&b, "| Cases scored / not finished | %d / %d |\n", s.Scored, s.Unfinished)
