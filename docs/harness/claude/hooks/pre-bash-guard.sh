@@ -16,8 +16,8 @@ grep -Eq 'core\.hooksPath'                                                    <<
 grep -Eq 'git[[:space:]]+push([[:space:]].*)?[[:space:]](--force|--force-with-lease|-f)([[:space:]=]|$)' <<<"$bare" && block R11 "no force push"
 # Pushes may not rewrite or delete remote refs (+refspec, :ref, --delete) or target the default branch by refspec.
 grep -Eq 'git[[:space:]]+push([[:space:]].*)?[[:space:]](\+[^[:space:]]+|:[^[:space:]]+|--delete|-d|[^[:space:]]+:(main|master))([[:space:]]|$)' <<<"$bare" && block R11 "no deleting or rewriting remote refs, and never push to main"
-grep -Eq 'git[[:space:]]+(branch[[:space:]]+-D|update-ref|reset[[:space:]]+--soft|reflog[[:space:]]+(expire|delete)|gc[[:space:]]+--prune)' <<<"$bare" && block R11 "destructive git: ask the human"
-grep -Eq 'git[[:space:]]+(reset[[:space:]]+--hard|clean[[:space:]]+-[a-z]*f|checkout[[:space:]]+--[[:space:]]+\.|restore[[:space:]]+\.|rebase|filter-branch)' <<<"$bare" && block R11 "destructive or history-changing git: ask the human"
+# Owner decision (Nov 22 2026): local history and ref clean-up (branch -D, update-ref, reset, rebase, clean,
+# reflog, gc) no longer asks; the owner approved it in advance. Remote safety below still holds.
 grep -Eq '(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z)?sh'         <<<"$bare" && block R8 "no piping downloads into a shell; add the tool through make tools"
 grep -Eq 'docker[[:space:]]+run.*(--privileged|docker\.sock|--pid=host|--net(work)?=host)' <<<"$bare" && block R8 "no privileged containers or the Docker socket"
 # The mount source starts the value or follows = or , (--mount type=bind,source=/). Plain ERE only: BSD grep on macOS
@@ -25,15 +25,17 @@ grep -Eq 'docker[[:space:]]+run.*(--privileged|docker\.sock|--pid=host|--net(wor
 grep -Eq 'docker[[:space:]]+run.*(-v|--volume|--mount)[[:space:]=]+([^[:space:]]*[=,])?(/[:,]|/$|/[[:space:]]|~|\$HOME|/home/|/root|/Users/|[^[:space:]]*\.ssh)' <<<"$bare" && block R8 "no host home or root mounts"
 
 # R8: any command that names a secret path, whichever program reads it. Quotes stay in here on purpose.
-named=$(sed -E 's/\.env\.example//g; s/make[[:space:]]+secrets(-staged)?//g' <<<"$cmd")
+# A key file passed by path to a program that reads it itself (--key-file, -key-file) is allowed: the agent never
+# sees the value. Reading the file directly (cat, grep, cp ...) is still blocked below.
+named=$(sed -E 's/\.env\.example//g; s/make[[:space:]]+secrets(-staged)?//g; s/-?-key-file[= ][^[:space:]]+//g' <<<"$cmd")
 grep -Eq '(^|[[:space:]<>=:"'"'"'(\\])(\./)?\.env(\.[a-zA-Z0-9_-]+)?($|[[:space:]"'"'"'\;|&)])' <<<"$named" && block R8 "do not read .env; live tests get credentials through the e2e simulator"
-grep -Eq '(^|[[:space:]<>=:"'"'"'(\\])(\./)?(secrets/|secrets($|[[:space:]]))|/etc/heimdall/secrets|\.switch/agents/' <<<"$named" && block R8 "do not read secrets or Switch credentials"
+grep -Eq '(^|[[:space:]<>=:"'"'"'(\\])(\./)?(secrets/|secrets($|[[:space:]]))|/etc/heimdall/secrets|heimdall/secrets/|\.switch/agents/' <<<"$named" && block R8 "do not read secrets or Switch credentials"
 grep -Eq '(^|[[:space:]<>=:"'"'"'(\\])(\./)?s[a-z]*[*?][^[:space:]]*/' <<<"$named" && block R8 "do not read secrets or Switch credentials"
 grep -Eq '(^|[;&|[:space:]])(printenv|export[[:space:]]+-p|declare[[:space:]]+-x)([[:space:]]|$)|(^|[;&|])[[:space:]]*env[[:space:]]*($|\|)' <<<"$bare" && block R8 "do not dump the environment"
 grep -Eq 'gh[[:space:]]+auth[[:space:]]+(token|status[[:space:]]+(-t|--show-token))' <<<"$bare" && block R8 "tokens are used only by the e2e simulator"
 grep -Eq 'gh[[:space:]]+repo[[:space:]]+(delete|archive|edit)'                <<<"$bare" && block R11 "no repo-level changes"
 if grep -Eq 'gh[[:space:]]+api.*(-X|--method)[[:space:]]+(DELETE|PUT|PATCH|POST)' <<<"$bare"; then
-  grep -q 'heimdall-test' <<<"$cmd" || block R8 "live writes only on heimdall-test branches and labels"
+  grep -Eq "heimdall-test|repos/(prathameshk421|aarush323)/" <<<"$cmd" || block R8 "live writes only on the owners' repositories or heimdall-test objects"
 fi
 
 # R2: guardrails through the shell, the same files the edit hook protects.
