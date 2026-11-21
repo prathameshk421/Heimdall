@@ -190,7 +190,7 @@ func (r *Runner) Activate(name string, artifact []byte) (RepoProfile, error) {
 }
 
 // persistProfile writes the artifact into the durable promoted directory atomically. Idempotent:
-// an equal existing file stays as it is.
+// an equal existing file stays as it is; a different one is replaced.
 func (r *Runner) persistProfile(name string, artifact []byte) error {
 	if r.profilesDir == "" {
 		return nil
@@ -200,12 +200,11 @@ func (r *Runner) persistProfile(name string, artifact []byte) error {
 	}
 	final := filepath.Join(r.profilesDir, name+".yaml")
 	existing, err := os.ReadFile(final) // #nosec G304 -- name is validated against ProfileName, dir is runner-owned
-	if err == nil {
-		if bytes.Equal(existing, artifact) {
-			return nil
-		}
-		return fmt.Errorf("promoted profile %q differs from the stored copy", name)
-	} else if !errors.Is(err, os.ErrNotExist) {
+	// An equal copy is a replay. A different one is a later promotion of a revised profile, which the server pushes
+	// only after a person promoted it (D184); it replaces the stored copy atomically below.
+	if err == nil && bytes.Equal(existing, artifact) {
+		return nil
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read stored promoted profile %q: %w", name, err)
 	}
 	tmp := filepath.Join(r.profilesDir, name+".yaml tmp")

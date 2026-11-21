@@ -195,3 +195,25 @@ func TestARestartedRunnerLoadsAPromotionWhoseCheckUsesAnImageName(t *testing.T) 
 	_, ok := again.specNamed("acme-pay")
 	require.True(t, ok)
 }
+
+// A revised profile promoted later replaces the stored one, and a restarted runner loads the newer one (live, Nov 21:
+// the revision with a golangci-lint check was refused as "differs from the stored copy", so it could never go live).
+func TestALaterPromotionReplacesTheStoredProfile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "promoted")
+	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err)
+	base := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n"
+	_, err = r.Activate("acme-pay", []byte(base))
+	require.NoError(t, err)
+	revised := strings.Replace(base, "tests/heimdall", "tests/accept", 1)
+	spec, err := r.Activate("acme-pay", []byte(revised))
+	require.NoError(t, err, "a later promotion replaces the earlier one")
+	require.Equal(t, "tests/accept", spec.Paths.Tests)
+
+	again, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err)
+	got, ok := again.specNamed("acme-pay")
+	require.True(t, ok)
+	require.Equal(t, "tests/accept", got.Paths.Tests, "a restart loads the newer promotion")
+}
