@@ -44,6 +44,8 @@ type commandRuntime struct {
 	profiles  mcp.Profiles
 	files     mcp.KnowledgeFiles
 	processor *collaboration.Processor
+	// dead reads a change's jobs that will not run again, so `resume` can release their row; nil reads none.
+	dead ports.DeadEffects
 }
 
 func newCommandRuntime(events ports.EventStore, ad adapters, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, in prIntakeHandler, profiles mcp.Profiles) (*commandRuntime, error) {
@@ -354,12 +356,7 @@ func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Targe
 		}
 		return "Already recorded.", nil
 	}
-	var events []change.Event
-	if review, ok := cmd.(commands.Review); ok {
-		events, err = r.reviewerSelectionEvents(ctx, target, person, source, sourceRef, review)
-	} else {
-		events, err = r.commandEvents(target.ChangeID, state, person, source, sourceRef, cmd)
-	}
+	events, err := r.executeEvents(ctx, target, state, person, source, sourceRef, cmd)
 	if err != nil {
 		return "", err
 	}
@@ -461,13 +458,30 @@ func (r *commandRuntime) reviewerSelectionEvents(ctx context.Context, target col
 	return []change.Event{ev}, nil
 }
 
+// executeEvents are the events a command writes on its change. A review and a resume read outside the change's own
+// events: the reviewer pool, and the dead jobs that are in the outbox (D188).
+func (r *commandRuntime) executeEvents(ctx context.Context, target collaboration.Target, state []change.Event, person string, source commands.Source, sourceRef string, cmd commands.Command) ([]change.Event, error) {
+	if review, ok := cmd.(commands.Review); ok {
+		return r.reviewerSelectionEvents(ctx, target, person, source, sourceRef, review)
+	}
+	if resume, ok := cmd.(commands.Resume); ok && r.dead != nil {
+		dead, err := r.dead.DeadEffects(ctx, target.ChangeID)
+		if err != nil {
+			return nil, fmt.Errorf("read the dead jobs of %s: %w", target.ChangeID, err)
+		}
+		return r.resumeEvents(target.ChangeID, state, person, source, sourceRef,
+			change.Actor{Kind: change.ActorHuman, ID: change.ActorID(person)}, resume, dead)
+	}
+	return r.commandEvents(target.ChangeID, state, person, source, sourceRef, cmd)
+}
+
 func (r *commandRuntime) commandEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, cmd commands.Command) ([]change.Event, error) {
 	actor := change.Actor{Kind: change.ActorHuman, ID: change.ActorID(person)}
 	if challenge, ok := cmd.(commands.Challenge); ok {
 		return r.challengeEvents(cid, state, person, source, sourceRef, actor, challenge)
 	}
 	if resume, ok := cmd.(commands.Resume); ok {
-		return r.resumeEvents(cid, state, person, source, sourceRef, actor, resume)
+		return r.resumeEvents(cid, state, person, source, sourceRef, actor, resume, nil)
 	}
 	if reprofile, ok := cmd.(commands.Reprofile); ok {
 		return r.reprofileEvents(cid, state, person, source, sourceRef, actor, reprofile)

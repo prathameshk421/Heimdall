@@ -41,6 +41,7 @@ func assembleCollaboration(store *postgres.Store, ad adapters, eng reconcile.Rec
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	runtime.dead = store
 	stream, ok := ad.chat.(ports.ChatStream)
 	if !ok {
 		return nil, nil, nil, errors.New("selected chat adapter does not implement the Switch room stream")

@@ -83,7 +83,9 @@ func subjectOf(ra RowAction) string {
 	return ""
 }
 
-// rowOfJob is the row whose job each effect kind is; `heimdall resume <change> <row>` runs it again.
+// RowOfJob is the row whose job an effect kind is; `heimdall resume <change> <row>` runs it again.
+func RowOfJob(k EffectKind) string { return rowOfJob(k) }
+
 func rowOfJob(k EffectKind) string {
 	switch k {
 	case EffectRoomOpen:

@@ -39,7 +39,13 @@ func stepEscalatedNow(state []change.Event, step string) (bool, error) {
 
 // resumable reports whether a person may start a new round of step: it escalated, or its seats used up their failures
 // and the row is capped (D173). The cap asks people to resume and never writes step.escalated itself.
-func resumable(state []change.Event, step string) (bool, error) {
+func resumable(state []change.Event, step string, dead []change.DeadJob) (bool, error) {
+	// A job of the row that failed for good or is in doubt: Missing tells people to resume the row (D188).
+	for _, d := range dead {
+		if change.RowOfJob(d.Kind) == step {
+			return true, nil
+		}
+	}
 	escalated, err := stepEscalatedNow(state, step)
 	if err != nil {
 		return false, err
@@ -54,10 +60,10 @@ func resumable(state []change.Event, step string) (bool, error) {
 	return change.RowCapped(view, step), nil
 }
 
-// resumeEvents releases an escalated or capped step. It refuses a step that is neither, so a resume cannot restart a
+// resumeEvents releases an escalated or capped step, or a row with a dead job. It refuses any other step, so a resume cannot restart a
 // step that is running. The one event it writes, step.resumed, names the person who released it.
-func (r *commandRuntime) resumeEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, actor change.Actor, cmd commands.Resume) ([]change.Event, error) {
-	ok, err := resumable(state, cmd.Step)
+func (r *commandRuntime) resumeEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, actor change.Actor, cmd commands.Resume, dead []change.DeadJob) ([]change.Event, error) {
+	ok, err := resumable(state, cmd.Step, dead)
 	if err != nil {
 		return nil, fmt.Errorf("read step %s: %w", cmd.Step, err)
 	}

@@ -79,7 +79,7 @@ func TestResumeOfACappedProfileRowWritesOneStepResumed(t *testing.T) {
 	state := resumeState(t)
 	require.True(t, change.RowCapped(mustFold(t, state), "profile"), "the fixture caps the profile row")
 	got, err := runtime.resumeEvents(id.ChangeID("pr-acme-pay-7"), state, "ana", commands.SourceChat, "message-9",
-		change.Actor{Kind: change.ActorHuman, ID: "ana"}, commands.Resume{Step: "profile"})
+		change.Actor{Kind: change.ActorHuman, ID: "ana"}, commands.Resume{Step: "profile"}, nil)
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	require.Equal(t, change.EventStepResumed, got[0].Type)
@@ -93,10 +93,28 @@ func TestResumeOfACappedProfileRowWritesOneStepResumed(t *testing.T) {
 func TestResumeOfARowThatIsNeitherEscalatedNorCappedIsRefused(t *testing.T) {
 	runtime := &commandRuntime{ids: ids.New(), clock: clock.System{}}
 	_, err := runtime.resumeEvents(id.ChangeID("pr-acme-pay-7"), resumeState(t), "ana", commands.SourceChat, "message-10",
-		change.Actor{Kind: change.ActorHuman, ID: "ana"}, commands.Resume{Step: "review"})
+		change.Actor{Kind: change.ActorHuman, ID: "ana"}, commands.Resume{Step: "review"}, nil)
 	require.Error(t, err)
 	require.ErrorIs(t, err, collaboration.ErrRefused)
 	require.Contains(t, err.Error(), "not escalated")
+}
+
+// A row whose job failed for good is resumed, as Missing tells people to do: the job's key carries the row's resume
+// count, so step.resumed starts a fresh job (live, Nov 21: run_checks on PR #18 died after 8 timeouts, D188).
+func TestResumeOfARowWithADeadJobWritesOneStepResumed(t *testing.T) {
+	runtime := &commandRuntime{ids: ids.New(), clock: clock.System{}}
+	dead := []change.DeadJob{{Key: "pr-acme-pay-7/checks/9f1c2ab/r0", Kind: change.EffectRunChecks, Attempts: 8, LastError: "ingest checks.reported"}}
+	got, err := runtime.resumeEvents(id.ChangeID("pr-acme-pay-7"), resumeState(t), "ana", commands.SourceChat, "message-11",
+		change.Actor{Kind: change.ActorHuman, ID: "ana"}, commands.Resume{Step: "checks"}, dead)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	resumed, ok := mustPayload[change.StepResumed](got[0])
+	require.True(t, ok)
+	require.Equal(t, change.StepResumed{Step: "checks", By: "ana"}, resumed)
+
+	_, err = runtime.resumeEvents(id.ChangeID("pr-acme-pay-7"), resumeState(t), "ana", commands.SourceChat, "message-12",
+		change.Actor{Kind: change.ActorHuman, ID: "ana"}, commands.Resume{Step: "verify"}, dead)
+	require.ErrorIs(t, err, collaboration.ErrRefused, "a dead job of another row releases nothing")
 }
 
 func mustFold(t *testing.T, state []change.Event) change.View {
