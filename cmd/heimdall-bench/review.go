@@ -12,10 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agentloop"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/bench"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -191,8 +189,12 @@ type reviewCase struct {
 	ToolSeconds  float64 `json:"tool_seconds,omitempty"`
 	// Nudges is the number of times the loop asked again after a text answer, and Transcript the bounded record of
 	// each turn, so a run that proposes nothing explains itself.
-	Nudges     int                   `json:"nudges,omitempty"`
-	Transcript []turnRecord          `json:"transcript,omitempty"`
+	Nudges     int          `json:"nudges,omitempty"`
+	Transcript []turnRecord `json:"transcript,omitempty"`
+	// Retries is the number of model calls the loop sent again after a rate limit or a server error, and FailedCall
+	// the attempts of the call that ended the case, when one did.
+	Retries    int                   `json:"retries,omitempty"`
+	FailedCall []attemptRecord       `json:"failed_call,omitempty"`
 	Error      string                `json:"error,omitempty"`
 	Truth      *bench.TruthMap       `json:"truth_on_head,omitempty"`
 	Findings   []bench.ScoredFinding `json:"findings"`
@@ -216,15 +218,19 @@ func reviewRun(ctx context.Context, o reviewOptions, r runner, model ports.Model
 		GoVersion: base.GoVersion, Manifest: o.manifest, Command: o.commandFor, Model: o.model, Price: o.price,
 		MaxCostUSD: o.maxCost, PerCaseUSD: o.perCase, BlockSeverity: string(o.blockAt), Sandbox: sandboxNote}
 	sb := newLocalSandbox()
+	var breaker providerBreaker
 	for _, c := range cases {
 		if rep.Stopped != "" {
 			rep.Cases = append(rep.Cases, reviewCase{CaseScore: bench.CaseScore{ID: c.ID, Kind: c.Kind}, Error: "not run: " + rep.Stopped})
 			continue
 		}
-		rc, stop := reviewOne(ctx, o, r, sb, capped, costCap, c)
+		rc, stop := reviewOne(ctx, o, r, sb, capped, costCap, &breaker, c)
 		rep.Cases = append(rep.Cases, rc)
-		if stop {
+		switch {
+		case stop:
 			rep.Stopped = "cost cap"
+		case breaker.tripped():
+			rep.Stopped = stopProviderFailing
 		}
 		writeDiagnostic(stderr, fmt.Sprintf("%-20s %-5s scored=%-5v proposed=%d proven=%d hit=%v fp=%v $%.4f %6.1fs %s\n",
 			c.ID, c.Kind, rc.Scored, rc.Proposed, rc.Proven, rc.Hit, rc.FalsePositive, rc.CostUSD, rc.Seconds, rc.Error))
@@ -290,9 +296,10 @@ func pickCases(cases []bench.Case, ids []string) ([]bench.Case, error) {
 	return out, nil
 }
 
-// reviewOne replays one case, runs the reviewer and proves its findings. stop is true when the cost cap ended it.
+// reviewOne replays one case, runs the reviewer and proves its findings. stop is true when the cost cap ended it. The
+// breaker reads the loop's result.
 func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox, model ports.ModelChat,
-	costCap *bench.CostCap, c bench.Case) (rc reviewCase, stop bool) {
+	costCap *bench.CostCap, breaker *providerBreaker, c bench.Case) (rc reviewCase, stop bool) {
 	start := time.Now()
 	rc = reviewCase{CaseScore: bench.CaseScore{ID: c.ID, Kind: c.Kind}}
 	defer func() { rc.Seconds = time.Since(start).Round(100 * time.Millisecond).Seconds() }()
@@ -316,6 +323,7 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 	rc.Head, rc.Base, rc.Fixed, rc.Truth = rep.head, rep.base, rep.fixed, rep.truth
 	res, runErr := runReviewer(ctx, o, model, budget, c, rep)
 	rc.recordLoop(res)
+	breaker.observe(res)
 	if runErr != nil {
 		rc.Error = runErr.Error()
 		return rc, errors.Is(runErr, bench.ErrCostCap)
@@ -330,6 +338,12 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 		rc.Error = fmt.Sprintf("stopped by the per-case budget ($%.2f)", o.perCase)
 		return rc, false
 	}
+	rc.proveAndScore(ctx, o, c, rep)
+	return rc, false
+}
+
+// proveAndScore proves each proposed finding on the case's trees and scores the case.
+func (rc *reviewCase) proveAndScore(ctx context.Context, o reviewOptions, c bench.Case, rep *replay) {
 	for i, p := range rep.proposals {
 		rc.Findings = append(rc.Findings, rep.prove(ctx, i+1, p))
 	}
@@ -341,19 +355,13 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 	score.ID, score.Scored = c.ID, true
 	score.CostUSD, score.InputTokens, score.CachedTokens, score.OutputTokens = rc.CostUSD, rc.InputTokens, rc.CachedTokens, rc.OutputTokens
 	rc.CaseScore = score
-	return rc, false
 }
 
 // runReviewer runs the reviewer through the product's agent loop (internal/app/agentloop, behind ports.AgentLoop), with
-// the per-case budget, so the bench measures the loop that ships.
+// the per-case budget and the retry rule on the real clock, so the bench measures the loop that ships.
 func runReviewer(ctx context.Context, o reviewOptions, model ports.ModelChat, budget float64, c bench.Case, rep *replay) (ports.AgentResult, error) {
-	loop, err := agentloop.NewRunner(model, clock.System{}, ports.ModelPrice{InputPerM: o.price.InputPerM,
-		CachedInputPerM: o.price.CachedInputPerM, OutputPerM: o.price.OutputPerM})
-	if err != nil {
-		return ports.AgentResult{}, fmt.Errorf("agent loop: %w", err)
-	}
 	tb := newToolbox(append(rep.tools(), finishReview()))
-	return loop.Run(ctx, ports.AgentRun{Model: o.model, System: reviewerPrompt(c), User: reviewerUser(c, rep),
+	return reviewLoop(ctx, model, systemRetry(), o.price, ports.AgentRun{Model: o.model, System: reviewerPrompt(c), User: reviewerUser(c, rep),
 		Tools: tb.specs(), FinalTools: []string{finalTool}, Dispatcher: tb,
 		Budget:          ports.AgentBudget{USD: budget, InputTokens: inputTokensPerCase, OutputTokens: outputTokensPerCas},
 		MaxOutputTokens: maxOutputPerAnswer, MaxTurns: maxTurnsPerCase, Deadline: time.Now().Add(caseDeadline),
@@ -374,6 +382,9 @@ type turnRecord struct {
 	ToolChoice string            `json:"tool_choice,omitempty"`
 	Fallback   string            `json:"fallback,omitempty"`
 	CostUSD    float64           `json:"cost_usd"`
+	// Attempts is the number of times the call was sent, and Failed its failed attempts (kind, status, wait).
+	Attempts int             `json:"attempts,omitempty"`
+	Failed   []attemptRecord `json:"failed,omitempty"`
 }
 
 type callRecord struct {
@@ -385,7 +396,8 @@ func turnRecords(turns []ports.AgentTurn) []turnRecord {
 	out := make([]turnRecord, 0, len(turns))
 	for _, t := range turns {
 		r := turnRecord{Text: t.Text, ToolCalls: t.ToolCalls, Finish: t.Finish, TextCalls: t.TextCalls, Nudged: t.Nudged,
-			ToolChoice: string(t.ToolChoice), Fallback: t.Fallback, CostUSD: t.CostUSD}
+			ToolChoice: string(t.ToolChoice), Fallback: t.Fallback, CostUSD: t.CostUSD, Attempts: t.Attempts,
+			Failed: attemptRecords(t.Failed)}
 		for _, c := range t.Calls {
 			r.Calls = append(r.Calls, callRecord(c))
 		}
@@ -399,6 +411,7 @@ func (rc *reviewCase) recordLoop(res ports.AgentResult) {
 	rc.Stop, rc.Turns, rc.CostUSD = res.Stop, len(res.Turns), res.CostUSD
 	rc.InputTokens, rc.CachedTokens, rc.OutputTokens = res.Usage.InputTokens, res.Usage.CachedInputTokens, res.Usage.OutputTokens
 	rc.Nudges, rc.Transcript = res.Nudges, turnRecords(res.Turns)
+	rc.Retries, rc.FailedCall = res.Retries, attemptRecords(res.FailedCall)
 	for _, t := range res.Turns {
 		rc.ModelSeconds += t.ModelLatency.Seconds()
 		rc.ToolSeconds += t.ToolLatency.Seconds()

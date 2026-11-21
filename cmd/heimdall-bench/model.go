@@ -47,7 +47,8 @@ func liveModel(o reviewOptions) (ports.ModelChat, error) {
 
 // cappedModel holds the run's hard cost cap in front of any model. Before each call it bounds the call's cost
 // (bench.Price.CallBound) and refuses with bench.ErrCostCap when the spend could pass the cap. After each call it adds
-// the cost the adapter reports.
+// the cost the adapter reports, also for a failed call that the provider billed. It sees every attempt of a retried
+// call, so a retry passes the same cap.
 type cappedModel struct {
 	inner ports.ModelChat
 	cap   *bench.CostCap
@@ -64,6 +65,11 @@ func (m cappedModel) Complete(ctx context.Context, req ports.ModelRequest) (port
 	}
 	resp, err := m.inner.Complete(ctx, req)
 	if err != nil {
+		if resp.CostUSD != 0 {
+			if addErr := m.cap.Add(resp.CostUSD); addErr != nil {
+				return ports.ModelResponse{}, fmt.Errorf("%w: %w", bench.ErrCostCap, addErr)
+			}
+		}
 		return resp, err
 	}
 	if err := m.cap.Add(resp.CostUSD); err != nil {
