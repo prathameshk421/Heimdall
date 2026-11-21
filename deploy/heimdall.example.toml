@@ -102,3 +102,50 @@ resolver = "resolver"
 tracker_project = "KAN"
 repo = "aarush323/PBL_TOS_RISK_ANALYZER"
 base_branch = "heimdall-demo"
+
+# The web board (the change list, change pages, review report and live stream). Without this section the server
+# does not serve the board at all. With it, every board route needs a sign-in, and only the people listed below get
+# in. Sign-in is the OAuth authorization code flow with PKCE.
+#   mode                  "oidc" (Okta, Google, Keycloak, Entra ID), "github", or "off" (developer laptop only:
+#                         no sign-in, and the server refuses to start unless listen is 127.0.0.1, [::1] or localhost).
+#   issuer                oidc only. The issuer URL; the server reads <issuer>/.well-known/openid-configuration.
+#   client_id             The client id registered at the provider.
+#   client_secret_secret  Secret file name under secrets_dir that holds the client secret.
+#   session_key_secret    Secret file name that holds 32 random bytes in base64: openssl rand -base64 32.
+#                         It seals the session cookies. A new key signs everyone out.
+#   redirect_url          This server's public URL plus /auth/callback. Register the same URL at the provider.
+#   session_ttl           How long a sign-in lasts, from "5m" to "24h". Default "8h".
+#   login_claim           oidc only. "email" (default; the provider must mark it verified) or "sub".
+#   [board_auth.people.<person>]
+#                         <person> is the name in the people map of heimdall.yaml. login is the email, subject or
+#                         GitHub login that proves this person. role is viewer, approver or admin.
+#
+# [board_auth]
+# mode = "oidc"
+# issuer = "https://example.okta.com/oauth2/default"
+# client_id = "0oa1b2c3d4heimdall"
+# client_secret_secret = "board_client_secret"
+# session_key_secret = "board_session_key"
+# redirect_url = "https://heimdall.example.com/auth/callback"
+# session_ttl = "8h"
+# login_claim = "email"
+#
+# [board_auth.people.alice]
+# login = "alice@example.com"
+# role = "admin"
+#
+# [board_auth.people.dana]
+# login = "dana@example.com"
+# role = "viewer"
+#
+# GitHub instead (an OAuth App, callback URL = redirect_url; logins are matched without case):
+# [board_auth]
+# mode = "github"
+# client_id = "Ov23liExample"
+# client_secret_secret = "board_client_secret"
+# session_key_secret = "board_session_key"
+# redirect_url = "https://heimdall.example.com/auth/callback"
+#
+# [board_auth.people.alice]
+# login = "alice-gh"
+# role = "approver"

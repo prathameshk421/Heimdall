@@ -13,6 +13,9 @@ const listHTML = `<!doctype html>
 <header>
 <h1>Heimdall changes</h1>
 <p class="note">Read only. Each row comes from the event log of one change.</p>
+{{- if .SignOut}}
+<p class="note"><a href="{{.SignOut}}">Sign out</a></p>
+{{- end}}
 </header>
 <main>
 {{- if .Rows}}
@@ -64,7 +67,8 @@ const detailHTML = `<!doctype html>
 </head>
 <body>
 <header>
-<p><a href="/">All changes</a> · <a href="/changes/{{.D.ID}}/report">Review report</a></p>
+<p><a href="/">All changes</a> · <a href="/changes/{{.D.ID}}/report">Review report</a>
+{{- if .SignOut}} · <a href="{{.SignOut}}">Sign out</a>{{end}}</p>
 <h1>{{.D.Ticket}}</h1>
 <dl class="facts">
 <dt>Repository</dt><dd>{{.D.Repo}}</dd>

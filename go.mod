@@ -6,6 +6,8 @@ toolchain go1.27.4
 
 require (
 	filippo.io/age v1.3.2
+	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/invopop/jsonschema v0.14.0
@@ -19,6 +21,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	github.com/zricethezav/gitleaks/v8 v8.30.1
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 )
