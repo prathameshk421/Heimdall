@@ -270,7 +270,7 @@ type Kind struct {
 | tests | `ticket` (title, description, each criterion with id); `profile` (seam, tests dir, test kinds); `repo_map` (base); `rejection` (last reasons; attempt n of m; retries only); `answers` | `read_code`, `search_code`, `ask_humans`, `submit_tests` | `testset.Submission` |
 | review | `pr` (title, body, author, base, head); `files` (changed files with +/- counts); `diff` (inline up to 40 KB, else a note); `criteria` (when a ticket is linked); `obligations` (rule cards whose `applies_to` globs match a changed file); `leads` (new check results on head, B7); `prior_findings`; `team_memory`; `repo_map` (head) | `read_code`, `search_code`, `find_symbol`, `run_check`, `ask_knowledge`, `read_card`, `stage_knowledge`, `submit_review` | `finding.Review` |
 | verdict | `case` (the finding, its evidence, the challenge); `prior_decisions`; `diff` | `read_code`, `run_check`, `read_card`, `ask_knowledge`, `submit_verdict` | `deliberation.Verdict` |
-| profile | `repo_map`; `stack_hints` | `read_code`, `search_code`, `propose_profile`, `trial_profile` | `Profile@1` |
+| profile | `repo_map`; `stack_hints`; `previous_trial` | `read_code`, `search_code`, `propose_profile` (the trial is the profile row's job, D175) | `Profile@1` |
 
 - **get_task** returns one JSON object:
   `{"task": {"id", "kind", "change", "base", "head", "deadline"}, "instructions": "<skill text>",

@@ -92,9 +92,9 @@ func TestProfileLifecycleToolsEnforceProfilerAndMappedHumanBoundaries(t *testing
 	require.Equal(t, workflow.RoleProfiler, profiles.lastPrincipal.Role)
 	require.Equal(t, []string{strings.Repeat("a", 64)}, r.reviews.proposals, "the proposal is recorded on the change, which ends the task (D175)")
 
-	trial := r.call("trial_profile", `{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sha":"a01b2c3d4e5f60718293a4b5c6d7e8f901234567"}`)
-	require.False(t, trial.IsError, trial.text())
-	require.Equal(t, 1, profiles.trials)
+	// Heimdall runs the trial after a person approves (D175); the agent has no trial tool.
+	trial := r.rpc("tools/call", `{"name":"trial_profile","arguments":{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sha":"a01b2c3d4e5f60718293a4b5c6d7e8f901234567"}}`)
+	require.NotNil(t, trial.Error, "trial_profile is not a tool")
 
 	// Approving and promoting are for a mapped human only: an agent token cannot, whatever its role.
 	const profileID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -715,4 +715,13 @@ func TestGetTaskCarriesTheReviewersMatchingCardsWithoutBeingAsked(t *testing.T) 
 	author := newRig(t, workflow.RoleTestAuthor)
 	author.server.deps.Cards = &fakeCards{forText: "must not appear"}
 	require.NotContains(t, author.call("get_task", `{}`).text(), "must not appear")
+}
+
+// A profiler proposing again after a failed trial reads that trial in get_task (D175).
+func TestGetTaskShowsTheProfilerItsPreviousTrial(t *testing.T) {
+	r := newRig(t, workflow.RoleProfiler)
+	r.server.deps.Profiles = &fakeProfiles{previousTrial: "proposal ccccccc failed its trial: 0 passed, 1 failed, 0 errored"}
+	res := r.call("get_task", `{}`)
+	require.False(t, res.IsError, res.text())
+	require.Contains(t, res.text(), "proposal ccccccc failed its trial")
 }

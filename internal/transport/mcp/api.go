@@ -157,7 +157,8 @@ type KnowledgeFiles interface {
 type Profiles interface {
 	Propose(context.Context, Principal, string, []byte) (ports.ProfileProposal, bool, error)
 	Approve(context.Context, Principal, string) error
-	Trial(context.Context, Principal, string, id.SHA) (ports.ProfileTrial, error)
+	// PreviousTrial is the failed trial of the repository's newest proposal, empty when there is none (D175).
+	PreviousTrial(ctx context.Context, repo string) (string, error)
 	Promote(context.Context, Principal, string) error
 }
 

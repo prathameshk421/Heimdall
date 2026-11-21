@@ -205,7 +205,7 @@ func assembleProfileLifecycle(ad adapters, store ports.ProfileStore, blobs ports
 	if err != nil {
 		return nil, err
 	}
-	return profileAPI{service: service}, nil
+	return profileAPI{service: service, store: store, blobs: blobs}, nil
 }
 
 // newProfileService builds the sandbox profile lifecycle on the runner. The MCP tools and the profile_trial executor

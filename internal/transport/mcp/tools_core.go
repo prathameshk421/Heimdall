@@ -45,7 +45,6 @@ func (s *Server) coreTools() ([]tool, error) {
 	if s.deps.Profiles != nil {
 		tools = append(tools,
 			tool{name: "propose_profile", description: "Propose a bounded repository sandbox profile for human review and return its id. Use it when you are the profiler with a complete artifact; do not use it to change a promoted profile. Example: propose_profile {\"artifact\":\"languages: [go]\"}", schema: proposeProfileSchema(), handle: s.proposeProfile},
-			tool{name: "trial_profile", description: "Run an approved profile once in an isolated runner and return the JUnit result. Use it after the profile is approved; do not run it on an unapproved id. Example: trial_profile {\"id\":\"<64 hex>\",\"sha\":\"<commit>\"}", schema: trialProfileSchema(), handle: s.trialProfile},
 			tool{name: "approve_profile", description: "Approve a sandbox profile for a trial, as the mapped human owner. For people only; agents cannot call it. Example: approve_profile {\"id\":\"<64 hex>\"}", schema: profileIDSchema(), humanOnly: true, handle: s.approveProfile},
 			tool{name: "promote_profile", description: "Promote an approved profile after a passing trial so production jobs use it. For people only; agents cannot call it. Example: promote_profile {\"id\":\"<64 hex>\"}", schema: profileIDSchema(), humanOnly: true, handle: s.promoteProfile},
 		)
@@ -55,10 +54,6 @@ func (s *Server) coreTools() ([]tool, error) {
 
 func proposeProfileSchema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"artifact":{"type":"string","minLength":1,"maxLength":65536}},"required":["artifact"],"additionalProperties":false}`)
-}
-
-func trialProfileSchema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"sha":{"type":"string","pattern":"^[0-9a-f]{40}$"}},"required":["id","sha"],"additionalProperties":false}`)
 }
 
 func profileIDSchema() json.RawMessage {
@@ -95,24 +90,6 @@ func (s *Server) proposeProfile(ctx context.Context, p Principal, args json.RawM
 		Created bool   `json:"created"`
 		State   string `json:"state"`
 	}{proposal.ID, created, string(proposal.State)})
-}
-
-func (s *Server) trialProfile(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
-	var input struct {
-		ID  string `json:"id"`
-		SHA string `json:"sha"`
-	}
-	if err := decodeArgs(args, &input); err != nil {
-		return "", err
-	}
-	if p.Role != workflow.RoleProfiler {
-		return "", refusal("Only the profiler may run a proposed profile trial.")
-	}
-	trial, err := s.deps.Profiles.Trial(ctx, p, input.ID, id.SHA(input.SHA))
-	if err != nil {
-		return "", fmt.Errorf("run sandbox profile trial: %w", err)
-	}
-	return marshalText(trial)
 }
 
 func (s *Server) approveProfile(ctx context.Context, p Principal, args json.RawMessage) (string, error) {

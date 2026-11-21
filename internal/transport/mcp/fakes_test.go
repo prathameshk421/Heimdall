@@ -65,8 +65,9 @@ func testEnvelope(role workflow.Role) workflow.TaskEnvelope {
 }
 
 type fakeProfiles struct {
-	proposals, approvals, trials, promotions int
-	lastPrincipal                            Principal
+	proposals, approvals, previousTrials, promotions int
+	previousTrial                                    string
+	lastPrincipal                                    Principal
 }
 
 func (f *fakeProfiles) Propose(_ context.Context, p Principal, repo string, artifact []byte) (ports.ProfileProposal, bool, error) {
@@ -79,10 +80,9 @@ func (f *fakeProfiles) Approve(_ context.Context, p Principal, _ string) error {
 	f.lastPrincipal = p
 	return nil
 }
-func (f *fakeProfiles) Trial(_ context.Context, p Principal, _ string, sha id.SHA) (ports.ProfileTrial, error) {
-	f.trials++
-	f.lastPrincipal = p
-	return ports.ProfileTrial{Outcome: ports.TrialPassed, SHA: sha}, nil
+func (f *fakeProfiles) PreviousTrial(context.Context, string) (string, error) {
+	f.previousTrials++
+	return f.previousTrial, nil
 }
 func (f *fakeProfiles) Promote(_ context.Context, p Principal, _ string) error {
 	f.promotions++
