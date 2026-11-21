@@ -208,6 +208,50 @@ func TestReplayACleanCaseWithAScriptedModel(t *testing.T) {
 	require.Equal(t, bench.Ratio{Num: 0, Den: 0}, rep.Summary.Recall, "no bug case ran")
 }
 
+func TestReplayAT3codeVitestCaseWithAScriptedModel(t *testing.T) {
+	// A real TypeScript case from pingdotgg/t3code: the reviewer's vitest file runs in a sparse plain tree after
+	// pnpm install, fails twice on the change that brought the bug in, and passes on the fix.
+	o := replayOptions(t, "t3code-38193", testingCapUSD)
+	o.out = filepath.Join(t.TempDir(), "t3code-vitest.json")
+	o.md = ""
+	model := loadScripts(t, "t3code-38193")
+	code, err := reviewRun(context.Background(), o, execRunner{}, model, testWriter{t})
+	require.NoError(t, err)
+	require.Equal(t, exitAgrees, code)
+
+	rep := readReport(t, o.out)
+	require.Len(t, rep.Cases, 1)
+	ts := rep.Cases[0]
+	require.True(t, ts.Scored, ts.Error)
+	require.Equal(t, "submitted", string(ts.Stop))
+	require.Equal(t, 1, ts.Proposed)
+	require.Equal(t, 1, ts.Proven, "the no-break space test fails twice on the head and passes on the fix")
+	require.True(t, ts.Hit, "cliArgs.ts 43-45 overlaps the truth mapped onto the head")
+	require.Len(t, ts.Findings[0].Runs, 3)
+}
+
+func TestReplayAT3codeCargoCaseWithAScriptedModel(t *testing.T) {
+	// A real Rust case from pingdotgg/t3code: the reviewer's module file is declared in the binary crate's root, runs
+	// under cargo test, fails twice on the change that brought the bug in (on macOS), and passes on the fix.
+	o := replayOptions(t, "t3code-19745", testingCapUSD)
+	o.out = filepath.Join(t.TempDir(), "t3code-cargo.json")
+	o.md = ""
+	model := loadScripts(t, "t3code-19745")
+	code, err := reviewRun(context.Background(), o, execRunner{}, model, testWriter{t})
+	require.NoError(t, err)
+	require.Equal(t, exitAgrees, code)
+
+	rep := readReport(t, o.out)
+	require.Len(t, rep.Cases, 1)
+	rs := rep.Cases[0]
+	require.True(t, rs.Scored, rs.Error)
+	require.Equal(t, "submitted", string(rs.Stop))
+	require.Equal(t, 1, rs.Proposed)
+	require.Equal(t, 1, rs.Proven, "the discovery test fails twice on the head and passes on the fix")
+	require.True(t, rs.Hit, "main.rs 400 overlaps the truth mapped onto the head")
+	require.Len(t, rs.Findings[0].Runs, 3)
+}
+
 func TestReplayStopsAtTheCostCap(t *testing.T) {
 	// The first recorded answers of testify-1207 cost about $0.0002 each, and each call's bound is larger than that,
 	// so a $0.001 cap stops the first case after a few calls and the second case never runs.

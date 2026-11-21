@@ -102,7 +102,7 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	o := reviewOptions{}
 	fs.StringVar(&o.out, "out", "", "write the JSON results to this file (required)")
 	fs.StringVar(&o.md, "md", "", "append the Markdown results to this file, such as docs/sota/BENCH.md")
-	fs.StringVar(&o.only, "only", "", "comma-separated valid case ids to review; default every valid Go case")
+	fs.StringVar(&o.only, "only", "", "comma-separated valid case ids to review; default every valid case with a runner (go, cargo, vitest)")
 	fs.StringVar(&o.model, "model", "", "the model id, such as deepseek/deepseek-v4-flash (required)")
 	fs.StringVar(&o.keyFile, "key-file", "", "the file that holds the model key, read through internal/platform/config (required)")
 	fs.StringVar(&o.baseURL, "base-url", "https://openrouter.ai/api/v1", "the OpenAI-compatible API root")
@@ -233,7 +233,7 @@ func reviewRun(ctx context.Context, o reviewOptions, r runner, model ports.Model
 	return exitAgrees, nil
 }
 
-// reviewCases picks the valid Go cases, or the -only ones, which must be valid Go cases too.
+// reviewCases picks the valid cases with a runner, or the -only ones, which must be valid cases with a runner too.
 func reviewCases(o reviewOptions) ([]bench.Case, error) {
 	m, err := loadManifest(o.manifest)
 	if err != nil {
@@ -248,12 +248,13 @@ func reviewCases(o reviewOptions) ([]bench.Case, error) {
 		return nil, err
 	}
 	if len(out) == 0 {
-		return nil, errors.New("review: no valid Go case to review")
+		return nil, errors.New("review: no valid case with a runner to review")
 	}
 	return out, nil
 }
 
-// pickCases keeps the valid Go cases, or, when ids is not empty, exactly those ids, which must all be valid Go cases.
+// pickCases keeps the valid cases with a runner (go, cargo or vitest), or, when ids is not empty, exactly those ids,
+// which must all be valid cases with a runner.
 func pickCases(cases []bench.Case, ids []string) ([]bench.Case, error) {
 	var out []bench.Case
 	have := map[string]bool{}
@@ -261,9 +262,9 @@ func pickCases(cases []bench.Case, ids []string) ([]bench.Case, error) {
 		if len(ids) > 0 && !slices.Contains(ids, c.ID) {
 			continue
 		}
-		if c.Status != bench.StatusValid || c.Language != "go" {
+		if c.Status != bench.StatusValid || c.Runner() == "" {
 			if len(ids) > 0 {
-				return nil, fmt.Errorf("review: %s is not a valid Go case", c.ID)
+				return nil, fmt.Errorf("review: %s is not a valid case with a runner", c.ID)
 			}
 			continue
 		}
@@ -272,7 +273,7 @@ func pickCases(cases []bench.Case, ids []string) ([]bench.Case, error) {
 	}
 	for _, id := range ids {
 		if !have[id] {
-			return nil, fmt.Errorf("review: -only %q names no valid Go case in the manifest", id)
+			return nil, fmt.Errorf("review: -only %q names no valid case with a runner in the manifest", id)
 		}
 	}
 	return out, nil
@@ -294,7 +295,7 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 		rc.Error = "open cache: " + err.Error()
 		return rc, false
 	}
-	sb.add(c.RepoSlug(), rp)
+	sb.add(c, rp)
 	rep, err := prepareReplay(ctx, rp, sb, c)
 	if err != nil {
 		rc.Error = "replay: " + err.Error()
@@ -330,12 +331,47 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 	return rc, false
 }
 
-// reviewerPrompt is the reviewer's system prompt. It states the task and the proof rule, not how to reason.
-const reviewerPrompt = `You review a pull request in a Go repository. Find bugs that this change brings in.
+// reviewerPrompt is the reviewer's system prompt. It states the task and the proof rule, not how to reason. The
+// test rules follow the case's toolchain (testRules).
+func reviewerPrompt(c bench.Case) string {
+	if c.Runner() == bench.ToolchainGo {
+		return goReviewerPrompt
+	}
+	return `You review a pull request in a ` + languageName(c) + ` repository. Find bugs that this change brings in.
+A finding counts only with proof: a test that fails on this head because of the bug, in two separate runs, and
+passes once the suspected lines are fixed. A test that does not build or load proves nothing. ` + testRules(c) + `
+Use run_test to try a test before you propose it. Propose each bug with propose_finding (at most 5), then call
+finish_review. If you find no bug you can prove, propose nothing and call finish_review.`
+}
+
+// goReviewerPrompt is the Go reviewer's prompt, unchanged since P2.1b.
+const goReviewerPrompt = `You review a pull request in a Go repository. Find bugs that this change brings in.
 A finding counts only with proof: a Go test that fails on this head because of the bug, in two separate runs, and
 passes once the suspected lines are fixed. A test that does not build proves nothing. Use run_test to try a test
 before you propose it. Propose each bug with propose_finding (at most 5), then call finish_review. If you find no
 bug you can prove, propose nothing and call finish_review.`
+
+func languageName(c bench.Case) string {
+	if c.Runner() == bench.ToolchainCargo {
+		return "Rust"
+	}
+	return "TypeScript"
+}
+
+// testRules says what test file the reviewer writes for the case's runner (reviewTestPath and reviewTestName check it).
+func testRules(c bench.Case) string {
+	switch c.Runner() {
+	case bench.ToolchainCargo:
+		return "Write a new Rust file " + c.Workdir + "/src/<module>.rs (a lower-case module name). The sandbox " +
+			"declares it as a test module of the crate root, so `use super::*;` reaches the crate's private items. Name a " +
+			"test as libtest does, <module>::<function>."
+	case bench.ToolchainVitest:
+		return "Write a new vitest file (*.test.ts) under " + c.Workdir + ". Import the test API as the package's own " +
+			"tests do. Name a test by its describe titles and its title joined by \" > \"."
+	case bench.ToolchainGo:
+	}
+	return ""
+}
 
 func reviewerMessages(c bench.Case, rep *replay) []ports.ModelMessage {
 	var files []string
@@ -344,7 +380,7 @@ func reviewerMessages(c bench.Case, rep *replay) []ports.ModelMessage {
 	}
 	user := fmt.Sprintf("Repository: %s. The pull request changes %d files: %s. Use list_changes to read the diff.",
 		c.RepoSlug(), len(files), strings.Join(files, ", "))
-	return []ports.ModelMessage{{Role: ports.ModelRoleSystem, Content: reviewerPrompt}, {Role: ports.ModelRoleUser, Content: user}}
+	return []ports.ModelMessage{{Role: ports.ModelRoleSystem, Content: reviewerPrompt(c)}, {Role: ports.ModelRoleUser, Content: user}}
 }
 
 func writeReview(o reviewOptions, rep reviewReport) error {

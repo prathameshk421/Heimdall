@@ -1,0 +1,98 @@
+{
+  "case": "t3code-38193",
+  "note": "Recorded tool-call sequence for the harness check. It is not model output: it proves the vitest runner, the sandbox, the proof rule and the scoring on a real t3code case.",
+  "turns": [
+    {
+      "calls": [
+        {
+          "name": "list_changes",
+          "arguments": {}
+        }
+      ],
+      "usage": {
+        "input_tokens": 1500,
+        "cached_input_tokens": 0,
+        "output_tokens": 40
+      },
+      "cost_usd": 0.0001422
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "packages/shared/src/cliArgs.ts",
+            "start_line": 30,
+            "end_line": 60
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 9000,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0008208,
+      "expect": "packages/shared/src/cliArgs.ts"
+    },
+    {
+      "calls": [
+        {
+          "name": "run_test",
+          "arguments": {
+            "test_path": "packages/shared/src/heimdallBenchTokenizer.test.ts",
+            "test_source": "import { describe, expect, it } from \"vite-plus/test\";\n\nimport { tokenizeCliArgs } from \"./cliArgs.ts\";\n\ndescribe(\"heimdall bench tokenizer\", () => {\n  it(\"keeps a no-break space inside a path\", () => {\n    const path = \"/tmp/project\\u00a0name\";\n    expect(tokenizeCliArgs(`--add-dir ${path} --verbose`)).toEqual([\"--add-dir\", path, \"--verbose\"]);\n  });\n});\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 10500,
+        "cached_input_tokens": 0,
+        "output_tokens": 300
+      },
+      "cost_usd": 0.000999,
+      "expect": "/\\s/.test(char)"
+    },
+    {
+      "calls": [
+        {
+          "name": "propose_finding",
+          "arguments": {
+            "file": "packages/shared/src/cliArgs.ts",
+            "start_line": 43,
+            "end_line": 45,
+            "severity": "medium",
+            "claim": "tokenizeCliArgs splits on /\\s/, which matches Unicode spaces such as U+00A0. A path with a no-break space is cut into two arguments.",
+            "test_path": "packages/shared/src/heimdallBenchTokenizer.test.ts",
+            "test_name": "heimdall bench tokenizer > keeps a no-break space inside a path",
+            "test_source": "import { describe, expect, it } from \"vite-plus/test\";\n\nimport { tokenizeCliArgs } from \"./cliArgs.ts\";\n\ndescribe(\"heimdall bench tokenizer\", () => {\n  it(\"keeps a no-break space inside a path\", () => {\n    const path = \"/tmp/project\\u00a0name\";\n    expect(tokenizeCliArgs(`--add-dir ${path} --verbose`)).toEqual([\"--add-dir\", path, \"--verbose\"]);\n  });\n});\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 11200,
+        "cached_input_tokens": 0,
+        "output_tokens": 280
+      },
+      "cost_usd": 0.0010584,
+      "expect": "heimdall bench tokenizer > keeps a no-break space inside a path: failure"
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_review",
+          "arguments": {
+            "summary": "The tokenizer splits values on Unicode whitespace."
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 11600,
+        "cached_input_tokens": 0,
+        "output_tokens": 30
+      },
+      "cost_usd": 0.0010494,
+      "expect": "recorded as F1"
+    }
+  ]
+}

@@ -235,7 +235,7 @@ real model finds, and it is not a recall result.
   nothing about a model's quality. The live run is the one that fills them.
 - The clean case in the fake-model check runs as its own test (`TestReplayACleanCaseWithAScriptedModel`), not in the
   two-case run above, so the table's false-positive row has no value.
-- Python, Java, JavaScript and TypeScript cases: `review` takes valid Go cases only, for the same reason `validate`
+- Python, Java, JavaScript and TypeScript cases (at P2.1b): `review` took valid Go cases only, for the same reason `validate`
   does (there is no runner for those languages).
 
 ## Cost estimate for the live run
@@ -363,3 +363,50 @@ unused predicate, so it is a weak false-positive probe. #18289 changes how the G
 - Cold-cache times for each case. The table has warm-store times; the one cold install measured is in "Run".
 - Type errors. Vitest strips types and does not check them, so a test that is red only because of a type error
   cannot happen, but a type error the fix brings in is not seen either.
+
+### Reviewer harness on t3code, fake model
+
+`heimdall-bench review` now takes every valid case with a runner. For a cargo or vitest case the `run_test` tool and
+the proof runs go through the case's runner, in a fresh plain tree per run after the case's install steps:
+
+- vitest: the reviewer writes a new `*.test.ts` under the workdir. The sandbox runs only that file and names each test
+  by its describe path (`describe > title`).
+- cargo: the reviewer writes a new `src/<module>.rs` in the crate. The sandbox appends `#[cfg(test)] mod <module>;` to
+  the crate root (`lib.rs`, else `main.rs`), so `use super::*;` reaches private items even in a binary crate. It runs
+  `cargo test -- <module>::` and names each test as libtest does (`<module>::<function>`).
+- The prompt and the tool descriptions name the case's language and test rules. The Go prompt is unchanged.
+
+| Item | Value |
+|---|---|
+| Command | `TMPDIR=<private dir> CGO_ENABLED=0 go test -tags benchreplay -count=1 -v -run TestReplay ./cmd/heimdall-bench` |
+| Heimdall tree | `ed43ec4` plus the step 4 code, committed right after |
+| Started | 2026-11-21T14:52:55Z, cold bench cache (a private TMPDIR) |
+| Model | scripted fake (`testdata/bench/scripts/t3code-38193.json` and `t3code-19745.json`), no model call |
+| Exit status | 0: all six replay tests pass, the four Go ones included |
+| Wall time | 218.5 s |
+
+| Case | Runner | Scored | Stop | Proposed | Proven | Hit | Cost (scripted) | Time | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| t3code-38193 | vitest | yes | submitted | 1 | 1 | yes | $0.0041 | 56.0 s | a no-break space in a path splits the argument: red twice at the intro `40c0ab08`, green at the fix |
+| t3code-19745 | cargo | yes | submitted | 1 | 1 | yes | $0.0041 | 34.2 s | an unselected macOS process keeps its command line: red twice at the intro `163d86a7`, green at the fix |
+
+What this check caught: the first cargo replay listed its test as `:discovery_...`, because the vitest renaming split
+`module::function` at its first colon. The cargo result now keeps libtest's names, and a unit test holds it.
+
+A run on the shared cache failed twice while another worktree ran the same replay tests at the same time: both use
+`$TMPDIR/heimdall-bench` and the same worktree names, so one run deleted the other's head tree. The run above used a
+private TMPDIR. See "Noticed" in the P2.1d report.
+
+### Live run on the t3code cases
+
+Not run: the brief allows no live model call. The command for the owner, with the key file as a placeholder:
+
+```
+CGO_ENABLED=0 go run ./cmd/heimdall-bench review -out t3code-review.json -md docs/sota/BENCH.md \
+  -model deepseek/deepseek-v4-flash -base-url https://openrouter.ai/api/v1 -key-file <KEY_FILE> -max-cost 3.00 \
+  -only t3code-5025,t3code-6189,t3code-6175,t3code-6670,t3code-12537,t3code-11425,t3code-12763,t3code-32169,t3code-38193,t3code-39217,t3code-19745,t3code-18289-clean,t3code-10008-clean
+```
+
+Expected cost, with the per-case assumption of the Go estimate above (288k input and 5k output tokens): about $0.027
+per case, so about $0.35 for 13 cases with no cache reads. The hard cap is $3.00. This is `not verified`: t3code
+files are larger than the Go cases' files, so a real reviewer may read more tokens per turn.

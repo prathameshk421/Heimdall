@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,9 +99,9 @@ func (rp *replay) tools() []agentloop.Tool {
 			Parameters: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}},"required":["path"],"additionalProperties":false}`)}, run: rp.readCode},
 		fnTool{spec: ports.ModelTool{Name: "search_code", Description: "Search the files at the pull request head for a literal string. At most 50 matches.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1},"path_prefix":{"type":"string"}},"required":["query"],"additionalProperties":false}`)}, run: rp.searchCode},
-		fnTool{spec: ports.ModelTool{Name: "run_test", Description: "Write one new Go test file into the pull request head and run its package's tests in the sandbox. Returns each test's outcome and the output.",
-			Parameters: json.RawMessage(`{"type":"object","properties":{"test_path":{"type":"string","description":"A new *_test.go path in the package under test."},"test_source":{"type":"string"}},"required":["test_path","test_source"],"additionalProperties":false}`)}, run: rp.runTest},
-		fnTool{spec: ports.ModelTool{Name: "propose_finding", Description: "Propose one bug the change brings in, with a Go test that fails on this head because of the bug and passes once the bug is fixed. At most 5 findings.",
+		fnTool{spec: ports.ModelTool{Name: "run_test", Description: "Write one new " + testKind(rp.c) + " into the pull request head and run it in the sandbox. Returns each test's outcome and the output.",
+			Parameters: json.RawMessage(`{"type":"object","properties":{"test_path":{"type":"string","description":` + strconv.Quote(testPathHint(rp.c)) + `},"test_source":{"type":"string"}},"required":["test_path","test_source"],"additionalProperties":false}`)}, run: rp.runTest},
+		fnTool{spec: ports.ModelTool{Name: "propose_finding", Description: "Propose one bug the change brings in, with a " + testKind(rp.c) + " that fails on this head because of the bug and passes once the bug is fixed. At most 5 findings.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"file":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"severity":{"type":"string","enum":["low","medium","high","critical"]},"claim":{"type":"string","maxLength":600},"test_path":{"type":"string"},"test_name":{"type":"string"},"test_source":{"type":"string"}},"required":["file","start_line","end_line","severity","claim","test_path","test_name","test_source"],"additionalProperties":false}`)}, run: rp.proposeFinding},
 	}
 }
@@ -299,20 +300,20 @@ func (s searcher) report() string {
 	return out
 }
 
-// checkTestFile refuses a test path or source the sandbox should not take. The path must be a new Go test file, so a
-// proof never replaces a test the change has.
+// checkTestFile refuses a test path or source the sandbox should not take. The path must be a new test file of the
+// case's runner (reviewTestPath), so a proof never replaces a test the change has.
 func (rp *replay) checkTestFile(testPath, source string) error {
 	if err := repoPath(testPath); err != nil {
 		return err
 	}
-	if !strings.HasSuffix(testPath, "_test.go") {
-		return fmt.Errorf("test_path %q: want a *_test.go file", testPath)
+	if err := reviewTestPath(rp.c, testPath); err != nil {
+		return err
 	}
 	if _, err := rp.headFile(testPath); err == nil {
 		return fmt.Errorf("test_path %q exists at the head: use a new file name", testPath)
 	}
 	if source == "" || len(source) > maxTestSource {
-		return errors.New("test_source: want a Go file of at most 64 KiB")
+		return errors.New("test_source: want a file of at most 64 KiB")
 	}
 	return nil
 }
@@ -339,9 +340,9 @@ func (rp *replay) runTest(ctx context.Context, args json.RawMessage) (string, er
 	if err != nil {
 		return "", err
 	}
-	names, err := bench.TestFuncs([]byte(in.TestSource), allLines(in.TestSource))
+	names, err := rp.focusNames(in.TestPath, in.TestSource, res)
 	if err != nil {
-		return "", fmt.Errorf("test_source: %w", err)
+		return "", err
 	}
 	return describeRun(res, names), nil
 }
@@ -406,14 +407,11 @@ func (rp *replay) proposeFinding(_ context.Context, args json.RawMessage) (strin
 	if err := rp.checkTestFile(in.TestPath, in.TestSource); err != nil {
 		return "", err
 	}
-	names, err := bench.TestFuncs([]byte(in.TestSource), allLines(in.TestSource))
+	name, err := reviewTestName(rp.c, in.TestPath, in.TestSource, in.TestName)
 	if err != nil {
-		return "", fmt.Errorf("test_source: %w", err)
+		return "", err
 	}
-	if !slices.Contains(names, in.TestName) {
-		return "", fmt.Errorf("test_name %q: test_source declares no top-level test of that name (it declares %v)", in.TestName, names)
-	}
-	p.TestPath, p.TestName, p.TestSource = in.TestPath, in.TestName, []byte(in.TestSource)
+	p.TestPath, p.TestName, p.TestSource = in.TestPath, name, []byte(in.TestSource)
 	rp.proposals = append(rp.proposals, p)
 	return fmt.Sprintf("recorded as F%d; it is proven after the review ends", len(rp.proposals)), nil
 }

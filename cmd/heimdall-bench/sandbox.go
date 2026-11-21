@@ -19,25 +19,33 @@ import (
 )
 
 // sandboxNote goes into every review report, so nobody reads a bench result as a sandbox result.
-const sandboxNote = "local go test in a fresh git worktree per run, as the operator's user with the network on; " +
-	"the uid sandbox (ACTION_MODE 4.4) is not used locally"
+const sandboxNote = "local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after " +
+	"the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally"
 
 // maxTestOutput bounds the go test output a run returns to the reviewer.
 const maxTestOutput = 8 << 10
 
-// localSandbox runs one Go package's tests in a fresh worktree of a cached repository. It implements ports.Sandbox
+// localSandbox runs one Go package's tests in a fresh worktree of a cached repository, or, for a cargo or vitest case,
+// the reviewer's test file in a fresh plain tree (toolchain.go) after the case's install steps. It implements ports.Sandbox
 // and the overlay extension that app/effects calls OverlaySandbox, so the reviewer's tools see the product's port.
 // It is not isolated: see sandboxNote.
 type localSandbox struct {
-	repos map[string]*repo // by owner/name
+	repos map[string]*repo      // by owner/name
+	cases map[string]bench.Case // the case under review, by owner/name: it names the runner of a cargo or vitest repo
 	seq   int
 }
 
 var _ ports.Sandbox = (*localSandbox)(nil)
 
-func newLocalSandbox() *localSandbox { return &localSandbox{repos: map[string]*repo{}} }
+func newLocalSandbox() *localSandbox {
+	return &localSandbox{repos: map[string]*repo{}, cases: map[string]bench.Case{}}
+}
 
-func (s *localSandbox) add(slug string, rp *repo) { s.repos[slug] = rp }
+// add registers the case under review and its cache. Cases run one at a time, so the newest case of a repository is
+// the one its jobs serve.
+func (s *localSandbox) add(c bench.Case, rp *repo) {
+	s.repos[c.RepoSlug()], s.cases[c.RepoSlug()] = rp, c
+}
 
 // Run runs the job's package tests at the job's commit, with no overlay.
 func (s *localSandbox) Run(ctx context.Context, j ports.SandboxJob) (ports.SandboxResult, error) {
@@ -59,6 +67,9 @@ func (s *localSandbox) RunOverlay(ctx context.Context, j ports.SandboxJob, overl
 		return ports.SandboxResult{}, fmt.Errorf("sandbox: no cache for %s", j.Repo)
 	}
 	s.seq++
+	if c := s.cases[string(j.Repo)]; c.Runner() == bench.ToolchainCargo || c.Runner() == bench.ToolchainVitest {
+		return s.runTool(ctx, rp, c, j, overlays)
+	}
 	dir, err := rp.worktree(ctx, string(j.SHA), "sbx-"+strconv.Itoa(s.seq))
 	if err != nil {
 		return ports.SandboxResult{}, err
@@ -179,4 +190,63 @@ func boundTail(s string, n int) string {
 		cut = cut[i+1:]
 	}
 	return "[earlier output cut]\n" + cut
+}
+
+// runTool runs the overlay tests of a cargo or vitest case at the job's commit, in a fresh plain tree: write the
+// overlays, declare a Rust test module in the crate root, install, and run only the reviewer's tests.
+func (s *localSandbox) runTool(ctx context.Context, rp *repo, c bench.Case, j ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error) {
+	tree, err := rp.plainTree(ctx, string(j.SHA), "sbx-"+strconv.Itoa(s.seq), c.Sparse)
+	if err != nil {
+		return ports.SandboxResult{}, err
+	}
+	defer func() { _ = rp.remove(context.WithoutCancel(ctx), tree) }() // a leftover tree is pruned by the next run
+	var files, modules []string
+	for _, f := range overlays {
+		if err := writeOverlay(tree, f); err != nil {
+			return ports.SandboxResult{}, err
+		}
+		files = append(files, f.Path)
+		if c.Runner() == bench.ToolchainCargo {
+			module := strings.TrimSuffix(filepath.Base(f.Path), ".rs")
+			if err := wireCrateRoot(tree, c, module); err != nil {
+				return ports.SandboxResult{}, err
+			}
+			modules = append(modules, module+"::")
+		}
+	}
+	if _, err := rp.install(ctx, c, tree); err != nil {
+		return ports.SandboxResult{}, err
+	}
+	c.Timeout = j.Timeout
+	tr, err := rp.runOverlayTests(ctx, c, tree, "sbx-"+strconv.Itoa(s.seq), files, modules)
+	if err != nil {
+		return ports.SandboxResult{}, err
+	}
+	res := sandboxResult(stripTestFiles(c.Runner(), tr.run))
+	res.Output = boundTail(tr.output+tr.run.BuildOutput, maxTestOutput)
+	sum := sha256.Sum256([]byte(tr.output))
+	res.LogRef = workflow.BlobRef(fmt.Sprintf("blob:sha256:%x", sum))
+	return res, nil
+}
+
+// wireCrateRoot declares a reviewer module in the crate root of the workdir: src/lib.rs when the crate has a library,
+// else src/main.rs.
+func wireCrateRoot(tree string, c bench.Case, module string) error {
+	src := filepath.Join(tree, filepath.FromSlash(c.Workdir), "src")
+	for _, name := range []string{"lib.rs", "main.rs"} {
+		root := filepath.Join(src, name)
+		b, err := os.ReadFile(root) // #nosec G304 -- the crate root inside the bench's own tree
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read crate root: %w", err)
+		}
+		// #nosec G703 -- root is the crate root inside the bench's own tree; module passed rustModule (reviewTestPath)
+		if err := os.WriteFile(root, wireRustTestModule(b, module), 0o600); err != nil {
+			return fmt.Errorf("declare the test module: %w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("no src/lib.rs or src/main.rs in %s", c.Workdir)
 }
