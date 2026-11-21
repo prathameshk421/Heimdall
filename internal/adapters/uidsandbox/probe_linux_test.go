@@ -70,6 +70,8 @@ const (
 	keySpecUser  = -4
 	keyctlRead   = 11
 	keyctlRevoke = 3
+	keyctlLink   = 8
+	keyctlUnlink = 9
 )
 
 func TestEscapeProbes(t *testing.T) {
@@ -165,8 +167,14 @@ func acceptAll(ln net.Listener) {
 }
 
 // keyControls adds a key with the canary as payload to the runner user's session and user keyrings and reads each
-// back, so a blocked read inside is the sandbox. The keys are revoked at the end.
+// back, so a blocked read inside is the sandbox. A key in the user keyring is readable only by a possessor, so the
+// user keyring is linked into the session keyring first (run 44909825507 failed this control without the link). The
+// keys are revoked and the link removed at the end.
 func keyControls(t *testing.T, canary string) []int {
+	user, sess := keySpecUser, keySpecSess
+	_, _, e := syscall.Syscall(syscall.SYS_KEYCTL, keyctlLink, uintptr(user), uintptr(sess))
+	require.Zero(t, e, "control: link the user keyring into the session keyring: %v", e)
+	t.Cleanup(func() { _, _, _ = syscall.Syscall(syscall.SYS_KEYCTL, keyctlUnlink, uintptr(user), uintptr(sess)) })
 	typ, _ := syscall.BytePtrFromString("user")
 	desc, _ := syscall.BytePtrFromString(keyDesc)
 	payload := []byte(canary)
