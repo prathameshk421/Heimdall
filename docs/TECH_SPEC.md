@@ -502,7 +502,9 @@ with it on every Run.
    says "the model provider refuses"; `stall_rewake` posts the wake once more and records `task.rewoken{stall: true}`
    (Switch offers an agent no session reset, D172); `fail`
    records `task.failed{reason: unresponsive}`, after which the row is open again and the next Run assigns a fresh
-   task. Past its deadline a live task gets `task.timed_out`, and the row reassigns. Switch restarts a crashed agent
+   task. After `MaxTaskFailures` (2) failed or timed-out tasks of one kind and subject on the same input, in one round
+   of the row, the row assigns nothing more and asks the operators: "<seat> failed 2 review tasks on <head>;
+   `heimdall resume <change> <row>` tries again" (D173). Past its deadline a live task gets `task.timed_out`, and the row reassigns. Switch restarts a crashed agent
    itself; Heimdall holds no gateway login (D145).
 5. **Submit.** The agent submits with its kind's tool. Schema and semantic validation run (6.5). On failure the agent
    gets structured errors and keeps working inside the task's time and cost budget. A submission is stored whole and

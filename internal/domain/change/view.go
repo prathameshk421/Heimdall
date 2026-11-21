@@ -160,17 +160,19 @@ type GateInfo struct {
 type TaskInfo struct {
 	// Kind, Subject and Input say what the task is for (HARNESS_DESIGN B4); Since is when it was assigned, Wakes how
 	// many times the agent was woken again and StallWokenAt when it was woken again after a stall.
-	Kind         string        `json:"kind"`
-	Subject      string        `json:"subject"`
-	Input        string        `json:"input"`
-	Since        time.Time     `json:"since"`
-	Wakes        int           `json:"wakes"`
-	StallWokenAt time.Time     `json:"stall_woken_at"`
-	Agent        id.AgentName  `json:"agent"`
-	Role         workflow.Role `json:"role"`
-	Deadline     time.Time     `json:"deadline"`
-	Status       string        `json:"status"`
-	Progress     string        `json:"progress"`
+	Kind         string    `json:"kind"`
+	Subject      string    `json:"subject"`
+	Input        string    `json:"input"`
+	Since        time.Time `json:"since"`
+	Wakes        int       `json:"wakes"`
+	StallWokenAt time.Time `json:"stall_woken_at"`
+	// Round is how many times the task's row had been resumed when the task was assigned; failures count per round.
+	Round    int           `json:"round,omitempty"`
+	Agent    id.AgentName  `json:"agent"`
+	Role     workflow.Role `json:"role"`
+	Deadline time.Time     `json:"deadline"`
+	Status   string        `json:"status"`
+	Progress string        `json:"progress"`
 }
 
 // Task statuses.
@@ -323,7 +325,7 @@ func (v *View) applyTask(e Event, p Payload) {
 	switch p := p.(type) {
 	case TaskAssigned:
 		v.Tasks[p.TaskID] = TaskInfo{Agent: p.Agent, Role: p.Role, Deadline: p.Deadline, Status: TaskAssignedStatus,
-			Kind: p.Kind, Subject: p.Subject, Input: p.Input, Since: e.OccurredAt}
+			Kind: p.Kind, Subject: p.Subject, Input: p.Input, Since: e.OccurredAt, Round: v.Resumes[TaskRow(p.Kind)]}
 	case TaskSuperseded:
 		v.setTask(p.TaskID, TaskSupersededStatus, "")
 	case TaskRewoken:

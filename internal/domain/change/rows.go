@@ -1,9 +1,11 @@
 package change
 
 import (
+	"fmt"
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -194,10 +196,57 @@ func Next(in In) []RowAction {
 	var out []RowAction
 	for _, r := range Open(in) {
 		for _, a := range r.Next(in) {
+			if a.Task != nil {
+				a = capTask(in, r.ID, a)
+			}
 			out = append(out, RowAction{Row: r.ID, Action: a})
 		}
 	}
 	return out
+}
+
+// MaxTaskFailures is how many tasks of one kind and subject may fail or time out on the same input, in one round of
+// the row, before the seat is left to a person. Every task costs model tokens; a seat that always fails would loop.
+const MaxTaskFailures = 2
+
+// TaskRow is the row that assigns tasks of a kind; `heimdall resume <change> <row>` starts a new round of it.
+func TaskRow(kind string) string {
+	switch kind {
+	case "tests":
+		return "write_tests"
+	case "review":
+		return "review"
+	case "verdict":
+		return "deliberate"
+	}
+	return ""
+}
+
+// capTask turns a task that already failed MaxTaskFailures times on its input in this round into a question for the
+// operators, so the reconciler assigns nothing and Missing says what a person can do.
+func capTask(in In, row string, a Action) Action {
+	t := a.Task
+	failed := 0
+	for _, info := range in.View.Tasks {
+		if info.Kind == t.Kind && info.Subject == t.Subject && info.Input == t.Input &&
+			info.Round == in.View.Resumes[row] && (info.Status == TaskFailedStatus || info.Status == TaskTimedOutStatus) {
+			failed++
+		}
+	}
+	if failed < MaxTaskFailures {
+		return a
+	}
+	text := fmt.Sprintf("%s failed %d %s tasks on %s; `heimdall resume %s %s` tries again",
+		t.Subject, failed, t.Kind, inputLabel(t.Input), in.Change, row)
+	return Action{Ask: &Ask{Who: operators(in), What: text}, Text: text}
+}
+
+// inputLabel is a task input in the words people read: a short head for a review, the input itself otherwise.
+func inputLabel(input string) string {
+	if head, ok := strings.CutPrefix(input, "head-"); ok {
+		return short(head)
+	}
+	return input
 }
 
 // RowAction is an action and the row that decided it.

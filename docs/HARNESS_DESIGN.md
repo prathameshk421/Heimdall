@@ -206,7 +206,8 @@ Run(ctx, change):                          // serialized per change: a mutex per
     `probe_provider` → `ports.ModelHealth.Probe` and Fact `provider.probed{health}` (new); `provider_blocked` → nothing
     (`Missing` says "the model provider refuses: <health>"); `stall_rewake` → Job `task_assign` keyed `<task id>/wake/<n>`
     and Fact `task.rewoken{task_id, n, stall: true}` (D172: Switch offers an agent no session reset); `fail` → Fact `task.failed{reason: "unresponsive"}`,
-    after which the row is open again and the next `Run` assigns a fresh task.
+    after which the row is open again and the next `Run` assigns a fresh task, at most `MaxTaskFailures` (2) times per
+    input and round of the row (D173).
   - Past its deadline a live task gets `task.timed_out` (Fact), and the row reassigns.
 - **Executors** perform their job and record their fact with `reconcile.Record`. They decide nothing: no log scans, no
   "am I done". A fact recorded twice (a crash after the append, before `Done`) folds to the same view (tested in H1).

@@ -343,3 +343,36 @@ func TestAPolicyProblemOpensNoRowAndIsTheOneNeed(t *testing.T) {
 	require.Equal(t, "policy", needs[0].Step)
 	require.Equal(t, "heimdall.yaml cannot be used (heimdall.yaml: version 3 is not known); nothing runs on this change until the policy is fixed on the base branch", needs[0].Text)
 }
+
+// A seat whose task failed twice on the same input is not assigned again: each round costs model tokens, and a seat
+// that always fails (H11, D6) would loop forever. A person decides with `heimdall resume`, which allows two more.
+func TestASeatThatFailedTwiceOnTheSameInputIsNotAssignedAgainUntilResumed(t *testing.T) {
+	picked := ev(t, 3, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1"}, By: "heimdall", Method: change.PickDefault})
+	base := []change.Event{opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}), picked,
+		ev(t, 4, change.EventChecksReported, change.ChecksReported{Head: fHead})}
+	fail := func(n int, task string) []change.Event {
+		return []change.Event{
+			ev(t, n, change.EventTaskAssigned, change.TaskAssigned{TaskID: tk(task), Agent: "rev-1", Role: "reviewer",
+				Deadline: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC), Kind: "review", Subject: "rev-1", Input: "head-" + fHead}),
+			ev(t, n+1, change.EventTaskFailed, change.TaskFailed{TaskID: tk(task), Agent: "rev-1", Role: "reviewer", Reason: "unresponsive"}),
+		}
+	}
+	once := append(append([]change.Event{}, base...), fail(5, "tsk_01KANRY0000000000000000001")...)
+	require.NotNil(t, actionsOf(inOf("pr-acme-pay-7", fold(t, once...), t0))["review"][0].Task, "one failure is retried")
+
+	twice := append(append([]change.Event{}, once...), fail(7, "tsk_01KANRY0000000000000000002")...)
+	stopped := actionsOf(inOf("pr-acme-pay-7", fold(t, twice...), t0))["review"][0]
+	require.Nil(t, stopped.Task, "two failures on the same input stop the seat")
+	require.NotNil(t, stopped.Ask)
+	require.Equal(t, "rev-1 failed 2 review tasks on "+fHead[:7]+"; `heimdall resume pr-acme-pay-7 review` tries again", stopped.Text)
+
+	resumed := append(append([]change.Event{}, twice...), ev(t, 9, change.EventStepResumed, change.StepResumed{Step: "review", By: "ann"}))
+	require.NotNil(t, actionsOf(inOf("pr-acme-pay-7", fold(t, resumed...), t0))["review"][0].Task, "a resume allows the seat again")
+
+	pushed := append(append([]change.Event{}, twice...),
+		ev(t, 9, change.EventPRPushed, change.PRPushed{Repo: "acme/pay", Number: 7, HeadSHA: fHead2}),
+		ev(t, 10, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
+		ev(t, 11, change.EventChecksReported, change.ChecksReported{Head: fHead2}))
+	in := inOf("pr-acme-pay-7", fold(t, pushed...), t0)
+	require.NotNil(t, actionsOf(in)["review"][0].Task, "a new head is a new input")
+}
