@@ -55,6 +55,7 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | A13 test selection | Claude / Sonnet | `a13-test-selection` | merged | `6ddf435`: reverse-dependency closure, fail safe to Full (go.mod, go.sum, go.work, vendor, unknown graph, unmapped file). Apple M3, warm cache, 5 real commits each: heimdall 106.7 s to 13.1 s; echo 8.5 to 8.4 s; client_golang 51.7 to 43.2 s; selection costs 0.2 to 0.6 s. No large repo, no recall test (all commits green), Go only, nightly full run not built |
 | P2.1b Proof Bench reviewer harness | Claude / Opus | `p2.1b-bench-review` | running | fake model only. Owner said yes (Nov 21) to one live run, cap $3, DeepSeek V4 Flash; the owner runs it in their own terminal because R8 keeps the key file away from agents |
 | AM13 Action rows | Claude / Sonnet | `am13-action-rows` | merged | `8054225`: `actionflow.Decide` gives 9 rows (state, fast, ingest, proof, findings, budget, break_glass, sweep, publish) with typed effects; results count only for their head, base and policy hash; fail closed on bad policy or failed log. Tested on hand-built views, not on Fold of real events. AM14 must pass HeadAt (push time) |
+| AM14 Action gate, proof and ingest use cases | Claude / Opus | `am14-action-app` | running | |
 
 ## Merge into heimdall-build (owner yes, Nov 21 2026)
 
