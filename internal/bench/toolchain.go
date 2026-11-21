@@ -39,9 +39,9 @@ func toolchainLanguages() map[Toolchain][]string {
 	}
 }
 
-// vitestTestFile says whether path is a file vitest collects by default: *.test.* or *.spec.* with a JS or TS
+// VitestTestFile says whether path is a file vitest collects by default: *.test.* or *.spec.* with a JS or TS
 // extension.
-func vitestTestFile(p string) bool {
+func VitestTestFile(p string) bool {
 	base := path.Base(p)
 	for _, ext := range []string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"} {
 		stem, ok := strings.CutSuffix(base, ext)
@@ -143,7 +143,7 @@ func checkTests(c Case) []error {
 			errs = append(errs, fmt.Errorf("test id %q: want file:name", id))
 		case !strings.HasPrefix(file, c.Workdir+"/"):
 			errs = append(errs, fmt.Errorf("test id %q: the file must be under workdir %s", id, c.Workdir))
-		case !vitestTestFile(file):
+		case !VitestTestFile(file):
 			errs = append(errs, fmt.Errorf("test id %q: %s is not a test file (*.test.ts or *.spec.ts)", id, file))
 		}
 	}

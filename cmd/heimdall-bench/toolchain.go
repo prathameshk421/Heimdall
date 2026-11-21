@@ -94,12 +94,35 @@ func (rp *repo) runTests(ctx context.Context, c bench.Case, tree, label string, 
 	argv := strings.Fields(c.TestCommand)
 	switch c.Runner() {
 	case bench.ToolchainCargo:
-		return rp.runCargo(ctx, c, tree, tests, argv)
+		if len(tests) > 0 {
+			argv = append(append(argv, "--", "--exact"), tests...)
+		}
+		return rp.runCargo(ctx, c, tree, argv)
 	case bench.ToolchainVitest:
-		return rp.runVitest(ctx, c, tree, label, tests, argv)
+		files, err := testFiles(c, tests)
+		if err != nil {
+			return testRun{}, err
+		}
+		return rp.runVitest(ctx, c, tree, label, files, argv)
 	case bench.ToolchainGo:
 	}
 	return testRun{}, fmt.Errorf("no plain-tree runner for toolchain %q", c.Runner())
+}
+
+// testFiles returns the files of vitest test ids, relative to the workdir, each once.
+func testFiles(c bench.Case, tests []string) ([]string, error) {
+	var files []string
+	for _, id := range tests {
+		file, _, ok := bench.SplitTestID(id)
+		if !ok {
+			return nil, fmt.Errorf("test id %q: want file:name", id)
+		}
+		rel := strings.TrimPrefix(file, c.Workdir+"/")
+		if !slices.Contains(files, rel) {
+			files = append(files, rel)
+		}
+	}
+	return files, nil
 }
 
 // exitText describes a command's exit for an error message.
@@ -110,10 +133,7 @@ func exitText(err error) string {
 	return err.Error()
 }
 
-func (rp *repo) runCargo(ctx context.Context, c bench.Case, tree string, tests, argv []string) (testRun, error) {
-	if len(tests) > 0 {
-		argv = append(append(argv, "--", "--exact"), tests...)
-	}
+func (rp *repo) runCargo(ctx context.Context, c bench.Case, tree string, argv []string) (testRun, error) {
 	out, errOut, err := rp.toolRun(ctx, c, tree, argv)
 	if ctx.Err() != nil {
 		return testRun{}, fmt.Errorf("cargo test did not finish in %v: %w", c.Timeout, ctx.Err())
@@ -125,18 +145,8 @@ func (rp *repo) runCargo(ctx context.Context, c bench.Case, tree string, tests, 
 	return testRun{run: run, output: string(out) + string(errOut)}, nil
 }
 
-func (rp *repo) runVitest(ctx context.Context, c bench.Case, tree, label string, tests, argv []string) (testRun, error) {
-	var files []string
-	for _, id := range tests {
-		file, _, ok := bench.SplitTestID(id)
-		if !ok {
-			return testRun{}, fmt.Errorf("test id %q: want file:name", id)
-		}
-		rel := strings.TrimPrefix(file, c.Workdir+"/")
-		if !slices.Contains(files, rel) {
-			files = append(files, rel)
-		}
-	}
+// runVitest runs vitest on the files (relative to the workdir; none means the whole suite) and parses its report.
+func (rp *repo) runVitest(ctx context.Context, c bench.Case, tree, label string, files, argv []string) (testRun, error) {
 	report := filepath.Join(rp.work, label+"-vitest.json")
 	if err := os.Remove(report); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return testRun{}, fmt.Errorf("remove old report: %w", err)
@@ -238,23 +248,27 @@ func (rp *repo) applyDiff(ctx context.Context, tree, sha string, files []bench.F
 	return nil
 }
 
-// toolTruth computes the truth of a fix diff for the case's toolchain. For Rust it reads each changed file on the
-// fix parent to find its inline test module.
+// toolTruth computes the truth of a fix diff for the case's toolchain. For Rust it reads each changed file on both
+// sides to find its inline test module.
 func toolTruth(ctx context.Context, rp *repo, c bench.Case, files []bench.FileDiff) ([]bench.FileTruth, error) {
-	testFrom := map[string]int{}
+	tests := map[string]bench.TestModule{}
 	if c.Runner() == bench.ToolchainCargo {
 		for _, f := range files {
 			if f.Status != bench.FileModified || !strings.HasSuffix(f.Path, ".rs") {
 				continue
 			}
-			src, err := rp.show(ctx, c.Fix.Parent, f.Path)
+			old, err := rp.show(ctx, c.Fix.Parent, f.Path)
 			if err != nil {
 				return nil, err
 			}
-			testFrom[f.Path] = bench.RustTestStart(src)
+			fixed, err := rp.show(ctx, c.Fix.SHA, f.Path)
+			if err != nil {
+				return nil, err
+			}
+			tests[f.Path] = bench.TestModule{Old: bench.RustTestStart(old), New: bench.RustTestRegion(fixed)}
 		}
 	}
-	return bench.SourceTruth(c.Runner(), files, testFrom), nil
+	return bench.SourceTruth(c.Runner(), files, tests), nil
 }
 
 // timing is how long a toolchain case spent installing and testing.
@@ -356,11 +370,18 @@ func (rp *repo) timedTests(ctx context.Context, c bench.Case, tree, label string
 	return tr.run, err
 }
 
-// testsNotInFix returns the manifest tests whose leaf name no file of the fix diff holds at the fix.
+// testsNotInFix returns the manifest tests the fix did not touch. A vitest test must sit in a test file the fix added
+// or changed: it.each and describe.each format their titles, so a title need not appear in the source. A cargo test's
+// function name must appear in a Rust file the fix changed.
 func (rp *repo) testsNotInFix(ctx context.Context, c bench.Case, files []bench.FileDiff) []string {
+	changed := map[string]bool{}
 	var texts []string
 	for _, f := range files {
 		if f.Status == bench.FileDeleted {
+			continue
+		}
+		changed[f.Path] = true
+		if c.Runner() != bench.ToolchainCargo || !strings.HasSuffix(f.Path, ".rs") {
 			continue
 		}
 		if src, err := rp.show(ctx, c.Fix.SHA, f.Path); err == nil {
@@ -369,8 +390,14 @@ func (rp *repo) testsNotInFix(ctx context.Context, c bench.Case, files []bench.F
 	}
 	var missing []string
 	for _, id := range c.Tests {
-		leaf := bench.TestLeaf(c.Runner(), id)
-		if !slices.ContainsFunc(texts, func(s string) bool { return strings.Contains(s, leaf) }) {
+		if c.Runner() == bench.ToolchainVitest {
+			if file, _, ok := bench.SplitTestID(id); !ok || !changed[file] {
+				missing = append(missing, id)
+			}
+			continue
+		}
+		leaf := bench.TestLeaf(id)
+		if !slices.ContainsFunc(texts, func(s string) bool { return strings.Contains(s, "fn "+leaf+"(") }) {
 			missing = append(missing, id)
 		}
 	}

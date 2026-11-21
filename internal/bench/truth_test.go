@@ -54,6 +54,14 @@ func TestRustTestStartFindsTheTopLevelTestModule(t *testing.T) {
 	require.Zero(t, RustTestStart([]byte("fn main() {}\n")))
 	require.Zero(t, RustTestStart([]byte("    #[cfg(test)]\n    mod inner {}\n")), "an indented module is not top level")
 	require.Zero(t, RustTestStart([]byte("#[cfg(test)]\nfn helper() {}\n")), "cfg(test) on a function is not the module")
+	declared := "mod capture;\n#[cfg(test)]\nmod transport_tests;\n\nfn main() {}\n\n#[cfg(test)]\nmod tests {\n}\n"
+	require.Equal(t, 7, RustTestStart([]byte(declared)), "a declared file module is not the inline test module")
+}
+
+func TestRustTestRegionTakesTheBlankLinesBeforeTheModule(t *testing.T) {
+	require.Equal(t, 6, RustTestRegion([]byte(rustBefore)))
+	require.Equal(t, 8, RustTestRegion([]byte(rustFix)))
+	require.Zero(t, RustTestRegion([]byte("fn main() {}\n")))
 }
 
 func TestSpliceRustTestsTakesTheFixModuleAndKeepsTheBaseCode(t *testing.T) {
@@ -87,8 +95,30 @@ func TestSourceTruthForCargoDropsTheTestModule(t *testing.T) {
 		{Path: "native/m/tests/cli.rs", Status: FileModified, Hunks: []Hunk{{OldStart: 1, OldCount: 1, NewStart: 1, NewCount: 1}}},
 		{Path: "native/m/Cargo.toml", Status: FileModified, Hunks: []Hunk{{OldStart: 1, OldCount: 1, NewStart: 1, NewCount: 1}}},
 	}
-	got := SourceTruth(ToolchainCargo, files, map[string]int{"native/m/src/main.rs": 7})
+	got := SourceTruth(ToolchainCargo, files, map[string]TestModule{"native/m/src/main.rs": {Old: 7, New: 9}})
 	require.Equal(t, []FileTruth{{File: "native/m/src/main.rs", Lines: []string{"4", "5-6"}}}, got)
+}
+
+func TestSourceTruthKeepsCodeInsertedJustBeforeTheOldModule(t *testing.T) {
+	// pingdotgg/t3code#23426 adds a function after the blank line that precedes ipc.rs's test module (old line 175,
+	// "#[cfg(test)]" at 176). That is source, and its new lines end before the fix's test region.
+	files := []FileDiff{{Path: "native/h/src/ipc.rs", Status: FileModified, Hunks: []Hunk{
+		{OldStart: 175, OldCount: 0, NewStart: 168, NewCount: 22},
+		{OldStart: 214, OldCount: 0, NewStart: 229, NewCount: 19},
+	}}}
+	got := SourceTruth(ToolchainCargo, files, map[string]TestModule{"native/h/src/ipc.rs": {Old: 176, New: 190}})
+	require.Equal(t, []FileTruth{{File: "native/h/src/ipc.rs", Lines: []string{"175-176"}}}, got)
+}
+
+func TestSourceTruthDropsATestModuleTheFixAppends(t *testing.T) {
+	// The parent has no test module; the fix changes line 30 and appends a module after line 48 (real shape of
+	// pingdotgg/t3code#22116 in native/hyprland-snap-shot/src/main.rs).
+	files := []FileDiff{{Path: "native/h/src/main.rs", Status: FileModified, Hunks: []Hunk{
+		{OldStart: 27, OldCount: 4, NewStart: 37, NewCount: 1},
+		{OldStart: 48, OldCount: 0, NewStart: 56, NewCount: 93},
+	}}}
+	got := SourceTruth(ToolchainCargo, files, map[string]TestModule{"native/h/src/main.rs": {New: 56}})
+	require.Equal(t, []FileTruth{{File: "native/h/src/main.rs", Lines: []string{"27-30"}}}, got)
 }
 
 func TestSourceTruthForVitestSkipsTestsAndTypes(t *testing.T) {
@@ -132,6 +162,6 @@ func TestChangesInstall(t *testing.T) {
 }
 
 func TestTestLeaf(t *testing.T) {
-	require.Equal(t, "keeps a: b", TestLeaf(ToolchainVitest, "packages/x/a.test.ts:outer > keeps a: b"))
-	require.Equal(t, "keeps", TestLeaf(ToolchainCargo, "tests::keeps"))
+	require.Equal(t, "keeps", TestLeaf("ipc::tests::keeps"))
+	require.Equal(t, "keeps", TestLeaf("keeps"))
 }

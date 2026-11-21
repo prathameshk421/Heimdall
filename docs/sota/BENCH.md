@@ -256,3 +256,110 @@ and 5k output tokens per case.
 
 So the expected spend is $0.15 to $0.50, and the hard cap is $3.00. The estimate is `not verified` until a live run
 exists: it rests on a token count from a scripted model, not on a real one.
+
+## t3code cases (P2.1d)
+
+This section records `heimdall-bench validate` on 15 cases from pingdotgg/t3code, a TypeScript and Rust monorepo of
+about 1 GB. The cases are at the end of `testdata/bench/cases.yaml`. All GitHub data came from GET calls. The bench
+fetches the commits from the owner's fork `prathameshk421/t3code`, synced once with `gh repo sync`. Nothing was
+pushed, opened or commented anywhere.
+
+### How a cargo or vitest case runs
+
+- The case names its toolchain (`cargo` or `vitest`), its workdir, its install steps, sparse-checkout patterns and
+  the fix's tests. A TypeScript case checks out only the root files, `patches/`, every `package.json`, `scripts/`,
+  `infra/task-cache/` and the packages it needs (24 MB at HEAD for `packages/shared`). A Rust case checks out only
+  `.cargo/` and its crate.
+- The tree has no `.git` link to the cache. So pnpm's `prepare` script (`vp config`, which writes git config) cannot
+  change the cache, and a test cannot read later history.
+- One tree serves both runs: the fix parent with the fix's tests put in (before), then the same tree with the fix's
+  files written over it (after). Install runs once per tree, and again only when the fix changes a manifest or a
+  lockfile. Install time and test time are timed apart.
+- pnpm's store, `CARGO_HOME` and `CARGO_TARGET_DIR` live under the bench cache in the OS temp dir.
+- Rust unit tests live inside the source file. The before tree takes the fix's `#[cfg(test)]` module spliced onto
+  its own code, not the fix's whole file. Truth leaves that module out.
+- Vitest does not type-check. So for each red test I read the first failure line in the results file: every one is
+  an assertion or a runtime error of the bug (below), and none is "is not a function".
+- The intro (`change`) is chosen by blame: the newest commit that last touched the fix's old-side source lines.
+
+### Run
+
+| Item | Value |
+|---|---|
+| Command | `CGO_ENABLED=0 heimdall-bench validate -only <the 15 t3code ids> -out final.json` |
+| Heimdall tree | `ca9c269` (branch `p2.1d-t3code-cases`) plus the uncommitted P2.1d step 3 and 4 code, committed right after |
+| Started | 2026-11-21T14:38:08Z |
+| Machine | darwin/arm64, 8 CPUs (Apple Mac), go1.27.4, node 26.13.1, pnpm 12.21.0 (each tree's `packageManager` pnpm ran the install), cargo 1.99.1, network on |
+| Exit status | 0: every case agrees with its manifest status |
+| Wall time | 178.4 s for 15 cases, with warm pnpm and cargo caches |
+
+The pnpm store was warm from earlier runs on the same day. A cold install of `packages/shared` at t3code HEAD took
+191.6 s (3m11.6s, 312 packages downloaded). The first validate run of these cases, with a partly warm store, spent
+23 to 27 s per install. Each status held on two runs: this recorded run and one full run of the same case before it.
+
+### Results
+
+Times are in seconds. "Targets" is the fix's tests the manifest names, and "Red" is how many of them fail before the
+fix. Every target passes after the fix in each valid case.
+
+| Case | Lang | Kind | Outcome | Install | Tests | Total | Targets | Red | First failure line before the fix | Intro evidence |
+|---|---|---|---|---|---|---|---|---|---|---|
+| t3code-5025 | typescript | bug | valid | 5.3 | 1.7 | 8.4 | 1 | 1 | `AssertionError: expected { note: 'a]' } to deeply equal { note: 'a,]' }` | intro has no pnpm-lock.yaml, not run |
+| t3code-6189 | typescript | bug | valid | 4.5 | 1.6 | 19.2 | 1 | 1 | `AssertionError: expected 'C:' to be 'C:\'` | red at the intro, red at its parent too |
+| t3code-6175 | typescript | bug | valid | 4.8 | 1.7 | 7.8 | 3 | 1 | `AssertionError: expected 'github' to be 'unknown'` | intro has no pnpm-lock.yaml, not run |
+| t3code-6670 | typescript | bug | valid | 5.7 | 2.4 | 23.1 | 2 | 1 | `RangeError: Invalid time zone specified: Etc/Unknown` | the fix's tests do not load at the intro |
+| t3code-12537 | typescript | bug | valid | 6.0 | 3.1 | 25.2 | 1 | 1 | `AssertionError: expected { kind: 'gitlab', …(2) } to deeply equal { kind: 'gitlab', …(2) }` | red at the intro, red at its parent too |
+| t3code-11425 | typescript | bug | valid | 5.9 | 2.2 | 24.1 | 6 | 6 | `AssertionError: expected [] to deeply equal [ [ '' ] ]` and two more of the same kind | red at the intro; the tests do not load at its parent |
+| t3code-12763 | typescript | bug | valid | 4.1 | 2.0 | 7.5 | 1 | 1 | `SchemaError: Missing key` | intro has no pnpm-lock.yaml, not run |
+| t3code-32169 | typescript | bug | valid | 3.8 | 1.7 | 7.2 | 1 | 1 | `AssertionError: expected 1 to be less than 0` | intro has no pnpm-lock.yaml, not run |
+| t3code-38193 | typescript | bug | valid | 1.2 | 1.3 | 17.4 | 1 | 1 | `AssertionError: expected [ '--add-dir', '/tmp/project', …(2) ] to deeply equal [ '--add-dir', …(2) ]` | red at the intro, red at its parent too |
+| t3code-39217 | typescript | bug | valid | 2.2 | 1.3 | 12.4 | 7 | 3 | `AssertionError: expected true to be false` (and the reverse) | red at the intro, red at its parent too |
+| t3code-19745 | rust | bug | valid | 0.2 | 2.9 | 4.1 | 1 | 1 | `assertion failed: unselected.cmd().is_empty()` | the fix's tests do not build at the intro |
+| t3code-23426 | rust | bug | invalid | 0.1 | 1.0 | 1.4 | 1 | 0 | the crate does not build on macOS (below) | |
+| t3code-22116 | rust | bug | invalid | 0.0 | 0.7 | 1.1 | 3 | 0 | the crate does not build on macOS (below) | |
+| t3code-18289-clean | typescript | clean | valid | 4.8 | 3.7 | 10.1 | | | `vp test run` passes at the merge, 352 tests | |
+| t3code-10008-clean | typescript | clean | valid | 4.3 | 3.7 | 9.0 | | | `vp test run` passes at the merge, 508 tests | |
+
+"Total" also holds the fetch, the checkout and the intro evidence runs, which install again in their own trees.
+
+### Counts
+
+| Language | Valid bug | Valid clean | Invalid | p50 install | p50 tests |
+|---|---|---|---|---|---|
+| typescript | 10 | 2 | 0 | 4.7 s | 1.9 s |
+| rust | 1 | 0 | 2 (bug) | 0.1 s | 1.0 s |
+
+### What the run showed
+
+- The two Hyprland cases are invalid on this Mac. `smithay-client-toolkit` 0.19.2 imports `rustix::pipe::pipe_with`,
+  which rustix leaves out on Apple targets, so the crate does not build after the fix either. Their tests also call
+  functions the fix adds (`next_event`, `captured_metadata`), so on Linux they would still be a build error before the
+  fix. t3code has only three Rust crates and 10 `.rs` files. Only three 2026 Rust fix PRs add a test, so Rust stays
+  small.
+- `it.each` and `describe.each` format their titles (`with delimiter %j` becomes `with delimiter ","`). So a vitest
+  target must be named as the report names it, and the validator checks only that its file is one the fix changed.
+  Two rows of t3code-39217 have a CR LF inside the title. The manifest keeps a test id on one line, so those two rows
+  are not targets.
+- Blame picks a weak intro. In 4 of the 5 cases where the fix's tests run at the intro, they also fail at the intro's
+  parent, so the bug is older than the blamed commit. In 4 more cases the intro is older than the pnpm lockfile.
+  A replay review uses the intro as the head, so these cases still show the bug at the head, but the intro is not
+  the commit that brought it in.
+- Older trees need more of the repo: in July to September 2026 the root `prepare` script ran `scripts/` files. The
+  sparse patterns take the whole `scripts/` directory for that reason.
+- `prepare` runs `vp config`, which writes `core.hookspath` into the git config of the repository it finds. A plain
+  tree has no `.git`, so the cache stays clean.
+
+### Clean cases
+
+Both clean PRs have no cross-reference from a fix or revert in their GitHub timeline (GET, 2026-11-21), and no later
+commit whose subject starts with `fix` touched their source file up to t3code HEAD `e0f3ab9e7`. #10008 removes an
+unused predicate, so it is a weak false-positive probe. #18289 changes how the GitHub client reads credentials.
+
+### Not verified
+
+- Linux. The Hyprland and KDE crates need a Linux runner. I did not run them on the VM.
+- The intro of each bug case: blame is a heuristic, and no case's intro evidence is confirmed.
+- Flakiness beyond the runs above: each verdict held on at least two runs, never more than three.
+- Cold-cache times for each case. The table has warm-store times; the one cold install measured is in "Run".
+- Type errors. Vitest strips types and does not check them, so a test that is red only because of a type error
+  cannot happen, but a type error the fix brings in is not seen either.

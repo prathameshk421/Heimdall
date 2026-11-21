@@ -6,8 +6,9 @@ import (
 	"strings"
 )
 
-// RustTestStart returns the 1-based line of the "#[cfg(test)]" that opens a file's top-level test module, or 0 when
-// the file has none. Attributes may sit between it and "mod"; an indented module is not top level.
+// RustTestStart returns the 1-based line of the "#[cfg(test)]" that opens a file's top-level inline test module
+// ("mod name {"), or 0 when the file has none. Attributes may sit between it and "mod". An indented module is not top
+// level, and a declared file module ("mod name;") is not inline.
 func RustTestStart(src []byte) int {
 	lines := strings.Split(string(src), "\n")
 	for i, line := range lines {
@@ -19,13 +20,29 @@ func RustTestStart(src []byte) int {
 			if next == "" || strings.HasPrefix(next, "#[") {
 				continue
 			}
-			if strings.HasPrefix(next, "mod ") || strings.HasPrefix(next, "pub mod ") || strings.HasPrefix(next, "pub(crate) mod ") {
+			inline := strings.HasSuffix(next, "{")
+			if inline && (strings.HasPrefix(next, "mod ") || strings.HasPrefix(next, "pub mod ") || strings.HasPrefix(next, "pub(crate) mod ")) {
 				return i + 1
 			}
 			break
 		}
 	}
 	return 0
+}
+
+// RustTestRegion returns the first line of a file's test region: the blank lines before its inline test module and
+// the module itself (RustTestStart). It returns 0 when the file has no inline test module. A fix that appends a module
+// adds the blank line too, so the region, not the "#[cfg(test)]" line, tells test code from source.
+func RustTestRegion(src []byte) int {
+	start := RustTestStart(src)
+	if start == 0 {
+		return 0
+	}
+	lines := strings.Split(string(src), "\n")
+	for start > 1 && strings.TrimSpace(lines[start-2]) == "" {
+		start--
+	}
+	return start
 }
 
 // SpliceRustTests puts the fix's top-level test module into the base file: the base's code up to its own test module,
@@ -45,10 +62,21 @@ func SpliceRustTests(base, fix []byte) ([]byte, error) {
 	return []byte(code + "\n" + tests), nil
 }
 
+// TestModule locates a Rust file's inline test module on each side of a fix diff. Old is its "#[cfg(test)]" line on
+// the fix parent (RustTestStart): code the fix inserts after the blank line before it is still source. New is its
+// region on the fix (RustTestRegion): a fix that appends a module adds the blank line before it too. 0 means that
+// side has none.
+type TestModule struct{ Old, New int }
+
+// inModule says whether the hunk is test code: it starts in the old test module, or it adds lines inside the new one.
+func (m TestModule) inModule(h Hunk) bool {
+	return (m.Old > 0 && h.OldStart >= m.Old) || (m.New > 0 && h.NewCount > 0 && h.NewStart >= m.New)
+}
+
 // SourceTruth returns the truth spans of a fix diff for the toolchain: the old-side spans in source files, not in
-// tests (doc.go, "Truth"). testFrom maps a Rust file to the first line of its inline test module (RustTestStart on the
-// fix parent); a hunk that starts there or later is test code and gives no truth.
-func SourceTruth(t Toolchain, files []FileDiff, testFrom map[string]int) []FileTruth {
+// tests (doc.go, "Truth"). tests maps a Rust file to its inline test module on both sides; a hunk inside it is test
+// code and gives no truth.
+func SourceTruth(t Toolchain, files []FileDiff, tests map[string]TestModule) []FileTruth {
 	if t == ToolchainGo {
 		return GoTruth(files)
 	}
@@ -59,7 +87,7 @@ func SourceTruth(t Toolchain, files []FileDiff, testFrom map[string]int) []FileT
 		}
 		ft := FileTruth{File: f.Path}
 		for _, h := range f.Hunks {
-			if from := testFrom[f.Path]; from > 0 && h.OldStart >= from {
+			if tests[f.Path].inModule(h) {
 				continue
 			}
 			ft.Lines = append(ft.Lines, oldSpan(h))
@@ -86,7 +114,7 @@ func isSource(t Toolchain, p string) bool {
 	case ToolchainCargo:
 		return strings.HasSuffix(p, ".rs") && !rustIntegrationTest(p)
 	case ToolchainVitest:
-		if vitestTestFile(p) || strings.HasSuffix(p, ".d.ts") {
+		if VitestTestFile(p) || strings.HasSuffix(p, ".d.ts") {
 			return false
 		}
 		for _, ext := range []string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"} {
@@ -121,7 +149,7 @@ func ToolchainTestFiles(t Toolchain, files []FileDiff) []string {
 		if f.Status == FileDeleted {
 			continue
 		}
-		if (t == ToolchainVitest && vitestTestFile(f.Path)) || (t == ToolchainCargo && rustIntegrationTest(f.Path)) {
+		if (t == ToolchainVitest && VitestTestFile(f.Path)) || (t == ToolchainCargo && rustIntegrationTest(f.Path)) {
 			out = append(out, f.Path)
 		}
 	}
@@ -143,21 +171,9 @@ func ChangesInstall(files []FileDiff) bool {
 	return false
 }
 
-// TestLeaf returns the last part of a test id: the test title for vitest, the function name for cargo. The fix's
-// file must hold it, so a typo in the manifest cannot name a test the fix did not write.
-func TestLeaf(t Toolchain, id string) string {
-	switch t {
-	case ToolchainGo:
-	case ToolchainVitest:
-		_, name, ok := SplitTestID(id)
-		if !ok {
-			return id
-		}
-		parts := strings.Split(name, " > ")
-		return parts[len(parts)-1]
-	case ToolchainCargo:
-		parts := strings.Split(id, "::")
-		return parts[len(parts)-1]
-	}
-	return id
+// TestLeaf returns the function name of a cargo test id: the part after the last "::". The fix's Rust files must
+// declare it, so a typo in the manifest cannot name a test the fix did not write.
+func TestLeaf(id string) string {
+	parts := strings.Split(id, "::")
+	return parts[len(parts)-1]
 }
