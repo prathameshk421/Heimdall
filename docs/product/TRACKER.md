@@ -71,8 +71,22 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | Live Proof Bench run 3 | owner's terminal, DeepSeek V4.1 Flash on Deploy, `--parallel 3` | `083c81f` | done | all 28 cases; $2.92, stopped at the $3 cap after 33 min; 6 scored: `fixture-refunds` proposed 2 proven 2 hit (first proven live hit), recall 1/3, FP 0/3, no injection. 7 cases ended on HTTP 500 after 3 attempts each (2 more cut by the cap during a failing call): identical refusals, never the first call. Cause matched to DeepSeek docs: `reasoning_content` of earlier assistant turns not sent back in thinking mode with tools |
 | AM12d send reasoning back | Claude Personal / Opus | `am12d-reasoning` | merged | `7873f67`: `ports.ModelReasoning` on messages and answers; adapter reads `reasoning_content` (DeepSeek, Deploy), `reasoning` and `reasoning_details` (OpenRouter) and sends each earlier assistant turn back in the same field, full, details byte for byte; failed attempts record body size, SHA-256 and `same_request`. Break check: dropping reasoning on send fails 3 adapter tests and the chi-1051 replay. Lint 0, archcheck holds, unit 5295. Whether it fixes Deploy's 500 is not verified until live run 4 |
 | Site v6 identity and rebuild | Claude Personal / Opus (medium) | `site-v6` | merged `78b97e1`, not deployed | Gateposts logo (two posts, a floating check; sharp at 16 px); research-release page: dated plain headline, candid lede, sticky contents, 4 numbered tables with footnotes, Figure 1 demo labelled illustration. AA contrast in 6 views, no overflow, keyboard focus ring, reduced motion. Caught the 9 vs 7 HTTP 500 count (fixed in `1bff3ac`). Source links point at `product-build` on GitHub, which is behind local: they resolve only after a push. Awaiting owner and Aarush approval to deploy |
+| AM15 heimdall action CLI wiring | Claude Personal / Opus | `am15-action-cli` | running | wires AM14 use cases to real adapters; Linux build; smoke test on httptest fakes |
 | Site v7 periwinkle mist and grain | Claude Personal / Opus (medium) | `site-v7` | live (deployed Nov 22, deployment heimdall-9c90ctlyo, alias heimdall-sage.vercel.app) | palette tokens (light paper #eceefb, dark #11133a, rose accent); original SVG gate art (9.4 KB after v7.1): two lit fluted columns, the check as light, mist over the plinth, a walking figure; one mask fades the scene into the page at top and bottom (no seam). Grain under content. Lowest contrast 5.24:1 light, 7.03:1 dark; no overflow; focus on every stop; reduced motion stills the mist. HTML 66.0 KB (16.9 KB gzip). Safari and Firefox not checked; owner said go; product-build pushed (fast-forward, 29 commits) so the 11 linked source files resolve (all 200); deploy holds only index.html, favicon and og image; og:image absolute (`11f5749`); dotfiles 404 |
 | Landing page v4 | Claude / Opus (medium) | `site-v4`, merged `9da0032` | live | https://heimdall-sage.vercel.app (new Vercel project `heimdall` on prathameshk421, first deploy went to production): 8 sections, every number linked to its source, `site/CLAIMS.md`; checked at 1440/834/360 px light and dark; deployed only index.html, the old page and their assets (gitleaks clean). Source links point to `blob/product-build/...`, which 404 until `product-build` is pushed (owner's call). Screen reader, contrast tool and Firefox not checked |
+
+## Roadmap status (Nov 22 2026, against ROADMAP.md draft 3)
+
+Done and merged: research 01 to 12 and three critics; A0 Proof Bench (28+ valid cases in Go, TypeScript, Rust and
+fixture-pay; three live runs); A1 design and S1 spike; Action core AM1 to AM12d; A3 summary renderer; A6 and A11
+test integrity and fail-twice rule; A13 test selection; AM13 rows; AM14a/b/c use cases; A9 and A9b board sign-in;
+B1 session readers; P1.7 any OpenAI-compatible endpoint; landing page v7.1 live.
+
+Open, critical path to a shippable Action, in order: AM15 CLI wiring (running); AM16 composite action and
+workflows with a timed install on the fixture repo; A4 shadow mode and digest; A8 break-glass; A10 cost line in the
+summary (caps already in the loop); A12 p95 and misses report; owner's live run 4 for real recall numbers.
+Then: a whole-product security review pass; a VM usage and performance pass; Stage B memory B2 to B7.
+Waiting by design: Stage C (a signed self-hosted partner), Stage D (after design partners), go-to-market (founders).
 
 ## Merge into heimdall-build (owner yes, Nov 21 2026)
 
