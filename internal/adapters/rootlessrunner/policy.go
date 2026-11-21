@@ -23,6 +23,9 @@ type Policy struct {
 	Images      map[string]string
 	Profiles    map[string]RepoProfile
 	ModuleCache string
+	// Allowed are the pinned references the runner was started with (--go-image and --allowed-images). A profile row
+	// may name one by its reference, as the proposal was validated against this list (D191).
+	Allowed []string
 }
 
 // ContainerArgs returns fixed, restrictive Podman arguments for a single Go test job.
@@ -58,7 +61,7 @@ func (p Policy) WithProfile(name string, spec RepoProfile) (Policy, error) {
 		return Policy{}, errors.New("profile name must be 1 to 64 lowercase name characters")
 	}
 	profiles := map[string]RepoProfile{name: spec}
-	return Policy{Images: p.Images, Profiles: profiles, ModuleCache: p.ModuleCache}, nil
+	return Policy{Images: p.Images, Profiles: profiles, ModuleCache: p.ModuleCache, Allowed: p.Allowed}, nil
 }
 
 // resolveJob turns a check or test job into a jobSpec from the promoted profile it runs under. The command and the
@@ -102,12 +105,14 @@ func (p Policy) resolveJob(profile, checkID, testKind, dir string) (jobSpec, err
 }
 
 // resolveImage turns the image a profile row names into the digest reference to run. A bare name resolves through the
-// runner's own image table; a reference must be one the runner holds (its table or the profile's own reviewed image).
+// runner's own image table; a reference must be one the runner holds (its table, its allowlist or the profile's own
+// reviewed image).
 func (p Policy) resolveImage(name string, spec RepoProfile) (string, error) {
 	if ref, ok := p.Images[name]; ok && digestImage.MatchString(ref) {
 		return ref, nil
 	}
-	if digestImage.MatchString(name) && (name == spec.Image || slices.Contains(slices.Collect(maps.Values(p.Images)), name)) {
+	if digestImage.MatchString(name) && (name == spec.Image || slices.Contains(slices.Collect(maps.Values(p.Images)), name) ||
+		slices.Contains(p.Allowed, name)) {
 		return name, nil
 	}
 	return "", fmt.Errorf("%w: %q", ErrImageNotAllowed, name)

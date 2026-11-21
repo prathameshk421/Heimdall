@@ -217,3 +217,21 @@ func TestALaterPromotionReplacesTheStoredProfile(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "tests/accept", got.Paths.Tests, "a restart loads the newer promotion")
 }
+
+// A check may name an image from the runner's allowlist by its pinned reference: the proposal was validated against
+// that list, so the job must accept it too (live, Nov 21: the golangci-lint check on PR #18 was refused, D191).
+func TestACheckRunsOnAnAllowlistedImageByReference(t *testing.T) {
+	lintRef := "registry.example/lint@sha256:" + strings.Repeat("c", 64)
+	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), filepath.Join(t.TempDir(), "promoted"), []string{goRef, lintRef})
+	require.NoError(t, err)
+	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n" +
+		"checks:\n  - { id: lint, lens: static, when: [\"**/*.go\"], image: " + lintRef + ", run: lint --sarif /out/result.sarif }\n"
+	_, err = r.Activate("acme-pay", []byte(artifact))
+	require.NoError(t, err)
+	p, err := r.effectivePolicy(JobInput{Profile: "acme-pay"})
+	require.NoError(t, err)
+	j, err := p.resolveJob("acme-pay", "lint", "", "")
+	require.NoError(t, err)
+	require.Equal(t, lintRef, j.Image)
+}

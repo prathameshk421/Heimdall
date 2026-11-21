@@ -107,6 +107,7 @@ type Runner struct {
 // NewRunner loads the durable promoted profiles from profilesDir over the image allowlist and
 // returns a runner ready to serve jobs or promotions.
 func NewRunner(policy Policy, executor Executor, root, profilesDir string, allowlist []string) (Runner, error) {
+	policy.Allowed = slices.Clone(allowlist)
 	// A promotion is validated against the same images Activate accepted: the digest refs and the policy's image
 	// names a check, a test kind or a service may use (D182).
 	accepted := slices.Clone(allowlist)
