@@ -145,3 +145,17 @@ func TestATrialWithoutTestEventsComesBackWithItsLog(t *testing.T) {
 	require.NotEmpty(t, res.LogRef)
 	require.Contains(t, string(blobs.puts[res.LogRef]), "tests/heimdall/KAN-22", "the plain output is the log")
 }
+
+// A runner built without a promoted-profiles folder still takes a promotion: the first one used to panic on a nil map
+// and kill the push (live, Nov 21, `assignment to entry in nil map` in Activate).
+func TestActivateWorksOnARunnerWithNoPromotedProfilesYet(t *testing.T) {
+	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), "", []string{goRef})
+	require.NoError(t, err)
+	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n"
+	spec, err := r.Activate("acme-pay", []byte(artifact))
+	require.NoError(t, err)
+	require.Equal(t, "tests/heimdall", spec.Paths.Tests)
+	_, ok := r.specNamed("acme-pay")
+	require.True(t, ok, "the promoted profile serves jobs")
+}

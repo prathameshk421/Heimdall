@@ -26,6 +26,7 @@ func run() error {
 	goImage := flag.String("go-image", "", "approved Go image pinned by sha256 digest")
 	profileDir := flag.String("profile-dir", "/etc/heimdall-runner/profiles", "operator-approved repository profiles")
 	allowedImages := flag.String("allowed-images", "", "comma-separated immutable image references approved for profiles")
+	promotedDir := flag.String("promoted-dir", "/var/lib/heimdall-runner/promoted", "durable folder of profiles promoted by Heimdall; reloaded on start")
 	flag.Parse()
 	if *goImage == "" {
 		return fmt.Errorf("--go-image is required")
@@ -42,7 +43,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	runner := rootlessrunner.Runner{Policy: rootlessrunner.Policy{Images: map[string]string{"go": *goImage}, Profiles: profiles}, Executor: rootlessrunner.Podman{}}
+	// NewRunner keeps promoted profiles in promotedDir, so a promotion survives a restart and Activate has its maps.
+	allowlist := slices.Compact(images)
+	runner, err := rootlessrunner.NewRunner(rootlessrunner.Policy{Images: map[string]string{"go": *goImage}, Profiles: profiles},
+		rootlessrunner.Podman{}, "", *promotedDir, allowlist)
+	if err != nil {
+		return fmt.Errorf("build runner: %w", err)
+	}
 	if err := rootlessrunner.Listen(ctx, *socket, runner.Handler()); err != nil {
 		return err
 	}

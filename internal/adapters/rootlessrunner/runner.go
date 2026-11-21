@@ -166,6 +166,12 @@ func (r *Runner) Activate(name string, artifact []byte) (RepoProfile, error) {
 		return RepoProfile{}, err
 	}
 	r.mu.Lock()
+	if r.promoted == nil {
+		r.promoted = map[string]RepoProfile{} // a runner with no promoted profile yet (live panic, Nov 21)
+	}
+	if r.active == nil {
+		r.active = map[string]RepoProfile{}
+	}
 	r.promoted[name] = spec
 	r.active[name] = spec
 	r.mu.Unlock()
