@@ -10,14 +10,15 @@
 //
 //   - Parse(data, check, lens) reads one SARIF document into Results.
 //   - New(base, head) returns the head results that are new.
-//   - Result: the shape of 4.4. Finger is rule:file:hex(sha256(collapsed snippet text)).
+//   - Result: the shape of 4.4. Finger is rule:file:hex(sha256(collapsed snippet text, or the message)).
 //
 // # Invariants
 //
 //   - The fingerprint hashes the text of the reported lines with every run of white space made one space and both
 //     ends trimmed. Line numbers are not in it, so moved code is not new.
-//   - A result with a region has its text in region.snippet.text. Without it the result cannot be fingerprinted and
-//     Parse refuses the document. A result with no region at all (a file-level result) has Lines [0, 0] and the
+//   - A result with a region is fingerprinted from region.snippet.text, or from its message text when the tool wrote
+//     no snippet (optional in SARIF; golangci-lint omits it, D192). With neither, Parse refuses the document. An
+//     absent endLine is the startLine. A result with no region at all (a file-level result) has Lines [0, 0] and the
 //     fingerprint rule:file: with no hash; New then matches it by rule and file only.
 //   - Input larger than MaxBytes, an unknown level and an invalid line range are refused.
 //   - New matches on check and fingerprint together, so two checks that flag the same text do not hide each other.
