@@ -55,7 +55,8 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | A13 test selection | Claude / Sonnet | `a13-test-selection` | merged | `6ddf435`: reverse-dependency closure, fail safe to Full (go.mod, go.sum, go.work, vendor, unknown graph, unmapped file). Apple M3, warm cache, 5 real commits each: heimdall 106.7 s to 13.1 s; echo 8.5 to 8.4 s; client_golang 51.7 to 43.2 s; selection costs 0.2 to 0.6 s. No large repo, no recall test (all commits green), Go only, nightly full run not built |
 | P2.1b Proof Bench reviewer harness | OpenCode / DeepSeek V4.1 Flash (deploy) | `p2.1b-bench-review` | running (finish) | Claude / Opus WIP committed as `c083b08` (not verified; builds, tests pass). Owner yes for one live run, cap $3; the owner runs it in their own terminal (R8) |
 | AM13 Action rows | Claude / Sonnet | `am13-action-rows` | merged | `8054225`: `actionflow.Decide` gives 9 rows (state, fast, ingest, proof, findings, budget, break_glass, sweep, publish) with typed effects; results count only for their head, base and policy hash; fail closed on bad policy or failed log. Tested on hand-built views, not on Fold of real events. AM14 must pass HeadAt (push time) |
-| AM14 Action gate, proof and ingest use cases | OpenCode / DeepSeek V4.1 Flash (deploy) | `am14-action-app` | running as AM14a (gate and ingest only) | the Claude / Opus run stopped at the 5-hour limit with no work written; proof use case (AM14b) waits for AM14a |
+| AM14 Action gate, proof and ingest use cases | OpenCode / DeepSeek V4.1 Flash (deploy) | `am14-action-app` | AM14a done on branch `am14-action-app-gate` (unmerged); AM14b not started | AM14a `3571210`, `c53b8b6`, `a5d2384`, `eb52cd0`, and the effect-order fix: new `internal/app/action` (`doc.go`, `ingest.go`, `gate.go`, `gate_effects.go`, `gate_view.go`, `gate_test.go`). Ingest maps third-party comments with `external` and merges a candidate into our finding on same file, overlapping lines and claim Jaccard at least 0.6. The gate loads through `ports.EventStore`, appends `state.reset` first on a failed MAC or chain and fails closed with `ErrStateUnverified` when no `Resetter` is wired, folds, reads GitHub, runs `fastcheck.Evaluate` with only `testintegrity.Result.Blocking()`, calls `actionflow.Decide` with `HeadAt` set to the push time, and runs the rows in rounds. `PostChecks` goes before the summary so a crash repeats an idempotent post. Only an appended event counts as progress, so a second run on the same head appends nothing, posts one check run per head and leaves one comment. Component test: in-memory fakes for every port, nine cases (enforce pass, shadow neutral, forged pass gives unknown, warning-only integrity does not block, no proof check without a result, bad MAC resets and gives unknown, bad MAC without a resetter fails closed, double run posts one comment, moved head re-decides). `CGO_ENABLED=0 go test ./internal/app/action/...` pass; `golangci-lint` 0 issues; archcheck holds (115 packages); `make fast` 4819 tests. Not verified: no real GitHub call, no `gitlog` against `httptest`, no live `pr.opened`/`pr.pushed` fold, and no `FactsReader` implementation yet (cmd wiring is AM15). Proof effects are ignored by design |
+| AM14b Action proof use case | – | – | not started | waits for AM14a's merge and for AM11 to land |
 | t3code third-party comment dataset | OpenCode / DeepSeek V4.1 Flash free | `bench-t3code` | running | Claude / Sonnet run stopped at the limit with no work written; read-only on pingdotgg/t3code; fork `prathameshk421/t3code` is the live trial target after AM15/AM16 |
 
 ## Merge into heimdall-build (owner yes, Nov 21 2026)
@@ -98,6 +99,20 @@ Not pushed.
   `Copilot`. Check the real login on a live PR before A5 ships, or Copilot comments are silently ignored.
 - AM7 for AM14: the caller sets `Outdated` (REST `position` null or GraphQL `isOutdated`); LEFT-side comments stay
   unmapped with `Side` set; duplicate merging with our findings (6.2 step 5) is AM14's.
+
+- AM14a for AM15: `ports.ReviewComment` carries no `position`, no `Outdated` and no `original_commit_id`, so the gate
+  cannot pass the outdated flag the adapter can read. AM9's doc names `REST position null or GraphQL isOutdated` as the
+  caller's job, but the port has no field for it. A comment whose current line is gone is still anchored through
+  `original_line` when the adapter fills it; otherwise it drops as `no_line`. Decide whether AM15 adds the field or the
+  adapter sets `Outdated` from `position` itself.
+- AM14a for AM15: wiring needs two pieces this task leaves to `cmd`. `Config.Facts` must be built from
+  `internal/secretscan`, the coverage adapter and the domain rules (`testintegrity`), and `Config.IsUnverified` must be
+  `errors.Is(err, gitlog.ErrIntegrity)`. `Config.Resetter` needs a gitlog method that replaces a change's log; the store
+  has none today, so a bad MAC fails closed until that exists.
+- AM14a: `change.ExternalIngested.Side` accepts `external.SideLeft`, but the location of a LEFT comment is on the base
+  file. The gate records it as given and the summary shows the path only, so no wrong head line becomes a comment.
+- AM14a: the gate reads `heimdall.yaml` at the merge base with `ports.CodeReader` and decodes it with an injected
+  `PolicyDecoder`. A real run should use `policyyaml.Decode`; the component test does, against the pay-demo fixture.
 
 - AM9 for AM14: `Adapter.tokens` is the concrete App token source, so the existing PR, files, reviews and checks calls
   cannot use the Action's static token yet. Make the field the `Tokens` interface when AM14 wires Action mode.
