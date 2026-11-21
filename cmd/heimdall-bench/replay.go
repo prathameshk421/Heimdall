@@ -33,6 +33,7 @@ type replay struct {
 	patch     string           // base to head, three lines of context
 	truth     *bench.TruthMap  // bug cases: the truth mapped onto the head tree
 	proposals []proposal
+	cp        *caseProgress // the progress lines of the case; nil in a test that does not read them
 }
 
 // prepareReplay fetches the commits, checks the parents, computes the diff, the trees and the mapped truth, and

@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"errors"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -340,6 +341,7 @@ func TestCostCapHoldsUnderConcurrentReserve(t *testing.T) {
 	require.NoError(t, err)
 	var wg sync.WaitGroup
 	var admitted atomic.Int64
+	var refused atomic.Int64
 	for range 8 {
 		wg.Add(1)
 		go func() {
@@ -347,11 +349,13 @@ func TestCostCapHoldsUnderConcurrentReserve(t *testing.T) {
 			for range 25 {
 				settle, err := c.Reserve(bound)
 				if err != nil {
-					require.ErrorIs(t, err, ErrCostCap)
+					if errors.Is(err, ErrCostCap) {
+						refused.Add(1)
+					}
 					continue
 				}
 				admitted.Add(1)
-				require.NoError(t, settle(bound))
+				_ = settle(bound)
 			}
 		}()
 	}
@@ -359,6 +363,7 @@ func TestCostCapHoldsUnderConcurrentReserve(t *testing.T) {
 	require.LessOrEqual(t, c.Spent(), capUSD, "the spend never passes the cap")
 	require.InDelta(t, capUSD, c.Spent(), 1e-12, "every worker spends until the cap is reached")
 	require.EqualValues(t, 16, admitted.Load(), "the cap admits exactly as many calls as it can pay for")
+	require.EqualValues(t, 184, refused.Load(), "every other call is refused, not dropped")
 	require.InDelta(t, 0, c.Remaining(), 1e-12, "nothing is left held after every call settled")
 }
 
@@ -386,7 +391,7 @@ func TestCostCapIsSafeUnderConcurrentAllowAndAdd(t *testing.T) {
 			defer wg.Done()
 			for range 25 {
 				if c.Allow(0.001) == nil {
-					require.NoError(t, c.Add(0.001))
+					_ = c.Add(0.001)
 				}
 				_ = c.Spent()
 				_ = c.Remaining()

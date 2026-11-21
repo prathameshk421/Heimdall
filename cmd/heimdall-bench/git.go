@@ -129,12 +129,22 @@ func (rp *repo) worktree(ctx context.Context, sha, label string) (string, error)
 	return dir, err
 }
 
-// remove deletes a worktree, also one a killed run left behind.
+// remove deletes a worktree, also one a killed run left behind. It removes through os.Root, so only a path inside the
+// repository's own worktree parent can be touched, whatever label a caller passes.
 func (rp *repo) remove(ctx context.Context, dir string) error {
-	if err := os.RemoveAll(dir); err != nil {
+	rel, err := filepath.Rel(rp.work, dir)
+	if err != nil {
+		return fmt.Errorf("worktree path %q: %w", dir, err)
+	}
+	root, err := os.OpenRoot(rp.work)
+	if err != nil {
+		return fmt.Errorf("open the worktree parent: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.RemoveAll(rel); err != nil {
 		return fmt.Errorf("remove worktree: %w", err)
 	}
-	_, err := rp.git(ctx, "", "--git-dir", rp.gitDir, "worktree", "prune")
+	_, err = rp.git(ctx, "", "--git-dir", rp.gitDir, "worktree", "prune")
 	return err
 }
 

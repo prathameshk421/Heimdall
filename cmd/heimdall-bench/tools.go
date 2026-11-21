@@ -89,20 +89,48 @@ func decodeArgs(raw json.RawMessage, v any) error {
 }
 
 // tools returns the reviewer's tools: the ones the product gives it (read_code, search_code, list_changes,
-// run_test, propose_finding). They read the head worktree only, so the fix and later history are not visible.
-func (rp *replay) tools() []agentloop.Tool {
-	return []agentloop.Tool{
-		fnTool{spec: ports.ModelTool{Name: "list_changes", Description: "List the files the pull request changes, with the unified diff (3 lines of context) from its base to its head.",
+// run_test, propose_finding). They read the head worktree only, so the fix and later history are not visible. onCall
+// is told the latency of each call; it may be nil.
+func (rp *replay) tools(onCall func(name string, seconds float64)) []agentloop.Tool {
+	specs := rp.toolSpecs()
+	out := make([]agentloop.Tool, len(specs))
+	for i, s := range specs {
+		out[i] = timedTool{inner: s, onCall: onCall}
+	}
+	return out
+}
+
+// toolSpecs is the reviewer's tool list, before the timing wrapper.
+func (rp *replay) toolSpecs() []fnTool {
+	return []fnTool{
+		{spec: ports.ModelTool{Name: "list_changes", Description: "List the files the pull request changes, with the unified diff (3 lines of context) from its base to its head.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)}, run: rp.listChanges},
-		fnTool{spec: ports.ModelTool{Name: "read_code", Description: "Read a file at the pull request head, with line numbers. At most 300 lines per call.",
+		{spec: ports.ModelTool{Name: "read_code", Description: "Read a file at the pull request head, with line numbers. At most 300 lines per call.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}},"required":["path"],"additionalProperties":false}`)}, run: rp.readCode},
-		fnTool{spec: ports.ModelTool{Name: "search_code", Description: "Search the files at the pull request head for a literal string. At most 50 matches.",
+		{spec: ports.ModelTool{Name: "search_code", Description: "Search the files at the pull request head for a literal string. At most 50 matches.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1},"path_prefix":{"type":"string"}},"required":["query"],"additionalProperties":false}`)}, run: rp.searchCode},
-		fnTool{spec: ports.ModelTool{Name: "run_test", Description: "Write one new Go test file into the pull request head and run its package's tests in the sandbox. Returns each test's outcome and the output.",
+		{spec: ports.ModelTool{Name: "run_test", Description: "Write one new Go test file into the pull request head and run its package's tests in the sandbox. Returns each test's outcome and the output.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"test_path":{"type":"string","description":"A new *_test.go path in the package under test."},"test_source":{"type":"string"}},"required":["test_path","test_source"],"additionalProperties":false}`)}, run: rp.runTest},
-		fnTool{spec: ports.ModelTool{Name: "propose_finding", Description: "Propose one bug the change brings in, with a Go test that fails on this head because of the bug and passes once the bug is fixed. At most 5 findings.",
+		{spec: ports.ModelTool{Name: "propose_finding", Description: "Propose one bug the change brings in, with a Go test that fails on this head because of the bug and passes once the bug is fixed. At most 5 findings.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"file":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"severity":{"type":"string","enum":["low","medium","high","critical"]},"claim":{"type":"string","maxLength":600},"test_path":{"type":"string"},"test_name":{"type":"string"},"test_source":{"type":"string"}},"required":["file","start_line","end_line","severity","claim","test_path","test_name","test_source"],"additionalProperties":false}`)}, run: rp.proposeFinding},
 	}
+}
+
+// timedTool reports the latency of one tool call to the case's progress. It changes nothing the model sees.
+type timedTool struct {
+	inner  fnTool
+	onCall func(name string, seconds float64)
+}
+
+func (t timedTool) Spec() ports.ModelTool { return t.inner.Spec() }
+
+func (t timedTool) Run(ctx context.Context, args json.RawMessage) (string, error) {
+	start := time.Now()
+	out, err := t.inner.Run(ctx, args)
+	if t.onCall != nil {
+		t.onCall(t.inner.spec.Name, time.Since(start).Seconds())
+	}
+	return out, err
 }
 
 func (rp *replay) listChanges(_ context.Context, args json.RawMessage) (string, error) {
@@ -317,11 +345,21 @@ func (rp *replay) checkTestFile(testPath, source string) error {
 	return nil
 }
 
-// sandboxRun runs the package of testPath at sha with the test file written in.
+// sandboxRun runs the package of testPath at sha with the test file written in. The case's progress gets one start
+// line and one end line per run, so a slow suite is visible while the run is still going.
 func (rp *replay) sandboxRun(ctx context.Context, sha, testPath string, source []byte) (ports.SandboxResult, error) {
 	job := ports.SandboxJob{Kind: ports.SandboxRepro, Repo: change.Repo(rp.c.RepoSlug()), SHA: id.SHA(sha),
 		Dir: path.Dir(testPath), Timeout: min(rp.c.Timeout, maxSandboxTimout)}
-	return rp.sandbox.RunOverlay(ctx, job, []ports.File{{Path: testPath, Content: source}})
+	label := treeLabel(sha)
+	if rp.cp != nil {
+		rp.cp.testStart(label)
+	}
+	start := time.Now()
+	res, err := rp.sandbox.RunOverlay(ctx, job, []ports.File{{Path: testPath, Content: source}})
+	if rp.cp != nil {
+		rp.cp.testEnd(label, res, err, time.Since(start).Seconds())
+	}
+	return res, err
 }
 
 func (rp *replay) runTest(ctx context.Context, args json.RawMessage) (string, error) {

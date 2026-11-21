@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agentloop"
@@ -91,9 +92,13 @@ type reviewOptions struct {
 	price      bench.Price
 	maxCost    float64
 	perCase    float64
+	parallel   int
 	blockAt    finding.Severity
 	commandFor string // the command line written into the report
 }
+
+// MaxParallel is the most cases a review runs at once.
+const maxParallel = 8
 
 func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	fs := flag.NewFlagSet("review", flag.ContinueOnError)
@@ -111,6 +116,7 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	fs.Float64Var(&o.price.OutputPerM, "price-output", 0, "USD per million output tokens; default the table's price for -model")
 	fs.Float64Var(&o.maxCost, "max-cost", testingCapUSD, "hard cap in USD for the whole run; no call that could pass it is made")
 	fs.Float64Var(&o.perCase, "per-case-cost", 0.50, "the agent loop budget in USD for one case (ACTION_MODE 7)")
+	fs.IntVar(&o.parallel, "parallel", 1, "how many cases to review at once, at most 8; the cost cap stays shared")
 	block := fs.String("block-severity", "medium", "a proven finding at or above this severity blocks")
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -124,6 +130,9 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	}
 	if o.keyFile == "" {
 		return o, errors.New("review: -key-file is required")
+	}
+	if o.parallel < 1 || o.parallel > maxParallel {
+		return o, fmt.Errorf("review: -parallel %d: want 1 to %d", o.parallel, maxParallel)
 	}
 	p, err := priceFor(o.model, o.price)
 	if err != nil {
@@ -156,22 +165,23 @@ func runReview(ctx context.Context, args []string, stderr io.Writer, r runner) (
 
 // reviewReport is the results file of a review run.
 type reviewReport struct {
-	HeimdallCommit string        `json:"heimdall_commit"`
-	Started        string        `json:"started"`
-	Machine        string        `json:"machine"`
-	GoVersion      string        `json:"go_version"`
-	Manifest       string        `json:"manifest"`
-	Command        string        `json:"command"`
-	Model          string        `json:"model"`
-	Price          bench.Price   `json:"price"`
-	MaxCostUSD     float64       `json:"max_cost_usd"`
-	PerCaseUSD     float64       `json:"per_case_usd"`
-	BlockSeverity  string        `json:"block_severity"`
-	Sandbox        string        `json:"sandbox"`
-	Seconds        float64       `json:"seconds"`
-	Stopped        string        `json:"stopped,omitempty"`
-	Summary        bench.Summary `json:"summary"`
-	Cases          []reviewCase  `json:"cases"`
+	HeimdallCommit string          `json:"heimdall_commit"`
+	Started        string          `json:"started"`
+	Machine        string          `json:"machine"`
+	GoVersion      string          `json:"go_version"`
+	Manifest       string          `json:"manifest"`
+	Command        string          `json:"command"`
+	Model          string          `json:"model"`
+	Price          bench.Price     `json:"price"`
+	MaxCostUSD     float64         `json:"max_cost_usd"`
+	PerCaseUSD     float64         `json:"per_case_usd"`
+	BlockSeverity  string          `json:"block_severity"`
+	Sandbox        string          `json:"sandbox"`
+	Seconds        float64         `json:"seconds"`
+	Stopped        string          `json:"stopped,omitempty"`
+	Summary        bench.Summary   `json:"summary"`
+	Turns          bench.TurnStats `json:"turns"`
+	Cases          []reviewCase    `json:"cases"`
 }
 
 // reviewCase is one case in the results file.
@@ -181,7 +191,6 @@ type reviewCase struct {
 	Base     string                `json:"base"`
 	Fixed    string                `json:"fixed"`
 	Stop     agentloop.StopReason  `json:"stop,omitempty"`
-	Turns    int                   `json:"turns"`
 	Error    string                `json:"error,omitempty"`
 	Truth    *bench.TruthMap       `json:"truth_on_head,omitempty"`
 	Findings []bench.ScoredFinding `json:"findings"`
@@ -189,6 +198,10 @@ type reviewCase struct {
 
 // reviewRun reviews every selected valid case with model behind the hard cost cap, then writes the results. The exit
 // status is 0 when every case was scored, and 1 when one was not (an error, or the cost cap stopped the run).
+//
+// With -parallel N the cases are reviewed N at a time. One cost cap is shared by every worker, so the run's spend never
+// passes -max-cost. Every case keeps its own repository cache, sandbox and worktrees, and the results file keeps the
+// manifest order whatever order the cases end in.
 func reviewRun(ctx context.Context, o reviewOptions, r runner, model ports.ModelChat, stderr io.Writer) (int, error) {
 	cases, err := reviewCases(o)
 	if err != nil {
@@ -198,32 +211,20 @@ func reviewRun(ctx context.Context, o reviewOptions, r runner, model ports.Model
 	if err != nil {
 		return exitUsage, err
 	}
-	capped := cappedModel{inner: model, cap: costCap, price: o.price}
 	start := time.Now()
 	base := newReport(ctx, r, o.manifest, start)
 	rep := reviewReport{HeimdallCommit: base.HeimdallCommit, Started: base.Started, Machine: base.Machine,
 		GoVersion: base.GoVersion, Manifest: o.manifest, Command: o.commandFor, Model: o.model, Price: o.price,
 		MaxCostUSD: o.maxCost, PerCaseUSD: o.perCase, BlockSeverity: string(o.blockAt), Sandbox: sandboxNote}
-	sb := newLocalSandbox()
-	for _, c := range cases {
-		if rep.Stopped != "" {
-			rep.Cases = append(rep.Cases, reviewCase{CaseScore: bench.CaseScore{ID: c.ID, Kind: c.Kind}, Error: "not run: " + rep.Stopped})
-			continue
-		}
-		rc, stop := reviewOne(ctx, o, r, sb, capped, costCap, c)
-		rep.Cases = append(rep.Cases, rc)
-		if stop {
-			rep.Stopped = "cost cap"
-		}
-		writeDiagnostic(stderr, fmt.Sprintf("%-20s %-5s scored=%-5v proposed=%d proven=%d hit=%v fp=%v $%.4f %6.1fs %s\n",
-			c.ID, c.Kind, rc.Scored, rc.Proposed, rc.Proven, rc.Hit, rc.FalsePositive, rc.CostUSD, rc.Seconds, rc.Error))
-	}
+	prog := newProgress(stderr)
+	rep.Cases, rep.Stopped = runCases(ctx, o, r, model, costCap, prog, cases)
 	rep.Seconds = time.Since(start).Seconds()
 	scores := make([]bench.CaseScore, len(rep.Cases))
 	for i, c := range rep.Cases {
 		scores[i] = c.CaseScore
 	}
 	rep.Summary = bench.Summarize(scores)
+	rep.Turns = bench.TurnSummary(scores)
 	if err := writeReview(o, rep); err != nil {
 		return exitUsage, err
 	}
@@ -231,6 +232,58 @@ func reviewRun(ctx context.Context, o reviewOptions, r runner, model ports.Model
 		return exitDisagree, nil
 	}
 	return exitAgrees, nil
+}
+
+// runCases reviews the cases with up to -parallel workers and returns one result per case, in the manifest order.
+// stopped is "cost cap" when the cap ended the run.
+func runCases(ctx context.Context, o reviewOptions, r runner, model ports.ModelChat, costCap *bench.CostCap,
+	prog *progress, cases []bench.Case) (out []reviewCase, stopped string) {
+	run := func(i int) (reviewCase, bool) {
+		return reviewOne(ctx, o, r, model, costCap, prog, cases[i])
+	}
+	out, capped := runPool(o.parallel, len(cases), run)
+	if !capped {
+		return out, ""
+	}
+	for i, c := range out {
+		if c.ID == "" {
+			out[i] = reviewCase{CaseScore: bench.CaseScore{ID: cases[i].ID, Kind: cases[i].Kind}, Error: "not run: cost cap"}
+		}
+	}
+	return out, "cost cap"
+}
+
+// runPool runs one case at a time in each of n workers, and returns the results in slot order whatever order the work
+// ends in. capped is true when a worker reported that the cost cap ended the run; no case after that starts.
+func runPool(n, count int, run func(i int) (reviewCase, bool)) (out []reviewCase, capped bool) {
+	out = make([]reviewCase, count)
+	workers := max(min(n, count), 1)
+	var mu sync.Mutex
+	next := 0
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				mu.Lock()
+				if next >= count || capped {
+					mu.Unlock()
+					return
+				}
+				i := next
+				next++
+				mu.Unlock()
+				rc, stop := run(i)
+				mu.Lock()
+				out[i] = rc
+				capped = capped || stop
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	return out, capped
 }
 
 // reviewCases picks the valid Go cases, or the -only ones, which must be valid Go cases too.
@@ -278,56 +331,91 @@ func pickCases(cases []bench.Case, ids []string) ([]bench.Case, error) {
 	return out, nil
 }
 
-// reviewOne replays one case, runs the reviewer and proves its findings. stop is true when the cost cap ended it.
-func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox, model ports.ModelChat,
-	costCap *bench.CostCap, c bench.Case) (rc reviewCase, stop bool) {
+// reviewOne replays one case, runs the reviewer and proves its findings. stop is true when the cost cap ended it. The
+// case has its own repository cache, sandbox and progress lines, so several cases can run at once on one cost cap.
+func reviewOne(ctx context.Context, o reviewOptions, r runner, model ports.ModelChat, costCap *bench.CostCap,
+	prog *progress, c bench.Case) (rc reviewCase, stop bool) {
 	start := time.Now()
 	rc = reviewCase{CaseScore: bench.CaseScore{ID: c.ID, Kind: c.Kind}}
 	defer func() { rc.Seconds = time.Since(start).Round(100 * time.Millisecond).Seconds() }()
-	budget, err := costCap.CaseBudget(o.perCase)
+	cp := newCaseProgress(prog, c.ID)
+	cp.startCase(c.Kind)
+	defer func() { cp.end(rc, costCap.Spent()) }()
+	rep, budget, err := openCase(ctx, o, r, costCap, cp, c)
 	if err != nil {
-		rc.Error = "not run: " + err.Error()
+		rc.Error = err.Error()
 		return rc, errors.Is(err, bench.ErrCostCap)
-	}
-	rp, err := openRepo(ctx, r, o.cache, c)
-	if err != nil {
-		rc.Error = "open cache: " + err.Error()
-		return rc, false
-	}
-	sb.add(c.RepoSlug(), rp)
-	rep, err := prepareReplay(ctx, rp, sb, c)
-	if err != nil {
-		rc.Error = "replay: " + err.Error()
-		return rc, false
 	}
 	defer rep.close(ctx)
 	rc.Head, rc.Base, rc.Fixed, rc.Truth = rep.head, rep.base, rep.fixed, rep.truth
-	loop, err := agentloop.New(model, clock.System{}, agentloop.Config{Model: o.model, MaxOutputTokens: maxOutputPerAnswer,
-		BudgetUSD: budget, InputTokenCap: inputTokensPerCase, OutputTokenCap: outputTokensPerCas,
-		Deadline: time.Now().Add(caseDeadline), MaxTurns: maxTurnsPerCase}, rep.tools(), []agentloop.Submitter{finishReview{}})
-	if err != nil {
-		rc.Error = "agent loop: " + err.Error()
-		return rc, false
+	if stop, err := runReviewer(ctx, o, model, costCap, budget, cp, rep, &rc); err != nil {
+		rc.Error = err.Error()
+		return rc, stop
 	}
-	res, runErr := loop.Run(ctx, reviewerMessages(c, rep))
+	proveProposals(ctx, rep, &rc)
+	rc.CaseScore = scoreCase(c, o.blockAt, rc)
+	return rc, false
+}
+
+// openCase sets the case up: the per-case budget, the repository, the sandbox and the replayed trees.
+func openCase(ctx context.Context, o reviewOptions, r runner, costCap *bench.CostCap, cp *caseProgress,
+	c bench.Case) (*replay, float64, error) {
+	budget, err := costCap.CaseBudget(o.perCase)
+	if err != nil {
+		return nil, 0, fmt.Errorf("not run: %w", err)
+	}
+	rp, err := openRepo(ctx, r, o.cache, c)
+	if err != nil {
+		return nil, 0, fmt.Errorf("open cache: %w", err)
+	}
+	sb := newLocalSandbox()
+	sb.add(c.RepoSlug(), rp)
+	rep, err := prepareReplay(ctx, rp, sb, c)
+	if err != nil {
+		return nil, 0, fmt.Errorf("replay: %w", err)
+	}
+	rep.cp = cp
+	return rep, budget, nil
+}
+
+// runReviewer runs the agent loop on the case and fills the turn, the stop reason, the cost and the tokens of rc. The
+// returned stop marks a run the cost cap ended.
+func runReviewer(ctx context.Context, o reviewOptions, model ports.ModelChat, costCap *bench.CostCap, budget float64,
+	cp *caseProgress, rep *replay, rc *reviewCase) (stop bool, err error) {
+	capped := cappedModel{inner: model, cap: costCap, price: o.price, prog: cp}
+	loop, err := agentloop.New(capped, clock.System{}, agentloop.Config{Model: o.model, MaxOutputTokens: maxOutputPerAnswer,
+		BudgetUSD: budget, InputTokenCap: inputTokensPerCase, OutputTokenCap: outputTokensPerCas,
+		Deadline: time.Now().Add(caseDeadline), MaxTurns: maxTurnsPerCase}, rep.tools(cp.toolCall), []agentloop.Submitter{finishReview{}})
+	if err != nil {
+		return false, fmt.Errorf("agent loop: %w", err)
+	}
+	res, runErr := loop.Run(ctx, reviewerMessages(rep.c, rep))
 	rc.Stop, rc.Turns, rc.CostUSD = res.Reason, res.Turns, res.CostUSD
+	rc.TurnSeconds, rc.ToolSeconds = cp.turnsSeconds(), cp.toolSeconds()
 	rc.InputTokens, rc.CachedTokens, rc.OutputTokens = res.Usage.InputTokens, res.Usage.CachedInputTokens, res.Usage.OutputTokens
 	if runErr != nil {
-		rc.Error = runErr.Error()
-		return rc, errors.Is(runErr, bench.ErrCostCap)
+		return errors.Is(runErr, bench.ErrCostCap), errors.New(runErr.Error())
 	}
+	return false, nil
+}
+
+// proveProposals runs the proof rule on every proposal and adds its result to the case.
+func proveProposals(ctx context.Context, rep *replay, rc *reviewCase) {
 	for i, p := range rep.proposals {
 		rc.Findings = append(rc.Findings, rep.prove(ctx, i+1, p))
 	}
+}
+
+// scoreCase scores the findings of a finished case and copies the cost and the tokens into the score.
+func scoreCase(c bench.Case, blockAt finding.Severity, rc reviewCase) bench.CaseScore {
 	var truth []bench.FileTruth
-	if rep.truth != nil {
-		truth = rep.truth.Truth
+	if rc.Truth != nil {
+		truth = rc.Truth.Truth
 	}
-	score := bench.ScoreCase(c.Kind, truth, rc.Findings, o.blockAt)
+	score := bench.ScoreCase(c.Kind, truth, rc.Findings, blockAt)
 	score.ID, score.Scored = c.ID, true
 	score.CostUSD, score.InputTokens, score.CachedTokens, score.OutputTokens = rc.CostUSD, rc.InputTokens, rc.CachedTokens, rc.OutputTokens
-	rc.CaseScore = score
-	return rc, false
+	return score
 }
 
 // reviewerPrompt is the reviewer's system prompt. It states the task and the proof rule, not how to reason.
