@@ -35,13 +35,19 @@ type Price struct {
 // ChatClient sends chat completions to an OpenAI-compatible endpoint, with tool calling. It holds no key: KeyName
 // names the secret and Secrets reads it on each call. Empty KeyName sends no Authorization header, for a local
 // endpoint. Headers are extra, non-secret request headers. Prices bills each answer from its usage.
+//
+// RequiredToolChoice is the capability flag for tool_choice "required". When it is false, a request that asks for a
+// required tool call is sent with "auto", because an endpoint that does not know the value may refuse the whole call.
+// When it is true and the endpoint still refuses the call as a bad request, the client sends the same request once more
+// with "auto" and records the first refusal in ModelResponse.Fallback.
 type ChatClient struct {
-	BaseURL string
-	Secrets Secrets
-	KeyName string
-	Headers map[string]string
-	HTTP    *http.Client
-	Prices  map[string]Price
+	BaseURL            string
+	Secrets            Secrets
+	KeyName            string
+	Headers            map[string]string
+	HTTP               *http.Client
+	Prices             map[string]Price
+	RequiredToolChoice bool
 }
 
 // Complete implements ports.ModelChat over POST /chat/completions.
@@ -53,7 +59,44 @@ func (c ChatClient) Complete(parent context.Context, req ports.ModelRequest) (po
 	if err != nil {
 		return ports.ModelResponse{}, errors.New("model chat credential is unavailable")
 	}
-	body, err := chatRequestBody(req)
+	choice := c.toolChoice(req)
+	answer, err := c.send(parent, req, key, choice)
+	if choice != ports.ModelToolChoiceRequired || !refusedRequest(err) {
+		return answer, err
+	}
+	answer, retryErr := c.send(parent, req, key, ports.ModelToolChoiceAuto)
+	if retryErr != nil {
+		return answer, fmt.Errorf("model chat fell back to tool_choice auto after tool_choice required was refused (%v): %w", err, retryErr)
+	}
+	answer.Fallback = "tool_choice required refused: " + err.Error()
+	return answer, nil
+}
+
+// toolChoice is the choice the client sends: none without tools or without a choice in the request, and auto in place
+// of required for an endpoint that is not known to take it.
+func (c ChatClient) toolChoice(req ports.ModelRequest) ports.ModelToolChoice {
+	if len(req.Tools) == 0 || req.ToolChoice == "" {
+		return ""
+	}
+	if req.ToolChoice == ports.ModelToolChoiceRequired && !c.RequiredToolChoice {
+		return ports.ModelToolChoiceAuto
+	}
+	return req.ToolChoice
+}
+
+// refusedRequest reports whether the endpoint refused the call as a bad request it could not take. A context that is
+// too long, a content filter, auth, a rate limit and a server error are not refusals of the tool choice.
+func refusedRequest(err error) bool {
+	var modelErr *ports.ModelError
+	if !errors.As(err, &modelErr) || modelErr.Kind != ports.ModelErrorInvalid {
+		return false
+	}
+	return modelErr.Status == http.StatusBadRequest || modelErr.Status == http.StatusUnprocessableEntity
+}
+
+// send makes one call with the given tool choice.
+func (c ChatClient) send(parent context.Context, req ports.ModelRequest, key string, choice ports.ModelToolChoice) (ports.ModelResponse, error) {
+	body, err := chatRequestBody(req, choice)
 	if err != nil {
 		return ports.ModelResponse{}, err
 	}
@@ -74,9 +117,11 @@ func (c ChatClient) Complete(parent context.Context, req ports.ModelRequest) (po
 		return ports.ModelResponse{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return ports.ModelResponse{}, chatStatusError(resp, raw)
+		return ports.ModelResponse{}, chatStatusError(resp, raw, len(body))
 	}
-	return chatAnswer(raw, req, c.Prices)
+	answer, err := chatAnswer(raw, req, c.Prices)
+	answer.ToolChoice = choice
+	return answer, err
 }
 
 func (c ChatClient) endpoint() string {
@@ -123,16 +168,19 @@ type chatTool struct {
 type chatRequestBodyWire struct {
 	Model     string        `json:"model"`
 	Messages  []chatMessage `json:"messages"`
-	Tools     []chatTool    `json:"tools,omitempty"`
-	MaxTokens int           `json:"max_tokens,omitempty"`
+	Tools      []chatTool    `json:"tools,omitempty"`
+	ToolChoice string        `json:"tool_choice,omitempty"`
+	MaxTokens  int           `json:"max_tokens,omitempty"`
 }
 
-func chatRequestBody(req ports.ModelRequest) ([]byte, error) {
+// chatRequestBody is the wire body of one call. choice is the tool_choice to send, empty for none.
+func chatRequestBody(req ports.ModelRequest, choice ports.ModelToolChoice) ([]byte, error) {
 	body := chatRequestBodyWire{
-		Model:     req.Model,
-		Messages:  make([]chatMessage, 0, len(req.Messages)),
-		Tools:     make([]chatTool, 0, len(req.Tools)),
-		MaxTokens: req.MaxOutputTokens,
+		Model:      req.Model,
+		Messages:   make([]chatMessage, 0, len(req.Messages)),
+		Tools:      make([]chatTool, 0, len(req.Tools)),
+		ToolChoice: string(choice),
+		MaxTokens:  req.MaxOutputTokens,
 	}
 	for _, m := range req.Messages {
 		body.Messages = append(body.Messages, chatWireMessage(m))
@@ -261,7 +309,9 @@ type chatErrorBody struct {
 	} `json:"error"`
 }
 
-func chatStatusError(resp *http.Response, raw []byte) error {
+// chatStatusError maps a refused call to a typed error. It records the status, the content type and the size of the
+// request body, never the body itself or the key, so a refusal such as an HTML "400 Bad request" explains itself.
+func chatStatusError(resp *http.Response, raw []byte, requestBytes int) error {
 	var body chatErrorBody
 	decoded := json.Unmarshal(raw, &body) == nil
 	message, code := "", ""
@@ -271,7 +321,8 @@ func chatStatusError(resp *http.Response, raw []byte) error {
 	if message == "" {
 		message = chatErrorSnippet(raw)
 	}
-	modelErr := &ports.ModelError{Status: resp.StatusCode, Message: message}
+	modelErr := &ports.ModelError{Status: resp.StatusCode, ContentType: chatContentType(resp.Header), RequestBytes: requestBytes,
+		Message: message}
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
 		modelErr.Kind = ports.ModelErrorRateLimited
@@ -299,6 +350,16 @@ func chatErrorCode(code any) string {
 	default:
 		return ""
 	}
+}
+
+// chatContentType is the answer's content type, cut to a bounded length.
+func chatContentType(header http.Header) string {
+	const limit = 128
+	text := strings.TrimSpace(header.Get("Content-Type"))
+	if len(text) > limit {
+		text = text[:limit]
+	}
+	return text
 }
 
 // chatErrorSnippet is the fallback message for a body that is not the JSON envelope.
