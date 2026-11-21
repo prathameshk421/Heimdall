@@ -154,7 +154,7 @@ secret_names=(
 	github_app_id github_app_installation_id github_app_private_key
 	switch_api_key switch_registration_token
 	agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2
-	agent_token_reviewer-3 agent_token_resolver
+	agent_token_reviewer-3 agent_token_resolver agent_token_profiler
 )
 for name in "${secret_names[@]}"; do
 	path="$DEPLOY_SECRETS_DIR/$name"

@@ -135,7 +135,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ports.ErrUnavailable):
 		http.Error(w, "Switch controller is unavailable; retry setup", http.StatusServiceUnavailable)
 	case errors.Is(err, ports.ErrConflict):
-		http.Error(w, "Switch agent configuration conflicts with Heimdall; reconcile it before retrying", http.StatusConflict)
+		// The cause names the agent and the differing fields, never a value; only the coordinator-key caller sees it.
+		http.Error(w, "Switch agent configuration conflicts with Heimdall ("+err.Error()+"); reconcile it before retrying", http.StatusConflict)
 	case errors.Is(err, ports.ErrUnauthorized):
 		http.Error(w, "Switch rejected its configured controller credential; update it and retry setup", http.StatusBadGateway)
 	default:

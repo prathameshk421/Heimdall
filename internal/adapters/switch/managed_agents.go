@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
@@ -99,8 +100,8 @@ func (c *Client) findManagedAgent(ctx context.Context, spec ports.ManagedAgentSp
 		if current.Name != string(spec.Agent.Name) {
 			continue
 		}
-		if !matchesManagedAgent(spec, current) {
-			return ports.ManagedAgent{}, false, fmt.Errorf("switch managed agent %q: %w", current.Name, ports.ErrConflict)
+		if differs := managedAgentDiff(spec, current); differs != "" {
+			return ports.ManagedAgent{}, false, fmt.Errorf("switch managed agent %q differs in %s: %w", current.Name, differs, ports.ErrConflict)
 		}
 		if current.ID == "" {
 			return ports.ManagedAgent{}, false, errors.New("switch list_managed_agents: matching agent has no id")
@@ -115,19 +116,29 @@ func (c *Client) findManagedAgent(ctx context.Context, spec ports.ManagedAgentSp
 	return ports.ManagedAgent{}, false, nil
 }
 
-func matchesManagedAgent(spec ports.ManagedAgentSpec, current managedAgentSummary) bool {
+// managedAgentDiff names the fields in which an existing Switch agent differs from Heimdall's definition, comma
+// separated, or "" when it matches. Only field names are reported, never values.
+func managedAgentDiff(spec ports.ManagedAgentSpec, current managedAgentSummary) string {
+	var differs []string
 	if current.Machine.ID != spec.Machine && current.Machine.Name != spec.Machine {
-		return false
+		differs = append(differs, "machine")
 	}
 	// The model may differ: Heimdall moves an existing agent to the configured model instead of refusing it, so a
 	// model or provider change in heimdall.toml reaches agents that already exist.
-	if current.Description != spec.Description || current.Provider != spec.Provider {
-		return false
+	if current.Description != spec.Description {
+		differs = append(differs, "description")
 	}
-	if !current.AutoMode || current.AutoApprove || current.Directory != spec.Directory {
-		return false
+	if current.Provider != spec.Provider {
+		differs = append(differs, "provider")
 	}
-	return true
+	if !current.AutoMode || current.AutoApprove {
+		differs = append(differs, "auto mode")
+	}
+	// An empty directory leaves the choice to Switch (agent_runtime.agents_dir unset), so whatever Switch chose matches.
+	if spec.Directory != "" && current.Directory != spec.Directory {
+		differs = append(differs, "directory")
+	}
+	return strings.Join(differs, ", ")
 }
 
 // SetManagedAgentState changes the desired state in Switch. The controller

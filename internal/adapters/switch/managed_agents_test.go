@@ -158,3 +158,31 @@ func TestSetModelReachesAnAgentMadeByHandAndChangesOnlyItsModel(t *testing.T) {
 	spec.Agent.Name = "reviewer-9"
 	require.ErrorIs(t, c.SetManagedAgentModel(context.Background(), spec), ports.ErrNotFound)
 }
+
+// With no agents_dir, Heimdall leaves the directory to Switch; the directory Switch then chose is not a conflict, and
+// the replay adopts the agent (found live on the profiler, H13). A configured directory still has to match.
+func TestADirectorySwitchChoseIsAdoptedWhenHeimdallLeavesItToSwitch(t *testing.T) {
+	f := newFakeSwitch(t)
+	c, _ := newTestClient(t, f)
+	spec := ports.ManagedAgentSpec{
+		Agent:       ports.AgentRef{Name: id.AgentName("profiler"), Role: workflow.RoleProfiler},
+		Description: "Heimdall profiler", Machine: "machine-1", Provider: "opencode",
+		Model: "deploy/deepseek-ai/deepseek-v4.1-flash-1017", Instructions: "Use Heimdall tools.",
+	}
+	f.ops["list_managed_agents"] = func(map[string]any) (int, any) {
+		return http.StatusOK, []any{map[string]any{
+			"agent_id": "managed-9", "name": "profiler", "description": "Heimdall profiler",
+			"provider": "opencode", "model": "deploy/deepseek-ai/deepseek-v4.1-flash-1017",
+			"auto_mode": true, "auto_approve": false, "machine": map[string]any{"id": "machine-1", "name": "VM"},
+			"directory": "/var/lib/switch-agents/1000/agent/profiler",
+		}}
+	}
+	got, err := c.CreateManagedAgent(context.Background(), spec)
+	require.NoError(t, err)
+	require.Equal(t, ports.ManagedAgent{ID: "managed-9", Name: "profiler"}, got)
+
+	spec.Directory = "/srv/agents/profiler"
+	_, err = c.CreateManagedAgent(context.Background(), spec)
+	require.ErrorIs(t, err, ports.ErrConflict, "a directory Heimdall configured must match")
+	require.ErrorContains(t, err, "directory")
+}

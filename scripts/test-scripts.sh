@@ -88,7 +88,7 @@ COSIGN_CAPTURE="$work/sign-args" PATH="$work/bin:$PATH" RELEASE_ARCHIVE="$releas
 [ "$code" -eq 0 ] && grep -q 'sign-blob.*--key' "$work/sign-args" && [ -s "$release_output/v1.0.0.tgz.sig" ]; check "release signer invokes cosign on the built artifact using the key reference" $?
 deploy_secrets="$work/deploy-secrets"
 mkdir -p "$deploy_secrets"
-for name in database_url postgres_password deploy_api_key jira_email jira_api_token github_app_id github_app_installation_id github_app_private_key switch_api_key switch_registration_token agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver; do
+for name in database_url postgres_password deploy_api_key jira_email jira_api_token github_app_id github_app_installation_id github_app_private_key switch_api_key switch_registration_token agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver agent_token_profiler; do
 	: > "$deploy_secrets/$name"
 	chmod 0600 "$deploy_secrets/$name"
 done
@@ -290,7 +290,7 @@ out=$(PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --
 [ "$code" -eq 1 ] && grep -q 'private regular secret file is required' <<<"$out"; check "controller installer fails closed when the Deploy secret file is absent" $?
 
 # Full local controller flow with disposable credentials and fake Switch/systemd commands.
-for name in deploy_api_key agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver; do
+for name in deploy_api_key agent_token_test-author agent_token_reviewer-1 agent_token_reviewer-2 agent_token_reviewer-3 agent_token_resolver agent_token_profiler; do
 	printf 'stub-%s\n' "$name" > "$controller_secrets/$name"
 	chmod 0600 "$controller_secrets/$name"
 done

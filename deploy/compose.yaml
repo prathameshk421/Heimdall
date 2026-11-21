@@ -56,6 +56,7 @@ services:
       - agent_token_reviewer-2
       - agent_token_reviewer-3
       - agent_token_resolver
+      - agent_token_profiler
     # The server reaches Switch by its service name on Switch's own network: 127.0.0.1 inside this container is not the VM.
     networks: [core, memory, switch]
     depends_on:
@@ -208,3 +209,5 @@ secrets:
     file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds agent_token_reviewer-3}/agent_token_reviewer-3
   agent_token_resolver:
     file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds agent_token_resolver}/agent_token_resolver
+  agent_token_profiler:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR to the directory that holds agent_token_profiler}/agent_token_profiler
