@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -217,7 +218,12 @@ func TestMACCompareIsConstantTime(t *testing.T) {
 	for _, banned := range []string{"bytes.Equal(", "== h.MAC", "!= h.MAC", "subtle.", "strings.EqualFold("} {
 		require.NotContains(t, text, banned)
 	}
-	for _, f := range []string{"api.go", "state.go", "store.go", "publish.go"} {
+	files, err := filepath.Glob("*.go")
+	require.NoError(t, err)
+	for _, f := range files {
+		if f == "logfile.go" || strings.HasSuffix(f, "_test.go") {
+			continue
+		}
 		other, err := os.ReadFile(f)
 		require.NoError(t, err)
 		require.NotContains(t, string(other), ".MAC", f+" must not compare a MAC")
@@ -327,18 +333,19 @@ func TestReplyBounds(t *testing.T) {
 		require.ErrorIs(t, err, ErrTooLarge)
 	})
 
-	t.Run("a reply body larger than its limit is refused", func(t *testing.T) {
+	t.Run("a reply body larger than the client's cap is refused", func(t *testing.T) {
 		g, s := setup(t)
 		g.intercept = func(w http.ResponseWriter, r *http.Request) bool {
 			if !strings.Contains(r.URL.Path, "/git/ref/") {
 				return false
 			}
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(bytes.Repeat([]byte(" "), maxSmallReply+10))
+			_, _ = w.Write(bytes.Repeat([]byte(" "), 8<<20+10))
 			return true
 		}
 		_, err := s.Load(ctx, cid)
-		require.ErrorIs(t, err, ErrTooLarge)
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrIntegrity)
 	})
 
 	t.Run("a reply with a bad object id or the wrong shape is refused", func(t *testing.T) {
@@ -390,7 +397,7 @@ func TestNoCredentialInErrorsOrPrints(t *testing.T) {
 	_, errs["wrong key"] = g.store(t, otherKey).Load(ctx, cid)
 	_, errs["too large"] = s.Append(ctx, cid, 1, roomEvents(cid, 1, strings.Repeat("a", MaxEventBytes)), nil)
 
-	badToken, err := New(Config{Repo: testRepo, Token: "ghs_WRONGTOKEN987654321", Key: testKey, BaseURL: g.srv.URL, HTTPClient: g.srv.Client()})
+	badToken, err := New(Config{Repo: testRepo, Git: g.api(t, "ghs_WRONGTOKEN987654321"), Key: testKey, Wait: g.wait})
 	require.NoError(t, err)
 	_, errs["unauthorized"] = badToken.Load(ctx, cid)
 	require.ErrorIs(t, errs["unauthorized"], ports.ErrUnauthorized)
@@ -414,7 +421,7 @@ func TestNoCredentialInErrorsOrPrints(t *testing.T) {
 		}
 	}
 
-	cfg := Config{Repo: testRepo, Token: testToken, Key: testKey}
+	cfg := Config{Repo: testRepo, Git: g.api(t, testToken), Key: testKey, Wait: g.wait}
 	for _, v := range []any{s, cfg, &cfg} {
 		requireNoSecrets(t, fmt.Sprintf("%v|%+v|%#v|%s", v, v, v, v))
 	}

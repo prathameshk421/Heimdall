@@ -9,6 +9,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 // errRefMoved says the ref update was refused because another writer moved the ref. Append reads again.
@@ -148,44 +149,75 @@ func newEffectRows(snap *snapshot, cause change.EventID, fx []change.Effect) ([]
 	return rows, nil
 }
 
-// publish makes the blobs, the tree and the commit, then moves the ref. When GitHub refuses the move, it reads the ref
-// again: if the tip is not the one the plan was built on, the ref moved (errRefMoved); if it is the same, the refusal
-// has another cause and is returned as it is.
+// publish makes the blobs, the tree and the commit, then moves the ref to it. It returns nil when the commit is the
+// tip, errRefMoved when another writer moved the ref first, or another error.
 func (s *Store) publish(ctx context.Context, snap *snapshot, p *writePlan, message string) error {
-	entries := make([]newTreeEntry, 0, len(p.files))
+	entries := make([]ports.GitTreeEntry, 0, len(p.files))
 	for _, f := range p.files {
-		sha, err := s.api.createBlob(ctx, f.content)
+		sha, err := s.git.CreateBlob(ctx, s.repo, f.content)
 		if err != nil {
 			return err
 		}
-		entries = append(entries, newTreeEntry{Path: f.path, Mode: "100644", Type: "blob", SHA: sha})
+		entries = append(entries, ports.GitTreeEntry{Path: f.path, Mode: "100644", SHA: sha})
 	}
-	tree, err := s.api.createTree(ctx, snap.rootTree, entries)
+	tree, err := s.git.CreateTree(ctx, s.repo, snap.rootTree, entries)
 	if err != nil {
 		return err
 	}
-	var parents []string
+	var parents []id.SHA
 	if snap.tip != "" {
-		parents = []string{snap.tip}
+		parents = []id.SHA{snap.tip}
 	}
-	commit, err := s.api.createCommit(ctx, message, tree, parents)
+	commit, err := s.git.CreateCommit(ctx, s.repo, message, tree, parents)
 	if err != nil {
 		return err
 	}
-	if snap.tip == "" {
-		err = s.api.createRef(ctx, commit)
-	} else {
-		err = s.api.updateRef(ctx, commit)
+	return s.moveRef(ctx, snap.tip, commit)
+}
+
+// moveRef moves the ref from before ("" when it does not exist) to after, and learns the outcome of every refusal by
+// reading the tip again (S1 1.7 point 5). GitHub does not say why it refused an updateRefs, and a lost reply looks
+// the same, so the tip decides:
+//
+//   - tip == after: the move landed and only the answer was lost. Success.
+//   - tip == before: nothing moved. A transient failure: wait (1 s, 2 s, 4 s) and offer the same commit again, at most
+//     maxSwapAttempts times, then ports.ErrUnavailable.
+//   - any other tip: another writer won. errRefMoved, and Append reads again.
+//
+// ports.ErrUnauthorized (FORBIDDEN: the token has no contents: write) is returned at once. The store fails closed.
+func (s *Store) moveRef(ctx context.Context, before, after id.SHA) error {
+	for attempt := 1; ; attempt++ {
+		var err error
+		if before == "" {
+			err = s.git.CreateRef(ctx, s.repo, s.ref, after)
+		} else {
+			err = s.git.SwapRef(ctx, s.repo, s.ref, before, after)
+		}
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, ports.ErrUnauthorized) {
+			return fmt.Errorf("move %s: %w", s.ref, err)
+		}
+		if cerr := ctx.Err(); cerr != nil {
+			return fmt.Errorf("move %s: outcome unknown: %w", s.ref, cerr)
+		}
+		tip, rerr := s.tip(ctx)
+		if rerr != nil {
+			return fmt.Errorf("move %s: outcome unknown, the tip could not be read again: %w", s.ref, errors.Join(err, rerr))
+		}
+		switch tip {
+		case after:
+			return nil
+		case before:
+			if attempt >= maxSwapAttempts {
+				return fmt.Errorf("move %s: refused %d times while the ref did not move: %w: %w", s.ref, attempt, ports.ErrUnavailable, err)
+			}
+			if werr := s.wait(ctx, swapBackoff<<(attempt-1)); werr != nil {
+				return fmt.Errorf("move %s: waiting to try again: %w", s.ref, werr)
+			}
+		default:
+			return errRefMoved
+		}
 	}
-	if !errors.Is(err, errRefused) {
-		return err
-	}
-	cur, readErr := s.api.refSHA(ctx)
-	if readErr != nil {
-		return readErr
-	}
-	if cur != snap.tip {
-		return errRefMoved
-	}
-	return fmt.Errorf("ref update refused although the ref did not move: %w", err)
 }

@@ -28,7 +28,9 @@
 //     takes any Tokens source. StaticToken is the workflow's GITHUB_TOKEN, handed in by the caller from config, never read
 //     from the environment here (R7). ActionAPI implements ports.PRComments (the summary comment, found by hidden marker
 //     and author login), ports.PRCommentReader, ports.PRReviewCommentReader, ports.ArtifactReader, ports.CodeScanReader,
-//     ports.GitRefs and ports.GitObjects. It shares the client, pagination and error mapping with Adapter.
+//     ports.GitRefs, ports.GitObjects, ports.GitReader (GetCommit, recursive GetTree, GetBlob) and ports.GitRefSwapper
+//     (SwapRef, GraphQL updateRefs, for the git-ref event store AM8). It shares the client, pagination and error
+//     mapping with Adapter.
 //
 // # Traps
 //
@@ -63,9 +65,20 @@
 //   - A 422 from GitHub is not typed (the client maps only 401, 403, 404, 409 on conflictMissing and 5xx). CreateRef on a ref
 //     that exists and UpdateRef on a branch that is not a fast-forward both return an ordinary error. The caller reads the
 //     ref with GetRef to learn why.
-//   - UpdateRef is NOT a compare-and-swap. Live spike S1 (to be confirmed) found that REST PATCH /git/refs with force false
-//     did not refuse a non-fast-forward update on a custom ref refs/heimdall/*. A nil error does not prove nobody moved
-//     the ref. The conflict mechanism belongs to AM8.
+//   - UpdateRef is NOT a compare-and-swap. Spike S1 (ACTION_MODE_SPIKE.md 1.1) measured that REST PATCH /git/refs with
+//     force false checks fast-forward only on refs/heads/*. On refs/heimdall/* a stale write, a sibling and a rewind all
+//     returned 200. A nil error does not prove nobody moved the ref. Use SwapRef instead.
+//   - SwapRef is GraphQL updateRefs with beforeOid and force false, the call S1 1.2 verified as a compare-and-swap. It
+//     always sends beforeOid. GitHub refuses a stale beforeOid with an untyped "Something went wrong" error and HTTP 200,
+//     and a lost reply looks the same, so every outcome but success and FORBIDDEN wraps ports.ErrRefSwapUnconfirmed: the
+//     caller reads the ref to learn what happened. FORBIDDEN (a token without contents: write), 401 and 403 are
+//     ports.ErrUnauthorized. Errors repeat the GraphQL error type, never its message. The endpoint is /graphql next to
+//     the REST root, or /api/graphql for a GitHub Enterprise Server root ending in /api/v3 (not verified live). The
+//     repository's node id is read once per repository and kept on the ActionAPI.
+//   - GraphQL cannot see refs/heimdall/* (S1 1.2: refs() and ref() return nothing), so GetRef, GetCommit, GetTree and
+//     GetBlob use REST. GetTree is recursive in one call and refuses a truncated listing or one over the caller's entry
+//     limit with ports.ErrObjectTooLarge. GetBlob checks the stated size against the caller's limit before decoding,
+//     and a blob reply must fit the 8 MiB body cap.
 //   - A repository without code scanning answers 404 or 403 on the alerts list. They stay ports.ErrNotFound and
 //     ports.ErrUnauthorized, so a caller cannot tell "not enabled" from "no permission". Alert descriptions and messages
 //     are untrusted text from the analyzer.

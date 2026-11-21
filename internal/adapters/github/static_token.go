@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -98,6 +99,10 @@ type ActionAPI struct {
 	c      *client
 	tokens Tokens
 	author string
+
+	// nodeIDs caches each repository's GraphQL node id for SwapRef. A node id does not change.
+	nodeMu  sync.Mutex
+	nodeIDs map[change.Repo]string
 }
 
 // The compile-time proof that ActionAPI satisfies each port it covers.

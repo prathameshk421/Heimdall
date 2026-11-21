@@ -1,6 +1,7 @@
 package gitlog
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -12,14 +13,37 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/github"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 )
 
 const (
 	testToken = "ghs_TESTTOKEN0123456789abcdef"
 	testRepo  = "acme/widgets"
 	testRef   = "refs/heimdall/state"
+	testNode  = "R_kgDOTEST"
+	// opaqueError is how GitHub refuses an updateRefs with a stale beforeOid (S1 1.2).
+	opaqueError = "Something went wrong while executing your query on 2026-11-21T04:00:00Z. Please include `C0DE:1234` when reporting this issue."
+)
+
+// swapMode is how the fake answers one updateRefs call.
+type swapMode int
+
+const (
+	// swapNormal is GitHub as S1 measured it.
+	swapNormal swapMode = iota
+	// swapLostAnswer applies the update, then answers with the opaque error: the reply was lost.
+	swapLostAnswer
+	// swapLostGateway applies the update, then answers 502.
+	swapLostGateway
+	// swapTransient applies nothing and answers with the opaque error, though beforeOid is right.
+	swapTransient
+	// swapForbidden answers as GitHub does for a token with contents: read.
+	swapForbidden
 )
 
 type fakeEntry struct {
@@ -31,8 +55,12 @@ type fakeCommit struct {
 	parents []string
 }
 
-// fakeGit is an in-memory Git Data API on an httptest server. It implements blobs, trees (with base_tree and nested
-// paths), commits and refs, and a ref update with force false that is refused unless the commit descends from the tip.
+// fakeGit is GitHub as spike S1 measured it, on an httptest server (ACTION_MODE_SPIKE.md 1.1, 1.2, 1.5). It holds
+// blobs, trees (with base_tree, nested paths and recursive listing), commits and refs. POST /git/refs refuses a ref
+// that exists with 422. GraphQL updateRefs is the compare-and-swap: a beforeOid that is not the tip, or a missing
+// beforeOid, gets the opaque "Something went wrong" error, and a non-fast-forward gets UNPROCESSABLE. REST PATCH
+// /git/refs on refs/heimdall/* is a plain set with no fast-forward check, as S1 found, so a store that used it would
+// lose writes in the tests.
 type fakeGit struct {
 	t       *testing.T
 	srv     *httptest.Server
@@ -43,6 +71,12 @@ type fakeGit struct {
 	refs    map[string]string
 	calls   []string
 	bodies  map[string][]json.RawMessage // "METHOD path" -> request bodies
+
+	// swapHook picks how the n-th updateRefs call is answered. Nil means swapNormal.
+	swapHook func(n int) swapMode
+	swaps    int
+	// waits records every wait the store asked for.
+	waits []time.Duration
 
 	// hookBeforeRefWrite runs, without the lock, before a ref create or update is handled. A test uses it to let
 	// another writer move the ref after the store read it.
@@ -78,10 +112,34 @@ func objectID(kind string, parts ...string) string {
 	return hex.EncodeToString(h.Sum(nil))[:40]
 }
 
-// store returns a Store on the fake with the given key.
+// fixedClock is the github client's clock. Nothing in these tests depends on time passing.
+type fixedClock struct{}
+
+func (fixedClock) Now() time.Time { return base }
+
+// api returns the real GitHub adapter of Action mode, pointed at the fake, with token.
+func (g *fakeGit) api(t *testing.T, token string) *github.ActionAPI {
+	t.Helper()
+	tok, err := github.NewStaticToken(token)
+	require.NoError(t, err)
+	x, err := github.NewAction(github.ActionConfig{BaseURL: g.srv.URL, Tokens: tok, HTTPClient: g.srv.Client(),
+		Clock: fixedClock{}, Wait: func(context.Context, time.Duration) error { return nil }})
+	require.NoError(t, err)
+	return x
+}
+
+// wait records the store's wait and returns at once.
+func (g *fakeGit) wait(ctx context.Context, d time.Duration) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.waits = append(g.waits, d)
+	return ctx.Err()
+}
+
+// store returns a Store on the fake with the given key, through the real GitHub adapter.
 func (g *fakeGit) store(t *testing.T, key []byte) *Store {
 	t.Helper()
-	s, err := New(Config{Repo: testRepo, Token: testToken, Key: key, BaseURL: g.srv.URL, HTTPClient: g.srv.Client()})
+	s, err := New(Config{Repo: change.Repo(testRepo), Git: g.api(t, testToken), Key: key, Wait: g.wait})
 	require.NoError(t, err)
 	return s
 }
@@ -94,6 +152,9 @@ func (g *fakeGit) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
 		return
 	}
+	if g.serveOutsideGit(w, r) {
+		return
+	}
 	prefix := "/repos/" + testRepo + "/git/"
 	if !strings.HasPrefix(r.URL.Path, prefix) {
 		http.NotFound(w, r)
@@ -102,13 +163,7 @@ func (g *fakeGit) serve(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, prefix)
 	isRefWrite := (r.Method == http.MethodPost && rest == "refs") || (r.Method == http.MethodPatch && strings.HasPrefix(rest, "refs/"))
 	if isRefWrite {
-		g.mu.Lock()
-		g.refWrites++
-		n, hook := g.refWrites, g.hookBeforeRefWrite
-		g.mu.Unlock()
-		if hook != nil {
-			hook(n)
-		}
+		g.beforeRefWrite()
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -118,7 +173,117 @@ func (g *fakeGit) serve(w http.ResponseWriter, r *http.Request) {
 	if len(body) > 0 {
 		g.bodies[key] = append(g.bodies[key], body)
 	}
-	g.route(w, r.Method, rest, body)
+	g.route(w, r.Method, rest, r.URL.Query().Get("recursive") == "1", body)
+}
+
+// serveOutsideGit answers the repository read (for its node id) and the GraphQL endpoint. It returns false for any
+// other path.
+func (g *fakeGit) serveOutsideGit(w http.ResponseWriter, r *http.Request) bool {
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/repos/"+testRepo:
+		g.record("GET repo", nil)
+		reply(w, http.StatusOK, map[string]any{"node_id": testNode, "default_branch": "main"})
+		return true
+	case r.Method == http.MethodPost && r.URL.Path == "/graphql":
+		g.graphql(w, readBody(r))
+		return true
+	}
+	return false
+}
+
+// beforeRefWrite counts a ref write and runs the hook outside the lock.
+func (g *fakeGit) beforeRefWrite() {
+	g.mu.Lock()
+	g.refWrites++
+	n, hook := g.refWrites, g.hookBeforeRefWrite
+	g.mu.Unlock()
+	if hook != nil {
+		hook(n)
+	}
+}
+
+func (g *fakeGit) record(key string, body json.RawMessage) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.calls = append(g.calls, key)
+	if len(body) > 0 {
+		g.bodies[key] = append(g.bodies[key], body)
+	}
+}
+
+// swapVars are the variables of the updateRefs mutation (ACTION_MODE_SPIKE.md 1.2).
+type swapVars struct {
+	R string  `json:"r"`
+	N string  `json:"n"`
+	B *string `json:"b"`
+	A string  `json:"a"`
+	F bool    `json:"f"`
+}
+
+func graphqlErr(kind, message string) map[string]any {
+	e := map[string]any{"message": message}
+	if kind != "" {
+		e["type"] = kind
+	}
+	return map[string]any{"errors": []map[string]any{e}}
+}
+
+// graphql answers the updateRefs mutation the way S1 measured it on refs/heimdall/* (ACTION_MODE_SPIKE.md 1.2).
+func (g *fakeGit) graphql(w http.ResponseWriter, body json.RawMessage) {
+	g.beforeRefWrite()
+	g.record("POST graphql", body)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.swaps++
+	mode := swapNormal
+	if g.swapHook != nil {
+		mode = g.swapHook(g.swaps)
+	}
+	var in struct {
+		Query     string   `json:"query"`
+		Variables swapVars `json:"variables"`
+	}
+	require.NoError(g.t, json.Unmarshal(body, &in))
+	require.Contains(g.t, in.Query, "updateRefs(")
+	require.Contains(g.t, in.Query, "beforeOid:$b")
+	switch mode {
+	case swapForbidden:
+		reply(w, http.StatusOK, graphqlErr("FORBIDDEN", "Resource not accessible by integration"))
+		return
+	case swapTransient:
+		reply(w, http.StatusOK, graphqlErr("", opaqueError))
+		return
+	case swapNormal, swapLostAnswer, swapLostGateway:
+	}
+	if refusal := g.applySwap(in.Variables); refusal != nil {
+		reply(w, http.StatusOK, refusal)
+		return
+	}
+	switch mode {
+	case swapLostAnswer:
+		reply(w, http.StatusOK, graphqlErr("", opaqueError))
+	case swapLostGateway:
+		reply(w, http.StatusBadGateway, map[string]string{"message": "Server Error"})
+	case swapNormal, swapTransient, swapForbidden:
+		reply(w, http.StatusOK, map[string]any{"data": map[string]any{"updateRefs": map[string]any{"clientMutationId": nil}}})
+	}
+}
+
+// applySwap moves the ref when beforeOid is the tip and afterOid a fast-forward, and returns nil. Otherwise it returns
+// GitHub's refusal: the opaque error for a stale or missing beforeOid, UNPROCESSABLE for a non-fast-forward.
+func (g *fakeGit) applySwap(v swapVars) map[string]any {
+	if v.R != testNode {
+		return graphqlErr("NOT_FOUND", "Could not resolve to a node")
+	}
+	cur, exists := g.refs[v.N]
+	if _, ok := g.commits[v.A]; !ok || !exists || v.B == nil || (!v.F && *v.B != cur) {
+		return graphqlErr("", opaqueError)
+	}
+	if !v.F && !g.descends(v.A, cur) {
+		return graphqlErr("UNPROCESSABLE", "rejecting non-fast forward update")
+	}
+	g.refs[v.N] = v.A
+	return nil
 }
 
 func readBody(r *http.Request) json.RawMessage {
@@ -140,12 +305,12 @@ func reply(w http.ResponseWriter, status int, v any) {
 }
 
 // route sends a request to its handler. rest is the path after /git/.
-func (g *fakeGit) route(w http.ResponseWriter, method, rest string, body json.RawMessage) {
+func (g *fakeGit) route(w http.ResponseWriter, method, rest string, recursive bool, body json.RawMessage) {
 	if method == http.MethodGet {
 		kind, arg, _ := strings.Cut(rest, "/")
 		handlers := map[string]func(http.ResponseWriter, string){
 			"ref": func(w http.ResponseWriter, a string) { g.getRef(w, "refs/"+a) }, "commits": g.getCommit,
-			"trees": g.getTree, "blobs": g.getBlob,
+			"trees": func(w http.ResponseWriter, a string) { g.getTree(w, a, recursive) }, "blobs": g.getBlob,
 		}
 		if h, ok := handlers[kind]; ok {
 			h(w, arg)
@@ -181,26 +346,39 @@ func (g *fakeGit) getCommit(w http.ResponseWriter, sha string) {
 		reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return
 	}
-	reply(w, http.StatusOK, map[string]any{"sha": sha, "tree": map[string]string{"sha": c.tree}})
+	parents := make([]map[string]string, 0, len(c.parents))
+	for _, p := range c.parents {
+		parents = append(parents, map[string]string{"sha": p})
+	}
+	reply(w, http.StatusOK, map[string]any{"sha": sha, "tree": map[string]string{"sha": c.tree}, "parents": parents})
 }
 
-func (g *fakeGit) getTree(w http.ResponseWriter, sha string) {
-	t, ok := g.trees[sha]
-	if !ok {
+func (g *fakeGit) getTree(w http.ResponseWriter, sha string, recursive bool) {
+	if _, ok := g.trees[sha]; !ok {
 		reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return
 	}
+	entries := g.listTree(sha, "", recursive)
+	reply(w, http.StatusOK, map[string]any{"sha": sha, "tree": entries, "truncated": g.truncateTrees})
+}
+
+// listTree lists a tree in path order, descending into subtrees when recursive is set, as GitHub does.
+func (g *fakeGit) listTree(sha, prefix string, recursive bool) []map[string]string {
+	t := g.trees[sha]
 	names := make([]string, 0, len(t))
 	for n := range t {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	entries := make([]map[string]string, 0, len(names))
+	var out []map[string]string
 	for _, n := range names {
 		e := t[n]
-		entries = append(entries, map[string]string{"path": n, "mode": e.mode, "type": e.kind, "sha": e.sha})
+		out = append(out, map[string]string{"path": prefix + n, "mode": e.mode, "type": e.kind, "sha": e.sha})
+		if recursive && e.kind == "tree" {
+			out = append(out, g.listTree(e.sha, prefix+n+"/", true)...)
+		}
 	}
-	reply(w, http.StatusOK, map[string]any{"sha": sha, "tree": entries, "truncated": g.truncateTrees})
+	return out
 }
 
 func (g *fakeGit) getBlob(w http.ResponseWriter, sha string) {
@@ -319,19 +497,15 @@ func (g *fakeGit) postRef(w http.ResponseWriter, body json.RawMessage) {
 	reply(w, http.StatusCreated, map[string]string{"ref": in.Ref})
 }
 
+// patchRef is REST PATCH /git/refs as S1 measured it on refs/heimdall/*: a plain set. It checks neither the old tip
+// nor fast-forward, whatever force says. The store must never use it.
 func (g *fakeGit) patchRef(w http.ResponseWriter, name string, body json.RawMessage) {
 	var in struct {
-		SHA   string `json:"sha"`
-		Force bool   `json:"force"`
+		SHA string `json:"sha"`
 	}
 	require.NoError(g.t, json.Unmarshal(body, &in))
-	cur, ok := g.refs[name]
-	if !ok {
+	if _, ok := g.refs[name]; !ok {
 		reply(w, http.StatusUnprocessableEntity, map[string]string{"message": "Reference does not exist"})
-		return
-	}
-	if !in.Force && !g.descends(in.SHA, cur) {
-		reply(w, http.StatusUnprocessableEntity, map[string]string{"message": "Update is not a fast forward"})
 		return
 	}
 	g.refs[name] = in.SHA

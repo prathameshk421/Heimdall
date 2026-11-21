@@ -163,15 +163,24 @@ func TestAppendCommitShape(t *testing.T) {
 
 	_, err := s.Append(ctx, cid, 1, roomEvents(cid, 1, "room-2"), nil)
 	require.NoError(t, err)
-	require.Equal(t, 1, g.callCount("PATCH refs/heimdall/state"))
-	var upd struct {
-		SHA   string
-		Force *bool
+	require.Equal(t, 1, g.callCount("POST graphql"), "later appends move the ref with updateRefs")
+	require.Zero(t, g.callCount("PATCH"), "REST PATCH is a plain set on refs/heimdall/* and is never used")
+	var swap struct {
+		Variables struct {
+			R, N, A string
+			B       *string
+			F       *bool
+		}
 	}
-	require.NoError(t, json.Unmarshal(g.bodies["PATCH refs/heimdall/state"][0], &upd))
-	require.NotNil(t, upd.Force)
-	require.False(t, *upd.Force, "the ref update is a compare-and-swap, never a force")
-	require.Equal(t, g.tip(), upd.SHA)
+	require.NoError(t, json.Unmarshal(g.bodies["POST graphql"][0], &swap))
+	v := swap.Variables
+	require.Equal(t, testNode, v.R)
+	require.Equal(t, testRef, v.N)
+	require.NotNil(t, v.B, "beforeOid is always sent")
+	require.Equal(t, firstTip, *v.B, "beforeOid is the tip the store read")
+	require.Equal(t, g.tip(), v.A)
+	require.NotNil(t, v.F)
+	require.False(t, *v.F, "the ref update is a compare-and-swap, never a force")
 	require.NoError(t, json.Unmarshal(g.bodies["POST commits"][1], &commit))
 	require.Equal(t, []string{firstTip}, commit.Parents)
 	var tree struct {
@@ -258,7 +267,7 @@ func TestRefConflicts(t *testing.T) {
 		n, err := s.Append(ctx, cid, 1, roomEvents(cid, 1, "room-2"), nil)
 		require.NoError(t, err)
 		require.Equal(t, int64(2), n)
-		require.Equal(t, 2, g.callCount("PATCH"), "one refused update, one that won")
+		require.Equal(t, 2, g.callCount("POST graphql"), "one refused swap, one that won")
 		got, err := s.Load(ctx, cid)
 		require.NoError(t, err)
 		require.Len(t, got, 2)
@@ -294,8 +303,8 @@ func TestRefConflicts(t *testing.T) {
 		}
 		_, err := s.Append(ctx, cid, 0, roomEvents(cid, 0, "room-1"), nil)
 		require.NoError(t, err)
-		require.Equal(t, 1, g.callCount("POST refs"))
-		require.Equal(t, 1, g.callCount("PATCH"))
+		require.Equal(t, 1, g.callCount("POST refs"), "the create is refused with 422 and not repeated")
+		require.Equal(t, 1, g.callCount("POST graphql"), "the rebuilt commit is swapped onto the other writer's tip")
 	})
 
 	t.Run("the same change moved is a version conflict and writes nothing of ours", func(t *testing.T) {
@@ -333,28 +342,11 @@ func TestRefConflicts(t *testing.T) {
 		s := g.store(t, testKey)
 		seed(ctx, t, s, cid, "room-1")
 		g.hookBeforeRefWrite = func(n int) { moveOtherFile(g, n) }
-		before := g.callCount("PATCH")
+		before := g.callCount("POST graphql")
 		_, err := s.Append(ctx, cid, 1, roomEvents(cid, 1, "room-2"), nil)
 		require.ErrorIs(t, err, ports.ErrUnavailable)
 		require.NotErrorIs(t, err, ports.ErrVersionConflict)
-		require.Equal(t, maxRebuilds, g.callCount("PATCH")-before)
-	})
-
-	t.Run("a refusal that is not a moved ref is returned and not retried", func(t *testing.T) {
-		g := newFakeGit(t)
-		s := g.store(t, testKey)
-		seed(ctx, t, s, cid, "room-1")
-		g.intercept = func(w http.ResponseWriter, r *http.Request) bool {
-			if r.Method != http.MethodPatch {
-				return false
-			}
-			reply(w, http.StatusUnprocessableEntity, map[string]string{"message": "Required status check is expected"})
-			return true
-		}
-		_, err := s.Append(ctx, cid, 1, roomEvents(cid, 1, "room-2"), nil)
-		require.Error(t, err)
-		require.ErrorIs(t, err, errRefused)
-		require.NotErrorIs(t, err, ports.ErrVersionConflict)
+		require.Equal(t, maxRebuilds, g.callCount("POST graphql")-before)
 	})
 
 	t.Run("a cancelled context stops the retry", func(t *testing.T) {
@@ -396,29 +388,27 @@ func TestConcurrentAppendsToDifferentChanges(t *testing.T) {
 }
 
 func TestNewRefusesBadConfig(t *testing.T) {
-	ok := Config{Repo: testRepo, Token: testToken, Key: testKey}
+	g := newFakeGit(t)
+	ok := Config{Repo: testRepo, Git: g.api(t, testToken), Key: testKey, Wait: g.wait}
 	cases := map[string]func(*Config){
 		"short key":   func(c *Config) { c.Key = []byte("short") },
 		"no key":      func(c *Config) { c.Key = nil },
-		"no token":    func(c *Config) { c.Token = "" },
+		"no git":      func(c *Config) { c.Git = nil },
+		"no wait":     func(c *Config) { c.Wait = nil },
 		"bad repo":    func(c *Config) { c.Repo = "not-a-repo" },
 		"branch name": func(c *Config) { c.Ref = "heimdall/state" },
 		"dotdot ref":  func(c *Config) { c.Ref = "refs/heimdall/../state" },
-		"bad url":     func(c *Config) { c.BaseURL = "ftp://example.com" },
 	}
 	for name, mutate := range cases {
 		c := ok
 		mutate(&c)
 		_, err := New(c)
 		require.Error(t, err, name)
-		require.NotContains(t, err.Error(), testToken, name)
+		requireNoSecrets(t, err.Error())
 	}
 	s, err := New(ok)
 	require.NoError(t, err)
-	require.Equal(t, DefaultRef, s.api.ref)
-	require.Equal(t, DefaultBaseURL, s.api.base)
-	_, err = New(Config{Repo: testRepo, Token: testToken, Key: testKey, Ref: "refs/heads/heimdall/state"})
-	require.NoError(t, err, "the owner may pick a branch if S1 refuses the custom ref")
+	require.Equal(t, DefaultRef, s.ref)
 }
 
 func TestErrorsKeepTheirKind(t *testing.T) {

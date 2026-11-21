@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -16,40 +14,54 @@ import (
 )
 
 const (
-	// DefaultRef is the ref that holds the log (ACTION_MODE 2.3).
+	// DefaultRef is the ref that holds the log (ACTION_MODE 2.3, S1 1.7).
 	DefaultRef = "refs/heimdall/state"
-	// DefaultBaseURL is the GitHub REST API root.
-	DefaultBaseURL = "https://api.github.com"
 	// MinKeyBytes is the shortest MAC key the store accepts.
 	MinKeyBytes = 32
 	// maxRebuilds is how often one Append rebuilds its commit on a tip that moved for another change.
 	maxRebuilds = 10
-	redacted    = "gitlog.Store{redacted}"
+	// maxSwapAttempts is how often one commit is offered to the ref while the ref stays at the tip it was built on
+	// and GitHub keeps answering with an error (a transient failure, S1 1.7 point 5).
+	maxSwapAttempts = 4
+	// swapBackoff is the first wait between those attempts. It doubles each time: 1 s, 2 s, 4 s.
+	swapBackoff = time.Second
+	// maxTreeEntries bounds the recursive listing of the state tree.
+	maxTreeEntries = 50_000
+	redacted       = "gitlog.Store{redacted}"
 )
 
-var (
-	reRefName = regexp.MustCompile(`^refs/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$`)
-	reRepo    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$`)
-)
+var reRefName = regexp.MustCompile(`^refs/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$`)
 
-// Config holds what New needs. Key and Token are credentials: the caller reads them from their file (D89) and passes
-// them in. This package never reads the environment. Config prints without them.
+// Git is the part of GitHub the store uses. It holds no ref update that is a plain set: the ref moves only by
+// CreateRef (refused when the ref exists) or SwapRef (a compare-and-swap). REST PATCH /git/refs is not a compare on
+// refs/heimdall/* (S1 1.1), so ports.GitRefs.UpdateRef is left out on purpose. *github.ActionAPI satisfies it.
+type Git interface {
+	// GetRef returns the commit the ref points at. A missing ref is ports.ErrNotFound.
+	GetRef(ctx context.Context, repo change.Repo, ref string) (id.SHA, error)
+	// CreateRef creates the ref. GitHub refuses a ref that exists (422), which is the safe create-if-absent.
+	CreateRef(ctx context.Context, repo change.Repo, ref string, sha id.SHA) error
+	ports.GitObjects
+	ports.GitReader
+	ports.GitRefSwapper
+}
+
+// Config holds what New needs. Key is a credential: the caller reads it from its file (D89) and passes it in. This
+// package never reads the environment. Config prints without it.
 type Config struct {
 	// Repo is the repository that holds the ref.
 	Repo change.Repo
-	// Token is a GitHub token that may write refs and git objects of Repo.
-	Token string
+	// Git reaches GitHub. The token lives inside it.
+	Git Git
 	// Key is the HMAC key of the heads. At least MinKeyBytes bytes.
 	Key []byte
 	// Ref is the full ref name. Empty means DefaultRef.
 	Ref string
-	// BaseURL is the API root. Empty means DefaultBaseURL.
-	BaseURL string
-	// HTTPClient is used for every call. Nil means a client with a 60 second timeout.
-	HTTPClient *http.Client
+	// Wait holds the store between swap attempts. It returns early with the context's error. Production passes
+	// clock.Wait; tests pass a fake that records the waits.
+	Wait func(ctx context.Context, d time.Duration) error
 }
 
-// String and GoString keep the credentials out of any print of a Config.
+// String and GoString keep the key out of any print of a Config.
 func (Config) String() string { return "gitlog.Config{redacted}" }
 
 // GoString is the %#v form of String.
@@ -57,52 +69,40 @@ func (Config) GoString() string { return "gitlog.Config{redacted}" }
 
 // Store implements ports.EventStore on one git ref.
 type Store struct {
-	api *api
-	key []byte
+	git  Git
+	repo change.Repo
+	ref  string
+	key  []byte
+	wait func(ctx context.Context, d time.Duration) error
 }
 
 var _ ports.EventStore = (*Store)(nil)
 
-// String and GoString keep the key and the token out of any print of a Store.
+// String and GoString keep the key out of any print of a Store.
 func (*Store) String() string { return redacted }
 
 // GoString is the %#v form of String.
 func (*Store) GoString() string { return redacted }
 
-// New checks cfg and returns a Store. Its errors never repeat the key or the token.
+// New checks cfg and returns a Store. Its errors never repeat the key.
 func New(cfg Config) (*Store, error) {
 	if len(cfg.Key) < MinKeyBytes {
 		return nil, fmt.Errorf("gitlog: the MAC key must be at least %d bytes", MinKeyBytes)
 	}
-	if cfg.Token == "" {
-		return nil, errors.New("gitlog: a GitHub token is required")
+	if cfg.Git == nil || cfg.Wait == nil {
+		return nil, errors.New("gitlog: Git and Wait are required")
 	}
-	if !reRepo.MatchString(string(cfg.Repo)) {
-		return nil, errors.New("gitlog: the repository must be owner/name")
+	if _, err := change.ParseRepo(cfg.Repo.String()); err != nil {
+		return nil, fmt.Errorf("gitlog: %w", err)
 	}
-	ref := orDefault(cfg.Ref, DefaultRef)
+	ref := cfg.Ref
+	if ref == "" {
+		ref = DefaultRef
+	}
 	if !reRefName.MatchString(ref) || strings.Contains(ref, "..") {
 		return nil, errors.New("gitlog: the ref must be a full name such as refs/heimdall/state")
 	}
-	base := strings.TrimRight(orDefault(cfg.BaseURL, DefaultBaseURL), "/")
-	if u, err := url.Parse(base); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return nil, errors.New("gitlog: the base URL must be an http or https URL")
-	}
-	client := cfg.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 2 * requestTimeout}
-	}
-	return &Store{
-		api: &api{http: client, base: base, repo: string(cfg.Repo), token: cfg.Token, ref: ref},
-		key: append([]byte(nil), cfg.Key...),
-	}, nil
-}
-
-func orDefault(v, def string) string {
-	if v == "" {
-		return def
-	}
-	return v
+	return &Store{git: cfg.Git, repo: cfg.Repo, ref: ref, key: append([]byte(nil), cfg.Key...), wait: cfg.Wait}, nil
 }
 
 // Load returns every event of the change in version order, after it checked the head MAC, the hash chain and that the
@@ -119,24 +119,29 @@ func (s *Store) Load(ctx context.Context, changeID id.ChangeID) ([]change.Event,
 	return snap.events, nil
 }
 
-// Append writes evs and fx as one commit and moves the ref to it with compare-and-swap (ACTION_MODE 2.3, 2.4).
+// Append writes evs and fx as one commit and moves the ref to it with a compare-and-swap (ACTION_MODE 2.3, 2.4).
 //
 // It reads the log at the current tip and checks the change is at expected: if not it returns ErrVersionConflict. It
-// chains evs from the stored head, so the store and not the caller writes PrevHash and Hash. If GitHub refuses the ref
-// update because the ref moved, it reads again. If the change itself moved, that is ErrVersionConflict and nothing is
-// written. If only other files moved, it rebuilds the same commit on the new tip, up to maxRebuilds times.
+// chains evs from the stored head, so the store and not the caller writes PrevHash and Hash. If the ref moved before
+// the swap, it reads again. If the change itself moved, that is ErrVersionConflict and nothing is written. If only
+// other files moved, it rebuilds the same commit on the new tip, up to maxRebuilds times.
 func (s *Store) Append(ctx context.Context, changeID id.ChangeID, expected int64, evs []change.Event, fx []change.Effect) (int64, error) {
 	prepared, err := prepare(changeID, expected, evs, fx)
 	if err != nil {
 		return 0, fmt.Errorf("append to %s: %w", changeID, err)
 	}
-	for range maxRebuilds {
+	for rebuild := range maxRebuilds {
 		if err := ctx.Err(); err != nil {
 			return 0, fmt.Errorf("append to %s: %w", changeID, err)
 		}
 		snap, err := s.read(ctx, changeID, len(fx) > 0)
 		if err != nil {
 			return 0, fmt.Errorf("append to %s: %w", changeID, err)
+		}
+		// After a refused swap the tip may have moved past our own commit: it landed, the answer was lost, and
+		// another writer appended on top before the store read the tip again. The log then holds our exact batch.
+		if rebuild > 0 && holdsBatch(snap, expected, prepared) {
+			return expected + int64(len(prepared)), nil
 		}
 		if snap.version() != expected {
 			return 0, fmt.Errorf("append to %s: change is at version %d, not %d: %w", changeID, snap.version(), expected, ports.ErrVersionConflict)
@@ -154,6 +159,19 @@ func (s *Store) Append(ctx context.Context, changeID id.ChangeID, expected int64
 		}
 	}
 	return 0, fmt.Errorf("append to %s: the ref moved %d times in a row: %w", changeID, maxRebuilds, ports.ErrUnavailable)
+}
+
+// holdsBatch reports whether the stored log already holds evs right after version expected, by event id.
+func holdsBatch(snap *snapshot, expected int64, evs []change.Event) bool {
+	if snap.version() < expected+int64(len(evs)) {
+		return false
+	}
+	for i, e := range evs {
+		if snap.events[expected+int64(i)].ID != e.ID {
+			return false
+		}
+	}
+	return true
 }
 
 // prepare checks the batch without any call and returns the events as they are stored: UTC, cut to microseconds (what
