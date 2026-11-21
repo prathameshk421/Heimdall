@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -20,14 +21,16 @@ type Config struct {
 	Model string
 	// MaxOutputTokens caps each answer (ACTION_MODE section 7, proposed 4k).
 	MaxOutputTokens int
-	// BudgetUSD is checked before each model call. The call that crosses it is not stopped, so the final cost can
-	// pass the budget by one answer.
+	// BudgetUSD is the cost cap of the run. Before each model call the loop adds the worst case of that call to the
+	// spend, and a call that could pass the cap is not made (StopBudget).
 	BudgetUSD float64
 	// InputTokenCap and OutputTokenCap are the per-run token caps of ACTION_MODE section 7 (proposed 800k and 40k).
-	// Input counts every prompt token, cached ones included. Like BudgetUSD they are checked before each model call,
-	// stop the run with StopBudget, and may be passed by one answer.
+	// Input counts every prompt token, cached ones included. They are checked the same way as BudgetUSD.
 	InputTokenCap  int64
 	OutputTokenCap int64
+	// Price is the model's price. It sizes the worst case of a call before the call, so it is required: without it
+	// the cap could not see the spend.
+	Price ports.ModelPrice
 	// Deadline is read against the clock before each model call and each tool call. It also bounds a call in flight.
 	Deadline time.Time
 	// MaxTurns is the number of model answers allowed.
@@ -41,6 +44,9 @@ func (cfg Config) check() error {
 	}
 	if cfg.MaxOutputTokens <= 0 || cfg.InputTokenCap <= 0 || cfg.OutputTokenCap <= 0 {
 		return errors.New("agent loop config needs a positive output cap per answer and positive input and output token caps per run")
+	}
+	if !cfg.Price.Valid() {
+		return errors.New("agent loop config needs a positive price for the model: without it the caps cannot see the spend")
 	}
 	return nil
 }
@@ -107,7 +113,8 @@ type run struct {
 
 // Run sends the conversation to the model and executes its tool calls until a stop condition holds. The returned
 // Result is always filled. The error is nil for every stop that is an outcome of the run (submitted, refused,
-// budget, deadline, turn cap, no submission). It wraps the cause for StopCancelled and StopModelError.
+// budget, deadline, turn cap, no submission). It wraps the cause for StopCancelled and StopModelError, and
+// ports.ErrAgentUsage for a StopBudget that came from a usage report that cannot be true.
 func (l *Loop) Run(parent context.Context, messages []ports.ModelMessage) (Result, error) {
 	r := &run{l: l, parent: parent, messages: append([]ports.ModelMessage(nil), messages...), refusalsLeft: retriesAfterRefusal}
 	wait := l.cfg.Deadline.Sub(l.clock.Now())
@@ -129,21 +136,31 @@ func (r *run) loop() error {
 		if r.stopBeforeCall() {
 			return r.cancelErr()
 		}
-		resp, err := r.l.model.Complete(r.ctx, ports.ModelRequest{
-			Model: r.l.cfg.Model, Messages: r.messages, Tools: r.l.specs, MaxOutputTokens: r.l.cfg.MaxOutputTokens,
-		})
+		started := r.l.clock.Now()
+		resp, err := r.l.model.Complete(r.ctx, r.request())
+		modelTime := r.l.clock.Now().Sub(started)
 		if err != nil {
 			return r.modelFailed(err)
 		}
-		r.record(resp)
+		if err := r.record(resp, modelTime); err != nil {
+			return err
+		}
 		if len(resp.ToolCalls) == 0 {
 			r.res.Reason = StopNoSubmission
 			return nil
 		}
-		if r.dispatch(resp.ToolCalls) {
+		started = r.l.clock.Now()
+		ended := r.dispatch(resp.ToolCalls)
+		r.res.Turn[len(r.res.Turn)-1].ToolLatency = r.l.clock.Now().Sub(started)
+		if ended {
 			return r.cancelErr()
 		}
 	}
+}
+
+// request is the next model call. The same value sizes the call before it starts and is sent after.
+func (r *run) request() ports.ModelRequest {
+	return ports.ModelRequest{Model: r.l.cfg.Model, Messages: r.messages, Tools: r.l.specs, MaxOutputTokens: r.l.cfg.MaxOutputTokens}
 }
 
 // cancelErr is the error that goes with the stop reason: the context error for StopCancelled, otherwise nil.
@@ -173,9 +190,7 @@ func (r *run) stopBeforeCall() bool {
 		return true
 	}
 	switch {
-	case r.res.CostUSD >= r.l.cfg.BudgetUSD,
-		r.res.Usage.InputTokens >= r.l.cfg.InputTokenCap,
-		r.res.Usage.OutputTokens >= r.l.cfg.OutputTokenCap:
+	case r.overBudget():
 		r.res.Reason = StopBudget
 	case r.res.Turns >= r.l.cfg.MaxTurns:
 		r.res.Reason = StopTurnCap
@@ -183,6 +198,22 @@ func (r *run) stopBeforeCall() bool {
 		return false
 	}
 	return true
+}
+
+// overBudget is the worst-case guard (ACTION_MODE 7): it reports true when the next call could pass a cap whatever the
+// model answers. The worst case is the request's own size plus the full per-answer output cap, so a call that is
+// refused is one the run could not afford. A request that cannot be sized is over budget too, because an unsized call
+// is an unbounded one.
+func (r *run) overBudget() bool {
+	body, err := json.Marshal(r.request())
+	if err != nil {
+		return true
+	}
+	cfg := r.l.cfg
+	input := int64(len(body) + ports.AgentFramingTokens)
+	return r.res.CostUSD+cfg.Price.CallBound(len(body), cfg.MaxOutputTokens) > cfg.BudgetUSD ||
+		r.res.Usage.InputTokens+input > cfg.InputTokenCap ||
+		r.res.Usage.OutputTokens+int64(cfg.MaxOutputTokens) > cfg.OutputTokenCap
 }
 
 func (r *run) modelFailed(err error) error {
@@ -193,14 +224,24 @@ func (r *run) modelFailed(err error) error {
 	return fmt.Errorf("agent loop model call: %w", err)
 }
 
-func (r *run) record(resp ports.ModelResponse) {
+// record adds one answer to the conversation and the tally. A cost or a token count that cannot be true ends the run:
+// a missing measure must never look like a cheap one.
+func (r *run) record(resp ports.ModelResponse, modelTime time.Duration) error {
+	if !(resp.CostUSD >= 0) || math.IsInf(resp.CostUSD, 0) || resp.Usage.InputTokens < 0 || resp.Usage.CachedInputTokens < 0 || resp.Usage.OutputTokens < 0 {
+		r.res.Reason = StopBudget
+		return fmt.Errorf("agent loop: %w: a cost of %v and %d/%d tokens", ports.ErrAgentUsage, resp.CostUSD,
+			resp.Usage.InputTokens, resp.Usage.OutputTokens)
+	}
 	r.res.Turns++
+	r.res.Turn = append(r.res.Turn, ports.AgentTurn{Usage: resp.Usage, CostUSD: resp.CostUSD, ModelLatency: modelTime,
+		ToolCalls: len(resp.ToolCalls)})
 	r.res.CostUSD += resp.CostUSD
 	r.res.Usage.InputTokens += resp.Usage.InputTokens
 	r.res.Usage.CachedInputTokens += resp.Usage.CachedInputTokens
 	r.res.Usage.OutputTokens += resp.Usage.OutputTokens
 	r.res.LastText = resp.Content
 	r.messages = append(r.messages, ports.ModelMessage{Role: ports.ModelRoleAssistant, Content: resp.Content, ToolCalls: resp.ToolCalls})
+	return nil
 }
 
 // dispatch runs the tool calls of one answer in order. It reports true when the run ended: a submission was accepted,

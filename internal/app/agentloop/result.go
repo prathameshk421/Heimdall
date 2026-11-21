@@ -11,8 +11,9 @@ const (
 	StopSubmitted StopReason = "submitted"
 	// StopRefused means the model's retry was refused too, so the run gave up on a valid submission.
 	StopRefused StopReason = "refused"
-	// StopBudget means the cost so far reached Config.BudgetUSD, or the tokens so far reached Config.InputTokenCap or
-	// Config.OutputTokenCap, before the next model call.
+	// StopBudget means the next model call could pass Config.BudgetUSD, Config.InputTokenCap or Config.OutputTokenCap,
+	// so it was not made. It also ends a run whose model reported a cost or a token count that cannot be true; Run
+	// then returns an error that wraps ports.ErrAgentUsage.
 	StopBudget StopReason = "budget"
 	// StopDeadline means the clock reached Config.Deadline.
 	StopDeadline StopReason = "deadline"
@@ -43,6 +44,8 @@ type Result struct {
 	Refusals int
 	// Usage is the token count of every model answer, added up.
 	Usage ports.ModelUsage
+	// Turn holds the usage, cost and latency of each model answer, in order.
+	Turn []ports.AgentTurn
 	// Submission is set only when Reason is StopSubmitted.
 	Submission *Submission
 	// LastText is the text of the last model answer, for a run that ended without a submission.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -107,6 +108,7 @@ func newHarness(t *testing.T, steps ...modelStep) *harness {
 		sub:   &fakeSubmitter{name: "submit_plan", verdicts: []Verdict{{Accepted: true}}},
 		cfg: Config{
 			Model: "m", MaxOutputTokens: 4000, BudgetUSD: 0.50, InputTokenCap: 800_000, OutputTokenCap: 40_000,
+			Price:    ports.ModelPrice{InputPerM: 0.09, CachedInputPerM: 0.018, OutputPerM: 0.18},
 			Deadline: clock.now.Add(15 * time.Minute), MaxTurns: 10,
 		},
 	}
@@ -224,32 +226,91 @@ func TestBudgetStopsBeforeTheNextCall(t *testing.T) {
 	assert.Len(t, h.model.requests, 2, "no third call after the budget is reached")
 }
 
-// ACTION_MODE section 7: the per-PR token cap stops the run like the cost budget. Each scripted answer reads 100
-// input tokens (cached ones included) and writes 10.
-func TestInputTokenCapStopsBeforeTheNextCall(t *testing.T) {
+// ACTION_MODE section 7: the per-PR token cap stops the run like the cost budget, and the guard sizes the worst case
+// of the next call. Each scripted answer reads 100 input tokens (cached ones included) and writes 10. The first request
+// is about 150 bytes, so a call needs a little over 1,100 input tokens of room (the request plus the framing allowance).
+func TestInputTokenCapStopsBeforeTheCallThatCouldPassIt(t *testing.T) {
 	h := newHarness(t,
 		answer(0.01, call("c1", "read_code", `{}`)),
 		answer(0.01, call("c2", "read_code", `{}`)),
 	)
-	h.cfg.InputTokenCap = 150
+	h.cfg.InputTokenCap = 1300
 	res, err := h.run(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, StopBudget, res.Reason)
-	assert.Equal(t, int64(200), res.Usage.InputTokens)
-	assert.Len(t, h.model.requests, 2, "no third call after the input token cap is reached")
+	assert.Equal(t, int64(100), res.Usage.InputTokens)
+	assert.Len(t, h.model.requests, 1, "the second call could send more than the cap, so it is not made")
 }
 
-func TestOutputTokenCapStopsBeforeTheNextCall(t *testing.T) {
+func TestOutputTokenCapStopsBeforeTheCallThatCouldPassIt(t *testing.T) {
 	h := newHarness(t,
 		answer(0.01, call("c1", "read_code", `{}`)),
 		answer(0.01, call("c2", "read_code", `{}`)),
 	)
-	h.cfg.OutputTokenCap = 15
+	h.cfg.OutputTokenCap = int64(h.cfg.MaxOutputTokens) + 5
 	res, err := h.run(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, StopBudget, res.Reason)
-	assert.Equal(t, int64(20), res.Usage.OutputTokens)
-	assert.Len(t, h.model.requests, 2, "no third call after the output token cap is reached")
+	assert.Equal(t, int64(10), res.Usage.OutputTokens)
+	assert.Len(t, h.model.requests, 1, "a full answer after the first one could pass the cap, so the call is not made")
+}
+
+// The worst case of a call is its own size and a full answer, whatever the model would have written. A cap below the
+// worst case of the first call stops the run before any call.
+func TestACapBelowTheWorstCaseOfTheFirstCallMakesNoCall(t *testing.T) {
+	for name, mutate := range map[string]func(*Config){
+		"input":  func(c *Config) { c.InputTokenCap = 900 },
+		"output": func(c *Config) { c.OutputTokenCap = int64(c.MaxOutputTokens) - 1 },
+		"cost":   func(c *Config) { c.Price = ports.ModelPrice{InputPerM: 5000, CachedInputPerM: 5000, OutputPerM: 5000} },
+	} {
+		h := newHarness(t, answer(0.001, call("s1", "submit_plan", `{}`)))
+		mutate(&h.cfg)
+		res, err := h.run(context.Background(), t)
+		require.NoError(t, err, name)
+		assert.Equal(t, StopBudget, res.Reason, name)
+		assert.Empty(t, h.model.requests, name)
+		assert.Zero(t, res.Turns, name)
+	}
+}
+
+// A cost or a token count that cannot be true ends the run: a missing measure must never look like a cheap one.
+func TestAUsageThatCannotBeTrueStopsTheRun(t *testing.T) {
+	bad := []ports.ModelResponse{
+		{CostUSD: -0.01, ToolCalls: []ports.ModelToolCall{call("c1", "read_code", `{}`)}},
+		{CostUSD: math.NaN(), ToolCalls: []ports.ModelToolCall{call("c1", "read_code", `{}`)}},
+		{Usage: ports.ModelUsage{OutputTokens: -1}, ToolCalls: []ports.ModelToolCall{call("c1", "read_code", `{}`)}},
+	}
+	for _, resp := range bad {
+		h := newHarness(t, modelStep{resp: resp}, answer(0.01, call("s1", "submit_plan", `{}`)))
+		res, err := h.run(context.Background(), t)
+		require.ErrorIs(t, err, ports.ErrAgentUsage)
+		assert.Equal(t, StopBudget, res.Reason)
+		assert.Len(t, h.model.requests, 1)
+		assert.Zero(t, res.Turns, "an answer that cannot be measured is not counted")
+	}
+}
+
+// Each answer carries its usage, cost and latency, and the tool calls that followed carry theirs.
+func TestEachTurnReportsUsageCostAndLatency(t *testing.T) {
+	h := newHarness(t,
+		answer(0.01, call("c1", "read_code", `{}`)),
+		answer(0.02, call("s1", "submit_plan", `{}`)),
+	)
+	h.model.steps[0].hook = func() { h.clock.now = h.clock.now.Add(2 * time.Second) }
+	h.read.run = func(json.RawMessage) (string, error) {
+		h.clock.now = h.clock.now.Add(3 * time.Second)
+		return "ok", nil
+	}
+	res, err := h.run(context.Background(), t)
+	require.NoError(t, err)
+	require.Len(t, res.Turn, 2)
+	assert.Equal(t, 2*time.Second, res.Turn[0].ModelLatency)
+	assert.Equal(t, 3*time.Second, res.Turn[0].ToolLatency)
+	assert.Equal(t, 1, res.Turn[0].ToolCalls)
+	assert.InDelta(t, 0.01, res.Turn[0].CostUSD, 1e-12)
+	assert.Equal(t, ports.ModelUsage{InputTokens: 100, CachedInputTokens: 40, OutputTokens: 10}, res.Turn[0].Usage)
+	assert.Zero(t, res.Turn[1].ModelLatency)
+	assert.InDelta(t, 0.02, res.Turn[1].CostUSD, 1e-12)
 }
 
 func TestEachCallCarriesTheOutputCap(t *testing.T) {
@@ -391,6 +452,8 @@ func TestNewRefusesABadRegistryOrConfig(t *testing.T) {
 		func(c *Config) { c.MaxOutputTokens = 0 },
 		func(c *Config) { c.InputTokenCap = 0 },
 		func(c *Config) { c.OutputTokenCap = 0 },
+		func(c *Config) { c.Price = ports.ModelPrice{} },
+		func(c *Config) { c.Price.OutputPerM = 0 },
 	} {
 		cfg := h.cfg
 		mutate(&cfg)
