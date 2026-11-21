@@ -166,8 +166,8 @@ type chatTool struct {
 }
 
 type chatRequestBodyWire struct {
-	Model     string        `json:"model"`
-	Messages  []chatMessage `json:"messages"`
+	Model      string        `json:"model"`
+	Messages   []chatMessage `json:"messages"`
 	Tools      []chatTool    `json:"tools,omitempty"`
 	ToolChoice string        `json:"tool_choice,omitempty"`
 	MaxTokens  int           `json:"max_tokens,omitempty"`

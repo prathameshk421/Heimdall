@@ -40,7 +40,7 @@ func liveModel(o reviewOptions) (ports.ModelChat, error) {
 		return nil, fmt.Errorf("model key file: %w", err)
 	}
 	return openrouter.ChatClient{
-		BaseURL: o.baseURL, Secrets: keys, KeyName: name,
+		BaseURL: o.baseURL, Secrets: keys, KeyName: name, RequiredToolChoice: o.requiredToolChoice,
 		Prices: map[string]openrouter.Price{o.model: {Input: o.price.InputPerM, CachedInput: o.price.CachedInputPerM, Output: o.price.OutputPerM}},
 	}, nil
 }
