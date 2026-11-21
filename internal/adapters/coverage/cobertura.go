@@ -143,7 +143,7 @@ func (r *coberturaReader) end() {
 }
 
 // directive accepts one plain external document type declaration before the root, which is what Java
-// Cobertura and coverage.py write. Go's decoder does not read or expand a directive, so nothing in a
+// Cobertura writes. coverage.py 4.5.4, 5.5 and 7.17.4 write none (docs/product/research/12). Go's decoder does not read or expand a directive, so nothing in a
 // declaration is ever fetched; an internal subset or an ENTITY declaration could still mean the report
 // relies on an entity, so those are refused, and so is any other directive.
 func (r *coberturaReader) directive(t xml.Directive, line int) error {

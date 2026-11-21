@@ -92,3 +92,26 @@ func TestParseGoCoverHandlesWindowsPaths(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]Lines{"a.go": {1: 1, 2: 1}}, got.Files)
 }
+
+// Go writes the end of a block as an exclusive position. A block that ends at column 1 of a line holds no
+// character of that line: the closing brace on that line is outside it. `go tool cover -html` agrees, and
+// it closes the span at the start of the brace line. Real profiles from google/uuid and spf13/cobra end
+// 100 of 148 and 596 of 813 multi-line blocks this way (docs/product/research/12-coverage-real-reports.md).
+func TestParseGoCoverEndColumnOneLeavesTheEndLineOut(t *testing.T) {
+	in := "mode: set\n" +
+		"example.com/app/a.go:35.3,38.1 3 1\n" + // the body of an if: lines 35 to 37, the brace on line 38 is outside
+		"example.com/app/a.go:39.2,39.18 1 0\n" + // the statement after the brace
+		"example.com/app/a.go:50.2,52.2 1 1\n" // ends after a character of line 52: line 52 stays
+	got, err := ParseGoCover([]byte(in), Options{MaxBytes: 1 << 20, Prefix: "example.com/app"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]Lines{
+		"a.go": {35: 1, 36: 1, 37: 1, 39: 0, 50: 1, 51: 1, 52: 1},
+	}, got.Files)
+}
+
+// A span that starts and ends on one line keeps that line, whatever its end column.
+func TestParseGoCoverSingleLineSpanKeepsItsLine(t *testing.T) {
+	got, err := ParseGoCover([]byte("mode: set\nexample.com/app/a.go:5.1,5.1 1 1\n"), Options{MaxBytes: 1 << 20, Prefix: "example.com/app"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]Lines{"a.go": {5: 1}}, got.Files)
+}
