@@ -119,6 +119,12 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	if o.out == "" {
 		return o, errors.New("review: -out is required")
 	}
+	if strings.TrimSpace(o.model) == "" {
+		return o, errors.New("review: -model is required")
+	}
+	if o.keyFile == "" {
+		return o, errors.New("review: -key-file is required")
+	}
 	p, err := priceFor(o.model, o.price)
 	if err != nil {
 		return o, err

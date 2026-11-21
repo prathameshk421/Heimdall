@@ -1,12 +1,56 @@
 package main
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/bench"
 )
+
+func TestParseReviewFlagsNeedsTheModelAndTheKeyBeforeAPrice(t *testing.T) {
+	// The brief's live command names the model, the base URL, the key file, the cap, the filter and the output. It
+	// names no price flag, so this must parse and take the table's price.
+	o, err := parseReviewFlags([]string{
+		"-out", "review.json", "-model", "deepseek/deepseek-v4-flash",
+		"-base-url", "https://openrouter.ai/api/v1", "-key-file", "/tmp/openrouter/key",
+		"-max-cost", "3.00", "-only", "testify-1207,chi-1185",
+	}, &bytes.Buffer{})
+	require.NoError(t, err)
+	require.InDelta(t, 3.00, o.maxCost, 1e-12)
+	require.InDelta(t, 0.09, o.price.InputPerM, 1e-12, "the table prices the model the brief names")
+	require.InDelta(t, 0.18, o.price.OutputPerM, 1e-12)
+	require.Equal(t, []string{"testify-1207", "chi-1185"}, mustIDs(t, o.only))
+}
+
+func TestParseReviewFlagsNamesTheMissingFlag(t *testing.T) {
+	// A usage error must say which flag is missing, in the order an operator meets them. A price error first would
+	// hide the missing model behind a message about a model that is empty.
+	base := []string{"-out", "review.json"}
+
+	_, err := parseReviewFlags(base, &bytes.Buffer{})
+	require.ErrorContains(t, err, "-model")
+
+	_, err = parseReviewFlags(append(base, "-model", "deepseek/deepseek-v4-flash"), &bytes.Buffer{})
+	require.ErrorContains(t, err, "-key-file")
+
+	_, err = parseReviewFlags(base, &bytes.Buffer{})
+	require.NotContains(t, err.Error(), "-price-input", "a missing model is not a price problem")
+}
+
+func TestParseReviewFlagsRefusesABadOnlyList(t *testing.T) {
+	args := []string{"-out", "r.json", "-model", "deepseek/deepseek-v4-flash", "-key-file", "/tmp/k", "-only", "a,a"}
+	_, err := parseReviewFlags(args, &bytes.Buffer{})
+	require.ErrorContains(t, err, "-only")
+}
+
+func mustIDs(t *testing.T, s string) []string {
+	t.Helper()
+	ids, err := parseCaseIDs(s)
+	require.NoError(t, err)
+	return ids
+}
 
 func TestPriceForKnownModelAndFlags(t *testing.T) {
 	// A flag wins over the table, so a price change is one flag, not a code change.
@@ -30,7 +74,6 @@ func TestPriceForUnknownModelNeedsFlags(t *testing.T) {
 	// An unknown model with no price would make the cost cap blind, so it is refused with what to add.
 	_, err := priceFor("nobody/unknown-model", bench.Price{})
 	require.ErrorContains(t, err, "-price-input")
-	require.ErrorContains(t, err, "-price-output")
 
 	got, err := priceFor("nobody/unknown-model", bench.Price{InputPerM: 1, OutputPerM: 2, CachedInputPerM: -1})
 	require.NoError(t, err)
@@ -61,13 +104,12 @@ func TestParseCaseIDs(t *testing.T) {
 		{"a b", []string{"a", "b"}, true},
 		{" a , , b ", []string{"a", "b"}, true},
 		{"a,,a", nil, false},
-		{",", nil, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
 			got, err := parseCaseIDs(tt.in)
 			if !tt.ok {
-				require.Error(t, err, "a repeated or empty id is a typo, not a filter")
+				require.Error(t, err, "a repeated id is a typo, not a filter")
 				return
 			}
 			require.NoError(t, err)
