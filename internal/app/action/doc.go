@@ -20,7 +20,8 @@
 //     record, the candidates that duplicate one of Heimdall's own findings, and the counts of what was dropped or
 //     ignored.
 //   - NewProof(ProofConfig) and (*Proof).Run(ctx, ProofIn): one proof run. It skips a trivial change at $0, runs the
-//     reviewer through its loop with tools bounded by size, and applies testintegrity.Prove to each proposal. The
+//     reviewer through ProofConfig.Loop (a ports.AgentLoop, the one loop of the product) with tools bounded by size, and
+//     applies testintegrity.Prove to each proposal. The
 //     result holds the proof.Outcome, the per-candidate results and the artifact bytes.
 //   - NewGate(Config), (*Gate).Run(ctx, changeID): one gate run.
 //   - (*Gate).RecordProof(ctx, ProofRecordIn): the gate's read of one proof artifact. It validates the artifact against
@@ -30,7 +31,6 @@
 //   - Result: the head, the fast verdict, the events appended, the checks posted, and whether the summary was written.
 //   - ErrStateUnverified: the state log failed its MAC or its hash chain. Nothing is written to a log that failed.
 //   - ErrProofArtifact: the proof artifact broke a rule of its format. Nothing in it is believed.
-//   - ErrProofBudget: the next model call could pass the run's cap, so it was not made.
 //   - Config.Resetter starts a new log with state.reset (ACTION_MODE 2.7). A store that cannot reset leaves it nil, and
 //     the gate then fails closed with ErrStateUnverified.
 //   - Config.Facts reads the fast-check groups that no port covers: the secret scan, the rule cards at the merge base,
@@ -58,7 +58,10 @@
 //  4. Call actionflow.Decide with HeadAt set to the time the head was observed (the last pr.opened or pr.pushed event),
 //     so the sweep row can tell how long a proof result has waited.
 //  5. Run the effects the rows ask for: append the events, post the two check runs, and post or update the summary
-//     comment. A proof row's effects are left to RecordProof.
+//     comment. A proof row that asks for a result the gate makes itself is run here: a trivial change records its skip
+//     at $0 (actionflow.SkipProof), and a head whose proof never reported records unknown (actionflow.ReportProofUnknown:
+//     the sweep, a changed proof workflow, the monthly cap). Both go through the write RecordProof uses and name
+//     RunIn.WorkflowRun, or the run they close. A real proof run's result is left to RecordProof.
 //
 // # Invariants
 //
@@ -68,8 +71,10 @@
 //   - The model key never shares a process with PR code. The key stays in this process; every tool that touches PR code
 //     goes through the sandbox port or reads the checkout through os.Root. No tool returns the environment, a file
 //     outside the checkout, or process information.
-//   - No call that could pass a cap. The model port is wrapped so every request is sized before it: the worst case of
-//     the request plus the full output cap must fit the per-PR dollar and token caps (ACTION_MODE 7).
+//   - No call that could pass a cap. This package hands the per-PR dollar and token caps to the agent loop, and the
+//     loop sizes every request before it: the worst case of the request plus the full output cap must fit the caps
+//     (ACTION_MODE 7). A run it stops for that reason ends unknown for the reason budget. The guard lives in
+//     internal/app/agentloop, so the bench gets it too.
 //   - The artifact is untrusted. The gate checks its version, its size, its head, base, policy hash and workflow run, and
 //     its counts against its candidates. It also recomputes each proven candidate's blocking flag from the policy at the
 //     merge base and refuses a disagreement, because that flag drives the check conclusion.
@@ -104,6 +109,7 @@
 // # Not here
 //
 // The CLI wiring (AM15), the workflows (AM16), the summary wording (A3), and the fast-check clause rules (A2, A4, A6),
-// which live in the domain. The agent loop is here and not in internal/app/agentloop, because the dependency rule (R3)
-// lets an app package import domain and ports only; moving it to a package both layers may import needs the owner's yes.
+// which live in the domain. The agent loop is not here: it is internal/app/agentloop behind ports.AgentLoop, so the
+// dependency rule (R3) holds and the bench measures the loop that ships. cmd wires an agentloop.Runner, with the
+// model and its price, into ProofConfig.Loop.
 package action

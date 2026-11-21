@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agentloop"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/bench"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -48,34 +47,59 @@ type proposal struct {
 	TestSource []byte
 }
 
-// fnTool is an agentloop.Tool made of a spec and a function.
+// fnTool is one tool of the reviewer: a spec and a function.
 type fnTool struct {
 	spec ports.ModelTool
 	run  func(ctx context.Context, args json.RawMessage) (string, error)
 }
 
-func (t fnTool) Spec() ports.ModelTool { return t.spec }
+// finalTool is the name of the final-answer tool.
+const finalTool = "finish_review"
 
-func (t fnTool) Run(ctx context.Context, args json.RawMessage) (string, error) {
-	return t.run(ctx, args)
-}
-
-// finishReview is the final-answer tool. The review's output is the findings it proposed, so any summary is accepted.
-type finishReview struct{}
-
-func (finishReview) Spec() ports.ModelTool {
-	return ports.ModelTool{Name: "finish_review", Description: "End the review. Call it once, after you proposed every finding you can support with a test.",
-		Parameters: json.RawMessage(`{"type":"object","properties":{"summary":{"type":"string","description":"One or two sentences on what you checked."}},"additionalProperties":false}`)}
-}
-
-// Submit accepts any summary: the review's output is the findings it proposed, not its closing text.
-func (finishReview) Submit(_ context.Context, args json.RawMessage) (agentloop.Verdict, error) {
-	var in struct {
-		Summary string `json:"summary"`
+// finishReview is the final-answer tool. The review's output is the findings it proposed, so any summary is accepted:
+// a summary the model wrote badly is not worth a refusal, because the review is already over.
+func finishReview() fnTool {
+	return fnTool{
+		spec: ports.ModelTool{Name: finalTool, Description: "End the review. Call it once, after you proposed every finding you can support with a test.",
+			Parameters: json.RawMessage(`{"type":"object","properties":{"summary":{"type":"string","description":"One or two sentences on what you checked."}},"additionalProperties":false}`)},
+		run: func(_ context.Context, args json.RawMessage) (string, error) {
+			var in struct {
+				Summary string `json:"summary"`
+			}
+			_ = decodeArgs(args, &in)
+			return "accepted", nil
+		},
 	}
-	// A summary the model wrote badly is not worth a refusal: the review is already over.
-	_ = decodeArgs(args, &in)
-	return agentloop.Verdict{Accepted: true}, nil
+}
+
+// toolbox is the reviewer's ports.ToolDispatcher: it runs a tool call by name.
+type toolbox struct {
+	byName map[string]fnTool
+	list   []ports.ModelTool
+}
+
+var _ ports.ToolDispatcher = toolbox{}
+
+// newToolbox indexes the tools. Names are unique, and the loop refuses a duplicate in the specs.
+func newToolbox(tools []fnTool) toolbox {
+	tb := toolbox{byName: map[string]fnTool{}}
+	for _, t := range tools {
+		tb.byName[t.spec.Name] = t
+		tb.list = append(tb.list, t.spec)
+	}
+	return tb
+}
+
+// specs are the tool definitions the model sees.
+func (tb toolbox) specs() []ports.ModelTool { return tb.list }
+
+// Dispatch runs one tool call. The loop calls it only for a name in specs.
+func (tb toolbox) Dispatch(ctx context.Context, name string, args json.RawMessage) (string, error) {
+	t, ok := tb.byName[name]
+	if !ok {
+		return "", fmt.Errorf("unknown tool %q", name)
+	}
+	return t.run(ctx, args)
 }
 
 // decodeArgs decodes the model's arguments strictly: an unknown field is an error the model can fix.
@@ -90,17 +114,17 @@ func decodeArgs(raw json.RawMessage, v any) error {
 
 // tools returns the reviewer's tools: the ones the product gives it (read_code, search_code, list_changes,
 // run_test, propose_finding). They read the head worktree only, so the fix and later history are not visible.
-func (rp *replay) tools() []agentloop.Tool {
-	return []agentloop.Tool{
-		fnTool{spec: ports.ModelTool{Name: "list_changes", Description: "List the files the pull request changes, with the unified diff (3 lines of context) from its base to its head.",
+func (rp *replay) tools() []fnTool {
+	return []fnTool{
+		{spec: ports.ModelTool{Name: "list_changes", Description: "List the files the pull request changes, with the unified diff (3 lines of context) from its base to its head.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)}, run: rp.listChanges},
-		fnTool{spec: ports.ModelTool{Name: "read_code", Description: "Read a file at the pull request head, with line numbers. At most 300 lines per call.",
+		{spec: ports.ModelTool{Name: "read_code", Description: "Read a file at the pull request head, with line numbers. At most 300 lines per call.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}},"required":["path"],"additionalProperties":false}`)}, run: rp.readCode},
-		fnTool{spec: ports.ModelTool{Name: "search_code", Description: "Search the files at the pull request head for a literal string. At most 50 matches.",
+		{spec: ports.ModelTool{Name: "search_code", Description: "Search the files at the pull request head for a literal string. At most 50 matches.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1},"path_prefix":{"type":"string"}},"required":["query"],"additionalProperties":false}`)}, run: rp.searchCode},
-		fnTool{spec: ports.ModelTool{Name: "run_test", Description: "Write one new Go test file into the pull request head and run its package's tests in the sandbox. Returns each test's outcome and the output.",
+		{spec: ports.ModelTool{Name: "run_test", Description: "Write one new Go test file into the pull request head and run its package's tests in the sandbox. Returns each test's outcome and the output.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"test_path":{"type":"string","description":"A new *_test.go path in the package under test."},"test_source":{"type":"string"}},"required":["test_path","test_source"],"additionalProperties":false}`)}, run: rp.runTest},
-		fnTool{spec: ports.ModelTool{Name: "propose_finding", Description: "Propose one bug the change brings in, with a Go test that fails on this head because of the bug and passes once the bug is fixed. At most 5 findings.",
+		{spec: ports.ModelTool{Name: "propose_finding", Description: "Propose one bug the change brings in, with a Go test that fails on this head because of the bug and passes once the bug is fixed. At most 5 findings.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"file":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"severity":{"type":"string","enum":["low","medium","high","critical"]},"claim":{"type":"string","maxLength":600},"test_path":{"type":"string"},"test_name":{"type":"string"},"test_source":{"type":"string"}},"required":["file","start_line","end_line","severity","claim","test_path","test_name","test_source"],"additionalProperties":false}`)}, run: rp.proposeFinding},
 	}
 }

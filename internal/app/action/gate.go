@@ -148,6 +148,9 @@ type RunIn struct {
 	ChangeID id.ChangeID
 	Repo     change.Repo
 	Number   int
+	// WorkflowRun is the GitHub Actions run id of this gate run. A result the gate records itself (a trivial skip, an
+	// unknown) names it, as proof.reported requires a run id. A run that has none fails when it must record one.
+	WorkflowRun int64
 }
 
 // Result is what one gate run did. It is a fact for the CLI and the tests: the log is the record of what happened.

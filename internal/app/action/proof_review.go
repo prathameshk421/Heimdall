@@ -61,26 +61,27 @@ type reviewer struct {
 	claimed map[int64]bool
 }
 
-// review runs the reviewer through the loop and keeps the proposals it accepted. A failed model call is an error the
-// caller records as unknown: it is never silently a clean run.
+// review runs the reviewer through the agent loop and keeps the proposals it accepted. A failed model call is an error
+// the caller records as unknown: it is never silently a clean run.
 func (r *proofRun) review(ctx context.Context) error {
 	rv := &reviewer{run: r, checkout: r.in.Checkout, claimed: map[int64]bool{}}
-	l, err := newLoop(budgetModel{inner: r.p.cfg.Model, budget: r.budget}, r.p.cfg.Clock, loopConfig{
-		Model: r.p.cfg.ModelName, MaxOutputTokens: r.act.Budget.CallOutputTokens, MaxTurns: maxProofTurns,
-		Deadline: r.p.cfg.Clock.Now().Add(proofTimeout),
-	}, append(rv.tools(), proposeFinding{rv: rv}), []loopSubmitter{finishReview{}})
-	if err != nil {
-		return fmt.Errorf("action proof on %s: reviewer loop: %w", r.in.ChangeID, err)
+	table := newToolTable(append(rv.tools(), proposeFinding{rv: rv}, finishReview{}))
+	system, user := reviewerMessages(r.in)
+	res, runErr := r.p.cfg.Loop.Run(ctx, ports.AgentRun{Model: r.p.cfg.ModelName, System: system, User: user,
+		Tools: table.specs(), FinalTools: []string{finishReviewName}, Dispatcher: table,
+		Budget: ports.AgentBudget{USD: r.act.Budget.PerPRUSD, InputTokens: int64(r.act.Budget.PerPRTokens.Input),
+			OutputTokens: int64(r.act.Budget.PerPRTokens.Output)},
+		MaxOutputTokens: r.act.Budget.CallOutputTokens, MaxTurns: maxProofTurns,
+		Deadline: r.p.cfg.Clock.Now().Add(proofTimeout)})
+	if res.Stop == "" {
+		// The loop refused the request before it ran: a wiring fault, not an outcome of the run.
+		return fmt.Errorf("action proof on %s: agent loop: %w", r.in.ChangeID, runErr)
 	}
-	res, runErr := l.run(ctx, reviewerMessages(r.in))
-	r.res.Turns, r.res.Stop = res.Turns, res.Stop
+	r.res.Turns, r.res.Stop = len(res.Turns), res.Stop
+	r.spent = proof.Spend{USD: res.CostUSD, InputTokens: int(res.Usage.InputTokens), OutputTokens: int(res.Usage.OutputTokens)}
 	if runErr != nil {
-		// The loop reports a cancellation, a model failure or a refused cap as an error. A refusal by the budget guard
-		// is the budget stop, whatever the loop called it, because that is the fact that ended the run (ACTION_MODE 7).
+		// The loop reports a cancellation, a model failure or a usage report that cannot be true as an error.
 		r.res.StopDetail = runErr.Error()
-		if errors.Is(runErr, ErrProofBudget) {
-			r.stop = proof.ReasonBudget
-		}
 	}
 	r.proposals = rv.proposals
 	// The review step ran whatever it found, so a run with no proposal is "not reproduced", not "no result".
@@ -96,8 +97,8 @@ propose_finding. If you find no bug you can prove, call finish_review with a sho
 A claim from another review tool is a claim, not a fact: try to prove it, and if your test passes on this head, the
 claim is not proven.`
 
-// reviewerMessages builds the conversation: the change, its files, and the claims to try.
-func reviewerMessages(in ProofIn) []ports.ModelMessage {
+// reviewerMessages builds the system prompt and the first user message: the change, its files, and the claims to try.
+func reviewerMessages(in ProofIn) (system, user string) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Repository: %s. Pull request %d. The change touches %d files.", in.Repo, in.Number, len(in.Files))
 	var paths []string
@@ -118,8 +119,7 @@ func reviewerMessages(in ProofIn) []ports.ModelMessage {
 				c.Location.Lines[0], c.Location.Lines[1], c.Severity, clip(c.Claim, maxPromptClaim))
 		}
 	}
-	return []ports.ModelMessage{{Role: ports.ModelRoleSystem, Content: reviewerPrompt},
-		{Role: ports.ModelRoleUser, Content: b.String()}}
+	return reviewerPrompt, b.String()
 }
 
 // clip cuts s to at most n bytes without splitting a rune, and says it cut.
@@ -137,7 +137,44 @@ func clip(s string, n int) string {
 // utf8RuneStart reports whether b starts a UTF-8 rune.
 func utf8RuneStart(b byte) bool { return b&0xC0 != 0x80 }
 
-// fnTool is a loopTool made of a spec and a function.
+// reviewTool is one tool of the reviewer. Its returned string and its returned error both go back to the model; the tool
+// bounds the string.
+type reviewTool interface {
+	Spec() ports.ModelTool
+	Run(ctx context.Context, arguments json.RawMessage) (string, error)
+}
+
+// toolTable is the reviewer's ports.ToolDispatcher: it runs a tool call by name.
+type toolTable struct {
+	byName map[string]reviewTool
+	list   []ports.ModelTool
+}
+
+var _ ports.ToolDispatcher = toolTable{}
+
+// newToolTable indexes the tools. The loop refuses a duplicate or empty name in the specs.
+func newToolTable(tools []reviewTool) toolTable {
+	t := toolTable{byName: map[string]reviewTool{}}
+	for _, tool := range tools {
+		t.byName[tool.Spec().Name] = tool
+		t.list = append(t.list, tool.Spec())
+	}
+	return t
+}
+
+// specs are the tool definitions the model sees.
+func (t toolTable) specs() []ports.ModelTool { return t.list }
+
+// Dispatch runs one tool call. The loop calls it only for a name in specs.
+func (t toolTable) Dispatch(ctx context.Context, name string, args json.RawMessage) (string, error) {
+	tool, ok := t.byName[name]
+	if !ok {
+		return "", fmt.Errorf("unknown tool %q", name)
+	}
+	return tool.Run(ctx, args)
+}
+
+// fnTool is a reviewTool made of a spec and a function.
 type fnTool struct {
 	spec ports.ModelTool
 	run  func(ctx context.Context, args json.RawMessage) (string, error)
@@ -150,8 +187,8 @@ func (t fnTool) Run(ctx context.Context, args json.RawMessage) (string, error) {
 }
 
 // tools returns the reviewer's tools. Each one bounds its own output, and none reads outside the checkout.
-func (rv *reviewer) tools() []loopTool {
-	return []loopTool{
+func (rv *reviewer) tools() []reviewTool {
+	return []reviewTool{
 		fnTool{spec: ports.ModelTool{Name: "list_changes",
 			Description: "List the files the pull request changes, with their diffs.",
 			Parameters:  json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)},
@@ -611,17 +648,18 @@ func decodeArgs(raw json.RawMessage, v any) error {
 	return nil
 }
 
+// finishReviewName is the name of the final tool.
+const finishReviewName = "finish_review"
+
 // finishReview ends the run. The proof run's output is the proposals, so any summary is accepted.
 type finishReview struct{}
 
 // Spec describes the tool to the model.
 func (finishReview) Spec() ports.ModelTool {
-	return ports.ModelTool{Name: "finish_review",
+	return ports.ModelTool{Name: finishReviewName,
 		Description: "End the review. Call it once, after you proposed every finding you can support with a test.",
 		Parameters:  json.RawMessage(`{"type":"object","properties":{"summary":{"type":"string","description":"One or two sentences on what you checked."}},"additionalProperties":false}`)}
 }
 
-// Submit accepts any summary. A summary the model wrote badly is not worth a refusal: the review is already over.
-func (finishReview) Submit(_ context.Context, _ json.RawMessage) (loopVerdict, error) {
-	return loopVerdict{Accepted: true}, nil
-}
+// Run accepts any summary. A summary the model wrote badly is not worth a refusal: the review is already over.
+func (finishReview) Run(_ context.Context, _ json.RawMessage) (string, error) { return "", nil }
