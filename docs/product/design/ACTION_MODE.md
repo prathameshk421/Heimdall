@@ -5,6 +5,10 @@ Status: design, Nov 21 2026. No product code. Owner: P-A1. Inputs: `STRATEGY.md`
 `HARNESS_DESIGN.md` Part B, and the `doc.go` of each package named below. Every GitHub fact that no run in this repo
 has proven is marked `not verified` and goes to the spike S1 (section 8).
 
+**S1 update (Nov 21 2026).** S1 ran; its results are in `ACTION_MODE_SPIKE.md`. Each place this document changed
+because of it is marked `[S1]`. The big one: REST `PATCH /git/refs` is **not** a compare-and-swap on
+`refs/heimdall/*`. The append now uses the GraphQL `updateRefs` mutation with `beforeOid` (2.2 to 2.4, WP AM8).
+
 ## 0. Summary
 
 Action mode runs Heimdall as a stateless step in the customer's GitHub Actions. It has no database, no VM and no
@@ -19,7 +23,7 @@ The core decisions, each argued below:
 | # | Decision | Section |
 |---|---|---|
 | D-A1 | The domain is reused. Fold, the gate clauses, tiers, finding states, slop, testplan, present, sarif, verify and rulecard stay. Three domain additions: a tri-state verdict, an `action` policy area, and action events | 1 |
-| D-A2 | The event log lives on one git ref, `refs/heimdall/state`, one JSONL file per change, written with compare-and-swap through the Git Data API, with an HMAC over each chain head | 2 |
+| D-A2 | The event log lives on one git ref, `refs/heimdall/state`, one JSONL file per change, written with compare-and-swap through the GraphQL `updateRefs` mutation (`beforeOid`) `[S1]`, with an HMAC over each chain head | 2 |
 | D-A3 | Three workflows. An unprivileged `pull_request` trigger, an unprivileged `pull_request` proof run, and a privileged `workflow_run` gate that never executes PR code. No `pull_request_target` anywhere | 3 |
 | D-A4 | A built-in agent loop over an OpenAI-compatible endpoint, not OpenCode or Claude Code headless. PR code runs only as a separate Linux user with no network | 4 |
 | D-A5 | `unknown` is a third verdict. It never maps to `success`. In enforce mode it maps to `action_required` | 5 |
@@ -96,7 +100,7 @@ Two kinds of fact, as in the server:
 | Check run output | `summary` and `text` at most 65,535 characters each | With the commit | Last write wins, no compare | Any workflow with `checks: write`, including a branch workflow of any writer | One list call per SHA. No repo-wide query |
 | Hidden marker in the summary comment | 65,536 characters for the whole body | With the PR | Last write wins | The gate, and any person with write access, who can edit any comment | Search API only |
 | Workflow artifacts | Large | 1 to 90 days, then gone | Immutable per upload, no compare | Any workflow run, including fork runs | List by name across the repo |
-| A git ref | Blobs up to 100 MB through the Git Data API | Permanent | Compare-and-swap: a ref update with `force: false` fails when the ref moved | The gate's token; also any person with write access through `git push` | One tree read |
+| A git ref | Blobs through the Git Data API: 10 MiB accepted, larger sizes not measured `[S1]` | Permanent | Compare-and-swap through GraphQL `updateRefs` with `beforeOid`. **Not** REST `PATCH` with `force: false`: that checks fast-forward only on `refs/heads/*` and is a plain set on `refs/heimdall/*` `[S1]` | The gate's token; also any person with write access through `git push` | One tree read |
 
 ### 2.3 The pick: one ref, `refs/heimdall/state`
 
@@ -113,20 +117,25 @@ budget/<yyyy-mm>.json                    the month's cost per change, for the ca
 Why this one:
 
 - **It is the event store.** `ports.EventStore.Append(change, expected, events, effects)` maps to one commit. The
-  per-change `expected` version is checked against the `.head` file. The ref update with `force: false` is the
-  compare-and-swap. The same `Fold`, `VerifyChain` and reconciler run on it. No second model of a change exists.
+  per-change `expected` version is checked against the `.head` file. The compare-and-swap is the GraphQL
+  `updateRefs` mutation with `beforeOid` = the tip the gate read, `afterOid` = the new commit and `force: false`
+  `[S1]` (call and raw results in `ACTION_MODE_SPIKE.md` 1.2; verified with `GITHUB_TOKEN` and `contents: write`).
+  REST `PATCH /git/refs` with `force: false` is not a compare on this ref: a stale writer got 200 `[S1]`. The same `Fold`, `VerifyChain` and reconciler run on it. No second model of a change exists.
 - **It survives.** Artifacts vanish after at most 90 days. Check runs and comments are scattered per SHA and per PR.
 - **Cross-PR reads are one tree read.** The monthly cap and the weekly shadow digest need every PR of a month.
 - **Normal clones do not fetch it.** The default refspec is `refs/heads/*`. A ref outside `refs/heads` adds nothing
   to a developer's clone. GitHub's REST docs require a ref name that starts with `refs` and has at least two slashes
-  ([Git refs API](https://docs.github.com/en/rest/git/refs)). That `POST /git/refs` accepts `refs/heimdall/state`
-  from the gate's token is `not verified` (S1). If S1 shows it is refused, the owner picks the branch
-  `heimdall/state` instead, and this section is changed in the same commit. That is a decision, not a runtime
-  fallback (R4).
+  ([Git refs API](https://docs.github.com/en/rest/git/refs)). `POST /git/refs` accepts `refs/heimdall/...` from a
+  workflow's `GITHUB_TOKEN` (201), and a second create returns 422 `Reference already exists` `[S1]`. A default
+  `git clone` fetched no `refs/heimdall/*` `[S1]`. Reads (`GET /git/ref/heimdall/state`, trees, contents with
+  `?ref=refs/heimdall/state`) work with a `contents: read` token; GraphQL cannot see the ref, so reads use REST
+  `[S1]`. In a public repository the ref is listed without a login `[S1]`, so the log holds only what the public
+  summary could show.
 - **Pushes by `GITHUB_TOKEN` do not start workflows**, so the writes cause no CI runs
   ([triggering a workflow](https://docs.github.com/en/actions/using-workflows/triggering-a-workflow)). In enforce mode
-  the gate writes with the Heimdall App token; push events for a ref outside `refs/heads` and `refs/tags` are
-  `not verified` (S1).
+  the gate writes with the Heimdall App token. A commit with an `on: push` workflow, created on `refs/heimdall/*`
+  through the API by a user token, started no run; the same commit on a `heimdall-test` branch did `[S1]`. An App
+  token write to `refs/heimdall/*` is `not verified`.
 
 ### 2.4 Concurrency
 
@@ -140,11 +149,18 @@ Why this one:
   one of two cases. If the change's own `.head` moved, the store returns `ErrVersionConflict`, and `reconcile.Run`
   loads again and decides again, up to 5 times, as today. If only other files moved, the store rebuilds the same
   commit on the new tip and tries again without a new decision. A gate run touches one change file and the budget
-  file, so most conflicts are the second case.
+  file, so most conflicts are the second case. `[S1]` A refused `updateRefs` is not typed: GitHub returns "Something
+  went wrong ... <request id>". After any such error the store reads the tip over REST: tip equals `afterOid` means
+  the append landed and only the reply was lost; any other tip is a conflict, handled as above; the old tip means a
+  transient failure, retried with backoff. `FORBIDDEN` (token without `contents: write`) fails closed. Two writers
+  with the same `beforeOid` gave exactly one winner in 14 of 14 trials.
 - **Proof runs.** `concurrency: heimdall-proof-<pr>` with `cancel-in-progress: true`. A new head cancels the old
   proof run. The binary catches the cancel signal, stops the model, and writes a partial result
-  (`unknown: superseded by <sha>`, cost so far). An `if: always()` step uploads it. Runner grace times on cancel are
-  `not verified` (S1).
+  (`unknown: superseded by <sha>`, cost so far). An `if: always()` step uploads it. `[S1]` On cancel the runner sends
+  SIGINT, then SIGTERM about 8 s later, then SIGKILL about 2 s after that. The binary must write its partial result
+  within a few seconds of SIGINT. The `always()` and `cancelled()` steps then run, but the whole cancel is cut at
+  300 s from the request: a job that overruns loses its post steps and its logs. The partial-result step must
+  therefore take seconds.
 
 ### 2.5 Idempotency
 
@@ -162,10 +178,10 @@ Why this one:
 |---|---|---|
 | One event | 64 KiB, else refused at append | Ours |
 | One change file | 4 MiB. Over it, the gate stops proof work for the change and says why | Ours |
-| Blob through the Git Data API | 100 MB. We cap at 64 KiB per test file (`testset.MaxFileBytes`) | GitHub, `not verified` (S1) |
+| Blob through the Git Data API | 1 MiB and 10 MiB accepted (10 MiB took 57 s); larger sizes not measured. We cap at 64 KiB per test file (`testset.MaxFileBytes`) | Measured `[S1]` |
 | Contents API read | 1 MB. We read blobs through the Git Data API instead | `internal/adapters/github/doc.go` traps |
 | Check run `summary` and `text` | 65,535 characters each | [Check runs API](https://docs.github.com/en/rest/checks/runs) |
-| Comment body | 65,536 characters. The renderer budget is 60,000 with a truncation line | `not verified` (S1) |
+| Comment body | Documented 65,536 characters. `[S1]` The API accepted up to 262,144 bytes, and the 422 message still says 65,536. The renderer budget stays 60,000 with a truncation line | Measured `[S1]`; web UI rendering of a long body not verified |
 
 Estimate: about 100 events of 500 bytes and 20 KiB of test files per PR, so 1,000 PRs add about 70 MB to the ref.
 This is an estimate, not a measurement.
@@ -239,8 +255,10 @@ Rules that every workflow follows:
 - Enforce mode: a ruleset on the default branch requires `heimdall/fast` with the Heimdall App as expected source.
   `heimdall/proof` stays advisory until the team asks for it to be required.
 - A check from the gate appears 30 to 90 seconds after a push (trigger run, then gate run). Until then GitHub shows
-  "Expected: waiting for status", which blocks a merge. That is fail-closed by design. The latency is
-  `not verified` (S1 measures it).
+  "Expected: waiting for status", which blocks a merge. That is fail-closed by design. `[S1]` One stage measured: a
+  push to a visible check run from `GITHUB_TOKEN` took p50 6.1 s, p95 8.8 s (n=10). The two-stage chain is blocked
+  (it needs a `workflow_run` workflow on the default branch), so 30 to 90 seconds is neither confirmed nor refuted.
+  The one-stage figure is a floor.
 
 ### 3.4 Forks, Dependabot and agent PRs
 
@@ -474,7 +492,7 @@ Each WP is under 2 days, one concern, and names its files and its test. The test
 
 | WP | What | Files | Test | Needs | Roadmap |
 |---|---|---|---|---|---|
-| S1 | **Spike: GitHub facts.** Custom ref by API with `GITHUB_TOKEN`; environment secret in `workflow_run` with a default-branch rule; App as expected check source; `workflow_run.pull_requests` for forks; cancel grace time; comment and blob size limits; trigger-to-check latency (20 pushes) | `docs/product/design/ACTION_MODE_SPIKE.md`, throwaway workflows on `aarush323/heimdall-fixture-pay` | The recorded results; this doc changed where a fact differs | Owner's yes for live GitHub writes | A1 |
+| S1 | **Spike: GitHub facts. Done Nov 21 2026 `[S1]`: see `ACTION_MODE_SPIKE.md`; the `workflow_run` and fork items are blocked there.** Custom ref by API with `GITHUB_TOKEN`; environment secret in `workflow_run` with a default-branch rule; App as expected check source; `workflow_run.pull_requests` for forks; cancel grace time; comment and blob size limits; trigger-to-check latency (20 pushes) | `docs/product/design/ACTION_MODE_SPIKE.md`, throwaway workflows on `aarush323/heimdall-fixture-pay` | The recorded results; this doc changed where a fact differs | Owner's yes for live GitHub writes | A1 |
 | AM1 | Tri-state verdict | `internal/domain/gate/verdict.go` | `verdict_test.go`: every clause known-false is fail, every clause unknown is unknown, a mix is fail, nothing unmet is pass | – | A2 |
 | AM2 | `action` policy area | `internal/domain/policy/area_action.go`, validate rules | `area_action_test.go`: goldens, defaults, refusals with key paths | – | A2, A4, A8, A10 |
 | AM3 | Action events | `internal/domain/change/events_action.go` | Payload round trip and validation table; fold tests for each | Stage 0 releases `change` | A3, A8, A10 |
@@ -482,7 +500,7 @@ Each WP is under 2 days, one concern, and names its files and its test. The test
 | AM5 | Proof outcome and trivial skip | `internal/domain/proof/` | Table test for each outcome and reason; trivial-skip table; $0 on docs-only | AM2 | A3, A10 |
 | AM6 | Coverage parsers | `internal/domain/coverage/` (lcov, Cobertura, Go cover) | Goldens per format, diff-coverage arithmetic, `FuzzParse` | – | A2 |
 | AM7 | Third-party comment parsers | `internal/domain/external/` | Goldens from recorded comments of each tool, location mapping through a diff, outdated and no-location drops | AM5 | A5 |
-| AM8 | Git-ref event store | `internal/adapters/gitlog/` | Contract test of `ports.EventStore` against an `httptest` Git Data API: append, conflict on own change, rebuild on another change, MAC refused, chain broken refused, size limits | – | A1 |
+| AM8 | Git-ref event store `[S1]` | `internal/adapters/gitlog/` | Contract test of `ports.EventStore` against an `httptest` fake of the Git Data REST reads and the GraphQL `updateRefs` mutation (a `beforeOid` mismatch returns the opaque error; the store re-reads the tip to tell a lost reply, a conflict and a transient failure apart): append, conflict on own change, rebuild on another change, MAC refused, chain broken refused, size limits | – | A1 |
 | AM9 | GitHub adapter additions | `internal/adapters/github/{static_token,comments,artifacts,codescan,gitdata}.go` | Recorded-response tests; pagination; error mapping per `doc.go` traps | – | A2, A5 |
 | AM10 | Model chat with tools | `internal/ports/model.go`, `internal/adapters/openrouter/chat.go` | Recorded-response tests: tool calls, usage and cost, refusal, 429 | – | A7 |
 | AM11 | Isolated sandbox | `internal/adapters/uidsandbox/` | Escape probes (env, `/proc`, home, `_temp`, network, docker socket, a surviving process) must all fail. Build-tagged; runs only on a hosted Linux runner in CI | – | A7 |
@@ -511,7 +529,7 @@ A3 (the summary renderer), A4 (the shadow check text and weekly digest), A6 (tes
 |---|---|---|
 | Q1 | Enforce mode needs a GitHub App identity so a writer cannot forge `heimdall/fast`. Do we ask each customer to create a BYO App by manifest (`heimdall action init`), or wait for a hosted Heimdall App? | BYO App by manifest now. Shadow mode needs no App |
 | Q2 | `HEIMDALL_LOG_KEY` in environment `heimdall` adds one install step. Required even in shadow mode? | Yes. `heimdall action init` sets it, so the cost is one command |
-| Q3 | Custom ref `refs/heimdall/state` or branch `heimdall/state`? | The ref, if S1 shows the API accepts it |
+| Q3 | Custom ref `refs/heimdall/state` or branch `heimdall/state`? | Closed `[S1]`: the ref. `POST /git/refs` accepts it, and `updateRefs` with `beforeOid` is a real compare-and-swap on it |
 | Q4 | Red-first tests: attach to the summary as a patch for the author to adopt, or commit them to the PR branch? | Attach in v1. A `/heimdall adopt-tests` command for same-repo PRs later |
 | Q5 | Self-hosted runners without `sudo`: proof parts are `unknown`. Build a docker backend (`--network none`) for them? | After the first design partner on self-hosted runners asks |
 | Q6 | Fork and Dependabot PRs get no model proof. Add a maintainer command `/heimdall prove <sha>` that runs a privileged proof for one exact SHA? | No in v1. It reopens the privileged-execution question of 3.5 |
@@ -522,7 +540,9 @@ A3 (the summary renderer), A4 (the shadow check text and weekly digest), A6 (tes
 
 ## 10. Not verified
 
-Every item marked `not verified` above. The main ones: custom ref creation by API; environment secrets in
-`workflow_run` under a default-branch rule; `workflow_run.pull_requests` for forks; the check latency after a push;
-the runner's cancel grace time; the size limits of comments and blobs; the bot logins and formats; the escape probes
-of the sandbox; install and prompt sizes of OpenCode and Claude Code; all costs.
+Every item marked `not verified` above. The main ones: environment-scoped values in `workflow_run` under a
+default-branch rule; `workflow_run.pull_requests` for forks; the latency of the two-stage trigger-and-gate chain; an
+App token write to `refs/heimdall/*`; blobs above 10 MiB; how the web UI renders a long comment; the bot logins and
+formats; the escape probes of the sandbox; install and prompt sizes of OpenCode and Claude Code; all costs. `[S1]`
+settled (see `ACTION_MODE_SPIKE.md`): custom ref creation by API, the compare-and-swap call, one-stage check latency,
+the runner's cancel grace, and the size limits of comments and blobs.
