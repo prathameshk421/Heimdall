@@ -1,0 +1,7 @@
+{
+  "path": "internal/pay/refund_test.go",
+  "changed": ["internal/pay/ledger.go", "internal/pay/refund_test.go"],
+  "mocks": [
+    {"kind": "go_generated", "target": "github.com/acme/shop/internal/pay/mocks", "line": 11}
+  ]
+}
