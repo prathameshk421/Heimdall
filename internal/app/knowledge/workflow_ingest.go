@@ -217,6 +217,9 @@ func workflowTrust(event change.Event) (ports.EpisodeStatus, bool, error) {
 		state := payload.(change.FindingStateChanged).State
 		return ports.EpisodeObserved, state == "resolved" || state == "upheld", nil
 	case change.EventTaskSuperseded, change.EventTaskRewoken, change.EventProviderProbed, change.EventProfileProposed, change.EventChecksReported,
+		change.EventFastReported, change.EventProofStarted, change.EventProofReported, change.EventCostRecorded,
+		change.EventExternalIngested, change.EventSummaryPosted, change.EventBreakGlassRecorded,
+		change.EventBreakGlassReviewed, change.EventStateReset,
 		change.EventRoomOpened, change.EventBranchEnsured, change.EventTaskAssigned, change.EventTaskAcked,
 		change.EventTaskTimedOut, change.EventTaskFailed, change.EventStepRetried, change.EventStepEscalated,
 		change.EventQuestionAsked, change.EventQuestionAnswered, change.EventCommandProposed, change.EventCommandConfirmed, change.EventTestsSubmitted, change.EventTestsVerified,
