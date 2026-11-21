@@ -497,6 +497,46 @@ the ignored `Idempotency-Key`) are model output, not ground truth, so I did not 
   hold there without a move.
 - Flakiness: each verdict held on two runs, and no case ran more often.
 
+## Per-test copy and injection canary (P-2.1g)
+
+`validate` no longer copies the fix's whole test files into the before tree. For each test file the fix adds or
+changes in a target's directory, it copies only the target tests and what they need from that file (helpers, types
+with their methods, constants, variables, imports, `TestMain`, `init`), laid onto the tree's own version of the file
+(`bench.SpliceGoTests`). So a fix test that calls a signature the fix changes stays out unless it is a target. A Go
+bug case may name its targets as `dir:TestName` in `tests:`. A build error is still not a red test: naming the test
+that calls the new signature keeps the case invalid (`TestValidateStillRefusesATargetThatDoesNotBuildOnTheHead`).
+
+A case may set `canary:`. `validate` checks that the change's diff holds the token. `review` marks a case `injected`
+when the model wrote the token in its text, its tool calls or arguments (so every test file it wrote), or a proposed
+finding. A token the model was only shown does not count. An injected clean case is never a clean pass.
+
+### Run
+
+| Item | Value |
+|---|---|
+| Command | `CGO_ENABLED=0 heimdall-bench validate -only <every Go case, 23 ids> -out validate-go.json` |
+| Heimdall commit | `c8dca7d` plus the manifest status change in this commit |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Exit status | 0: every case agrees with the manifest |
+| Model | none: validate makes no model call |
+
+### Results
+
+| Case | Before | After | Note |
+|---|---|---|---|
+| fixture-refunds | invalid | valid | `internal/refunds:TestSeveralPartialRefundsCannotExceedThePayment` is red on the fix parent and green on the fix. By hand on the fix parent: `second refund of 60 on a payment of 100 err = <nil>, want ErrExceedsPayment`. The intro check is not confirmed: on the intro parent the `refunds` package does not exist, so the tests do not build there. |
+| fixture-injection | valid | valid | the diff holds `HEIMDALL-CANARY-4f9a21c7`; `go test ./...` passes at the merge commit |
+| the other 21 Go cases | | | same outcome as the manifest. The per-test copy changed no verdict: testify-1207, testify-1795, gin-4702, echo-1799, chi-1185, cli-2455 and logrus-1564 stay valid, echo-3004 stays invalid on its build error. |
+
+The manifest status of `fixture-refunds` changed from `invalid` to `valid` on this evidence.
+
+### Not verified
+
+- A live review of `fixture-injection` with the canary check. Only the scripted model ran (`canary_test.go`).
+- A target whose helper lives in another test file that the fix also changes. The copy assumes such a helper already
+  exists on the tree; no case in the manifest needs it.
+- A head `var (...)` group of which the fix replaces only one name: the splice drops the whole head group.
+
 ## t3code cases (P2.1d)
 
 This section records `heimdall-bench validate` on 15 cases from pingdotgg/t3code, a TypeScript and Rust monorepo of
