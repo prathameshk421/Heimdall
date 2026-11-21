@@ -180,7 +180,7 @@ Run(ctx, change):                          // serialized per change: a mutex per
     events := Load(change); in := build In (fold, policy, outside, profile, settings, dead jobs, now)
     actions := Next of every open row
     facts := Fact actions + the task facts decided below (task.assigned, task.superseded, task.rewoken, task.failed)
-    jobs  := Job actions + the task effects decided below (task_assign, agent_reset)
+    jobs  := Job actions + the task effects decided below (task_assign)
     if facts != nil: Append(change, version, facts, jobs)   // the jobs attach to the last fact
     else if jobs != nil: EnsureEffects(change, jobs)        // attached to the stream's last event
     if ErrVersionConflict: continue (reload and decide again); else return
@@ -201,11 +201,11 @@ Run(ctx, change):                          // serialized per change: a mutex per
     → resolver) or, for review, the seat itself;
   - live on another input: Fact `task.superseded{task_id, reason: "new input <input>"}` (new event), then assign;
   - live on this input: `liveness.Next(facts, windows, now)`; the facts come from the view (`Since`, `Acked`,
-    `Wakes > 0`, `ResetAt`) and `ports.ToolCalls` (this agent's last call while holding this task). Then: `wait` →
+    `Wakes > 0`, `StallWokenAt`) and `ports.ToolCalls` (this agent's last call while holding this task). Then: `wait` →
     nothing; `repeat_wake` → Job `task_assign` keyed `<task id>/wake/<n>` and Fact `task.rewoken{task_id, n}` (new);
     `probe_provider` → `ports.ModelHealth.Probe` and Fact `provider.probed{health}` (new); `provider_blocked` → nothing
-    (`Missing` says "the model provider refuses: <health>"); `reset_and_repeat` → Job `agent_reset` (new effect kind:
-    Switch resets the agent's session) and Fact `task.rewoken`; `fail` → Fact `task.failed{reason: "unresponsive"}`,
+    (`Missing` says "the model provider refuses: <health>"); `stall_rewake` → Job `task_assign` keyed `<task id>/wake/<n>`
+    and Fact `task.rewoken{task_id, n, stall: true}` (D172: Switch offers an agent no session reset); `fail` → Fact `task.failed{reason: "unresponsive"}`,
     after which the row is open again and the next `Run` assigns a fresh task.
   - Past its deadline a live task gets `task.timed_out` (Fact), and the row reassigns.
 - **Executors** perform their job and record their fact with `reconcile.Record`. They decide nothing: no log scans, no
@@ -223,7 +223,7 @@ Run(ctx, change):                          // serialized per change: a mutex per
   (`omitempty`, not required by `Validate`); new tasks leave it empty.
 - `tests.submitted`, `review.submitted`, `verdict.submitted` gain `task_id` (`omitempty`); every new submission sets it.
 - `pr.opened` and `pr.pushed` gain `base_sha` (`omitempty`); intake sets it (it has `pr.BaseSHA`).
-- View: `TaskInfo` gains `Kind`, `Subject`, `Input`, `Since`, `Wakes`, `ResetAt`; statuses gain `done` (a submission
+- View: `TaskInfo` gains `Kind`, `Subject`, `Input`, `Since`, `Wakes`, `StallWokenAt`; statuses gain `done` (a submission
   naming the task) and `superseded`.
 - `postgres.TaskIndex` (finds an agent's active task) ends a task on `task.timed_out`, `task.failed`,
   `task.superseded`, or a submission whose `task_id` equals it. For events without `task_id` it keeps today's role rule,
@@ -373,7 +373,7 @@ green (except the known `secrets` false positive listed in PROGRESS, which needs
 - **Change (`internal/domain/change`):**
   - `TestsInfo` + `Ref workflow.BlobRef` (`e.BlobRefs[0]` of `tests.submitted`), `Attempts int` (count of
     `tests.submitted`, never reset), `TaskID`, `BaseSHA`.
-  - `TaskInfo` + `Kind`, `Subject`, `Input`, `Since` (`OccurredAt` of `task.assigned`), `Wakes`, `ResetAt`; statuses
+  - `TaskInfo` + `Kind`, `Subject`, `Input`, `Since` (`OccurredAt` of `task.assigned`), `Wakes`, `StallWokenAt`; statuses
     `done`, `superseded`. A submission with `task_id` sets that task `done`.
   - `ReviewInfo` + `Outcome` (`submitted`, `unavailable`, `waived`); fold `review.unavailable` and `review.waived`
     (not folded today).

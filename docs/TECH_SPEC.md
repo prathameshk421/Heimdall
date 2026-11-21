@@ -496,10 +496,11 @@ with it on every Run.
    wrapped) and the change's `Missing` texts. The first call of a task before its deadline records `task.acked`.
    There is no `ack` tool. With no active task, `get_task` says so plainly.
 4. **Liveness.** For a live task on the same input, `liveness.Next` decides from the view (`Since`, `Acked`, `Wakes`,
-   `ResetAt`) and the agent's last tool call (`ports.ToolCalls`), with two windows: ack 3 minutes, stall 10 minutes.
+   `StallWokenAt`) and the agent's last tool call (`ports.ToolCalls`), with two windows: ack 3 minutes, stall 10 minutes.
    `wait` does nothing; `repeat_wake` posts the wake again and records `task.rewoken`; `probe_provider` asks the model
    provider once with the server's key and records `provider.probed`; `provider_blocked` posts nothing and `Missing`
-   says "the model provider refuses"; `reset_and_repeat` starts `agent_reset` and records `task.rewoken`; `fail`
+   says "the model provider refuses"; `stall_rewake` posts the wake once more and records `task.rewoken{stall: true}`
+   (Switch offers an agent no session reset, D172); `fail`
    records `task.failed{reason: unresponsive}`, after which the row is open again and the next Run assigns a fresh
    task. Past its deadline a live task gets `task.timed_out`, and the row reassigns. Switch restarts a crashed agent
    itself; Heimdall holds no gateway login (D145).

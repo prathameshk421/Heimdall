@@ -14,7 +14,7 @@ const (
 	Repeat  Action = "repeat_wake"      // post the wake line again
 	Probe   Action = "probe_provider"   // ask the model provider once, with the server's own key
 	Blocked Action = "provider_blocked" // the provider refuses: say so in every status, post no wake
-	Reset   Action = "reset_and_repeat" // reset the agent's session in the working room, then repeat the wake line
+	Rewake  Action = "stall_rewake"     // post the wake line once more after a stall (Switch offers no session reset, D172)
 	Fail    Action = "fail"             // task.failed{unavailable}; Missing names the seat
 )
 
@@ -30,12 +30,12 @@ const (
 
 // Facts about one open task.
 type Facts struct {
-	Since    time.Time // when the task was assigned
-	Acked    bool
-	LastCall time.Time // this agent's last Heimdall call; zero if none
-	Repeated bool      // the wake line was repeated
-	ResetAt  time.Time // when the session was reset; zero if never
-	Provider Health
+	Since        time.Time // when the task was assigned
+	Acked        bool
+	LastCall     time.Time // this agent's last Heimdall call; zero if none
+	Repeated     bool      // the wake line was repeated
+	StallWokenAt time.Time // when the agent was woken again after a stall; zero if never
+	Provider     Health
 }
 
 // Windows are the two waits of 6.3.
@@ -56,9 +56,9 @@ func Next(f Facts, w Windows, now time.Time) Action {
 		return Wait
 	case f.Provider == Unprobed:
 		return Probe
-	case f.ResetAt.IsZero():
-		return Reset
-	case now.Sub(latest(f.ResetAt, f.LastCall)) >= w.Stall:
+	case f.StallWokenAt.IsZero():
+		return Rewake
+	case now.Sub(latest(f.StallWokenAt, f.LastCall)) >= w.Stall:
 		return Fail
 	}
 	return Wait

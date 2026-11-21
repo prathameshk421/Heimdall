@@ -159,18 +159,18 @@ type GateInfo struct {
 // TaskInfo is one task. Its status changes only on task events.
 type TaskInfo struct {
 	// Kind, Subject and Input say what the task is for (HARNESS_DESIGN B4); Since is when it was assigned, Wakes how
-	// many times the agent was woken again and ResetAt when its session was last reset.
-	Kind     string        `json:"kind"`
-	Subject  string        `json:"subject"`
-	Input    string        `json:"input"`
-	Since    time.Time     `json:"since"`
-	Wakes    int           `json:"wakes"`
-	ResetAt  time.Time     `json:"reset_at"`
-	Agent    id.AgentName  `json:"agent"`
-	Role     workflow.Role `json:"role"`
-	Deadline time.Time     `json:"deadline"`
-	Status   string        `json:"status"`
-	Progress string        `json:"progress"`
+	// many times the agent was woken again and StallWokenAt when it was woken again after a stall.
+	Kind         string        `json:"kind"`
+	Subject      string        `json:"subject"`
+	Input        string        `json:"input"`
+	Since        time.Time     `json:"since"`
+	Wakes        int           `json:"wakes"`
+	StallWokenAt time.Time     `json:"stall_woken_at"`
+	Agent        id.AgentName  `json:"agent"`
+	Role         workflow.Role `json:"role"`
+	Deadline     time.Time     `json:"deadline"`
+	Status       string        `json:"status"`
+	Progress     string        `json:"progress"`
 }
 
 // Task statuses.
@@ -329,8 +329,8 @@ func (v *View) applyTask(e Event, p Payload) {
 	case TaskRewoken:
 		if t, ok := v.Tasks[p.TaskID]; ok {
 			t.Wakes = p.N
-			if p.Reset {
-				t.ResetAt = e.OccurredAt
+			if p.Stall || p.Reset {
+				t.StallWokenAt = e.OccurredAt
 			}
 			v.Tasks[p.TaskID] = t
 		}

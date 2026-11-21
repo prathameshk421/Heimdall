@@ -102,7 +102,7 @@ func rowOfJob(k EffectKind) string {
 		return "acceptance"
 	case EffectGitHubCheck:
 		return "gate"
-	case EffectGitHubComment, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign, EffectAgentReset:
+	case EffectGitHubComment, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign:
 		return ""
 	}
 	return ""

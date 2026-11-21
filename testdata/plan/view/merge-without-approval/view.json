@@ -89,7 +89,7 @@
       "input": "",
       "since": "2026-11-07T17:23:09Z",
       "wakes": 0,
-      "reset_at": "0001-01-01T00:00:00Z",
+      "stall_woken_at": "0001-01-01T00:00:00Z",
       "agent": "reviewer-2",
       "role": "reviewer",
       "deadline": "2026-11-07T17:53:09Z",

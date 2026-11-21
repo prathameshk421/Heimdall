@@ -468,7 +468,10 @@ func (p TaskSuperseded) Validate() error {
 type TaskRewoken struct {
 	TaskID id.TaskID `json:"task_id"`
 	N      int       `json:"n"`
-	// Reset is true when the wake also reset the agent's session.
+	// Stall is true for the one wake after a stall with a healthy provider (liveness.Rewake).
+	Stall bool `json:"stall,omitempty"`
+	// Reset is set only by events from before D172, when this wake was meant to reset the agent's session. The reset
+	// never ran (Switch offers an agent no session reset); such an event folds as the stall wake.
 	Reset bool `json:"reset,omitempty"`
 }
 

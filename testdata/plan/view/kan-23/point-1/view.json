@@ -59,7 +59,7 @@
       "input": "",
       "since": "2026-11-08T04:37:00.133667Z",
       "wakes": 0,
-      "reset_at": "0001-01-01T00:00:00Z",
+      "stall_woken_at": "0001-01-01T00:00:00Z",
       "agent": "test-author",
       "role": "test-author",
       "deadline": "2026-11-08T06:37:00.133667355Z",

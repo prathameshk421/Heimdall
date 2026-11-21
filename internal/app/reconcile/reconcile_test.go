@@ -136,7 +136,7 @@ func TestAnUnansweredWakeIsRepeatedOnce(t *testing.T) {
 	require.Equal(t, 1, r.store.count(prc, change.EventTaskRewoken), "the same run twice changes nothing")
 }
 
-func TestAQuietAgentIsProbedResetFailedAndReassigned(t *testing.T) {
+func TestAQuietAgentIsProbedWokenAgainFailedAndReassigned(t *testing.T) {
 	r := newRig(t)
 	task := r.heldTask(t)
 	r.add(t, prc, change.EventTaskAcked, change.TaskAcked{TaskID: task, Agent: "rev-1", Role: "reviewer"})
@@ -147,13 +147,17 @@ func TestAQuietAgentIsProbedResetFailedAndReassigned(t *testing.T) {
 	require.Equal(t, 1, r.store.count(prc, change.EventProviderProbed))
 	require.Equal(t, "ok", r.store.payloads(t, prc, change.EventProviderProbed)[0].(change.ProviderProbed).Health)
 
-	r.clock.set(t0.Add(12 * time.Minute)) // healthy: reset the session and wake again
+	r.clock.set(t0.Add(12 * time.Minute)) // healthy: wake again. Switch offers an agent no session reset (D172)
 	r.run(t, prc)
-	require.Contains(t, r.store.keys(), "pr-acme-pay-7/"+string(task)+"/reset/1")
+	require.Contains(t, r.store.keys(), "pr-acme-pay-7/"+string(task)+"/wake/1")
+	for _, k := range r.store.keys() {
+		require.NotContains(t, k, "/reset/", "no session reset job: Heimdall cannot reset a Switch session")
+	}
 	require.Equal(t, 1, r.store.count(prc, change.EventTaskRewoken))
+	require.True(t, r.store.payloads(t, prc, change.EventTaskRewoken)[0].(change.TaskRewoken).Stall)
 	require.Equal(t, 1, r.health.probes, "a healthy provider is not asked again")
 
-	r.clock.set(t0.Add(23 * time.Minute)) // still silent ten minutes after the reset
+	r.clock.set(t0.Add(23 * time.Minute)) // still silent ten minutes after the stall wake
 	r.run(t, prc)
 	require.Equal(t, 1, r.store.count(prc, change.EventTaskFailed))
 
