@@ -177,14 +177,17 @@ type reviewReport struct {
 // reviewCase is one case in the results file.
 type reviewCase struct {
 	bench.CaseScore
-	Head     string                `json:"head"`
-	Base     string                `json:"base"`
-	Fixed    string                `json:"fixed"`
-	Stop     agentloop.StopReason  `json:"stop,omitempty"`
-	Turns    int                   `json:"turns"`
-	Error    string                `json:"error,omitempty"`
-	Truth    *bench.TruthMap       `json:"truth_on_head,omitempty"`
-	Findings []bench.ScoredFinding `json:"findings"`
+	Head  string          `json:"head"`
+	Base  string          `json:"base"`
+	Fixed string          `json:"fixed"`
+	Stop  ports.AgentStop `json:"stop,omitempty"`
+	Turns int             `json:"turns"`
+	// ModelSeconds and ToolSeconds are the model-call and tool-call time of the loop, summed over its turns.
+	ModelSeconds float64               `json:"model_seconds,omitempty"`
+	ToolSeconds  float64               `json:"tool_seconds,omitempty"`
+	Error        string                `json:"error,omitempty"`
+	Truth        *bench.TruthMap       `json:"truth_on_head,omitempty"`
+	Findings     []bench.ScoredFinding `json:"findings"`
 }
 
 // reviewRun reviews every selected valid case with model behind the hard cost cap, then writes the results. The exit
@@ -302,16 +305,23 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 	}
 	defer rep.close(ctx)
 	rc.Head, rc.Base, rc.Fixed, rc.Truth = rep.head, rep.base, rep.fixed, rep.truth
-	loop, err := agentloop.New(model, clock.System{}, agentloop.Config{Model: o.model, MaxOutputTokens: maxOutputPerAnswer,
-		BudgetUSD: budget, InputTokenCap: inputTokensPerCase, OutputTokenCap: outputTokensPerCas,
-		Deadline: time.Now().Add(caseDeadline), MaxTurns: maxTurnsPerCase}, rep.tools(), []agentloop.Submitter{finishReview{}})
+	runner, err := agentloop.NewRunner(model, clock.System{}, ports.ModelPrice{InputPerM: o.price.InputPerM,
+		CachedInputPerM: o.price.CachedInputPerM, OutputPerM: o.price.OutputPerM})
 	if err != nil {
 		rc.Error = "agent loop: " + err.Error()
 		return rc, false
 	}
-	res, runErr := loop.Run(ctx, reviewerMessages(c, rep))
-	rc.Stop, rc.Turns, rc.CostUSD = res.Reason, res.Turns, res.CostUSD
+	tb := newToolbox(append(rep.tools(), finishReview()))
+	res, runErr := runner.Run(ctx, ports.AgentRun{Model: o.model, System: reviewerPrompt, User: reviewerUser(c, rep),
+		Tools: tb.specs(), FinalTools: []string{finalTool}, Dispatcher: tb,
+		Budget:          ports.AgentBudget{USD: budget, InputTokens: inputTokensPerCase, OutputTokens: outputTokensPerCas},
+		MaxOutputTokens: maxOutputPerAnswer, MaxTurns: maxTurnsPerCase, Deadline: time.Now().Add(caseDeadline)})
+	rc.Stop, rc.Turns, rc.CostUSD = res.Stop, len(res.Turns), res.CostUSD
 	rc.InputTokens, rc.CachedTokens, rc.OutputTokens = res.Usage.InputTokens, res.Usage.CachedInputTokens, res.Usage.OutputTokens
+	for _, t := range res.Turns {
+		rc.ModelSeconds += t.ModelLatency.Seconds()
+		rc.ToolSeconds += t.ToolLatency.Seconds()
+	}
 	if runErr != nil {
 		rc.Error = runErr.Error()
 		return rc, errors.Is(runErr, bench.ErrCostCap)
@@ -337,14 +347,14 @@ passes once the suspected lines are fixed. A test that does not build proves not
 before you propose it. Propose each bug with propose_finding (at most 5), then call finish_review. If you find no
 bug you can prove, propose nothing and call finish_review.`
 
-func reviewerMessages(c bench.Case, rep *replay) []ports.ModelMessage {
+// reviewerUser is the first user message: the repository and the files the pull request changes.
+func reviewerUser(c bench.Case, rep *replay) string {
 	var files []string
 	for _, f := range rep.changes {
 		files = append(files, f.Path)
 	}
-	user := fmt.Sprintf("Repository: %s. The pull request changes %d files: %s. Use list_changes to read the diff.",
+	return fmt.Sprintf("Repository: %s. The pull request changes %d files: %s. Use list_changes to read the diff.",
 		c.RepoSlug(), len(files), strings.Join(files, ", "))
-	return []ports.ModelMessage{{Role: ports.ModelRoleSystem, Content: reviewerPrompt}, {Role: ports.ModelRoleUser, Content: user}}
 }
 
 func writeReview(o reviewOptions, rep reviewReport) error {
