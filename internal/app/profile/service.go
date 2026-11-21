@@ -129,10 +129,16 @@ func (s *Service) Approve(ctx context.Context, actor, proposalID string) error {
 		return err
 	}
 	if !ok {
-		return errors.New("profile is not awaiting approval")
+		return StepRefusedError{Reason: "that sandbox profile is not waiting for approval"}
 	}
 	return nil
 }
+
+// StepRefusedError is a lifecycle step taken out of order, such as a promotion before a passing trial (D186). It is a
+// decision the person can act on, not a failure to retry; Reason says what to do, in plain words.
+type StepRefusedError struct{ Reason string }
+
+func (e StepRefusedError) Error() string { return e.Reason }
 
 // Trial runs the approved artifact in an isolated one-off job and durably records its JUnit result.
 func (s *Service) Trial(ctx context.Context, proposalID string, sha id.SHA) (ports.ProfileTrial, error) {
@@ -186,7 +192,7 @@ func (s *Service) Promote(ctx context.Context, actor, proposalID string) error {
 		return fmt.Errorf("authorize profile promotion: %w", err)
 	}
 	if p.Trial.Outcome != ports.TrialPassed {
-		return errors.New("profile requires a passing isolated trial before promotion")
+		return StepRefusedError{Reason: "that sandbox profile has not passed its trial yet; promote it after Heimdall says the trial passed"}
 	}
 	if err := s.cfg.Syncer.SyncProfile(ctx, profileName(change.Repo(p.Repo)), p.Artifact); err != nil {
 		return fmt.Errorf("sync promoted profile to runner: %w", err)
@@ -199,7 +205,7 @@ func (s *Service) Promote(ctx context.Context, actor, proposalID string) error {
 		return err
 	}
 	if !ok {
-		return errors.New("profile is not eligible for promotion")
+		return StepRefusedError{Reason: "that sandbox profile cannot be promoted in its current state"}
 	}
 	return nil
 }

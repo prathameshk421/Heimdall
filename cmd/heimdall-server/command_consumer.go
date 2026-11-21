@@ -13,6 +13,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/people"
+	appprofile "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/profile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/commands"
@@ -394,12 +395,12 @@ func (r *commandRuntime) executeDirect(ctx context.Context, person string, cmd c
 	switch profile := cmd.(type) {
 	case commands.ApproveProfile:
 		if err := r.profiles.Approve(ctx, mcp.Principal{Person: person}, profile.ID); err != nil {
-			return "", true, err
+			return "", true, profileRefusal(err)
 		}
 		return "The sandbox profile is approved for an isolated trial.", true, nil
 	case commands.PromoteProfile:
 		if err := r.profiles.Promote(ctx, mcp.Principal{Person: person}, profile.ID); err != nil {
-			return "", true, err
+			return "", true, profileRefusal(err)
 		}
 		return "The passing sandbox profile is active for production jobs.", true, nil
 	}
@@ -934,4 +935,17 @@ func hasTrigger(events []change.Event) bool {
 		}
 	}
 	return false
+}
+
+// profileRefusal turns a profile step the person took out of order, or an id that names no profile, into a refusal the
+// room answers (D186). Any other error is an outage and stays an error, so the stream retries the command.
+func profileRefusal(err error) error {
+	var refused appprofile.StepRefusedError
+	switch {
+	case errors.As(err, &refused):
+		return fmt.Errorf("%w: %s", collaboration.ErrRefused, refused.Reason)
+	case errors.Is(err, ports.ErrNotFound):
+		return fmt.Errorf("%w: no sandbox profile has that id", collaboration.ErrRefused)
+	}
+	return err
 }

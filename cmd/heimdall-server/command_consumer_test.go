@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
+	appprofile "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/profile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/commands"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -93,7 +96,10 @@ func setupCommandRuntime(t *testing.T, cid id.ChangeID, tickets ports.TicketRead
 	return runtime, store, chat, comments
 }
 
-type commandProfileFake struct{ approvals, promotions []string }
+type commandProfileFake struct {
+	approvals, promotions []string
+	promoteErr            error
+}
 
 func (f *commandProfileFake) Propose(context.Context, mcp.Principal, string, []byte) (ports.ProfileProposal, bool, error) {
 	return ports.ProfileProposal{}, false, nil
@@ -111,7 +117,7 @@ func (f *commandProfileFake) PromotedArtifact(context.Context, string) (string, 
 }
 func (f *commandProfileFake) Promote(_ context.Context, p mcp.Principal, _ string) error {
 	f.promotions = append(f.promotions, p.Person)
-	return nil
+	return f.promoteErr
 }
 
 func TestProfileHumanCommandsRequireMappedPolicyOwnerAndUseMappedIdentity(t *testing.T) {
@@ -407,4 +413,28 @@ func findDecision(t *testing.T, events []change.Event, source string) change.Dec
 	}
 	t.Fatalf("decision source %q missing", source)
 	return change.DecisionRecorded{}
+}
+
+// A profile step out of order is answered in the room, not retried: before, a promote sent ahead of the trial stopped
+// the whole room stream and retried every minute, so no other command got through (live, Nov 21, D186).
+func TestAProfileStepOutOfOrderGetsAReplyAndDoesNotStopTheStream(t *testing.T) {
+	cid := id.ChangeID("KAN-42")
+	runtime, _, chat, _ := setupCommandRuntime(t, cid, nil, ports.PR{})
+	proposalID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	room := ports.RoomBinding{ChangeID: cid, RoomID: "profile-room"}
+	for n, tc := range []struct {
+		err  error
+		want string
+	}{
+		{appprofile.StepRefusedError{Reason: "it has not passed its trial yet; promote it after Heimdall says the trial passed"}, "has not passed its trial yet"},
+		{ports.ErrNotFound, "no sandbox profile has that id"},
+	} {
+		runtime.profiles = &commandProfileFake{promoteErr: tc.err}
+		msg := ports.Message{ID: change.MessageID("early-" + strconv.Itoa(n)), Room: room.RoomID, Sender: "ana", Text: "heimdall promote-profile " + proposalID}
+		require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, msg), "a refusal is a reply, not a stream error")
+		require.Contains(t, chat.posts[len(chat.posts)-1], tc.want)
+	}
+	runtime.profiles = &commandProfileFake{promoteErr: errors.New("call runner socket: EOF")}
+	msg := ports.Message{ID: "runner-down", Room: room.RoomID, Sender: "ana", Text: "heimdall promote-profile " + proposalID}
+	require.Error(t, runtime.processor.HandleRoomMessage(context.Background(), room, msg), "an outage is still retried")
 }

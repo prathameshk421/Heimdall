@@ -250,3 +250,13 @@ func TestATrialWithNoTestResultsFails(t *testing.T) {
 	require.Equal(t, logRef, trial.LogRef, "the log is kept for the profiler's next task")
 	require.Error(t, svc.Promote(context.Background(), "owner", proposal.ID))
 }
+
+// Steps out of order are refusals with a reason a person can act on (D186), not failures to retry.
+func TestAProfileStepOutOfOrderIsARefusalWithItsReason(t *testing.T) {
+	svc, _, _, _, _ := newProfileService(t, ports.SandboxResult{Passed: 1, LogRef: workflow.BlobRef("blob:sha256:" + strings.Repeat("c", 64))})
+	proposal, _, err := svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
+	require.NoError(t, err)
+	var refused StepRefusedError
+	require.ErrorAs(t, svc.Promote(context.Background(), "owner", proposal.ID), &refused)
+	require.Contains(t, refused.Reason, "has not passed its trial yet")
+}
