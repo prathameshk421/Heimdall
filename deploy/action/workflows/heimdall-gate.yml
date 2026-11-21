@@ -1,0 +1,42 @@
+# Heimdall gate (ACTION_MODE.md 3.2, 2.7). The privileged half. It never checks out or runs PR code: it reads the pull
+# request through the API as data, and reads the trigger and proof artifacts as untrusted input. It writes the check
+# runs, the summary comment and the state ref refs/heimdall/state. The log key lives in environment heimdall, which
+# only the default branch may use. This file works only on the default branch: GitHub starts workflow_run and
+# schedule workflows from there.
+name: Heimdall gate
+
+on:
+  workflow_run:
+    workflows: [Heimdall trigger, Heimdall proof]
+    types: [completed]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: heimdall-gate-${{ github.event.workflow_run.head_repository.full_name || github.repository }}-${{ github.event.workflow_run.head_branch || github.event.issue.number || 'sweep' }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: github.event_name != 'issue_comment' || (github.event.issue.pull_request && startsWith(github.event.comment.body, '/heimdall'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: heimdall
+    permissions:
+      contents: write
+      checks: write
+      pull-requests: write
+      actions: read
+      security-events: read
+    steps:
+      - uses: prathameshk421/Heimdall/deploy/action@0000000000000000000000000000000000000000 # heimdall-pin
+        with:
+          step: gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEIMDALL_LOG_KEY: ${{ secrets.HEIMDALL_LOG_KEY }}
