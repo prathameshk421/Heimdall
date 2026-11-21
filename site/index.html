@@ -18,18 +18,24 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Site v6. A reading page in the identity of site/DESIGN.md: Newsreader for reading, IBM Plex Sans for UI,
-   neutrals plus one accent that marks only proven things. Every number links to its source (site/CLAIMS.md). */
+/* Site v7. The v6 reading page (site/DESIGN.md) in the "Periwinkle mist" mood: one blue-violet monochrome,
+   pale periwinkle paper by day, deep indigo by night, a pale rose accent that marks only proven things, and a
+   film grain under the text. Every number links to its source (site/CLAIMS.md). */
 :root {
   color-scheme: light;
-  --paper: #fbfaf7;
-  --fill: #f2f0eb;
-  --rule: #e4e1da;
-  --muted: #67645e;
-  --text: #2c2b28;
-  --ink: #1d1c1a;
-  --accent: #b3341b;
-  --accent-soft: rgba(179, 52, 27, .07);
+  --paper: #eceefb;
+  --fill: #e0e3f7;
+  --rule: #c3c8ee;
+  --muted: #4b5096;
+  --text: #242862;
+  --ink: #161946;
+  --accent: #a3245f;
+  --accent-soft: rgba(163, 36, 95, .08);
+  --grain: .07;
+  /* Hero art */
+  --sky0: #6f7de0; --sky1: #9ba6ee; --sky2: #d9d6f4; --glow: #fbeef6;
+  --hill-far: #aab2ef; --hill-near: #929ce8; --ground: #a7afee;
+  --col-dark: #3a3fa3; --col-mid: #7a85dc; --col-lit: #f3e6f0; --figure: #23276b;
   --serif: Newsreader, "Iowan Old Style", Georgia, serif;
   --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -37,16 +43,22 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --paper: #121211; --fill: #1b1a18; --rule: #2d2b28;
-    --muted: #a29e95; --text: #d9d6cf; --ink: #eeece7;
-    --accent: #f0805f; --accent-soft: rgba(240, 128, 95, .09);
+    --paper: #11133a; --fill: #191c4a; --rule: #2f3474;
+    --muted: #a6abe8; --text: #d8dbf7; --ink: #f3e6f0;
+    --accent: #f4a9cf; --accent-soft: rgba(244, 169, 207, .09); --grain: .06;
+    --sky0: #090b2c; --sky1: #1b1f5e; --sky2: #3b3e93; --glow: #f3e6f0;
+    --hill-far: #262a73; --hill-near: #1e2265; --ground: #1b1e57;
+    --col-dark: #0f1247; --col-mid: #353a98; --col-lit: #e7d3ea; --figure: #080a2a;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --paper: #121211; --fill: #1b1a18; --rule: #2d2b28;
-  --muted: #a29e95; --text: #d9d6cf; --ink: #eeece7;
-  --accent: #f0805f; --accent-soft: rgba(240, 128, 95, .09);
+  --paper: #11133a; --fill: #191c4a; --rule: #2f3474;
+  --muted: #a6abe8; --text: #d8dbf7; --ink: #f3e6f0;
+  --accent: #f4a9cf; --accent-soft: rgba(244, 169, 207, .09); --grain: .06;
+  --sky0: #090b2c; --sky1: #1b1f5e; --sky2: #3b3e93; --glow: #f3e6f0;
+  --hill-far: #262a73; --hill-near: #1e2265; --ground: #1b1e57;
+  --col-dark: #0f1247; --col-mid: #353a98; --col-lit: #e7d3ea; --figure: #080a2a;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -56,6 +68,12 @@ body {
   font: 400 18px/1.65 var(--serif); -webkit-font-smoothing: antialiased;
   font-optical-sizing: auto;
 }
+/* Film grain. It sits under the content (z-index -1), so it shifts only the page colour, never the text.
+   The worst case (opacity 7%, every grain pixel black or white) keeps every text pair above 4.5:1. */
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: var(--grain);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='2 0 0 0 -.5 2 0 0 0 -.5 2 0 0 0 -.5 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px; }
+@media (prefers-reduced-transparency: reduce) { body::before { display: none; } }
 p { margin: 0 0 16px; }
 a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
     text-decoration-color: color-mix(in srgb, currentColor 32%, transparent); transition: color .25s, text-decoration-color .25s; }
