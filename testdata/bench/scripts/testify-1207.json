@@ -1,0 +1,116 @@
+{
+  "case": "testify-1207",
+  "note": "Recorded tool-call sequence for the harness check. It is not model output: it proves the tools, the sandbox, the proof rule and the scoring on a real case.",
+  "turns": [
+    {
+      "calls": [
+        {
+          "name": "list_changes",
+          "arguments": {}
+        }
+      ],
+      "usage": {
+        "input_tokens": 1450,
+        "cached_input_tokens": 0,
+        "output_tokens": 40
+      },
+      "cost_usd": 0.0001377
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "mock/mock.go",
+            "start_line": 210,
+            "end_line": 230
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 4200,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0003888,
+      "expect": "-\tmutex sync.Mutex"
+    },
+    {
+      "calls": [
+        {
+          "name": "search_code",
+          "arguments": {
+            "query": "m.mutex.Lock()",
+            "path_prefix": "mock/"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 4900,
+        "cached_input_tokens": 0,
+        "output_tokens": 50
+      },
+      "cost_usd": 0.00045,
+      "expect": "mutex *sync.Mutex"
+    },
+    {
+      "calls": [
+        {
+          "name": "run_test",
+          "arguments": {
+            "test_path": "mock/heimdall_bench_nil_mutex_test.go",
+            "test_source": "package mock\n\nimport \"testing\"\n\nfunc TestHeimdallBenchAssertExpectationsWithNoCalls(t *testing.T) {\n\tvar m Mock\n\tdefer func() {\n\t\tif r := recover(); r != nil {\n\t\t\tt.Fatalf(\"AssertExpectations panicked on a mock with no expectations: %v\", r)\n\t\t}\n\t}()\n\tif !m.AssertExpectations(t) {\n\t\tt.Fatal(\"a mock with no expectations must meet them\")\n\t}\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 5600,
+        "cached_input_tokens": 0,
+        "output_tokens": 420
+      },
+      "cost_usd": 0.0005796,
+      "expect": "mock/mock.go:511: m.mutex.Lock()"
+    },
+    {
+      "calls": [
+        {
+          "name": "propose_finding",
+          "arguments": {
+            "file": "mock/mock.go",
+            "start_line": 507,
+            "end_line": 511,
+            "severity": "high",
+            "claim": "Mock.mutex is now a pointer that only Test and On set. AssertExpectations on a mock with no expectations dereferences a nil mutex and panics.",
+            "test_path": "mock/heimdall_bench_nil_mutex_test.go",
+            "test_name": "TestHeimdallBenchAssertExpectationsWithNoCalls",
+            "test_source": "package mock\n\nimport \"testing\"\n\nfunc TestHeimdallBenchAssertExpectationsWithNoCalls(t *testing.T) {\n\tvar m Mock\n\tdefer func() {\n\t\tif r := recover(); r != nil {\n\t\t\tt.Fatalf(\"AssertExpectations panicked on a mock with no expectations: %v\", r)\n\t\t}\n\t}()\n\tif !m.AssertExpectations(t) {\n\t\tt.Fatal(\"a mock with no expectations must meet them\")\n\t}\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 6400,
+        "cached_input_tokens": 0,
+        "output_tokens": 480
+      },
+      "cost_usd": 0.0006624,
+      "expect": "TestHeimdallBenchAssertExpectationsWithNoCalls: failure"
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_review",
+          "arguments": {
+            "summary": "One nil mutex dereference, proven by a test."
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 6900,
+        "cached_input_tokens": 0,
+        "output_tokens": 30
+      },
+      "cost_usd": 0.0006264,
+      "expect": "recorded as F1"
+    }
+  ]
+}

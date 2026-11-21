@@ -1,12 +1,17 @@
-// Command heimdall-bench checks the Proof Bench dataset (internal/bench). It makes no model calls and never writes to
-// GitHub: it only fetches commits read-only and runs git and go test locally.
+// Command heimdall-bench checks the Proof Bench dataset (internal/bench) and scores Heimdall's reviewer on it. It never
+// writes to GitHub: it only fetches commits read-only and runs git and go test locally. Only review calls a model.
 //
 //	heimdall-bench validate -out results.json [-manifest testdata/bench/cases.yaml] [-only id,id] [-cache dir]
 //	heimdall-bench truth -case id [-manifest ...] [-cache dir]
+//	heimdall-bench review -out review.json -model id -key-file path -price-input usd -price-output usd
+//	    [-max-cost 3] [-per-case-cost 0.5] [-md docs/sota/BENCH.md] [-only id,id] [-base-url url] [-block-severity medium]
 //
 // validate proves each case real (internal/bench doc.go) and writes one JSON results file. Its exit status is 0 when
 // every case agrees with its manifest status, 1 when one does not, and 2 on a usage or manifest error.
 // truth prints the truth block of a bug case, computed from its fix diff, as YAML for the manifest.
+// review replays each valid case as a pull request, runs the reviewer through the agent loop with the model behind a
+// hard cost cap, proves each proposed finding with testintegrity.Prove and scores the run (review.go). Its exit status
+// is 0 when every case was scored, 1 when one was not, and 2 on a usage error.
 package main
 
 import (
@@ -43,7 +48,7 @@ func main() {
 
 func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, r runner) int {
 	if len(args) == 0 {
-		writeDiagnostic(stderr, "usage: heimdall-bench validate|truth [flags]\n")
+		writeDiagnostic(stderr, "usage: heimdall-bench validate|truth|review [flags]\n")
 		return exitUsage
 	}
 	var code int
@@ -53,6 +58,8 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, r runn
 		code, err = runValidate(ctx, args[1:], stderr, r)
 	case "truth":
 		code, err = runTruth(ctx, args[1:], stdout, stderr, r)
+	case "review":
+		code, err = runReview(ctx, args[1:], stderr, r)
 	default:
 		code, err = exitUsage, fmt.Errorf("unknown subcommand %q", args[0])
 	}
