@@ -50,7 +50,7 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | AM9 GitHub adapter additions | Claude Personal / Sonnet | `am9-github` | merged | `40b792d`: static token, comments by marker and author, artifact zip (streaming cap, entry count, per-entry limit read through, path escape, symlink and duplicate refusal), code scanning, Git Data (no CAS claimed). New ports in `internal/ports/vcs_action.go`. Coordinator kept 422 untyped: the shared adapter's test asserts it on purpose and the live gate uses it; AM8 calls GetRef instead. Lint 0 issues, unit 4109 after merge. Live GitHub calls, cross-host artifact redirect, comment size limit not verified |
 
 | A3 proof summary renderer | Claude / Sonnet | `a3-summary` | running | |
-| A6 test integrity rules and the fail-twice proof rule | Claude / Sonnet | `a6-test-integrity` | running | |
+| A6 test integrity rules and the fail-twice proof rule | Claude / Sonnet | `a6-test-integrity` | merged | `9582565`: pinned tests read-only (owner approval clears), weakened tests and tautological asserts warn, mock-of-subject (Go, Python, JS/TS) warns, `Prove`: proven needs 2 red runs on head and green on the fixed tree; flaky, one red run, build error never proof (reviewed by coordinator). Lint 0, archcheck holds. Real diffs not parsed yet; caller must pass only `Result.Blocking()` to fastcheck |
 
 ## Merge into heimdall-build (owner yes, Nov 21 2026)
 
