@@ -238,6 +238,52 @@ real model finds, and it is not a recall result.
 - Python, Java, JavaScript and TypeScript cases: `review` takes valid Go cases only, for the same reason `validate`
   does (there is no runner for those languages).
 
+## Progress lines, parallel cases and turn timing (P-2.1c)
+
+A live run was slow and silent: a reasoning model takes 20 to 60 s per turn, a case takes about eight turns, and ten
+cases ran in sequence. Nothing was printed until the end. Three changes fix that.
+
+1. **Progress lines.** `review` writes one line to stderr per case start, per model turn, per test run and per case end.
+   The writer is shared by the workers and locks itself, so two lines never interleave. The existing `writeDiagnostic`
+   writer is reused; no new output path and no `fmt.Print` in product code.
+2. **`-parallel N`** (default 1, at most 8) reviews N cases at once. One `bench.CostCap` is shared by every worker. A
+   worker now reserves the most its call can cost (`CostCap.Reserve`) and settles the real cost after it, and a call
+   that failed settles with zero. The reservation holds until the call settles, so two workers cannot both pass the
+   check and together pass the cap. The spend therefore never passes `-max-cost`. Each case keeps its own repository
+   cache, sandbox and worktree counter, and the results file keeps the manifest order whatever order the cases end in.
+3. **Turn timing.** Every case in the JSON records `turns`, `turn_seconds` (one model latency per answer) and
+   `tool_seconds` (one latency per tool call, with its turn and name). The run records `turns` with median and p95 for
+   model turns and tool calls, and turns per case. Both appear in the Markdown table.
+
+### Harness check at `-parallel 2`, fake model
+
+| Item | Value |
+|---|---|
+| Command | `CGO_ENABLED=0 go test -tags benchreplay -count=1 -run 'TestReplayTwoRealCasesInParallelWithAScriptedModel' ./cmd/heimdall-bench` |
+| Model | scripted fake from `testdata/bench/scripts`, no network call to a model |
+| Cost cap | $3.00 for the run, $0.50 per case (neither was reached) |
+| Exit status | 0: both cases scored |
+| Case order in JSON | testify-1207, chi-1185 (manifest order, not completion order) |
+| Wall time | 107.1 s, against 105.7 s for the same two cases in sequence |
+
+### What the timing says, and what it does not
+
+- The scripted model answers in microseconds, so its model-turn latency is 0.0 s after rounding to the millisecond.
+  That number is an artifact of the fake model and says nothing about a live turn. It is recorded so the live run has
+  a column to fill.
+- The tool latency is real: `run_test` on chi-1185 took 26.3 s on this machine, because that package's suite is slow.
+  The two tool-call percentiles separate a fast tool from the one slow call.
+- `-parallel 2` saved almost nothing here, because chi-1185's 107 s is one slow `run_test` and the two cases share a
+  machine, a disk and a Go build cache. The gain is real on turns that wait on the model; this run waits on `go test`.
+
+### Not verified in this check
+
+- A live model at `-parallel 2`: no live call was made. The parallel proof uses the scripted model only.
+- A correctness rate under real concurrency: two cases share one reserve-aware cap by construction, and the unit test
+  proves the cap holds across eight workers under the race detector. A run of ten cases at eight workers is not
+  measured.
+- The model-turn latency of a real reasoning model. Only the scripted model ran.
+
 ## Cost estimate for the live run
 
 The live run is all 10 valid Go cases (7 bug and 3 clean) on `deepseek/deepseek-v4-flash` through OpenRouter, at

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"math"
 	"sync"
 	"time"
 
@@ -79,15 +80,19 @@ func (c *caseProgress) elapsed() time.Duration { return time.Since(c.start) }
 func (c *caseProgress) modelTurn(resp benchTurn, runSpent float64, elapsed time.Duration) {
 	c.turn++
 	c.spend += resp.cost
-	c.turns = append(c.turns, resp.seconds)
+	c.turns = append(c.turns, roundSeconds(resp.seconds))
 	c.p.line("bench case=%s turn=%d tool=%s in=%d out=%d case$=%.4f run$=%.4f %.1fs\n",
 		c.id, c.turn, toolNames(resp.tools), resp.input, resp.output, c.spend, runSpent, elapsed.Seconds())
 }
 
 // toolCall records the latency of one tool call, for the results file and the Markdown table.
 func (c *caseProgress) toolCall(name string, seconds float64) {
-	c.tools = append(c.tools, bench.TurnToolLatency{Turn: c.turn, Tool: name, Seconds: seconds})
+	c.tools = append(c.tools, bench.TurnToolLatency{Turn: c.turn, Tool: name, Seconds: roundSeconds(seconds)})
 }
+
+// roundSeconds keeps the milliseconds of a latency, so a results file is readable and a percentile of a fast scripted
+// turn is not a fraction of a microsecond.
+func roundSeconds(s float64) float64 { return math.Round(s*1000) / 1000 }
 
 // testStart writes the line of a test run that starts on one tree.
 func (c *caseProgress) testStart(label string) {

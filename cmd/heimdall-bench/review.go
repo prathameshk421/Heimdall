@@ -406,7 +406,7 @@ func proveProposals(ctx context.Context, rep *replay, rc *reviewCase) {
 	}
 }
 
-// scoreCase scores the findings of a finished case and copies the cost and the tokens into the score.
+// scoreCase scores the findings of a finished case and copies the cost, the tokens and the turn timing into the score.
 func scoreCase(c bench.Case, blockAt finding.Severity, rc reviewCase) bench.CaseScore {
 	var truth []bench.FileTruth
 	if rc.Truth != nil {
@@ -415,6 +415,7 @@ func scoreCase(c bench.Case, blockAt finding.Severity, rc reviewCase) bench.Case
 	score := bench.ScoreCase(c.Kind, truth, rc.Findings, blockAt)
 	score.ID, score.Scored = c.ID, true
 	score.CostUSD, score.InputTokens, score.CachedTokens, score.OutputTokens = rc.CostUSD, rc.InputTokens, rc.CachedTokens, rc.OutputTokens
+	score.Turns, score.TurnSeconds, score.ToolSeconds = rc.Turns, rc.TurnSeconds, rc.ToolSeconds
 	return score
 }
 

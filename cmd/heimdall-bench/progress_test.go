@@ -39,6 +39,15 @@ func TestProgressLinesAreOneShortStableLineEach(t *testing.T) {
 	}
 }
 
+func TestProgressRoundsALatencyToMillis(t *testing.T) {
+	// A scripted model answers in a fraction of a millisecond. The results file and the table read better in
+	// milliseconds, and the percentile of a fast turn is then a real number rather than 1.209e-06.
+	require.InDelta(t, 0.025, roundSeconds(0.0254), 1e-12)
+	require.Zero(t, roundSeconds(0.0004), "a turn faster than half a millisecond is zero, not a fraction")
+	require.InDelta(t, 25.657, roundSeconds(25.6574), 1e-12)
+	require.InDelta(t, 1.958, roundSeconds(1.9581), 1e-12)
+}
+
 func TestProgressNamesTheToolsOfAnAnswer(t *testing.T) {
 	// An answer with no tool call is a stop the operator must see, so the field is "-" and never empty.
 	require.Equal(t, "-", toolNames(nil))
