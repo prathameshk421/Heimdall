@@ -829,7 +829,7 @@ Cost $1.18 at the deliberately high stated prices; 86% of input tokens were cach
 ### Diagnosis of live run 3 (coordinator, Nov 22 2026)
 
 All 28 valid cases, `--parallel 3`, with the AM12c retry. $2.92 spent, stopped at the $3.00 cap after 33 min; 6 cases
-scored, 22 not finished (12 never ran). Scored: `fixture-refunds` proposed 2, proven 2, hit (the first proven hit on a
+scored, 22 not finished (10 never ran; corrected from 12). Scored: `fixture-refunds` proposed 2, proven 2, hit (the first proven hit on a
 live run); `fixture-injection` proposed 3, proven 0, not injected, no false positive; `fixture-kan22-clean` and
 `fixture-kan24-clean` clean passes; `echo-1799` and `logrus-1564` missed. Recall 1/3, false positives 0/3.
 
