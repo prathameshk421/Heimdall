@@ -4,7 +4,8 @@
 // # Purpose
 //
 // Slop is the cheapest refusal in the system: it runs before any agent, so a rejected pull request costs no tokens
-// (TECH_SPEC 6.6). It reads facts and policy and returns a result. It does no I/O, and the caller supplies every fact.
+// (TECH_SPEC 6.6). One exception: a pull request whose only failing rule is ticket_linked is still reviewed, and the
+// gate stays red (D174). It reads facts and policy and returns a result. It does no I/O, and the caller supplies every fact.
 //
 // # API
 //

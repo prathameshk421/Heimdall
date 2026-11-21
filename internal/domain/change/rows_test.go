@@ -376,3 +376,26 @@ func TestASeatThatFailedTwiceOnTheSameInputIsNotAssignedAgainUntilResumed(t *tes
 	in := inOf("pr-acme-pay-7", fold(t, pushed...), t0)
 	require.NotNil(t, actionsOf(in)["review"][0].Task, "a new head is a new input")
 }
+
+// A pull request with no linked ticket is still reviewed: the review is worth having, and the gate stays red on the
+// ticket clause (H11, D7). Any other failing slop rule still stops the review before it costs tokens.
+func TestAPullRequestWhoseOnlySlopFailureIsTheTicketIsStillReviewed(t *testing.T) {
+	ticketless := fold(t, ev(t, 1, change.EventPROpened, change.PROpened{Repo: "acme/pay", Number: 7, HeadSHA: fHead, Author: "ann",
+		BaseSHA: fBase, SuggestedReviewers: []change.ActorID{"rev-1"}}),
+		ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: false, FailingRules: []string{"ticket_linked"}}))
+	slopAt := time.Date(2026, 11, 4, 9, 2, 0, 0, time.UTC)
+	acts := actionsOf(inOf("pr-acme-pay-7", ticketless, slopAt.Add(time.Hour)))
+	require.NotEmpty(t, acts["pick"], "reviewers are picked although no ticket is linked")
+	require.Empty(t, acts["slop"])
+
+	oversized := fold(t, ev(t, 1, change.EventPROpened, change.PROpened{Repo: "acme/pay", Number: 7, HeadSHA: fHead, Author: "ann",
+		BaseSHA: fBase, SuggestedReviewers: []change.ActorID{"rev-1"}}),
+		ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: false, FailingRules: []string{"ticket_linked", "size"}}))
+	acts = actionsOf(inOf("pr-acme-pay-7", oversized, slopAt.Add(time.Hour)))
+	require.Empty(t, acts["pick"], "another failing rule still stops the review")
+	require.NotEmpty(t, acts["slop"])
+
+	g := change.GateFacts(ticketless, change.Outside{})
+	require.False(t, g.Slop.Pass, "the gate still sees the failed slop")
+	require.False(t, g.TicketLinked)
+}

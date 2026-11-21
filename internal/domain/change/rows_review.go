@@ -10,6 +10,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/slop"
 )
 
 // acceptanceCheck is the check Heimdall's own run of every Heimdall test reports under (TECH_SPEC 12.4, D150).
@@ -21,12 +22,23 @@ func reviewRows() []Row {
 
 func rowSlop() Row {
 	return Row{ID: "slop", Flow: FlowReview,
-		Done: func(in In) bool { return slopPassedOnHead(in.View) },
+		Done: func(in In) bool { return slopAllowsReview(in.View) },
 		Next: func(in In) []Action { return []Action{say(slopText(in.View.PR))} }}
 }
 
-func slopPassedOnHead(v View) bool {
-	return v.PR != nil && v.PR.Slop != nil && v.PR.Slop.SHA == v.PR.HeadSHA && v.PR.Slop.Pass
+// slopAllowsReview is whether the slop rules let the review start on the head: they pass, or the only one failing is
+// the ticket link (D174). A ticketless pull request is worth reviewing; the gate still reads the failed slop and the
+// ticket clause, so it can never merge. Any other failure stops the review before it costs tokens.
+func slopAllowsReview(v View) bool {
+	if v.PR == nil || v.PR.Slop == nil || v.PR.Slop.SHA != v.PR.HeadSHA {
+		return false
+	}
+	if v.PR.Slop.Pass {
+		return true
+	}
+	return len(v.PR.Slop.FailingRules) > 0 && !slices.ContainsFunc(v.PR.Slop.FailingRules, func(r string) bool {
+		return r != string(slop.RuleTicketLinked)
+	})
 }
 
 func slopText(pr *PRInfo) string {

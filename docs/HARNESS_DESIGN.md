@@ -156,7 +156,7 @@ Tests rows need `v.Trigger != nil`; Review rows need `v.PR != nil`; when `v.Over
 | `test_qa` | tests | `write_tests` | `v.Tests.Verified != nil` | Job `test_quality` | `<c>/test_qa/<v.Tests.Ref>` |
 | `signoff` | tests | `test_qa` | `!v.Tests.Verified.NeedsSignoff \|\| v.Tests.ApprovedBy != ""` | Ask the approvers of the sensitive domain to `heimdall approve-tests <c>` | |
 | `commit` | tests | `test_qa`, `signoff` | `v.Tests.Committed != nil` | Job `github_commit_tests` | `<c>/commit/<v.Tests.Ref>` |
-| `slop` | review | – | slop passed on head | Text only: "the slop rules pass on <head> (failing: …)"; intake records slop on every head, a push fixes it | |
+| `slop` | review | – | slop passed on head, or only `ticket_linked` failed (D174) | Text only: "the slop rules pass on <head> (failing: …)"; intake records slop on every head, a push fixes it | |
 | `checks` | review | `slop` | `v.Checks[head]` exists, or the profile has no check whose `when` matches a changed file | Job `run_checks` (B7) | `<c>/checks/<head>` |
 | `pick` | review | `slop` | `v.PR.Picked != nil` | before `v.PR.SlopAt + Settings.PickWait`: Ask the PR author "pick reviewers with `heimdall review`"; after: Fact `reviewers.picked{people: v.PR.Suggested or Settings.Reviewers, by: heimdall, method: default}` | |
 | `review` | review | `pick`, `checks` | every picked seat has an outcome (review, unavailable, waived) on head | Task `review` per seat without one; subject = seat; input `head-<head>` | |

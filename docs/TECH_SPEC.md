@@ -575,7 +575,8 @@ Rules every skill states:
 
 - **Cost control (D128).** One production OpenRouter key with a credit limit is the hard cap. Tasks are bounded by a deadline per role and by the context bundle caps, not by a per-task dollar enforcer. Spend is read from the key's usage and shown on the dashboard. Separate keys exist only for testing (`TEST_STRATEGY.md`).
 - The VM runtimes cache stable prefixes (skill, room instructions, pack).
-- The slop rule runs before any agent, so rejected PRs cost zero tokens.
+- The slop rule runs before any agent, so rejected PRs cost zero tokens. One exception (D174): a PR whose only failing
+  rule is `ticket_linked` is still reviewed; the gate stays red on slop and the ticket clause, so it never merges.
 - Reviewers are capped at the default 3 plus any policy requires.
 - Re-review on push wakes only reviewers whose files changed.
 - Graphiti extraction uses DeepSeek V4 Flash through OpenRouter, and ingestion is selective.
