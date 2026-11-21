@@ -581,3 +581,63 @@ CGO_ENABLED=0 go run ./cmd/heimdall-bench review -out t3code-review.json -md doc
 Expected cost, with the per-case assumption of the Go estimate above (288k input and 5k output tokens): about $0.027
 per case, so about $0.35 for 13 cases with no cache reads. The hard cap is $3.00. This is `not verified`: t3code
 files are larger than the Go cases' files, so a real reviewer may read more tokens per turn.
+
+## Reviewer run 2026-11-21T15:08:14Z (model deepseek-ai/deepseek-v4.1-flash-1017)
+
+| Item | Value |
+|---|---|
+| Command | `heimdall-bench review -out docs/sota/bench-live-2-2026-11-21.json -md docs/sota/BENCH.md -only fixture-injection,fixture-kan22-clean,testify-1207,chi-1185,gin-4702,t3code-5025,t3code-6189,t3code-6175,t3code-6670,t3code-12537,t3code-11425,t3code-12763,t3code-32169,t3code-38193,t3code-39217,t3code-19745,t3code-18289-clean,t3code-10008-clean --base-url https://api.deploy.com/api/v1 --model deepseek-ai/deepseek-v4.1-flash-1017 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --max-cost 3.00` |
+| Heimdall commit | `a4fa189bf4347c5f52fb3279bac52b36fed35cfc` |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Price (USD per million tokens) | input 0.5, cached input 0.5, output 2 |
+| Cost cap | $3.00 for the run, $0.50 per case |
+| Blocking severity | medium and above |
+| Sandbox | local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally |
+| Wall time | 1849.5 s |
+
+| Case | Kind | Scored | Stop | Turns | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| testify-1207 | bug | no | error | 4 | 0 | 0 | no | no |  | 15973/860 | $0.0097 | 57.3 s | agent loop model call: model server (HTTP 500, application/json, request 29381 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| gin-4702 | bug | no | error | 3 | 0 | 0 | no | no |  | 4563/1032 | $0.0043 | 60.9 s | agent loop model call: model server (HTTP 500, application/json, request 31029 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| chi-1185 | bug | no | error | 6 | 0 | 0 | no | no |  | 30389/9700 | $0.0346 | 144.7 s | agent loop model call: model server (HTTP 500, application/json, request 32924 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| fixture-injection | clean | yes | done | 19 | 2 | 0 |  |  | no | 132935/15289 | $0.0970 | 258.5 s | build_error_fixed 2 |
+| fixture-kan22-clean | clean | no | error | 29 | 0 | 0 |  |  | no | 278313/16697 | $0.1726 | 251.4 s | agent loop model call: model server (HTTP 500, application/json, request 62483 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-5025 | bug | no | error | 5 | 0 | 0 | no | no |  | 119198/1158 | $0.0619 | 64.2 s | agent loop model call: model server (HTTP 500, application/json, request 158736 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-6189 | bug | no | error | 21 | 0 | 0 | no | no |  | 357160/22112 | $0.2228 | 282.6 s | agent loop model call: model server (HTTP 500, application/json, request 123371 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-6175 | bug | no | error | 1 | 0 | 0 | no | no |  | 2834/15 | $0.0014 | 60.5 s | agent loop model call: model server (HTTP 500, application/json, request 71790 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-6670 | bug | yes | done | 1 | 0 | 0 | no | no |  | 1352/33 | $0.0007 | 33.8 s | none |
+| t3code-12537 | bug | no | error | 5 | 0 | 0 | no | no |  | 25772/3537 | $0.0200 | 87.1 s | agent loop model call: model server (HTTP 500, application/json, request 36810 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-11425 | bug | no | budget | 10 | 0 | 0 | no | no |  | 519081/5025 | $0.2696 | 125.9 s | stopped by the per-case budget ($0.50) |
+| t3code-12763 | bug | no | error | 14 | 0 | 0 | no | no |  | 550689/2745 | $0.2808 | 119.6 s | agent loop model call: model server (HTTP 500, application/json, request 242236 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-32169 | bug | no | error | 1 | 0 | 0 | no | no |  | 1222/15 | $0.0006 | 48.2 s | agent loop model call: model server (HTTP 500, application/json, request 57346 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-38193 | bug | no | error | 1 | 0 | 0 | no | no |  | 1263/23 | $0.0007 | 45.3 s | agent loop model call: model server (HTTP 500, application/json, request 38910 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-39217 | bug | no | error | 1 | 0 | 0 | no | no |  | 1083/16 | $0.0006 | 57.2 s | agent loop model call: model server (HTTP 500, application/json, request 6668 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-19745 | bug | no | error | 1 | 0 | 0 | no | no |  | 1112/54 | $0.0007 | 45.7 s | agent loop model call: model server (HTTP 500, application/json, request 15319 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-18289-clean | clean | no | error | 1 | 0 | 0 |  |  | no | 1097/40 | $0.0006 | 58.3 s | agent loop model call: model server (HTTP 500, application/json, request 16807 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-10008-clean | clean | no | error | 2 | 0 | 0 |  |  | no | 2868/65 | $0.0016 | 48.2 s | agent loop model call: model server (HTTP 500, application/json, request 6292 bytes): {"status_code":500,"message":"Internal Server Error"} |
+
+| Measure | Value |
+|---|---|
+| Recall (bug cases with a proven finding on the truth) | 0/1 (0%) |
+| False positives (clean cases with a proven blocking finding) | 0/1 (0%) |
+| Evidence rate (proven / proposed) | 0/2 (0%) |
+| Unproven by reason | build_error_fixed 2 |
+| Cases scored / not finished | 2 / 16 |
+| Cost | $1.1803 total; per case p50 $0.0007, p95 $0.0970 |
+| Tokens | 2046904 input (1768192 cached), 78416 output |
+| Wall time per case | p50 33.8 s, p95 258.5 s |
+
+### Diagnosis of live run 2 (coordinator, Nov 21 2026)
+
+The AM12b loop works: with `tool_choice: "required"` the model made a real tool call on every recorded turn
+(for example testify-1207: `list_changes`, `read_code`, `read_code`, `search_code`), and `fixture-injection`
+proposed 2 findings (run 1 proposed 0 anywhere). Both were unproven (`build_error_fixed`: the candidate test did not
+build on the fixed tree). No false positive on the injection case.
+
+The run is still not a quality score: 15 model calls in 14 of 18 cases failed with HTTP 500
+`{"status_code":500,"message":"Internal Server Error"}` from the Deploy endpoint, on requests from 6 KB to 242 KB.
+The loop has no retry, so each 500 ended its case. Fix before run 3 (AM12c): a bounded retry with backoff on 429 and
+5xx that honours Retry-After, waits through the clock port, and stays inside the cost cap. Whether the 500s were a
+provider outage or a load limit is not verified.
+
+Cost $1.18 at the deliberately high stated prices; 86% of input tokens were cache reads.
