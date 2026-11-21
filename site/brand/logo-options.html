@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heimdall logo options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,600&display=swap">
+<style>
+/* Three candidate marks for Heimdall, each shown at favicon size and large, in one color and in reverse.
+   All three share the same stroke wordmark. The choice and the reason are in site/DESIGN.md. */
+:root { --paper: #fbfaf7; --ink: #1d1c1a; --muted: #67645e; --rule: #e4e1da; --accent: #b3341b; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 18px/1.6 Newsreader, Georgia, serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 48px 16px 96px; }
+h1 { font-weight: 600; font-size: 30px; margin: 0 0 8px; }
+p { max-width: 680px; }
+.ui { font: 400 14px/1.5 "IBM Plex Sans", system-ui, sans-serif; color: var(--muted); }
+.opt { border-top: 1px solid var(--rule); padding: 32px 0 40px; }
+.opt h2 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+.opt h2 span { font: 500 13px/1 "IBM Plex Sans", system-ui, sans-serif; color: var(--accent); margin-left: 8px; letter-spacing: .04em; }
+.row { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; margin-top: 20px; }
+.tile { border: 1px solid var(--rule); padding: 20px; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; min-width: 120px; }
+.tile.rev { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.tile.rev .ui { color: #b8b4ab; }
+.sizes { display: flex; align-items: flex-end; gap: 16px; }
+.lockup { display: flex; align-items: center; gap: 12px; }
+svg { display: block; }
+.tab { display: inline-flex; align-items: center; gap: 8px; background: #ecebe7; border-radius: 6px 6px 0 0; padding: 6px 12px; font: 400 12px/1 "IBM Plex Sans", system-ui, sans-serif; color: #333; }
+</style>
+</head>
+<body>
+<main>
+<h1>Heimdall logo options</h1>
+<p class="ui">Three marks, one wordmark. Each mark is drawn on a 24-unit grid with one stroke weight (2.25 or 2.5 units), so it holds at 16 px.
+No gradients, no helmet, no shield. The wordmark is drawn as strokes, not set in a font, so the SVG files need no font.</p>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- A: Gate. Two posts and a lintel, a check inside the doorway. -->
+    <g id="m-a" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="butt" stroke-linejoin="miter">
+      <path d="M4.5 21.5V3.5H19.5V21.5"/>
+      <path d="M8.25 12.75L11 15.5L15.75 9.25"/>
+    </g>
+    <!-- B: Crossing. The doorway is open at its top right corner, and the check's long arm leaves through it. -->
+    <g id="m-b" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="butt" stroke-linejoin="miter">
+      <path d="M19.5 13V21.5H4.5V3.5H12"/>
+      <path d="M8 11.5L11.75 15.25L21.5 3.5"/>
+    </g>
+    <!-- C: Gateposts. Two posts, and a check stands in the gap between them. -->
+    <g id="m-c" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="butt" stroke-linejoin="miter">
+      <path d="M4 2.5V21.5M20 2.5V21.5"/>
+      <path d="M7.25 12.75L10.5 16L16.75 9"/>
+    </g>
+    <!-- Wordmark: stroke letters on a 12-unit cap height. The two Ls share one base line. -->
+    <g id="wm" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="3">
+      <path d="M0.8 0V12M7.8 0V12M0.8 6H7.8"/>
+      <path d="M17.6 0.8H11.8V11.2H17.6M11.8 6H16.6"/>
+      <path d="M21.6 0V12"/>
+      <path d="M25.6 12V0.8L29.85 9L34.1 0.8V12"/>
+      <path d="M38.1 0.8H41.4A3.9 5.2 0 0 1 41.4 11.2H38.1Z"/>
+      <path d="M48.4 12L52.4 0.6L56.4 12M49.9 7.8H54.9"/>
+      <path d="M60.4 0V11.2H71.6M66.2 0V11.2"/>
+    </g>
+  </defs>
+</svg>
+
+<section class="opt" id="a">
+  <h2>A. Gate</h2>
+  <p class="ui">A doorway with a check inside. Reads as "checked at the gate". Clear at large sizes. At 16 px the check is small and the frame dominates.</p>
+  <div class="row">
+    <div class="tile"><div class="sizes">
+      <svg width="16" height="16" viewBox="0 0 24 24"><use href="#m-a"/></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24"><use href="#m-a"/></svg>
+      <svg width="48" height="48" viewBox="0 0 24 24"><use href="#m-a"/></svg>
+      <svg width="120" height="120" viewBox="0 0 24 24"><use href="#m-a"/></svg>
+    </div><span class="ui">One color</span></div>
+    <div class="tile rev"><div class="sizes">
+      <svg width="16" height="16" viewBox="0 0 24 24"><use href="#m-a"/></svg>
+      <svg width="48" height="48" viewBox="0 0 24 24"><use href="#m-a"/></svg>
+      <svg width="120" height="120" viewBox="0 0 24 24"><use href="#m-a"/></svg>
+    </div><span class="ui">Reverse</span></div>
+    <div class="tile"><div class="lockup"><svg width="28" height="28" viewBox="0 0 24 24"><use href="#m-a"/></svg><svg height="14" viewBox="-1 -1 74 14"><use href="#wm"/></svg></div><span class="ui">Lockup</span></div>
+  </div>
+</section>
+
+<section class="opt" id="b">
+  <h2>B. Crossing</h2>
+  <p class="ui">A doorway open at one corner. The check's long arm passes out through the gap. The idea is good, but at every size it reads as a checked box, the most common "done" icon there is.</p>
+  <div class="row">
+    <div class="tile"><div class="sizes">
+      <svg width="16" height="16" viewBox="0 0 24 24"><use href="#m-b"/></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24"><use href="#m-b"/></svg>
+      <svg width="48" height="48" viewBox="0 0 24 24"><use href="#m-b"/></svg>
+      <svg width="120" height="120" viewBox="0 0 24 24"><use href="#m-b"/></svg>
+    </div><span class="ui">One color</span></div>
+    <div class="tile rev"><div class="sizes">
+      <svg width="16" height="16" viewBox="0 0 24 24"><use href="#m-b"/></svg>
+      <svg width="48" height="48" viewBox="0 0 24 24"><use href="#m-b"/></svg>
+      <svg width="120" height="120" viewBox="0 0 24 24"><use href="#m-b"/></svg>
+    </div><span class="ui">Reverse</span></div>
+    <div class="tile"><div class="lockup"><svg width="28" height="28" viewBox="0 0 24 24"><use href="#m-b"/></svg><svg height="14" viewBox="-1 -1 74 14"><use href="#wm"/></svg></div><span class="ui">Lockup</span></div>
+  </div>
+</section>
+
+<section class="opt" id="c">
+  <h2>C. Gateposts <span>CHOSEN</span></h2>
+  <p class="ui">Two gateposts, and a check stands in the gap between them. Nothing passes the gate unless the check holds. Three strokes and no box, so it stays clear at 16 px and does not read as a checkbox. A first try joined the check to the posts, like the letter H; it read as "M" or "И", so the check now floats.</p>
+  <div class="row">
+    <div class="tile"><div class="sizes">
+      <svg width="16" height="16" viewBox="0 0 24 24"><use href="#m-c"/></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24"><use href="#m-c"/></svg>
+      <svg width="48" height="48" viewBox="0 0 24 24"><use href="#m-c"/></svg>
+      <svg width="120" height="120" viewBox="0 0 24 24"><use href="#m-c"/></svg>
+    </div><span class="ui">One color</span></div>
+    <div class="tile rev"><div class="sizes">
+      <svg width="16" height="16" viewBox="0 0 24 24"><use href="#m-c"/></svg>
+      <svg width="48" height="48" viewBox="0 0 24 24"><use href="#m-c"/></svg>
+      <svg width="120" height="120" viewBox="0 0 24 24"><use href="#m-c"/></svg>
+    </div><span class="ui">Reverse</span></div>
+    <div class="tile"><div class="lockup"><svg width="28" height="28" viewBox="0 0 24 24"><use href="#m-c"/></svg><svg height="14" viewBox="-1 -1 74 14"><use href="#wm"/></svg></div><span class="ui">Lockup</span></div>
+  </div>
+</section>
+
+<section class="opt">
+  <h2>In a browser tab, 16 px</h2>
+  <div class="row">
+    <span class="tab"><svg width="16" height="16" viewBox="0 0 24 24" style="color:var(--ink)"><use href="#m-a"/></svg>Heimdall</span>
+    <span class="tab"><svg width="16" height="16" viewBox="0 0 24 24" style="color:var(--ink)"><use href="#m-b"/></svg>Heimdall</span>
+    <span class="tab"><svg width="16" height="16" viewBox="0 0 24 24" style="color:var(--ink)"><use href="#m-c"/></svg>Heimdall</span>
+  </div>
+</section>
+</main>
+</body>
+</html>
