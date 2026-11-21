@@ -67,12 +67,7 @@ Product WPs avoid the packages that session is changing (`internal/domain/change
 | D4 | Threat model, Go fuzzing on parsers, sandbox escape tests in CI, SBOM and signed releases |
 | D5 | GitHub Enterprise Server and Bitbucket Data Center on request |
 
-## Go-to-market beside the build
+## Go-to-market
 
-| Step | When |
-|---|---|
-| Five calls with platform leads mid agent rollout; offer the $5k 30-day pilot | week 2 |
-| Landing page with measured numbers only (drop count, p95, cost, bench recall) | after A0 and A3 |
-| Show HN: "we drop AI review comments that cannot prove themselves, and print the count" | after A7 |
-| Open-source `heimdall memory` launch | after B4 |
-| Three paid design partners ($5k for 90 days) | after A7 |
+Owned by the founders (Nov 21 2026): calls, pilots, pricing tests and the launch post are not in this build plan.
+The build track keeps only the landing page, which shows shipped features with a source for every number.
