@@ -53,7 +53,7 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | A6 test integrity rules and the fail-twice proof rule | Claude / Sonnet | `a6-test-integrity` | merged | `9582565`: pinned tests read-only (owner approval clears), weakened tests and tautological asserts warn, mock-of-subject (Go, Python, JS/TS) warns, `Prove`: proven needs 2 red runs on head and green on the fixed tree; flaky, one red run, build error never proof (reviewed by coordinator). Lint 0, archcheck holds. Real diffs not parsed yet; caller must pass only `Result.Blocking()` to fastcheck |
 
 | A13 test selection | Claude / Sonnet | `a13-test-selection` | running | |
-| P2.1b Proof Bench reviewer harness | Claude / Opus | `p2.1b-bench-review` | running | fake model only; live run needs owner yes and a key path |
+| P2.1b Proof Bench reviewer harness | Claude / Opus | `p2.1b-bench-review` | running | fake model only. Owner said yes (Nov 21) to one live run, cap $3, DeepSeek V4 Flash; the owner runs it in their own terminal because R8 keeps the key file away from agents |
 | AM13 Action rows | Claude / Sonnet | `am13-action-rows` | running | |
 
 ## Merge into heimdall-build (owner yes, Nov 21 2026)
