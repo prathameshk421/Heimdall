@@ -1,0 +1,23 @@
+   Compiling objc2 v0.6.4
+   Compiling proc-macro2 v1.0.106
+   Compiling objc2-encode v4.1.0
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling bitflags v2.13.0
+   Compiling libc v0.2.186
+   Compiling serde_core v1.0.228
+   Compiling zmij v1.0.21
+   Compiling serde_json v1.0.150
+   Compiling memchr v2.8.2
+   Compiling serde v1.0.228
+   Compiling itoa v1.0.18
+   Compiling syn v2.0.118
+   Compiling objc2-core-foundation v0.3.2
+   Compiling objc2-foundation v0.3.2
+   Compiling objc2-open-directory v0.3.2
+   Compiling objc2-io-kit v0.3.2
+   Compiling sysinfo v0.39.3
+   Compiling serde_derive v1.0.228
+   Compiling t3-resource-monitor v0.1.0 (/private/var/folders/xx/T/t3wt-rm/native/resource-monitor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.88s
+     Running unittests src/main.rs (/var/folders/xx/T/heimdall-bench/cargo-target/rm/debug/deps/t3_resource_monitor-beeedae25a859662)

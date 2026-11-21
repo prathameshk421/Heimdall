@@ -1,0 +1,39 @@
+
+running 20 tests
+test tests::counts_selected_processes_that_could_not_be_materialized ... ok
+test tests::clamps_sample_interval ... ok
+test tests::accepts_clock_shifts_without_accepting_reused_process_starts ... ok
+test tests::heimdall_sample_ignored ... ignored
+test tests::bounds_history_by_estimated_process_bytes ... ok
+test tests::counts_external_processes_toward_history_limits ... ok
+test tests::excludes_and_trims_future_history_after_the_clock_moves_backward ... ok
+test tests::ignores_missing_roots ... ok
+test tests::decodes_protocol_commands ... ok
+test tests::refreshes_commands_without_enumerating_linux_tasks ... ok
+test tests::rejects_descendants_older_than_a_reused_parent_pid ... ok
+test tests::sample_now_does_not_postpone_an_existing_periodic_deadline ... ok
+test tests::heimdall_sample_fails ... FAILED
+test tests::selects_roots_and_all_descendants ... ok
+test tests::truncates_process_strings_at_utf8_boundaries ... ok
+test tests::validates_external_process_start_identity ... ok
+test tests::waits_for_a_cpu_measurement_window_after_priming ... ok
+test tests::retains_bounded_history_without_request_ids ... ok
+test tests::loads_details_when_an_existing_process_becomes_selected ... ok
+test tests::keeps_command_lines_and_memory_out_of_the_discovery_table ... ok
+
+failures:
+
+---- tests::heimdall_sample_fails stdout ----
+
+thread 'tests::heimdall_sample_fails' (10653666) panicked at src/main.rs:1133:9:
+assertion `left == right` failed: sample failure
+  left: 1
+ right: 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::heimdall_sample_fails
+
+test result: FAILED. 18 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.25s
+

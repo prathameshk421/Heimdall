@@ -1,0 +1,100 @@
+{
+ "numTotalTestSuites": 4,
+ "numPassedTestSuites": 1,
+ "numFailedTestSuites": 3,
+ "numPendingTestSuites": 0,
+ "numTotalTests": 4,
+ "numPassedTests": 2,
+ "numFailedTests": 1,
+ "numPendingTests": 1,
+ "numTodoTests": 0,
+ "snapshot": {
+  "added": 0,
+  "failure": false,
+  "filesAdded": 0,
+  "filesRemoved": 0,
+  "filesRemovedList": [],
+  "filesUnmatched": 0,
+  "filesUpdated": 0,
+  "matched": 0,
+  "total": 0,
+  "unchecked": 0,
+  "uncheckedKeysByFile": [],
+  "unmatched": 0,
+  "updated": 0,
+  "didUpdate": false
+ },
+ "startTime": 1795270072906,
+ "success": false,
+ "testResults": [
+  {
+   "assertionResults": [],
+   "startTime": 1795270072906,
+   "endTime": 1795270072906,
+   "status": "failed",
+   "message": "Cannot find module './doesNotExist.ts' imported from /private/var/folders/xx/T/t3wt-shared/packages/shared/src/heimdallBroken.test.ts",
+   "name": "/private/var/folders/xx/T/t3wt-shared/packages/shared/src/heimdallBroken.test.ts"
+  },
+  {
+   "assertionResults": [
+    {
+     "ancestorTitles": [
+      "outer",
+      "inner"
+     ],
+     "fullName": "outer inner passes",
+     "status": "passed",
+     "title": "passes",
+     "duration": 0.6868330000000071,
+     "failureMessages": [],
+     "meta": {},
+     "tags": [],
+     "benchmarks": []
+    },
+    {
+     "ancestorTitles": [
+      "outer"
+     ],
+     "fullName": "outer fails",
+     "status": "failed",
+     "title": "fails",
+     "duration": 2.3371669999999938,
+     "failureMessages": [
+      "AssertionError: expected 1 to be 2 // Object.is equality\n    at /private/var/folders/xx/T/t3wt-shared/packages/shared/src/heimdallSample.test.ts:10:15"
+     ],
+     "meta": {},
+     "tags": [],
+     "benchmarks": []
+    },
+    {
+     "ancestorTitles": [
+      "outer"
+     ],
+     "fullName": "outer is skipped",
+     "status": "skipped",
+     "title": "is skipped",
+     "failureMessages": [],
+     "meta": {},
+     "tags": [],
+     "benchmarks": []
+    },
+    {
+     "ancestorTitles": [],
+     "fullName": "top level passes",
+     "status": "passed",
+     "title": "top level passes",
+     "duration": 0.0745409999999822,
+     "failureMessages": [],
+     "meta": {},
+     "tags": [],
+     "benchmarks": []
+    }
+   ],
+   "startTime": 1795270073108,
+   "endTime": 1795270073111.0745,
+   "status": "failed",
+   "message": "",
+   "name": "/private/var/folders/xx/T/t3wt-shared/packages/shared/src/heimdallSample.test.ts"
+  }
+ ]
+}
