@@ -6,11 +6,13 @@ package uidsandbox
 //
 //	GOOS=linux CGO_ENABLED=0 go test -c -tags sbxprobe -o probe.test ./internal/adapters/uidsandbox
 //	HEIMDALL_PROBE_CANARY=<random> PROBE_TREE=<dir of testdata/probe> PROBE_GO_BIN=<go bin dir> \
-//	  ./probe.test -test.v -test.run TestEscapeProbes
+//	  ./probe.test -test.v -test.run TestEscapeProbes -test.timeout 25m <the same canary>
 //
-// It plants the canary in its own environment (it is the "loop" process), in a file in the runner home and in
-// _temp, checks that the runner user itself can reach each of them (the controls), then runs the probe module of
-// testdata/probe in the sandbox and requires every probe to be blocked.
+// It is the "loop" process: it holds the canary in its environment and its argv, and plants it in files (the runner
+// home, _temp, /tmp, /var/tmp, /dev/shm), in keys of its session and user keyrings and in a host message queue. It
+// proves the runner user reaches each target (the controls), then runs the probe module of testdata/probe in both
+// phases. Every probe must be blocked. A probe that could not run is UNKNOWN, and UNKNOWN fails the harness: it is
+// not a proof.
 
 import (
 	"archive/tar"
@@ -25,10 +27,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 
@@ -44,8 +49,28 @@ type probeConfig struct {
 	CredFiles    []string `json:"cred_files"`
 	RunnerHome   string   `json:"runner_home"`
 	HostSockets  []string `json:"host_sockets"`
-	Plants       []string `json:"plants"`
+	WritableDirs []string `json:"writable_dirs"`
+	HostPlants   []string `json:"host_plants"`
+	CmdlinePID   int      `json:"cmdline_pid"`
+	KeySerials   []int    `json:"key_serials"`
+	KeyDesc      string   `json:"key_desc"`
+	HostQueue    string   `json:"host_queue"`
+	LoopbackPort int      `json:"loopback_port"`
 }
+
+const (
+	keyDesc      = "heimdall-canary"
+	hostQueue    = "/dev/mqueue/heimdall-host-canary"
+	journalTag   = "heimdall-probe-"
+	sandboxMark  = "marker from the sandbox"
+	controlMark  = "marker from the runner user"
+	hangTimeout  = 45 * time.Second
+	hangSlack    = 30 * time.Second
+	keySpecSess  = -3
+	keySpecUser  = -4
+	keyctlRead   = 11
+	keyctlRevoke = 3
+)
 
 func TestEscapeProbes(t *testing.T) {
 	canary := os.Getenv("HEIMDALL_PROBE_CANARY")
@@ -60,14 +85,28 @@ func TestEscapeProbes(t *testing.T) {
 
 	sum := sha256.Sum256([]byte(canary))
 	cfg := probeConfig{
-		ParentPID: os.Getpid(), CanarySHA256: hex.EncodeToString(sum[:]), RunnerHome: home,
+		ParentPID: os.Getpid(), CmdlinePID: os.Getpid(), CanarySHA256: hex.EncodeToString(sum[:]), RunnerHome: home,
 		HomeCanary: filepath.Join(home, "heimdall-canary.txt"), TempCanary: filepath.Join(temp, "heimdall-canary.txt"),
-		CredFiles: runnerFiles(t),
-		Plants:    []string{"/tmp/heimdall-sbx-plant", "/var/tmp/heimdall-sbx-plant", "/dev/shm/heimdall-sbx-plant"},
+		CredFiles: runnerFiles(t), KeyDesc: keyDesc, HostQueue: hostQueue,
+		HostPlants: []string{"/tmp/heimdall-host-canary.txt", "/var/tmp/heimdall-host-canary.txt", "/dev/shm/heimdall-host-canary.txt"},
 	}
-	// World-readable on purpose: only the 0700 directories may stop the sandbox user.
-	require.NoError(t, os.WriteFile(cfg.HomeCanary, []byte(canary+"\n"), 0o644))
-	require.NoError(t, os.WriteFile(cfg.TempCanary, []byte(canary+"\n"), 0o644))
+	// World-readable on purpose: only the sandbox may stop the sandbox user.
+	for _, p := range append([]string{cfg.HomeCanary, cfg.TempCanary}, cfg.HostPlants...) {
+		require.NoError(t, os.WriteFile(p, []byte(canary+"\n"), 0o644))
+		t.Cleanup(func() { _ = os.Remove(p) })
+	}
+	q, err := os.OpenFile(hostQueue, os.O_CREATE|os.O_RDWR, 0o644)
+	require.NoError(t, err, "control: make a host message queue")
+	_ = q.Close()
+	t.Cleanup(func() { _ = os.Remove(hostQueue) })
+	cfg.KeySerials = keyControls(t, canary)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	go acceptAll(ln)
+	cfg.LoopbackPort = ln.Addr().(*net.TCPAddr).Port
+
 	ctx := context.Background()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	s, err := New(ctx, Config{
@@ -76,11 +115,12 @@ func TestEscapeProbes(t *testing.T) {
 	}, OSExec{})
 	require.NoError(t, err, "New")
 	cfg.HostSockets = hostSocketList(t, s)
+	cfg.WritableDirs = writableDirs(t, s)
 	controls(t, cfg, canary)
 	socketControls(t, cfg)
-	require.NoError(t, s.Setup(ctx), "Setup")
+	require.NoError(t, s.Setup(ctx), "Setup, including the self check of each phase")
 	t.Cleanup(func() { require.NoError(t, s.Cleanup(ctx), "Cleanup") })
-	t.Logf("SETUP uid=%d proxy port=%d", s.UID(), s.ProxyPort())
+	t.Logf("SETUP uid=%d proxy port=%d; the self check passed in both phases", s.UID(), s.ProxyPort())
 	hostChecks(t, s, cfg)
 
 	cfg.ProxyPort = s.ProxyPort()
@@ -88,25 +128,63 @@ func TestEscapeProbes(t *testing.T) {
 
 	goEnv := []string{"GOPATH=" + HomeDir + "/go", "GOCACHE=" + HomeDir + "/.cache/go-build", "GOTOOLCHAIN=local",
 		"GOTELEMETRY=off", "CGO_ENABLED=0"}
-	fetchEnv := append([]string{"GOPROXY=https://proxy.golang.org", "GOSUMDB=sum.golang.org", "GOFLAGS=-mod=mod"}, goEnv...)
-	execEnv := append([]string{"GOPROXY=off", "GOFLAGS=-mod=readonly"}, goEnv...)
+	fetchEnv := append([]string{"GOPROXY=https://proxy.golang.org", "GOSUMDB=sum.golang.org", "GOFLAGS=-mod=mod",
+		"HEIMDALL_PROBE_PHASE=fetch"}, goEnv...)
+	execEnv := append([]string{"GOPROXY=off", "GOFLAGS=-mod=readonly", "HEIMDALL_PROBE_PHASE=exec"}, goEnv...)
 
 	res, err := s.Fetch(ctx, Job{Argv: []string{"go", "mod", "download", "-x"}, Env: fetchEnv, Timeout: 3 * time.Minute})
 	require.NoError(t, err, "fetch go mod download")
 	t.Logf("FETCH go mod download: exit %d\n%s", res.Exit, tail(res.Stderr, 4000))
 	require.Equal(t, 0, res.Exit, "the allowed fetch must work")
 
-	res, err = s.Fetch(ctx, Job{Argv: []string{"go", "test", "-json", "-count=1", "-v", "-run", "^TestFetch", "."},
+	res, err = s.Fetch(ctx, Job{Argv: []string{"go", "test", "-json", "-count=1", "-v", "-run", "^(TestFetch|TestBoth)", "."},
 		Env: fetchEnv, Timeout: 5 * time.Minute, Result: ResultGoTestJSON})
-	require.NoError(t, err, "fetch probes")
+	require.NoError(t, err, "fetch probes (includes the kill of every sandbox process)")
 	judge(t, "fetch", res)
+	survivor(t, s, "survivor-fetch.pid")
 
-	res, err = s.Exec(ctx, Job{Argv: []string{"go", "test", "-json", "-count=1", "-v", "-run", "^TestExec", "."},
+	res, err = s.Exec(ctx, Job{Argv: []string{"go", "test", "-json", "-count=1", "-v", "-run", "^(TestExec|TestBoth)", "."},
 		Env: execEnv, Timeout: 5 * time.Minute, Result: ResultGoTestJSON})
 	require.NoError(t, err, "exec probes (includes the kill of every sandbox process)")
 	judge(t, "exec", res)
-	survivor(t, s)
-	plants(t, cfg)
+	survivor(t, s, "survivor-exec.pid")
+
+	hang(t, s, execEnv)
+	plants(t, s, cfg)
+	journal(t, s)
+}
+
+func acceptAll(ln net.Listener) {
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		_ = c.Close()
+	}
+}
+
+// keyControls adds a key with the canary as payload to the runner user's session and user keyrings and reads each
+// back, so a blocked read inside is the sandbox. The keys are revoked at the end.
+func keyControls(t *testing.T, canary string) []int {
+	typ, _ := syscall.BytePtrFromString("user")
+	desc, _ := syscall.BytePtrFromString(keyDesc)
+	payload := []byte(canary)
+	var serials []int
+	for name, ring := range map[string]int{"session": keySpecSess, "user": keySpecUser} {
+		r, _, e := syscall.Syscall6(syscall.SYS_ADD_KEY, uintptr(unsafe.Pointer(typ)), uintptr(unsafe.Pointer(desc)),
+			uintptr(unsafe.Pointer(&payload[0])), uintptr(len(payload)), uintptr(ring), 0)
+		require.Zero(t, e, "control: add_key to the %s keyring: %v", name, e)
+		id := int(int32(r))
+		buf := make([]byte, 256)
+		n, _, e := syscall.Syscall6(syscall.SYS_KEYCTL, keyctlRead, uintptr(id), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0, 0)
+		require.Zero(t, e, "control: read key %d back: %v", id, e)
+		require.Equal(t, canary, string(buf[:n]), "control: key %d holds the canary", id)
+		t.Logf("CONTROL runner user keyring %s: key %d %q holds the canary and reads back", name, id, keyDesc)
+		serials = append(serials, id)
+		t.Cleanup(func() { _, _, _ = syscall.Syscall(syscall.SYS_KEYCTL, keyctlRevoke, uintptr(id), 0) })
+	}
+	return serials
 }
 
 // hostSocketList finds every Unix socket of the host as root: every socket file outside /proc and /sys, and every
@@ -147,6 +225,23 @@ func hostSocketList(t *testing.T, s *Sandbox) []string {
 	return list
 }
 
+// writableDirs finds every world-writable directory of the host as root, outside /proc, /sys and /sbx. find prunes
+// each one it prints, so the list holds the top of each world-writable tree.
+func writableDirs(t *testing.T, s *Sandbox) []string {
+	code, out, err := s.root(context.Background(), nil, "/usr/bin/find", "/", "(", "-path", "/proc", "-o", "-path", "/sys",
+		"-o", "-path", Root, ")", "-prune", "-o", "-type", "d", "-perm", "-0002", "-print", "-prune")
+	require.NoError(t, err)
+	var dirs []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "/") {
+			dirs = append(dirs, l)
+		}
+	}
+	t.Logf("SETUP find / -type d -perm -0002 -prune as root: exit %d; %d world-writable directories: %v", code, len(dirs), dirs)
+	require.Contains(t, dirs, "/tmp")
+	return dirs
+}
+
 // socketControls proves the runner user reaches the host's Unix sockets, so a blocked connect inside is the sandbox.
 func socketControls(t *testing.T, cfg probeConfig) {
 	var reached []string
@@ -171,6 +266,8 @@ func socketControls(t *testing.T, cfg probeConfig) {
 	for _, argv := range [][]string{
 		{"/usr/bin/resolvectl", "query", "--legend=no", "example.com"},
 		{"/usr/bin/busctl", "--system", "--no-pager", "list"},
+		{"/usr/bin/chage", "-l", os.Getenv("USER")},
+		{"/usr/bin/logger", "-t", journalTag + "control", controlMark},
 	} {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		out, err := exec.CommandContext(ctx, argv[0], argv[1:]...).CombinedOutput()
@@ -180,39 +277,37 @@ func socketControls(t *testing.T, cfg probeConfig) {
 	}
 }
 
-// plants checks that the files the execution phase wrote to its /tmp, /var/tmp and /dev/shm are not on the host.
-func plants(t *testing.T, cfg probeConfig) {
-	for _, p := range cfg.Plants {
-		if _, err := os.Lstat(p); err == nil {
-			t.Errorf("PROBE plant %s: ESCAPED: the file is on the host", p)
-			continue
-		}
-		t.Logf("PROBE plant %s: blocked: not on the host", p)
-	}
-}
-
 // controls proves each probe target is reachable by the runner user, so a blocked probe means the sandbox blocked it.
 func controls(t *testing.T, cfg probeConfig, canary string) {
 	env, err := os.ReadFile("/proc/self/environ")
 	require.NoError(t, err)
 	require.Contains(t, string(env), "HEIMDALL_PROBE_CANARY="+canary, "control: canary in the loop's environ")
-	for _, p := range []string{cfg.HomeCanary, cfg.TempCanary} {
+	cmdline, err := os.ReadFile("/proc/self/cmdline")
+	require.NoError(t, err)
+	require.Contains(t, strings.Split(string(cmdline), "\x00"), canary, "control: canary in the loop's argv (pass it as the last argument)")
+	for _, p := range append([]string{cfg.HomeCanary, cfg.TempCanary}, cfg.HostPlants...) {
 		b, err := os.ReadFile(p)
 		require.NoError(t, err)
 		require.Equal(t, canary+"\n", string(b), "control: runner reads %s", p)
 	}
+	_, err = os.Lstat(cfg.HostQueue)
+	require.NoError(t, err, "control: the host message queue exists")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	addrs, err := net.DefaultResolver.LookupHost(ctx, "github.com")
 	require.NoError(t, err, "control: runner DNS")
 	var d net.Dialer
-	c, err := d.DialContext(ctx, "tcp", "1.1.1.1:443")
-	require.NoError(t, err, "control: runner TCP to 1.1.1.1:443")
-	_ = c.Close()
+	for _, addr := range []string{"1.1.1.1:443", "127.0.0.1:" + strconv.Itoa(cfg.LoopbackPort)} {
+		c, err := d.DialContext(ctx, "tcp", addr)
+		require.NoError(t, err, "control: runner TCP to %s", addr)
+		_ = c.Close()
+	}
 	u, err := d.DialContext(ctx, "unix", "/var/run/docker.sock")
 	require.NoError(t, err, "control: runner reaches the docker socket")
 	_ = u.Close()
-	t.Logf("CONTROL runner user: environ has canary, home and _temp canaries readable, DNS github.com=%v, TCP 1.1.1.1:443 ok, docker.sock ok", addrs)
+	t.Logf("CONTROL runner user: environ and argv have the canary; home, _temp, /tmp, /var/tmp, /dev/shm canaries readable; "+
+		"host queue %s exists; DNS github.com=%v; TCP 1.1.1.1:443 and loopback :%d ok; docker.sock ok",
+		cfg.HostQueue, addrs, cfg.LoopbackPort)
 }
 
 // runnerFiles finds the runner's own files (.credentials, .runner) by walking up to the Runner.Worker process.
@@ -294,43 +389,116 @@ func writeTarFile(tw *tar.Writer, name string, b []byte) error {
 	return err
 }
 
-// judge logs every probe line and requires every probe test to pass, which means every escape was blocked.
+// judge logs every probe line and requires every probe test to pass. A skipped probe is UNKNOWN: it could not make
+// its attempt, so it proves nothing, and it fails the harness like an escape does.
 func judge(t *testing.T, phase string, res Result) {
 	for _, line := range strings.Split(string(res.Stdout), "\n") {
 		var ev struct{ Action, Test, Output string }
-		if json.Unmarshal([]byte(line), &ev) == nil && ev.Action == "output" && strings.Contains(ev.Output, "PROBE") {
-			t.Logf("%s %s", strings.ToUpper(phase), strings.TrimSpace(ev.Output))
+		if json.Unmarshal([]byte(line), &ev) == nil && ev.Action == "output" &&
+			(strings.Contains(ev.Output, "PROBE") || strings.Contains(ev.Output, "INFO") || strings.HasPrefix(ev.Output, "        ")) {
+			t.Logf("%s %s", strings.ToUpper(phase), strings.TrimRight(ev.Output, "\n"))
 		}
 	}
 	cases := res.Report.Cases()
 	require.NotEmpty(t, cases, "%s: no probe ran; stderr:\n%s", phase, tail(res.Stderr, 4000))
+	unknown := 0
 	for _, c := range cases {
-		if c.Status != verify.StatusPass {
+		switch c.Status {
+		case verify.StatusPass:
+			t.Logf("RESULT %s %s: passed (escape blocked)", phase, c.Name)
+		case verify.StatusSkipped:
+			unknown++
+			t.Errorf("RESULT %s %s: UNKNOWN (the probe could not run, so this is not proven): %s %s", phase, c.Name, c.Message, c.Text)
+		case verify.StatusFail, verify.StatusError:
 			t.Errorf("RESULT %s %s: %s: %s %s", phase, c.Name, c.Status, c.Message, c.Text)
-			continue
 		}
-		t.Logf("RESULT %s %s: passed (escape blocked)", phase, c.Name)
 	}
-	t.Logf("RESULT %s: exit %d, %d probe tests, timed out %v", phase, res.Exit, len(cases), res.TimedOut)
+	t.Logf("RESULT %s: exit %d, %d probe tests, %d unknown, timed out %v", phase, res.Exit, len(cases), unknown, res.TimedOut)
 }
 
-func survivor(t *testing.T, s *Sandbox) {
-	b, err := s.readAsUser(context.Background(), "survivor.pid")
-	require.NoError(t, err, "read survivor.pid")
-	pid := strings.TrimSpace(string(b))
-	_, err = os.Stat("/proc/" + pid)
-	if err == nil {
-		t.Errorf("PROBE survivor: ESCAPED: pid %s still alive after the kill", pid)
-	} else {
-		t.Logf("PROBE survivor: blocked: pid %s gone after the kill: %v", pid, err)
+// survivor checks that the daemons a probe job started are gone after the job.
+func survivor(t *testing.T, s *Sandbox, pidFile string) {
+	b, err := s.readAsUser(context.Background(), pidFile)
+	if err != nil {
+		t.Errorf("PROBE survivor %s: UNKNOWN: no pid file: %v", pidFile, err)
+		return
 	}
+	pid := strings.TrimSpace(string(b))
+	if _, err := os.Stat("/proc/" + pid); err == nil {
+		t.Errorf("PROBE survivor %s: ESCAPED: pid %s still alive after the job", pidFile, pid)
+	} else {
+		t.Logf("PROBE survivor %s: blocked: pid %s gone after the job: %v", pidFile, pid, err)
+	}
+	noProcess(t, s, "survivor "+pidFile)
+}
+
+func noProcess(t *testing.T, s *Sandbox, what string) {
 	code, out, err := s.root(context.Background(), nil, s.tools.pgrep, "-a", "-u", strconv.Itoa(s.UID()))
 	require.NoError(t, err)
 	if code != 1 {
-		t.Errorf("PROBE survivor: ESCAPED: processes of the sandbox uid remain: %s", out)
+		t.Errorf("PROBE %s: ESCAPED: processes of the sandbox uid remain: %s", what, out)
 		return
 	}
-	t.Logf("PROBE survivor: blocked: pgrep -u %d finds no process after the job", s.UID())
+	t.Logf("PROBE %s: blocked: pgrep -u %d finds no process", what, s.UID())
+}
+
+// hang runs a job that never ends, with a short timeout. The job must end near its timeout, report TimedOut, and
+// leave no process, including the daemon it started in a new session.
+func hang(t *testing.T, s *Sandbox, execEnv []string) {
+	start := time.Now()
+	res, err := s.Exec(context.Background(), Job{Argv: []string{"go", "test", "-count=1", "-v", "-run", "^TestHang$", "."},
+		Env: execEnv, Timeout: hangTimeout})
+	took := time.Since(start)
+	t.Logf("TIMEOUT hang job: exit %d, timed out %v, took %s, err %v, stdout tail %q", res.Exit, res.TimedOut, took.Round(time.Second),
+		err, tail(res.Stdout, 300))
+	if err != nil {
+		t.Errorf("PROBE timeout: the hang job returned an error: %v", err)
+	}
+	if !res.TimedOut || took > hangTimeout+hangSlack {
+		t.Errorf("PROBE timeout: ESCAPED: the job ran %s past a %s timeout (timed out %v)", took, hangTimeout, res.TimedOut)
+	} else {
+		t.Logf("PROBE timeout: blocked: the job ended after %s for a %s timeout", took.Round(time.Second), hangTimeout)
+	}
+	if !strings.Contains(string(res.Stdout), "PROBE hang: daemon started") {
+		t.Errorf("PROBE timeout: UNKNOWN: the hang test did not start its daemon before the timeout")
+	}
+	survivor(t, s, "hang.pid")
+}
+
+// plants checks that no file a phase wrote into a world-writable directory is on the host.
+func plants(t *testing.T, s *Sandbox, cfg probeConfig) {
+	argv := append([]string{"/usr/bin/find"}, cfg.WritableDirs...)
+	argv = append(argv, "-maxdepth", "1", "-name", "heimdall-sbx-plant-*", "-print")
+	_, out, err := s.root(context.Background(), nil, argv...)
+	require.NoError(t, err)
+	var found []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "heimdall-sbx-plant-") {
+			found = append(found, l)
+		}
+	}
+	if len(found) > 0 {
+		t.Errorf("PROBE plants: ESCAPED: files written inside are on the host: %v", found)
+		return
+	}
+	t.Logf("PROBE plants: blocked: none of the files written inside is in any of the host's %d world-writable directories", len(cfg.WritableDirs))
+}
+
+// journal checks the host journal: the runner's control marker must be there and no marker from the sandbox.
+func journal(t *testing.T, s *Sandbox) {
+	_, out, err := s.root(context.Background(), nil, "/usr/bin/journalctl", "--no-pager", "-o", "cat",
+		"-t", journalTag+"control", "-t", journalTag+"fetch", "-t", journalTag+"exec")
+	require.NoError(t, err)
+	if !strings.Contains(out, controlMark) {
+		t.Errorf("PROBE journal: UNKNOWN: the control marker is not in the host journal: %q", tail([]byte(out), 300))
+		return
+	}
+	if strings.Contains(out, sandboxMark) {
+		t.Errorf("PROBE journal: ESCAPED: the sandbox wrote into the host journal: %q", tail([]byte(out), 300))
+		return
+	}
+	lines := slices.DeleteFunc(strings.Split(out, "\n"), func(l string) bool { return l == "" || l == controlMark })
+	t.Logf("PROBE journal: blocked: the host journal has the control marker and no sandbox marker (%q)", strings.Join(lines, " | "))
 }
 
 func tail(b []byte, n int) string {
