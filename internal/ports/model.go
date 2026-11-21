@@ -103,7 +103,9 @@ type ModelResponse struct {
 // ModelChat is one chat-completion endpoint with tool calling. Consumer: the Action-mode agent loop. Adapter:
 // internal/adapters/openrouter (AM10).
 type ModelChat interface {
-	// Complete sends the conversation and the tool definitions and returns the model's answer.
+	// Complete sends the conversation and the tool definitions and returns the model's answer. On an error the
+	// response is empty, unless the provider billed the failed call: then CostUSD and Usage say what it billed, and the
+	// caller counts that once.
 	Complete(ctx context.Context, req ModelRequest) (ModelResponse, error)
 }
 

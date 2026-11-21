@@ -54,4 +54,8 @@ type Result struct {
 	LastText string
 	// Transcript is the whole conversation, starting with the caller's messages.
 	Transcript []ports.ModelMessage
+	// Retries is the number of model calls sent again after a failure, over the whole run.
+	Retries int
+	// FailedCall holds the failed attempts of the model call that ended the run, nil when none did.
+	FailedCall []ports.AgentAttempt
 }

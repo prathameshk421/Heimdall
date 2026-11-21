@@ -5,8 +5,8 @@
 // Action mode asks a model to plan tests, write them and prove findings (ACTION_MODE.md 4). This package is the
 // built-in loop for that work: it sends the conversation to the model port, runs each tool call through a registry the
 // caller passes in, appends the results and stops on one of the conditions below. It does not know any tool. The
-// sandbox tools (AM11), the prompts and the validators belong to the caller. It does not retry a failed model call
-// and it does not pick a model.
+// sandbox tools (AM11), the prompts and the validators belong to the caller. It retries a model call that failed for
+// now (see Retries below), and it does not pick a model.
 //
 // # API
 //
@@ -16,6 +16,8 @@
 // final tool that is a *ports.AgentRefusal is a refusal. The result is a ports.AgentResult: the stop (done, budget,
 // deadline, turns, refused, cancelled, error), the final text, the submission, and usage, cost and latency per turn.
 // A run that keeps answering with text after two nudges is a done run with no submission.
+// Runner.WithRetry(wait, random) returns a Runner that retries; a Runner without it ends a run on the first failed
+// model call.
 //
 // Underneath, New(model, clock, Config, []Tool, []Submitter) returns a Loop. Loop.Run(ctx, messages) returns a Result and an error.
 // A Tool has Spec and Run. A Submitter is a final-answer tool: its Submit method holds the caller's validator and
@@ -68,6 +70,21 @@
 // argument size), the finish reason, the tool choice and fallback the port reported, and whether the calls were read
 // from text or the loop nudged after the answer.
 //
+// # Retries
+//
+// Config.Retry (Runner.WithRetry) sends a model call again when it failed with a rate limit (ModelErrorRateLimited,
+// HTTP 429) or a server error (ModelErrorServer, HTTP 5xx). Any other failure is never retried: an ordinary 4xx is a
+// fault of the request. The adapter types an HTML 400 page as ModelErrorInvalid, so it is not retried either. A call
+// is sent at most 3 times. The wait before attempt n+1 is the provider's Retry-After, capped at 60 s, or else a
+// random time in [0, min(30 s, 2 s * 2^(n-1))] (exponential backoff with full jitter, drawn from the Random port).
+// The loop waits only through the Waiter port, never time.Sleep. Before each wait the loop checks, in order: the
+// caller and the deadline; the cost the provider billed for the failed attempt, which is added once (most failures
+// bill nothing and report nothing); the retry rule; that the wait ends before the deadline (else StopDeadline, with no
+// wait); and the worst-case budget guard for the next attempt (else StopBudget, with no wait). A retried call is one
+// turn. The turn records Attempts and one ports.AgentAttempt (kind, status, wait) per failed attempt. Result.Retries
+// counts the retries of the run, and Result.FailedCall holds the attempts of the call that ended it. The bench stops a
+// whole run when several calls in a row fail after their retries (cmd/heimdall-bench, the provider breaker).
+//
 // # Failure modes
 //
 // A context cancel ends the run at the next check, or at once when
@@ -80,6 +97,10 @@
 // refusal, malformed submission arguments, budget stop, the worst-case guard for cost and for the input and output token
 // caps, usage that cannot be true, per-turn latency, the per-answer output cap, deadline stop (before a call and between
 // tool calls), turn cap, unknown tool, bad arguments, tool error, no submission, cancellation and a model error.
+// retry_test.go covers the retry rule with a fake waiter and a fixed jitter: a 500 then success, a 429 with
+// Retry-After then success, the Retry-After cap, three 500s and the wrapped error, the backoff ceiling, a deadline with
+// no time for the wait, a cancel during the wait, the budget guard on a retry after a billed failure, usage that
+// cannot be true on a failure, ordinary 4xx and other errors with no retry, and the Runner through the port.
 // robust_test.go covers text calls, nudges against the turn and budget caps, the tool choice and its fallback, and
 // the bounded transcript. textcall_test.go covers each text format, the refusals, the bounds and a fuzz target.
 // runner_test.go is the contract test of ports.AgentLoop, run through the port only.

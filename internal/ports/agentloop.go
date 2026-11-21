@@ -156,6 +156,19 @@ type AgentTurn struct {
 	Nudged     bool
 	ToolChoice ModelToolChoice
 	Fallback   string
+	// Attempts is the number of times the loop sent this call: 1, or more when it retried a failure that may pass
+	// (rate limited or a server error). Failed holds one entry per failed attempt, in order.
+	Attempts int
+	Failed   []AgentAttempt
+}
+
+// AgentAttempt is one failed attempt of a model call. Kind and Status come from the *ModelError, and are empty for
+// another error. Wait is the pause before the next attempt, read from the retry rule; it is zero when no attempt
+// followed.
+type AgentAttempt struct {
+	Kind   ModelErrorKind
+	Status int
+	Wait   time.Duration
 }
 
 // AgentCallBrief is one tool call in the bounded transcript: its name and the size of its arguments in bytes.
@@ -182,4 +195,9 @@ type AgentResult struct {
 	CostUSD float64
 	// Transcript is the whole conversation, starting with the caller's messages.
 	Transcript []ModelMessage
+	// Retries is the number of model calls the loop sent again after a failure, over the whole run.
+	Retries int
+	// FailedCall holds the failed attempts of the model call that ended the run, and is nil when no failed call
+	// ended it.
+	FailedCall []AgentAttempt
 }

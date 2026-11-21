@@ -16,6 +16,7 @@ type Runner struct {
 	model ports.ModelChat
 	clock ports.Clock
 	price ports.ModelPrice
+	retry Retry
 }
 
 var _ ports.AgentLoop = (*Runner)(nil)
@@ -34,6 +35,18 @@ func NewRunner(model ports.ModelChat, clock ports.Clock, price ports.ModelPrice)
 	return &Runner{model: model, clock: clock, price: price}, nil
 }
 
+// WithRetry returns a copy of the Runner that sends a model call again after a rate limit or a server error, up to 3
+// attempts, waiting through wait with jitter from random (retry.go). A Runner without it ends the run on the first
+// failed call.
+func (r *Runner) WithRetry(wait ports.Waiter, random ports.Random) (*Runner, error) {
+	if wait == nil || random == nil {
+		return nil, errors.New("agent loop runner retry needs a waiter and a jitter source")
+	}
+	out := *r
+	out.retry = Retry{Wait: wait, Random: random}
+	return &out, nil
+}
+
 // Run builds a Loop from the request, runs it and maps its result to the port's.
 func (r *Runner) Run(ctx context.Context, req ports.AgentRun) (ports.AgentResult, error) {
 	if req.Dispatcher == nil {
@@ -45,7 +58,7 @@ func (r *Runner) Run(ctx context.Context, req ports.AgentRun) (ports.AgentResult
 	}
 	l, err := New(r.model, r.clock, Config{Model: req.Model, MaxOutputTokens: req.MaxOutputTokens, BudgetUSD: req.Budget.USD,
 		InputTokenCap: req.Budget.InputTokens, OutputTokenCap: req.Budget.OutputTokens, Price: r.price,
-		Deadline: req.Deadline, MaxTurns: req.MaxTurns, RequireToolCall: req.RequireToolCall, Nudge: req.Nudge}, tools, finals)
+		Deadline: req.Deadline, MaxTurns: req.MaxTurns, RequireToolCall: req.RequireToolCall, Nudge: req.Nudge, Retry: r.retry}, tools, finals)
 	if err != nil {
 		return ports.AgentResult{}, err
 	}
@@ -117,7 +130,8 @@ func (f dispatchFinal) Submit(ctx context.Context, args json.RawMessage) (Verdic
 // port says.
 func portResult(res Result) ports.AgentResult {
 	out := ports.AgentResult{Stop: portStop(res.Reason), FinalText: res.LastText, Turns: res.Turn, Refusals: res.Refusals,
-		Nudges: res.Nudges, Usage: res.Usage, CostUSD: res.CostUSD, Transcript: res.Transcript}
+		Nudges: res.Nudges, Usage: res.Usage, CostUSD: res.CostUSD, Transcript: res.Transcript, Retries: res.Retries,
+		FailedCall: res.FailedCall}
 	if res.Submission != nil {
 		out.Submission = &ports.AgentSubmission{Tool: res.Submission.Tool, Arguments: res.Submission.Arguments}
 	}
