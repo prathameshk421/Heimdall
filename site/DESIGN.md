@@ -181,7 +181,12 @@ pink-white light comes through the gap between them, and the check from the logo
 hills and a faint distant colonnade sit behind. One tiny figure walks toward the gate.
 
 - Depth comes from layered gradients, Gaussian blur on the far layers and the mist, and a grain overlay.
-- The SVG uses the art tokens, so it follows the theme. The ground fades into `--paper`, so the art has no bottom edge.
+- The columns are lit from the gap (v7.1). Each shaft has a shadow side with a little reflected light, a lit side that
+  faces the gap, fluting that is faint in shadow and bright on the lit side, and a soft shadow under the capital. Each
+  column casts a soft shadow outward on the plinth, and a pool of light lies between them. Mist rises over the bases
+  and the plinth. The far colonnade is fainter and more blurred, with haze over its base.
+- The SVG uses the art tokens, so it follows the theme. One mask fades the whole scene to transparent at the top and
+  the bottom (v7.1), so the page color and its grain show through. The art has no top or bottom edge in either theme.
 - It scales with `preserveAspectRatio="xMidYMax slice"`: wide screens see the whole plain, a 360 px phone sees the
   gate and the figure.
 - The mist drifts 24 px over 40 s and the glow breathes slowly. Under `prefers-reduced-motion: reduce` both stop.
@@ -202,5 +207,8 @@ hills and a faint distant colonnade sit behind. One tiny figure walks toward the
 - Reduced motion: the mist and glow animations stop. Reduced transparency: the grain is off.
 - Weight: the HTML with all inline assets is 62,862 bytes (16,356 gzip), up from 53,606 (13,675 gzip) in v6. The art
   is 6.4 KB of it. Total transfer with fonts is 232 KB, up from 223 KB.
+- v7.1 (22 November 2026, same browser): 0 px overflow at 1440, 834 and 360 px in both themes. Lowest text contrast
+  with worst-case grain 5.24:1 in light and 7.03:1 in dark. Every tab stop shows the 2 px ring in both themes. With
+  reduced motion the mist and glow have no animation. The art is 9.4 KB; the HTML is 65,962 bytes (16,860 gzip).
 - LCP on a local server with 150 ms latency, 1.6 Mbit/s and 4x CPU slowdown, 3 runs: v7 516 to 584 ms at 1440 px and
   504 to 556 ms at 360 px; v6 500 to 548 ms and 492 to 536 ms. The LCP element is the lede paragraph in both.
