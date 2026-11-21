@@ -344,3 +344,16 @@ func TestABaseTreeReachesTheContainerAndAnOversizedOneNeverStartsIt(t *testing.T
 	require.Equal(t, http.StatusUnprocessableEntity, status)
 	require.Nil(t, big.args, "a base archive over its bound is refused before the container runtime")
 }
+
+// A profile job runs with a read-only root, so a tool's cache must have a writable home outside the repository tree
+// (live, Nov 21: the promoted vet check failed on "mkdir /go/.cache: read-only file system").
+func TestAProfileJobHasAWritableCacheOutsideTheTree(t *testing.T) {
+	j := jobSpec{Image: goRef, Run: "go vet ./...", ResultFile: resultSARIF, Archive: "/var/jobs/a.tgz", ModuleCache: "/var/cache/mod", Timeout: 60}
+	args, err := Policy{}.profileJobArgs(j)
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(args, " "), "--tmpfs /cache:rw,nosuid,nodev,")
+	script := args[len(args)-1]
+	require.Contains(t, script, "XDG_CACHE_HOME=/cache")
+	require.Contains(t, script, "TMPDIR=/cache/tmp")
+	require.Less(t, strings.Index(script, "/cache/tmp"), strings.Index(script, `sh -c "$HEIMDALL_RUN"`), "the cache is ready before the command")
+}
