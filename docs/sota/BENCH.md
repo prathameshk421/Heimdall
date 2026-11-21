@@ -165,3 +165,22 @@ real model finds, and it is not a recall result.
   two-case run above, so the table's false-positive row has no value.
 - Python, Java, JavaScript and TypeScript cases: `review` takes valid Go cases only, for the same reason `validate`
   does (there is no runner for those languages).
+
+## Cost estimate for the live run
+
+The live run is all 10 valid Go cases (7 bug and 3 clean) on `deepseek/deepseek-v4-flash` through OpenRouter, at
+input 0.09, cached input 0.018 and output 0.18 USD per million tokens (read 2026-11-21).
+
+The fake-model run bills 72,050 input and 2,210 output tokens for two bug cases, but its script makes six short calls
+per case. A real reviewer sends the whole conversation on each turn, so the input grows with every turn. The estimate
+assumes eight turns per case, a first prompt near 15k tokens and about 6k more per turn, which is about 288k input
+and 5k output tokens per case.
+
+| Assumption | Cost for 10 cases |
+|---|---|
+| 288k input, 5k output per case, no cache reads | $0.27 |
+| The same, with 70% of the input read from the cache | $0.13 |
+| Cap that stops the run (`-max-cost 3.00`) | $3.00 |
+
+So the expected spend is $0.15 to $0.50, and the hard cap is $3.00. The estimate is `not verified` until a live run
+exists: it rests on a token count from a scripted model, not on a real one.
