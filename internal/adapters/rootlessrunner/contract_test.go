@@ -176,3 +176,22 @@ func TestARunnerStartsBeforeItsFirstPromotionAndKeepsThePromotion(t *testing.T) 
 	_, ok := again.specNamed("acme-pay")
 	require.True(t, ok, "a restarted runner reloads the promotion")
 }
+
+// A promotion whose check names an image by its short name is accepted live, so a restarted runner must load it too
+// (live, Nov 21: the runner refused to start on "sandbox image is not allowlisted: \"go\"" and took the stack down).
+func TestARestartedRunnerLoadsAPromotionWhoseCheckUsesAnImageName(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "promoted")
+	pol := Policy{Images: map[string]string{"go": goRef}}
+	r, err := NewRunner(pol, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err)
+	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n" +
+		"checks:\n  - { id: vet, lens: static, when: [\"**/*.go\"], image: go, run: go vet ./... }\n"
+	_, err = r.Activate("acme-pay", []byte(artifact))
+	require.NoError(t, err)
+
+	again, err := NewRunner(pol, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err, "the restart loads what the live promotion accepted")
+	_, ok := again.specNamed("acme-pay")
+	require.True(t, ok)
+}
