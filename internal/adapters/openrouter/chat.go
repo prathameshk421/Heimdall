@@ -3,6 +3,8 @@ package openrouter
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -117,7 +119,7 @@ func (c ChatClient) send(parent context.Context, req ports.ModelRequest, key str
 		return ports.ModelResponse{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return ports.ModelResponse{}, chatStatusError(resp, raw, len(body))
+		return ports.ModelResponse{}, chatStatusError(resp, raw, body)
 	}
 	answer, err := chatAnswer(raw, req, c.Prices)
 	answer.ToolChoice = choice
@@ -139,12 +141,26 @@ func (c ChatClient) client() *http.Client {
 	return &http.Client{Timeout: chatTimeout}
 }
 
-// chatMessage is the wire form of ports.ModelMessage. Content is always sent, empty for an assistant tool call.
+// The wire fields that carry an answer's reasoning (ports.ModelReasoning.Field holds one of them). DeepSeek and the
+// endpoints that serve it use reasoning_content; OpenRouter uses reasoning, and may add reasoning_details.
+const (
+	fieldReasoningContent = "reasoning_content"
+	fieldReasoning        = "reasoning"
+)
+
+// chatMessage is the wire form of ports.ModelMessage. Content is always sent, empty for an assistant tool call. An
+// assistant message sends its reasoning back in the field it came in, and reasoning_details unchanged. DeepSeek
+// thinking mode with tools: "the reasoning_content must be fully passed back to the API in all subsequent requests",
+// else "the API will return a 400 error" (https://api-docs.deepseek.com/guides/thinking_mode). The doc never asks for
+// an empty value on a turn without reasoning, so such a turn sends none.
 type chatMessage struct {
-	Role       string         `json:"role"`
-	Content    string         `json:"content"`
-	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Role             string          `json:"role"`
+	Content          string          `json:"content"`
+	ReasoningContent *string         `json:"reasoning_content,omitempty"`
+	Reasoning        *string         `json:"reasoning,omitempty"`
+	ReasoningDetails json.RawMessage `json:"reasoning_details,omitempty"`
+	ToolCalls        []chatToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID       string          `json:"tool_call_id,omitempty"`
 }
 
 type chatToolCall struct {
@@ -195,15 +211,21 @@ func chatRequestBody(req ports.ModelRequest, choice ports.ModelToolChoice) ([]by
 			},
 		})
 	}
-	raw, err := json.Marshal(body)
-	if err != nil {
+	// The encoder does not escape <, > and &, so reasoning_details goes back with the bytes the provider sent.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(body); err != nil {
 		return nil, fmt.Errorf("encode model chat request: %w", err)
 	}
-	return raw, nil
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
 func chatWireMessage(m ports.ModelMessage) chatMessage {
 	msg := chatMessage{Role: string(m.Role), Content: m.Content, ToolCallID: m.ToolCallID}
+	if m.Role == ports.ModelRoleAssistant {
+		setWireReasoning(&msg, m.Reasoning)
+	}
 	for _, call := range m.ToolCalls {
 		msg.ToolCalls = append(msg.ToolCalls, chatToolCall{
 			ID:       call.ID,
@@ -212,6 +234,42 @@ func chatWireMessage(m ports.ModelMessage) chatMessage {
 		})
 	}
 	return msg
+}
+
+// setWireReasoning puts the reasoning back in the field it came in, the empty text too. The text is never cut: a cut
+// value may be refused.
+func setWireReasoning(msg *chatMessage, r ports.ModelReasoning) {
+	text := r.Text
+	switch r.Field {
+	case fieldReasoningContent:
+		msg.ReasoningContent = &text
+	case fieldReasoning:
+		msg.Reasoning = &text
+	}
+	if len(r.Details) > 0 {
+		msg.ReasoningDetails = r.Details
+	}
+}
+
+// answerReasoning reads the reasoning of an answer. reasoning_content wins when an endpoint sends both text fields,
+// since DeepSeek reads that one back. A null field is no field. reasoning_details is kept compact, which is the form
+// the request encoder writes, so it goes back byte for byte.
+func answerReasoning(content, reasoning *string, details json.RawMessage) ports.ModelReasoning {
+	var out ports.ModelReasoning
+	switch {
+	case content != nil:
+		out.Text, out.Field = *content, fieldReasoningContent
+	case reasoning != nil:
+		out.Text, out.Field = *reasoning, fieldReasoning
+	}
+	trimmed := bytes.TrimSpace(details)
+	if len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null")) {
+		var compact bytes.Buffer
+		if json.Compact(&compact, trimmed) == nil {
+			out.Details = compact.Bytes()
+		}
+	}
+	return out
 }
 
 // readChatResponse reads at most maxChatResponseBytes and refuses anything longer.
@@ -230,8 +288,11 @@ func readChatResponse(r io.Reader) ([]byte, error) {
 type chatAnswerBody struct {
 	Choices []struct {
 		Message struct {
-			Content   string `json:"content"`
-			ToolCalls []struct {
+			Content          string          `json:"content"`
+			ReasoningContent *string         `json:"reasoning_content"`
+			Reasoning        *string         `json:"reasoning"`
+			ReasoningDetails json.RawMessage `json:"reasoning_details"`
+			ToolCalls        []struct {
 				ID       string `json:"id"`
 				Function struct {
 					Name      string `json:"name"`
@@ -260,8 +321,9 @@ func chatAnswer(raw []byte, req ports.ModelRequest, prices map[string]Price) (po
 	}
 	choice := body.Choices[0]
 	answer := ports.ModelResponse{
-		Content: strings.TrimSpace(choice.Message.Content),
-		Finish:  chatFinish(choice.FinishReason),
+		Content:   strings.TrimSpace(choice.Message.Content),
+		Reasoning: answerReasoning(choice.Message.ReasoningContent, choice.Message.Reasoning, choice.Message.ReasoningDetails),
+		Finish:    chatFinish(choice.FinishReason),
 		Usage: ports.ModelUsage{
 			InputTokens:       body.Usage.PromptTokens,
 			CachedInputTokens: body.Usage.PromptTokensDetails.CachedTokens,
@@ -309,9 +371,10 @@ type chatErrorBody struct {
 	} `json:"error"`
 }
 
-// chatStatusError maps a refused call to a typed error. It records the status, the content type and the size of the
-// request body, never the body itself or the key, so a refusal such as an HTML "400 Bad request" explains itself.
-func chatStatusError(resp *http.Response, raw []byte, requestBytes int) error {
+// chatStatusError maps a refused call to a typed error. It records the status, the content type, the size of the
+// request body and its SHA-256, never the body itself or the key, so a refusal such as an HTML "400 Bad request"
+// explains itself, and a refusal that repeats on the same body shows as one.
+func chatStatusError(resp *http.Response, raw, request []byte) error {
 	var body chatErrorBody
 	decoded := json.Unmarshal(raw, &body) == nil
 	message, code := "", ""
@@ -321,8 +384,9 @@ func chatStatusError(resp *http.Response, raw []byte, requestBytes int) error {
 	if message == "" {
 		message = chatErrorSnippet(raw)
 	}
-	modelErr := &ports.ModelError{Status: resp.StatusCode, ContentType: chatContentType(resp.Header), RequestBytes: requestBytes,
-		Message: message}
+	sum := sha256.Sum256(request)
+	modelErr := &ports.ModelError{Status: resp.StatusCode, ContentType: chatContentType(resp.Header), RequestBytes: len(request),
+		RequestHash: hex.EncodeToString(sum[:]), Message: message}
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
 		modelErr.Kind = ports.ModelErrorRateLimited

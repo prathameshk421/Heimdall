@@ -21,13 +21,35 @@ const (
 )
 
 // ModelMessage is one message in a model conversation. Content is the text. An assistant message may carry ToolCalls
-// instead of text, and a tool message names its call in ToolCallID.
+// instead of text, and a tool message names its call in ToolCallID. Reasoning is the reasoning the model gave with an
+// assistant answer; the caller keeps it on that message, so the adapter can send it back (AM12d).
 type ModelMessage struct {
 	Role       ModelRole
 	Content    string
 	ToolCalls  []ModelToolCall
 	ToolCallID string
+	// Reasoning is left out of the JSON form when empty, so the size of a request that callers measure with
+	// json.Marshal (the loop's worst-case guard) grows only by the reasoning a message holds.
+	Reasoning ModelReasoning `json:",omitzero"`
 }
+
+// ModelReasoning is the reasoning a model gave with one answer. It is opaque to the caller: the adapter fills it from
+// the answer and sends it back unchanged with the same assistant message in later calls. Some endpoints refuse a call
+// whose earlier assistant turns lack the reasoning they gave (DeepSeek thinking mode with tools), so a caller never
+// drops, edits or cuts it.
+//
+// Text is the reasoning text. Field is the adapter's name for where the text came from, so the adapter sends it back
+// in the same place; it is empty when the answer had no reasoning field, and set with an empty Text when the field came
+// empty, so the same empty field goes back. Details is the provider's structured reasoning, kept as the
+// raw bytes it sent and echoed back byte for byte; nil when there is none.
+type ModelReasoning struct {
+	Text    string
+	Field   string
+	Details json.RawMessage
+}
+
+// IsZero reports whether the answer carried no reasoning.
+func (r ModelReasoning) IsZero() bool { return r.Text == "" && r.Field == "" && len(r.Details) == 0 }
 
 // ModelTool is one tool the model may call. Parameters is the tool's JSON schema for its arguments.
 type ModelTool struct {
@@ -90,8 +112,11 @@ type ModelRequest struct {
 // Usage and the caller's price table, so the loop can hold a budget. ToolChoice is the choice the adapter sent, empty
 // for none. Fallback is set when the endpoint refused the requested choice and the adapter sent auto instead: it holds
 // the refusal, without the key or the request body.
+//
+// Reasoning is the reasoning the model gave with the answer. The caller stores it on the assistant message it appends.
 type ModelResponse struct {
 	Content    string
+	Reasoning  ModelReasoning `json:",omitzero"`
 	ToolCalls  []ModelToolCall
 	Finish     ModelFinish
 	Usage      ModelUsage
@@ -130,13 +155,15 @@ const (
 
 // ModelError is a model endpoint failure. Status, ContentType and Message come from the provider answer and hold no
 // credential; Message is a bounded part of the answer body. RequestBytes is the size of the request body that was
-// refused, never its content. Unwrap maps the kind to ErrUnauthorized or ErrUnavailable, so errors.Is works for the
+// refused, never its content. RequestHash is the hex SHA-256 of that body, so a caller can tell a retry of the same
+// body from a new one; it holds nothing a reader can turn back into the body. Unwrap maps the kind to ErrUnauthorized or ErrUnavailable, so errors.Is works for the
 // retry decision.
 type ModelError struct {
 	Kind         ModelErrorKind
 	Status       int
 	ContentType  string
 	RequestBytes int
+	RequestHash  string
 	RetryAfter   time.Duration
 	Message      string
 }

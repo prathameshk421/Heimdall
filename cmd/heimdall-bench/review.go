@@ -498,17 +498,20 @@ func runReviewer(ctx context.Context, o reviewOptions, model ports.ModelChat, bu
 // reviewerNudge is the fixed message the loop sends after an answer with no tool call (at most twice a case).
 const reviewerNudge = "Call a tool now. If you found no bug you can prove, call finish_review."
 
-// turnRecord is one turn of the loop in the results file. The loop already bounds it: 2 KB of text, 16 calls.
+// turnRecord is one turn of the loop in the results file. The loop already bounds it: 2 KB of text, 16 calls, and
+// 2 KB of reasoning with its full size in ReasoningBytes.
 type turnRecord struct {
-	Text       string            `json:"text,omitempty"`
-	Calls      []callRecord      `json:"calls,omitempty"`
-	ToolCalls  int               `json:"tool_calls"`
-	Finish     ports.ModelFinish `json:"finish,omitempty"`
-	TextCalls  bool              `json:"text_calls,omitempty"`
-	Nudged     bool              `json:"nudged,omitempty"`
-	ToolChoice string            `json:"tool_choice,omitempty"`
-	Fallback   string            `json:"fallback,omitempty"`
-	CostUSD    float64           `json:"cost_usd"`
+	Text           string            `json:"text,omitempty"`
+	Reasoning      string            `json:"reasoning,omitempty"`
+	ReasoningBytes int               `json:"reasoning_bytes,omitempty"`
+	Calls          []callRecord      `json:"calls,omitempty"`
+	ToolCalls      int               `json:"tool_calls"`
+	Finish         ports.ModelFinish `json:"finish,omitempty"`
+	TextCalls      bool              `json:"text_calls,omitempty"`
+	Nudged         bool              `json:"nudged,omitempty"`
+	ToolChoice     string            `json:"tool_choice,omitempty"`
+	Fallback       string            `json:"fallback,omitempty"`
+	CostUSD        float64           `json:"cost_usd"`
 	// Attempts is the number of times the call was sent, and Failed its failed attempts (kind, status, wait).
 	Attempts int             `json:"attempts,omitempty"`
 	Failed   []attemptRecord `json:"failed,omitempty"`
@@ -522,7 +525,7 @@ type callRecord struct {
 func turnRecords(turns []ports.AgentTurn) []turnRecord {
 	out := make([]turnRecord, 0, len(turns))
 	for _, t := range turns {
-		r := turnRecord{Text: t.Text, ToolCalls: t.ToolCalls, Finish: t.Finish, TextCalls: t.TextCalls, Nudged: t.Nudged,
+		r := turnRecord{Text: t.Text, Reasoning: t.Reasoning, ReasoningBytes: t.ReasoningBytes, ToolCalls: t.ToolCalls, Finish: t.Finish, TextCalls: t.TextCalls, Nudged: t.Nudged,
 			ToolChoice: string(t.ToolChoice), Fallback: t.Fallback, CostUSD: t.CostUSD, Attempts: t.Attempts,
 			Failed: attemptRecords(t.Failed)}
 		for _, c := range t.Calls {

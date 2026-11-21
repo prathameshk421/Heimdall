@@ -91,17 +91,23 @@ func (cryptoJitter) Int63n(n int64) int64 {
 	return int64(binary.BigEndian.Uint64(b[:])&math.MaxInt64) % n
 }
 
-// attemptRecord is one failed attempt of a model call in the results file.
+// attemptRecord is one failed attempt of a model call in the results file. RequestBytes and RequestSHA256 name the
+// body that was refused, never its content, and SameRequest marks an attempt that sent the same body as the one before
+// it: a refusal that repeats on it is a fault of the request, not a passing one.
 type attemptRecord struct {
-	Kind        string  `json:"kind,omitempty"`
-	Status      int     `json:"status,omitempty"`
-	WaitSeconds float64 `json:"wait_seconds,omitempty"`
+	Kind          string  `json:"kind,omitempty"`
+	Status        int     `json:"status,omitempty"`
+	RequestBytes  int     `json:"request_bytes,omitempty"`
+	RequestSHA256 string  `json:"request_sha256,omitempty"`
+	SameRequest   bool    `json:"same_request,omitempty"`
+	WaitSeconds   float64 `json:"wait_seconds,omitempty"`
 }
 
 func attemptRecords(attempts []ports.AgentAttempt) []attemptRecord {
 	var out []attemptRecord
 	for _, a := range attempts {
-		out = append(out, attemptRecord{Kind: string(a.Kind), Status: a.Status, WaitSeconds: a.Wait.Seconds()})
+		out = append(out, attemptRecord{Kind: string(a.Kind), Status: a.Status, RequestBytes: a.RequestBytes,
+			RequestSHA256: a.RequestHash, SameRequest: a.SameRequest, WaitSeconds: a.Wait.Seconds()})
 	}
 	return out
 }

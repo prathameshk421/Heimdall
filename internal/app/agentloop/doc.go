@@ -68,7 +68,12 @@
 //
 // Each turn keeps a bounded transcript in ports.AgentTurn: the first 2 KB of the text, the first 16 calls (name and
 // argument size), the finish reason, the tool choice and fallback the port reported, and whether the calls were read
-// from text or the loop nudged after the answer.
+// from text or the loop nudged after the answer. It also keeps the first 2 KB of the answer's reasoning and its full
+// size.
+//
+// The conversation keeps each answer's ports.ModelReasoning on its assistant message, whole, also when the calls were
+// read from the text or the loop nudged after it. An endpoint in thinking mode with tools refuses a call whose earlier
+// turns lack it (AM12d). The reasoning counts toward no new cap: the provider bills it as output.
 //
 // # Retries
 //
@@ -81,7 +86,8 @@
 // caller and the deadline; the cost the provider billed for the failed attempt, which is added once (most failures
 // bill nothing and report nothing); the retry rule; that the wait ends before the deadline (else StopDeadline, with no
 // wait); and the worst-case budget guard for the next attempt (else StopBudget, with no wait). A retried call is one
-// turn. The turn records Attempts and one ports.AgentAttempt (kind, status, wait) per failed attempt. Result.Retries
+// turn. The turn records Attempts and one ports.AgentAttempt (kind, status, request size and hash, wait) per failed
+// attempt; SameRequest marks an attempt whose body hash equals the attempt before it. Result.Retries
 // counts the retries of the run, and Result.FailedCall holds the attempts of the call that ended it. The bench stops a
 // whole run when several calls in a row fail after their retries (cmd/heimdall-bench, the provider breaker).
 //
@@ -102,6 +108,7 @@
 // no time for the wait, a cancel during the wait, the budget guard on a retry after a billed failure, usage that
 // cannot be true on a failure, ordinary 4xx and other errors with no retry, and the Runner through the port.
 // robust_test.go covers text calls, nudges against the turn and budget caps, the tool choice and its fallback, and
-// the bounded transcript. textcall_test.go covers each text format, the refusals, the bounds and a fuzz target.
+// the bounded transcript. reasoning_test.go covers the reasoning kept through tool calls, text calls and nudges, its
+// 2 KB record, and the same-body mark on failed attempts. textcall_test.go covers each text format, the refusals, the bounds and a fuzz target.
 // runner_test.go is the contract test of ports.AgentLoop, run through the port only.
 package agentloop

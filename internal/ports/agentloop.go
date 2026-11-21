@@ -160,15 +160,23 @@ type AgentTurn struct {
 	// (rate limited or a server error). Failed holds one entry per failed attempt, in order.
 	Attempts int
 	Failed   []AgentAttempt
+	// Reasoning is the first 2 KB of the reasoning the model gave with the answer, and ReasoningBytes its full size.
+	// The conversation keeps the whole reasoning; only this record is cut.
+	Reasoning      string
+	ReasoningBytes int
 }
 
-// AgentAttempt is one failed attempt of a model call. Kind and Status come from the *ModelError, and are empty for
-// another error. Wait is the pause before the next attempt, read from the retry rule; it is zero when no attempt
-// followed.
+// AgentAttempt is one failed attempt of a model call. Kind, Status, RequestBytes and RequestHash come from the
+// *ModelError, and are empty for another error. SameRequest is set when the attempt sent a body with the same hash as
+// the failed attempt before it, so a refusal that repeats on an identical body shows at once. Wait is the pause before
+// the next attempt, read from the retry rule; it is zero when no attempt followed.
 type AgentAttempt struct {
-	Kind   ModelErrorKind
-	Status int
-	Wait   time.Duration
+	Kind         ModelErrorKind
+	Status       int
+	RequestBytes int
+	RequestHash  string
+	SameRequest  bool
+	Wait         time.Duration
 }
 
 // AgentCallBrief is one tool call in the bounded transcript: its name and the size of its arguments in bytes.
