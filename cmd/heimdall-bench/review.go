@@ -305,23 +305,8 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 	}
 	defer rep.close(ctx)
 	rc.Head, rc.Base, rc.Fixed, rc.Truth = rep.head, rep.base, rep.fixed, rep.truth
-	runner, err := agentloop.NewRunner(model, clock.System{}, ports.ModelPrice{InputPerM: o.price.InputPerM,
-		CachedInputPerM: o.price.CachedInputPerM, OutputPerM: o.price.OutputPerM})
-	if err != nil {
-		rc.Error = "agent loop: " + err.Error()
-		return rc, false
-	}
-	tb := newToolbox(append(rep.tools(), finishReview()))
-	res, runErr := runner.Run(ctx, ports.AgentRun{Model: o.model, System: reviewerPrompt, User: reviewerUser(c, rep),
-		Tools: tb.specs(), FinalTools: []string{finalTool}, Dispatcher: tb,
-		Budget:          ports.AgentBudget{USD: budget, InputTokens: inputTokensPerCase, OutputTokens: outputTokensPerCas},
-		MaxOutputTokens: maxOutputPerAnswer, MaxTurns: maxTurnsPerCase, Deadline: time.Now().Add(caseDeadline)})
-	rc.Stop, rc.Turns, rc.CostUSD = res.Stop, len(res.Turns), res.CostUSD
-	rc.InputTokens, rc.CachedTokens, rc.OutputTokens = res.Usage.InputTokens, res.Usage.CachedInputTokens, res.Usage.OutputTokens
-	for _, t := range res.Turns {
-		rc.ModelSeconds += t.ModelLatency.Seconds()
-		rc.ToolSeconds += t.ToolLatency.Seconds()
-	}
+	res, runErr := runReviewer(ctx, o, model, budget, c, rep)
+	rc.recordLoop(res)
 	if runErr != nil {
 		rc.Error = runErr.Error()
 		return rc, errors.Is(runErr, bench.ErrCostCap)
@@ -338,6 +323,31 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 	score.CostUSD, score.InputTokens, score.CachedTokens, score.OutputTokens = rc.CostUSD, rc.InputTokens, rc.CachedTokens, rc.OutputTokens
 	rc.CaseScore = score
 	return rc, false
+}
+
+// runReviewer runs the reviewer through the product's agent loop (internal/app/agentloop, behind ports.AgentLoop), with
+// the per-case budget, so the bench measures the loop that ships.
+func runReviewer(ctx context.Context, o reviewOptions, model ports.ModelChat, budget float64, c bench.Case, rep *replay) (ports.AgentResult, error) {
+	loop, err := agentloop.NewRunner(model, clock.System{}, ports.ModelPrice{InputPerM: o.price.InputPerM,
+		CachedInputPerM: o.price.CachedInputPerM, OutputPerM: o.price.OutputPerM})
+	if err != nil {
+		return ports.AgentResult{}, fmt.Errorf("agent loop: %w", err)
+	}
+	tb := newToolbox(append(rep.tools(), finishReview()))
+	return loop.Run(ctx, ports.AgentRun{Model: o.model, System: reviewerPrompt, User: reviewerUser(c, rep),
+		Tools: tb.specs(), FinalTools: []string{finalTool}, Dispatcher: tb,
+		Budget:          ports.AgentBudget{USD: budget, InputTokens: inputTokensPerCase, OutputTokens: outputTokensPerCas},
+		MaxOutputTokens: maxOutputPerAnswer, MaxTurns: maxTurnsPerCase, Deadline: time.Now().Add(caseDeadline)})
+}
+
+// recordLoop copies what the loop reported into the case: how it stopped, the turns, the cost, the tokens and the time.
+func (rc *reviewCase) recordLoop(res ports.AgentResult) {
+	rc.Stop, rc.Turns, rc.CostUSD = res.Stop, len(res.Turns), res.CostUSD
+	rc.InputTokens, rc.CachedTokens, rc.OutputTokens = res.Usage.InputTokens, res.Usage.CachedInputTokens, res.Usage.OutputTokens
+	for _, t := range res.Turns {
+		rc.ModelSeconds += t.ModelLatency.Seconds()
+		rc.ToolSeconds += t.ToolLatency.Seconds()
+	}
 }
 
 // reviewerPrompt is the reviewer's system prompt. It states the task and the proof rule, not how to reason.
