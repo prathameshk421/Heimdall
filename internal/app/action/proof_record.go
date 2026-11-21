@@ -86,18 +86,23 @@ func (g *Gate) recordProofOnce(ctx context.Context, in ProofRecordIn) (ProofReco
 		rec.Version = int64(len(r.events))
 		return rec, nil
 	}
-	evs, err := r.proofEvents(a)
-	if err != nil {
+	if err := r.recordArtifact(ctx, a); err != nil {
 		return rec, err
 	}
-	if err := r.appendEvents(ctx, evs...); err != nil {
-		return rec, err
-	}
-	for _, e := range evs {
-		rec.Appended = append(rec.Appended, e.Type)
-	}
+	rec.Appended = r.res.Appended
 	rec.Version = int64(len(r.events))
 	return rec, nil
+}
+
+// recordArtifact appends the records of one proof result: proof.reported and, when the run spent money, cost.recorded.
+// It is the one write of a proof result. RecordProof calls it for an artifact the gate read, and Gate.Run calls it for
+// the result a row asks it to make itself (a trivial skip, an unknown), so the log holds the same events either way.
+func (r *run) recordArtifact(ctx context.Context, a ProofArtifact) error {
+	evs, err := r.proofEvents(a)
+	if err != nil {
+		return err
+	}
+	return r.appendEvents(ctx, evs...)
 }
 
 // unknownArtifact is the record of a run whose artifact the gate does not believe: unknown, no result, no cost. The

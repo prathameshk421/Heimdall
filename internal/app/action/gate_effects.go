@@ -21,8 +21,9 @@ import (
 
 // apply runs the effects of the rows and reports whether it appended an event, which is the only progress the fold can
 // see. The check runs go first, so a crash between the two writes of the publish row repeats an idempotent check post
-// rather than losing it. A row whose effect this task does not own (the proof run) is left alone: its events run in
-// the proof use case (AM14b).
+// rather than losing it. The proof rows that record a result the gate makes itself (a trivial skip, an unknown) are
+// run here too, through the same write as RecordProof. The result of a real proof run is not made here: RecordProof
+// reads its artifact.
 func (r *run) apply(ctx context.Context, rows []actionflow.Row) (bool, error) {
 	for _, row := range rows {
 		for _, fx := range row.Effects {
@@ -65,11 +66,44 @@ func (r *run) effect(ctx context.Context, fx actionflow.Effect) (bool, error) {
 		// The rows ask for a reset only when the decision input says the log failed. This run reset it before it read
 		// the log, so a second reset here would drop the facts it just made.
 		return false, nil
-	case actionflow.SkipProof, actionflow.ReportProofUnknown:
-		// The proof use case owns these records (AM14b). The gate reads the result the log holds and nothing more.
-		return false, nil
+	case actionflow.SkipProof:
+		return r.recordSkip(ctx, fx)
+	case actionflow.ReportProofUnknown:
+		return r.recordUnknown(ctx, fx)
 	}
 	return false, nil
+}
+
+// recordSkip records proof.reported with the kind skipped_trivial at $0, for a change the trivial rule skips. The
+// skip has no model call, so it has no model id and no cost, and its run is this gate run.
+func (r *run) recordSkip(ctx context.Context, fx actionflow.SkipProof) (bool, error) {
+	if fx.Head != r.head || fx.Base != r.base {
+		return false, nil
+	}
+	if r.in.WorkflowRun <= 0 {
+		return false, fmt.Errorf("action gate on %s: recording a trivial skip needs the workflow run id of this run", r.in.ChangeID)
+	}
+	a := ProofArtifact{Head: fx.Head, Base: fx.Base, PolicyHash: fx.PolicyHash, WorkflowRun: r.in.WorkflowRun,
+		Kind: proof.KindSkippedTrivial}
+	return true, r.recordArtifact(ctx, a)
+}
+
+// recordUnknown records proof.reported with the kind unknown and the reason the row names. It closes the run the row
+// names, or this gate run when the row names none. The log then says "no result" for a head whose proof never came.
+func (r *run) recordUnknown(ctx context.Context, fx actionflow.ReportProofUnknown) (bool, error) {
+	if fx.Head != r.head || fx.Base != r.base {
+		return false, nil
+	}
+	runID := fx.WorkflowRun
+	if runID <= 0 {
+		runID = r.in.WorkflowRun
+	}
+	if runID <= 0 {
+		return false, fmt.Errorf("action gate on %s: recording an unknown proof result needs a workflow run id", r.in.ChangeID)
+	}
+	a := unknownArtifact(r, ArtifactKey{Head: fx.Head, Base: fx.Base, PolicyHash: fx.PolicyHash, WorkflowRun: runID})
+	a.Reason = fx.Reason
+	return true, r.recordArtifact(ctx, a)
 }
 
 // runFast records the fast check it just made. The result is already in hand, so this effect never re-reads GitHub.

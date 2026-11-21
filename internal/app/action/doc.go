@@ -58,7 +58,10 @@
 //  4. Call actionflow.Decide with HeadAt set to the time the head was observed (the last pr.opened or pr.pushed event),
 //     so the sweep row can tell how long a proof result has waited.
 //  5. Run the effects the rows ask for: append the events, post the two check runs, and post or update the summary
-//     comment. A proof row's effects are left to RecordProof.
+//     comment. A proof row that asks for a result the gate makes itself is run here: a trivial change records its skip
+//     at $0 (actionflow.SkipProof), and a head whose proof never reported records unknown (actionflow.ReportProofUnknown:
+//     the sweep, a changed proof workflow, the monthly cap). Both go through the write RecordProof uses and name
+//     RunIn.WorkflowRun, or the run they close. A real proof run's result is left to RecordProof.
 //
 // # Invariants
 //
