@@ -1,0 +1,29 @@
+{
+  "comment": {
+    "id": 1002,
+    "body": "_⚠️ Potential issue_ | _🔴 Critical_\n\n**SQL built by string concatenation.**\n\nThe `name` argument goes into the query text, so a quote in it changes the statement. [![Severity](https://img.shields.io/badge/sev-critical-red)](https://example.test/docs)\n\n<!-- fingerprinting:phantom:medusa:grasshopper -->\n<!-- This is an auto-generated comment by CodeRabbit -->",
+    "path": "store/users.go",
+    "line": 17,
+    "original_line": 17,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "position": 4,
+    "user": {"login": "coderabbitai[bot]", "type": "Bot"}
+  },
+  "want": {
+    "outcome": "candidate",
+    "tool": "coderabbit",
+    "candidate": {
+      "tool": "coderabbit",
+      "comment_id": 1002,
+      "path": "store/users.go",
+      "start_line": 17,
+      "end_line": 17,
+      "side": "RIGHT",
+      "claim": "SQL built by string concatenation. The `name` argument goes into the query text, so a quote in it changes the statement.",
+      "severity": "critical",
+      "severity_stated": true,
+      "style": false
+    }
+  }
+}

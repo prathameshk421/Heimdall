@@ -1,0 +1,29 @@
+{
+  "comment": {
+    "id": 4002,
+    "body": "**style:** The name `tmp2` does not say what the value holds.\n\n```suggestion\nnextPage := tmp2\n```\n\n<sub>Reviews (1): Last reviewed commit: \"add paging\"</sub>",
+    "path": "api/page.go",
+    "line": 40,
+    "original_line": 40,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "position": 13,
+    "user": {"login": "greptile-apps[bot]", "type": "Bot"}
+  },
+  "want": {
+    "outcome": "candidate",
+    "tool": "greptile",
+    "candidate": {
+      "tool": "greptile",
+      "comment_id": 4002,
+      "path": "api/page.go",
+      "start_line": 40,
+      "end_line": 40,
+      "side": "RIGHT",
+      "claim": "The name `tmp2` does not say what the value holds.",
+      "severity": "medium",
+      "severity_stated": false,
+      "style": true
+    }
+  }
+}

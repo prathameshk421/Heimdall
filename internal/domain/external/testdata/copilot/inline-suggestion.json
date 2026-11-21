@@ -1,0 +1,31 @@
+{
+  "comment": {
+    "id": 2002,
+    "body": "The error from `Close` is dropped here, so a failed flush is lost.\n\n```suggestion\nif err := w.Close(); err != nil {\n\treturn err\n}\n```",
+    "path": "internal/out/writer.go",
+    "line": 58,
+    "start_line": 56,
+    "original_line": 58,
+    "original_start_line": 56,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "position": 7,
+    "user": {"login": "copilot-pull-request-reviewer[bot]", "type": "Bot"}
+  },
+  "want": {
+    "outcome": "candidate",
+    "tool": "copilot",
+    "candidate": {
+      "tool": "copilot",
+      "comment_id": 2002,
+      "path": "internal/out/writer.go",
+      "start_line": 56,
+      "end_line": 58,
+      "side": "RIGHT",
+      "claim": "The error from `Close` is dropped here, so a failed flush is lost.",
+      "severity": "medium",
+      "severity_stated": false,
+      "style": false
+    }
+  }
+}
