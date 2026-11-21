@@ -56,6 +56,10 @@ const (
 	// event ingest after it. With the 20 s default the run was cut and the ingest after it timed out on every retry, so
 	// E1 findings dropped to E4 or never settled (KAN-23, Nov 8).
 	verifyEvidenceTimeout = 5 * time.Minute
+	// runChecksTimeout bounds a run_checks effect: a source fetch, the profile's checks on the head (each up to 5
+	// minutes, effects.checkTimeout) and the checks.reported ingest. With the 20 s default the vet and golangci-lint run
+	// used the whole budget and the ingest timed out on every retry, so review never started (PR #18, Nov 21, D187).
+	runChecksTimeout = 12 * time.Minute
 	// outboxLease is how long a claimed effect stays leased to one drainer. It must exceed outboxBatch times the longest
 	// effect timeout (outbox.New). An effect that was running when the server stopped is in doubt and is not re-run on
 	// lease expiry (T22), so a long lease does not delay recovery.
@@ -614,6 +618,7 @@ func newDrainer(d deps, store *postgres.Store, execs map[change.EffectKind]outbo
 		KindTimeouts: map[change.EffectKind]time.Duration{
 			change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout,
 			change.EffectVerifyEvidence: verifyEvidenceTimeout,
+			change.EffectRunChecks:      runChecksTimeout,
 			change.EffectProfileTrial:   testQualityTimeout, // a trial runs the profile's tests in the sandbox, like acceptance
 		},
 	})
