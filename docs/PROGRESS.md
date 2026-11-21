@@ -57,6 +57,9 @@ Notes for H9 (from H8):
 - `review.submitted.lead_checks` is still not set (owed by H7); `finding.runCited` in the submit rules reads leads, so wire it when the review flow is tested end to end (H10).
 - `EffectAgentReset` is gone (D172, `435f23f`). Traced Nov 21 (D9 in `LIVE_RUN_H11.md`): Switch resets a session only through a gateway user route or a typed `!reset`; Heimdall, as an agent, has neither. Owner decision. The Switch source is not at `~/.t3/projects/switchthon/switch`; it is readable inside the `switch-switch-1` container on the VM (`switch_core`).
 
+### Noticed (H13, Nov 21)
+- **Deploy outage, 19:06 to 19:17 UTC (about 11 min).** An SSH drop cut the `scp` of the server short; `hot-deploy.sh` installed the truncated 5.7 MB file, the server container restart-looped and compose failed. Recovered by keeping the last good binary as `heimdall-server.good-1544`, copying again (hash checked), and running the script detached with `nohup`. `hot-deploy.sh` checks no hash or size of the `.new` files; it should refuse a file whose SHA-256 differs from one the caller passes (a `scripts/` change: guarded, owner's call). Deployed `daafd9d` (D184 `reprofile`): server `e8bb983f`, runner `9b7fa578`, `/healthz` ok, no new warnings.
+
 ### Noticed (H11, Nov 20)
 - A second, new PR for a ticket whose first PR closed without a merge still folds into the ended change: intake allows it (`checkSecondPR` skips over changes), but nothing reopens the change. D8 covers only a reopen of the same PR.
 - `scripts/ops/install-agent-configs.sh` writes `{env:DEPLOY_API_KEY}` without checking that the agent units have that variable (B4). A guard that checks the variable name in the unit environment before rewriting would have caught it.
