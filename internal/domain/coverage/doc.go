@@ -51,6 +51,9 @@
 //     repeated separator are removed, and a path that leaves the root is refused. Options.Prefix is
 //     removed after that, so an absolute runner path or a Go module path becomes the path a diff has.
 //     Diff normalizes changed paths the same way, so ./a.go and a.go are one file.
+//   - A Go block spans the lines from its start to its end position, and the end position is exclusive. A block
+//     that ends at column 1 of a later line holds no character of that line, so that line is left out. This is
+//     how a closing brace on its own line stays outside the block, as `go tool cover -html` shows it.
 //   - A path or line that appears twice in one report is merged: hit counts add. That is how a merged
 //     LCOV report and a Go block that spans one line twice behave.
 //   - MaxLine bounds one line number and MaxLines bounds the instrumented lines of one report, so a small
@@ -77,6 +80,11 @@
 //     its expected line number, the prefix and Windows path cases, the inclusive size limit, and
 //     FuzzParseLCOV and FuzzParseGoCover, which must never panic. The Cobertura golden, refusals and
 //     fuzz target are in internal/adapters/coverage.
+//   - real_test.go: real reports from google/uuid and spf13/cobra (Go cover, set and atomic), tj/commander
+//     (c8), vercel/ms (Jest) and attrs and more-itertools (coverage.py lcov) in testdata/real. Parser totals
+//     against the tools' own summaries, diffs built from the projects' git history, a wrong prefix that makes
+//     a report not measurable, and the same report with absolute, ./ and Windows paths.
+//     docs/product/research/12-coverage-real-reports.md has the commands and results.
 //   - coverage_test.go: the diff arithmetic table, the duplicate-line and path-normalization cases, the
 //     missing-file and Measurable cases (a file the report never names, a prefix that makes every file
 //     missing, a named file with only non-instrumented lines, the empty diff), the percentage

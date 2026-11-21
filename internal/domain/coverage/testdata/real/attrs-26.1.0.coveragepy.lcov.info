@@ -1,0 +1,3063 @@
+SF:src/attr/__init__.py
+DA:7,1
+DA:8,1
+DA:10,1
+DA:11,1
+DA:12,1
+DA:13,1
+DA:14,1
+DA:28,1
+DA:29,1
+DA:32,1
+DA:33,1
+DA:34,1
+DA:37,1
+DA:38,1
+DA:41,1
+DA:43,1
+DA:81,1
+DA:87,1
+DA:88,1
+DA:89,1
+DA:90,1
+DA:92,1
+DA:94,1
+DA:96,1
+DA:97,1
+DA:99,1
+DA:101,1
+DA:104,1
+LF:28
+LH:28
+FN:81,101,_make_getattr
+FNDA:1,_make_getattr
+FN:87,99,_make_getattr.__getattr__
+FNDA:1,_make_getattr.__getattr__
+FNF:2
+FNH:2
+BRDA:88,0,jump to line 89,1
+BRDA:88,0,jump to line 92,1
+BRDA:96,0,jump to line 97,1
+BRDA:96,0,jump to line 99,1
+BRF:4
+BRH:4
+end_of_record
+SF:src/attr/_cmp.py
+DA:4,1
+DA:5,1
+DA:7,1
+DA:10,1
+DA:13,1
+DA:60,1
+DA:68,1
+DA:69,1
+DA:71,1
+DA:72,1
+DA:73,1
+DA:74,1
+DA:76,1
+DA:77,1
+DA:78,1
+DA:80,1
+DA:81,1
+DA:82,1
+DA:84,1
+DA:85,1
+DA:86,1
+DA:88,1
+DA:89,1
+DA:90,1
+DA:92,1
+DA:97,1
+DA:98,1
+DA:101,1
+DA:102,1
+DA:105,1
+DA:106,1
+DA:107,1
+DA:109,1
+DA:112,1
+DA:117,1
+DA:121,1
+DA:123,1
+DA:126,1
+DA:131,1
+DA:132,1
+DA:133,1
+DA:135,1
+DA:136,1
+DA:137,1
+DA:139,1
+DA:141,1
+DA:142,1
+DA:146,1
+DA:149,1
+DA:153,1
+DA:156,1
+DA:160,1
+LF:52
+LH:52
+FN:13,109,cmp_using
+FNDA:1,cmp_using
+FN:112,123,_make_init
+FNDA:1,_make_init
+FN:117,121,_make_init.__init__
+FNDA:1,_make_init.__init__
+FN:126,146,_make_operator
+FNDA:1,_make_operator
+FN:131,139,_make_operator.method
+FNDA:1,_make_operator.method
+FN:149,153,_is_comparable_to
+FNDA:1,_is_comparable_to
+FN:156,160,_check_same_type
+FNDA:1,_check_same_type
+FNF:7
+FNH:7
+BRDA:71,0,jump to line 72,1
+BRDA:71,0,jump to line 76,1
+BRDA:76,0,jump to line 77,1
+BRDA:76,0,jump to line 80,1
+BRDA:80,0,jump to line 81,1
+BRDA:80,0,jump to line 84,1
+BRDA:84,0,jump to line 85,1
+BRDA:84,0,jump to line 88,1
+BRDA:88,0,jump to line 89,1
+BRDA:88,0,jump to line 92,1
+BRDA:97,0,jump to line 98,1
+BRDA:97,0,jump to line 101,1
+BRDA:101,0,jump to line 102,1
+BRDA:101,0,jump to line 109,1
+BRDA:102,0,jump to line 105,1
+BRDA:102,0,jump to line 107,1
+BRDA:132,0,jump to line 133,1
+BRDA:132,0,jump to line 135,1
+BRDA:136,0,jump to line 137,1
+BRDA:136,0,jump to line 139,1
+BRF:20
+BRH:20
+end_of_record
+SF:src/attr/_compat.py
+DA:3,1
+DA:4,1
+DA:5,1
+DA:6,1
+DA:8,1
+DA:9,1
+DA:12,1
+DA:13,1
+DA:14,1
+DA:15,1
+DA:16,1
+DA:17,1
+DA:20,1
+DA:21,1
+DA:26,1
+DA:27,1
+DA:33,0
+DA:37,0
+DA:40,1
+DA:46,1
+DA:48,1
+DA:49,1
+DA:50,1
+DA:51,1
+DA:52,1
+DA:54,1
+DA:58,1
+DA:59,1
+DA:61,1
+DA:62,1
+DA:63,1
+DA:65,1
+DA:67,1
+DA:71,1
+DA:75,1
+DA:77,1
+DA:92,1
+DA:95,1
+DA:97,1
+DA:98,1
+DA:99,1
+LF:41
+LH:39
+FN:26,29,_get_annotations
+FNDA:1,_get_annotations
+FN:33,37,_get_annotations@33
+FNDA:0,_get_annotations@33
+FN:48,52,_AnnotationExtractor.__init__
+FNDA:1,_AnnotationExtractor.__init__
+FN:54,65,_AnnotationExtractor.get_first_param_type
+FNDA:1,_AnnotationExtractor.get_first_param_type
+FN:67,77,_AnnotationExtractor.get_return_type
+FNDA:1,_AnnotationExtractor.get_return_type
+FN:95,99,get_generic_base
+FNDA:1,get_generic_base
+FNF:6
+FNH:5
+BRDA:20,0,jump to line 21,1
+BRDA:20,0,jump to line 33,0
+BRDA:58,0,jump to line 59,1
+BRDA:58,0,jump to line 61,1
+BRDA:62,0,jump to line 63,1
+BRDA:62,0,jump to line 65,1
+BRDA:71,0,jump to line 75,1
+BRDA:71,0,jump to line 77,1
+BRDA:97,0,jump to line 98,1
+BRDA:97,0,jump to line 99,1
+BRF:10
+BRH:9
+end_of_record
+SF:src/attr/_config.py
+DA:3,1
+DA:5,1
+DA:8,1
+DA:16,1
+DA:17,1
+DA:18,1
+DA:20,1
+DA:23,1
+DA:31,1
+LF:9
+LH:9
+FN:8,20,set_run_validators
+FNDA:1,set_run_validators
+FN:23,31,get_run_validators
+FNDA:1,get_run_validators
+FNF:2
+FNH:2
+BRDA:16,0,jump to line 17,1
+BRDA:16,0,jump to line 20,1
+BRF:2
+BRH:2
+end_of_record
+SF:src/attr/_funcs.py
+DA:4,1
+DA:6,1
+DA:7,1
+DA:8,1
+DA:11,1
+DA:28,1
+DA:80,1
+DA:81,1
+DA:82,1
+DA:83,1
+DA:84,1
+DA:85,1
+DA:87,1
+DA:88,1
+DA:90,1
+DA:91,1
+DA:92,1
+DA:93,1
+DA:94,1
+DA:95,1
+DA:103,1
+DA:104,1
+DA:105,1
+DA:116,1
+DA:117,1
+DA:118,1
+DA:119,1
+DA:120,1
+DA:123,1
+DA:124,1
+DA:125,1
+DA:126,1
+DA:148,1
+DA:150,1
+DA:151,1
+DA:154,1
+DA:165,1
+DA:166,1
+DA:167,1
+DA:168,1
+DA:169,1
+DA:170,1
+DA:172,1
+DA:180,1
+DA:181,1
+DA:182,1
+DA:183,1
+DA:184,1
+DA:186,1
+DA:188,1
+DA:201,1
+DA:202,1
+DA:203,1
+DA:225,1
+DA:226,1
+DA:227,1
+DA:229,1
+DA:232,1
+DA:274,1
+DA:275,1
+DA:276,1
+DA:277,1
+DA:278,1
+DA:279,1
+DA:280,1
+DA:281,1
+DA:282,1
+DA:283,1
+DA:284,1
+DA:285,1
+DA:286,1
+DA:295,1
+DA:296,1
+DA:297,1
+DA:311,1
+DA:312,1
+DA:313,1
+DA:314,1
+DA:315,1
+DA:318,1
+DA:319,1
+DA:320,1
+DA:321,1
+DA:347,1
+DA:349,1
+DA:351,1
+DA:354,1
+DA:367,1
+DA:368,1
+DA:369,1
+DA:372,1
+DA:373,1
+DA:374,1
+DA:375,1
+DA:377,1
+DA:378,1
+DA:379,1
+DA:382,1
+DA:414,1
+DA:415,1
+DA:416,1
+DA:417,1
+DA:418,1
+DA:419,1
+DA:420,1
+DA:421,1
+DA:422,1
+DA:425,1
+DA:478,1
+DA:479,1
+DA:481,1
+DA:487,1
+DA:488,1
+DA:489,1
+DA:491,1
+DA:494,1
+DA:497,1
+LF:117
+LH:117
+FN:28,151,asdict
+FNDA:1,asdict
+FN:154,229,_asdict_anything
+FNDA:1,_asdict_anything
+FN:232,351,astuple
+FNDA:1,astuple
+FN:354,379,has
+FNDA:1,has
+FN:382,422,assoc
+FNDA:1,assoc
+FN:425,497,resolve_types
+FNDA:1,resolve_types
+FNF:6
+FNH:6
+BRDA:82,0,jump to line 83,1
+BRDA:82,0,jump to line 151,1
+BRDA:84,0,jump to line 85,1
+BRDA:84,0,jump to line 87,1
+BRDA:87,0,jump to line 88,1
+BRDA:87,0,jump to line 90,1
+BRDA:90,0,jump to line 91,1
+BRDA:90,0,jump to line 150,1
+BRDA:92,0,jump to line 93,1
+BRDA:92,0,jump to line 94,1
+BRDA:94,0,jump to line 95,1
+BRDA:94,0,jump to line 103,1
+BRDA:103,0,jump to line 104,1
+BRDA:103,0,jump to line 124,1
+BRDA:119,0,jump to line 120,1
+BRDA:119,0,jump to line 123,1
+BRDA:124,0,jump to line 125,1
+BRDA:124,0,jump to line 148,1
+BRDA:166,0,jump to line 167,1
+BRDA:166,0,jump to line 170,1
+BRDA:168,0,jump to line 169,1
+BRDA:168,0,jump to line 229,1
+BRDA:170,0,jump to line 172,1
+BRDA:170,0,jump to line 180,1
+BRDA:180,0,jump to line 181,1
+BRDA:180,0,jump to line 201,1
+BRDA:181,0,jump to line 182,1
+BRDA:181,0,jump to line 183,1
+BRDA:183,0,jump to line 184,1
+BRDA:183,0,jump to line 186,1
+BRDA:201,0,jump to line 202,1
+BRDA:201,0,jump to line 225,1
+BRDA:226,0,jump to line 227,1
+BRDA:226,0,jump to line 229,1
+BRDA:277,0,jump to line 278,1
+BRDA:277,0,jump to line 351,1
+BRDA:279,0,jump to line 280,1
+BRDA:279,0,jump to line 281,1
+BRDA:282,0,jump to line 283,1
+BRDA:282,0,jump to line 349,1
+BRDA:283,0,jump to line 284,1
+BRDA:283,0,jump to line 285,1
+BRDA:285,0,jump to line 286,1
+BRDA:285,0,jump to line 295,1
+BRDA:295,0,jump to line 296,1
+BRDA:295,0,jump to line 319,1
+BRDA:314,0,jump to line 315,1
+BRDA:314,0,jump to line 318,1
+BRDA:319,0,jump to line 320,1
+BRDA:319,0,jump to line 347,1
+BRDA:368,0,jump to line 369,1
+BRDA:368,0,jump to line 372,1
+BRDA:373,0,jump to line 374,1
+BRDA:373,0,jump to line 379,1
+BRDA:375,0,jump to line 377,1
+BRDA:375,0,jump to line 378,1
+BRDA:416,0,jump to line 417,1
+BRDA:416,0,jump to line 422,1
+BRDA:418,0,jump to line 419,1
+BRDA:418,0,jump to line 421,1
+BRDA:478,0,jump to line 479,1
+BRDA:478,0,jump to line 497,1
+BRDA:488,0,jump to line 489,1
+BRDA:488,0,jump to line 494,1
+BRDA:489,0,jump to line 488,1
+BRDA:489,0,jump to line 491,1
+BRF:66
+BRH:66
+end_of_record
+SF:src/attr/_make.py
+DA:3,1
+DA:5,1
+DA:6,1
+DA:7,1
+DA:8,1
+DA:9,1
+DA:10,1
+DA:11,1
+DA:12,1
+DA:13,1
+DA:14,1
+DA:15,1
+DA:17,1
+DA:18,1
+DA:19,1
+DA:23,1
+DA:24,1
+DA:32,1
+DA:41,1
+DA:42,1
+DA:43,1
+DA:52,1
+DA:54,1
+DA:57,1
+DA:59,1
+DA:62,1
+DA:73,1
+DA:75,1
+DA:76,1
+DA:78,1
+DA:79,1
+DA:82,1
+DA:83,1
+DA:90,1
+DA:102,1
+DA:103,1
+DA:106,1
+DA:164,1
+DA:168,1
+DA:169,1
+DA:170,1
+DA:172,1
+DA:173,1
+DA:174,1
+DA:177,1
+DA:178,1
+DA:179,1
+DA:180,1
+DA:181,1
+DA:183,1
+DA:184,1
+DA:187,1
+DA:188,1
+DA:190,1
+DA:191,1
+DA:193,1
+DA:194,1
+DA:196,1
+DA:216,1
+DA:226,1
+DA:227,1
+DA:230,1
+DA:240,1
+DA:244,1
+DA:245,1
+DA:246,1
+DA:247,1
+DA:253,1
+DA:254,1
+DA:255,1
+DA:257,1
+DA:258,1
+DA:260,1
+DA:262,1
+DA:265,1
+DA:275,1
+DA:276,1
+DA:277,1
+DA:279,1
+DA:280,1
+DA:282,1
+DA:283,1
+DA:288,1
+DA:289,1
+DA:290,1
+DA:291,1
+DA:294,1
+DA:302,1
+DA:305,1
+DA:306,1
+DA:308,1
+DA:311,1
+DA:315,1
+DA:318,1
+DA:324,1
+DA:325,1
+DA:328,1
+DA:329,1
+DA:330,1
+DA:331,1
+DA:333,1
+DA:334,1
+DA:335,1
+DA:340,1
+DA:341,1
+DA:342,1
+DA:343,1
+DA:344,1
+DA:345,1
+DA:346,1
+DA:348,1
+DA:351,1
+DA:362,1
+DA:363,1
+DA:366,1
+DA:367,1
+DA:368,1
+DA:369,1
+DA:371,1
+DA:372,1
+DA:373,1
+DA:374,1
+DA:376,1
+DA:379,1
+DA:397,1
+DA:398,1
+DA:400,1
+DA:401,1
+DA:402,1
+DA:403,1
+DA:408,1
+DA:409,1
+DA:410,1
+DA:411,1
+DA:412,1
+DA:413,1
+DA:414,1
+DA:416,1
+DA:417,1
+DA:418,1
+DA:420,1
+DA:421,1
+DA:422,1
+DA:430,1
+DA:439,1
+DA:440,1
+DA:441,1
+DA:451,1
+DA:452,1
+DA:456,1
+DA:460,1
+DA:461,1
+DA:462,1
+DA:464,1
+DA:469,1
+DA:470,1
+DA:472,1
+DA:473,1
+DA:475,1
+DA:476,1
+DA:483,1
+DA:484,1
+DA:485,1
+DA:486,1
+DA:487,1
+DA:489,1
+DA:490,1
+DA:494,1
+DA:495,1
+DA:496,1
+DA:497,1
+DA:501,1
+DA:502,1
+DA:504,1
+DA:507,1
+DA:508,1
+DA:521,1
+DA:522,1
+DA:526,1
+DA:539,1
+DA:546,1
+DA:548,1
+DA:554,1
+DA:559,1
+DA:563,1
+DA:570,1
+DA:571,1
+DA:573,1
+DA:576,1
+DA:580,1
+DA:581,1
+DA:582,1
+DA:584,1
+DA:587,1
+DA:624,1
+DA:625,1
+DA:626,1
+DA:627,1
+DA:630,1
+DA:632,1
+DA:633,1
+DA:634,1
+DA:635,1
+DA:636,1
+DA:637,1
+DA:638,1
+DA:639,1
+DA:640,1
+DA:642,1
+DA:645,1
+DA:650,1
+DA:674,1
+DA:682,1
+DA:691,1
+DA:692,1
+DA:693,1
+DA:694,1
+DA:695,1
+DA:696,1
+DA:697,1
+DA:698,1
+DA:699,1
+DA:700,1
+DA:703,1
+DA:704,1
+DA:705,1
+DA:708,1
+DA:709,1
+DA:710,1
+DA:711,1
+DA:712,1
+DA:713,1
+DA:714,1
+DA:716,1
+DA:717,1
+DA:719,1
+DA:720,1
+DA:722,1
+DA:723,1
+DA:724,1
+DA:726,1
+DA:727,1
+DA:732,1
+DA:733,1
+DA:734,1
+DA:735,1
+DA:736,1
+DA:737,1
+DA:739,1
+DA:740,1
+DA:741,1
+DA:752,1
+DA:754,1
+DA:755,1
+DA:761,1
+DA:764,1
+DA:768,1
+DA:771,1
+DA:773,1
+DA:775,1
+DA:776,1
+DA:778,1
+DA:782,1
+DA:783,1
+DA:784,1
+DA:785,1
+DA:787,1
+DA:793,1
+DA:794,1
+DA:796,1
+DA:802,1
+DA:803,1
+DA:804,1
+DA:805,1
+DA:807,1
+DA:808,1
+DA:809,1
+DA:813,1
+DA:817,1
+DA:819,1
+DA:821,1
+DA:825,1
+DA:826,1
+DA:829,1
+DA:830,1
+DA:831,1
+DA:838,1
+DA:839,1
+DA:842,1
+DA:843,1
+DA:847,1
+DA:850,1
+DA:852,1
+DA:853,1
+DA:855,1
+DA:857,1
+DA:861,1
+DA:868,1
+DA:869,1
+DA:879,1
+DA:880,1
+DA:882,1
+DA:883,1
+DA:884,1
+DA:885,1
+DA:886,1
+DA:890,1
+DA:891,1
+DA:892,1
+DA:893,1
+DA:894,1
+DA:895,1
+DA:902,1
+DA:904,1
+DA:905,1
+DA:911,1
+DA:913,1
+DA:921,1
+DA:922,1
+DA:923,1
+DA:924,1
+DA:926,1
+DA:928,1
+DA:929,1
+DA:930,1
+DA:931,1
+DA:932,1
+DA:934,1
+DA:935,1
+DA:936,1
+DA:938,1
+DA:944,1
+DA:950,1
+DA:955,1
+DA:956,1
+DA:957,1
+DA:958,1
+DA:960,1
+DA:962,1
+DA:965,1
+DA:973,1
+DA:976,1
+DA:979,1
+DA:980,1
+DA:983,1
+DA:985,1
+DA:987,1
+DA:988,1
+DA:989,1
+DA:990,1
+DA:991,1
+DA:992,1
+DA:994,1
+DA:996,1
+DA:997,1
+DA:998,1
+DA:1000,1
+DA:1001,1
+DA:1003,1
+DA:1004,1
+DA:1006,1
+DA:1007,1
+DA:1008,1
+DA:1010,1
+DA:1011,1
+DA:1012,1
+DA:1013,1
+DA:1015,1
+DA:1016,1
+DA:1018,1
+DA:1019,1
+DA:1021,1
+DA:1026,1
+DA:1030,1
+DA:1034,1
+DA:1036,1
+DA:1038,1
+DA:1042,1
+DA:1043,1
+DA:1046,1
+DA:1047,1
+DA:1049,1
+DA:1050,1
+DA:1051,1
+DA:1057,1
+DA:1058,1
+DA:1060,1
+DA:1062,1
+DA:1063,1
+DA:1064,1
+DA:1066,1
+DA:1067,1
+DA:1074,1
+DA:1075,1
+DA:1077,1
+DA:1079,1
+DA:1081,1
+DA:1082,1
+DA:1097,1
+DA:1098,1
+DA:1099,1
+DA:1100,1
+DA:1102,1
+DA:1104,1
+DA:1106,1
+DA:1107,1
+DA:1108,1
+DA:1110,1
+DA:1111,1
+DA:1117,1
+DA:1118,1
+DA:1133,1
+DA:1134,1
+DA:1135,1
+DA:1136,1
+DA:1138,1
+DA:1140,1
+DA:1142,1
+DA:1143,1
+DA:1145,1
+DA:1147,1
+DA:1148,1
+DA:1150,1
+DA:1152,1
+DA:1154,1
+DA:1156,1
+DA:1157,1
+DA:1159,1
+DA:1164,1
+DA:1166,1
+DA:1167,1
+DA:1168,1
+DA:1169,1
+DA:1170,1
+DA:1171,1
+DA:1173,1
+DA:1174,1
+DA:1176,1
+DA:1178,1
+DA:1179,1
+DA:1182,1
+DA:1183,1
+DA:1184,1
+DA:1185,1
+DA:1186,1
+DA:1188,1
+DA:1190,1
+DA:1192,1
+DA:1193,1
+DA:1194,1
+DA:1196,1
+DA:1198,1
+DA:1202,1
+DA:1204,1
+DA:1206,1
+DA:1210,1
+DA:1212,1
+DA:1216,1
+DA:1217,1
+DA:1219,1
+DA:1220,1
+DA:1222,1
+DA:1223,1
+DA:1225,1
+DA:1228,1
+DA:1233,1
+DA:1234,1
+DA:1235,1
+DA:1238,1
+DA:1239,1
+DA:1243,1
+DA:1244,1
+DA:1246,1
+DA:1247,1
+DA:1249,1
+DA:1250,1
+DA:1251,1
+DA:1253,1
+DA:1256,1
+DA:1261,1
+DA:1262,1
+DA:1263,1
+DA:1265,1
+DA:1269,1
+DA:1270,1
+DA:1272,1
+DA:1273,1
+DA:1276,1
+DA:1277,1
+DA:1278,1
+DA:1282,1
+DA:1283,1
+DA:1285,1
+DA:1287,1
+DA:1288,1
+DA:1290,1
+DA:1292,1
+DA:1293,1
+DA:1294,1
+DA:1296,1
+DA:1299,1
+DA:1311,1
+DA:1312,1
+DA:1314,1
+DA:1315,1
+DA:1318,1
+DA:1319,1
+DA:1320,1
+DA:1322,1
+DA:1325,1
+DA:1422,1
+DA:1423,1
+DA:1425,1
+DA:1432,1
+DA:1435,1
+DA:1436,1
+DA:1438,1
+DA:1439,1
+DA:1441,1
+DA:1443,1
+DA:1444,1
+DA:1445,1
+DA:1449,1
+DA:1450,1
+DA:1451,1
+DA:1453,1
+DA:1457,1
+DA:1459,1
+DA:1460,1
+DA:1461,1
+DA:1462,1
+DA:1467,1
+DA:1468,1
+DA:1469,1
+DA:1470,1
+DA:1471,1
+DA:1472,1
+DA:1473,1
+DA:1478,1
+DA:1479,1
+DA:1481,1
+DA:1483,1
+DA:1484,1
+DA:1486,1
+DA:1487,1
+DA:1488,1
+DA:1490,1
+DA:1492,1
+DA:1527,1
+DA:1528,1
+DA:1529,1
+DA:1531,1
+DA:1539,1
+DA:1540,1
+DA:1542,1
+DA:1543,1
+DA:1545,1
+DA:1546,1
+DA:1547,1
+DA:1548,1
+DA:1550,1
+DA:1551,1
+DA:1553,1
+DA:1554,1
+DA:1555,1
+DA:1556,1
+DA:1558,1
+DA:1559,1
+DA:1561,1
+DA:1562,1
+DA:1563,1
+DA:1564,1
+DA:1566,1
+DA:1567,1
+DA:1569,1
+DA:1574,1
+DA:1576,1
+DA:1580,1
+DA:1581,1
+DA:1583,1
+DA:1586,1
+DA:1587,1
+DA:1593,1
+DA:1598,1
+DA:1601,1
+DA:1605,1
+DA:1611,1
+DA:1614,1
+DA:1618,1
+DA:1620,1
+DA:1622,1
+DA:1624,1
+DA:1625,1
+DA:1626,1
+DA:1627,1
+DA:1628,1
+DA:1630,1
+DA:1632,1
+DA:1633,1
+DA:1634,1
+DA:1636,1
+DA:1638,1
+DA:1645,1
+DA:1652,1
+DA:1653,1
+DA:1654,1
+DA:1655,1
+DA:1656,1
+DA:1660,1
+DA:1662,1
+DA:1664,1
+DA:1665,1
+DA:1666,1
+DA:1667,1
+DA:1670,1
+DA:1672,1
+DA:1675,1
+DA:1677,1
+DA:1679,1
+DA:1680,1
+DA:1683,1
+DA:1687,1
+DA:1690,1
+DA:1693,1
+DA:1694,1
+DA:1697,1
+DA:1702,1
+DA:1703,1
+DA:1704,1
+DA:1706,1
+DA:1709,1
+DA:1713,1
+DA:1715,1
+DA:1721,1
+DA:1722,1
+DA:1723,1
+DA:1724,1
+DA:1725,1
+DA:1726,1
+DA:1729,1
+DA:1730,1
+DA:1734,1
+DA:1735,1
+DA:1736,1
+DA:1737,1
+DA:1739,1
+DA:1741,1
+DA:1743,1
+DA:1746,1
+DA:1750,1
+DA:1752,1
+DA:1756,1
+DA:1763,1
+DA:1767,1
+DA:1768,1
+DA:1770,1
+DA:1772,1
+DA:1776,1
+DA:1777,1
+DA:1779,1
+DA:1781,1
+DA:1785,1
+DA:1786,1
+DA:1788,1
+DA:1790,1
+DA:1794,1
+DA:1795,1
+DA:1797,1
+DA:1799,1
+DA:1802,1
+DA:1806,1
+DA:1807,1
+DA:1809,1
+DA:1810,1
+DA:1813,1
+DA:1814,1
+DA:1816,1
+DA:1819,1
+DA:1826,1
+DA:1831,1
+DA:1834,1
+DA:1835,1
+DA:1836,1
+DA:1837,1
+DA:1838,1
+DA:1839,1
+DA:1842,1
+DA:1847,1
+DA:1848,1
+DA:1850,1
+DA:1851,1
+DA:1853,1
+DA:1855,1
+DA:1873,1
+DA:1876,1
+DA:1880,1
+DA:1881,1
+DA:1883,1
+DA:1884,1
+DA:1887,1
+DA:1888,1
+DA:1891,1
+DA:1915,1
+DA:1917,1
+DA:1918,1
+DA:1919,1
+DA:1920,1
+DA:1921,1
+DA:1923,1
+DA:1925,1
+DA:1927,1
+DA:1928,1
+DA:1929,1
+DA:1930,1
+DA:1934,1
+DA:1935,1
+DA:1936,1
+DA:1937,1
+DA:1939,1
+DA:1942,1
+DA:1961,1
+DA:1962,1
+DA:1963,1
+DA:1964,1
+DA:1965,1
+DA:1966,1
+DA:1967,1
+DA:1968,1
+DA:1971,1
+DA:1980,1
+DA:1981,1
+DA:1983,1
+DA:1984,1
+DA:1985,1
+DA:1986,1
+DA:1989,1
+DA:1993,1
+DA:1994,1
+DA:1997,1
+DA:2011,1
+DA:2015,1
+DA:2016,1
+DA:2017,1
+DA:2019,1
+DA:2020,1
+DA:2021,1
+DA:2022,1
+DA:2023,1
+DA:2024,1
+DA:2026,1
+DA:2027,1
+DA:2029,1
+DA:2030,1
+DA:2031,1
+DA:2032,1
+DA:2034,1
+DA:2035,1
+DA:2036,1
+DA:2038,1
+DA:2052,1
+DA:2054,1
+DA:2056,1
+DA:2058,1
+DA:2061,1
+DA:2063,1
+DA:2066,1
+DA:2070,1
+DA:2073,1
+DA:2080,1
+DA:2083,1
+DA:2088,1
+DA:2089,1
+DA:2091,1
+DA:2094,1
+DA:2101,1
+DA:2102,1
+DA:2104,1
+DA:2107,1
+DA:2114,1
+DA:2115,1
+DA:2116,1
+DA:2123,1
+DA:2126,1
+DA:2127,1
+DA:2129,1
+DA:2131,1
+DA:2137,1
+DA:2138,1
+DA:2142,1
+DA:2144,1
+DA:2151,1
+DA:2154,1
+DA:2174,1
+DA:2176,1
+DA:2177,1
+DA:2184,1
+DA:2187,1
+DA:2189,1
+DA:2190,1
+DA:2191,1
+DA:2192,1
+DA:2196,1
+DA:2197,1
+DA:2199,1
+DA:2200,1
+DA:2201,1
+DA:2203,1
+DA:2204,1
+DA:2209,1
+DA:2211,1
+DA:2212,1
+DA:2214,1
+DA:2215,1
+DA:2217,1
+DA:2219,1
+DA:2220,1
+DA:2221,1
+DA:2222,1
+DA:2223,1
+DA:2231,1
+DA:2235,1
+DA:2242,1
+DA:2243,1
+DA:2244,1
+DA:2252,1
+DA:2256,1
+DA:2263,1
+DA:2264,1
+DA:2265,1
+DA:2266,1
+DA:2268,1
+DA:2269,1
+DA:2271,1
+DA:2272,1
+DA:2277,1
+DA:2281,1
+DA:2283,1
+DA:2284,1
+DA:2285,1
+DA:2286,1
+DA:2288,1
+DA:2289,1
+DA:2290,1
+DA:2292,1
+DA:2293,1
+DA:2294,1
+DA:2300,1
+DA:2301,1
+DA:2310,1
+DA:2314,1
+DA:2317,1
+DA:2318,1
+DA:2326,1
+DA:2328,1
+DA:2329,1
+DA:2331,1
+DA:2332,1
+DA:2334,1
+DA:2335,1
+DA:2340,1
+DA:2344,1
+DA:2346,1
+DA:2347,1
+DA:2348,1
+DA:2349,1
+DA:2351,1
+DA:2353,1
+DA:2354,1
+DA:2355,1
+DA:2356,1
+DA:2357,1
+DA:2358,1
+DA:2359,1
+DA:2360,1
+DA:2361,1
+DA:2363,1
+DA:2364,1
+DA:2371,1
+DA:2372,1
+DA:2373,1
+DA:2374,1
+DA:2376,1
+DA:2378,1
+DA:2379,1
+DA:2383,1
+DA:2384,1
+DA:2386,1
+DA:2388,1
+DA:2389,1
+DA:2390,1
+DA:2392,1
+DA:2393,1
+DA:2400,1
+DA:2401,1
+DA:2403,1
+DA:2405,1
+DA:2408,1
+DA:2409,1
+DA:2418,1
+DA:2426,1
+DA:2429,1
+DA:2477,1
+DA:2498,1
+DA:2520,1
+DA:2525,1
+DA:2529,1
+DA:2530,1
+DA:2531,1
+DA:2532,1
+DA:2533,1
+DA:2534,1
+DA:2535,1
+DA:2536,1
+DA:2537,1
+DA:2538,1
+DA:2539,1
+DA:2540,1
+DA:2548,1
+DA:2549,1
+DA:2550,1
+DA:2551,1
+DA:2552,1
+DA:2553,1
+DA:2558,1
+DA:2559,1
+DA:2561,1
+DA:2562,1
+DA:2568,1
+DA:2569,1
+DA:2570,1
+DA:2571,1
+DA:2572,1
+DA:2573,1
+DA:2596,1
+DA:2607,1
+DA:2609,1
+DA:2611,1
+DA:2613,1
+DA:2614,1
+DA:2621,1
+DA:2625,1
+DA:2628,1
+DA:2632,1
+DA:2637,1
+DA:2641,1
+DA:2644,1
+DA:2645,1
+DA:2650,1
+DA:2652,1
+DA:2654,1
+DA:2655,1
+DA:2656,1
+DA:2657,1
+DA:2658,1
+DA:2660,1
+DA:2670,1
+DA:2687,1
+DA:2696,1
+DA:2705,1
+DA:2723,1
+DA:2772,1
+DA:2774,1
+DA:2793,1
+DA:2794,1
+DA:2795,1
+DA:2796,1
+DA:2797,1
+DA:2798,1
+DA:2799,1
+DA:2800,1
+DA:2801,1
+DA:2802,1
+DA:2803,1
+DA:2804,1
+DA:2805,1
+DA:2806,1
+DA:2807,1
+DA:2808,1
+DA:2809,1
+DA:2811,1
+DA:2819,1
+DA:2820,1
+DA:2822,1
+DA:2823,1
+DA:2825,1
+DA:2836,1
+DA:2837,1
+DA:2839,1
+DA:2841,1
+DA:2844,1
+DA:2847,1
+DA:2916,1
+DA:2923,1
+DA:2924,1
+DA:2925,1
+DA:2926,1
+DA:2927,1
+DA:2928,1
+DA:2929,1
+DA:2930,1
+DA:2932,1
+DA:2939,1
+DA:2940,1
+DA:2941,1
+DA:2942,1
+DA:2943,1
+DA:2944,1
+DA:2946,1
+DA:2965,1
+DA:2984,1
+DA:2985,1
+DA:2986,1
+DA:2987,1
+DA:2988,1
+DA:2989,1
+DA:2990,1
+DA:2991,1
+DA:2992,1
+DA:2993,1
+DA:2994,1
+DA:2995,1
+DA:2996,1
+DA:2997,1
+DA:2998,1
+DA:2999,1
+DA:3001,1
+DA:3002,1
+DA:3003,1
+DA:3009,1
+DA:3026,1
+DA:3029,1
+DA:3048,1
+DA:3050,1
+DA:3051,1
+DA:3052,1
+DA:3054,1
+DA:3058,1
+DA:3060,1
+DA:3064,1
+DA:3065,1
+DA:3068,1
+DA:3084,1
+DA:3087,1
+DA:3108,1
+DA:3117,1
+DA:3118,1
+DA:3119,1
+DA:3120,1
+DA:3122,1
+DA:3123,1
+DA:3125,1
+DA:3126,1
+DA:3127,1
+DA:3128,1
+DA:3131,1
+DA:3132,1
+DA:3136,1
+DA:3138,1
+DA:3139,1
+DA:3140,1
+DA:3142,1
+DA:3143,1
+DA:3148,1
+DA:3150,1
+DA:3156,1
+DA:3157,1
+DA:3159,1
+DA:3160,1
+DA:3162,1
+DA:3163,1
+DA:3165,1
+DA:3167,1
+DA:3172,1
+DA:3178,1
+DA:3182,1
+DA:3185,1
+DA:3201,1
+DA:3206,1
+DA:3254,1
+DA:3256,1
+DA:3257,1
+DA:3258,1
+DA:3259,1
+DA:3261,1
+DA:3262,1
+DA:3264,1
+DA:3265,1
+DA:3266,1
+DA:3268,1
+DA:3269,1
+DA:3270,1
+DA:3271,1
+DA:3272,1
+DA:3273,1
+DA:3274,1
+DA:3275,1
+DA:3276,1
+DA:3278,1
+DA:3284,1
+DA:3285,1
+DA:3290,1
+DA:3291,1
+DA:3301,1
+DA:3303,1
+DA:3306,1
+DA:3313,1
+DA:3314,1
+DA:3319,1
+DA:3321,1
+DA:3322,1
+DA:3323,1
+DA:3326,1
+DA:3338,1
+DA:3339,1
+DA:3340,1
+DA:3346,1
+DA:3349,1
+DA:3365,1
+DA:3367,1
+DA:3369,1
+DA:3370,1
+DA:3371,1
+DA:3375,1
+DA:3379,1
+DA:3380,1
+DA:3381,1
+DA:3383,1
+DA:3385,1
+DA:3387,1
+DA:3388,1
+DA:3391,1
+DA:3392,1
+DA:3393,1
+DA:3395,1
+DA:3396,1
+DA:3397,0
+DA:3400,1
+DA:3401,1
+DA:3402,1
+DA:3404,1
+DA:3405,1
+DA:3406,1
+LF:1142
+LH:1141
+FN:75,76,_Nothing.__repr__
+FNDA:1,_Nothing.__repr__
+FN:78,79,_Nothing.__bool__
+FNDA:1,_Nothing.__bool__
+FN:102,103,_CacheHashWrapper.__reduce__
+FNDA:1,_CacheHashWrapper.__reduce__
+FN:106,213,attrib
+FNDA:1,attrib
+FN:216,227,_compile_and_eval
+FNDA:1,_compile_and_eval
+FN:230,262,_linecache_and_compile
+FNDA:1,_linecache_and_compile
+FN:265,283,_make_attr_tuple_class
+FNDA:1,_make_attr_tuple_class
+FN:279,280,_make_attr_tuple_class.getter
+FNDA:1,_make_attr_tuple_class.getter
+FN:294,308,_is_class_var
+FNDA:1,_is_class_var
+FN:311,315,_has_own_attribute
+FNDA:1,_has_own_attribute
+FN:318,348,_collect_base_attrs
+FNDA:1,_collect_base_attrs
+FN:351,376,_collect_base_attrs_broken
+FNDA:1,_collect_base_attrs_broken
+FN:379,504,_transform_attrs
+FNDA:1,_transform_attrs
+FN:507,556,_make_cached_property_getattr
+FNDA:1,_make_cached_property_getattr
+FN:559,573,_frozen_setattrs
+FNDA:1,_frozen_setattrs
+FN:576,584,_frozen_delattrs
+FNDA:1,_frozen_delattrs
+FN:587,642,evolve
+FNDA:1,evolve
+FN:674,773,_ClassBuilder.__init__
+FNDA:1,_ClassBuilder.__init__
+FN:775,776,_ClassBuilder.__repr__
+FNDA:1,_ClassBuilder.__repr__
+FN:778,794,_ClassBuilder._eval_snippets
+FNDA:1,_ClassBuilder._eval_snippets
+FN:796,819,_ClassBuilder.build_class
+FNDA:1,_ClassBuilder.build_class
+FN:821,855,_ClassBuilder._patch_original_class
+FNDA:1,_ClassBuilder._patch_original_class
+FN:857,998,_ClassBuilder._create_slots_class
+FNDA:1,_ClassBuilder._create_slots_class
+FN:1000,1008,_ClassBuilder.add_repr
+FNDA:1,_ClassBuilder.add_repr
+FN:1003,1004,_ClassBuilder.add_repr._attach_repr
+FNDA:1,_ClassBuilder.add_repr._attach_repr
+FN:1010,1019,_ClassBuilder.add_str
+FNDA:1,_ClassBuilder.add_str
+FN:1015,1016,_ClassBuilder.add_str.__str__
+FNDA:1,_ClassBuilder.add_str.__str__
+FN:1021,1060,_ClassBuilder._make_getstate_setstate
+FNDA:1,_ClassBuilder._make_getstate_setstate
+FN:1030,1034,_ClassBuilder._make_getstate_setstate.slots_getstate
+FNDA:1,_ClassBuilder._make_getstate_setstate.slots_getstate
+FN:1038,1058,_ClassBuilder._make_getstate_setstate.slots_setstate
+FNDA:1,_ClassBuilder._make_getstate_setstate.slots_setstate
+FN:1062,1064,_ClassBuilder.make_unhashable
+FNDA:1,_ClassBuilder.make_unhashable
+FN:1066,1079,_ClassBuilder.add_hash
+FNDA:1,_ClassBuilder.add_hash
+FN:1074,1075,_ClassBuilder.add_hash.attach_hash
+FNDA:1,_ClassBuilder.add_hash.attach_hash
+FN:1081,1104,_ClassBuilder.add_init
+FNDA:1,_ClassBuilder.add_init
+FN:1097,1100,_ClassBuilder.add_init._attach_init
+FNDA:1,_ClassBuilder.add_init._attach_init
+FN:1106,1108,_ClassBuilder.add_replace
+FNDA:1,_ClassBuilder.add_replace
+FN:1110,1115,_ClassBuilder.add_match_args
+FNDA:1,_ClassBuilder.add_match_args
+FN:1117,1140,_ClassBuilder.add_attrs_init
+FNDA:1,_ClassBuilder.add_attrs_init
+FN:1133,1136,_ClassBuilder.add_attrs_init._attach_attrs_init
+FNDA:1,_ClassBuilder.add_attrs_init._attach_attrs_init
+FN:1142,1154,_ClassBuilder.add_eq
+FNDA:1,_ClassBuilder.add_eq
+FN:1147,1148,_ClassBuilder.add_eq._attach_eq
+FNDA:1,_ClassBuilder.add_eq._attach_eq
+FN:1156,1164,_ClassBuilder.add_order
+FNDA:1,_ClassBuilder.add_order
+FN:1166,1196,_ClassBuilder.add_setattr
+FNDA:1,_ClassBuilder.add_setattr
+FN:1182,1190,_ClassBuilder.add_setattr.__setattr__
+FNDA:1,_ClassBuilder.add_setattr.__setattr__
+FN:1198,1210,_ClassBuilder._add_method_dunders_unsafe
+FNDA:1,_ClassBuilder._add_method_dunders_unsafe
+FN:1212,1225,_ClassBuilder._add_method_dunders_safe
+FNDA:1,_ClassBuilder._add_method_dunders_safe
+FN:1228,1253,_determine_attrs_eq_order
+FNDA:1,_determine_attrs_eq_order
+FN:1256,1296,_determine_attrib_eq_order
+FNDA:1,_determine_attrib_eq_order
+FN:1265,1273,_determine_attrib_eq_order.decide_callable_or_boolean
+FNDA:1,_determine_attrib_eq_order.decide_callable_or_boolean
+FN:1299,1322,_determine_whether_to_implement
+FNDA:1,_determine_whether_to_implement
+FN:1325,1583,attrs
+FNDA:1,attrs
+FN:1441,1576,attrs.wrap
+FNDA:1,attrs.wrap
+FN:1593,1598,_has_frozen_base_class
+FNDA:1,_has_frozen_base_class
+FN:1601,1608,_generate_unique_filename
+FNDA:1,_generate_unique_filename
+FN:1611,1680,_make_hash_script
+FNDA:1,_make_hash_script
+FN:1638,1662,_make_hash_script.append_hash_computation_lines
+FNDA:1,_make_hash_script.append_hash_computation_lines
+FN:1683,1694,_add_hash
+FNDA:1,_add_hash
+FN:1697,1706,__ne__
+FNDA:1,__ne__
+FN:1709,1743,_make_eq_script
+FNDA:1,_make_eq_script
+FN:1746,1799,_make_order
+FNDA:1,_make_order
+FN:1752,1761,_make_order.attrs_to_tuple
+FNDA:1,_make_order.attrs_to_tuple
+FN:1763,1770,_make_order.__lt__
+FNDA:1,_make_order.__lt__
+FN:1772,1779,_make_order.__le__
+FNDA:1,_make_order.__le__
+FN:1781,1788,_make_order.__gt__
+FNDA:1,_make_order.__gt__
+FN:1790,1797,_make_order.__ge__
+FNDA:1,_make_order.__ge__
+FN:1802,1816,_add_eq
+FNDA:1,_add_eq
+FN:1819,1873,_make_repr_script
+FNDA:1,_make_repr_script
+FN:1876,1888,_add_repr
+FNDA:1,_add_repr
+FN:1891,1939,fields
+FNDA:1,fields
+FN:1942,1968,fields_dict
+FNDA:1,fields_dict
+FN:1971,1986,validate
+FNDA:1,validate
+FN:1989,1994,_is_slot_attr
+FNDA:1,_is_slot_attr
+FN:1997,2063,_make_init_script
+FNDA:1,_make_init_script
+FN:2066,2070,_setattr
+FNDA:1,_setattr
+FN:2073,2080,_setattr_with_converter
+FNDA:1,_setattr_with_converter
+FN:2083,2091,_assign
+FNDA:1,_assign
+FN:2094,2104,_assign_with_converter
+FNDA:1,_assign_with_converter
+FN:2107,2151,_determine_setters
+FNDA:1,_determine_setters
+FN:2123,2129,_determine_setters.fmt_setter
+FNDA:1,_determine_setters.fmt_setter
+FN:2131,2142,_determine_setters.fmt_setter_with_converter
+FNDA:1,_determine_setters.fmt_setter_with_converter
+FN:2154,2415,_attrs_to_init_script
+FNDA:1,_attrs_to_init_script
+FN:2418,2426,_default_init_alias_for
+FNDA:1,_default_init_alias_for
+FN:2498,2556,Attribute.__init__
+FNDA:1,Attribute.__init__
+FN:2558,2559,Attribute.__setattr__
+FNDA:1,Attribute.__setattr__
+FN:2562,2593,Attribute.from_counting_attr
+FNDA:1,Attribute.from_counting_attr
+FN:2596,2625,Attribute.evolve
+FNDA:1,Attribute.evolve
+FN:2628,2635,Attribute.__getstate__
+FNDA:1,Attribute.__getstate__
+FN:2637,2652,Attribute.__setstate__
+FNDA:1,Attribute.__setstate__
+FN:2654,2667,Attribute._setattrs
+FNDA:1,Attribute._setattrs
+FN:2774,2809,_CountingAttr.__init__
+FNDA:1,_CountingAttr.__init__
+FN:2811,2823,_CountingAttr.validator
+FNDA:1,_CountingAttr.validator
+FN:2825,2841,_CountingAttr.default
+FNDA:1,_CountingAttr.default
+FN:2965,2999,ClassProps.__init__
+FNDA:1,ClassProps.__init__
+FN:3002,3006,ClassProps.is_hashable
+FNDA:1,ClassProps.is_hashable
+FN:3050,3052,Factory.__init__
+FNDA:1,Factory.__init__
+FN:3054,3058,Factory.__getstate__
+FNDA:1,Factory.__getstate__
+FN:3060,3065,Factory.__setstate__
+FNDA:1,Factory.__setstate__
+FN:3117,3140,Converter.__init__
+FNDA:1,Converter.__init__
+FN:3143,3148,Converter._get_global_name
+FNDA:1,Converter._get_global_name
+FN:3150,3165,Converter._fmt_converter_call
+FNDA:1,Converter._fmt_converter_call
+FN:3167,3176,Converter.__getstate__
+FNDA:1,Converter.__getstate__
+FN:3178,3182,Converter.__setstate__
+FNDA:1,Converter.__setstate__
+FN:3206,3306,make_class
+FNDA:1,make_class
+FN:3321,3323,_AndValidator.__call__
+FNDA:1,_AndValidator.__call__
+FN:3326,3346,and_
+FNDA:1,and_
+FN:3349,3406,pipe
+FNDA:1,pipe
+FN:3369,3375,pipe.pipe_converter
+FNDA:1,pipe.pipe_converter
+FN:3379,3383,pipe.pipe_converter@3379
+FNDA:1,pipe.pipe_converter@3379
+FNF:108
+FNH:108
+BRDA:168,0,jump to line 169,1
+BRDA:168,0,jump to line 172,1
+BRDA:172,0,jump to line 173,1
+BRDA:172,0,jump to line 183,1
+BRDA:173,0,jump to line 174,1
+BRDA:173,0,jump to line 178,1
+BRDA:178,0,jump to line 179,1
+BRDA:178,0,jump to line 181,1
+BRDA:183,0,jump to line 184,1
+BRDA:183,0,jump to line 187,1
+BRDA:187,0,jump to line 188,1
+BRDA:187,0,jump to line 190,1
+BRDA:190,0,jump to line 191,1
+BRDA:190,0,jump to line 193,1
+BRDA:193,0,jump to line 194,1
+BRDA:193,0,jump to line 196,1
+BRDA:254,0,jump to line 255,1
+BRDA:254,0,jump to line 257,1
+BRDA:277,0,jump to line 279,1
+BRDA:277,0,jump to line 283,1
+BRDA:305,0,jump to line 306,1
+BRDA:305,0,jump to line 308,1
+BRDA:328,0,jump to line 329,1
+BRDA:328,0,jump to line 340,1
+BRDA:329,0,jump to line 328,1
+BRDA:329,0,jump to line 330,1
+BRDA:330,0,jump to line 331,1
+BRDA:330,0,jump to line 333,1
+BRDA:342,0,jump to line 343,1
+BRDA:342,0,jump to line 348,1
+BRDA:343,0,jump to line 344,1
+BRDA:343,0,jump to line 345,1
+BRDA:366,0,jump to line 367,1
+BRDA:366,0,jump to line 376,1
+BRDA:367,0,jump to line 366,1
+BRDA:367,0,jump to line 368,1
+BRDA:368,0,jump to line 369,1
+BRDA:368,0,jump to line 371,1
+BRDA:400,0,jump to line 401,1
+BRDA:400,0,jump to line 402,1
+BRDA:402,0,jump to line 403,1
+BRDA:402,0,jump to line 430,1
+BRDA:410,0,jump to line 411,1
+BRDA:410,0,jump to line 420,1
+BRDA:411,0,jump to line 412,1
+BRDA:411,0,jump to line 413,1
+BRDA:416,0,jump to line 417,1
+BRDA:416,0,jump to line 418,1
+BRDA:421,0,jump to line 422,1
+BRDA:421,0,jump to line 439,1
+BRDA:451,0,jump to line 452,1
+BRDA:451,0,jump to line 456,1
+BRDA:460,0,jump to line 461,1
+BRDA:460,0,jump to line 464,1
+BRDA:469,0,jump to line 470,1
+BRDA:469,0,jump to line 475,1
+BRDA:470,0,jump to line 469,1
+BRDA:470,0,jump to line 472,1
+BRDA:475,0,jump to line 476,1
+BRDA:475,0,jump to line 483,1
+BRDA:484,0,jump to line 485,1
+BRDA:484,0,jump to line 494,1
+BRDA:485,0,jump to line 486,1
+BRDA:485,0,jump to line 489,1
+BRDA:489,0,jump to line 484,1
+BRDA:489,0,jump to line 490,1
+BRDA:494,0,jump to line 495,1
+BRDA:494,0,jump to line 501,1
+BRDA:495,0,jump to line 494,1
+BRDA:495,0,jump to line 496,1
+BRDA:521,0,jump to line 522,1
+BRDA:521,0,jump to line 526,1
+BRDA:563,0,jump to line 570,1
+BRDA:563,0,jump to line 573,1
+BRDA:580,0,jump to line 581,1
+BRDA:580,0,jump to line 584,1
+BRDA:634,0,jump to line 635,1
+BRDA:634,0,jump to line 642,1
+BRDA:635,0,jump to line 636,1
+BRDA:635,0,jump to line 637,1
+BRDA:639,0,jump to line 634,1
+BRDA:639,0,jump to line 640,1
+BRDA:705,0,jump to line 708,1
+BRDA:705,0,jump to line 711,1
+BRDA:722,0,jump to line 723,1
+BRDA:722,0,jump to line 727,1
+BRDA:727,0,jump to line 732,1
+BRDA:727,0,jump to line 754,1
+BRDA:733,0,jump to line 734,1
+BRDA:733,0,jump to line 741,1
+BRDA:734,0,jump to line 735,1
+BRDA:734,0,jump to line 736,1
+BRDA:736,0,jump to line 737,1
+BRDA:736,0,jump to line 739,1
+BRDA:739,0,jump to line 733,1
+BRDA:739,0,jump to line 740,1
+BRDA:741,0,jump to line 752,1
+BRDA:741,0,jump to line 754,1
+BRDA:754,0,jump to line 755,1
+BRDA:754,0,jump to line 761,1
+BRDA:768,0,jump to line 771,1
+BRDA:768,0,jump to line 773,1
+BRDA:784,0,jump to line 785,1
+BRDA:784,0,jump to line 787,1
+BRDA:793,0,jump to line 794,1
+BRDA:793,0,return from function '_eval_snippets',1
+BRDA:803,0,jump to line 804,1
+BRDA:803,0,jump to line 807,1
+BRDA:808,0,jump to line 809,1
+BRDA:808,0,jump to line 813,0
+BRDA:813,0,jump to line 817,1
+BRDA:813,0,jump to line 819,1
+BRDA:829,0,jump to line 830,1
+BRDA:829,0,jump to line 842,1
+BRDA:830,0,jump to line 831,1
+BRDA:830,0,jump to line 842,1
+BRDA:831,0,jump to line 830,1
+BRDA:831,0,jump to line 838,1
+BRDA:842,0,jump to line 843,1
+BRDA:842,0,jump to line 847,1
+BRDA:847,0,jump to line 850,1
+BRDA:847,0,jump to line 855,1
+BRDA:852,0,jump to line 853,1
+BRDA:852,0,jump to line 855,1
+BRDA:868,0,jump to line 869,1
+BRDA:868,0,jump to line 879,0
+BRDA:879,0,jump to line 880,1
+BRDA:879,0,jump to line 890,1
+BRDA:882,0,jump to line 883,1
+BRDA:882,0,jump to line 890,1
+BRDA:883,0,jump to line 884,1
+BRDA:883,0,jump to line 890,1
+BRDA:884,0,jump to line 883,1
+BRDA:884,0,jump to line 885,1
+BRDA:892,0,jump to line 893,1
+BRDA:892,0,jump to line 902,1
+BRDA:893,0,jump to line 894,1
+BRDA:893,0,jump to line 895,1
+BRDA:905,0,jump to line 911,1
+BRDA:905,0,jump to line 913,1
+BRDA:922,0,jump to line 923,1
+BRDA:922,0,jump to line 944,1
+BRDA:924,0,jump to line 926,1
+BRDA:924,0,jump to line 934,1
+BRDA:931,0,jump to line 924,1
+BRDA:931,0,jump to line 932,1
+BRDA:935,0,jump to line 936,1
+BRDA:935,0,jump to line 938,1
+BRDA:957,0,jump to line 958,1
+BRDA:957,0,jump to line 960,1
+BRDA:973,0,jump to line 976,1
+BRDA:973,0,jump to line 998,1
+BRDA:976,0,jump to line 979,1
+BRDA:976,0,jump to line 980,1
+BRDA:980,0,jump to line 983,1
+BRDA:980,0,jump to line 985,1
+BRDA:987,0,jump to line 988,1
+BRDA:987,0,jump to line 989,1
+BRDA:989,0,jump to line 973,1
+BRDA:989,0,jump to line 990,1
+BRDA:996,0,jump to line 989,1
+BRDA:996,0,jump to line 997,1
+BRDA:1011,0,jump to line 1012,1
+BRDA:1011,0,jump to line 1015,1
+BRDA:1043,0,jump to line 1046,1
+BRDA:1043,0,jump to line 1049,1
+BRDA:1046,0,jump to line 1047,1
+BRDA:1046,0,jump to line 1057,1
+BRDA:1049,0,jump to line 1050,1
+BRDA:1049,0,jump to line 1057,1
+BRDA:1050,0,jump to line 1049,1
+BRDA:1050,0,jump to line 1051,1
+BRDA:1057,0,jump to line 1058,1
+BRDA:1057,0,return from function 'slots_setstate',1
+BRDA:1168,0,jump to line 1169,1
+BRDA:1168,0,jump to line 1173,1
+BRDA:1170,0,jump to line 1168,1
+BRDA:1170,0,jump to line 1171,1
+BRDA:1173,0,jump to line 1174,1
+BRDA:1173,0,jump to line 1176,1
+BRDA:1176,0,jump to line 1178,1
+BRDA:1176,0,jump to line 1182,1
+BRDA:1233,0,jump to line 1234,1
+BRDA:1233,0,jump to line 1238,1
+BRDA:1238,0,jump to line 1239,1
+BRDA:1238,0,jump to line 1243,1
+BRDA:1243,0,jump to line 1244,1
+BRDA:1243,0,jump to line 1246,1
+BRDA:1246,0,jump to line 1247,1
+BRDA:1246,0,jump to line 1249,1
+BRDA:1249,0,jump to line 1250,1
+BRDA:1249,0,jump to line 1253,1
+BRDA:1261,0,jump to line 1262,1
+BRDA:1261,0,jump to line 1265,1
+BRDA:1269,0,jump to line 1270,1
+BRDA:1269,0,jump to line 1272,1
+BRDA:1276,0,jump to line 1277,1
+BRDA:1276,0,jump to line 1282,1
+BRDA:1282,0,jump to line 1283,1
+BRDA:1282,0,jump to line 1285,1
+BRDA:1287,0,jump to line 1288,1
+BRDA:1287,0,jump to line 1290,1
+BRDA:1292,0,jump to line 1293,1
+BRDA:1292,0,jump to line 1296,1
+BRDA:1311,0,jump to line 1312,1
+BRDA:1311,0,jump to line 1314,1
+BRDA:1314,0,jump to line 1315,1
+BRDA:1314,0,jump to line 1318,1
+BRDA:1318,0,jump to line 1319,1
+BRDA:1318,0,jump to line 1322,1
+BRDA:1319,0,jump to line 1318,1
+BRDA:1319,0,jump to line 1320,1
+BRDA:1422,0,jump to line 1423,1
+BRDA:1422,0,jump to line 1432,1
+BRDA:1435,0,jump to line 1436,1
+BRDA:1435,0,jump to line 1438,1
+BRDA:1438,0,jump to line 1439,1
+BRDA:1438,0,jump to line 1441,1
+BRDA:1449,0,jump to line 1450,1
+BRDA:1449,0,jump to line 1453,1
+BRDA:1459,0,jump to line 1460,1
+BRDA:1459,0,jump to line 1461,1
+BRDA:1461,0,jump to line 1462,1
+BRDA:1461,0,jump to line 1467,1
+BRDA:1467,0,jump to line 1468,1
+BRDA:1467,0,jump to line 1469,1
+BRDA:1469,0,jump to line 1470,1
+BRDA:1469,0,jump to line 1483,1
+BRDA:1470,0,jump to line 1471,1
+BRDA:1470,0,jump to line 1472,1
+BRDA:1472,0,jump to line 1473,1
+BRDA:1472,0,jump to line 1478,1
+BRDA:1478,0,jump to line 1479,1
+BRDA:1478,0,jump to line 1481,1
+BRDA:1487,0,jump to line 1488,1
+BRDA:1487,0,jump to line 1490,1
+BRDA:1527,0,jump to line 1528,1
+BRDA:1527,0,jump to line 1531,1
+BRDA:1539,0,jump to line 1540,1
+BRDA:1539,0,jump to line 1542,1
+BRDA:1542,0,jump to line 1543,1
+BRDA:1542,0,jump to line 1545,1
+BRDA:1545,0,jump to line 1546,1
+BRDA:1545,0,jump to line 1547,1
+BRDA:1547,0,jump to line 1548,1
+BRDA:1547,0,jump to line 1550,1
+BRDA:1550,0,jump to line 1551,1
+BRDA:1550,0,jump to line 1553,1
+BRDA:1553,0,jump to line 1554,1
+BRDA:1553,0,jump to line 1555,1
+BRDA:1555,0,jump to line 1556,1
+BRDA:1555,0,jump to line 1558,1
+BRDA:1558,0,jump to line 1559,1
+BRDA:1558,0,jump to line 1561,1
+BRDA:1562,0,jump to line 1563,1
+BRDA:1562,0,jump to line 1566,1
+BRDA:1566,0,jump to line 1567,1
+BRDA:1566,0,jump to line 1569,1
+BRDA:1569,0,jump to line 1574,1
+BRDA:1569,0,jump to line 1576,1
+BRDA:1580,0,jump to line 1581,1
+BRDA:1580,0,jump to line 1583,1
+BRDA:1627,0,jump to line 1628,1
+BRDA:1627,0,jump to line 1630,1
+BRDA:1652,0,jump to line 1653,1
+BRDA:1652,0,jump to line 1662,1
+BRDA:1653,0,jump to line 1654,1
+BRDA:1653,0,jump to line 1660,1
+BRDA:1664,0,jump to line 1665,1
+BRDA:1664,0,jump to line 1677,1
+BRDA:1666,0,jump to line 1667,1
+BRDA:1666,0,jump to line 1672,1
+BRDA:1703,0,jump to line 1704,1
+BRDA:1703,0,jump to line 1706,1
+BRDA:1722,0,jump to line 1723,1
+BRDA:1722,0,jump to line 1739,1
+BRDA:1724,0,jump to line 1725,1
+BRDA:1724,0,jump to line 1737,1
+BRDA:1725,0,jump to line 1726,1
+BRDA:1725,0,jump to line 1734,1
+BRDA:1735,0,jump to line 1724,1
+BRDA:1735,0,jump to line 1736,1
+BRDA:1767,0,jump to line 1768,1
+BRDA:1767,0,jump to line 1770,1
+BRDA:1776,0,jump to line 1777,1
+BRDA:1776,0,jump to line 1779,1
+BRDA:1785,0,jump to line 1786,1
+BRDA:1785,0,jump to line 1788,1
+BRDA:1794,0,jump to line 1795,1
+BRDA:1794,0,jump to line 1797,1
+BRDA:1806,0,jump to line 1807,1
+BRDA:1806,0,jump to line 1809,1
+BRDA:1838,0,jump to line 1839,1
+BRDA:1838,0,jump to line 1848,1
+BRDA:1850,0,jump to line 1851,1
+BRDA:1850,0,jump to line 1853,1
+BRDA:1880,0,jump to line 1881,1
+BRDA:1880,0,jump to line 1883,1
+BRDA:1917,0,jump to line 1918,1
+BRDA:1917,0,jump to line 1925,1
+BRDA:1919,0,jump to line 1920,1
+BRDA:1919,0,jump to line 1923,1
+BRDA:1927,0,jump to line 1928,1
+BRDA:1927,0,jump to line 1939,1
+BRDA:1928,0,jump to line 1929,1
+BRDA:1928,0,jump to line 1936,1
+BRDA:1930,0,jump to line 1934,1
+BRDA:1930,0,jump to line 1936,1
+BRDA:1961,0,jump to line 1962,1
+BRDA:1961,0,jump to line 1964,1
+BRDA:1965,0,jump to line 1966,1
+BRDA:1965,0,jump to line 1968,1
+BRDA:1980,0,jump to line 1981,1
+BRDA:1980,0,jump to line 1983,1
+BRDA:1983,0,jump to line 1984,1
+BRDA:1983,0,return from function 'validate',1
+BRDA:1985,0,jump to line 1983,1
+BRDA:1985,0,jump to line 1986,1
+BRDA:2015,0,jump to line 2016,1
+BRDA:2015,0,jump to line 2019,1
+BRDA:2022,0,jump to line 2023,1
+BRDA:2022,0,jump to line 2038,1
+BRDA:2023,0,jump to line 2024,1
+BRDA:2023,0,jump to line 2026,1
+BRDA:2029,0,jump to line 2030,1
+BRDA:2029,0,jump to line 2035,1
+BRDA:2030,0,jump to line 2031,1
+BRDA:2030,0,jump to line 2034,1
+BRDA:2035,0,jump to line 2022,1
+BRDA:2035,0,jump to line 2036,1
+BRDA:2052,0,jump to line 2054,1
+BRDA:2052,0,jump to line 2056,1
+BRDA:2058,0,jump to line 2061,1
+BRDA:2058,0,jump to line 2063,1
+BRDA:2088,0,jump to line 2089,1
+BRDA:2088,0,jump to line 2091,1
+BRDA:2101,0,jump to line 2102,1
+BRDA:2101,0,jump to line 2104,1
+BRDA:2114,0,jump to line 2115,1
+BRDA:2114,0,jump to line 2151,1
+BRDA:2115,0,jump to line 2116,1
+BRDA:2115,0,jump to line 2123,1
+BRDA:2126,0,jump to line 2127,1
+BRDA:2126,0,jump to line 2129,1
+BRDA:2137,0,jump to line 2138,1
+BRDA:2137,0,jump to line 2142,1
+BRDA:2176,0,jump to line 2177,1
+BRDA:2176,0,jump to line 2184,1
+BRDA:2199,0,jump to line 2200,1
+BRDA:2199,0,jump to line 2353,1
+BRDA:2200,0,jump to line 2201,1
+BRDA:2200,0,jump to line 2203,1
+BRDA:2214,0,jump to line 2215,1
+BRDA:2214,0,jump to line 2217,1
+BRDA:2219,0,jump to line 2220,1
+BRDA:2219,0,jump to line 2263,1
+BRDA:2220,0,jump to line 2221,1
+BRDA:2220,0,jump to line 2243,1
+BRDA:2222,0,jump to line 2223,1
+BRDA:2222,0,jump to line 2235,1
+BRDA:2243,0,jump to line 2244,1
+BRDA:2243,0,jump to line 2256,1
+BRDA:2263,0,jump to line 2264,1
+BRDA:2263,0,jump to line 2283,1
+BRDA:2265,0,jump to line 2266,1
+BRDA:2265,0,jump to line 2268,1
+BRDA:2271,0,jump to line 2272,1
+BRDA:2271,0,jump to line 2281,1
+BRDA:2283,0,jump to line 2284,1
+BRDA:2283,0,jump to line 2328,1
+BRDA:2285,0,jump to line 2286,1
+BRDA:2285,0,jump to line 2288,1
+BRDA:2293,0,jump to line 2294,1
+BRDA:2293,0,jump to line 2314,1
+BRDA:2328,0,jump to line 2329,1
+BRDA:2328,0,jump to line 2331,1
+BRDA:2334,0,jump to line 2335,1
+BRDA:2334,0,jump to line 2344,1
+BRDA:2346,0,jump to line 2199,1
+BRDA:2346,0,jump to line 2347,1
+BRDA:2347,0,jump to line 2348,1
+BRDA:2347,0,jump to line 2349,1
+BRDA:2349,0,jump to line 2199,1
+BRDA:2349,0,jump to line 2351,1
+BRDA:2353,0,jump to line 2354,1
+BRDA:2353,0,jump to line 2363,1
+BRDA:2356,0,jump to line 2357,1
+BRDA:2356,0,jump to line 2363,1
+BRDA:2363,0,jump to line 2364,1
+BRDA:2363,0,jump to line 2371,1
+BRDA:2371,0,jump to line 2372,1
+BRDA:2371,0,jump to line 2383,1
+BRDA:2372,0,jump to line 2373,1
+BRDA:2372,0,jump to line 2378,1
+BRDA:2373,0,jump to line 2374,1
+BRDA:2373,0,jump to line 2376,1
+BRDA:2383,0,jump to line 2384,1
+BRDA:2383,0,jump to line 2388,1
+BRDA:2390,0,jump to line 2392,1
+BRDA:2390,0,jump to line 2403,1
+BRDA:2403,0,jump to line 2405,1
+BRDA:2403,0,jump to line 2408,1
+BRDA:2568,0,jump to line 2569,1
+BRDA:2568,0,jump to line 2570,1
+BRDA:2570,0,jump to line 2571,1
+BRDA:2570,0,jump to line 2573,1
+BRDA:2611,0,jump to line 2613,1
+BRDA:2611,0,jump to line 2614,1
+BRDA:2614,0,jump to line 2621,1
+BRDA:2614,0,jump to line 2625,1
+BRDA:2641,0,jump to line 2644,1
+BRDA:2641,0,jump to line 2652,1
+BRDA:2656,0,jump to line 2657,1
+BRDA:2656,0,return from function '_setattrs',1
+BRDA:2657,0,jump to line 2658,1
+BRDA:2657,0,jump to line 2660,1
+BRDA:2819,0,jump to line 2820,1
+BRDA:2819,0,jump to line 2822,1
+BRDA:2836,0,jump to line 2837,1
+BRDA:2836,0,jump to line 2839,1
+BRDA:3064,0,jump to line 3065,1
+BRDA:3064,0,return from function '__setstate__',1
+BRDA:3125,0,jump to line 3126,1
+BRDA:3125,0,jump to line 3127,1
+BRDA:3127,0,jump to line 3128,1
+BRDA:3127,0,jump to line 3131,1
+BRDA:3131,0,jump to line 3132,1
+BRDA:3131,0,jump to line 3136,1
+BRDA:3139,0,jump to line 3140,1
+BRDA:3139,0,return from function '__init__',1
+BRDA:3156,0,jump to line 3157,1
+BRDA:3156,0,jump to line 3159,1
+BRDA:3159,0,jump to line 3160,1
+BRDA:3159,0,jump to line 3162,1
+BRDA:3162,0,jump to line 3163,1
+BRDA:3162,0,jump to line 3165,1
+BRDA:3256,0,jump to line 3257,1
+BRDA:3256,0,jump to line 3258,1
+BRDA:3258,0,jump to line 3259,1
+BRDA:3258,0,jump to line 3261,1
+BRDA:3269,0,jump to line 3270,1
+BRDA:3269,0,jump to line 3271,1
+BRDA:3271,0,jump to line 3272,1
+BRDA:3271,0,jump to line 3273,1
+BRDA:3273,0,jump to line 3274,1
+BRDA:3273,0,jump to line 3275,1
+BRDA:3275,0,jump to line 3276,1
+BRDA:3275,0,jump to line 3278,1
+BRDA:3322,0,jump to line 3323,1
+BRDA:3322,0,return from function '__call__',1
+BRDA:3339,0,jump to line 3340,1
+BRDA:3339,0,jump to line 3346,1
+BRDA:3367,0,jump to line 3369,1
+BRDA:3367,0,jump to line 3379,1
+BRDA:3370,0,jump to line 3371,1
+BRDA:3370,0,jump to line 3375,1
+BRDA:3380,0,jump to line 3381,1
+BRDA:3380,0,jump to line 3383,1
+BRDA:3385,0,jump to line 3387,1
+BRDA:3385,0,jump to line 3391,1
+BRDA:3392,0,jump to line 3393,1
+BRDA:3392,0,jump to line 3395,1
+BRDA:3396,0,jump to line 3397,0
+BRDA:3396,0,jump to line 3400,1
+BRDA:3401,0,jump to line 3402,1
+BRDA:3401,0,jump to line 3404,1
+BRDA:3404,0,jump to line 3405,1
+BRDA:3404,0,jump to line 3406,1
+BRF:468
+BRH:465
+end_of_record
+SF:src/attr/_next_gen.py
+DA:8,1
+DA:10,1
+DA:11,1
+DA:12,1
+DA:13,1
+DA:20,1
+DA:23,1
+DA:365,1
+DA:366,1
+DA:392,1
+DA:400,1
+DA:403,1
+DA:404,1
+DA:408,1
+DA:409,1
+DA:410,1
+DA:411,1
+DA:412,1
+DA:414,1
+DA:415,1
+DA:417,1
+DA:418,1
+DA:420,1
+DA:421,1
+DA:422,1
+DA:423,1
+DA:427,1
+DA:428,1
+DA:430,1
+DA:433,1
+DA:434,1
+DA:437,1
+DA:605,1
+DA:623,1
+DA:630,1
+DA:639,1
+DA:646,1
+DA:651,1
+DA:670,1
+DA:671,1
+DA:672,1
+DA:673,1
+DA:674,1
+LF:43
+LH:43
+FN:23,430,define
+FNDA:1,define
+FN:365,390,define.do_it
+FNDA:1,define.do_it
+FN:392,423,define.wrap
+FNDA:1,define.wrap
+FN:437,620,field
+FNDA:1,field
+FN:623,636,asdict
+FNDA:1,asdict
+FN:639,648,astuple
+FNDA:1,astuple
+FN:651,674,inspect
+FNDA:1,inspect
+FNF:7
+FNH:7
+BRDA:403,0,jump to line 404,1
+BRDA:403,0,jump to line 408,1
+BRDA:408,0,jump to line 409,1
+BRDA:408,0,jump to line 417,1
+BRDA:409,0,jump to line 408,1
+BRDA:409,0,jump to line 410,1
+BRDA:410,0,jump to line 411,1
+BRDA:410,0,jump to line 414,1
+BRDA:417,0,jump to line 418,1
+BRDA:417,0,jump to line 420,1
+BRDA:427,0,jump to line 428,1
+BRDA:427,0,jump to line 430,1
+BRF:12
+BRH:12
+end_of_record
+SF:src/attr/_version_info.py
+DA:4,1
+DA:6,1
+DA:7,1
+DA:10,1
+DA:11,1
+DA:12,1
+DA:33,1
+DA:34,1
+DA:35,1
+DA:36,1
+DA:38,1
+DA:39,1
+DA:43,1
+DA:44,1
+DA:45,1
+DA:47,1
+DA:51,1
+DA:59,1
+DA:60,1
+DA:62,1
+DA:63,1
+DA:65,1
+DA:66,1
+DA:68,1
+DA:70,1
+DA:71,1
+DA:72,1
+DA:73,1
+DA:74,1
+DA:76,1
+DA:78,1
+DA:79,1
+DA:80,1
+DA:81,1
+DA:82,1
+DA:86,1
+DA:88,1
+DA:89,1
+LF:38
+LH:38
+FN:39,49,VersionInfo._from_version_string
+FNDA:1,VersionInfo._from_version_string
+FN:51,68,VersionInfo._ensure_tuple
+FNDA:1,VersionInfo._ensure_tuple
+FN:70,76,VersionInfo.__eq__
+FNDA:1,VersionInfo.__eq__
+FN:78,86,VersionInfo.__lt__
+FNDA:1,VersionInfo.__lt__
+FN:88,89,VersionInfo.__hash__
+FNDA:1,VersionInfo.__hash__
+FNF:5
+FNH:5
+BRDA:44,0,jump to line 45,1
+BRDA:44,0,jump to line 47,1
+BRDA:59,0,jump to line 60,1
+BRDA:59,0,jump to line 62,1
+BRDA:62,0,jump to line 63,1
+BRDA:62,0,jump to line 65,1
+BRDA:65,0,jump to line 66,1
+BRDA:65,0,jump to line 68,1
+BRF:8
+BRH:8
+end_of_record
+SF:src/attr/converters.py
+DA:7,1
+DA:9,1
+DA:10,1
+DA:13,1
+DA:21,1
+DA:36,1
+DA:38,1
+DA:39,1
+DA:40,1
+DA:41,1
+DA:45,1
+DA:46,1
+DA:47,1
+DA:48,1
+DA:50,1
+DA:52,1
+DA:53,1
+DA:54,1
+DA:56,1
+DA:57,1
+DA:58,1
+DA:60,1
+DA:61,1
+DA:63,1
+DA:66,1
+DA:92,1
+DA:93,1
+DA:94,1
+DA:96,1
+DA:97,1
+DA:98,1
+DA:100,1
+DA:101,1
+DA:103,1
+DA:104,1
+DA:105,1
+DA:106,1
+DA:108,1
+DA:109,1
+DA:110,1
+DA:112,1
+DA:116,1
+DA:117,1
+DA:118,1
+DA:120,1
+DA:122,1
+DA:125,1
+DA:153,1
+DA:154,1
+DA:156,1
+DA:157,1
+DA:158,1
+DA:159,1
+DA:161,1
+DA:162,1
+LF:55
+LH:55
+FN:21,63,optional
+FNDA:1,optional
+FN:38,41,optional.optional_converter
+FNDA:1,optional.optional_converter
+FN:45,48,optional.optional_converter@45
+FNDA:1,optional.optional_converter@45
+FN:66,122,default_if_none
+FNDA:1,default_if_none
+FN:108,112,default_if_none.default_if_none_converter
+FNDA:1,default_if_none.default_if_none_converter
+FN:116,120,default_if_none.default_if_none_converter@116
+FNDA:1,default_if_none.default_if_none_converter@116
+FN:125,162,to_bool
+FNDA:1,to_bool
+FNF:7
+FNH:7
+BRDA:36,0,jump to line 38,1
+BRDA:36,0,jump to line 45,1
+BRDA:39,0,jump to line 40,1
+BRDA:39,0,jump to line 41,1
+BRDA:46,0,jump to line 47,1
+BRDA:46,0,jump to line 48,1
+BRDA:53,0,jump to line 54,1
+BRDA:53,0,jump to line 56,1
+BRDA:57,0,jump to line 58,1
+BRDA:57,0,jump to line 60,1
+BRDA:60,0,jump to line 61,1
+BRDA:60,0,jump to line 63,1
+BRDA:92,0,jump to line 93,1
+BRDA:92,0,jump to line 96,1
+BRDA:96,0,jump to line 97,1
+BRDA:96,0,jump to line 100,1
+BRDA:100,0,jump to line 101,1
+BRDA:100,0,jump to line 103,1
+BRDA:103,0,jump to line 104,1
+BRDA:103,0,jump to line 116,1
+BRDA:104,0,jump to line 105,1
+BRDA:104,0,jump to line 108,1
+BRDA:109,0,jump to line 110,1
+BRDA:109,0,jump to line 112,1
+BRDA:117,0,jump to line 118,1
+BRDA:117,0,jump to line 120,1
+BRDA:153,0,jump to line 154,1
+BRDA:153,0,jump to line 156,1
+BRDA:156,0,jump to line 157,1
+BRDA:156,0,jump to line 158,1
+BRDA:158,0,jump to line 159,1
+BRDA:158,0,jump to line 161,1
+BRF:32
+BRH:32
+end_of_record
+SF:src/attr/exceptions.py
+DA:3,1
+DA:6,1
+DA:17,1
+DA:18,1
+DA:19,1
+DA:20,1
+DA:23,1
+DA:31,1
+DA:39,1
+DA:47,1
+DA:55,1
+DA:64,1
+DA:72,1
+DA:81,1
+DA:89,1
+DA:90,1
+DA:91,1
+DA:92,1
+DA:94,1
+DA:95,1
+LF:20
+LH:20
+FN:17,20,FrozenError.__init__
+FNDA:1,FrozenError.__init__
+FN:89,92,NotCallableError.__init__
+FNDA:1,NotCallableError.__init__
+FN:94,95,NotCallableError.__str__
+FNDA:1,NotCallableError.__str__
+FNF:3
+FNH:3
+end_of_record
+SF:src/attr/filters.py
+DA:7,1
+DA:10,1
+DA:14,1
+DA:21,1
+DA:36,1
+DA:38,1
+DA:39,1
+DA:45,1
+DA:48,1
+DA:63,1
+DA:65,1
+DA:66,1
+DA:72,1
+LF:13
+LH:13
+FN:10,18,_split_what
+FNDA:1,_split_what
+FN:21,45,include
+FNDA:1,include
+FN:38,43,include.include_
+FNDA:1,include.include_
+FN:48,72,exclude
+FNDA:1,exclude
+FN:65,70,exclude.exclude_
+FNDA:1,exclude.exclude_
+FNF:5
+FNH:5
+end_of_record
+SF:src/attr/setters.py
+DA:7,1
+DA:8,1
+DA:11,1
+DA:18,1
+DA:19,1
+DA:21,1
+DA:22,1
+DA:24,1
+DA:26,1
+DA:29,1
+DA:35,1
+DA:38,1
+DA:44,1
+DA:45,1
+DA:47,1
+DA:48,1
+DA:49,1
+DA:51,1
+DA:53,1
+DA:56,1
+DA:63,1
+DA:64,1
+DA:66,1
+DA:68,1
+DA:69,1
+DA:71,1
+DA:73,1
+DA:79,1
+LF:28
+LH:28
+FN:11,26,pipe
+FNDA:1,pipe
+FN:18,24,pipe.wrapped_pipe
+FNDA:1,pipe.wrapped_pipe
+FN:29,35,frozen
+FNDA:1,frozen
+FN:38,53,validate
+FNDA:1,validate
+FN:56,73,convert
+FNDA:1,convert
+FNF:5
+FNH:5
+BRDA:21,0,jump to line 22,1
+BRDA:21,0,jump to line 24,1
+BRDA:44,0,jump to line 45,1
+BRDA:44,0,jump to line 47,1
+BRDA:48,0,jump to line 49,1
+BRDA:48,0,jump to line 51,1
+BRDA:64,0,jump to line 66,1
+BRDA:64,0,jump to line 73,1
+BRDA:68,0,jump to line 69,1
+BRDA:68,0,jump to line 71,1
+BRF:10
+BRH:10
+end_of_record
+SF:src/attr/validators.py
+DA:7,1
+DA:8,1
+DA:10,1
+DA:11,1
+DA:13,1
+DA:14,1
+DA:15,1
+DA:16,1
+DA:19,1
+DA:42,1
+DA:57,1
+DA:60,1
+DA:69,1
+DA:72,1
+DA:73,1
+DA:84,1
+DA:85,1
+DA:86,1
+DA:87,1
+DA:89,1
+DA:92,1
+DA:93,1
+DA:94,1
+DA:96,1
+DA:100,1
+DA:101,1
+DA:102,1
+DA:109,1
+DA:110,1
+DA:113,1
+DA:127,1
+DA:130,1
+DA:131,1
+DA:132,1
+DA:133,1
+DA:135,1
+DA:139,1
+DA:140,1
+DA:141,1
+DA:148,1
+DA:149,1
+DA:152,1
+DA:173,1
+DA:174,1
+DA:175,1
+DA:180,1
+DA:182,1
+DA:183,1
+DA:184,1
+DA:185,1
+DA:186,1
+DA:188,1
+DA:190,1
+DA:191,1
+DA:192,1
+DA:193,1
+DA:195,1
+DA:197,1
+DA:200,1
+DA:201,1
+DA:202,1
+DA:204,1
+DA:205,1
+DA:206,1
+DA:208,1
+DA:210,1
+DA:211,1
+DA:214,1
+DA:229,1
+DA:230,1
+DA:232,1
+DA:235,1
+DA:236,1
+DA:237,1
+DA:238,1
+DA:240,1
+DA:241,1
+DA:242,1
+DA:243,1
+DA:244,1
+DA:246,1
+DA:247,1
+DA:248,1
+DA:255,1
+DA:256,1
+DA:259,1
+DA:287,1
+DA:288,1
+DA:289,1
+DA:291,1
+DA:294,1
+DA:295,1
+DA:296,1
+DA:300,1
+DA:301,1
+DA:305,1
+DA:312,1
+DA:313,1
+DA:316,1
+DA:329,1
+DA:332,1
+DA:333,1
+DA:334,1
+DA:335,1
+DA:339,1
+DA:343,1
+DA:344,1
+DA:346,1
+DA:347,1
+DA:349,1
+DA:350,1
+DA:355,1
+DA:361,1
+DA:380,1
+DA:381,1
+DA:382,1
+DA:383,1
+DA:384,1
+DA:387,1
+DA:388,1
+DA:389,1
+DA:390,1
+DA:391,1
+DA:393,1
+DA:397,1
+DA:398,1
+DA:400,1
+DA:401,1
+DA:402,1
+DA:403,1
+DA:404,1
+DA:406,1
+DA:407,1
+DA:410,1
+DA:444,1
+DA:445,1
+DA:448,1
+DA:450,1
+DA:451,1
+DA:452,1
+DA:453,1
+DA:454,1
+DA:455,1
+DA:457,1
+DA:460,1
+DA:461,1
+DA:462,1
+DA:463,1
+DA:464,1
+DA:466,1
+DA:470,1
+DA:471,1
+DA:472,1
+DA:474,1
+DA:475,1
+DA:478,1
+DA:490,1
+DA:493,1
+DA:505,1
+DA:508,1
+DA:520,1
+DA:523,1
+DA:535,1
+DA:538,1
+DA:539,1
+DA:540,1
+DA:542,1
+DA:546,1
+DA:547,1
+DA:548,1
+DA:550,1
+DA:551,1
+DA:554,1
+DA:564,1
+DA:567,1
+DA:568,1
+DA:569,1
+DA:571,1
+DA:575,1
+DA:576,1
+DA:577,1
+DA:579,1
+DA:580,1
+DA:583,1
+DA:593,1
+DA:596,1
+DA:597,1
+DA:598,1
+DA:600,1
+DA:604,1
+DA:605,1
+DA:606,1
+DA:613,1
+DA:614,1
+DA:617,1
+DA:631,1
+DA:634,1
+DA:635,1
+DA:636,1
+DA:637,1
+DA:643,1
+DA:650,1
+DA:651,1
+DA:652,1
+DA:653,1
+DA:654,1
+DA:656,1
+DA:667,1
+DA:668,1
+DA:671,1
+DA:700,1
+DA:701,1
+DA:702,1
+DA:703,1
+DA:704,1
+DA:707,1
+DA:708,1
+DA:709,1
+DA:711,1
+DA:712,1
+DA:713,1
+DA:714,1
+DA:715,1
+DA:716,1
+DA:718,1
+DA:720,1
+DA:721,1
+DA:723,1
+DA:724,1
+DA:727,1
+DA:746,1
+DA:747,1
+DA:748,1
+DA:750,1
+LF:234
+LH:234
+FN:42,57,set_disabled
+FNDA:1,set_disabled
+FN:60,69,get_disabled
+FNDA:1,get_disabled
+FN:73,89,disabled
+FNDA:1,disabled
+FN:96,107,_InstanceOfValidator.__call__
+FNDA:1,_InstanceOfValidator.__call__
+FN:109,110,_InstanceOfValidator.__repr__
+FNDA:1,_InstanceOfValidator.__repr__
+FN:113,127,instance_of
+FNDA:1,instance_of
+FN:135,146,_MatchesReValidator.__call__
+FNDA:1,_MatchesReValidator.__call__
+FN:148,149,_MatchesReValidator.__repr__
+FNDA:1,_MatchesReValidator.__repr__
+FN:152,197,matches_re
+FNDA:1,matches_re
+FN:204,208,_OptionalValidator.__call__
+FNDA:1,_OptionalValidator.__call__
+FN:210,211,_OptionalValidator.__repr__
+FNDA:1,_OptionalValidator.__repr__
+FN:214,232,optional
+FNDA:1,optional
+FN:240,253,_InValidator.__call__
+FNDA:1,_InValidator.__call__
+FN:255,256,_InValidator.__repr__
+FNDA:1,_InValidator.__repr__
+FN:259,291,in_
+FNDA:1,in_
+FN:296,310,_IsCallableValidator.__call__
+FNDA:1,_IsCallableValidator.__call__
+FN:312,313,_IsCallableValidator.__repr__
+FNDA:1,_IsCallableValidator.__repr__
+FN:316,329,is_callable
+FNDA:1,is_callable
+FN:339,347,_DeepIterable.__call__
+FNDA:1,_DeepIterable.__call__
+FN:349,358,_DeepIterable.__repr__
+FNDA:1,_DeepIterable.__repr__
+FN:361,384,deep_iterable
+FNDA:1,deep_iterable
+FN:393,404,_DeepMapping.__call__
+FNDA:1,_DeepMapping.__call__
+FN:406,407,_DeepMapping.__repr__
+FNDA:1,_DeepMapping.__repr__
+FN:410,457,deep_mapping
+FNDA:1,deep_mapping
+FN:466,472,_NumberValidator.__call__
+FNDA:1,_NumberValidator.__call__
+FN:474,475,_NumberValidator.__repr__
+FNDA:1,_NumberValidator.__repr__
+FN:478,490,lt
+FNDA:1,lt
+FN:493,505,le
+FNDA:1,le
+FN:508,520,ge
+FNDA:1,ge
+FN:523,535,gt
+FNDA:1,gt
+FN:542,548,_MaxLengthValidator.__call__
+FNDA:1,_MaxLengthValidator.__call__
+FN:550,551,_MaxLengthValidator.__repr__
+FNDA:1,_MaxLengthValidator.__repr__
+FN:554,564,max_len
+FNDA:1,max_len
+FN:571,577,_MinLengthValidator.__call__
+FNDA:1,_MinLengthValidator.__call__
+FN:579,580,_MinLengthValidator.__repr__
+FNDA:1,_MinLengthValidator.__repr__
+FN:583,593,min_len
+FNDA:1,min_len
+FN:600,611,_SubclassOfValidator.__call__
+FNDA:1,_SubclassOfValidator.__call__
+FN:613,614,_SubclassOfValidator.__repr__
+FNDA:1,_SubclassOfValidator.__repr__
+FN:617,631,_subclass_of
+FNDA:1,_subclass_of
+FN:650,665,_NotValidator.__call__
+FNDA:1,_NotValidator.__call__
+FN:667,668,_NotValidator.__repr__
+FNDA:1,_NotValidator.__repr__
+FN:671,704,not_
+FNDA:1,not_
+FN:711,721,_OrValidator.__call__
+FNDA:1,_OrValidator.__call__
+FN:723,724,_OrValidator.__repr__
+FNDA:1,_OrValidator.__repr__
+FN:727,750,or_
+FNDA:1,or_
+FNF:45
+FNH:45
+BRDA:100,0,jump to line 101,1
+BRDA:100,0,return from function '__call__',1
+BRDA:139,0,jump to line 140,1
+BRDA:139,0,return from function '__call__',1
+BRDA:174,0,jump to line 175,1
+BRDA:174,0,jump to line 182,1
+BRDA:182,0,jump to line 183,1
+BRDA:182,0,jump to line 188,1
+BRDA:183,0,jump to line 184,1
+BRDA:183,0,jump to line 186,1
+BRDA:190,0,jump to line 191,1
+BRDA:190,0,jump to line 192,1
+BRDA:192,0,jump to line 193,1
+BRDA:192,0,jump to line 195,1
+BRDA:205,0,jump to line 206,1
+BRDA:205,0,jump to line 208,1
+BRDA:229,0,jump to line 230,1
+BRDA:229,0,jump to line 232,1
+BRDA:246,0,jump to line 247,1
+BRDA:246,0,return from function '__call__',1
+BRDA:288,0,jump to line 289,1
+BRDA:288,0,jump to line 291,1
+BRDA:300,0,jump to line 301,1
+BRDA:300,0,return from function '__call__',1
+BRDA:343,0,jump to line 344,1
+BRDA:343,0,jump to line 346,1
+BRDA:346,0,jump to line 347,1
+BRDA:346,0,return from function '__call__',1
+BRDA:380,0,jump to line 381,1
+BRDA:380,0,jump to line 382,1
+BRDA:382,0,jump to line 383,1
+BRDA:382,0,jump to line 384,1
+BRDA:397,0,jump to line 398,1
+BRDA:397,0,jump to line 400,1
+BRDA:400,0,jump to line 401,1
+BRDA:400,0,return from function '__call__',1
+BRDA:401,0,jump to line 402,1
+BRDA:401,0,jump to line 403,1
+BRDA:403,0,jump to line 400,1
+BRDA:403,0,jump to line 404,1
+BRDA:444,0,jump to line 445,1
+BRDA:444,0,jump to line 450,1
+BRDA:450,0,jump to line 451,1
+BRDA:450,0,jump to line 452,1
+BRDA:452,0,jump to line 453,1
+BRDA:452,0,jump to line 454,1
+BRDA:454,0,jump to line 455,1
+BRDA:454,0,jump to line 457,1
+BRDA:470,0,jump to line 471,1
+BRDA:470,0,return from function '__call__',1
+BRDA:546,0,jump to line 547,1
+BRDA:546,0,return from function '__call__',1
+BRDA:575,0,jump to line 576,1
+BRDA:575,0,return from function '__call__',1
+BRDA:604,0,jump to line 605,1
+BRDA:604,0,return from function '__call__',1
+BRDA:712,0,jump to line 713,1
+BRDA:712,0,jump to line 720,1
+BRDA:747,0,jump to line 748,1
+BRDA:747,0,jump to line 750,1
+BRF:60
+BRH:60
+end_of_record
+SF:src/attrs/__init__.py
+DA:3,1
+DA:25,1
+DA:26,1
+DA:28,1
+DA:31,1
+DA:72,1
+LF:6
+LH:6
+end_of_record
+SF:src/attrs/converters.py
+DA:3,1
+LF:1
+LH:1
+end_of_record
+SF:src/attrs/exceptions.py
+DA:3,1
+LF:1
+LH:1
+end_of_record
+SF:src/attrs/filters.py
+DA:3,1
+LF:1
+LH:1
+end_of_record
+SF:src/attrs/setters.py
+DA:3,1
+LF:1
+LH:1
+end_of_record
+SF:src/attrs/validators.py
+DA:3,1
+LF:1
+LH:1
+end_of_record
