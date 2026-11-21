@@ -26,6 +26,10 @@
 //	ToolCalls           reconciler liveness              adapters/postgres           H3
 //	ModelHealth         reconciler provider probe        adapters/openrouter         H3
 //	ModelChat           Action-mode agent loop           adapters/openrouter         AM10
+//	PRReviewCommentReader  prove-or-drop (Action mode)    adapters/github             AM9
+//	ArtifactReader      gate (proof, coverage, SARIF)    adapters/github             AM9
+//	CodeScanReader      fast check analyzers clause      adapters/github             AM9
+//	GitRefs, GitObjects git-ref event store              adapters/github             AM9 (used by AM8)
 //	TaskIndex           get_task (the active task)       adapters/postgres           T23
 //	ProfileStore        run_checks, verify, run_check    adapters/postgres           H8
 //
