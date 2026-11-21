@@ -80,19 +80,22 @@ func parseCaseIDs(s string) ([]string, error) {
 
 // reviewOptions are the flags of the review command.
 type reviewOptions struct {
-	manifest   string
-	cache      string
-	out        string
-	md         string
-	only       string
-	model      string
-	keyFile    string
-	baseURL    string
-	price      bench.Price
-	maxCost    float64
-	perCase    float64
-	blockAt    finding.Severity
-	commandFor string // the command line written into the report
+	manifest string
+	cache    string
+	out      string
+	md       string
+	only     string
+	model    string
+	keyFile  string
+	baseURL  string
+	// requiredToolChoice says the endpoint takes tool_choice "required". The client falls back to auto once if it
+	// does not, so the default is on.
+	requiredToolChoice bool
+	price              bench.Price
+	maxCost            float64
+	perCase            float64
+	blockAt            finding.Severity
+	commandFor         string // the command line written into the report
 }
 
 func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
@@ -106,6 +109,7 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	fs.StringVar(&o.model, "model", "", "the model id, such as deepseek/deepseek-v4-flash (required)")
 	fs.StringVar(&o.keyFile, "key-file", "", "the file that holds the model key, read through internal/platform/config (required)")
 	fs.StringVar(&o.baseURL, "base-url", "https://openrouter.ai/api/v1", "the OpenAI-compatible API root")
+	fs.BoolVar(&o.requiredToolChoice, "required-tool-choice", true, "send tool_choice \"required\"; a refused call falls back to auto once")
 	fs.Float64Var(&o.price.InputPerM, "price-input", 0, "USD per million input tokens; default the table's price for -model")
 	fs.Float64Var(&o.price.CachedInputPerM, "price-cached", -1, "USD per million cache-read tokens; unset means the input price")
 	fs.Float64Var(&o.price.OutputPerM, "price-output", 0, "USD per million output tokens; default the table's price for -model")
@@ -183,11 +187,15 @@ type reviewCase struct {
 	Stop  ports.AgentStop `json:"stop,omitempty"`
 	Turns int             `json:"turns"`
 	// ModelSeconds and ToolSeconds are the model-call and tool-call time of the loop, summed over its turns.
-	ModelSeconds float64               `json:"model_seconds,omitempty"`
-	ToolSeconds  float64               `json:"tool_seconds,omitempty"`
-	Error        string                `json:"error,omitempty"`
-	Truth        *bench.TruthMap       `json:"truth_on_head,omitempty"`
-	Findings     []bench.ScoredFinding `json:"findings"`
+	ModelSeconds float64 `json:"model_seconds,omitempty"`
+	ToolSeconds  float64 `json:"tool_seconds,omitempty"`
+	// Nudges is the number of times the loop asked again after a text answer, and Transcript the bounded record of
+	// each turn, so a run that proposes nothing explains itself.
+	Nudges     int                   `json:"nudges,omitempty"`
+	Transcript []turnRecord          `json:"transcript,omitempty"`
+	Error      string                `json:"error,omitempty"`
+	Truth      *bench.TruthMap       `json:"truth_on_head,omitempty"`
+	Findings   []bench.ScoredFinding `json:"findings"`
 }
 
 // reviewRun reviews every selected valid case with model behind the hard cost cap, then writes the results. The exit
@@ -337,13 +345,49 @@ func runReviewer(ctx context.Context, o reviewOptions, model ports.ModelChat, bu
 	return loop.Run(ctx, ports.AgentRun{Model: o.model, System: reviewerPrompt, User: reviewerUser(c, rep),
 		Tools: tb.specs(), FinalTools: []string{finalTool}, Dispatcher: tb,
 		Budget:          ports.AgentBudget{USD: budget, InputTokens: inputTokensPerCase, OutputTokens: outputTokensPerCas},
-		MaxOutputTokens: maxOutputPerAnswer, MaxTurns: maxTurnsPerCase, Deadline: time.Now().Add(caseDeadline)})
+		MaxOutputTokens: maxOutputPerAnswer, MaxTurns: maxTurnsPerCase, Deadline: time.Now().Add(caseDeadline),
+		RequireToolCall: true, Nudge: reviewerNudge})
+}
+
+// reviewerNudge is the fixed message the loop sends after an answer with no tool call (at most twice a case).
+const reviewerNudge = "Call a tool now. If you found no bug you can prove, call finish_review."
+
+// turnRecord is one turn of the loop in the results file. The loop already bounds it: 2 KB of text, 16 calls.
+type turnRecord struct {
+	Text       string            `json:"text,omitempty"`
+	Calls      []callRecord      `json:"calls,omitempty"`
+	ToolCalls  int               `json:"tool_calls"`
+	Finish     ports.ModelFinish `json:"finish,omitempty"`
+	TextCalls  bool              `json:"text_calls,omitempty"`
+	Nudged     bool              `json:"nudged,omitempty"`
+	ToolChoice string            `json:"tool_choice,omitempty"`
+	Fallback   string            `json:"fallback,omitempty"`
+	CostUSD    float64           `json:"cost_usd"`
+}
+
+type callRecord struct {
+	Name          string `json:"name"`
+	ArgumentBytes int    `json:"argument_bytes"`
+}
+
+func turnRecords(turns []ports.AgentTurn) []turnRecord {
+	out := make([]turnRecord, 0, len(turns))
+	for _, t := range turns {
+		r := turnRecord{Text: t.Text, ToolCalls: t.ToolCalls, Finish: t.Finish, TextCalls: t.TextCalls, Nudged: t.Nudged,
+			ToolChoice: string(t.ToolChoice), Fallback: t.Fallback, CostUSD: t.CostUSD}
+		for _, c := range t.Calls {
+			r.Calls = append(r.Calls, callRecord(c))
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // recordLoop copies what the loop reported into the case: how it stopped, the turns, the cost, the tokens and the time.
 func (rc *reviewCase) recordLoop(res ports.AgentResult) {
 	rc.Stop, rc.Turns, rc.CostUSD = res.Stop, len(res.Turns), res.CostUSD
 	rc.InputTokens, rc.CachedTokens, rc.OutputTokens = res.Usage.InputTokens, res.Usage.CachedInputTokens, res.Usage.OutputTokens
+	rc.Nudges, rc.Transcript = res.Nudges, turnRecords(res.Turns)
 	for _, t := range res.Turns {
 		rc.ModelSeconds += t.ModelLatency.Seconds()
 		rc.ToolSeconds += t.ToolLatency.Seconds()
@@ -351,11 +395,12 @@ func (rc *reviewCase) recordLoop(res ports.AgentResult) {
 }
 
 // reviewerPrompt is the reviewer's system prompt. It states the task and the proof rule, not how to reason.
-const reviewerPrompt = `You review a pull request in a Go repository. Find bugs that this change brings in.
+const reviewerPrompt = `Answer only with tool calls. Propose each bug with propose_finding, which takes the Go test
+that proves it (at most 5). End with finish_review, also when you found no bug you can prove.
+You review a pull request in a Go repository. Find bugs that this change brings in.
 A finding counts only with proof: a Go test that fails on this head because of the bug, in two separate runs, and
 passes once the suspected lines are fixed. A test that does not build proves nothing. Use run_test to try a test
-before you propose it. Propose each bug with propose_finding (at most 5), then call finish_review. If you find no
-bug you can prove, propose nothing and call finish_review.`
+before you propose it.`
 
 // reviewerUser is the first user message: the repository and the files the pull request changes.
 func reviewerUser(c bench.Case, rep *replay) string {

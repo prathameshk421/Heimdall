@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -63,23 +64,40 @@ const (
 	ModelFinishOther         ModelFinish = "other"
 )
 
+// ModelToolChoice says whether the model must call a tool. Empty means the provider's default.
+type ModelToolChoice string
+
+// The tool choices a caller can ask for.
+const (
+	// ModelToolChoiceAuto lets the model answer with text or with a tool call.
+	ModelToolChoiceAuto ModelToolChoice = "auto"
+	// ModelToolChoiceRequired asks the endpoint to force a tool call. An adapter sends it only to an endpoint that is
+	// known to take it, and falls back to auto once when the endpoint refuses it.
+	ModelToolChoiceRequired ModelToolChoice = "required"
+)
+
 // ModelRequest is one chat-completion call. MaxOutputTokens caps the answer and is zero for no explicit cap.
-// Consumer: the Action-mode agent loop (internal/app/agentloop).
+// ToolChoice is empty for the provider's default. Consumer: the Action-mode agent loop (internal/app/agentloop).
 type ModelRequest struct {
 	Model           string
 	Messages        []ModelMessage
 	Tools           []ModelTool
 	MaxOutputTokens int
+	ToolChoice      ModelToolChoice
 }
 
 // ModelResponse is the model's answer: text, or the tool calls it wants run, or both. CostUSD is computed from
-// Usage and the caller's price table, so the loop can hold a budget.
+// Usage and the caller's price table, so the loop can hold a budget. ToolChoice is the choice the adapter sent, empty
+// for none. Fallback is set when the endpoint refused the requested choice and the adapter sent auto instead: it holds
+// the refusal, without the key or the request body.
 type ModelResponse struct {
-	Content   string
-	ToolCalls []ModelToolCall
-	Finish    ModelFinish
-	Usage     ModelUsage
-	CostUSD   float64
+	Content    string
+	ToolCalls  []ModelToolCall
+	Finish     ModelFinish
+	Usage      ModelUsage
+	CostUSD    float64
+	ToolChoice ModelToolChoice
+	Fallback   string
 }
 
 // ModelChat is one chat-completion endpoint with tool calling. Consumer: the Action-mode agent loop. Adapter:
@@ -108,20 +126,34 @@ const (
 	ModelErrorInvalid ModelErrorKind = "invalid"
 )
 
-// ModelError is a model endpoint failure. Status and Message come from the provider answer and hold no credential.
-// Unwrap maps the kind to ErrUnauthorized or ErrUnavailable, so errors.Is works for the retry decision.
+// ModelError is a model endpoint failure. Status, ContentType and Message come from the provider answer and hold no
+// credential; Message is a bounded part of the answer body. RequestBytes is the size of the request body that was
+// refused, never its content. Unwrap maps the kind to ErrUnauthorized or ErrUnavailable, so errors.Is works for the
+// retry decision.
 type ModelError struct {
-	Kind       ModelErrorKind
-	Status     int
-	RetryAfter time.Duration
-	Message    string
+	Kind         ModelErrorKind
+	Status       int
+	ContentType  string
+	RequestBytes int
+	RetryAfter   time.Duration
+	Message      string
 }
 
 // Error renders the failure without the endpoint, the key or the conversation.
 func (e *ModelError) Error() string {
 	msg := fmt.Sprintf("model %s", e.Kind)
+	var facts []string
 	if e.Status != 0 {
-		msg += fmt.Sprintf(" (HTTP %d)", e.Status)
+		facts = append(facts, fmt.Sprintf("HTTP %d", e.Status))
+	}
+	if e.ContentType != "" {
+		facts = append(facts, e.ContentType)
+	}
+	if e.RequestBytes > 0 {
+		facts = append(facts, fmt.Sprintf("request %d bytes", e.RequestBytes))
+	}
+	if len(facts) > 0 {
+		msg += " (" + strings.Join(facts, ", ") + ")"
 	}
 	if e.Message != "" {
 		msg += ": " + e.Message

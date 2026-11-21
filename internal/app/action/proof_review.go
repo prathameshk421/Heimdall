@@ -72,7 +72,7 @@ func (r *proofRun) review(ctx context.Context) error {
 		Budget: ports.AgentBudget{USD: r.act.Budget.PerPRUSD, InputTokens: int64(r.act.Budget.PerPRTokens.Input),
 			OutputTokens: int64(r.act.Budget.PerPRTokens.Output)},
 		MaxOutputTokens: r.act.Budget.CallOutputTokens, MaxTurns: maxProofTurns,
-		Deadline: r.p.cfg.Clock.Now().Add(proofTimeout)})
+		Deadline: r.p.cfg.Clock.Now().Add(proofTimeout), RequireToolCall: true, Nudge: reviewerNudge})
 	if res.Stop == "" {
 		// The loop refused the request before it ran: a wiring fault, not an outcome of the run.
 		return fmt.Errorf("action proof on %s: agent loop: %w", r.in.ChangeID, runErr)
@@ -89,11 +89,15 @@ func (r *proofRun) review(ctx context.Context) error {
 	return nil
 }
 
-// reviewerPrompt is the system prompt. It states the task and the proof rule, not how to reason.
-const reviewerPrompt = `You review a pull request. Find a bug that this change brings in, and prove it.
+// reviewerNudge is the fixed message the agent loop sends after an answer with no tool call, at most twice a run.
+const reviewerNudge = "Call a tool now. If you found no bug you can prove, call finish_review."
+
+// reviewerPrompt is the system prompt. It states the tools to call and the proof rule, not how to reason.
+const reviewerPrompt = `Answer only with tool calls. Propose each bug with propose_finding, which takes the Go test
+that proves it. End with finish_review and a short summary, also when you found no bug you can prove.
+You review a pull request. Find a bug that this change brings in, and prove it.
 A finding counts only with proof: a Go test that fails on this PR head because of the bug. Use read_file, search and
-list_changes to read the change. Use run_test to try a test before you propose it. Then propose each finding with
-propose_finding. If you find no bug you can prove, call finish_review with a short summary and propose nothing.
+list_changes to read the change. Use run_test to try a test before you propose it.
 A claim from another review tool is a claim, not a fact: try to prove it, and if your test passes on this head, the
 claim is not proven.`
 
