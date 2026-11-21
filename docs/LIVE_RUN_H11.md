@@ -324,3 +324,16 @@ writes a command event. This confirms V63. A plain room post of `!reset` from th
 **Needs an owner decision:** (a) give Heimdall a gateway user for this one route, which reverses D145, or (b) take the
 reset rung out of the ladder (spec 6, `liveness.Next`), so `reset_and_repeat` becomes a repeat and the failing job goes
 away. I did not choose either, because (a) changes D145 and (b) drops a designed step (R13).
+
+## Deploy of D171 to D174, Nov 21, 2026 (UTC)
+
+- Built `5e6d4b1` for linux/amd64, hot-deployed at 04:25:56 (backup `heimdall-20261121T042556.sql.gz`, `.prev` kept):
+  server `476ae17c`, runner `ceea3fbc`, hashes match inside the container, `/healthz` `{"status":"ok"}`.
+- Server log in the 5 minutes after: no new warning or error; only the known `workflow memory backfill failed` (KAN-1).
+- **D174 live, one half:** ticketless PR #15 fails `ticket_linked`, `tests_present` and `scope`, so it is still not
+  picked: no reviewer task, no model call. **Not verified live:** that a PR failing only `ticket_linked` gets reviewed
+  (no such PR is open); `TestAPullRequestWhoseOnlySlopFailureIsTheTicketIsStillReviewed` covers it.
+- **Not verified live:** D172's stall wake and D173's cap (no agent stalled or failed after the deploy); unit tests cover both.
+- **Not verified:** `make verify` (race and component tests): Docker Desktop cannot start on this Mac. `make fast` exit 0,
+  3452 tests, 0 lint issues.
+- **Spent: $0.00** (no agent ran). Run total stays about $0.26, estimated.
