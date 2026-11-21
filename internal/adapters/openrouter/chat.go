@@ -66,7 +66,7 @@ func (c ChatClient) Complete(parent context.Context, req ports.ModelRequest) (po
 	}
 	answer, retryErr := c.send(parent, req, key, ports.ModelToolChoiceAuto)
 	if retryErr != nil {
-		return answer, fmt.Errorf("model chat fell back to tool_choice auto after tool_choice required was refused (%v): %w", err, retryErr)
+		return answer, fmt.Errorf("model chat fell back to tool_choice auto after tool_choice required was refused (%s): %w", err.Error(), retryErr)
 	}
 	answer.Fallback = "tool_choice required refused: " + err.Error()
 	return answer, nil

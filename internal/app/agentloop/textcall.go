@@ -222,20 +222,29 @@ func checkArguments(spec ports.ModelTool, raw json.RawMessage) (json.RawMessage,
 			return nil, fmt.Errorf("tool arguments lack %q", name)
 		}
 	}
+	if err := s.checkProperties(obj); err != nil {
+		return nil, err
+	}
+	return compact.Bytes(), nil
+}
+
+// checkProperties checks each property against its declared type, and refuses an undeclared one when the schema
+// forbids other properties.
+func (s toolSchema) checkProperties(obj map[string]json.RawMessage) error {
 	closed := strings.TrimSpace(string(s.AdditionalProperties)) == "false"
 	for name, value := range obj {
 		prop, declared := s.Properties[name]
 		if !declared {
 			if closed {
-				return nil, fmt.Errorf("tool arguments hold unknown %q", name)
+				return fmt.Errorf("tool arguments hold unknown %q", name)
 			}
 			continue
 		}
 		if t, ok := prop.Type.(string); ok && !jsonHasType(value, t) {
-			return nil, fmt.Errorf("tool argument %q is not a %s", name, t)
+			return fmt.Errorf("tool argument %q is not a %s", name, t)
 		}
 	}
-	return compact.Bytes(), nil
+	return nil
 }
 
 // jsonHasType reports whether a JSON value has the JSON schema type t. An unknown type name is not checked.
