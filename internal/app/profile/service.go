@@ -68,6 +68,15 @@ func New(cfg Config) (*Service, error) {
 	return &Service{cfg: cfg}, nil
 }
 
+// AllowedImages is the runner's image allowlist, the list Propose validates an artifact against.
+func (s *Service) AllowedImages(ctx context.Context) ([]string, error) {
+	images, err := s.cfg.Policy.AllowedImages(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read runner image allowlist: %w", err)
+	}
+	return images, nil
+}
+
 // Propose validates a profile against the runner's image allowlist and stores an immutable proposal.
 func (s *Service) Propose(ctx context.Context, repo change.Repo, author string, artifact []byte) (ports.ProfileProposal, bool, error) {
 	if author == "" {

@@ -105,6 +105,7 @@ func (f *commandProfileFake) Approve(_ context.Context, p mcp.Principal, _ strin
 func (f *commandProfileFake) PreviousTrial(context.Context, string) (string, error) {
 	return "", nil
 }
+func (f *commandProfileFake) AllowedImages(context.Context) ([]string, error) { return nil, nil }
 func (f *commandProfileFake) Promote(_ context.Context, p mcp.Principal, _ string) error {
 	f.promotions = append(f.promotions, p.Person)
 	return nil

@@ -6,7 +6,7 @@
 
 **How to work.**
 - Read the build files and the test setup with `read_code` and `search_code`: language, image, how tests run, where tests live, the seam they import.
-- Prefer commands that already work in the repository. Name only images from the runner's allowlist.
+- Prefer commands that already work in the repository. Name only images that `stack_hints` lists, exactly as written.
 - Declare each check with the files it applies to, and say whether it compares against the base.
 - Keep the artifact small and complete; one `report_progress` sentence per phase.
 
@@ -14,7 +14,7 @@
 
 ```yaml
 languages: [go]
-image: golang@sha256:e519d3b0a5b285e5aa53ab9eef02bc6bbb9cb04608389b743a136a9ce75f0d1e
+image: <one image from stack_hints, exactly as written>
 acceptance: go test {dir}/...
 seam: example.com/pay/internal/app
 ac_tag: "// heimdall:{ac}"

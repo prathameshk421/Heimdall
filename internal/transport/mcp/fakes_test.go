@@ -69,6 +69,7 @@ type fakeProfiles struct {
 	previousTrial                                    string
 	lastPrincipal                                    Principal
 	proposeErr                                       error
+	images                                           []string
 }
 
 func (f *fakeProfiles) Propose(_ context.Context, p Principal, repo string, artifact []byte) (ports.ProfileProposal, bool, error) {
@@ -88,6 +89,7 @@ func (f *fakeProfiles) PreviousTrial(context.Context, string) (string, error) {
 	f.previousTrials++
 	return f.previousTrial, nil
 }
+func (f *fakeProfiles) AllowedImages(context.Context) ([]string, error) { return f.images, nil }
 func (f *fakeProfiles) Promote(_ context.Context, p Principal, _ string) error {
 	f.promotions++
 	f.lastPrincipal = p

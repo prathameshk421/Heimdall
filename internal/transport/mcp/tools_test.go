@@ -725,3 +725,15 @@ func TestGetTaskShowsTheProfilerItsPreviousTrial(t *testing.T) {
 	require.False(t, res.IsError, res.text())
 	require.Contains(t, res.text(), "proposal ccccccc failed its trial")
 }
+
+// The profiler must name an allowlisted image, so get_task lists the runner's images in stack_hints (live, Nov 21: the
+// skill named the allowlist and no input showed it).
+func TestGetTaskShowsTheProfilerTheAllowedImages(t *testing.T) {
+	r := newRig(t, workflow.RoleProfiler)
+	img := "registry.example/go@sha256:" + strings.Repeat("b", 64)
+	r.server.deps.Profiles = &fakeProfiles{images: []string{img}}
+	res := r.call("get_task", `{}`)
+	require.False(t, res.IsError, res.text())
+	_, content := section(t, res.text(), "stack_hints")
+	require.Contains(t, content, img)
+}
