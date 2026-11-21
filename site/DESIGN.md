@@ -193,3 +193,14 @@ hills and a faint distant colonnade sit behind. One tiny figure walks toward the
 - Section heads get a short rule in `--rule` above them. Table headers sit on a `--fill` band.
 - Figure 1 keeps its content. Its panel takes a faint sky gradient, and the proven row glows in the rose accent.
 - The og:image is `site/shots/og-v7.png`, made from the hero art and the title.
+
+### Checks (22 November 2026, headless Chromium 1223)
+
+- 1440, 834 and 360 px, light and dark: 0 px horizontal overflow. Every visible text element passes AA with the
+  worst-case grain added: lowest ratio 5.24:1 in light, 6.94:1 in dark. No text sits over the art.
+- Keyboard: a visible 2 px focus ring on 40 of 40 tab stops in both themes (`site/shots/v7-focus-demo.png`).
+- Reduced motion: the mist and glow animations stop. Reduced transparency: the grain is off.
+- Weight: the HTML with all inline assets is 62,862 bytes (16,356 gzip), up from 53,606 (13,675 gzip) in v6. The art
+  is 6.4 KB of it. Total transfer with fonts is 232 KB, up from 223 KB.
+- LCP on a local server with 150 ms latency, 1.6 Mbit/s and 4x CPU slowdown, 3 runs: v7 516 to 584 ms at 1440 px and
+  504 to 556 ms at 360 px; v6 500 to 548 ms and 492 to 536 ms. The LCP element is the lede paragraph in both.
