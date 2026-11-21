@@ -1,0 +1,32 @@
+{
+  "comment": {
+    "id": 2796338465,
+    "body": "duplicate resize listener - `window.addEventListener(\"resize\", resizeAndSync)` duplicates the listener already registered on line 211, causing double resize API calls on window resize events\n\n```suggestion\n    // Removed duplicate - window resize already handled in useEffect on line 201\n    const fitTimer = window.setTimeout(resizeAndSync, 30);\n```",
+    "path": "apps/web/src/components/ThreadTerminalDrawer.tsx",
+    "line": null,
+    "start_line": null,
+    "original_line": 367,
+    "original_start_line": 366,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "original_commit_id": "head0001",
+    "outdated": true,
+    "user": {
+      "login": "greptile-apps[bot]",
+      "type": "Bot"
+    }
+  },
+  "want": {
+    "tool": "greptile",
+    "severity": "medium",
+    "severity_stated": false,
+    "outdated": true,
+    "claim_contains": [
+      "duplicate resize listener"
+    ],
+    "claim_excludes": [
+      "logic:",
+      "suggestion"
+    ]
+  }
+}

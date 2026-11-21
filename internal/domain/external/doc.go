@@ -27,15 +27,31 @@
 // (in_reply_to_id is 0); and the body carries a mark of the tool. Any other author is ignored with a typed reason and is
 // not an error.
 //
-//   - CodeRabbit (coderabbitai): the "_category_ | _severity_" line, or the word CodeRabbit, or a fingerprinting
-//     comment. Severity from the line: Critical is critical, Major is high, Minor is medium, Trivial and Nitpick are
-//     low. A Nitpick is style.
-//   - GitHub Copilot code review (copilot-pull-request-reviewer, Copilot): the login and the Bot type only. Copilot
-//     writes plain prose with no fixed mark. It states no severity.
+// The formats below were checked against 411 real comments from pingdotgg/t3code (testdata/real, and the corpus test;
+// docs/product/research/13-t3code-bot-comments.md has the counts). Where the documentation and the data disagreed, the
+// data won.
+//
+//   - CodeRabbit (coderabbitai): either header, the word CodeRabbit, or a fingerprinting comment. The older header is
+//     "_category_ | _severity_"; from November 2026 it is "**<picture>…</picture> Minor** · **Category** · **Quick
+//     win**", and the whole line is removed from the claim. Severity: Critical is critical, Major is high, Minor is
+//     medium, Trivial and Nitpick are low. A Nitpick is style.
+//   - GitHub Copilot code review (copilot-pull-request-reviewer, Copilot): the login and the Bot type only. The real
+//     login on a public PR is "Copilot"; either login in PR.Sources admits either. Copilot writes plain prose with no
+//     fixed mark and states no severity.
 //   - Cursor Bugbot (cursor): BUGBOT_BUG_ID, the DESCRIPTION START comment, or a "**High Severity**" line. Severity
 //     from that line: Critical, High, Medium, Low.
-//   - Greptile (greptile-apps): a "**logic:**", "**syntax:**" or "**style:**" prefix, the word Greptile, or "Prompt To
-//     Fix With AI". It states a category, not a severity. The style category is style.
+//   - Greptile (greptile-apps): the login and the Bot type. Every Greptile comment in the data is plain prose, so the
+//     "**logic:**" prefix is still read when it is there, but it is not required. Greptile states a category, not a
+//     severity. The style category is style.
+//   - Macroscope (macroscopeapp): the login and the Bot type; it writes plain prose, a path and a line. A severity when
+//     the body opens with an emoji and a word ("🔴 Critical", "🟠 High", "🟡 Medium", "🟢 Low"). The claim loses the
+//     severity line, the repeated "path:line", a GitHub blob link and the footer ("Addressed in <sha>", "No longer
+//     relevant as of <sha>"); the severity is kept.
+//   - OpenAI Codex connector (chatgpt-codex-connector): the "![P2 Badge]" image, or the "Useful? React with" footer.
+//     The badge is read from the raw body, because it sits inside a <sub> that the claim clean-up removes: P0 is
+//     critical, P1 high, P2 medium, P3 low.
+//   - Devin (devin-ai-integration): the "<!-- devin-review-comment {json} -->" payload or the review badge. The emoji
+//     that opens the finding is the severity: 🔴 critical, 🟠 high, 🟡 medium, 🟢 low.
 //
 // A tool that states no severity gets medium, and Candidate.SeverityStated is false.
 //
@@ -46,10 +62,18 @@
 // block or a fence that never closes takes the rest of the text. The claim is one line, at most 600 runes (the FindingIn
 // limit), cut with a "…" mark. A claim under 10 runes is not a claim: the comment is ignored as no_claim.
 //
+// A tool's own noise never opens a claim: the CodeRabbit header, the Macroscope severity line, path:line and blob URL,
+// the Codex badge and the Devin emoji are all removed after they are read, and so are the footers that ask for feedback
+// or confirm a fix. A body that is a tool saying it could not read the request ("Sorry, I'm unable to act on this
+// request…") is not a claim: it is ignored as no_claim, because it says nothing about the diff.
+//
 // # Location
 //
 //   - The coordinates are line and start_line on commit_id. When line is null, or the caller says the comment is
 //     outdated, they are original_line and original_start_line on original_commit_id.
+//   - Such a comment is not dropped. Candidate.Outdated is true, Candidate.CommitID names the commit the lines are on,
+//     and the lines are the original pair: 145 of the 411 real comments are like this, and a proof run that needs a
+//     place at head can see that it has none instead of losing the finding.
 //   - A comment on head needs no diff. A comment on an older commit is mapped through PR.Diffs for that commit, by its
 //     old path. A rename gives the new path. A line moved by an insert or a delete above it gets its new number. A range
 //     keeps the first and the last line that survive.
@@ -83,11 +107,13 @@
 //
 // # Tests
 //
-// The goldens in testdata/<tool>/ are hand made from the formats that the tools document and show in public. They are
-// not captured from a live PR, so every login, mark and severity pattern is `not verified` against a real PR (work
-// package A5 records real comments). golden_test.go reads each one. recognise_test.go holds the login and marker table,
-// the ignored authors and the claim clean-up. location_test.go holds the diff mapping (a line moved, a line deleted, a
-// file renamed, ranges, a deleted file, a missing diff, bad hunks) and the no-location drops. batch_test.go holds the
-// counts and the bounds. patch_test.go holds ParsePatch. fuzz_test.go holds FuzzIngestBody and FuzzParsePatch; run with
-// go test -run=^$ -fuzz=FuzzIngestBody -fuzztime=30s.
+// The goldens in testdata/<tool>/ are hand made from the formats that the tools document and show in public.
+// testdata/real/bodies/<tool>/ holds ten comments captured from a public PR (pingdotgg/t3code), with the severity, the
+// anchor and the words the claim must keep and lose: golden_test.go reads both. corpus_test.go feeds every line of the
+// real 411-comment corpus (testdata/corpus, from the same public PRs) and asserts that no line panics and that at least
+// 90% of the top-level comments become candidates; it logs the count per bot. recognise_test.go holds the login and
+// marker table, the ignored authors and the claim clean-up. location_test.go holds the diff mapping (a line moved, a
+// line deleted, a file renamed, ranges, a deleted file, a missing diff, bad hunks and the outdated anchor) and the
+// no-location drops. batch_test.go holds the counts and the bounds. patch_test.go holds ParsePatch. fuzz_test.go holds
+// FuzzIngestBody and FuzzParsePatch; run with go test -run=^$ -fuzz=FuzzIngestBody -fuzztime=30s.
 package external

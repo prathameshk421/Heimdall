@@ -1,0 +1,34 @@
+{
+  "comment": {
+    "id": 2785877942,
+    "body": "<!-- devin-review-comment {\"id\": \"BUG_pr-review-job-9a4187e999a942c99974c6457c0c3eb1_0001\", \"file_path\": \"apps/server/src/wsServer.ts\", \"start_line\": 238, \"end_line\": 249, \"side\": \"RIGHT\"} -->\n\n🔴 **Unhandled exception in `handleMessage` catch block when WebSocket closes during async request**\n\nThe `ws.send()` call inside the `catch` block of `handleMessage` has no error protection. If the WebSocket connection closes while `routeRequest()` is being awaited (e.g. during a slow provider session start), the first `ws.send()` at line 241 throws (caught by `catch`), then the catch-block's `ws.send()` at line 248 also throws — and this second throw propagates as an unhandled promise rejection because the caller uses `void handleMessage(ws, raw)` at line 212.\n\n<details>\n<summary>Root Cause and Impact</summary>\n\nThe `ws` library's `send()` method throws synchronously when called on a non-OPEN WebSocket without a callback. The code path:\n\n1. Client sends a request, then disconnects.\n2. `routeRequest(request)` completes (or throws).\n3. `ws.send(JSON.stringify(response))` throws `Error: WebSocket is not open` → caught by `catch`.\n4. `ws.send(JSON.stringify(response))` in the catch block at line 248 also throws → **unhandled**.\n\nSince `handleMessage` is invoked with `void` (`apps/server/src/wsServer.ts:212`), the returned promise rejection is unhandled. In Node.js 15+, unhandled rejections terminate the process by default, which would crash the entire server and disconnect all clients.\n\n</details>\n\n```suggestion\n    try {\n      const result = await routeRequest(request);\n      const response: WsResponse = { id: request.id, result };\n      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(response));\n    } catch (err) {\n      const message = err instanceof Error ? err.message : \"Unknown server error\";\n      const response: WsResponse = {\n        id: request.id,\n        error: { message },\n      };\n      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(response));\n    }\n```\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/pingdotgg/codething-mvp/pull/10\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with 👍 or 👎 to provide feedback.*",
+    "path": "apps/server/src/wsServer.ts",
+    "line": 249,
+    "start_line": 238,
+    "original_line": 249,
+    "original_start_line": 238,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "original_commit_id": "head0001",
+    "outdated": false,
+    "user": {
+      "login": "devin-ai-integration[bot]",
+      "type": "Bot"
+    }
+  },
+  "want": {
+    "tool": "devin",
+    "severity": "critical",
+    "severity_stated": true,
+    "outdated": false,
+    "claim_contains": [
+      "Unhandled exception"
+    ],
+    "claim_excludes": [
+      "devin-review-comment",
+      "🔴",
+      "Was this helpful",
+      "Open in Devin Review"
+    ]
+  }
+}

@@ -76,11 +76,12 @@ func TestMapThroughDiff(t *testing.T) {
 			c.StartLine, c.OriginalStartLine = 20, 20
 			return c
 		}(), file("a.go", "a.go", hunks...), 0, 0, "", external.CauseLineDeleted},
-		{"a comment GitHub marked outdated uses its original line and commit", func() external.Comment {
-			c := oldComment("a.go", 5)
-			c.Line, c.StartLine, c.CommitID, c.Outdated = 0, 0, head, true
-			return c
-		}(), file("a.go", "a.go", hunks...), 7, 7, "a.go", ""},
+		{"a comment GitHub marked outdated keeps its original pair and is marked",
+			func() external.Comment {
+				c := oldComment("a.go", 5)
+				c.Line, c.StartLine, c.CommitID, c.Outdated = 0, 0, head, true
+				return c
+			}(), file("a.go", "a.go", hunks...), 5, 5, "a.go", ""},
 		{"diff hunks out of order cannot be used", oldComment("a.go", 5),
 			file("a.go", "a.go", hunks[1], hunks[0]), 0, 0, "", external.CauseBadDiff},
 	}
@@ -102,6 +103,50 @@ func TestMapThroughDiff(t *testing.T) {
 			require.Equal(t, external.SideRight, got.Candidate.Side)
 		})
 	}
+}
+
+// TestOutdatedKeepsItsAnchor: a comment that GitHub calls outdated, or whose line is null, is not dropped. It keeps
+// its original pair on the original commit and says so, because 145 of the 411 real comments are like that and a drop
+// loses a finding the tool did post.
+func TestOutdatedKeepsItsAnchor(t *testing.T) {
+	hunks := []external.Hunk{{OldStart: 3, NewStart: 3, Ops: join(keep(2), add(2), keep(1))}}
+	pr := newPR()
+	pr.Diffs = external.Diffs{older: {{OldPath: "a.go", NewPath: "a.go", Hunks: hunks}}}
+
+	t.Run("a null line is anchored on the original commit", func(t *testing.T) {
+		c := oldComment("a.go", 5)
+		c.Line, c.StartLine, c.CommitID = 0, 0, head
+		got := pr.Ingest(c)
+		require.Equal(t, external.OutcomeCandidate, got.Outcome, "%+v", got)
+		require.True(t, got.Candidate.Outdated)
+		require.Equal(t, older, got.Candidate.CommitID)
+		require.Equal(t, 5, got.Candidate.StartLine, "the original line, not the mapped one")
+		require.Equal(t, 5, got.Candidate.EndLine)
+	})
+
+	t.Run("the outdated flag does the same", func(t *testing.T) {
+		c := oldComment("a.go", 5)
+		c.Outdated = true
+		got := pr.Ingest(c)
+		require.Equal(t, external.OutcomeCandidate, got.Outcome, "%+v", got)
+		require.True(t, got.Candidate.Outdated)
+		require.Equal(t, older, got.Candidate.CommitID)
+	})
+
+	t.Run("a comment at head is not outdated", func(t *testing.T) {
+		got := pr.Ingest(inline(1, "a.go", 5))
+		require.Equal(t, external.OutcomeCandidate, got.Outcome, "%+v", got)
+		require.False(t, got.Candidate.Outdated)
+		require.Empty(t, got.Candidate.CommitID)
+	})
+
+	t.Run("a null line with no original line is still no location", func(t *testing.T) {
+		c := inline(1, "a.go", 5)
+		c.Line, c.StartLine, c.OriginalLine, c.OriginalStartLine = 0, 0, 0, 0
+		got := pr.Ingest(c)
+		require.Equal(t, external.OutcomeDropped, got.Outcome, "%+v", got)
+		require.Equal(t, external.CauseNoLine, got.Drop.Cause)
+	})
 }
 
 func TestMapInsertAtTopAndPureInsert(t *testing.T) {

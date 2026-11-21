@@ -41,6 +41,7 @@ func (pr PR) Ingest(c Comment) Result {
 	r.Candidate = Candidate{
 		Tool: tool, CommentID: c.ID, Path: where.path, StartLine: where.start, EndLine: where.end, Side: where.side,
 		Claim: p.claim, Severity: p.sev, SeverityStated: p.stated, Style: p.style,
+		Outdated: where.outdated, CommitID: where.commit,
 	}
 	return r
 }

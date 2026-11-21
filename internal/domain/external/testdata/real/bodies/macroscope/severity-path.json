@@ -1,0 +1,34 @@
+{
+  "comment": {
+    "id": 3512848138,
+    "body": "<!-- MURMUR_IGNORE -->\n🟡 **Medium** `src/sourceControl.ts:136`\n\n`SCP_SSH_REMOTE_PATTERN` allows a `/` after the host, so a local path like `deploy@github.com/project/repo` matches the regex and `isSshRemoteUrl()` returns `true`. Git only treats `user@host:path` as an SCP-like SSH remote when the first separator after the host is `:`, not `/`; without the colon it is a local path. As a result, `parseRemoteHost()` also extracts a host from local paths, causing `detectSourceControlProviderFromRemoteUrl()` to misclassify the remote as GitHub instead of returning `null`. Consider requiring `:` instead of `[:/]` in the pattern.\n\n✅ Resolved in 536dc179add4c08b27b331475cf051bf225243f1",
+    "path": "packages/shared/src/sourceControl.ts",
+    "line": null,
+    "start_line": null,
+    "original_line": 136,
+    "original_start_line": 136,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "original_commit_id": "head0001",
+    "outdated": true,
+    "user": {
+      "login": "macroscopeapp[bot]",
+      "type": "Bot"
+    }
+  },
+  "want": {
+    "tool": "macroscope",
+    "severity": "medium",
+    "severity_stated": true,
+    "outdated": true,
+    "claim_contains": [
+      "SCP_SSH_REMOTE_PATTERN"
+    ],
+    "claim_excludes": [
+      "src/sourceControl.ts:136",
+      "🟡",
+      "Resolved in",
+      "536dc17"
+    ]
+  }
+}
