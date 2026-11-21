@@ -159,3 +159,20 @@ func TestActivateWorksOnARunnerWithNoPromotedProfilesYet(t *testing.T) {
 	_, ok := r.specNamed("acme-pay")
 	require.True(t, ok, "the promoted profile serves jobs")
 }
+
+// A promoted-profiles folder that does not exist yet means no promotion yet: the runner starts, and its first promotion
+// creates the folder (live, Nov 21: the runner refused to start on a fresh VM and took the stack down with it).
+func TestARunnerStartsBeforeItsFirstPromotionAndKeepsThePromotion(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "promoted")
+	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err)
+	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n"
+	_, err = r.Activate("acme-pay", []byte(artifact))
+	require.NoError(t, err)
+
+	again, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err)
+	_, ok := again.specNamed("acme-pay")
+	require.True(t, ok, "a restarted runner reloads the promotion")
+}

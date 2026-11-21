@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"io"
 	"os"
 	"os/exec"
@@ -133,6 +134,10 @@ func NewRunner(policy Policy, executor Executor, root, profilesDir string, allow
 func loadPromotedProfiles(dir string, allowlist []string) (map[string]RepoProfile, error) {
 	if dir == "" {
 		return nil, nil
+	}
+	// A folder that does not exist yet holds no promotion; Activate creates it with the first one.
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		return map[string]RepoProfile{}, nil
 	}
 	profiles, err := LoadApprovedProfiles(dir, allowlist)
 	if err != nil {
