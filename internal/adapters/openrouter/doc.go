@@ -16,5 +16,15 @@
 // once more with "auto" and sets ModelResponse.Fallback to the first refusal; it never loops. A refused call does not
 // bill, so the retry does not change the cost bound of a turn. Every refused call carries the status, the content
 // type and the request body size in its ports.ModelError, and a bounded part of the answer, never the request body or
-// the key.
+// the key, plus the hex SHA-256 of the body, so a refusal that repeats on the same body shows as one.
+//
+// Reasoning (AM12d). DeepSeek thinking mode with tools refuses a call whose earlier assistant turns lack the
+// reasoning_content they gave ("the reasoning_content must be fully passed back to the API in all subsequent
+// requests", else "the API will return a 400 error"; https://api-docs.deepseek.com/guides/thinking_mode). The Deploy
+// endpoint turned that refusal into an HTTP 500 in live run 3. ChatClient reads reasoning_content, or OpenRouter's
+// reasoning, from every answer into ports.ModelReasoning with the field name, and keeps reasoning_details as raw
+// compact JSON. It sends each earlier assistant message back with its reasoning in the same field, never cut, and
+// reasoning_details byte for byte (the request encoder does not escape <, > or &). A message with no reasoning field
+// sends none: the doc never asks for an empty value. A field that came empty goes back empty. A null field is no
+// field. The client does not stream, so there is no delta to join.
 package openrouter

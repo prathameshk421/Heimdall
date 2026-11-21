@@ -63,11 +63,19 @@ func backoffCeiling(attempt int) time.Duration {
 	return min(ceiling, retryCap)
 }
 
-// attemptOf is the record of one failed attempt: the kind and the status of a *ports.ModelError, empty otherwise.
-func attemptOf(err error) ports.AgentAttempt {
+// attemptOf is the record of one failed attempt: the kind, the status, the request size and the request hash of a
+// *ports.ModelError, empty otherwise. SameRequest is set when the hash matches the failed attempt before it. Live run 3
+// met an HTTP 500 that repeated on the identical body three times: a refusal of the request, not a passing fault. The
+// retry rule stays as it is; the record only makes the repeat plain.
+func attemptOf(err error, before []ports.AgentAttempt) ports.AgentAttempt {
 	var modelErr *ports.ModelError
-	if errors.As(err, &modelErr) {
-		return ports.AgentAttempt{Kind: modelErr.Kind, Status: modelErr.Status}
+	if !errors.As(err, &modelErr) {
+		return ports.AgentAttempt{}
 	}
-	return ports.AgentAttempt{}
+	a := ports.AgentAttempt{Kind: modelErr.Kind, Status: modelErr.Status, RequestBytes: modelErr.RequestBytes,
+		RequestHash: modelErr.RequestHash}
+	if n := len(before); n > 0 && a.RequestHash != "" {
+		a.SameRequest = before[n-1].RequestHash == a.RequestHash
+	}
+	return a
 }

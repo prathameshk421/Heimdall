@@ -285,7 +285,7 @@ func (r *run) complete() (resp ports.ModelResponse, modelTime time.Duration, end
 		if callErr == nil {
 			return resp, modelTime, false, nil
 		}
-		r.failed = append(r.failed, attemptOf(callErr))
+		r.failed = append(r.failed, attemptOf(callErr, r.failed))
 		if ended, err := r.retry(resp, callErr, attempt); ended {
 			r.res.FailedCall = r.failed
 			return ports.ModelResponse{}, modelTime, true, err
@@ -360,7 +360,8 @@ func (r *run) addUsage(resp ports.ModelResponse) {
 // record adds one answer to the conversation and the tally. A cost or a token count that cannot be true ends the run:
 // a missing measure must never look like a cheap one. calls are the answer's tool calls; when they were read from the
 // text, the conversation holds them as real calls with no text, so the model sees its call in the wire form and the
-// text is not sent back.
+// text is not sent back. The answer's reasoning is kept in either case. The turn record holds its first 2 KB and its
+// size.
 func (r *run) record(resp ports.ModelResponse, calls []ports.ModelToolCall, fromText bool, modelTime time.Duration) error {
 	if err := r.usageErr(resp); err != nil {
 		return err
@@ -369,7 +370,8 @@ func (r *run) record(resp ports.ModelResponse, calls []ports.ModelToolCall, from
 	r.res.Turn = append(r.res.Turn, ports.AgentTurn{Usage: resp.Usage, CostUSD: resp.CostUSD, ModelLatency: modelTime,
 		ToolCalls: len(calls), Text: clipText(resp.Content, turnTextBytes), Calls: briefs(calls), Finish: resp.Finish,
 		TextCalls: fromText, ToolChoice: resp.ToolChoice, Fallback: clipText(resp.Fallback, turnTextBytes),
-		Attempts: len(r.failed) + 1, Failed: r.failed})
+		Attempts: len(r.failed) + 1, Failed: r.failed, Reasoning: clipText(resp.Reasoning.Text, turnTextBytes),
+		ReasoningBytes: len(resp.Reasoning.Text)})
 	if resp.Fallback != "" {
 		r.autoOnly = true
 	}
@@ -379,7 +381,10 @@ func (r *run) record(resp ports.ModelResponse, calls []ports.ModelToolCall, from
 	if fromText {
 		content = ""
 	}
-	r.messages = append(r.messages, ports.ModelMessage{Role: ports.ModelRoleAssistant, Content: content, ToolCalls: calls})
+	// The reasoning stays on the message whole: an endpoint in thinking mode with tools refuses a later call whose
+	// earlier assistant turns lack the reasoning they gave (AM12d, live run 3).
+	r.messages = append(r.messages, ports.ModelMessage{Role: ports.ModelRoleAssistant, Content: content, ToolCalls: calls,
+		Reasoning: resp.Reasoning})
 	return nil
 }
 
