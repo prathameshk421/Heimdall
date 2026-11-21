@@ -153,7 +153,7 @@ func TestReplayTwoRealCasesWithAScriptedModel(t *testing.T) {
 	mock, chi := rep.Cases[0], rep.Cases[1]
 	require.Equal(t, "testify-1207", mock.ID)
 	require.True(t, mock.Scored, mock.Error)
-	require.Equal(t, "submitted", string(mock.Stop))
+	require.Equal(t, string(ports.AgentStopDone), string(mock.Stop))
 	require.Equal(t, 1, mock.Proposed)
 	require.Equal(t, 1, mock.Proven, "the nil mutex test fails twice on the head and passes on the fix")
 	require.True(t, mock.Hit, "mock/mock.go 507-511 overlaps the truth 510-511 on the head")
@@ -162,7 +162,7 @@ func TestReplayTwoRealCasesWithAScriptedModel(t *testing.T) {
 
 	require.Equal(t, "chi-1185", chi.ID)
 	require.True(t, chi.Scored, chi.Error)
-	require.Equal(t, "submitted", string(chi.Stop))
+	require.Equal(t, string(ports.AgentStopDone), string(chi.Stop))
 	require.Equal(t, 1, chi.Proposed)
 	require.Equal(t, 1, chi.Proven, "the discard-and-flush test fails twice on the head and passes on the fix")
 	require.True(t, chi.Hit, "the truth maps onto the head tree and the finding sits on one of its spans")
@@ -178,8 +178,8 @@ func TestReplayTwoRealCasesWithAScriptedModel(t *testing.T) {
 
 	md, err := os.ReadFile(o.md)
 	require.NoError(t, err)
-	require.Contains(t, string(md), "| testify-1207 | bug | yes | submitted |")
-	require.Contains(t, string(md), "| chi-1185 | bug | yes | submitted |")
+	require.Contains(t, string(md), "| testify-1207 | bug | yes | done |")
+	require.Contains(t, string(md), "| chi-1185 | bug | yes | done |")
 	t.Log("\n" + string(md))
 }
 

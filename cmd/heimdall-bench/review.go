@@ -319,6 +319,16 @@ func reviewOne(ctx context.Context, o reviewOptions, r runner, sb *localSandbox,
 		rc.Error = runErr.Error()
 		return rc, errors.Is(runErr, bench.ErrCostCap)
 	}
+	if res.Stop == ports.AgentStopBudget {
+		// A budget stop is not a reviewer that found nothing: scoring it would count a cut-short run as a miss or a
+		// clean pass. When the run's cost cap, not the per-case budget, set this case's budget, the run stops too.
+		if budget < o.perCase {
+			rc.Error = fmt.Sprintf("stopped by the cost cap ($%.4f left for this case)", budget)
+			return rc, true
+		}
+		rc.Error = fmt.Sprintf("stopped by the per-case budget ($%.2f)", o.perCase)
+		return rc, false
+	}
 	for i, p := range rep.proposals {
 		rc.Findings = append(rc.Findings, rep.prove(ctx, i+1, p))
 	}
