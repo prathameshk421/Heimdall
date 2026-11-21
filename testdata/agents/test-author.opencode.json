@@ -11,7 +11,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "options": {
         "baseURL": "https://api.deploy.com/api/v1",
-        "apiKey": "{env:DEPLOY_API_KEY}"
+        "apiKey": "{{file:secrets/deploy_api_key}}"
       },
       "models": {
         "deepseek-ai/deepseek-v4.1-flash-1017": {

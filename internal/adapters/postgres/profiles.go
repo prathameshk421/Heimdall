@@ -163,6 +163,18 @@ func (s *Store) ActiveProfile(ctx context.Context, repo string) (ports.ProfilePr
 	return p, true, nil
 }
 
+// LatestProfile returns the repository's newest proposal in any state; the profile row reads it (D175).
+func (s *Store) LatestProfile(ctx context.Context, repo string) (ports.ProfileProposal, bool, error) {
+	p, err := scanProfile(s.pool.QueryRow(ctx, `SELECT `+profileColumns+` FROM sandbox_profile_proposal WHERE repository=$1 ORDER BY created_at DESC, id DESC LIMIT 1`, repo))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ports.ProfileProposal{}, false, nil
+	}
+	if err != nil {
+		return ports.ProfileProposal{}, false, fmt.Errorf("load the latest sandbox profile for %s: %w", repo, err)
+	}
+	return p, true, nil
+}
+
 // PromotedProfiles lists profiles in repository order for deterministic runner replay.
 func (s *Store) PromotedProfiles(ctx context.Context) ([]ports.ProfileProposal, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+profileColumns+` FROM sandbox_profile_proposal WHERE state='promoted' ORDER BY repository, id`)

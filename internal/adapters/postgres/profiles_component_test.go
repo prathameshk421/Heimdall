@@ -72,3 +72,37 @@ func TestProfileStoreLifecycleReplayAndAtomicActiveSelection(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{p.ID}, []string{all[0].ID})
 }
+
+// LatestProfile is the repository's newest proposal in any state, which the profile row reads (D175).
+func TestLatestProfileIsTheNewestProposalOfTheRepository(t *testing.T) {
+	ctx := context.Background()
+	srv := startServer(t)
+	db := srv.database(ctx, t)
+	store := NewStore(db.pool)
+	now := time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)
+
+	_, found, err := store.LatestProfile(ctx, "acme/pay")
+	require.NoError(t, err)
+	require.False(t, found)
+
+	spec := ports.ProfileSpec{Languages: []string{"go"}, Image: "registry.example/go@sha256:" + strings.Repeat("b", 64), Acceptance: "go test {dir}", Seam: "test", ACTag: "// tag", TestsDir: "tests/heimdall"}
+	for i, idChar := range []string{"a", "c"} {
+		_, err := store.PutProfile(ctx, ports.ProfileProposal{ID: strings.Repeat(idChar, 64), Repo: "acme/pay", State: ports.ProfileProposed,
+			Author: "profiler", Artifact: []byte("profile " + idChar), Spec: spec, CreatedAt: now.Add(time.Duration(i) * time.Minute)})
+		require.NoError(t, err)
+	}
+	_, err = store.PutProfile(ctx, ports.ProfileProposal{ID: strings.Repeat("e", 64), Repo: "acme/other", State: ports.ProfileProposed,
+		Author: "profiler", Artifact: []byte("other"), Spec: spec, CreatedAt: now.Add(time.Hour)})
+	require.NoError(t, err)
+
+	latest, found, err := store.LatestProfile(ctx, "acme/pay")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, strings.Repeat("c", 64), latest.ID, "the newer proposal of this repository, not another repository's")
+
+	_, err = store.ApproveProfile(ctx, latest.ID, "ann", now.Add(2*time.Minute))
+	require.NoError(t, err)
+	latest, _, err = store.LatestProfile(ctx, "acme/pay")
+	require.NoError(t, err)
+	require.Equal(t, ports.ProfileApproved, latest.State)
+}

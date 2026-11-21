@@ -26,8 +26,6 @@ import (
 func TestTheReviewFlowRunsFromPullRequestToMergeReady(t *testing.T) {
 	started := time.Now()
 	r := newFlowRig(t)
-	// The Switch session reset has no executor yet (HANDOFF known gap): its job fails, and the ladder goes on.
-	r.allowed = []string{string(change.EffectAgentReset)}
 	r.runTestsFlow()
 
 	// The developer pushes the change with a bug the profile check reports on line 8, and opens the pull request.

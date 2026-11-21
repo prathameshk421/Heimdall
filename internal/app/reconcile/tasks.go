@@ -114,7 +114,7 @@ func (r *Reconciler) watch(ctx context.Context, d *decision, in change.In, t tas
 		return err
 	}
 	facts := liveness.Facts{Since: t.info.Since, Acked: t.info.Status == change.TaskAckedStatus, LastCall: last,
-		Repeated: t.info.Wakes > 0, ResetAt: t.info.ResetAt, Provider: providerHealth(in.View)}
+		Repeated: t.info.Wakes > 0, StallWokenAt: t.info.StallWokenAt, Provider: providerHealth(in.View)}
 	n := t.info.Wakes + 1
 	switch liveness.Next(facts, r.cfg.Windows, in.Now) {
 	case liveness.Wait:
@@ -124,12 +124,8 @@ func (r *Reconciler) watch(ctx context.Context, d *decision, in change.In, t tas
 		return d.job(wakeJob(in, t.id, t.info.Agent, t.info.Role, fmt.Sprintf("%s/wake/%d", t.id, n)))
 	case liveness.Probe, liveness.Blocked:
 		return r.probe(ctx, d, in.View)
-	case liveness.Reset:
-		if err := d.job(change.Job{Kind: change.EffectAgentReset, Key: change.EffectKey(fmt.Sprintf("%s/%s/reset/%d", in.Change, t.id, n)),
-			Target: string(in.View.Room), Payload: change.AgentResetPayload{Agent: t.info.Agent, RoomID: in.View.Room}}); err != nil {
-			return err
-		}
-		d.fact(change.TaskRewoken{TaskID: t.id, N: n, Reset: true})
+	case liveness.Rewake:
+		d.fact(change.TaskRewoken{TaskID: t.id, N: n, Stall: true})
 		return d.job(wakeJob(in, t.id, t.info.Agent, t.info.Role, fmt.Sprintf("%s/wake/%d", t.id, n)))
 	case liveness.Fail:
 		d.fact(change.TaskFailed{TaskID: t.id, Agent: t.info.Agent, Role: t.info.Role, Reason: "unresponsive"})

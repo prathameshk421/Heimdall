@@ -28,9 +28,14 @@ for pair in 04:resolver 05:reviewer-1 06:reviewer-2 07:reviewer-3; do
   owner=$(sudo stat -c '%U:%G' "$cfg")
   mode=$(sudo stat -c '%a' "$cfg")
   sudo cp -p "$cfg" "$cfg.bak-$stamp"
-  sudo env NAME="$name" TOK="$tok" CFG="$cfg" python3 - <<'PY'
+  sudo env NAME="$name" TOK="$tok" KEY="$secrets/deploy_api_key" CFG="$cfg" python3 - <<'PY'
 import json, os
 token = open(os.environ["TOK"]).read().strip()
+# The model key is written into the config, like the bearer. {env:DEPLOY_API_KEY} never reaches an agent: the Switch
+# 0.31 controller forwards only an allowlist of variables (OPENAI_API_KEY, OPENROUTER_API_KEY), found live in H11 (B4).
+key = open(os.environ["KEY"]).read().strip()
+if not key or any(c in key for c in "\r\n\0"):
+    raise SystemExit("deploy_api_key must hold one non-empty line")
 cfg = {
     "$schema": "https://opencode.ai/config.json",
     "autoupdate": False,
@@ -42,7 +47,7 @@ cfg = {
         "deploy": {
             "name": "Deploy",
             "npm": "@ai-sdk/openai-compatible",
-            "options": {"baseURL": "https://api.deploy.com/api/v1", "apiKey": "{env:DEPLOY_API_KEY}"},
+            "options": {"baseURL": "https://api.deploy.com/api/v1", "apiKey": key},
             "models": {
                 "deepseek-ai/deepseek-v4.1-flash-1017": {
                     "name": "DeepSeek V4.1 Flash",

@@ -1,6 +1,6 @@
-KAN-23 · 2 needs
+KAN-23 · 3 needs
 Tests     5 tests for AC1, AC2, AC3 · submitted on 9b49652 · verified · committed b464e91
 PR        #11 by prathameshk421 · head 619a8f4 · slop passed · acceptance success
 Reviews   not picked
 Findings  none
-Next      reviewers are picked; no approval has been recorded from an approver of the changed domains
+Next      reviewers are picked; aarush323/heimdall-fixture-pay has no sandbox profile, and no profiler is configured in [agents] to propose one; no approval has been recorded from an approver of the changed domains

@@ -21,6 +21,7 @@ func All() []EventType {
 		EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed, EventTaskProgress,
 		EventTaskSuperseded, EventTaskRewoken, EventProviderProbed,
 		EventStepRetried, EventStepEscalated, EventStepResumed,
+		EventProfileProposed,
 		EventQuestionAsked, EventQuestionAnswered, EventCommandProposed, EventCommandConfirmed,
 		EventTestsSubmitted, EventTestsVerified, EventTestsRejected, EventTestsCommitted, EventTestsApproved,
 		EventTicketChanged,

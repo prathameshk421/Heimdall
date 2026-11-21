@@ -29,6 +29,7 @@ const (
 	testsTimeout   = 2 * time.Hour
 	reviewTimeout  = 30 * time.Minute
 	verdictTimeout = 30 * time.Minute
+	profileTimeout = time.Hour // workflow.Kinds: the profiler reads the repository and proposes one artifact
 	ackWindow      = 3 * time.Minute
 	stallWindow    = 10 * time.Minute
 )
@@ -69,16 +70,25 @@ func (r reconcileInputs) Outside(ctx context.Context, v change.View) (change.Out
 		HeadSHA: v.PR.HeadSHA, Author: v.PR.Author, Approvers: approvers})
 }
 
-// Profile returns the repository's promoted profile, or the zero Profile when it has none.
+// Profile returns the repository's promoted profile (zero fields when it has none) and its newest proposal.
 func (r reconcileInputs) Profile(ctx context.Context, repo change.Repo) (change.Profile, error) {
+	var out change.Profile
+	latest, ok, err := r.profiles.LatestProfile(ctx, string(repo))
+	if err != nil {
+		return change.Profile{}, err
+	}
+	if ok {
+		out.Latest = &change.ProfileProposal{ID: latest.ID, State: string(latest.State), Trial: string(latest.Trial.Outcome),
+			TrialLog: latest.Trial.LogRef}
+	}
 	p, ok, err := r.profiles.ActiveProfile(ctx, string(repo))
 	if err != nil {
 		return change.Profile{}, err
 	}
 	if !ok {
-		return change.Profile{}, nil
+		return out, nil
 	}
-	out := change.Profile{TestsDir: p.Spec.TestsDir}
+	out.Promoted, out.TestsDir = true, p.Spec.TestsDir
 	for _, c := range p.Spec.Checks {
 		out.Checks = append(out.Checks, change.ProfileCheck{ID: c.ID, When: c.When})
 	}
@@ -91,8 +101,8 @@ type keyReader struct{ cfg config.Config }
 // Get reads one named key.
 func (k keyReader) Get(name string) (string, error) { return k.cfg.Secret(name) }
 
-// agentFor says which agent holds a task: the test author and the resolver are configured, a review seat is its own
-// agent name.
+// agentFor says which agent holds a task: the test author, the resolver and the profiler are configured, a review seat
+// is its own agent name.
 func agentFor(agents config.Agents) func(kind, subject string) (id.AgentName, bool) {
 	return func(kind, subject string) (id.AgentName, bool) {
 		switch kind {
@@ -100,6 +110,8 @@ func agentFor(agents config.Agents) func(kind, subject string) (id.AgentName, bo
 			return id.AgentName(agents.TestAuthor), agents.TestAuthor != ""
 		case "verdict":
 			return id.AgentName(agents.Resolver), agents.Resolver != ""
+		case "profile":
+			return id.AgentName(agents.Profiler), agents.Profiler != ""
 		case "review":
 			name, err := id.ParseAgentName(subject)
 			return name, err == nil
@@ -123,8 +135,8 @@ func newReconciler(ad adapters, store *postgres.Store, openrouter ports.ModelHea
 		Store: store, Effects: store, Open: store, Dead: store, Calls: store, Health: openrouter,
 		Inputs: reconcileInputs{code: ad.vcs, gate: gate, profiles: store},
 		Agents: agentFor(ad.agents), IDs: gen, Clock: clk, Logger: logger, Wait: clock.Wait,
-		Settings: change.Settings{Reviewers: reviewers, TestAttempts: testAttempts, PickWait: pickWait,
-			Timeouts: map[string]time.Duration{"tests": testsTimeout, "review": reviewTimeout, "verdict": verdictTimeout}},
+		Settings: change.Settings{Reviewers: reviewers, TestAttempts: testAttempts, PickWait: pickWait, Profiler: ad.agents.Profiler,
+			Timeouts: map[string]time.Duration{"tests": testsTimeout, "review": reviewTimeout, "verdict": verdictTimeout, "profile": profileTimeout}},
 		Windows: liveness.Windows{Ack: ackWindow, Stall: stallWindow},
 	})
 }

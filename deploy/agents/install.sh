@@ -29,6 +29,10 @@ rules=$repo/testdata/agents/AGENTS.md
 
 [[ -f "$manifest" ]] || { echo "install agents: manifest is unavailable" >&2; exit 1; }
 [[ -f "$rules" ]] || { echo "install agents: agent rules are unavailable" >&2; exit 1; }
+# The model key is written into each config, like the bearer. The Switch controller passes only an allowlisted set of
+# variables to agent units, so an {env:...} reference would never resolve (H11, B4).
+model_key_path=$secrets_dir/deploy_api_key
+[[ -f "$model_key_path" && -r "$model_key_path" ]] || { echo "install agents: missing Deploy key file" >&2; exit 1; }
 
 # The agents get their instructions from get_task, so no skill file is installed; the third column of the manifest is unused.
 while IFS=$'\t' read -r name template _skill; do
@@ -40,7 +44,7 @@ while IFS=$'\t' read -r name template _skill; do
 	[[ -f "$template_path" ]] || { echo "install agents: template unavailable for $name" >&2; exit 1; }
 	[[ -f "$token_path" && -r "$token_path" ]] || { echo "install agents: missing token file for $name" >&2; exit 1; }
 	grep -Fq '"model": "deploy/deepseek-ai/deepseek-v4.1-flash-1017"' "$template_path" || { echo "install agents: wrong model for $name" >&2; exit 1; }
-	grep -Fq '"apiKey": "{env:DEPLOY_API_KEY}"' "$template_path" || { echo "install agents: the model key must come from DEPLOY_API_KEY for $name" >&2; exit 1; }
+	grep -Fq '"apiKey": "{{file:secrets/deploy_api_key}}"' "$template_path" || { echo "install agents: model key reference missing for $name" >&2; exit 1; }
 	grep -Fq '"auto_mode": true' "$template_path" || { echo "install agents: auto_mode is not enabled for $name" >&2; exit 1; }
 	grep -Fq '"auto_approve": false' "$template_path" || { echo "install agents: auto_approve is enabled for $name" >&2; exit 1; }
 	grep -Fq "{{file:secrets/agent_token_$name}}" "$template_path" || { echo "install agents: token reference missing for $name" >&2; exit 1; }
@@ -52,18 +56,26 @@ while IFS=$'\t' read -r name template _skill; do
 
 	mkdir -p "$destination/scratch"
 	install -m 0644 "$rules" "$destination/AGENTS.md"
-	python3 - "$template_path" "$token_path" "$destination/opencode.json" <<'PY'
+	python3 - "$template_path" "$token_path" "$model_key_path" "$destination/opencode.json" <<'PY'
 import json
 import os
 import sys
 
-template_path, token_path, output_path = sys.argv[1:]
+template_path, token_path, model_key_path, output_path = sys.argv[1:]
 with open(template_path, encoding="utf-8") as handle:
     config = json.load(handle)
 with open(token_path, encoding="utf-8") as handle:
     token = handle.read().strip()
 if not token or any(char in token for char in "\r\n"):
     raise SystemExit("install agents: token file is empty or multiline")
+with open(model_key_path, encoding="utf-8") as handle:
+    model_key = handle.read().strip()
+if not model_key or any(char in model_key for char in "\r\n\0"):
+    raise SystemExit("install agents: Deploy key file is empty or multiline")
+options = config["provider"]["deploy"]["options"]
+if options.get("apiKey") != "{{file:secrets/deploy_api_key}}":
+    raise SystemExit("install agents: invalid model key reference")
+options["apiKey"] = model_key
 headers = config["mcp"]["heimdall"]["headers"]
 authorization = headers["Authorization"]
 if not authorization.startswith("Bearer {{file:secrets/") or not authorization.endswith("}}"):

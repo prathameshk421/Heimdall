@@ -85,6 +85,8 @@ model = "deploy/deepseek-ai/deepseek-v4.1-flash-1017"
 test_author = "test-author"
 reviewers = ["reviewer-1", "reviewer-2", "reviewer-3"]
 resolver = "resolver"
+# Optional (D175): the agent that proposes a repository's sandbox profile. Without it, the profile row says so.
+profiler = "profiler"
 
 # Optional standing channels. Without [rooms], every change gets its own room. Make the rooms with
 # POST /admin/rooms (docs/RUNBOOK.md), then paste their Switch room ids here.

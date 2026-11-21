@@ -1,13 +1,16 @@
 package change
 
 import (
+	"fmt"
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
 // The one table of rows (HARNESS_DESIGN B2). A row says when a piece of work is done and what to do while it is not.
@@ -72,9 +75,22 @@ type Outside struct {
 
 // Profile is the part of the repository's promoted profile the rows read. The zero value means there is none.
 type Profile struct {
+	// Promoted says the repository has a promoted profile; TestsDir and Checks are its fields, zero when it has none.
+	Promoted bool
 	// TestsDir is the folder the Heimdall tests live in, such as tests/heimdall; the ticket's folder is inside it.
 	TestsDir string
 	Checks   []ProfileCheck
+	// Latest is the repository's newest proposal in any state, nil when none was ever proposed (D175).
+	Latest *ProfileProposal
+}
+
+// ProfileProposal is a proposal as the profile row reads it: its id, its state (proposed, approved or promoted) and
+// the outcome of its latest trial ("" before any, "passed" or "failed") with the trial's log.
+type ProfileProposal struct {
+	ID       string
+	State    string
+	Trial    string
+	TrialLog workflow.BlobRef
 }
 
 // ProfileCheck is one check of the profile: it applies when a changed file matches one of its When globs (or always
@@ -91,6 +107,7 @@ type Settings struct {
 	PickWait       time.Duration
 	BranchTemplate string // empty means DefaultBranchTemplate
 	Timeouts       map[string]time.Duration
+	Profiler       string // the agent that holds profile tasks; empty when none is configured (D175)
 }
 
 // DeadJob is an outbox row of the change that failed for good or is in doubt. Row is the row that made it.
@@ -194,10 +211,57 @@ func Next(in In) []RowAction {
 	var out []RowAction
 	for _, r := range Open(in) {
 		for _, a := range r.Next(in) {
+			if a.Task != nil {
+				a = capTask(in, r.ID, a)
+			}
 			out = append(out, RowAction{Row: r.ID, Action: a})
 		}
 	}
 	return out
+}
+
+// MaxTaskFailures is how many tasks of one kind and subject may fail or time out on the same input, in one round of
+// the row, before the seat is left to a person. Every task costs model tokens; a seat that always fails would loop.
+const MaxTaskFailures = 2
+
+// TaskRow is the row that assigns tasks of a kind; `heimdall resume <change> <row>` starts a new round of it.
+func TaskRow(kind string) string {
+	switch kind {
+	case "tests":
+		return "write_tests"
+	case "review":
+		return "review"
+	case "verdict":
+		return "deliberate"
+	}
+	return ""
+}
+
+// capTask turns a task that already failed MaxTaskFailures times on its input in this round into a question for the
+// operators, so the reconciler assigns nothing and Missing says what a person can do.
+func capTask(in In, row string, a Action) Action {
+	t := a.Task
+	failed := 0
+	for _, info := range in.View.Tasks {
+		if info.Kind == t.Kind && info.Subject == t.Subject && info.Input == t.Input &&
+			info.Round == in.View.Resumes[row] && (info.Status == TaskFailedStatus || info.Status == TaskTimedOutStatus) {
+			failed++
+		}
+	}
+	if failed < MaxTaskFailures {
+		return a
+	}
+	text := fmt.Sprintf("%s failed %d %s tasks on %s; `heimdall resume %s %s` tries again",
+		t.Subject, failed, t.Kind, inputLabel(t.Input), in.Change, row)
+	return Action{Ask: &Ask{Who: operators(in), What: text}, Text: text}
+}
+
+// inputLabel is a task input in the words people read: a short head for a review, the input itself otherwise.
+func inputLabel(input string) string {
+	if head, ok := strings.CutPrefix(input, "head-"); ok {
+		return short(head)
+	}
+	return input
 }
 
 // RowAction is an action and the row that decided it.

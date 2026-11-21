@@ -182,6 +182,9 @@ func provisionAgents(agents config.Agents) []agentprovision.Agent {
 		{Name: id.AgentName(agents.TestAuthor), Role: workflow.RoleTestAuthor, Description: "Heimdall " + agents.TestAuthor, Instructions: "Follow the installed test-author skill. Get tasks and submit results through Heimdall MCP tools."},
 		{Name: id.AgentName(agents.Resolver), Role: workflow.RoleResolver, Description: "Heimdall resolver", Instructions: "Follow the installed resolver skill. Get tasks and submit results through Heimdall MCP tools."},
 	}
+	if agents.Profiler != "" {
+		out = append(out, agentprovision.Agent{Name: id.AgentName(agents.Profiler), Role: workflow.RoleProfiler, Description: "Heimdall " + agents.Profiler, Instructions: "Follow the installed profiler skill. Get tasks and submit results through Heimdall MCP tools."})
+	}
 	for _, name := range agents.Reviewers {
 		out = append(out, agentprovision.Agent{Name: id.AgentName(name), Role: workflow.RoleReviewer, Description: "Heimdall " + name, Instructions: "Follow the installed reviewer skill. Get tasks and submit results through Heimdall MCP tools."})
 	}

@@ -102,8 +102,8 @@ func (f *commandProfileFake) Approve(_ context.Context, p mcp.Principal, _ strin
 	f.approvals = append(f.approvals, p.Person)
 	return nil
 }
-func (f *commandProfileFake) Trial(context.Context, mcp.Principal, string, id.SHA) (ports.ProfileTrial, error) {
-	return ports.ProfileTrial{}, nil
+func (f *commandProfileFake) PreviousTrial(context.Context, string) (string, error) {
+	return "", nil
 }
 func (f *commandProfileFake) Promote(_ context.Context, p mcp.Principal, _ string) error {
 	f.promotions = append(f.promotions, p.Person)
@@ -232,7 +232,7 @@ func TestServerCommandRuntimeSelectsReviewersForFanout(t *testing.T) {
 			require.True(t, ok)
 			assigned[string(payload.Agent)] = true
 		case change.EventChangeTriggered, change.EventRoomOpened, change.EventBranchEnsured,
-			change.EventTaskSuperseded, change.EventTaskRewoken, change.EventProviderProbed, change.EventChecksReported,
+			change.EventTaskSuperseded, change.EventTaskRewoken, change.EventProviderProbed, change.EventProfileProposed, change.EventChecksReported,
 			change.EventTaskAcked, change.EventTaskTimedOut, change.EventTaskFailed, change.EventTaskProgress,
 			change.EventStepRetried, change.EventStepEscalated, change.EventStepResumed, change.EventQuestionAsked, change.EventQuestionAnswered, change.EventCommandProposed, change.EventCommandConfirmed,
 			change.EventTestsSubmitted, change.EventTestsVerified, change.EventTestsRejected, change.EventTestsCommitted,

@@ -29,30 +29,6 @@ func (p TaskAssignPayload) Validate() error {
 	return v.join()
 }
 
-// AgentResetPayload is the payload of an agent_reset effect: whose session to reset, in which room.
-type AgentResetPayload struct {
-	Agent  id.AgentName `json:"agent"`
-	RoomID RoomID       `json:"room_id"`
-}
-
-// Validate returns every problem with the payload.
-func (p AgentResetPayload) Validate() error {
-	var v problems
-	v.add("agent", checkAgent(p.Agent))
-	_, err := ParseRoomID(string(p.RoomID))
-	v.add("room_id", err)
-	return v.join()
-}
-
-// DecodeAgentResetPayload strictly decodes and validates an agent_reset payload.
-func DecodeAgentResetPayload(raw json.RawMessage) (AgentResetPayload, error) {
-	var p AgentResetPayload
-	if err := decodeEffectPayload(raw, []string{"agent", "room_id"}, &p); err != nil {
-		return AgentResetPayload{}, fmt.Errorf("agent_reset payload: %w", err)
-	}
-	return p, nil
-}
-
 // DecodeTaskAssignPayload strictly decodes and validates a task_assign payload.
 func DecodeTaskAssignPayload(raw json.RawMessage) (TaskAssignPayload, error) {
 	var p TaskAssignPayload

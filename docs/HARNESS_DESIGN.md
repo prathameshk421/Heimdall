@@ -84,7 +84,7 @@ A change carries up to two flows; each starts on its own fact and needs nothing 
 | Flow | Starts on | Rows | Ends when |
 |---|---|---|---|
 | **Tests** | `change.triggered` (a ticket moved to In Progress) | `branch`, `write_tests`, `test_qa`, `signoff`, `commit` | the verified tests are committed to the ticket branch; CI runs them on every push (`heimdall/acceptance`) |
-| **Review** | `pr.opened` | `slop`, `checks`, `pick`, `review`, `verify`, `deliberate`, `acceptance`, `gate` | the PR closes |
+| **Review** | `pr.opened` | `slop`, `checks`, `pick`, `review`, `verify`, `deliberate`, `acceptance`, `gate`, `profile` | the PR closes |
 | both | the first fact of the change | `open_room` | the room exists |
 
 - `wait_pr` is deleted. Review rows wait only for a PR. A PR opened before its tests are committed is reviewed at once;
@@ -156,8 +156,9 @@ Tests rows need `v.Trigger != nil`; Review rows need `v.PR != nil`; when `v.Over
 | `test_qa` | tests | `write_tests` | `v.Tests.Verified != nil` | Job `test_quality` | `<c>/test_qa/<v.Tests.Ref>` |
 | `signoff` | tests | `test_qa` | `!v.Tests.Verified.NeedsSignoff \|\| v.Tests.ApprovedBy != ""` | Ask the approvers of the sensitive domain to `heimdall approve-tests <c>` | |
 | `commit` | tests | `test_qa`, `signoff` | `v.Tests.Committed != nil` | Job `github_commit_tests` | `<c>/commit/<v.Tests.Ref>` |
-| `slop` | review | – | slop passed on head | Text only: "the slop rules pass on <head> (failing: …)"; intake records slop on every head, a push fixes it | |
+| `slop` | review | – | slop passed on head, or only `ticket_linked` failed (D174) | Text only: "the slop rules pass on <head> (failing: …)"; intake records slop on every head, a push fixes it | |
 | `checks` | review | `slop` | `v.Checks[head]` exists, or the profile has no check whose `when` matches a changed file | Job `run_checks` (B7) | `<c>/checks/<head>` |
+| `profile` | review | `slop` | the repository has a promoted profile | no proposal, or the newest failed its trial: Task `profile` (subject the repo, input `first` or `after-<id>`); `proposed`: Ask the owners `heimdall approve-profile <id>`; approved, no trial: Job `profile_trial` keyed `<c>/profile/<id>/r<n>`; trial passed: Ask `heimdall promote-profile <id>`; no profiler configured: text only (D175) | `profile_trial` |
 | `pick` | review | `slop` | `v.PR.Picked != nil` | before `v.PR.SlopAt + Settings.PickWait`: Ask the PR author "pick reviewers with `heimdall review`"; after: Fact `reviewers.picked{people: v.PR.Suggested or Settings.Reviewers, by: heimdall, method: default}` | |
 | `review` | review | `pick`, `checks` | every picked seat has an outcome (review, unavailable, waived) on head | Task `review` per seat without one; subject = seat; input `head-<head>` | |
 | `verify` | review | `review` | no E1 to E3 finding is unchecked | Job `verify_evidence` per unchecked finding | `<c>/verify/<ref>/<head>` |
@@ -180,7 +181,7 @@ Run(ctx, change):                          // serialized per change: a mutex per
     events := Load(change); in := build In (fold, policy, outside, profile, settings, dead jobs, now)
     actions := Next of every open row
     facts := Fact actions + the task facts decided below (task.assigned, task.superseded, task.rewoken, task.failed)
-    jobs  := Job actions + the task effects decided below (task_assign, agent_reset)
+    jobs  := Job actions + the task effects decided below (task_assign)
     if facts != nil: Append(change, version, facts, jobs)   // the jobs attach to the last fact
     else if jobs != nil: EnsureEffects(change, jobs)        // attached to the stream's last event
     if ErrVersionConflict: continue (reload and decide again); else return
@@ -201,12 +202,13 @@ Run(ctx, change):                          // serialized per change: a mutex per
     → resolver) or, for review, the seat itself;
   - live on another input: Fact `task.superseded{task_id, reason: "new input <input>"}` (new event), then assign;
   - live on this input: `liveness.Next(facts, windows, now)`; the facts come from the view (`Since`, `Acked`,
-    `Wakes > 0`, `ResetAt`) and `ports.ToolCalls` (this agent's last call while holding this task). Then: `wait` →
+    `Wakes > 0`, `StallWokenAt`) and `ports.ToolCalls` (this agent's last call while holding this task). Then: `wait` →
     nothing; `repeat_wake` → Job `task_assign` keyed `<task id>/wake/<n>` and Fact `task.rewoken{task_id, n}` (new);
     `probe_provider` → `ports.ModelHealth.Probe` and Fact `provider.probed{health}` (new); `provider_blocked` → nothing
-    (`Missing` says "the model provider refuses: <health>"); `reset_and_repeat` → Job `agent_reset` (new effect kind:
-    Switch resets the agent's session) and Fact `task.rewoken`; `fail` → Fact `task.failed{reason: "unresponsive"}`,
-    after which the row is open again and the next `Run` assigns a fresh task.
+    (`Missing` says "the model provider refuses: <health>"); `stall_rewake` → Job `task_assign` keyed `<task id>/wake/<n>`
+    and Fact `task.rewoken{task_id, n, stall: true}` (D172: Switch offers an agent no session reset); `fail` → Fact `task.failed{reason: "unresponsive"}`,
+    after which the row is open again and the next `Run` assigns a fresh task, at most `MaxTaskFailures` (2) times per
+    input and round of the row (D173).
   - Past its deadline a live task gets `task.timed_out` (Fact), and the row reassigns.
 - **Executors** perform their job and record their fact with `reconcile.Record`. They decide nothing: no log scans, no
   "am I done". A fact recorded twice (a crash after the append, before `Done`) folds to the same view (tested in H1).
@@ -223,7 +225,7 @@ Run(ctx, change):                          // serialized per change: a mutex per
   (`omitempty`, not required by `Validate`); new tasks leave it empty.
 - `tests.submitted`, `review.submitted`, `verdict.submitted` gain `task_id` (`omitempty`); every new submission sets it.
 - `pr.opened` and `pr.pushed` gain `base_sha` (`omitempty`); intake sets it (it has `pr.BaseSHA`).
-- View: `TaskInfo` gains `Kind`, `Subject`, `Input`, `Since`, `Wakes`, `ResetAt`; statuses gain `done` (a submission
+- View: `TaskInfo` gains `Kind`, `Subject`, `Input`, `Since`, `Wakes`, `StallWokenAt`; statuses gain `done` (a submission
   naming the task) and `superseded`.
 - `postgres.TaskIndex` (finds an agent's active task) ends a task on `task.timed_out`, `task.failed`,
   `task.superseded`, or a submission whose `task_id` equals it. For events without `task_id` it keeps today's role rule,
@@ -268,7 +270,7 @@ type Kind struct {
 | tests | `ticket` (title, description, each criterion with id); `profile` (seam, tests dir, test kinds); `repo_map` (base); `rejection` (last reasons; attempt n of m; retries only); `answers` | `read_code`, `search_code`, `ask_humans`, `submit_tests` | `testset.Submission` |
 | review | `pr` (title, body, author, base, head); `files` (changed files with +/- counts); `diff` (inline up to 40 KB, else a note); `criteria` (when a ticket is linked); `obligations` (rule cards whose `applies_to` globs match a changed file); `leads` (new check results on head, B7); `prior_findings`; `team_memory`; `repo_map` (head) | `read_code`, `search_code`, `find_symbol`, `run_check`, `ask_knowledge`, `read_card`, `stage_knowledge`, `submit_review` | `finding.Review` |
 | verdict | `case` (the finding, its evidence, the challenge); `prior_decisions`; `diff` | `read_code`, `run_check`, `read_card`, `ask_knowledge`, `submit_verdict` | `deliberation.Verdict` |
-| profile | `repo_map`; `stack_hints` | `read_code`, `search_code`, `propose_profile`, `trial_profile` | `Profile@1` |
+| profile | `repo_map`; `stack_hints`; `previous_trial` | `read_code`, `search_code`, `propose_profile` (the trial is the profile row's job, D175) | `Profile@1` |
 
 - **get_task** returns one JSON object:
   `{"task": {"id", "kind", "change", "base", "head", "deadline"}, "instructions": "<skill text>",
@@ -373,7 +375,7 @@ green (except the known `secrets` false positive listed in PROGRESS, which needs
 - **Change (`internal/domain/change`):**
   - `TestsInfo` + `Ref workflow.BlobRef` (`e.BlobRefs[0]` of `tests.submitted`), `Attempts int` (count of
     `tests.submitted`, never reset), `TaskID`, `BaseSHA`.
-  - `TaskInfo` + `Kind`, `Subject`, `Input`, `Since` (`OccurredAt` of `task.assigned`), `Wakes`, `ResetAt`; statuses
+  - `TaskInfo` + `Kind`, `Subject`, `Input`, `Since` (`OccurredAt` of `task.assigned`), `Wakes`, `StallWokenAt`; statuses
     `done`, `superseded`. A submission with `task_id` sets that task `done`.
   - `ReviewInfo` + `Outcome` (`submitted`, `unavailable`, `waived`); fold `review.unavailable` and `review.waived`
     (not folded today).

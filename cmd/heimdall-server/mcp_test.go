@@ -122,6 +122,7 @@ func TestEveryEffectKindEmittedByWorkflowHasAnExecutor(t *testing.T) {
 		change.EffectVerifyEvidence:    true,
 		change.EffectAcceptance:        true, // emitted by PR intake
 		change.EffectRunChecks:         true, // the checks row of the review flow
+		change.EffectProfileTrial:      true, // the profile row of the review flow (D175)
 	}
 
 	store := newMemStore()
@@ -254,5 +255,9 @@ func (f *fakeMCPReviews) SubmitReview(context.Context, mcp.Assignment, finding.R
 	return mcp.SubmitReceipt{Accepted: true}, nil
 }
 func (f *fakeMCPReviews) SubmitVerdict(context.Context, mcp.Assignment, deliberation.Verdict, bool) error {
+	return nil
+}
+
+func (f *fakeMCPReviews) RecordProfileProposed(context.Context, mcp.Assignment, string, change.Repo) error {
 	return nil
 }

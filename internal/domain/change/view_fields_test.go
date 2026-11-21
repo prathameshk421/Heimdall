@@ -3,6 +3,7 @@ package change_test
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,14 +76,22 @@ func TestTaskInfoCarriesKindInputAndLiveness(t *testing.T) {
 	v := fold(t,
 		assigned(t, 1, fTask),
 		ev(t, 2, change.EventTaskRewoken, change.TaskRewoken{TaskID: tk(fTask), N: 1}),
-		ev(t, 3, change.EventTaskRewoken, change.TaskRewoken{TaskID: tk(fTask), N: 2, Reset: true}))
+		ev(t, 3, change.EventTaskRewoken, change.TaskRewoken{TaskID: tk(fTask), N: 2, Stall: true}))
 	task := v.Tasks[tk(fTask)]
 	require.Equal(t, "review", task.Kind)
 	require.Equal(t, "head-"+fHead, task.Input)
 	require.Equal(t, 2, task.Wakes)
 	require.Equal(t, time.Date(2026, 11, 4, 9, 1, 0, 0, time.UTC), task.Since)
-	require.Equal(t, time.Date(2026, 11, 4, 9, 3, 0, 0, time.UTC), task.ResetAt)
+	require.Equal(t, time.Date(2026, 11, 4, 9, 3, 0, 0, time.UTC), task.StallWokenAt)
 	require.True(t, task.Live())
+}
+
+// Events from before D172 say reset: true for the stall wake (the session reset never ran); they fold the same way.
+func TestAnOldResetWakeFoldsAsTheStallWake(t *testing.T) {
+	v := fold(t,
+		assigned(t, 1, fTask),
+		ev(t, 2, change.EventTaskRewoken, change.TaskRewoken{TaskID: tk(fTask), N: 1, Reset: true}))
+	require.Equal(t, time.Date(2026, 11, 4, 9, 2, 0, 0, time.UTC), v.Tasks[tk(fTask)].StallWokenAt)
 }
 
 func TestTaskStatusesDoneAndSuperseded(t *testing.T) {
@@ -197,4 +206,17 @@ func TestOldPayloadsDecode(t *testing.T) {
 		_, err := change.Decode(eventWith(typ, raw))
 		require.NoError(t, err, string(typ))
 	}
+}
+
+// A profile proposal ends the profiler's task, as a submission does (D175).
+func TestAProfileProposalEndsTheProfilerTask(t *testing.T) {
+	proposal := strings.Repeat("ab", 32)
+	v := fold(t,
+		ev(t, 1, change.EventTaskAssigned, change.TaskAssigned{TaskID: tk(fTask), Agent: "profiler", Role: "profiler",
+			Deadline: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC), Kind: "profile", Subject: "acme/pay", Input: "base-" + fBase}),
+		ev(t, 2, change.EventProfileProposed, change.ProfileProposed{TaskID: tk(fTask), ProposalID: proposal, Repo: "acme/pay"}))
+	require.Equal(t, change.TaskDoneStatus, v.Tasks[tk(fTask)].Status)
+
+	require.Error(t, change.ProfileProposed{TaskID: tk(fTask), Repo: "acme/pay"}.Validate(), "a proposal id is required")
+	require.Error(t, change.ProfileProposed{TaskID: tk(fTask), ProposalID: "short", Repo: "acme/pay"}.Validate(), "the id is 64 hex")
 }

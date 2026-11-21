@@ -149,7 +149,7 @@ func TestATicketlessPullRequestRunsTheReviewFlow(t *testing.T) {
 	for _, r := range change.Open(in) {
 		open = append(open, r.ID)
 	}
-	require.Equal(t, []string{"open_room", "checks", "pick", "gate"}, open, "the gate row is open as long as the PR is")
+	require.Equal(t, []string{"open_room", "checks", "pick", "gate", "profile"}, open, "the gate row is open as long as the PR is")
 	require.NotContains(t, got, "acceptance", "no ticket, so no acceptance tests to run")
 	for _, row := range []string{"branch", "write_tests", "test_qa", "signoff", "commit"} {
 		require.NotContains(t, got, row, row)
@@ -313,7 +313,8 @@ func TestEachRowDeclaresTheJobKindsItStarts(t *testing.T) {
 	}{{"KAN-5", tests}, {"pr-acme-pay-7", review}} {
 		for n := 1; n <= len(flow.events); n++ {
 			in := inOf(flow.change, fold(t, flow.events[:n]...), t0)
-			in.Profile = change.Profile{Checks: []change.ProfileCheck{{ID: "lint"}}}
+			in.Profile = change.Profile{Checks: []change.ProfileCheck{{ID: "lint"}},
+				Latest: &change.ProfileProposal{ID: strings.Repeat("c", 64), State: "approved"}} // the profile row starts its trial
 			in.Outside = change.Outside{ChangedFiles: []string{"a.go"}}
 			for _, ra := range change.Next(in) {
 				if ra.Job == nil {
@@ -342,4 +343,60 @@ func TestAPolicyProblemOpensNoRowAndIsTheOneNeed(t *testing.T) {
 	require.Len(t, needs, 1)
 	require.Equal(t, "policy", needs[0].Step)
 	require.Equal(t, "heimdall.yaml cannot be used (heimdall.yaml: version 3 is not known); nothing runs on this change until the policy is fixed on the base branch", needs[0].Text)
+}
+
+// A seat whose task failed twice on the same input is not assigned again: each round costs model tokens, and a seat
+// that always fails (H11, D6) would loop forever. A person decides with `heimdall resume`, which allows two more.
+func TestASeatThatFailedTwiceOnTheSameInputIsNotAssignedAgainUntilResumed(t *testing.T) {
+	picked := ev(t, 3, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1"}, By: "heimdall", Method: change.PickDefault})
+	base := []change.Event{opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}), picked,
+		ev(t, 4, change.EventChecksReported, change.ChecksReported{Head: fHead})}
+	fail := func(n int, task string) []change.Event {
+		return []change.Event{
+			ev(t, n, change.EventTaskAssigned, change.TaskAssigned{TaskID: tk(task), Agent: "rev-1", Role: "reviewer",
+				Deadline: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC), Kind: "review", Subject: "rev-1", Input: "head-" + fHead}),
+			ev(t, n+1, change.EventTaskFailed, change.TaskFailed{TaskID: tk(task), Agent: "rev-1", Role: "reviewer", Reason: "unresponsive"}),
+		}
+	}
+	once := append(append([]change.Event{}, base...), fail(5, "tsk_01KANRY0000000000000000001")...)
+	require.NotNil(t, actionsOf(inOf("pr-acme-pay-7", fold(t, once...), t0))["review"][0].Task, "one failure is retried")
+
+	twice := append(append([]change.Event{}, once...), fail(7, "tsk_01KANRY0000000000000000002")...)
+	stopped := actionsOf(inOf("pr-acme-pay-7", fold(t, twice...), t0))["review"][0]
+	require.Nil(t, stopped.Task, "two failures on the same input stop the seat")
+	require.NotNil(t, stopped.Ask)
+	require.Equal(t, "rev-1 failed 2 review tasks on "+fHead[:7]+"; `heimdall resume pr-acme-pay-7 review` tries again", stopped.Text)
+
+	resumed := append(append([]change.Event{}, twice...), ev(t, 9, change.EventStepResumed, change.StepResumed{Step: "review", By: "ann"}))
+	require.NotNil(t, actionsOf(inOf("pr-acme-pay-7", fold(t, resumed...), t0))["review"][0].Task, "a resume allows the seat again")
+
+	pushed := append(append([]change.Event{}, twice...),
+		ev(t, 9, change.EventPRPushed, change.PRPushed{Repo: "acme/pay", Number: 7, HeadSHA: fHead2}),
+		ev(t, 10, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
+		ev(t, 11, change.EventChecksReported, change.ChecksReported{Head: fHead2}))
+	in := inOf("pr-acme-pay-7", fold(t, pushed...), t0)
+	require.NotNil(t, actionsOf(in)["review"][0].Task, "a new head is a new input")
+}
+
+// A pull request with no linked ticket is still reviewed: the review is worth having, and the gate stays red on the
+// ticket clause (H11, D7). Any other failing slop rule still stops the review before it costs tokens.
+func TestAPullRequestWhoseOnlySlopFailureIsTheTicketIsStillReviewed(t *testing.T) {
+	ticketless := fold(t, ev(t, 1, change.EventPROpened, change.PROpened{Repo: "acme/pay", Number: 7, HeadSHA: fHead, Author: "ann",
+		BaseSHA: fBase, SuggestedReviewers: []change.ActorID{"rev-1"}}),
+		ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: false, FailingRules: []string{"ticket_linked"}}))
+	slopAt := time.Date(2026, 11, 4, 9, 2, 0, 0, time.UTC)
+	acts := actionsOf(inOf("pr-acme-pay-7", ticketless, slopAt.Add(time.Hour)))
+	require.NotEmpty(t, acts["pick"], "reviewers are picked although no ticket is linked")
+	require.Empty(t, acts["slop"])
+
+	oversized := fold(t, ev(t, 1, change.EventPROpened, change.PROpened{Repo: "acme/pay", Number: 7, HeadSHA: fHead, Author: "ann",
+		BaseSHA: fBase, SuggestedReviewers: []change.ActorID{"rev-1"}}),
+		ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: false, FailingRules: []string{"ticket_linked", "size"}}))
+	acts = actionsOf(inOf("pr-acme-pay-7", oversized, slopAt.Add(time.Hour)))
+	require.Empty(t, acts["pick"], "another failing rule still stops the review")
+	require.NotEmpty(t, acts["slop"])
+
+	g := change.GateFacts(ticketless, change.Outside{})
+	require.False(t, g.Slop.Pass, "the gate still sees the failed slop")
+	require.False(t, g.TicketLinked)
 }

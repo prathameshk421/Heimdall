@@ -96,13 +96,15 @@ func rowOfJob(k EffectKind) string {
 		return "commit"
 	case EffectRunChecks:
 		return "checks"
+	case EffectProfileTrial:
+		return "profile"
 	case EffectVerifyEvidence:
 		return "verify"
 	case EffectAcceptance:
 		return "acceptance"
 	case EffectGitHubCheck:
 		return "gate"
-	case EffectGitHubComment, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign, EffectAgentReset:
+	case EffectGitHubComment, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign:
 		return ""
 	}
 	return ""

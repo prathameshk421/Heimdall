@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/liveness"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -102,4 +104,45 @@ func newTestReconciler(t *testing.T, store reconcileStore, reviewers ...change.A
 	})
 	require.NoError(t, err)
 	return rec
+}
+
+// latestProfiles answers ActiveProfile and LatestProfile from two separate proposals.
+type latestProfiles struct {
+	ports.ProfileStore
+	active, latest *ports.ProfileProposal
+}
+
+func (l latestProfiles) ActiveProfile(context.Context, string) (ports.ProfileProposal, bool, error) {
+	if l.active == nil {
+		return ports.ProfileProposal{}, false, nil
+	}
+	return *l.active, true, nil
+}
+
+func (l latestProfiles) LatestProfile(context.Context, string) (ports.ProfileProposal, bool, error) {
+	if l.latest == nil {
+		return ports.ProfileProposal{}, false, nil
+	}
+	return *l.latest, true, nil
+}
+
+// The profile row reads the promoted profile and the newest proposal with its trial (D175).
+func TestReconcileProfileInputCarriesThePromotedProfileAndTheNewestProposal(t *testing.T) {
+	none, err := reconcileInputs{profiles: latestProfiles{}}.Profile(context.Background(), "acme/pay")
+	require.NoError(t, err)
+	require.False(t, none.Promoted)
+	require.Nil(t, none.Latest)
+
+	proposal := ports.ProfileProposal{ID: strings.Repeat("c", 64), Repo: "acme/pay", State: ports.ProfileApproved,
+		Trial: ports.ProfileTrial{Outcome: ports.TrialFailed, LogRef: "blob:sha256:" + workflow.BlobRef(strings.Repeat("d", 64))}}
+	got, err := reconcileInputs{profiles: latestProfiles{latest: &proposal}}.Profile(context.Background(), "acme/pay")
+	require.NoError(t, err)
+	require.False(t, got.Promoted)
+	require.Equal(t, &change.ProfileProposal{ID: proposal.ID, State: "approved", Trial: "failed", TrialLog: proposal.Trial.LogRef}, got.Latest)
+
+	active := ports.ProfileProposal{ID: strings.Repeat("a", 64), State: ports.ProfilePromoted, Spec: ports.ProfileSpec{TestsDir: "tests/heimdall"}}
+	got, err = reconcileInputs{profiles: latestProfiles{active: &active, latest: &active}}.Profile(context.Background(), "acme/pay")
+	require.NoError(t, err)
+	require.True(t, got.Promoted)
+	require.Equal(t, "tests/heimdall", got.TestsDir)
 }

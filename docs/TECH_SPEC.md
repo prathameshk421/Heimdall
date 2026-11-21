@@ -279,6 +279,7 @@ Changes use the ticket key (`PAY-142`), or `pr-<repo>-<number>` for a PR with no
 | `room.opened`, `branch.ensured` | room id; branch, base sha | Adapters |
 | `task.assigned` / `task.acked` / `task.superseded` / `task.rewoken` / `task.timed_out` / `task.failed` / `task.progress` | task id, agent, role, kind, subject, input, deadline (old events: bundle hash); reason; wake count; bounded progress text | Reconciler (6.2) / agent tool |
 | `step.retried` / `step.escalated` / `step.resumed` | step id, attempt, reasons / attempts, reason / step id, by | Old events only for `step.retried` and `step.escalated` (the engine is deleted, 5.1); `step.resumed` is a person re-arming a row (`heimdall resume`, 5.1) |
+| `profile.proposed` | task id, proposal id (64 hex), repo | The profiler proposed a sandbox profile; ends its task. The proposal, its approval, trial and promotion live in the profile store (D175) |
 | `question.asked` / `question.answered` | ids, refs, sender, message id | test-author, room sync |
 | `command.proposed` / `command.confirmed` | trigger message, sender, person, command text, verb, proposing agent, head sha / trigger, sender, message id | Board, for an agent's `propose_command` (AGENT_INTERACTION_ARCH 5.3) |
 | `tests.submitted` / `tests.verified` / `tests.rejected` / `tests.committed` | refs, AC map, run ids, reasons, sha, tree hash; `tests.verified` also carries `needs_signoff`, set by the engine from policy (sensitive paths and labels, D131, D33): true sends the change to AWAITING_TEST_SIGNOFF, false to TESTS_READY | Agent, sandbox, GitHub, engine |
@@ -391,7 +392,7 @@ carries up to two flows. Each flow starts on its own fact and needs nothing from
 | Flow | Starts on | Rows |
 |---|---|---|
 | tests | `change.triggered` (a ticket moved to In Progress) | `branch`, `write_tests`, `test_qa`, `signoff`, `commit` |
-| review | `pr.opened` | `slop`, `checks`, `pick`, `review`, `verify`, `deliberate`, `acceptance`, `gate` |
+| review | `pr.opened` | `slop`, `checks`, `pick`, `review`, `verify`, `deliberate`, `acceptance`, `gate`, `profile` (D175; nothing waits on it) |
 | both | the first fact of the change | `open_room` |
 
 The table is `internal/domain/change/rows.go`, `rows_tests.go` and `rows_review.go`:
@@ -496,12 +497,15 @@ with it on every Run.
    wrapped) and the change's `Missing` texts. The first call of a task before its deadline records `task.acked`.
    There is no `ack` tool. With no active task, `get_task` says so plainly.
 4. **Liveness.** For a live task on the same input, `liveness.Next` decides from the view (`Since`, `Acked`, `Wakes`,
-   `ResetAt`) and the agent's last tool call (`ports.ToolCalls`), with two windows: ack 3 minutes, stall 10 minutes.
+   `StallWokenAt`) and the agent's last tool call (`ports.ToolCalls`), with two windows: ack 3 minutes, stall 10 minutes.
    `wait` does nothing; `repeat_wake` posts the wake again and records `task.rewoken`; `probe_provider` asks the model
    provider once with the server's key and records `provider.probed`; `provider_blocked` posts nothing and `Missing`
-   says "the model provider refuses"; `reset_and_repeat` starts `agent_reset` and records `task.rewoken`; `fail`
+   says "the model provider refuses"; `stall_rewake` posts the wake once more and records `task.rewoken{stall: true}`
+   (Switch offers an agent no session reset, D172); `fail`
    records `task.failed{reason: unresponsive}`, after which the row is open again and the next Run assigns a fresh
-   task. Past its deadline a live task gets `task.timed_out`, and the row reassigns. Switch restarts a crashed agent
+   task. After `MaxTaskFailures` (2) failed or timed-out tasks of one kind and subject on the same input, in one round
+   of the row, the row assigns nothing more and asks the operators: "<seat> failed 2 review tasks on <head>;
+   `heimdall resume <change> <row>` tries again" (D173). Past its deadline a live task gets `task.timed_out`, and the row reassigns. Switch restarts a crashed agent
    itself; Heimdall holds no gateway login (D145).
 5. **Submit.** The agent submits with its kind's tool. Schema and semantic validation run (6.5). On failure the agent
    gets structured errors and keeps working inside the task's time and cost budget. A submission is stored whole and
@@ -572,7 +576,8 @@ Rules every skill states:
 
 - **Cost control (D128).** One production OpenRouter key with a credit limit is the hard cap. Tasks are bounded by a deadline per role and by the context bundle caps, not by a per-task dollar enforcer. Spend is read from the key's usage and shown on the dashboard. Separate keys exist only for testing (`TEST_STRATEGY.md`).
 - The VM runtimes cache stable prefixes (skill, room instructions, pack).
-- The slop rule runs before any agent, so rejected PRs cost zero tokens.
+- The slop rule runs before any agent, so rejected PRs cost zero tokens. One exception (D174): a PR whose only failing
+  rule is `ticket_linked` is still reviewed; the gate stays red on slop and the ticket clause, so it never merges.
 - Reviewers are capped at the default 3 plus any policy requires.
 - Re-review on push wakes only reviewers whose files changed.
 - Graphiti extraction uses DeepSeek V4 Flash through OpenRouter, and ingestion is selective.

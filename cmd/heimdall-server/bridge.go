@@ -308,6 +308,9 @@ func newTokenStore(cfg config.Config) (*tokenStore, error) {
 	if cfg.Agents.Resolver != "" {
 		list = append(list, agentRole{agent: cfg.Agents.Resolver, role: workflow.RoleResolver})
 	}
+	if cfg.Agents.Profiler != "" {
+		list = append(list, agentRole{agent: cfg.Agents.Profiler, role: workflow.RoleProfiler})
+	}
 
 	for _, ar := range list {
 		if previous, exists := seenAgents[ar.agent]; exists {
@@ -488,6 +491,10 @@ func (r *mcpReviewsAdapter) SubmitReview(ctx context.Context, a mcp.Assignment, 
 
 func (r *mcpReviewsAdapter) SubmitVerdict(ctx context.Context, a mcp.Assignment, v deliberation.Verdict, late bool) error {
 	return r.svc.SubmitVerdict(ctx, r.tracker.toAgenttools(a), v, late)
+}
+
+func (r *mcpReviewsAdapter) RecordProfileProposed(ctx context.Context, a mcp.Assignment, proposalID string, repo change.Repo) error {
+	return r.svc.RecordProfileProposed(ctx, r.tracker.toAgenttools(a), proposalID, repo)
 }
 
 func toMCPAssignment(a agenttools.Assignment) mcp.Assignment {

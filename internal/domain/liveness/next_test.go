@@ -25,10 +25,10 @@ func TestNext(t *testing.T) {
 		{"acked, silent for the stall window, provider not probed", Facts{Since: t0, Acked: true, LastCall: at(time.Minute)}, at(12 * time.Minute), Probe},
 		{"provider refuses", Facts{Since: t0, Acked: true, Provider: Refusing}, at(12 * time.Minute), Blocked},
 		{"provider refuses even before the ack window", Facts{Since: t0, Provider: Refusing}, at(2 * time.Minute), Blocked},
-		{"provider fine, no reset yet", Facts{Since: t0, Acked: true, Provider: Healthy}, at(12 * time.Minute), Reset},
-		{"reset, waiting", Facts{Since: t0, Acked: true, Provider: Healthy, ResetAt: at(12 * time.Minute)}, at(15 * time.Minute), Wait},
-		{"still silent after the reset", Facts{Since: t0, Acked: true, Provider: Healthy, ResetAt: at(12 * time.Minute)}, at(23 * time.Minute), Fail},
-		{"called after the reset", Facts{Since: t0, Acked: true, Provider: Healthy, ResetAt: at(12 * time.Minute), LastCall: at(20 * time.Minute)}, at(23 * time.Minute), Wait},
+		{"provider fine, stalled, not woken after a stall yet", Facts{Since: t0, Acked: true, Provider: Healthy}, at(12 * time.Minute), Rewake},
+		{"woken after the stall, waiting", Facts{Since: t0, Acked: true, Provider: Healthy, StallWokenAt: at(12 * time.Minute)}, at(15 * time.Minute), Wait},
+		{"still silent after the stall wake", Facts{Since: t0, Acked: true, Provider: Healthy, StallWokenAt: at(12 * time.Minute)}, at(23 * time.Minute), Fail},
+		{"called after the stall wake", Facts{Since: t0, Acked: true, Provider: Healthy, StallWokenAt: at(12 * time.Minute), LastCall: at(20 * time.Minute)}, at(23 * time.Minute), Wait},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

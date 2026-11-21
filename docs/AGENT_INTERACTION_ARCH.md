@@ -478,11 +478,11 @@ func Next(task TaskInfo, lastCallByAgent time.Time, sent []Nudge, provider Healt
 | No ack inside the ack window, no repeat yet | Repeat the wake line |
 | Acked, no Heimdall call **by this agent** for the stall window, provider not probed since | Probe the model provider once |
 | Provider refuses (quota, auth, outage) | Record `agents.blocked{reason}`; every affected status says "the model provider is refusing requests"; no wake is posted while it holds |
-| Provider fine, no reset yet for this task | Reset the agent's session in the working room and repeat the wake line |
+| Provider fine, not yet woken after a stall for this task | Repeat the wake line once more (D172: Switch offers the board no session reset) |
 | Still silent after that | `task.failed{unavailable}` with the trace; `Missing` names the seat; an approver may waive it or resume |
 
 The probe uses the provider key the server already holds, against the same endpoint and model. It never reads an
-agent's files. **Not verified:** that Switch honours the board's `!reset @agent` (spike SI2).
+agent's files. Switch 0.31 writes a `!reset` command only for a gateway user or a typed chat command, never for an agent, so the board does not reset sessions (D172).
 
 ### 6.4 Keeping talk affordable
 

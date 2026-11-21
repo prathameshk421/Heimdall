@@ -30,6 +30,7 @@ const (
 	EventStepRetried         EventType = "step.retried"
 	EventStepEscalated       EventType = "step.escalated"
 	EventStepResumed         EventType = "step.resumed"
+	EventProfileProposed     EventType = "profile.proposed"
 	EventTicketChanged       EventType = "ticket.changed"
 	EventPROpened            EventType = "pr.opened"
 	EventPRPushed            EventType = "pr.pushed"
@@ -61,6 +62,7 @@ func corePayloads() map[EventType]payloadEntry {
 		EventStepRetried:         entry[StepRetried](),
 		EventStepEscalated:       entry[StepEscalated](),
 		EventStepResumed:         entry[StepResumed](),
+		EventProfileProposed:     entry[ProfileProposed](),
 		EventTicketChanged:       entry[TicketChanged](),
 		EventPROpened:            entry[PROpened](),
 		EventPRPushed:            entry[PRPushed](),
@@ -326,6 +328,24 @@ type StepEscalated struct {
 	Reason   string `json:"reason"`
 }
 
+// ProfileProposed is the payload of profile.proposed: the profiler proposed a sandbox profile for the repository
+// (D175). It ends the profiler's task, as a submission does. The proposal itself, its approval, trial and promotion
+// live in the profile store; ProposalID is its content identifier (64 hex).
+type ProfileProposed struct {
+	TaskID     id.TaskID `json:"task_id"`
+	ProposalID string    `json:"proposal_id"`
+	Repo       Repo      `json:"repo"`
+}
+
+// Validate returns every problem with the payload.
+func (p ProfileProposed) Validate() error {
+	var v problems
+	v.add("task_id", checkTask(p.TaskID))
+	v.require("proposal_id", reHash.MatchString(p.ProposalID), "must be 64 lowercase hex characters")
+	v.add("repo", checkRepo(p.Repo))
+	return v.join()
+}
+
 // StepResumed is the payload of step.resumed: a person released an escalated step (A10 item 5). Step is the workflow
 // step id. By is the person who resumed it. The step's view starts again at this event, and the step is offered again.
 type StepResumed struct {
@@ -468,7 +488,10 @@ func (p TaskSuperseded) Validate() error {
 type TaskRewoken struct {
 	TaskID id.TaskID `json:"task_id"`
 	N      int       `json:"n"`
-	// Reset is true when the wake also reset the agent's session.
+	// Stall is true for the one wake after a stall with a healthy provider (liveness.Rewake).
+	Stall bool `json:"stall,omitempty"`
+	// Reset is set only by events from before D172, when this wake was meant to reset the agent's session. The reset
+	// never ran (Switch offers an agent no session reset); such an event folds as the stall wake.
 	Reset bool `json:"reset,omitempty"`
 }
 

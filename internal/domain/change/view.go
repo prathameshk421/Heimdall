@@ -159,13 +159,15 @@ type GateInfo struct {
 // TaskInfo is one task. Its status changes only on task events.
 type TaskInfo struct {
 	// Kind, Subject and Input say what the task is for (HARNESS_DESIGN B4); Since is when it was assigned, Wakes how
-	// many times the agent was woken again and ResetAt when its session was last reset.
-	Kind     string        `json:"kind"`
-	Subject  string        `json:"subject"`
-	Input    string        `json:"input"`
-	Since    time.Time     `json:"since"`
-	Wakes    int           `json:"wakes"`
-	ResetAt  time.Time     `json:"reset_at"`
+	// many times the agent was woken again and StallWokenAt when it was woken again after a stall.
+	Kind         string    `json:"kind"`
+	Subject      string    `json:"subject"`
+	Input        string    `json:"input"`
+	Since        time.Time `json:"since"`
+	Wakes        int       `json:"wakes"`
+	StallWokenAt time.Time `json:"stall_woken_at"`
+	// Round is how many times the task's row had been resumed when the task was assigned; failures count per round.
+	Round    int           `json:"round,omitempty"`
 	Agent    id.AgentName  `json:"agent"`
 	Role     workflow.Role `json:"role"`
 	Deadline time.Time     `json:"deadline"`
@@ -287,7 +289,7 @@ func (v *View) apply(e Event, p Payload) {
 		v.applyPR(e, p)
 	case ProviderProbed:
 		v.Provider = &ProviderInfo{Health: p.Health, Detail: p.Detail}
-	case TaskAssigned, TaskAcked, TaskTimedOut, TaskFailed, TaskProgress, TaskSuperseded, TaskRewoken:
+	case TaskAssigned, TaskAcked, TaskTimedOut, TaskFailed, TaskProgress, TaskSuperseded, TaskRewoken, ProfileProposed:
 		v.applyTask(e, p)
 	case ReviewSubmitted, ReviewUnavailable, ReviewWaived:
 		v.applyReview(p)
@@ -323,19 +325,21 @@ func (v *View) applyTask(e Event, p Payload) {
 	switch p := p.(type) {
 	case TaskAssigned:
 		v.Tasks[p.TaskID] = TaskInfo{Agent: p.Agent, Role: p.Role, Deadline: p.Deadline, Status: TaskAssignedStatus,
-			Kind: p.Kind, Subject: p.Subject, Input: p.Input, Since: e.OccurredAt}
+			Kind: p.Kind, Subject: p.Subject, Input: p.Input, Since: e.OccurredAt, Round: v.Resumes[TaskRow(p.Kind)]}
 	case TaskSuperseded:
 		v.setTask(p.TaskID, TaskSupersededStatus, "")
 	case TaskRewoken:
 		if t, ok := v.Tasks[p.TaskID]; ok {
 			t.Wakes = p.N
-			if p.Reset {
-				t.ResetAt = e.OccurredAt
+			if p.Stall || p.Reset {
+				t.StallWokenAt = e.OccurredAt
 			}
 			v.Tasks[p.TaskID] = t
 		}
 	case TaskAcked:
 		v.setTask(p.TaskID, TaskAckedStatus, "")
+	case ProfileProposed:
+		v.endTask(p.TaskID) // the proposal ends the profiler's task, as a submission does (D175)
 	case TaskTimedOut:
 		v.setTask(p.TaskID, TaskTimedOutStatus, "")
 	case TaskFailed:

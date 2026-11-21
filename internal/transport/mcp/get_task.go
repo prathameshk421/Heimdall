@@ -72,29 +72,39 @@ func (s *Server) getTask(ctx context.Context, p Principal, args json.RawMessage)
 // reviewer and resolver, the compiled brief.
 func (s *Server) inputDeps(p Principal, a Assignment) taskinput.Deps {
 	d := taskinput.Deps{Blobs: s.deps.Blobs, Paths: s.deps.Paths, Wrap: wrapUntrusted, Providers: map[string]taskinput.Provider{}}
-	if s.deps.Briefs != nil && (p.Role == workflow.RoleReviewer || p.Role == workflow.RoleResolver) {
-		// One get_task compiles the brief once, however many inputs read it.
-		var once sync.Once
-		var compiled reviewbrief.Brief
-		var compileErr error
-		brief := func(pick func(b briefText) string) taskinput.Provider {
-			return func(ctx context.Context, _ taskinput.Source) (string, error) {
-				once.Do(func() { compiled, compileErr = s.taskBrief(ctx, p, a) })
-				if compileErr != nil {
-					return "", compileErr
-				}
-				return pick(briefText{compiled.Obligations, compiled.PriorFindings, compiled.Memory}), nil
-			}
+	switch {
+	case s.deps.Briefs != nil && (p.Role == workflow.RoleReviewer || p.Role == workflow.RoleResolver):
+		s.addBriefProviders(d, p, a)
+	case s.deps.Profiles != nil && p.Role == workflow.RoleProfiler:
+		d.Providers["previous_trial"] = func(ctx context.Context, _ taskinput.Source) (string, error) {
+			return s.deps.Profiles.PreviousTrial(ctx, a.Task.Change.Repo)
 		}
-		d.Providers["obligations"] = brief(func(b briefText) string { return b.obligations })
-		d.Providers["prior_findings"] = brief(func(b briefText) string { return b.prior })
-		d.Providers["team_memory"] = brief(func(b briefText) string { return b.memory })
-	} else if s.deps.Cards != nil && p.Role == workflow.RoleReviewer {
+	case s.deps.Cards != nil && p.Role == workflow.RoleReviewer:
 		d.Providers["obligations"] = func(ctx context.Context, _ taskinput.Source) (string, error) {
 			return s.deps.Cards.ForTask(ctx, p, a)
 		}
 	}
 	return d
+}
+
+// addBriefProviders serves obligations, prior findings and team memory from one compiled brief: one get_task compiles
+// it once, however many inputs read it.
+func (s *Server) addBriefProviders(d taskinput.Deps, p Principal, a Assignment) {
+	var once sync.Once
+	var compiled reviewbrief.Brief
+	var compileErr error
+	brief := func(pick func(b briefText) string) taskinput.Provider {
+		return func(ctx context.Context, _ taskinput.Source) (string, error) {
+			once.Do(func() { compiled, compileErr = s.taskBrief(ctx, p, a) })
+			if compileErr != nil {
+				return "", compileErr
+			}
+			return pick(briefText{compiled.Obligations, compiled.PriorFindings, compiled.Memory}), nil
+		}
+	}
+	d.Providers["obligations"] = brief(func(b briefText) string { return b.obligations })
+	d.Providers["prior_findings"] = brief(func(b briefText) string { return b.prior })
+	d.Providers["team_memory"] = brief(func(b briefText) string { return b.memory })
 }
 
 type briefText struct{ obligations, prior, memory string }

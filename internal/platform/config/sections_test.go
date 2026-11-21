@@ -66,6 +66,17 @@ func TestLoadReadsLiveSections(t *testing.T) {
 	}, cfg.Agents)
 }
 
+// The profiler seat is optional (D175): without it the profile row names the gap instead of a task nobody holds.
+func TestLoadReadsAnOptionalProfiler(t *testing.T) {
+	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+liveSections+"profiler = \"profiler\"\n"))
+	require.NoError(t, err)
+	require.Equal(t, "profiler", cfg.Agents.Profiler)
+
+	cfg, err = Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+liveSections))
+	require.NoError(t, err)
+	require.Empty(t, cfg.Agents.Profiler)
+}
+
 func TestLoadReadsSwitchAgentRuntimeContract(t *testing.T) {
 	body := "secrets_dir = \"" + t.TempDir() + "\"\n" + liveSections + `
 [agent_runtime]
@@ -183,6 +194,7 @@ func TestLoadRefusesBadLiveSections(t *testing.T) {
 		{"agents section with bad reviewer name", head + "[agents]\ntest_author = \"author\"\nreviewers = [\"bad reviewer!\"]\nresolver = \"res1\"\n", "agents.reviewers"},
 		{"agents section without resolver", head + "[agents]\ntest_author = \"author\"\nreviewers = [\"rev1\"]\n", "agents.resolver"},
 		{"agents section with bad resolver", head + "[agents]\ntest_author = \"author\"\nreviewers = [\"rev1\"]\nresolver = \"bad resolver!\"\n", "agents.resolver"},
+		{"agents section with bad profiler", head + "[agents]\ntest_author = \"author\"\nreviewers = [\"rev1\"]\nresolver = \"res1\"\nprofiler = \"bad profiler!\"\n", "agents.profiler"},
 		{"unknown agents key", head + "[agents]\ntest_author = \"author\"\nreviewers = [\"rev1\"]\nresolver = \"res1\"\nextra = \"bad\"\n", "unknown key"},
 	}
 	for _, tc := range cases {

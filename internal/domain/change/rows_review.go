@@ -10,23 +10,35 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/slop"
 )
 
 // acceptanceCheck is the check Heimdall's own run of every Heimdall test reports under (TECH_SPEC 12.4, D150).
 const acceptanceCheck = "heimdall/acceptance"
 
 func reviewRows() []Row {
-	return []Row{rowSlop(), rowChecks(), rowPick(), rowReview(), rowVerify(), rowDeliberate(), rowAcceptance(), rowGate()}
+	return []Row{rowSlop(), rowChecks(), rowPick(), rowReview(), rowVerify(), rowDeliberate(), rowAcceptance(), rowGate(), rowProfile()}
 }
 
 func rowSlop() Row {
 	return Row{ID: "slop", Flow: FlowReview,
-		Done: func(in In) bool { return slopPassedOnHead(in.View) },
+		Done: func(in In) bool { return slopAllowsReview(in.View) },
 		Next: func(in In) []Action { return []Action{say(slopText(in.View.PR))} }}
 }
 
-func slopPassedOnHead(v View) bool {
-	return v.PR != nil && v.PR.Slop != nil && v.PR.Slop.SHA == v.PR.HeadSHA && v.PR.Slop.Pass
+// slopAllowsReview is whether the slop rules let the review start on the head: they pass, or the only one failing is
+// the ticket link (D174). A ticketless pull request is worth reviewing; the gate still reads the failed slop and the
+// ticket clause, so it can never merge. Any other failure stops the review before it costs tokens.
+func slopAllowsReview(v View) bool {
+	if v.PR == nil || v.PR.Slop == nil || v.PR.Slop.SHA != v.PR.HeadSHA {
+		return false
+	}
+	if v.PR.Slop.Pass {
+		return true
+	}
+	return len(v.PR.Slop.FailingRules) > 0 && !slices.ContainsFunc(v.PR.Slop.FailingRules, func(r string) bool {
+		return r != string(slop.RuleTicketLinked)
+	})
 }
 
 func slopText(pr *PRInfo) string {
@@ -73,6 +85,42 @@ func rowChecks() Row {
 			p := RunChecksPayload{Repo: pr.Repo, Change: in.Change, Head: pr.HeadSHA, Base: pr.Base, CheckIDs: applicableChecks(in)}
 			return []Action{{Text: "the profile checks run on " + short(string(pr.HeadSHA)),
 				Job: &Job{Kind: EffectRunChecks, Key: in.jobKey("checks", string(pr.HeadSHA)), Target: string(pr.Repo), Payload: p}}}
+		}}
+}
+
+// rowProfile walks the repository to a promoted sandbox profile (D175): the profiler proposes, an owner approves,
+// Heimdall runs the trial, an owner promotes. No row waits on it, so review never blocks on a profile, and it is last
+// in the table so a status lists the pull request's own merge work first. The proposal's
+// state lives in the profile store and comes in through In.Profile.Latest.
+func rowProfile() Row {
+	return Row{ID: "profile", Flow: FlowReview, After: []string{"slop"}, Jobs: []EffectKind{EffectProfileTrial},
+		Done: func(in In) bool { return in.Profile.Promoted },
+		Next: func(in In) []Action {
+			repo := in.View.PR.Repo
+			latest := in.Profile.Latest
+			switch {
+			case latest == nil || (latest.State == "approved" && latest.Trial == "failed"):
+				if in.Settings.Profiler == "" {
+					return []Action{say(string(repo) + " has no sandbox profile, and no profiler is configured in [agents] to propose one")}
+				}
+				input := "first"
+				if latest != nil {
+					input = "after-" + latest.ID
+				}
+				return []Action{{Task: &Task{Kind: "profile", Subject: string(repo), Input: input},
+					Text: "the profiler proposes a sandbox profile for " + string(repo)}}
+			case latest.State == "proposed":
+				text := "approve the sandbox profile " + short(latest.ID) + " for " + string(repo) + ": `heimdall approve-profile " + latest.ID + "`"
+				return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
+			case latest.State == "approved" && latest.Trial == "":
+				p := ProfileTrialPayload{Repo: repo, ProposalID: latest.ID, SHA: in.View.PR.HeadSHA}
+				return []Action{{Text: "the sandbox profile " + short(latest.ID) + " runs its trial on " + short(string(in.View.PR.HeadSHA)),
+					Job: &Job{Kind: EffectProfileTrial, Key: in.jobKey("profile", latest.ID), Target: string(repo), Payload: p}}}
+			case latest.State == "approved" && latest.Trial == "passed":
+				text := "the sandbox profile " + short(latest.ID) + " passed its trial; promote it: `heimdall promote-profile " + latest.ID + "`"
+				return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
+			}
+			return []Action{say("the sandbox profile " + short(latest.ID) + " is " + latest.State + " but not active for " + string(repo))}
 		}}
 }
 

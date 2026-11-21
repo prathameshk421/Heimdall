@@ -614,6 +614,7 @@ func newDrainer(d deps, store *postgres.Store, execs map[change.EffectKind]outbo
 		KindTimeouts: map[change.EffectKind]time.Duration{
 			change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout,
 			change.EffectVerifyEvidence: verifyEvidenceTimeout,
+			change.EffectProfileTrial:   testQualityTimeout, // a trial runs the profile's tests in the sandbox, like acceptance
 		},
 	})
 	if err != nil {
@@ -641,6 +642,15 @@ func executors(ad adapters, store ports.EventStore, profiles ports.ProfileStore,
 	if err != nil {
 		return nil, err
 	}
+	lifecycle, err := newProfileService(ad, profiles, blobs, clk)
+	if err != nil {
+		return nil, err
+	}
+	trial, err := effects.NewProfileTrial(effects.ProfileTrialDeps{Trials: lifecycle})
+	if err != nil {
+		return nil, fmt.Errorf("build profile_trial executor: %w", err)
+	}
+	review[change.EffectProfileTrial] = trial
 	all := map[change.EffectKind]outbox.Executor{}
 	for _, area := range []map[change.EffectKind]outbox.Executor{core, tests, review} {
 		maps.Copy(all, area)

@@ -105,7 +105,7 @@ func bootSelfCheck(ctx context.Context, d deps, ad adapters, blobs ports.BlobSto
 	}
 	check := runSelfCheck(ctx, d.logger, selfCheckTimeout, []dependency{
 		// Every profile tool reaches the runner: propose reads its image allowlist, trial runs a job, promote syncs.
-		{name: "runner", tools: []string{"run_check", "propose_profile", "trial_profile", "promote_profile"},
+		{name: "runner", tools: []string{"run_check", "propose_profile", "promote_profile"},
 			reason: "runner unreachable", probe: runnerProbe(ad.runner(blobs))},
 		{name: "code host", tools: []string{"read_code", "search_code", "find_symbol"},
 			reason: "code host unreachable", probe: codeHostProbe(ad.vcs, ad.repos)},

@@ -180,10 +180,10 @@ reconciler, starts all work (TECH_SPEC 5.2). Every writer only records facts.
   means an input could not be read (the policy at the merge base, the promoted profile, or a GitHub read for the
   gate). Fix the cause; the next sweep picks it up. Do not restart the server for it.
 - **Quiet agents.** The reconciler wakes a quiet agent again after 3 minutes without an ack or 10 minutes without a
-  call, probes the model provider, resets the agent, and then fails the task and assigns a fresh one. Each step is a
+  call, probes the model provider, wakes it once more, and then fails the task and assigns a fresh one. Each step is a
   fact on the change (`task.rewoken`, `provider.probed`, `task.failed`). If the provider refuses, `Missing` says "the
-  model provider refuses" and nothing is posted until it answers again. Note: `agent_reset` has no executor yet, so
-  that job fails and the ladder goes on.
+  model provider refuses" and nothing is posted until it answers again. Switch gives Heimdall no session reset (D172);
+  to clear a stuck session by hand, type `!reset @<agent>` in the room.
 - **Dead jobs.** An outbox job that fails 8 times is dead; a job that started and lost its claim is in doubt. Neither
   is retried by itself. Each one is a need in `Missing`: "<kind> failed <n> times: <last error>; `heimdall resume
   <change> <row>` runs it again". Fix the cause first (credentials, a GitHub permission, the runner), then a person in

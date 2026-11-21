@@ -201,7 +201,7 @@ func setupSecretNames(cfg config.Config) []string {
 		"postgres_password",
 		"openrouter_api_key",
 	}
-	for _, name := range append([]string{cfg.Agents.TestAuthor}, append(cfg.Agents.Reviewers, cfg.Agents.Resolver)...) {
+	for _, name := range append([]string{cfg.Agents.TestAuthor}, append(cfg.Agents.Reviewers, cfg.Agents.Resolver, cfg.Agents.Profiler)...) {
 		if name != "" {
 			names = append(names, "agent_token_"+name)
 		}

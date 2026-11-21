@@ -35,6 +35,9 @@ func (s selectedProfileStore) PromoteProfile(context.Context, string, time.Time)
 func (s selectedProfileStore) ActiveProfile(context.Context, string) (ports.ProfileProposal, bool, error) {
 	return s.proposal, s.found, s.err
 }
+func (s selectedProfileStore) LatestProfile(context.Context, string) (ports.ProfileProposal, bool, error) {
+	return s.proposal, s.found, s.err
+}
 func (s selectedProfileStore) PromotedProfiles(context.Context) ([]ports.ProfileProposal, error) {
 	return nil, nil
 }
