@@ -140,6 +140,9 @@ func (p *Processor) dispatch(ctx context.Context, in Input, src commands.Source,
 		return p.replies.Reply(ctx, in.Target, src, in.SourceRef, "Sorry, you are not allowed to run that command. Ask an approver for this repository.")
 	}
 	message, err := p.executor.Execute(ctx, in.Target, person, src, in.SourceRef, parsed.Command)
+	if errors.Is(err, ErrRefused) {
+		return p.replies.Reply(ctx, in.Target, src, in.SourceRef, refusalText(err))
+	}
 	if err != nil {
 		return fmt.Errorf("execute %s command: %w", parsed.Verb, err)
 	}
@@ -147,6 +150,13 @@ func (p *Processor) dispatch(ctx context.Context, in Input, src commands.Source,
 		message = "Done."
 	}
 	return p.replies.Reply(ctx, in.Target, src, in.SourceRef, message)
+}
+
+// refusalText is what the person reads when the executor refuses a command: the reason, without the error wrapper.
+// A refusal is a decision, not a failure, so the poller must not retry it.
+func refusalText(err error) string {
+	why := strings.TrimSuffix(strings.TrimPrefix(err.Error(), ErrRefused.Error()+": "), ".")
+	return "Not done: " + why + "."
 }
 
 // HandleRoomMessage is the roomstream adapter. The room-change binding is retained for policy and action resolution.

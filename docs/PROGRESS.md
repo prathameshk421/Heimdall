@@ -875,3 +875,20 @@ Noticed:
   the testset clause, with its table test, passes the gate tests and fails those. Owner decision needed: either the
   survivor loop (mutants check, ST2) must exist first, or those tests change. The patch is ready for review.
 - Steps 9 (critic) and 10 (UI preview) need the live runner pieces and are not started.
+
+## Three live-run defects: profile round, capped resume, refused reply (Nov 21, 2026)
+
+- **Profile task round (D173/D175).** `change.TaskRow` had no case for kind `profile`, so a profile task recorded
+  round `Resumes[""]` and `heimdall resume <change> profile` never cleared its cap. It now maps `profile` to row
+  `profile`. Test: `TestAProfileTaskThatFailedTwiceIsNotAssignedAgainUntilResumed`.
+- **Resume of a capped row.** The cap text tells people to resume, but `resumeEvents` accepted only a step that
+  `stepEscalatedNow` saw, and the cap writes no `step.escalated`. New pure `change.RowCapped(v, row)` reports a row
+  whose seat used up `MaxTaskFailures` on one input in the current round; `capTask` now shares its counting helper.
+  `resumeEvents` accepts a step that escalated or is capped. Tests: `TestRowCappedSeesTheRoundTheRowIsIn`,
+  `TestResumeOfACappedProfileRowWritesOneStepResumed`, `TestResumeOfARowThatIsNeitherEscalatedNorCappedIsRefused`.
+- **Refused command reply.** `dispatch` returned every executor error, so the GitHub comment poller failed the whole
+  PR and retried the same comment every 17 s. A refusal (`collaboration.ErrRefused`, now also `Refuse(reason)`) gets
+  one reply with the reason and a nil error; other errors still return. Tests:
+  `TestHandleRepliesWithTheReasonWhenTheExecutorRefuses`, `TestHandleReturnsAPlainExecutorErrorWithoutReplying`.
+- **Evidence.** `make fast` exit 0, 4333 tests, 0 lint issues. `make verify` not run. Real GitHub comment poll not
+  run: `not verified` (needs the VM and a live PR).

@@ -233,21 +233,44 @@ func TaskRow(kind string) string {
 		return "review"
 	case "verdict":
 		return "deliberate"
+	case "profile":
+		return "profile"
 	}
 	return ""
+}
+
+// RowCapped reports whether a task the row assigned failed MaxTaskFailures times on its input in the row's current
+// round, so the row asks a person instead of assigning again. It reads the same facts capTask does, and the resume
+// command uses it to accept `heimdall resume <change> <row>` for a capped row that never escalated.
+func RowCapped(v View, row string) bool {
+	for _, info := range v.Tasks {
+		if TaskRow(info.Kind) != row || info.Round != v.Resumes[row] {
+			continue
+		}
+		if failures(v, row, Task{Kind: info.Kind, Subject: info.Subject, Input: info.Input}) >= MaxTaskFailures {
+			return true
+		}
+	}
+	return false
+}
+
+// failures counts the tasks of t's kind, subject and input that failed or timed out in the row's current round.
+func failures(v View, row string, t Task) int {
+	failed := 0
+	for _, info := range v.Tasks {
+		if info.Kind == t.Kind && info.Subject == t.Subject && info.Input == t.Input &&
+			info.Round == v.Resumes[row] && (info.Status == TaskFailedStatus || info.Status == TaskTimedOutStatus) {
+			failed++
+		}
+	}
+	return failed
 }
 
 // capTask turns a task that already failed MaxTaskFailures times on its input in this round into a question for the
 // operators, so the reconciler assigns nothing and Missing says what a person can do.
 func capTask(in In, row string, a Action) Action {
 	t := a.Task
-	failed := 0
-	for _, info := range in.View.Tasks {
-		if info.Kind == t.Kind && info.Subject == t.Subject && info.Input == t.Input &&
-			info.Round == in.View.Resumes[row] && (info.Status == TaskFailedStatus || info.Status == TaskTimedOutStatus) {
-			failed++
-		}
-	}
+	failed := failures(in.View, row, *t)
 	if failed < MaxTaskFailures {
 		return a
 	}
