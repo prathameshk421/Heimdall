@@ -267,3 +267,20 @@ func checkLogins(c *checker, key string, logins []string, valid func(string) boo
 		seen[lower] = true
 	}
 }
+
+// Protects reports whether path is one of Heimdall's own files under this action policy: heimdall.yaml, anything
+// under .heimdall/, a Heimdall workflow, or a workflow the policy declares as the producer of an input in use. A
+// change to such a file is never trivial and needs a policy owner (ACTION_MODE 5.1 heimdall_files, section 7). The
+// fast check and the proof skip both call this, so the two can never disagree.
+func (a Action) Protects(path string) bool {
+	if path == "heimdall.yaml" || path == "heimdall.yml" ||
+		MatchGlob(".heimdall/**", path) ||
+		MatchGlob(".github/workflows/heimdall-*.yml", path) ||
+		MatchGlob(".github/workflows/heimdall-*.yaml", path) {
+		return true
+	}
+	if a.Analyzers.Source == AnalyzerSourceSARIFArtifact && a.Analyzers.Workflow != "" && path == a.Analyzers.Workflow {
+		return true
+	}
+	return a.DiffCoverage.Min > 0 && a.DiffCoverage.Workflow != "" && path == a.DiffCoverage.Workflow
+}

@@ -3,7 +3,6 @@ package proof
 import (
 	"fmt"
 	"path"
-	"slices"
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
@@ -94,34 +93,15 @@ func cleanPath(p string) bool {
 // its paths. The rule is the same as fastcheck's, because a change that fast holds for a policy owner must never skip
 // the proof run either.
 func heimdallFiles(files []File, a policy.Action) []string {
-	declared := declaredWorkflows(a)
 	var hit []string
 	for _, f := range files {
 		for _, p := range []string{f.Path, f.From} {
-			if p != "" && (isHeimdallFile(p) || slices.Contains(declared, p)) {
+			if p != "" && a.Protects(p) {
 				hit = append(hit, p)
 			}
 		}
 	}
 	return hit
-}
-
-func isHeimdallFile(file string) bool {
-	return file == "heimdall.yaml" || file == "heimdall.yml" ||
-		policy.MatchGlob(".heimdall/**", file) ||
-		policy.MatchGlob(".github/workflows/heimdall-*.yml", file) ||
-		policy.MatchGlob(".github/workflows/heimdall-*.yaml", file)
-}
-
-func declaredWorkflows(a policy.Action) []string {
-	var out []string
-	if a.Analyzers.Source == policy.AnalyzerSourceSARIFArtifact && a.Analyzers.Workflow != "" {
-		out = append(out, a.Analyzers.Workflow)
-	}
-	if a.DiffCoverage.Min > 0 && a.DiffCoverage.Workflow != "" {
-		out = append(out, a.DiffCoverage.Workflow)
-	}
-	return out
 }
 
 func allMatch(files []File, globs []string) bool {

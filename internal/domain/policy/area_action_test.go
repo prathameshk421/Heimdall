@@ -170,3 +170,34 @@ func TestDefaultsAreFreshEveryCall(t *testing.T) {
 	a.Trivial[0] = "changed"
 	require.Equal(t, "**/*.md", policy.Action{}.Effective().Trivial[0], "no package-level state can be changed by a caller")
 }
+
+// Protects is the one rule for Heimdall's own files; the fast check's heimdall_files clause and the proof's trivial
+// skip both use it.
+func TestActionProtects(t *testing.T) {
+	var a policy.Action
+	a.Analyzers.Source = policy.AnalyzerSourceSARIFArtifact
+	a.Analyzers.Workflow = ".github/workflows/lint.yml"
+	a.DiffCoverage.Min = 80
+	a.DiffCoverage.Workflow = ".github/workflows/test.yml"
+	for path, want := range map[string]bool{
+		"heimdall.yaml":                         true,
+		"heimdall.yml":                          true,
+		".heimdall/memory/rules.md":             true,
+		".github/workflows/heimdall-gate.yml":   true,
+		".github/workflows/heimdall-proof.yaml": true,
+		".github/workflows/lint.yml":            true,
+		".github/workflows/test.yml":            true,
+		".github/workflows/deploy.yml":          false,
+		"docs/heimdall.yaml":                    false,
+		"README.md":                             false,
+	} {
+		require.Equal(t, want, a.Protects(path), path)
+	}
+
+	var off policy.Action
+	off.Analyzers.Source = policy.AnalyzerSourceCodeScanning
+	off.Analyzers.Workflow = ".github/workflows/lint.yml"
+	off.DiffCoverage.Workflow = ".github/workflows/test.yml"
+	require.False(t, off.Protects(".github/workflows/lint.yml"), "a workflow is protected only while its input is in use")
+	require.False(t, off.Protects(".github/workflows/test.yml"), "diff coverage off: its workflow is not an input")
+}
