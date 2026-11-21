@@ -139,25 +139,64 @@ func readReport(t *testing.T, path string) reviewReport {
 }
 
 func TestReplayTwoRealCasesWithAScriptedModel(t *testing.T) {
-	o := replayOptions(t, "testify-1207,cobra-1643-clean", testingCapUSD)
-	model := loadScripts(t, "testify-1207", "cobra-1643-clean")
+	// Two real valid bug cases, each replaying the change that brought the bug in. The script is fixed, so this is a
+	// harness check: it proves the tools, the sandbox, the proof rule and the scoring before any model spend.
+	o := replayOptions(t, "testify-1207,chi-1185", testingCapUSD)
+	model := loadScripts(t, "testify-1207", "chi-1185")
 	code, err := reviewRun(context.Background(), o, execRunner{}, model, testWriter{t})
 	require.NoError(t, err)
 	require.Equal(t, exitAgrees, code)
 
 	rep := readReport(t, o.out)
 	require.Len(t, rep.Cases, 2)
-	bug, clean := rep.Cases[0], rep.Cases[1]
 
-	require.Equal(t, "testify-1207", bug.ID)
-	require.True(t, bug.Scored, bug.Error)
-	require.Equal(t, "submitted", string(bug.Stop))
-	require.Equal(t, 1, bug.Proposed)
-	require.Equal(t, 1, bug.Proven, "the nil mutex test fails twice on the head and passes on the fix")
-	require.True(t, bug.Hit, "mock/mock.go 507-511 overlaps the truth 510-511 on the head")
-	require.Len(t, bug.Findings[0].Runs, 3)
-	require.NotNil(t, bug.Truth)
+	mock, chi := rep.Cases[0], rep.Cases[1]
+	require.Equal(t, "testify-1207", mock.ID)
+	require.True(t, mock.Scored, mock.Error)
+	require.Equal(t, "submitted", string(mock.Stop))
+	require.Equal(t, 1, mock.Proposed)
+	require.Equal(t, 1, mock.Proven, "the nil mutex test fails twice on the head and passes on the fix")
+	require.True(t, mock.Hit, "mock/mock.go 507-511 overlaps the truth 510-511 on the head")
+	require.Len(t, mock.Findings[0].Runs, 3)
+	require.NotNil(t, mock.Truth)
 
+	require.Equal(t, "chi-1185", chi.ID)
+	require.True(t, chi.Scored, chi.Error)
+	require.Equal(t, "submitted", string(chi.Stop))
+	require.Equal(t, 1, chi.Proposed)
+	require.Equal(t, 1, chi.Proven, "the discard-and-flush test fails twice on the head and passes on the fix")
+	require.True(t, chi.Hit, "the truth maps onto the head tree and the finding sits on one of its spans")
+	require.Len(t, chi.Findings[0].Runs, 3)
+	require.NotNil(t, chi.Truth)
+
+	s := rep.Summary
+	require.Equal(t, bench.Ratio{Num: 2, Den: 2}, s.Recall)
+	require.Equal(t, bench.Ratio{Num: 0, Den: 0}, s.FalsePositives, "no clean case ran")
+	require.Equal(t, bench.Ratio{Num: 2, Den: 2}, s.Evidence)
+	require.Positive(t, s.CostUSD)
+	require.Equal(t, sandboxNote, rep.Sandbox)
+
+	md, err := os.ReadFile(o.md)
+	require.NoError(t, err)
+	require.Contains(t, string(md), "| testify-1207 | bug | yes | submitted |")
+	require.Contains(t, string(md), "| chi-1185 | bug | yes | submitted |")
+	t.Log("\n" + string(md))
+}
+
+func TestReplayACleanCaseWithAScriptedModel(t *testing.T) {
+	// A clean case is scored on false positives. Both recorded findings are wrong on purpose: one test passes on the
+	// head, one does not build. Neither is proven, so neither blocks, and the case is scored.
+	o := replayOptions(t, "cobra-1643-clean", testingCapUSD)
+	o.out = filepath.Join(t.TempDir(), "clean.json")
+	o.md = ""
+	model := loadScripts(t, "cobra-1643-clean")
+	code, err := reviewRun(context.Background(), o, execRunner{}, model, testWriter{t})
+	require.NoError(t, err)
+	require.Equal(t, exitAgrees, code)
+
+	rep := readReport(t, o.out)
+	require.Len(t, rep.Cases, 1)
+	clean := rep.Cases[0]
 	require.Equal(t, "cobra-1643-clean", clean.ID)
 	require.True(t, clean.Scored, clean.Error)
 	require.Equal(t, 2, clean.Proposed)
@@ -165,17 +204,8 @@ func TestReplayTwoRealCasesWithAScriptedModel(t *testing.T) {
 	require.False(t, clean.FalsePositive)
 	require.Equal(t, map[string]int{"passes_on_head": 1, "build_error_head": 1}, clean.Unproven)
 
-	s := rep.Summary
-	require.Equal(t, bench.Ratio{Num: 1, Den: 1}, s.Recall)
-	require.Equal(t, bench.Ratio{Num: 0, Den: 1}, s.FalsePositives)
-	require.Equal(t, bench.Ratio{Num: 1, Den: 3}, s.Evidence)
-	require.Positive(t, s.CostUSD)
-	require.Equal(t, sandboxNote, rep.Sandbox)
-
-	md, err := os.ReadFile(o.md)
-	require.NoError(t, err)
-	require.Contains(t, string(md), "| testify-1207 | bug | yes | submitted |")
-	t.Log("\n" + string(md))
+	require.Equal(t, bench.Ratio{Num: 0, Den: 1}, rep.Summary.FalsePositives)
+	require.Equal(t, bench.Ratio{Num: 0, Den: 0}, rep.Summary.Recall, "no bug case ran")
 }
 
 func TestReplayStopsAtTheCostCap(t *testing.T) {
