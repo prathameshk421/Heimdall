@@ -68,13 +68,13 @@ func (finishReview) Spec() ports.ModelTool {
 		Parameters: json.RawMessage(`{"type":"object","properties":{"summary":{"type":"string","description":"One or two sentences on what you checked."}},"additionalProperties":false}`)}
 }
 
+// Submit accepts any summary: the review's output is the findings it proposed, not its closing text.
 func (finishReview) Submit(_ context.Context, args json.RawMessage) (agentloop.Verdict, error) {
 	var in struct {
 		Summary string `json:"summary"`
 	}
-	if err := decodeArgs(args, &in); err != nil {
-		return agentloop.Verdict{Reason: err.Error()}, nil
-	}
+	// A summary the model wrote badly is not worth a refusal: the review is already over.
+	_ = decodeArgs(args, &in)
 	return agentloop.Verdict{Accepted: true}, nil
 }
 
@@ -206,51 +206,97 @@ func (rp *replay) searchCode(ctx context.Context, args json.RawMessage) (string,
 		return "", fmt.Errorf("open head tree: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-	var hits []string
-	errFull := errors.New("full")
-	walkErr := fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
-		switch {
-		case err != nil:
-			return nil // an unreadable entry is skipped
-		case ctx.Err() != nil:
-			return ctx.Err()
-		case d.IsDir() && (p == ".git" || p == "vendor"):
-			return fs.SkipDir
-		case d.IsDir() || !d.Type().IsRegular() || !strings.HasPrefix(p, in.PathPrefix):
-			return nil
-		}
-		if info, err := d.Info(); err != nil || info.Size() > maxSearchFile {
-			return nil
-		}
-		b, err := root.ReadFile(p)
-		if err != nil || bytes.IndexByte(b, 0) >= 0 {
-			return nil
-		}
-		for i, line := range strings.Split(string(b), "\n") {
-			if !strings.Contains(line, in.Query) {
-				continue
-			}
-			if len(line) > maxSearchLine {
-				line = line[:maxSearchLine] + "..."
-			}
-			hits = append(hits, fmt.Sprintf("%s:%d: %s", p, i+1, strings.TrimSpace(line)))
-			if len(hits) == maxSearchHits {
-				return errFull
-			}
-		}
-		return nil
-	})
-	if walkErr != nil && !errors.Is(walkErr, errFull) {
+	s := &searcher{root: root, ctx: ctx, query: in.Query, prefix: in.PathPrefix}
+	walkErr := fs.WalkDir(root.FS(), ".", s.visit)
+	if walkErr != nil && !errors.Is(walkErr, errSearchFull) {
 		return "", fmt.Errorf("search: %w", walkErr)
 	}
-	if len(hits) == 0 {
-		return "no match", nil
+	return s.report(), nil
+}
+
+// errSearchFull ends the walk once the match limit is reached.
+var errSearchFull = errors.New("full")
+
+// searcher holds the state of one search_code walk. It skips directories the reviewer never needs, files that are too
+// large or binary, and stops at maxSearchHits matches.
+type searcher struct {
+	root   *os.Root
+	ctx    context.Context
+	query  string
+	prefix string
+	hits   []string
+}
+
+// visit is fs.WalkDirFunc. It ignores the walk error on purpose: an entry the walk cannot read is skipped, so one
+// permission problem does not end the whole search. A nil entry is the same case, and it is never read.
+func (s *searcher) visit(p string, d fs.DirEntry, _ error) error {
+	if d == nil {
+		return nil
 	}
-	out := strings.Join(hits, "\n")
-	if len(hits) == maxSearchHits {
+	if s.ctx.Err() != nil {
+		return s.ctx.Err()
+	}
+	if d.IsDir() {
+		if p == ".git" || p == "vendor" {
+			return fs.SkipDir
+		}
+		return nil
+	}
+	if !s.wanted(p, d) {
+		return nil
+	}
+	b, ok := s.read(p)
+	if !ok {
+		return nil
+	}
+	return s.scan(p, b)
+}
+
+// wanted says whether the walk reads this file: a regular file under the prefix, of at most maxSearchFile bytes.
+func (s *searcher) wanted(p string, d fs.DirEntry) bool {
+	if !d.Type().IsRegular() || !strings.HasPrefix(p, s.prefix) {
+		return false
+	}
+	info, err := d.Info()
+	return err == nil && info.Size() <= maxSearchFile
+}
+
+// read returns a file's bytes, or false when the file cannot be read or looks binary.
+func (s *searcher) read(p string) ([]byte, bool) {
+	b, err := s.root.ReadFile(p)
+	if err != nil || bytes.IndexByte(b, 0) >= 0 {
+		return nil, false
+	}
+	return b, true
+}
+
+// scan adds the lines of one file that hold the query, and stops the walk at the match limit.
+func (s *searcher) scan(p string, b []byte) error {
+	for i, line := range strings.Split(string(b), "\n") {
+		if !strings.Contains(line, s.query) {
+			continue
+		}
+		if len(line) > maxSearchLine {
+			line = line[:maxSearchLine] + "..."
+		}
+		s.hits = append(s.hits, fmt.Sprintf("%s:%d: %s", p, i+1, strings.TrimSpace(line)))
+		if len(s.hits) == maxSearchHits {
+			return errSearchFull
+		}
+	}
+	return nil
+}
+
+// report writes the hits, and says when the limit cut the list short.
+func (s searcher) report() string {
+	if len(s.hits) == 0 {
+		return "no match"
+	}
+	out := strings.Join(s.hits, "\n")
+	if len(s.hits) == maxSearchHits {
 		out += "\n[stopped at 50 matches; narrow the query or the path_prefix]"
 	}
-	return out, nil
+	return out
 }
 
 // checkTestFile refuses a test path or source the sandbox should not take. The path must be a new Go test file, so a
@@ -293,14 +339,30 @@ func (rp *replay) runTest(ctx context.Context, args json.RawMessage) (string, er
 	if err != nil {
 		return "", err
 	}
-	return describeRun(res), nil
+	names, err := bench.TestFuncs([]byte(in.TestSource), allLines(in.TestSource))
+	if err != nil {
+		return "", fmt.Errorf("test_source: %w", err)
+	}
+	return describeRun(res, names), nil
 }
 
 // describeRun writes a sandbox result for the model: counts, failing and errored tests first, then the output tail.
-func describeRun(res ports.SandboxResult) string {
+// focus names the tests the reviewer just wrote; they are listed before the rest, so a package with more tests than
+// the listing takes still shows the answer the reviewer waits on.
+func describeRun(res ports.SandboxResult, focus []string) string {
 	tests := slices.Clone(res.Tests)
+	focused := map[string]bool{}
+	for _, n := range focus {
+		focused[n] = true
+	}
 	rank := map[ports.Outcome]int{ports.OutcomeError: 0, ports.OutcomeFailure: 1, ports.OutcomePassed: 2, ports.OutcomeSkipped: 3}
 	slices.SortFunc(tests, func(a, b ports.TestResult) int {
+		if da, db := focused[a.Name], focused[b.Name]; da != db {
+			if da {
+				return -1
+			}
+			return 1
+		}
 		if d := rank[a.Outcome] - rank[b.Outcome]; d != 0 {
 			return d
 		}

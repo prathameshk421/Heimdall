@@ -106,6 +106,8 @@ func TestMapTruthWithNoDiffKeepsTheTruth(t *testing.T) {
 	require.Empty(t, got.Dropped)
 }
 
+// proven is a finding proven by its test. The cases below all sit on a.go; the file is a parameter so a test that
+// needs another path stays readable.
 func proven(file string, span Span, sev finding.Severity) ScoredFinding {
 	return ScoredFinding{File: file, Lines: span, Severity: sev,
 		Proof: testintegrity.ProofResult{Class: testintegrity.ClassProven, Why: testintegrity.WhyProven}}
@@ -126,7 +128,9 @@ func TestScoreBugCaseHitNeedsAProvenOverlappingFinding(t *testing.T) {
 	}{
 		{"proven and overlapping", []ScoredFinding{proven("a.go", Span{11, 11}, finding.SeverityLow)}, true, true},
 		{"proven elsewhere", []ScoredFinding{proven("a.go", Span{40, 41}, finding.SeverityHigh)}, false, false},
+		{"proven in another file", []ScoredFinding{proven("other/a.go", Span{11, 11}, finding.SeverityHigh)}, false, false},
 		{"overlapping but unproven", []ScoredFinding{unproven("a.go", Span{10, 10}, testintegrity.WhyPassesOnHead)}, false, true},
+		{"unproven in another file", []ScoredFinding{unproven("other/a.go", Span{10, 10}, testintegrity.WhyBuildHead)}, false, false},
 		{"one of two", []ScoredFinding{
 			unproven("a.go", Span{10, 10}, testintegrity.WhyOneRedRun),
 			proven("a.go", Span{12, 13}, finding.SeverityMedium),

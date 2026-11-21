@@ -45,9 +45,11 @@ type repo struct {
 func openRepo(ctx context.Context, r runner, root string, c bench.Case) (*repo, error) {
 	name := strings.ReplaceAll(c.RepoSlug(), "/", "__")
 	rp := &repo{r: r, gitDir: filepath.Join(root, "repos", name+".git"), work: filepath.Join(root, "work", name)}
+	// #nosec G703 -- root is the operator's -cache flag and name comes from the manifest's repo slug, never a request
 	if err := os.MkdirAll(rp.work, 0o750); err != nil {
 		return nil, fmt.Errorf("make work dir: %w", err)
 	}
+	// #nosec G703 -- see above: the cache directory is the operator's own
 	if _, err := os.Stat(filepath.Join(rp.gitDir, "HEAD")); err == nil {
 		return rp, nil
 	} else if !errors.Is(err, fs.ErrNotExist) {

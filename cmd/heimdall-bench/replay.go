@@ -103,7 +103,7 @@ func (r *replay) prove(ctx context.Context, n int, p proposal) bench.ScoredFindi
 		{"head-1", r.head, r.headTree}, {"head-2", r.head, r.headTree}, {"fixed-1", r.fixed, r.fixedTree},
 	}
 	for i, step := range plan {
-		if i == 2 && !(facts.Runs[0].Outcome == testintegrity.OutcomeFail && facts.Runs[1].Outcome == testintegrity.OutcomeFail) {
+		if i == 2 && (facts.Runs[0].Outcome != testintegrity.OutcomeFail || facts.Runs[1].Outcome != testintegrity.OutcomeFail) {
 			break // Prove reads the fixed tree only after two red head runs
 		}
 		res, err := r.sandboxRun(ctx, step.sha, p.TestPath, p.TestSource)
