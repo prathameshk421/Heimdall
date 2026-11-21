@@ -1,0 +1,4 @@
+mode: count
+example.com/app/internal/domain/coverage/coverage.go:41.1,43.2 2 12
+example.com/app/internal/domain/coverage/coverage.go:45.10,47.3 1 0
+example.com/app/internal/domain/coverage/lcov.go:5.1,7.2 3 7
