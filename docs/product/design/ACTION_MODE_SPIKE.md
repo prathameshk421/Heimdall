@@ -310,3 +310,126 @@ afterwards on Nov 21 2026):
   API. They are unreachable from any branch.
 - Other `heimdall-test/*` branches (`demo-base`, `green-1..3`, `h11-ticketless-20261119`) and the open PRs 11 and 15
   were not made by S1 and were not touched.
+
+## 9. AM11 probes: the isolated sandbox
+
+Status: measured Nov 21 2026 by P-AM11 on `aarush323/heimdall-fixture-pay`, branch `heimdall-test/am11-r1`, runner
+`ubuntu-latest` (image `ubuntu-26.04` version 20261116.88.1, Ubuntu 26.04.1, runner 2.338.2, systemd 259, nftables
+1.1.6, setpriv from util-linux 2.41.3, Go 1.25.14 from `actions/setup-go`). No model calls. No secret: the canary was a
+random value made in the step. The workflow file, the probe module and the harness binary went onto the branch through
+the contents API. Nothing went into this repository's workflows.
+
+**Result: one probe escaped.** From the execution phase, the host's systemd-resolved answered a DNS query through its
+Unix socket. Every other probe was blocked. AM11 is therefore not done: section 4.4 of `ACTION_MODE.md` does not hold
+until a fix from 9.4 lands and the probes pass again.
+
+### 9.1 Method
+
+The harness is `internal/adapters/uidsandbox/probe_linux_test.go` (tags `linux,sbxprobe`), cross-compiled here with
+`GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c -tags sbxprobe`. On the runner it is the "loop" process. It:
+
+1. holds the canary in its own environment, and writes it to `$HOME/heimdall-canary.txt` and
+   `$RUNNER_TEMP/heimdall-canary.txt` with mode 0644, so only the directory modes can stop the sandbox user;
+2. runs the controls as the runner user: its `/proc/self/environ` has the canary, both files are readable, DNS works
+   (`github.com` = 4.149.173.80), TCP to 1.1.1.1:443 works, and `/var/run/docker.sock` accepts a connect;
+3. finds the runner's own files by walking up to `Runner.Worker`: `.credentials`, `.runner` and `_diag` under
+   `/home/runner/actions-runner/cached/2.338.2/`;
+4. calls `New`, `Setup` (uid 999, proxy on 127.0.0.1:36289 in run 1) and `Stage` with the probe module of
+   `testdata/probe` plus a `config.json` (parent pid, canary paths, canary SHA-256, proxy port, runner files);
+5. runs `go mod download` in the fetch phase (allowlist `proxy.golang.org`, `sum.golang.org`, port 443), then
+   `go test -run ^TestFetch` in the fetch phase, then `go test -run ^TestExec` in the execution phase;
+6. after the execution job, checks that the daemon pid the probe wrote is gone and that `pgrep -u 999` finds nothing.
+
+A probe test passes when the escape fails. It fails with `ESCAPED` when the escape works.
+
+### 9.2 Results: run 44868233309, all 40 attempts in 21 probe tests blocked
+
+Run 44868368873 repeated every probe below with the same result and added the probes of 9.3.
+
+| Probe | Phase | Exact result |
+|---|---|---|
+| Read the loop's `/proc/<pid>/environ` | exec | `open /proc/2511/environ: permission denied` |
+| Open the loop's `/proc/<pid>/mem` | exec | `open /proc/2511/mem: permission denied` |
+| Scan every `/proc/*/environ` for the canary key or value | exec | in none; 2 readable (own uid), 194 denied |
+| Own environment | exec | 13 fixed variables, no canary |
+| Read the home canary; list the home | exec | `open /home/runner/heimdall-canary.txt: permission denied`; `open /home/runner: permission denied` |
+| Read the `_temp` canary | exec | `open /home/runner/work/_temp/heimdall-canary.txt: permission denied` |
+| Read the runner's `.credentials`, `.runner`, `_diag` | exec | `permission denied` for each |
+| DNS, system resolver | exec | `read udp 127.0.0.1:34678->127.0.0.53:53: read: connection refused` |
+| DNS to 8.8.8.8 | exec | `dial udp 8.8.8.8:53: connect: network is unreachable` |
+| TCP to 1.1.1.1:443, 140.82.112.3:443, [2606:4700:4700::1111]:443, 169.254.169.254:80 | exec | `connect: network is unreachable` for each |
+| Network interfaces | exec | only `lo` |
+| Fetch proxy from the execution phase: `CONNECT example.com:443` and `proxy.golang.org:443` | exec | `dial tcp 127.0.0.1:36289: connect: connection refused` |
+| `/var/run/docker.sock`, `/run/containerd/containerd.sock` | exec | `connect: permission denied` |
+| Passwordless root escalation (`/usr/bin/sudo -n true`) | exec | refused: `The "no new privileges" flag is set, which prevents sudo from running as root.` |
+| `su root` | exec | `su: Authentication failure` |
+| Privileges | exec | `NoNewPrivs=1`, `CapEff=0`, `CapBnd=0`, uid 999 in all four fields, no groups |
+| Install a crontab | exec | `You (heimdall-sbx) are not allowed to use this program (crontab)` |
+| `at` job | exec | not applicable: the image has no `at` |
+| `systemd-run --user` | exec | `Failed to connect to user scope bus` |
+| Daemon kept alive: a `setsid` child and a `setsid -f nohup` child | exec | pid 4040 gone after the kill (`stat /proc/4040: no such file`); `pgrep -u 999` empty; the workflow's last step printed `no heimdall-sbx process` |
+| Root rights of the user (`-l -U heimdall-sbx`, run as root) | setup | `User heimdall-sbx is not allowed to run sudo on ip-10-0-142-233.`; `id`: `groups=986(heimdall-sbx)` |
+| Home and `_temp` mode after setup | setup | both 0700 (the image ships the home as 0750 and `_temp` as 0755) |
+| Allowed fetch: `go mod download` of `rsc.io/quote` v1.5.2 | fetch | exit 0; proxy log `sandbox proxy tunnel target=proxy.golang.org:443` |
+| `CONNECT proxy.golang.org:443` | fetch | 200 (the positive check) |
+| `CONNECT` to `example.com:443`, `github.com:443`, `proxy.golang.org.evil.example:443` | fetch | `403 Forbidden`, logged `host not in the registry allowlist` |
+| `CONNECT 1.1.1.1:443`, `169.254.169.254:80` | fetch | `403 Forbidden`, logged `IP literal target refused` |
+| `CONNECT proxy.golang.org:80` | fetch | `403 Forbidden`, logged `port not allowed` |
+| Direct TCP to 1.1.1.1:443, 127.0.0.53:53, 169.254.169.254:80 | fetch | `i/o timeout` (the nftables drop) |
+| Direct TCP to [2606:4700:4700::1111]:443 | fetch | `network is unreachable` |
+| DNS, system resolver | fetch | `write udp 127.0.0.1:42039->127.0.0.53:53: write: operation not permitted` |
+| `/var/run/docker.sock` | fetch | `permission denied` |
+| Offline build with the fetched module | exec | works: `"Hello, world."` |
+
+### 9.3 The escape: run 44868368873
+
+A network namespace cuts the sockets of the network stack. It does not cut Unix sockets on the file system.
+
+| Probe | Phase | Exact result |
+|---|---|---|
+| `resolvectl query example.com` | exec | **ESCAPED**: `example.com: 104.20.23.154, 172.66.147.243, 2606:4700:10::6814:179a, 2606:4700:10::ac42:93f3`, after `Failed to resolve interface name for index 2` (the host's eth0 does not exist in the namespace) |
+| `resolvectl query example.com` | fetch | **ESCAPED**: the same answer, `-- link: eth0`. This also goes around the proxy allowlist |
+| `getent ahosts example.com` (NSS) | both | blocked: exit 2. NSS on this image asks 127.0.0.53 and does not use the varlink socket |
+| Host Unix sockets that accept a connect | fetch | 23 of 65 listed, among them `/run/dbus/system_bus_socket`, `/run/systemd/resolve/io.systemd.Resolve`, `/run/systemd/io.systemd.Manager`, `/run/snapd.socket`, `/run/polkit/agent-helper.socket`, `/run/ssh-unix-local/socket`, `/run/systemd/journal/stdout` and two abstract sockets |
+| The same list | exec | `/proc/net/unix` lists 0 (it is per namespace), but the resolvectl answer shows that file system sockets still connect |
+
+What it means: PR code in the execution phase can send any data out as DNS names under a domain its author controls.
+It still cannot read the key (9.2), so the leak is limited to what heimdall-sbx can read: the PR tree, the model's
+tests and world-readable host files. In the fetch phase it skips the registry allowlist. The D-Bus and systemd
+sockets were only connected to, not used. What an unprivileged caller can do through them is `not verified`.
+
+### 9.4 Fix options (owner decision, not built)
+
+The brief said to stop on an escape and write it up, so nothing below is built.
+
+1. **A transient service instead of a scope (recommended).** `systemd-run --pipe --wait --collect` with
+   `User=heimdall-sbx`, `NoNewPrivileges=yes`, `PrivateNetwork=yes` (execution phase), `TemporaryFileSystem=/run` or
+   `InaccessiblePaths=` for `/run/dbus`, `/run/systemd`, the snapd, polkit and ssh sockets, plus `PrivateTmp=yes`,
+   `ProtectHome=yes` and `RuntimeMaxSec=`. This also gives systemd's own NoNewPrivileges, which a scope cannot set,
+   and a private /tmp. The cost: stdin and stdout go through `--pipe`, and the fetch rule may move from nftables to
+   `IPAddressDeny=any` with `IPAddressAllow=127.0.0.1` (a cgroup BPF filter; `not verified` on this image).
+2. **A mount namespace in the current chain.** `unshare --mount` with an empty tmpfs over `/run` before `setpriv`.
+   The chain has no shell, so this needs a small helper (the binary itself), and it must keep `/run/netns`.
+3. **`RestrictAddressFamilies=~AF_UNIX`** for the execution phase. It breaks test suites that use Unix sockets, so it
+   is not a default.
+
+### 9.5 Not verified
+
+- Any fix from 9.4. The probes must run again after it.
+- What D-Bus, polkit, snapd or the local ssh socket allow an unprivileged caller (only the connect was tried).
+- The memory, CPU and task limits under load (set, not stressed). A job that hits its deadline on the runner (the
+  kill path is unit-tested with a fake exec only).
+- `New` on a runner without passwordless root or without nftables. The `CannotIsolateError` paths are code plus a
+  unit test of the error type; no such runner was used.
+- Self-hosted runners, ARM runners and `ubuntu-24.04`.
+
+### 9.6 Objects and cleanup
+
+All on `aarush323/heimdall-fixture-pay`, all deleted Nov 21 2026, and checked by listing afterwards:
+
+- Branch `heimdall-test/am11-r1`, made from the tip of `main` (nothing was written to `main` or `heimdall-demo`):
+  deleted.
+- Workflow runs 44868233309 (success), 44868368873 (failure: the escape), and 44868360227, 44868362078, 44868364155,
+  44868366675 (intermediate commits of the second upload, cancelled): all six deleted. The run list of the branch is
+  empty. The logs survive only in this section.
+- No PR, label, secret or environment was created (no `am11` branch left, secrets count 0, label list unchanged).
