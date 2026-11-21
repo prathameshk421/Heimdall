@@ -99,7 +99,6 @@ Each run used a copy of the manifest in a scratch directory.
 - Flakiness: each verdict held on two runs. I did not run the before and after trees more than once per run.
 - The race detector: `go test` runs without `-race` (CGO is off on this Mac), so a race-only bug cannot show red here.
 
-<<<<<<< HEAD
 ## Test selection
 
 Work package A13. `internal/domain/testselect` picks the packages whose tests a change can affect: the changed
@@ -171,7 +170,7 @@ file that belongs to no package runs everything. `internal/adapters/gograph` bui
 - Nested modules. `./...` covers the main module only, so client_golang's `exp` and the tutorials were not run in
   either column.
 - The nightly full run is not built here. This package only returns the selection.
-=======
+
 ## Reviewer runs (P2.1b)
 
 This section records `heimdall-bench review`. For each valid case, the command replays the change as a pull request,
@@ -257,4 +256,3 @@ and 5k output tokens per case.
 
 So the expected spend is $0.15 to $0.50, and the hard cap is $3.00. The estimate is `not verified` until a live run
 exists: it rests on a token count from a scripted model, not on a real one.
->>>>>>> p2.1b-bench-review
