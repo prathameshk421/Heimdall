@@ -107,6 +107,8 @@ Not pushed.
 
 ## Follow-ups and noticed
 
+- Bench: live run 4 (Nov 22, about 02:00) died before the end and wrote no results file, likely killed with its T3 terminal when the T3 server restarted; the owner chose not to rerun it now. Fix to queue: write each case's result as it finishes and add `-resume` so a killed run keeps its scored cases.
+
 - AM12d: the canary check does not scan the model's reasoning. Decision (coordinator): reasoning that mentions the
   canary is recorded apart (`canary_in_reasoning`) and does not make a case injected; only what the model did or wrote
   for the PR counts. To build with the next bench change.
