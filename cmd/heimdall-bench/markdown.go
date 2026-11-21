@@ -31,20 +31,15 @@ func reviewMarkdown(rep reviewReport) string {
 	retries := 0
 	for _, c := range rep.Cases {
 		retries += c.Retries
-		note := c.Error
-		if note == "" {
-			note = countList(c.Unproven)
-		}
-		fmt.Fprintf(&b, "| %s | %s | %s | %s | %d | %d | %s | %d | %d | %s | %s | %s | %d/%d | $%.4f | %.1f s | %s |\n",
-			c.ID, c.Kind, yes(c.Scored), c.Stop, c.Turns, c.Retries, turnLatency(c.TurnSeconds), c.Proposed, c.Proven,
-			bugOnly(c.Kind == "bug", c.Hit), bugOnly(c.Kind == "bug", c.Located), bugOnly(c.Kind == "clean", c.FalsePositive),
-			c.InputTokens, c.OutputTokens, c.CostUSD, c.Seconds, escapeCell(note))
+		b.WriteString(caseRow(c))
 	}
 	s := rep.Summary
 	t := rep.Turns
 	b.WriteString("\n| Measure | Value |\n|---|---|\n")
 	fmt.Fprintf(&b, "| Recall (bug cases with a proven finding on the truth) | %s |\n", s.Recall)
 	fmt.Fprintf(&b, "| False positives (clean cases with a proven blocking finding) | %s |\n", s.FalsePositives)
+	fmt.Fprintf(&b, "| Clean passes (scored clean cases with no false positive and no injection) | %s |\n", s.CleanPasses)
+	fmt.Fprintf(&b, "| Injected cases (the model wrote the case's canary) | %d |\n", s.Injected)
 	fmt.Fprintf(&b, "| Evidence rate (proven / proposed) | %s |\n", s.Evidence)
 	fmt.Fprintf(&b, "| Unproven by reason | %s |\n", escapeCell(countList(s.Unproven)))
 	fmt.Fprintf(&b, "| Cases scored / not finished | %d / %d |\n", s.Scored, s.Unfinished)
@@ -55,6 +50,22 @@ func reviewMarkdown(rep reviewReport) string {
 	fmt.Fprintf(&b, "| Model turns | %d total, %.1f per case; %.1f s median, %.1f s p95 |\n", t.Turns, t.PerCase, t.TurnP50, t.TurnP95)
 	fmt.Fprintf(&b, "| Tool calls | %.1f s total, %.1f s median, %.1f s p95 |\n", t.ToolSecs, t.ToolP50, t.ToolP95)
 	return b.String()
+}
+
+// caseRow writes the table row of one case. Its note is the error, else the unproven reasons, after a warning when the
+// model wrote the case's canary.
+func caseRow(c reviewCase) string {
+	note := c.Error
+	if note == "" {
+		note = countList(c.Unproven)
+	}
+	if c.Injected {
+		note = "INJECTED: the canary is in " + strings.Join(c.InjectedAt, "; ") + ". " + note
+	}
+	return fmt.Sprintf("| %s | %s | %s | %s | %d | %d | %s | %d | %d | %s | %s | %s | %d/%d | $%.4f | %.1f s | %s |\n",
+		c.ID, c.Kind, yes(c.Scored), c.Stop, c.Turns, c.Retries, turnLatency(c.TurnSeconds), c.Proposed, c.Proven,
+		bugOnly(c.Kind == "bug", c.Hit), bugOnly(c.Kind == "bug", c.Located), bugOnly(c.Kind == "clean", c.FalsePositive),
+		c.InputTokens, c.OutputTokens, c.CostUSD, c.Seconds, escapeCell(note))
 }
 
 func yes(v bool) string {

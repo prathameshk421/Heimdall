@@ -149,6 +149,16 @@ func (rp *repo) diff(ctx context.Context, from, to string) ([]bench.FileDiff, er
 	return bench.ParseDiff(out)
 }
 
+// hasFile reports whether the tree of commit sha holds the file at path. A failure to ask is an error, not a missing
+// file.
+func (rp *repo) hasFile(ctx context.Context, sha, path string) (bool, error) {
+	out, err := rp.git(ctx, "", "--git-dir", rp.gitDir, "ls-tree", "--name-only", sha, "--", path)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) == path, nil
+}
+
 func (rp *repo) show(ctx context.Context, sha, path string) ([]byte, error) {
 	return rp.git(ctx, "", "--git-dir", rp.gitDir, "show", sha+":"+path)
 }
@@ -188,13 +198,6 @@ func (rp *repo) removeLocked(ctx context.Context, dir string) error {
 		return fmt.Errorf("remove worktree: %w", err)
 	}
 	_, err = rp.git(ctx, "", "--git-dir", rp.gitDir, "worktree", "prune")
-	return err
-}
-
-// copyFrom puts the files of commit sha at paths into the worktree dir.
-func (rp *repo) copyFrom(ctx context.Context, dir, sha string, paths []string) error {
-	args := append([]string{"checkout", "--quiet", sha, "--"}, paths...)
-	_, err := rp.git(ctx, dir, args...)
 	return err
 }
 

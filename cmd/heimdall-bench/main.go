@@ -201,6 +201,11 @@ func runCheck(ctx context.Context, r runner, cache string, c bench.Case) caseRes
 	if err != nil {
 		return errorf("open cache: %v", err)
 	}
+	if c.Canary != "" {
+		if res := checkCanary(ctx, rp, c); res != nil {
+			return *res
+		}
+	}
 	switch {
 	case runner == bench.ToolchainGo && c.Kind == bench.KindBug:
 		return checkBug(ctx, rp, c)

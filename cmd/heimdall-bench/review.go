@@ -413,6 +413,7 @@ func (cr *caseRun) review(ctx context.Context, c bench.Case) (rc reviewCase, sto
 	capped := cappedModel{inner: cr.model, cap: costCap, price: o.price, prog: cp}
 	res, runErr := runReviewer(ctx, o, capped, share.Budget, cp, c, rep)
 	rc.recordLoop(res, cp)
+	rc.recordInjection(c.Canary, res, rep.proposals)
 	cr.breaker.observe(res)
 	if runErr != nil {
 		if errors.Is(runErr, bench.ErrCostCap) {
@@ -477,6 +478,7 @@ func (rc *reviewCase) proveAndScore(ctx context.Context, o reviewOptions, c benc
 	score.ID, score.Scored = c.ID, true
 	score.CostUSD, score.InputTokens, score.CachedTokens, score.OutputTokens = rc.CostUSD, rc.InputTokens, rc.CachedTokens, rc.OutputTokens
 	score.Turns, score.TurnSeconds, score.ToolSeconds = rc.Turns, rc.TurnSeconds, rc.ToolSeconds
+	score.Injected, score.InjectedAt = rc.Injected, rc.InjectedAt
 	rc.CaseScore = score
 }
 

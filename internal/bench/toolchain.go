@@ -3,6 +3,7 @@ package bench
 import (
 	"errors"
 	"fmt"
+	"go/token"
 	"path"
 	"slices"
 	"strings"
@@ -63,10 +64,10 @@ func checkToolchain(c Case) []error {
 		return []error{fmt.Errorf("toolchain %s runs %s, not %s", c.Toolchain, strings.Join(langs, " or "), c.Language)}
 	}
 	if c.Toolchain == "" || c.Toolchain == ToolchainGo {
-		if c.Workdir != "" || len(c.Install) > 0 || len(c.Sparse) > 0 || len(c.Tests) > 0 {
-			return []error{errors.New("a go case, or a case with no toolchain, has no workdir, install, sparse or tests: go test finds them")}
+		if c.Workdir != "" || len(c.Install) > 0 || len(c.Sparse) > 0 {
+			return []error{errors.New("a go case, or a case with no toolchain, has no workdir, install or sparse: go test finds them")}
 		}
-		return nil
+		return checkGoTests(c)
 	}
 	var errs []error
 	if !cleanDir(c.Workdir) {
@@ -76,6 +77,40 @@ func checkToolchain(c Case) []error {
 	errs = append(errs, checkLines("sparse pattern", c.Sparse)...)
 	errs = append(errs, checkTestCommand(c)...)
 	errs = append(errs, checkTests(c)...)
+	return errs
+}
+
+// SplitGoTestID splits a Go test id into its package directory (relative to the repository root, "." for the root) and
+// its test function: "mock:Test_AssertExpectations".
+func SplitGoTestID(id string) (dir, name string, ok bool) {
+	dir, name, ok = strings.Cut(id, ":")
+	if !ok || (dir != "." && !cleanDir(dir)) || !token.IsIdentifier(name) || !isTestName(name) {
+		return "", "", false
+	}
+	return dir, name, true
+}
+
+// checkGoTests checks the tests of a Go case. A Go bug case may name the fix's target tests; then the before tree gets
+// only those tests from the fix, not its whole test files. With none named, the targets are the tests the fix adds
+// lines to (cmd/heimdall-bench). A clean case runs its whole test command.
+func checkGoTests(c Case) []error {
+	if len(c.Tests) == 0 {
+		return nil
+	}
+	if c.Kind == KindClean {
+		return []error{errors.New("a clean case has no tests: it runs its whole test command")}
+	}
+	var errs []error
+	seen := map[string]bool{}
+	for _, id := range c.Tests {
+		if _, _, ok := SplitGoTestID(id); !ok {
+			errs = append(errs, fmt.Errorf("test id %q: want dir:TestName (a clean directory from the repository root, or ., and a top-level test function)", id))
+		}
+		if seen[id] {
+			errs = append(errs, fmt.Errorf("test id %q: named twice", id))
+		}
+		seen[id] = true
+	}
 	return errs
 }
 
