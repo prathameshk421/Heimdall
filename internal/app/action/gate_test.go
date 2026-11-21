@@ -756,3 +756,32 @@ func TestNewGateNeedsEveryRequiredPort(t *testing.T) {
 func findingLocation(file string, first, last int) finding.Location {
 	return finding.Location{File: file, Lines: [2]int{first, last}}
 }
+
+// TestMovedHeadRecordsAPushAndReDecides is the break attempt at the log boundary: a new head must record pr.pushed,
+// drop the old fast result and post a check for the new head, never reuse the old conclusion.
+func TestMovedHeadRecordsAPushAndReDecides(t *testing.T) {
+	h := newHarness(t, policy.ActionModeEnforce)
+	h.run(t)
+	old, ok := h.checks.fast()
+	require.True(t, ok)
+	require.Equal(t, testHead, h.checks.shas[old.ExternalID])
+
+	// GitHub reports a new head. The approval of the old head no longer counts, so the run is a fail, not a pass.
+	h.github.pr.HeadSHA = testHead2
+	h.facts.integrity = action.IntegrityFacts{Known: true}
+	res := h.run(t)
+
+	require.Equal(t, testHead2, res.Head)
+	require.NotEqual(t, gate.VerdictPass, res.Verdict, "the old approval is for the old head and does not carry over")
+	types := h.log(t)
+	require.Equal(t, 1, countOf(types, change.EventPRPushed))
+	require.Equal(t, 2, countOf(types, change.EventFastReported), "a new head gets its own fast result")
+	require.Equal(t, 2, h.checks.count(), "each head has its own check run")
+	for _, id := range h.checks.all {
+		want := testHead
+		if strings.Contains(id, string(testHead2)) {
+			want = testHead2
+		}
+		require.Equal(t, want, h.checks.shas[id], "a check run names its own head in its external id")
+	}
+}
