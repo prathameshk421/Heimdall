@@ -16,7 +16,7 @@
 //     package does not define (events and Switch's ids) are defined here, with the same validate-on-parse rule.
 //
 // Layout by area. The catalog is split into one file per area: events_core.go, events_tests.go, events_review.go,
-// events_checks.go and events_talk.go. Each holds its event type constants, their payload types and its part of the
+// events_checks.go, events_talk.go and the Action area (events_action*.go, below). Each holds its event type constants, their payload types and its part of the
 // payload registry; registry() in payload.go joins the parts. The catalog order (All, in event.go) is the order of
 // TECH_SPEC 3.2 and is declared there only.
 //
@@ -44,8 +44,40 @@
 // recorded KAN-22 and KAN-23 logs) are the tests: view_golden_test.go. Stage is a label for people; nothing branches
 // on it.
 //
-// Tests: the goldens; a table per predicate (can_test.go); payload, envelope and chain tests.
+// The Action area (events_action.go, events_action_proof.go, events_action_facts.go, view_action.go). Action mode runs
+// Heimdall as a step in the customer's GitHub Actions (docs/product/design/ACTION_MODE.md). Its nine events come after
+// the server's 52 in All, so no earlier position moves, and no server log holds one. The design names seven:
+// proof.started, proof.reported, cost.recorded, external.ingested, breakglass.recorded, breakglass.reviewed and
+// state.reset. The design records a fast check result and a posted summary comment but names no event for them, so
+// they follow the pattern of ci.reported and checks.reported: fast.reported and summary.posted. Choices that the
+// design leaves open:
+//   - Money is an integer. A payload holds no fractions (jsonstrict.go), so cost is whole micro dollars (usd_micros),
+//     with the provider's token names (prompt_tokens, completion_tokens). NewCost converts a proof.Spend.
+//   - proof.started, proof.reported and cost.recorded carry the GitHub workflow run id (workflow_run). The design lists
+//     none for cost.recorded. The id makes a record that is appended twice (a crash after the append, H1) fold to one
+//     record, so cost never counts twice.
+//   - A budget hit, a timeout or a superseded run is proof.reported with kind unknown and its reason (proof.Reason). A
+//     granted break-glass is breakglass.recorded: the gate checks the person against the policy before it records. There
+//     is no event for a request that was refused.
+//   - proof.reported carries the per-candidate results (proven, dropped with a reason, not checked with a reason) for
+//     the findings that have a name in the log, at most MaxProofResults. Fold puts each on its finding (FindingInfo.Proof).
+//     The tier and state of a finding still move only by finding events.
+//   - fast.reported must carry the verdict its clauses give (gate.VerdictOf), so a forged pass is not a valid event.
+//     A clause reason is at most MaxClauseReason bytes; NewFastReported clips a longer one at a rune boundary.
+//   - A break-glass and its review cannot come from an agent (invariant 1 applies to them, in payload.go). The fold does
+//     not let a person close their own bypass; another approver's review does (ACTION_MODE 5.4).
+//   - state.reset drops every produced fact folded before it (fast, proof, summary, candidates, bypasses and the proof
+//     result on each finding) and counts itself. Observed facts stay, and cost records stay: the money was spent.
+//
+// The fold adds one optional part to View (Action) and one to FindingInfo (Proof). Both are absent from the JSON until
+// an Action event arrives, so the goldens and every server fold are unchanged. The Action events enter the fold through
+// the default branch of applyHuman, and each is folded by a small function of its own.
+//
+// Tests: the goldens; a table per predicate (can_test.go); payload, envelope and chain tests; for the Action area a
+// round trip, a missing-field case and a bad-value case per event (events_action_test.go) and a fold test per event
+// (view_action_test.go).
 //
 // Layout and dependency rule: docs/TECH_SPEC.md section 2.2, enforced by internal/archcheck. This package imports
-// the standard library and the domain packages id, finding, workflow and policy only.
+// the standard library and the domain packages id, finding, workflow, policy, gate and sarif, and, for the Action
+// area, proof, fastcheck and external (their types are what the payloads carry).
 package change

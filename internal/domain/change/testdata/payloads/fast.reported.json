@@ -1,0 +1,1 @@
+{"head":"9f1c2ab","verdict":"fail","clauses":[{"id":"secrets","status":"met","reason":"no new secret in the added lines"},{"id":"approval","status":"unmet","reason":"no approval on head"}]}

@@ -32,7 +32,7 @@ func entry[T Payload]() payloadEntry {
 func registry() map[EventType]payloadEntry {
 	all := map[EventType]payloadEntry{}
 	for _, area := range []map[EventType]payloadEntry{
-		corePayloads(), testsPayloads(), reviewPayloads(), checksPayloads(), talkPayloads(),
+		corePayloads(), testsPayloads(), reviewPayloads(), checksPayloads(), talkPayloads(), actionPayloads(),
 	} {
 		maps.Copy(all, area)
 	}
@@ -65,9 +65,10 @@ func Decode(e Event) (Payload, error) {
 }
 
 // checkActorRule enforces invariant 1 (TECH_SPEC 3.4). It is checked before the payload is read, so the refusal
-// does not depend on the payload's shape.
+// does not depend on the payload's shape. A break-glass and its review are human authority like a decision, so they
+// fall under it too (ACTION_MODE 5.4).
 func checkActorRule(e Event) error {
-	if (e.Type == EventDecisionRecorded || e.Type == EventApprovalRecorded) && e.Actor.Kind == ActorAgent {
+	if e.Actor.Kind == ActorAgent && oneOf(e.Type, EventDecisionRecorded, EventApprovalRecorded, EventBreakGlassRecorded, EventBreakGlassReviewed) {
 		return fmt.Errorf("invariant 1: %s cannot come from an agent (actor %q)", e.Type, e.Actor.ID)
 	}
 	return nil
