@@ -10,6 +10,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
 // The one table of rows (HARNESS_DESIGN B2). A row says when a piece of work is done and what to do while it is not.
@@ -74,9 +75,22 @@ type Outside struct {
 
 // Profile is the part of the repository's promoted profile the rows read. The zero value means there is none.
 type Profile struct {
+	// Promoted says the repository has a promoted profile; TestsDir and Checks are its fields, zero when it has none.
+	Promoted bool
 	// TestsDir is the folder the Heimdall tests live in, such as tests/heimdall; the ticket's folder is inside it.
 	TestsDir string
 	Checks   []ProfileCheck
+	// Latest is the repository's newest proposal in any state, nil when none was ever proposed (D175).
+	Latest *ProfileProposal
+}
+
+// ProfileProposal is a proposal as the profile row reads it: its id, its state (proposed, approved or promoted) and
+// the outcome of its latest trial ("" before any, "passed" or "failed") with the trial's log.
+type ProfileProposal struct {
+	ID       string
+	State    string
+	Trial    string
+	TrialLog workflow.BlobRef
 }
 
 // ProfileCheck is one check of the profile: it applies when a changed file matches one of its When globs (or always

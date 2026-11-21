@@ -69,16 +69,25 @@ func (r reconcileInputs) Outside(ctx context.Context, v change.View) (change.Out
 		HeadSHA: v.PR.HeadSHA, Author: v.PR.Author, Approvers: approvers})
 }
 
-// Profile returns the repository's promoted profile, or the zero Profile when it has none.
+// Profile returns the repository's promoted profile (zero fields when it has none) and its newest proposal.
 func (r reconcileInputs) Profile(ctx context.Context, repo change.Repo) (change.Profile, error) {
+	var out change.Profile
+	latest, ok, err := r.profiles.LatestProfile(ctx, string(repo))
+	if err != nil {
+		return change.Profile{}, err
+	}
+	if ok {
+		out.Latest = &change.ProfileProposal{ID: latest.ID, State: string(latest.State), Trial: string(latest.Trial.Outcome),
+			TrialLog: latest.Trial.LogRef}
+	}
 	p, ok, err := r.profiles.ActiveProfile(ctx, string(repo))
 	if err != nil {
 		return change.Profile{}, err
 	}
 	if !ok {
-		return change.Profile{}, nil
+		return out, nil
 	}
-	out := change.Profile{TestsDir: p.Spec.TestsDir}
+	out.Promoted, out.TestsDir = true, p.Spec.TestsDir
 	for _, c := range p.Spec.Checks {
 		out.Checks = append(out.Checks, change.ProfileCheck{ID: c.ID, When: c.When})
 	}

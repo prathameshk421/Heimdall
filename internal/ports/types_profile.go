@@ -400,6 +400,8 @@ type ProfileStore interface {
 	// RecordProfileTrial stores the latest real trial result while the profile is approved. It
 	// returns false when the id is unknown or no longer recordable.
 	RecordProfileTrial(ctx context.Context, id string, t ProfileTrial, at time.Time) (bool, error)
+	// LatestProfile returns the repository's newest proposal in any state (D175), false when it has none.
+	LatestProfile(ctx context.Context, repo string) (ProfileProposal, bool, error)
 	// PromoteProfile moves approved to promoted and sets the repository's active profile pointer in
 	// one transaction, refusing twice (one promotion per id) and requiring a passing trial.
 	PromoteProfile(ctx context.Context, id string, at time.Time) (bool, error)

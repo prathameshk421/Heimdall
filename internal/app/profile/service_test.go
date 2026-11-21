@@ -71,6 +71,16 @@ func (m *memoryProfiles) ActiveProfile(_ context.Context, repo string) (ports.Pr
 	}
 	return m.records[key], true, nil
 }
+func (m *memoryProfiles) LatestProfile(_ context.Context, repo string) (ports.ProfileProposal, bool, error) {
+	var latest ports.ProfileProposal
+	found := false
+	for _, p := range m.records {
+		if p.Repo == repo && (!found || p.CreatedAt.After(latest.CreatedAt)) {
+			latest, found = p, true
+		}
+	}
+	return latest, found, nil
+}
 func (m *memoryProfiles) PromotedProfiles(context.Context) ([]ports.ProfileProposal, error) {
 	out := []ports.ProfileProposal{}
 	for _, p := range m.records {
