@@ -19,20 +19,35 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
-// apply runs the effects of the rows, one kind at a time, and reports whether it wrote anything. A row whose effect
-// this task does not own (the proof run) is left alone: its events run in the proof use case (AM14b).
+// apply runs the effects of the rows and reports whether it appended an event, which is the only progress the fold can
+// see. The check runs go first, so a crash between the two writes of the publish row repeats an idempotent check post
+// rather than losing it. A row whose effect this task does not own (the proof run) is left alone: its events run in
+// the proof use case (AM14b).
 func (r *run) apply(ctx context.Context, rows []actionflow.Row) (bool, error) {
-	wrote := false
 	for _, row := range rows {
 		for _, fx := range row.Effects {
-			done, err := r.effect(ctx, fx)
-			if err != nil {
-				return wrote, err
+			if _, ok := fx.(actionflow.PostChecks); !ok {
+				continue
 			}
-			wrote = wrote || done
+			if _, err := r.effect(ctx, fx); err != nil {
+				return false, err
+			}
 		}
 	}
-	return wrote, nil
+	appended := false
+	for _, row := range rows {
+		for _, fx := range row.Effects {
+			if _, ok := fx.(actionflow.PostChecks); ok {
+				continue
+			}
+			done, err := r.effect(ctx, fx)
+			if err != nil {
+				return appended, err
+			}
+			appended = appended || done
+		}
+	}
+	return appended, nil
 }
 
 // effect runs one effect. ResetState is impossible here: the reset happened before the log was read.
@@ -147,6 +162,7 @@ func (r *run) postChecks(ctx context.Context, fx actionflow.PostChecks) (bool, e
 			return false, err
 		}
 	}
+	// A check run is a write outside the log, so it is not progress the fold can see: it reports false.
 	return false, nil
 }
 
