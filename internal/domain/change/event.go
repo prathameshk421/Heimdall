@@ -24,7 +24,7 @@ func All() []EventType {
 		EventQuestionAsked, EventQuestionAnswered, EventCommandProposed, EventCommandConfirmed,
 		EventTestsSubmitted, EventTestsVerified, EventTestsRejected, EventTestsCommitted, EventTestsApproved,
 		EventTicketChanged,
-		EventPROpened, EventPRPushed, EventPRLinked, EventPRClosed,
+		EventPROpened, EventPRPushed, EventPRLinked, EventPRClosed, EventPRReopened,
 		EventSlopEvaluated,
 		EventReviewersPicked,
 		EventReviewSubmitted, EventReviewUnavailable, EventReviewWaived,

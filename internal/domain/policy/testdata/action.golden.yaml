@@ -1,0 +1,23 @@
+# An action area (ACTION_MODE 1.2, 5, 7). Every key is set, so a typo in a key name fails the decode.
+action:
+  mode: enforce
+  proof_required: true
+  budget:
+    per_pr_usd: 0.75
+    per_pr_tokens: { input: 600000, output: 30000 }
+    call_output_tokens: 3000
+    monthly_usd: 120
+  trivial: ["**/*.md", "docs/**", "go.sum"]
+  trivial_lines: 3
+  pinned: ["tests/heimdall/**", "**/*_contract_test.go"]
+  analyzers:
+    source: sarif_artifact
+    min_severity: high
+    workflow: .github/workflows/codeql.yml
+    artifact: sarif
+  diff_coverage:
+    min: 80
+    workflow: .github/workflows/test.yml
+    artifact: coverage
+  sources: ["coderabbitai[bot]"]
+  break_glass: [alice, ana]

@@ -10,17 +10,25 @@ import (
 
 var _ ports.OpenChanges = (*Store)(nil)
 
-// openChangesSQL selects every change with no event that ends it. It is change.View.Over in SQL: a pr.closed, a
-// change.rejected, or a decision.recorded of kind reject.
+// openChangesSQL selects every change with no event that ends it. It is change.View.Over in SQL: a pr.closed that no
+// later pr.reopened of the same unmerged pull request undoes, a change.rejected, or a decision.recorded of kind reject.
 const openChangesSQL = `
 SELECT DISTINCT e.change_id
 FROM event e
 WHERE NOT EXISTS (
   SELECT 1 FROM event x
   WHERE x.change_id = e.change_id
-    AND (x.type IN ('pr.closed', 'change.rejected')
-         OR (x.type = 'decision.recorded' AND x.payload->>'kind' = 'reject')))
+    AND (x.type = 'change.rejected'
+         OR (x.type = 'decision.recorded' AND x.payload->>'kind' = 'reject')
+         OR (x.type = 'pr.closed' AND NOT EXISTS (` + reopenedAfterSQL + `))))
 ORDER BY e.change_id`
+
+// reopenedAfterSQL finds a pr.reopened of the pull request that the pr.closed x closed without a merge, after x.
+const reopenedAfterSQL = `
+  SELECT 1 FROM event r
+  WHERE r.change_id = x.change_id AND r.type = 'pr.reopened' AND r.version > x.version
+    AND COALESCE((x.payload->>'merged')::boolean, false) = false
+    AND r.payload->>'repo' = x.payload->>'repo' AND r.payload->'number' = x.payload->'number'`
 
 // OpenChanges implements ports.OpenChanges.
 func (s *Store) OpenChanges(ctx context.Context) ([]id.ChangeID, error) {

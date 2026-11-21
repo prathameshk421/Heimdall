@@ -30,6 +30,9 @@
 //     endpoints. Config.ModelProvider(name) resolves a name to a configured entry, else to a shipped default
 //     (deploy, openrouter). Config.ModelProviderNames() lists them for an error message. An absent key_file
 //     means the endpoint takes no key.
+//   - [board_auth] mode, issuer, client_id, client_secret_secret, session_key_secret, redirect_url, session_ttl,
+//     login_claim and [board_auth.people.<person>] login, role: the sign-in of the web board (WP A9). Config.BoardAuth
+//     holds it. An absent section leaves Mode empty, and the server does not serve the board.
 //   - OnceSet.First(key) bool: true only the first time a key is offered. The caller uses it to log an
 //     unmapped project once. The zero value is ready to use and it is safe for concurrent use.
 //   - FilePath(args, getenv) (string, error): the --config value, else HEIMDALL_CONFIG. This package is
@@ -50,6 +53,12 @@
 //     private IP address when allow_private_http is true. A hostname other than localhost needs https. A
 //     key_file is a single path element. Extra headers have valid names, no control character in a value, and
 //     never name Authorization, Content-Type, Content-Length or Host.
+//   - [board_auth] mode is github, oidc or off. In github and oidc mode every key but issuer, session_ttl and
+//     login_claim is required; issuer is required for oidc and refused for github, and so is login_claim (email or
+//     sub, default email). redirect_url is https (or http on loopback) with path /auth/callback and no query.
+//     session_ttl is from 5m to 24h, default 8h. Each person has a login and a role (viewer, approver or admin), and
+//     no two people share a login (compared without case for github logins and emails). Mode off takes no other key
+//     and needs a listen host that is a loopback address or localhost; ":8080" and "0.0.0.0:8080" are refused.
 //   - Secret names are single path elements: no separators, no "..". A secret is a regular file whose
 //     real location (after symlinks) stays inside SecretsDir. The read goes through os.Root, which
 //     enforces the escape check.
@@ -78,6 +87,8 @@
 // FilePath, and the provider selections (read, absent, empty and unknown keys refused).
 // sections_test.go covers the live sections: every key read, every missing or invalid key named, https and
 // loopback-http URLs, project key shape and duplicates, secret file names, and every problem reported at once.
+// board_auth_test.go covers [board_auth]: both login modes, the defaults, dev mode on loopback and its refusal
+// elsewhere, every refused key, and logins that clash.
 // model_providers_test.go covers the model providers: the shipped defaults, a configured entry, replacement of a
 // default, every refusal (http on a public host, a hostname over http, credentials in the URL, a bad key file
 // or header) and duplicate names.

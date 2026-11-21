@@ -35,33 +35,31 @@ The branch was pushed to `origin/heimdall-build` on Nov 18, 2026 (81 commits ove
 
 ## Start here: the H11 owner steps (H12 is done)
 
-H11 (Nov 19 to 20) deployed the overhaul build and ran KAN-26 live: the tests flow works end to end on the VM
-(trigger, room, branch, a correct red-first rejection, verified, committed `ab0d649`), and PR #16 got slop, CI,
-acceptance, the default pick and three review tasks. Read `docs/LIVE_RUN_H11.md` for the timeline, the cost (about
-$0.24, estimated) and defects D1 to D7. Code fixes: `b20e758` (probe the agents' provider, mount `deploy_api_key`,
-wait for Graphiti) and `92bf94c` (skills: stop after submitting; join boundary cases to failing ones).
+H11 (Nov 19 to 20) deployed the overhaul build and ran KAN-26 live: the tests flow works end to end on the VM, and PR
+#16 got slop, CI, acceptance, the default pick and 2 of 3 reviews (reviewer-1 and reviewer-2, no findings). Read
+`docs/LIVE_RUN_H11.md` for both halves, the cost (about $0.24 in all, estimated; $0.00 in the rerun) and defects D1 to
+D8. The rerun found that a reopened PR left its change over (D8); `bb04269` adds `pr.reopened`, and it is deployed.
 
-The VM runs server `00a892f2` and runner `c44c04c7`; `/healthz` is `{"status":"ok"}`. Rollback copies are
-`/opt/heimdall/heimdall-server.prev`, `/usr/local/bin/heimdall-runner.prev` and `/opt/heimdall/deploy/compose.yaml.prev`
-(`ssh heimdall-vm 'sudo sh -s rollback' < scripts/ops/hot-deploy.sh`). Deploy steps are in `docs/RUNBOOK.md`.
+The VM runs server `8b8fa65e` and runner `d581f0d0`; `/healthz` is `{"status":"ok"}`. Rollback copies are the
+`.prev` files (`ssh heimdall-vm 'sudo sh -s rollback' < scripts/ops/hot-deploy.sh`). PR #16 is closed again, on purpose.
 
-Owner steps before re-running the review half of H11:
+Owner steps before the last part of H11:
 
-1. **D6:** run `ssh heimdall-vm 'bash -s' < scripts/ops/install-agent-configs.sh` (it writes the agents' configs and
-   tokens, so only the owner runs it). It raises the agents' output limit from 8000 to 32000; then restart the agent
-   units. Not verified that Deploy accepts 32000 for this model. The test-author's config (slot 03) is not in the
-   installer's list; raise it the same way.
-2. **B1:** a promoted profile with a `patterns` check on `aarush323/heimdall-fixture-pay`. No profiler agent exists,
-   and approve/promote need a policy owner (`heimdall approve-profile <id>`, `heimdall promote-profile <id>` in chat).
-3. **B2:** a `rekdfr` token in the gh keyring (`gh auth login`), so the approval can be made with that login.
-4. **D7:** decide whether a ticketless PR is reviewed before slop passes, or the check uses `require_ticket: false`.
-5. Then reopen PR #16 (KAN-26) and watch reviews, verify, gate, approval and merge.
+1. **B4:** the D6 configs read the model key from `DEPLOY_API_KEY`, and the agent units have only
+   `OPENROUTER_API_KEY`. Add `DEPLOY_API_KEY` to `/etc/switch/agents.env` (`deploy/agents/install-controller.sh` does it
+   from `deploy_api_key`), restart the controller and agent units 03 to 07, and check one "agent host connected" line
+   each.
+2. **B1:** a promoted profile needs a design step: no profiler seat exists and no row assigns a `profile` task, so
+   `propose_profile` can never run. Until then E2 and `run_check` stay unproven live.
+3. **D7:** decide whether a ticketless PR is reviewed before slop passes, or the check uses `require_ticket: false`.
+4. Then reopen PR #16 (KAN-26). The change resumes at the next sync; watch reviewer-3, verify, the gate, the approval as
+   `temporaryhameshakagroup-alt` (token per call, on the head) and the merge.
 
 ## Then, in order
 
 - **Docker:** give Docker Desktop access to `/Volumes/SSD` (its disk folder is there), then run `make verify` on the
   tip. It last passed at `e213e02`; the board and H12 commits ran only `make fast`.
-- **H11 rest:** after the owner steps above, rerun the review half on KAN-26 and record it in `docs/LIVE_RUN_H11.md`.
+- **H11 rest:** after B4, reopen PR #16 and record reviewer-3, the gate, the approval and the merge in `docs/LIVE_RUN_H11.md`.
 - **Open items:** D7 (ticketless PRs) and the unbounded reassignment of a failing seat (PROGRESS, Noticed H11).
 - **Then the SOTA quality programme** (`docs/SOTA_QUALITY_PLAN.md`).
 

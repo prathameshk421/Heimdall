@@ -16,10 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport"
-	dashboardedge "github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/dashboard"
 )
 
 // newTicker is the system ticker of the dashboard's live streams. The transport package never reads the clock.
@@ -69,14 +67,19 @@ func run(
 	}
 	handler = mountHTTP(handler, a)
 	if a != nil {
-		handler, err = dashboardedge.Mount(handler, postgres.NewStore(a.pool), logger, dashboardedge.Options{NewTicker: newTicker})
+		handler, err = mountBoard(ctx, handler, cfg, a, logger)
 		if err != nil {
-			return fmt.Errorf("mount dashboard: %w", err)
+			return err
 		}
 	}
 	ln, err := listen(ctx, "tcp", cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", cfg.Listen, err)
+	}
+	if err := checkBoardListener(cfg, ln); err != nil {
+		// The listener never served; its close error adds nothing to the refusal.
+		_ = ln.Close()
+		return err
 	}
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: readHeaderTimeout}
 	served := make(chan error, 1)

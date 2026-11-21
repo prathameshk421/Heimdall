@@ -102,3 +102,60 @@ resolver = "resolver"
 tracker_project = "KAN"
 repo = "aarush323/PBL_TOS_RISK_ANALYZER"
 base_branch = "heimdall-demo"
+
+# The web board (the change list, change pages, review report and live stream). Without this section the server
+# does not serve the board at all. With it, every board route needs a sign-in, and only the people listed below get
+# in. Sign-in is the OAuth authorization code flow with PKCE.
+#   mode                  "oidc" (Okta, Google, Keycloak, Entra ID), "github", or "off" (developer laptop only:
+#                         no sign-in, and the server refuses to start unless listen is 127.0.0.1, [::1] or localhost).
+#   issuer                oidc only. The issuer URL; the server reads <issuer>/.well-known/openid-configuration.
+#   client_id             The client id registered at the provider.
+#   client_secret_secret  Secret file name under secrets_dir that holds the client secret.
+#   session_key_secret    Secret file name that holds 32 random bytes in base64: openssl rand -base64 32.
+#                         It seals the session cookies. A new key signs everyone out.
+#   redirect_url          This server's public URL plus /auth/callback. Register the same URL at the provider.
+#   session_ttl           How long a sign-in lasts, from "5m" to "24h". Default "8h".
+#   login_claim           oidc only. "sub" (default) or "email". The subject is stable for one issuer. An email
+#                         can be reassigned to another person, so choose "email" only when you accept that; the
+#                         provider must mark it verified.
+#   [board_auth.people.<person>]
+#                         <person> is the name in the people map of heimdall.yaml. role is viewer, approver or
+#                         admin. The identity that proves the person depends on the mode:
+#                           oidc    login = the value of the login claim (a subject, or an email with login_claim
+#                                   "email").
+#                           github  github_id = the number of the GitHub account, not the login. A login can be
+#                                   renamed, and another account can then claim the freed name. The number never
+#                                   changes. Each person finds theirs with: gh api user --jq .id
+#                                   (or open https://api.github.com/users/<login> and read "id").
+#                                   A github person with no github_id stops the server at startup. There is no
+#                                   fallback to the login, and a login key is refused.
+#
+# [board_auth]
+# mode = "oidc"
+# issuer = "https://example.okta.com/oauth2/default"
+# client_id = "0oa1b2c3d4heimdall"
+# client_secret_secret = "board_client_secret"
+# session_key_secret = "board_session_key"
+# redirect_url = "https://heimdall.example.com/auth/callback"
+# session_ttl = "8h"
+# login_claim = "sub"
+#
+# [board_auth.people.alice]
+# login = "00u1a2b3c4alice"
+# role = "admin"
+#
+# [board_auth.people.dana]
+# login = "00u5d6e7f8dana"
+# role = "viewer"
+#
+# GitHub instead (an OAuth App, callback URL = redirect_url; people are matched by the numeric id):
+# [board_auth]
+# mode = "github"
+# client_id = "Ov23liExample"
+# client_secret_secret = "board_client_secret"
+# session_key_secret = "board_session_key"
+# redirect_url = "https://heimdall.example.com/auth/callback"
+#
+# [board_auth.people.alice]
+# github_id = 1234567        # from: gh api user --jq .id
+# role = "approver"

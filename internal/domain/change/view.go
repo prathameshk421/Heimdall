@@ -283,7 +283,7 @@ func (v *View) apply(e Event, p Payload) {
 		v.Branch = &BranchInfo{Repo: p.Repo, Branch: p.Branch, BaseSHA: p.BaseSHA}
 	case TestsSubmitted, TestsVerified, TestsRejected, TestsCommitted, TestsApproved:
 		v.applyTests(e, p)
-	case PROpened, PRPushed, PRLinked, SlopEvaluated, CIReported, GateEvaluated, ReviewersPicked, PRClosed:
+	case PROpened, PRPushed, PRLinked, SlopEvaluated, CIReported, GateEvaluated, ReviewersPicked, PRClosed, PRReopened:
 		v.applyPR(e, p)
 	case ProviderProbed:
 		v.Provider = &ProviderInfo{Health: p.Health, Detail: p.Detail}
@@ -375,14 +375,29 @@ func (v *View) applyTests(e Event, p Payload) {
 	}
 }
 
+// applyClose folds pr.closed and pr.reopened and reports whether p was one of them. A reopen undoes a close only for
+// the change's own pull request when it closed without a merge (found live in H11).
+func (v *View) applyClose(p Payload) bool {
+	switch p := p.(type) {
+	case PRClosed:
+		v.Closed = &ClosedInfo{Merged: p.Merged, HeadSHA: p.HeadSHA}
+	case PRReopened:
+		if v.Closed != nil && !v.Closed.Merged && v.PR != nil && v.PR.Repo == p.Repo && v.PR.Number == p.Number {
+			v.Closed = nil
+		}
+	default:
+		return false
+	}
+	return true
+}
+
 func (v *View) applyPR(e Event, p Payload) {
 	if o, ok := p.(PROpened); ok {
 		v.PR = &PRInfo{Repo: o.Repo, Number: o.Number, Author: o.Author, Ticket: o.Ticket, HeadSHA: o.HeadSHA, Base: o.BaseSHA,
 			Suggested: nonNil(o.SuggestedReviewers), CI: map[id.SHA]map[string]CIConclusion{}}
 		return
 	}
-	if c, ok := p.(PRClosed); ok {
-		v.Closed = &ClosedInfo{Merged: c.Merged, HeadSHA: c.HeadSHA}
+	if v.applyClose(p) {
 		return
 	}
 	if v.PR == nil {
