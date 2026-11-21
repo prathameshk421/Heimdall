@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -42,6 +43,8 @@ type probeConfig struct {
 	ProxyPort    int      `json:"proxy_port"`
 	CredFiles    []string `json:"cred_files"`
 	RunnerHome   string   `json:"runner_home"`
+	HostSockets  []string `json:"host_sockets"`
+	Plants       []string `json:"plants"`
 }
 
 func TestEscapeProbes(t *testing.T) {
@@ -60,12 +63,11 @@ func TestEscapeProbes(t *testing.T) {
 		ParentPID: os.Getpid(), CanarySHA256: hex.EncodeToString(sum[:]), RunnerHome: home,
 		HomeCanary: filepath.Join(home, "heimdall-canary.txt"), TempCanary: filepath.Join(temp, "heimdall-canary.txt"),
 		CredFiles: runnerFiles(t),
+		Plants:    []string{"/tmp/heimdall-sbx-plant", "/var/tmp/heimdall-sbx-plant", "/dev/shm/heimdall-sbx-plant"},
 	}
 	// World-readable on purpose: only the 0700 directories may stop the sandbox user.
 	require.NoError(t, os.WriteFile(cfg.HomeCanary, []byte(canary+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(cfg.TempCanary, []byte(canary+"\n"), 0o644))
-	controls(t, cfg, canary)
-
 	ctx := context.Background()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	s, err := New(ctx, Config{
@@ -73,6 +75,9 @@ func TestEscapeProbes(t *testing.T) {
 		ToolPath: goBin + ":/usr/bin:/bin", Limits: Limits{CPUPercent: 200, MemoryMax: 4 << 30, TasksMax: 1024}, Logger: log,
 	}, OSExec{})
 	require.NoError(t, err, "New")
+	cfg.HostSockets = hostSocketList(t, s)
+	controls(t, cfg, canary)
+	socketControls(t, cfg)
 	require.NoError(t, s.Setup(ctx), "Setup")
 	t.Cleanup(func() { require.NoError(t, s.Cleanup(ctx), "Cleanup") })
 	t.Logf("SETUP uid=%d proxy port=%d", s.UID(), s.ProxyPort())
@@ -101,6 +106,89 @@ func TestEscapeProbes(t *testing.T) {
 	require.NoError(t, err, "exec probes (includes the kill of every sandbox process)")
 	judge(t, "exec", res)
 	survivor(t, s)
+	plants(t, cfg)
+}
+
+// hostSocketList finds every Unix socket of the host as root: every socket file outside /proc and /sys, and every
+// abstract name and bound path in the host's /proc/net/unix (the harness runs in the host network namespace).
+func hostSocketList(t *testing.T, s *Sandbox) []string {
+	code, out, err := s.root(context.Background(), nil, "/usr/bin/find", "/", "(", "-path", "/proc", "-o", "-path", "/sys",
+		")", "-prune", "-o", "-type", "s", "-print")
+	require.NoError(t, err)
+	t.Logf("SETUP find / -type s as root: exit %d", code)
+	seen := map[string]bool{}
+	var list []string
+	add := func(n string) {
+		if n != "" && !seen[n] {
+			seen[n] = true
+			list = append(list, n)
+		}
+	}
+	files := 0
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "/") {
+			files++
+			add(l)
+		}
+	}
+	b, err := os.ReadFile("/proc/net/unix")
+	require.NoError(t, err)
+	abstract := 0
+	for _, line := range strings.Split(string(b), "\n")[1:] {
+		if f := strings.Fields(line); len(f) >= 8 {
+			if strings.HasPrefix(f[7], "@") {
+				abstract++
+			}
+			add(f[7])
+		}
+	}
+	t.Logf("SETUP host Unix sockets: %d socket files from find, %d abstract names, %d distinct in all: %v", files, abstract, len(list), list)
+	require.NotEmpty(t, list)
+	return list
+}
+
+// socketControls proves the runner user reaches the host's Unix sockets, so a blocked connect inside is the sandbox.
+func socketControls(t *testing.T, cfg probeConfig) {
+	var reached []string
+	for _, n := range cfg.HostSockets {
+		addr := n
+		if strings.HasPrefix(n, "@") {
+			addr = "\x00" + n[1:]
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		var d net.Dialer
+		c, err := d.DialContext(ctx, "unix", addr)
+		cancel()
+		if err == nil {
+			_ = c.Close()
+			reached = append(reached, n)
+		}
+	}
+	t.Logf("CONTROL runner user reaches %d of %d host Unix sockets: %v", len(reached), len(cfg.HostSockets), reached)
+	for _, must := range []string{"/run/systemd/resolve/io.systemd.Resolve", "/run/dbus/system_bus_socket"} {
+		require.Contains(t, reached, must, "control: the runner user reaches %s", must)
+	}
+	for _, argv := range [][]string{
+		{"/usr/bin/resolvectl", "query", "--legend=no", "example.com"},
+		{"/usr/bin/busctl", "--system", "--no-pager", "list"},
+	} {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		out, err := exec.CommandContext(ctx, argv[0], argv[1:]...).CombinedOutput()
+		cancel()
+		require.NoError(t, err, "control: %v: %s", argv, out)
+		t.Logf("CONTROL runner user %v: works, %d bytes, first line %q", argv, len(out), strings.SplitN(string(out), "\n", 2)[0])
+	}
+}
+
+// plants checks that the files the execution phase wrote to its /tmp, /var/tmp and /dev/shm are not on the host.
+func plants(t *testing.T, cfg probeConfig) {
+	for _, p := range cfg.Plants {
+		if _, err := os.Lstat(p); err == nil {
+			t.Errorf("PROBE plant %s: ESCAPED: the file is on the host", p)
+			continue
+		}
+		t.Logf("PROBE plant %s: blocked: not on the host", p)
+	}
 }
 
 // controls proves each probe target is reachable by the runner user, so a blocked probe means the sandbox blocked it.

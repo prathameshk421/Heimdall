@@ -3,6 +3,7 @@ package uidsandbox
 import (
 	"context"
 	"io"
+	"path"
 	"strconv"
 	"strings"
 	"testing"
@@ -37,8 +38,8 @@ func (f *fakeExec) Run(_ context.Context, c Cmd) (int, error) {
 
 func testTools() tools {
 	return tools{
-		sudo: "/usr/bin/sudo", useradd: "/usr/sbin/useradd", id: "/usr/bin/id", nft: "/usr/sbin/nft", ip: "/usr/sbin/ip",
-		systemdRun: "/usr/bin/systemd-run", systemctl: "/usr/bin/systemctl", setpriv: "/usr/bin/setpriv",
+		sudo: "/usr/bin/sudo", useradd: "/usr/sbin/useradd", id: "/usr/bin/id", nft: "/usr/sbin/nft",
+		systemdRun: "/usr/bin/systemd-run", systemctl: "/usr/bin/systemctl",
 		env: "/usr/bin/env", tar: "/usr/bin/tar", pkill: "/usr/bin/pkill", pgrep: "/usr/bin/pgrep",
 		chmod: "/usr/bin/chmod", chown: "/usr/bin/chown", mkdir: "/usr/bin/mkdir", rm: "/usr/bin/rm",
 		tee: "/usr/bin/tee", head: "/usr/bin/head",
@@ -57,19 +58,21 @@ func readyAnswer(argv []string) (int, string) {
 		return 1, ""
 	case strings.HasPrefix(cmd, "/usr/sbin/nft list table"):
 		return 1, ""
-	case strings.HasPrefix(cmd, "/usr/sbin/ip netns exec heimdall-sbx /usr/bin/env true"):
-		return 1, ""
 	}
 	return 0, ""
 }
 
-func setupSandbox(t *testing.T, f *fakeExec) *Sandbox {
-	t.Helper()
-	s := newSandbox(Config{
+func testConfig() Config {
+	return Config{
 		RunnerHome: "/home/runner", RunnerTemp: "/home/runner/work/_temp",
 		Registries: []string{"proxy.golang.org"}, ToolPath: "/opt/go/bin:/usr/bin:/bin",
 		Limits: Limits{CPUPercent: 200, MemoryMax: 4 << 30, TasksMax: 512},
-	}, f, testTools())
+	}
+}
+
+func setupSandbox(t *testing.T, f *fakeExec) *Sandbox {
+	t.Helper()
+	s := newSandbox(testConfig(), f, testTools())
 	require.NoError(t, s.Setup(context.Background()))
 	t.Cleanup(func() { _ = s.Cleanup(context.Background()) })
 	return s
@@ -102,11 +105,21 @@ func TestSetupCommands(t *testing.T) {
 		"/usr/bin/tee -a /etc/cron.deny",
 		"/usr/bin/chown --no-dereference heimdall-sbx:heimdall-sbx -- /sbx/work",
 		"/usr/sbin/nft -f -",
-		"/usr/sbin/ip netns add heimdall-sbx",
-		"/usr/sbin/ip -n heimdall-sbx link set lo up",
 	} {
 		assert.Contains(t, joined, want)
 	}
+	// The self check starts one empty service per phase with the full hardening.
+	var checks []string
+	for _, c := range f.calls {
+		if c[3] == "/usr/bin/systemd-run" {
+			assert.Equal(t, []string{"--", "/usr/bin/env", "-i", "-C", "/sbx/work", "--", "/usr/bin/env"}, c[len(c)-7:],
+				"the self check runs only env")
+			checks = append(checks, strings.Join(c, " "))
+		}
+	}
+	require.Len(t, checks, 2)
+	assert.Contains(t, checks[0], "-p PrivateNetwork=yes")
+	assert.Contains(t, checks[1], "-p RestrictAddressFamilies=AF_INET AF_INET6")
 	rules := strings.Join(f.stdin, "\n")
 	assert.Contains(t, rules, `meta skuid 1500 oifname "lo" ip daddr 127.0.0.1 tcp dport `+strconv.Itoa(s.ProxyPort())+" accept")
 	assert.Contains(t, rules, "meta skuid 1500 counter drop")
@@ -119,10 +132,136 @@ func TestSetupRefusesUserWithExtraGroups(t *testing.T) {
 		}
 		return readyAnswer(argv)
 	}}
-	s := newSandbox(Config{RunnerHome: "/h", RunnerTemp: "/t", Registries: []string{"proxy.golang.org"}}, f, testTools())
+	cfg := testConfig()
+	cfg.RunnerHome, cfg.RunnerTemp = "/h", "/t"
+	s := newSandbox(cfg, f, testTools())
 	err := s.Setup(context.Background())
 	require.ErrorIs(t, err, ErrSetupStep)
 	assert.Contains(t, err.Error(), "docker")
+}
+
+func TestSetupRefusesZeroLimit(t *testing.T) {
+	for name, l := range map[string]Limits{
+		"cpu":    {MemoryMax: 1, TasksMax: 1},
+		"memory": {CPUPercent: 100, TasksMax: 1},
+		"tasks":  {CPUPercent: 100, MemoryMax: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.Limits = l
+			f := &fakeExec{answer: readyAnswer}
+			require.ErrorIs(t, newSandbox(cfg, f, testTools()).Setup(context.Background()), ErrSetupStep)
+			assert.Empty(t, f.calls, "nothing changes on the host before the limits are checked")
+		})
+	}
+}
+
+// A systemd that rejects a property makes the runner unable to isolate: no job may run with less hardening.
+func TestSetupSelfCheckRefused(t *testing.T) {
+	f := &fakeExec{answer: func(argv []string) (int, string) {
+		if argv[3] == "/usr/bin/systemd-run" {
+			return 1, "Unknown assignment: ProtectProc=invisible"
+		}
+		return readyAnswer(argv)
+	}}
+	s := newSandbox(testConfig(), f, testTools())
+	err := s.Setup(context.Background())
+	require.ErrorIs(t, err, ErrCannotIsolate)
+	assert.Contains(t, err.Error(), "ProtectProc=invisible")
+	_ = s.Cleanup(context.Background())
+}
+
+// commonProps is the hardening both phases share, in order.
+var commonProps = []string{
+	"User=heimdall-sbx",
+	"Group=heimdall-sbx",
+	"NoNewPrivileges=yes",
+	"CapabilityBoundingSet=",
+	"AmbientCapabilities=",
+	"ProtectSystem=strict",
+	"ReadWritePaths=/sbx/work /sbx/home /sbx/tmp",
+	"ProtectHome=yes",
+	"TemporaryFileSystem=/run",
+	"PrivateTmp=yes",
+	"PrivateDevices=yes",
+	"PrivateIPC=yes",
+	"ProtectProc=invisible",
+	"ProtectKernelTunables=yes",
+	"ProtectKernelModules=yes",
+	"ProtectKernelLogs=yes",
+	"ProtectControlGroups=yes",
+	"ProtectClock=yes",
+	"ProtectHostname=yes",
+	"RestrictNamespaces=yes",
+	"RestrictSUIDSGID=yes",
+	"RestrictRealtime=yes",
+	"LockPersonality=yes",
+	"SystemCallArchitectures=native",
+	"RemoveIPC=yes",
+	"KeyringMode=private",
+	"UMask=0077",
+}
+
+func TestServiceProps(t *testing.T) {
+	assert.Equal(t, append(append([]string{}, commonProps...), "PrivateNetwork=yes"), serviceProps(PhaseExec))
+	assert.Equal(t, append(append([]string{}, commonProps...), "RestrictAddressFamilies=AF_INET AF_INET6"), serviceProps(PhaseFetch))
+	assert.NotContains(t, serviceProps(PhaseFetch), "PrivateNetwork=yes", "the fetch phase needs the host network for the proxy")
+}
+
+// unitHead returns everything of a job command up to and including env's "--", and the rest.
+func unitHead(t *testing.T, argv []string) ([]string, []string) {
+	t.Helper()
+	for i := 3; i+4 < len(argv); i++ {
+		if argv[i] == "--" && argv[i+1] == "/usr/bin/env" {
+			require.Equal(t, []string{"-i", "-C"}, argv[i+2:i+4])
+			return argv[:i+6], argv[i+6:]
+		}
+	}
+	t.Fatalf("no env after systemd-run in %q", argv)
+	return nil, nil
+}
+
+func wantHead(phase Phase, unit, timeoutSec, dir string) []string {
+	h := []string{"/usr/bin/sudo", "-n", "--", "/usr/bin/systemd-run", "--wait", "--pipe", "--collect", "--quiet",
+		"--expand-environment=no", "--service-type=exec", "--unit=" + unit}
+	for _, p := range serviceProps(phase) {
+		h = append(h, "-p", p)
+	}
+	return append(h, "-p", "CPUQuota=200%", "-p", "MemoryMax=4294967296", "-p", "TasksMax=512",
+		"-p", "RuntimeMaxSec="+timeoutSec, "--", "/usr/bin/env", "-i", "-C", dir, "--")
+}
+
+// No job input can add, remove or override a property: argv, Dir and Env only ever follow env's "--".
+func TestJobCannotChangeProps(t *testing.T) {
+	hostile := []Job{
+		{Argv: []string{"go", "-p", "PrivateNetwork=no", "--", "-p", "User=root"}, Timeout: time.Minute},
+		{Argv: []string{"go"}, Env: []string{"PrivateNetwork=no", "NoNewPrivileges=no", "RestrictAddressFamilies=AF_UNIX",
+			"ProtectHome=no", "TemporaryFileSystem=", "Group=root"}, Timeout: time.Minute},
+		{Argv: []string{"go"}, Dir: "a -p PrivateNetwork=no", Timeout: time.Minute},
+		{Argv: []string{"go", "${HOME}", "$PATH", "%h"}, Timeout: time.Minute},
+	}
+	for _, phase := range []Phase{PhaseExec, PhaseFetch} {
+		for i, j := range hostile {
+			require.NoError(t, validateJob(j))
+			f := &fakeExec{answer: readyAnswer}
+			s := setupSandbox(t, f)
+			f.calls = nil
+			_, err := s.run(context.Background(), phase, j)
+			require.NoError(t, err)
+			dir, _ := relPath(j.Dir)
+			head, tail := unitHead(t, f.calls[0])
+			assert.Equal(t, wantHead(phase, "heimdall-sbx-3.service", "60", path.Join("/sbx/work", dir)), head, "phase %d job %d", phase, i)
+			assert.Equal(t, j.Argv, tail[len(tail)-len(j.Argv):], "argv stays literal and last")
+		}
+	}
+}
+
+func TestRuntimeMaxSec(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		time.Minute: "60", 1500 * time.Millisecond: "2", time.Millisecond: "1", time.Second: "1",
+	} {
+		assert.Equal(t, want, runtimeMaxSec(d), d.String())
+	}
 }
 
 func TestExecArgvChain(t *testing.T) {
@@ -136,16 +275,19 @@ func TestExecArgvChain(t *testing.T) {
 	got := f.calls[0]
 	want := []string{
 		"/usr/bin/sudo", "-n", "--",
-		"/usr/sbin/ip", "netns", "exec", "heimdall-sbx",
-		"/usr/bin/systemd-run", "--scope", "--quiet", "--collect", "--unit=heimdall-sbx-1.scope",
-		"-p", "CPUQuota=200%", "-p", "MemoryMax=4294967296", "-p", "TasksMax=512", "--",
-		"/usr/bin/setpriv", "--reuid=1500", "--regid=1500", "--clear-groups", "--no-new-privs",
-		"--inh-caps=-all", "--bounding-set=-all", "--",
+		"/usr/bin/systemd-run", "--wait", "--pipe", "--collect", "--quiet", "--expand-environment=no",
+		"--service-type=exec", "--unit=heimdall-sbx-3.service",
+	}
+	for _, p := range commonProps {
+		want = append(want, "-p", p)
+	}
+	want = append(want, "-p", "PrivateNetwork=yes",
+		"-p", "CPUQuota=200%", "-p", "MemoryMax=4294967296", "-p", "TasksMax=512", "-p", "RuntimeMaxSec=60", "--",
 		"/usr/bin/env", "-i", "-C", "/sbx/work/pkg", "--",
 		"PATH=/opt/go/bin:/usr/bin:/bin", "HOME=/sbx/home", "TMPDIR=/sbx/tmp", "USER=heimdall-sbx", "LOGNAME=heimdall-sbx",
 		"GOFLAGS=-mod=mod",
 		"go", "test", "./...; curl evil",
-	}
+	)
 	assert.Equal(t, want, got, "PR data stays one argv element each; no shell")
 	// Every job ends with the kill of the uid.
 	last := strings.Join(f.calls[len(f.calls)-1][3:], " ")
@@ -159,7 +301,8 @@ func TestFetchUsesHostNetworkAndProxy(t *testing.T) {
 	_, err := s.Fetch(context.Background(), Job{Argv: []string{"go", "mod", "download"}, Timeout: time.Minute})
 	require.NoError(t, err)
 	got := strings.Join(f.calls[0], " ")
-	assert.NotContains(t, got, "netns exec")
+	assert.NotContains(t, got, "PrivateNetwork")
+	assert.Contains(t, got, "-p RestrictAddressFamilies=AF_INET AF_INET6")
 	assert.Contains(t, got, "HTTPS_PROXY=http://127.0.0.1:"+strconv.Itoa(s.ProxyPort()))
 	assert.Contains(t, got, "-C /sbx/work --")
 }
@@ -222,7 +365,9 @@ func TestReadResultAsSandboxUser(t *testing.T) {
 		}
 	}
 	require.NotNil(t, read)
-	assert.Contains(t, read, "--reuid=1500", "the result file is read as the sandbox user, not root")
+	head, _ := unitHead(t, read)
+	assert.Equal(t, wantHead(PhaseExec, "heimdall-sbx-4.service", "60", "/sbx/work"), head,
+		"the result file is read as the sandbox user in the hardened service, not by root")
 }
 
 func TestJobBeforeSetup(t *testing.T) {

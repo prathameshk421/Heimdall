@@ -319,9 +319,12 @@ Status: measured Nov 21 2026 by P-AM11 on `aarush323/heimdall-fixture-pay`, bran
 random value made in the step. The workflow file, the probe module and the harness binary went onto the branch through
 the contents API. Nothing went into this repository's workflows.
 
-**Result: one probe escaped.** From the execution phase, the host's systemd-resolved answered a DNS query through its
-Unix socket. Every other probe was blocked. AM11 is therefore not done: section 4.4 of `ACTION_MODE.md` does not hold
-until a fix from 9.4 lands and the probes pass again.
+**Result.** The first design (a systemd scope plus `setpriv` and a named network namespace) let one probe escape: the
+host's systemd-resolved answered a DNS query through its Unix socket (9.3). The owner took fix 1 of 9.4. Jobs now run
+as a hardened transient service. Run 44869764001 on the same image (branch `heimdall-test/am11-r2`, image version
+20261116.202.1, systemd 259.9) repeated every earlier probe and added probes for every host Unix socket in both phases:
+**all 34 probe tests blocked their escapes, and the allowed fetch still worked** (9.5). Sections 9.1 to 9.3 describe
+the first design and stay as the record.
 
 ### 9.1 Method
 
@@ -398,32 +401,116 @@ It still cannot read the key (9.2), so the leak is limited to what heimdall-sbx 
 tests and world-readable host files. In the fetch phase it skips the registry allowlist. The D-Bus and systemd
 sockets were only connected to, not used. What an unprivileged caller can do through them is `not verified`.
 
-### 9.4 Fix options (owner decision, not built)
+### 9.4 Fix options, and the owner's choice
 
-The brief said to stop on an escape and write it up, so nothing below is built.
+1. **A transient service instead of a scope (recommended, chosen and built).** `systemd-run --pipe --wait --collect`
+   with `User=heimdall-sbx`, `NoNewPrivileges=yes`, `PrivateNetwork=yes` (execution phase), `/run` hidden, a private
+   /tmp, the homes hidden and `RuntimeMaxSec=`. The built property list is in 9.5.
+2. A mount namespace in the current chain (`unshare --mount` with an empty tmpfs over `/run` before `setpriv`). Not
+   built.
+3. `RestrictAddressFamilies=~AF_UNIX` for the execution phase. Not built: it breaks test suites that use Unix
+   sockets. The fetch phase got the stricter allow form instead (`AF_INET AF_INET6` only).
 
-1. **A transient service instead of a scope (recommended).** `systemd-run --pipe --wait --collect` with
-   `User=heimdall-sbx`, `NoNewPrivileges=yes`, `PrivateNetwork=yes` (execution phase), `TemporaryFileSystem=/run` or
-   `InaccessiblePaths=` for `/run/dbus`, `/run/systemd`, the snapd, polkit and ssh sockets, plus `PrivateTmp=yes`,
-   `ProtectHome=yes` and `RuntimeMaxSec=`. This also gives systemd's own NoNewPrivileges, which a scope cannot set,
-   and a private /tmp. The cost: stdin and stdout go through `--pipe`, and the fetch rule may move from nftables to
-   `IPAddressDeny=any` with `IPAddressAllow=127.0.0.1` (a cgroup BPF filter; `not verified` on this image).
-2. **A mount namespace in the current chain.** `unshare --mount` with an empty tmpfs over `/run` before `setpriv`.
-   The chain has no shell, so this needs a small helper (the binary itself), and it must keep `/run/netns`.
-3. **`RestrictAddressFamilies=~AF_UNIX`** for the execution phase. It breaks test suites that use Unix sockets, so it
-   is not a default.
+### 9.5 The fix: run 44869764001, every escape blocked
 
-### 9.5 Not verified
+Each job is now:
 
-- Any fix from 9.4. The probes must run again after it.
-- What D-Bus, polkit, snapd or the local ssh socket allow an unprivileged caller (only the connect was tried).
-- The memory, CPU and task limits under load (set, not stressed). A job that hits its deadline on the runner (the
-  kill path is unit-tested with a fake exec only).
-- `New` on a runner without passwordless root or without nftables. The `CannotIsolateError` paths are code plus a
-  unit test of the error type; no such runner was used.
-- Self-hosted runners, ARM runners and `ubuntu-24.04`.
+```
+sudo -n -- systemd-run --wait --pipe --collect --quiet --expand-environment=no --service-type=exec
+  --unit=heimdall-sbx-<n>.service -p <every property below> -p CPUQuota=<n>% -p MemoryMax=<bytes>
+  -p TasksMax=<n> -p RuntimeMaxSec=<job timeout, rounded up> -- /usr/bin/env -i -C /sbx/work/<dir> -- <fixed env> <argv>
+```
 
-### 9.6 Objects and cleanup
+Properties of both phases, in this order: `User=heimdall-sbx`, `Group=heimdall-sbx`, `NoNewPrivileges=yes`,
+`CapabilityBoundingSet=` (empty), `AmbientCapabilities=` (empty), `ProtectSystem=strict`,
+`ReadWritePaths=/sbx/work /sbx/home /sbx/tmp`, `ProtectHome=yes`, `TemporaryFileSystem=/run`, `PrivateTmp=yes`,
+`PrivateDevices=yes`, `PrivateIPC=yes`, `ProtectProc=invisible`, `ProtectKernelTunables=yes`,
+`ProtectKernelModules=yes`, `ProtectKernelLogs=yes`, `ProtectControlGroups=yes`, `ProtectClock=yes`,
+`ProtectHostname=yes`, `RestrictNamespaces=yes`, `RestrictSUIDSGID=yes`, `RestrictRealtime=yes`,
+`LockPersonality=yes`, `SystemCallArchitectures=native`, `RemoveIPC=yes`, `KeyringMode=private`, `UMask=0077`.
+
+- Execution phase adds `PrivateNetwork=yes`.
+- Fetch phase adds `RestrictAddressFamilies=AF_INET AF_INET6`, and keeps the nftables uid rule and the CONNECT proxy.
+
+What changed besides the properties:
+
+- `setpriv` and the named network namespace `heimdall-sbx` are gone. `User=`, `NoNewPrivileges=yes` and the empty
+  bounding set cover `setpriv`. `PrivateNetwork=yes` covers the namespace. The probe shows `NoNewPrivs=1`, `CapEff=0`,
+  `CapBnd=0`.
+- `--expand-environment=no` keeps PR argv literal: without it systemd-run expands `$X` and `${X}`.
+- The tar extraction of `Stage` and the read of a JUnit file run in an execution-phase service too.
+- `Setup` refuses a zero limit, and ends by running `env` in one service of each phase. A systemd that rejects a
+  property returns `CannotIsolateError`, so no job ever runs with less hardening. systemd 259.9 accepted every
+  property; no property needed a substitute.
+- Nothing from a job (argv, Dir, Env) can add, remove or change a property: it all goes after env's `--`. A unit test
+  pins the exact list per phase and runs hostile jobs such as `Env: PrivateNetwork=no` and `Argv: -p User=root`.
+
+Run 44869764001 had one predecessor on the branch, run 44869516172. It failed in `Setup` before any probe: the
+self check ran `env -C /sbx/work` with no command, and env answered `env: must specify command with --chdir (-C)`
+(exit 125). systemd had accepted every property in it. The self check now runs `env` as the command.
+
+Controls (runner user, before Setup, same run):
+
+| Control | Result |
+|---|---|
+| Host Unix sockets, found as root | `find / -type s` outside /proc and /sys: 65 socket files; the host's `/proc/net/unix`: 8 abstract names; 75 distinct |
+| Runner user connects to each | 39 of 75 accept, among them `/run/systemd/resolve/io.systemd.Resolve`, `/run/dbus/system_bus_socket`, `/run/snapd.socket`, `/run/snapd-snap.socket`, `/run/polkit/agent-helper.socket`, `/run/ssh-unix-local/socket`, `/run/docker.sock`, `/run/user/1001/bus`, two `/tmp/dotnet-diagnostic-*` sockets |
+| `resolvectl query example.com` | works: `example.com: 2606:4700:10::ac42:93f3 -- link: eth0` |
+| `busctl --system list` | works: 3250 bytes of bus names |
+| Canaries, DNS, TCP, docker socket | as in 9.1: environ has the canary, both canary files readable, DNS `github.com` = 140.82.112.4, TCP 1.1.1.1:443 and `docker.sock` connect |
+
+New probes, both phases:
+
+| Probe | Exec phase | Fetch phase |
+|---|---|---|
+| `resolvectl query example.com` | blocked: `sd_bus_open_system: No such file or directory` | blocked: `sd_bus_open_system: Address family not supported by protocol` |
+| `getent ahosts example.com` | blocked: exit 2 | blocked: exit 2 |
+| Connect to every host Unix socket (75 from the harness, plus every entry of the namespace's own `/proc/net/unix`) | blocked: 0 of 75; 67 `no such file or directory`, 8 abstract `connection refused` | blocked: 0 of 78; all 78 `address family not supported by protocol` |
+| By name: `io.systemd.Resolve`, `io.systemd.Resolve.Monitor`, `/run/dbus/system_bus_socket`, `/var/run/dbus/system_bus_socket`, `io.systemd.Manager`, `/run/systemd/private`, `notify`, `journal/stdout`, `journal/socket`, `userdb/io.systemd.DynamicUser`, `/run/snapd.socket`, `/run/snapd-snap.socket`, `/run/polkit/agent-helper.socket`, `/run/ssh-unix-local/socket`, `/var/run/docker.sock`, `/run/containerd/containerd.sock`, `/dev/log` | blocked: `connect: no such file or directory` for each | blocked: `socket: address family not supported by protocol` for each |
+| `busctl --system list` | blocked: `Failed to connect to system scope bus via local transport: No such file or directory` | blocked: `... Address family not supported by protocol` |
+| `/proc/net/unix` inside | blocked: 0 entries, none of the host's | **visible, not reachable**: 115 entries, 112 of them host names. The fetch phase shares the host network namespace by design; the names cannot be connected to |
+| Create a Unix socket (path and abstract) | works (the positive check: a test suite may use its own socket) | blocked: `socket: address family not supported by protocol` |
+| Plant files in `/tmp`, `/var/tmp`, `/dev/shm` | written inside; none of the three appears on the host | not run |
+
+Earlier probes, repeated in the same run:
+
+| Probe | Phase | Result now |
+|---|---|---|
+| The loop's `/proc/<pid>/environ` and `/proc/<pid>/mem` | exec | blocked: `no such file or directory` (`ProtectProc=invisible` hides other users' processes) |
+| Scan every `/proc/*/environ` | exec | blocked: canary in none; 2 readable (own), 0 denied, the rest invisible |
+| Own environment | exec | blocked: 13 fixed variables, no canary |
+| Home canary, list the home, `_temp` canary, `.credentials`, `.runner`, `_diag` | exec | blocked: `permission denied` for each |
+| DNS, system resolver; DNS to 8.8.8.8 | exec | blocked: `read udp [::1]:44662->[::1]:53: read: connection refused`; `connect: network is unreachable` |
+| TCP to 1.1.1.1:443, 140.82.112.3:443, [2606:4700:4700::1111]:443, 169.254.169.254:80 | exec | blocked: `network is unreachable` for each |
+| Interfaces | exec | blocked: only `lo` |
+| Fetch proxy from the execution phase (`example.com`, `proxy.golang.org`) | exec | blocked: `dial tcp 127.0.0.1:44295: connect: connection refused` |
+| `docker.sock`, `containerd.sock` | exec | blocked: `no such file or directory` |
+| `sudo -n true`; `su root` | exec | blocked: `The "no new privileges" flag is set ...`; `su: Authentication failure` |
+| Privileges | exec | blocked: `NoNewPrivs=1`, `CapEff=0`, `CapBnd=0`, uid 999 |
+| crontab; `at`; `systemd-run --user` | exec | blocked: `not allowed to use this program (crontab)`; no `at` binary; `Failed to connect to user scope bus` |
+| Surviving daemons (`setsid`, `setsid -f nohup`) | exec | blocked: pid 4676 gone; `pgrep -u 999` empty; the last workflow step printed `no heimdall-sbx process` and no `heimdall-sbx-*` unit |
+| Sudo rights and groups of the user | setup | `User heimdall-sbx is not allowed to run sudo`; `groups=986(heimdall-sbx)` |
+| Home and `_temp` mode | setup | both 0700 |
+| Allowed fetch `go mod download` of `rsc.io/quote` v1.5.2 | fetch | works: exit 0, proxy log `sandbox proxy tunnel target=proxy.golang.org:443`. Go's toolchain needs no AF_UNIX |
+| `CONNECT proxy.golang.org:443` | fetch | works: 200 |
+| `CONNECT` to `example.com:443`, `github.com:443`, `proxy.golang.org.evil.example:443`, `1.1.1.1:443`, `169.254.169.254:80`, `proxy.golang.org:80` | fetch | blocked: `403 Forbidden` each, with the same logged reasons as 9.2 |
+| Direct TCP to 1.1.1.1:443, 127.0.0.53:53, 169.254.169.254:80; to [2606:4700:4700::1111]:443 | fetch | blocked: `i/o timeout`; `network is unreachable` |
+| DNS, system resolver | fetch | blocked: `write udp [::1]:47498->[::1]:53: write: operation not permitted` (no resolv.conf under the hidden /run, then the nftables drop) |
+| `docker.sock` | fetch | blocked: `address family not supported by protocol` |
+| Offline build with the fetched module | exec | works: `"Hello, world."` |
+
+### 9.6 Not verified
+
+- A package manager other than Go's in the fetch phase (npm, pip, cargo, maven). If one needs AF_UNIX there, it fails
+  with `address family not supported by protocol`, and widening the family list is an owner decision.
+- What D-Bus, polkit, snapd or the local ssh socket allow an unprivileged caller. Moot now: neither phase can connect.
+- The memory, CPU and task limits under load (set, not stressed). A job that hits `RuntimeMaxSec` or the binary's
+  deadline on the runner (the kill path is unit-tested with a fake exec only).
+- `New` on a runner without passwordless root or without nftables, and the self check's `CannotIsolateError` on a
+  systemd that rejects a property. These paths are code plus unit tests; no such runner was used.
+- Self-hosted runners, ARM runners and `ubuntu-24.04` (older systemd: `--expand-environment` needs 254 or later).
+
+### 9.7 Objects and cleanup
 
 All on `aarush323/heimdall-fixture-pay`, all deleted Nov 21 2026, and checked by listing afterwards:
 
@@ -433,3 +520,13 @@ All on `aarush323/heimdall-fixture-pay`, all deleted Nov 21 2026, and checked by
   44868366675 (intermediate commits of the second upload, cancelled): all six deleted. The run list of the branch is
   empty. The logs survive only in this section.
 - No PR, label, secret or environment was created (no `am11` branch left, secrets count 0, label list unchanged).
+
+Second pass, all on `aarush323/heimdall-fixture-pay`, all deleted Nov 21 2026 and checked by listing afterwards:
+
+- Branch `heimdall-test/am11-r2`, made from the tip of `main` (`74886fe`; nothing was written to `main` or
+  `heimdall-demo`): deleted. The branch list has no `am11` branch.
+- The workflow `.github/workflows/am11-probe.yml` lived only on that branch and ran only on a push that changed
+  `am11/trigger`, so the six setup uploads started no run. Runs 44869516172 (failure: the self-check bug above) and
+  44869764001 (success): both deleted, and both return 404.
+- No PR, label, secret or environment was created (secrets count 0, no PR for the branch, the workflow list shows
+  only the fixture's own `ci.yml`).

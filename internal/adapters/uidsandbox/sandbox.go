@@ -45,12 +45,15 @@ const (
 	WorkDir  = "/sbx/work"
 	HomeDir  = "/sbx/home"
 	TmpDir   = "/sbx/tmp"
-	NetNS    = "heimdall-sbx"
 	nftTable = "heimdall_sbx"
 	// MaxOutputBytes caps stdout and stderr of one job, each.
 	MaxOutputBytes = 4 << 20
 	// killRounds bounds the kill loop of one cleanup.
 	killRounds = 20
+	// stageTimeout and readTimeout are the deadlines of the sandbox's own jobs: the tar extraction and the read of
+	// a result file.
+	stageTimeout = 10 * time.Minute
+	readTimeout  = time.Minute
 )
 
 // Phase is where a job runs.
@@ -60,7 +63,7 @@ type Phase int
 const (
 	// PhaseFetch has egress only through the proxy to the allowlisted registries.
 	PhaseFetch Phase = iota + 1
-	// PhaseExec runs in a network namespace with loopback only.
+	// PhaseExec runs in a private network namespace with loopback only.
 	PhaseExec
 )
 
@@ -98,7 +101,7 @@ type Result struct {
 	Report   verify.Report
 }
 
-// Limits of the systemd scope of each job.
+// Limits of the transient service of each job. Each must be positive; Setup refuses a zero.
 type Limits struct {
 	CPUPercent int   // CPUQuota, 100 is one core
 	MemoryMax  int64 // bytes
@@ -119,7 +122,7 @@ type Config struct {
 
 // tools are the absolute paths of every binary the sandbox runs.
 type tools struct {
-	sudo, useradd, id, nft, ip, systemdRun, systemctl, setpriv, env, tar, pkill, pgrep, chmod, chown, mkdir, rm, crontab, tee, head string
+	sudo, useradd, id, nft, systemdRun, systemctl, env, tar, pkill, pgrep, chmod, chown, mkdir, rm, crontab, tee, head string
 }
 
 // Sandbox runs PR code as the heimdall-sbx user (ACTION_MODE 4.4).
@@ -186,12 +189,16 @@ func (s *Sandbox) mustRoot(ctx context.Context, stdin io.Reader, argv ...string)
 
 func fixedPathEnv() []string { return []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin"} }
 
-// Setup prepares the user, the directories, the proxy, the nftables rule and the network namespace. It is
-// idempotent for the user and safe to call once per runner job.
+// Setup prepares the user, the directories, the proxy and the nftables rule, then starts one empty job in each
+// phase to prove that this systemd accepts every property. It is idempotent for the user and safe to call once per
+// runner job.
 func (s *Sandbox) Setup(ctx context.Context) error {
 	allow, err := NewAllowlist(s.cfg.Registries, s.cfg.Ports)
 	if err != nil {
 		return fmt.Errorf("fetch allowlist: %w", err)
+	}
+	if l := s.cfg.Limits; l.CPUPercent <= 0 || l.MemoryMax <= 0 || l.TasksMax <= 0 {
+		return fmt.Errorf("%w: every limit must be positive: %+v", ErrSetupStep, l)
 	}
 	if err := s.ensureUser(ctx); err != nil {
 		return err
@@ -212,7 +219,36 @@ func (s *Sandbox) Setup(ctx context.Context) error {
 	if err := s.installNft(ctx, p.Port()); err != nil {
 		return err
 	}
-	return s.makeNetNS(ctx)
+	return s.selfCheck(ctx)
+}
+
+// selfCheck runs env inside env (it prints the empty environment and exits 0) in a service of each phase. A systemd
+// that rejects a property fails here, before any PR code runs, and the runner cannot isolate. env needs a command
+// with -C, so the inner env is that command.
+func (s *Sandbox) selfCheck(ctx context.Context) error {
+	for _, phase := range []Phase{PhaseExec, PhaseFetch} {
+		var out bytes.Buffer
+		lw := &limitWriter{w: &out, limit: MaxOutputBytes}
+		cctx, cancel := context.WithTimeout(ctx, readTimeout)
+		unit := s.nextUnit()
+		code, err := s.exec.Run(cctx, Cmd{
+			Argv: append([]string{s.tools.sudo, "-n", "--"}, s.unitArgv(phase, unit, readTimeout, WorkDir, nil, s.tools.env)...),
+			Env:  fixedPathEnv(), Stdout: lw, Stderr: lw,
+			Cancel: func() error { return s.killUnit(context.WithoutCancel(ctx), unit) },
+		})
+		cancel()
+		if kerr := s.KillAll(context.WithoutCancel(ctx)); kerr != nil {
+			return errors.Join(err, kerr)
+		}
+		if err != nil {
+			return fmt.Errorf("sandbox self check: %w", err)
+		}
+		if code != 0 {
+			return &CannotIsolateError{Reason: fmt.Sprintf("systemd refused the hardened service (phase %d, exit %d): %s",
+				phase, code, strings.TrimSpace(out.String()))}
+		}
+	}
+	return nil
 }
 
 func (s *Sandbox) ensureUser(ctx context.Context) error {
@@ -312,16 +348,6 @@ func (s *Sandbox) installNft(ctx context.Context, port int) error {
 	return s.mustRoot(ctx, strings.NewReader(nftRuleset(s.UID(), port)), s.tools.nft, "-f", "-")
 }
 
-func (s *Sandbox) makeNetNS(ctx context.Context) error {
-	if code, _, err := s.root(ctx, nil, s.tools.ip, "netns", "exec", NetNS, s.tools.env, "true"); err == nil && code == 0 {
-		return nil
-	}
-	if err := s.mustRoot(ctx, nil, s.tools.ip, "netns", "add", NetNS); err != nil {
-		return err
-	}
-	return s.mustRoot(ctx, nil, s.tools.ip, "-n", NetNS, "link", "set", "lo", "up")
-}
-
 // Stage replaces the work tree with the tar stream tree (for example the GitHub tarball of the head SHA, which holds
 // no .git). It extracts as the sandbox user, so a hostile archive can write only where that user can.
 func (s *Sandbox) Stage(ctx context.Context, tree io.Reader, stripComponents int) error {
@@ -334,23 +360,98 @@ func (s *Sandbox) Stage(ctx context.Context, tree io.Reader, stripComponents int
 	if err := s.resetWork(ctx); err != nil {
 		return err
 	}
-	argv := s.asUser(WorkDir, fixedPathEnv(), s.tools.tar, "-x", "-f", "-", "-C", WorkDir, "--no-same-owner", "--no-same-permissions",
-		"--exclude=.git", "--strip-components="+strconv.Itoa(stripComponents))
-	err := s.mustRoot(ctx, tree, argv...)
-	if kerr := s.KillAll(ctx); kerr != nil {
+	sctx, cancel := context.WithTimeout(ctx, stageTimeout)
+	defer cancel()
+	unit := s.nextUnit()
+	var out bytes.Buffer
+	lw := &limitWriter{w: &out, limit: MaxOutputBytes}
+	code, err := s.exec.Run(sctx, Cmd{
+		Argv: append([]string{s.tools.sudo, "-n", "--"}, s.unitArgv(PhaseExec, unit, stageTimeout, WorkDir, fixedPathEnv(),
+			s.tools.tar, "-x", "-f", "-", "-C", WorkDir, "--no-same-owner", "--no-same-permissions",
+			"--exclude=.git", "--strip-components="+strconv.Itoa(stripComponents))...),
+		Env: fixedPathEnv(), Stdin: tree, Stdout: lw, Stderr: lw,
+		Cancel: func() error { return s.killUnit(context.WithoutCancel(ctx), unit) },
+	})
+	if err == nil && code != 0 {
+		err = fmt.Errorf("%w: tar exited %d: %s", ErrSetupStep, code, strings.TrimSpace(out.String()))
+	}
+	if kerr := s.KillAll(context.WithoutCancel(ctx)); kerr != nil {
 		return errors.Join(err, kerr)
 	}
 	return err
 }
 
-// asUser wraps argv so it runs as the sandbox user with no new privileges, no capabilities, no supplementary groups
-// and an empty environment. It is the inner part of every command that touches PR data.
-// env(1) reads every NAME=VALUE after its options as a variable, so env holds only checked entries and argv[0] has
-// no "=" (validateJob).
-func (s *Sandbox) asUser(dir string, env []string, argv ...string) []string {
-	uid := strconv.Itoa(s.UID())
-	out := []string{s.tools.setpriv, "--reuid=" + uid, "--regid=" + uid, "--clear-groups", "--no-new-privs",
-		"--inh-caps=-all", "--bounding-set=-all", "--", s.tools.env, "-i", "-C", dir, "--"}
+// serviceProps is the fixed hardening of the transient service of a phase. Nothing from a Job enters it: the job's
+// argv, directory and variables go after the "--" of systemd-run, to env(1). Both phases hide /run (every host
+// socket of systemd, D-Bus, snapd, polkit and ssh lives there, and /var/run links to it), the home directories and
+// /tmp, and make the whole file system read-only except the three sandbox directories. The execution phase has a
+// private network namespace with loopback only, which also cuts abstract Unix sockets. The fetch phase keeps the
+// host network for the proxy and may open only IPv4 and IPv6 sockets, so no Unix socket of any kind.
+func serviceProps(phase Phase) []string {
+	props := []string{
+		"User=" + User,
+		"Group=" + User,
+		"NoNewPrivileges=yes",
+		"CapabilityBoundingSet=",
+		"AmbientCapabilities=",
+		"ProtectSystem=strict",
+		"ReadWritePaths=" + WorkDir + " " + HomeDir + " " + TmpDir,
+		"ProtectHome=yes",
+		"TemporaryFileSystem=/run",
+		"PrivateTmp=yes",
+		"PrivateDevices=yes",
+		"PrivateIPC=yes",
+		"ProtectProc=invisible",
+		"ProtectKernelTunables=yes",
+		"ProtectKernelModules=yes",
+		"ProtectKernelLogs=yes",
+		"ProtectControlGroups=yes",
+		"ProtectClock=yes",
+		"ProtectHostname=yes",
+		"RestrictNamespaces=yes",
+		"RestrictSUIDSGID=yes",
+		"RestrictRealtime=yes",
+		"LockPersonality=yes",
+		"SystemCallArchitectures=native",
+		"RemoveIPC=yes",
+		"KeyringMode=private",
+		"UMask=0077",
+	}
+	switch phase {
+	case PhaseExec:
+		props = append(props, "PrivateNetwork=yes")
+	case PhaseFetch:
+		props = append(props, "RestrictAddressFamilies=AF_INET AF_INET6")
+	}
+	return props
+}
+
+// runtimeMaxSec is the job deadline in whole seconds, rounded up, at least 1.
+func runtimeMaxSec(d time.Duration) string {
+	sec := int64((d + time.Second - 1) / time.Second)
+	if sec < 1 {
+		sec = 1
+	}
+	return strconv.FormatInt(sec, 10)
+}
+
+// unitArgv is the root command of one sandbox job: a transient service with the phase's hardening, the limits and
+// the deadline, running env -i with only env and then argv. --wait and --pipe keep the caller attached to the
+// job's stdio and exit status. --expand-environment=no keeps every argv element literal: systemd does not expand
+// "$X" or "${X}" in it.
+func (s *Sandbox) unitArgv(phase Phase, unit string, timeout time.Duration, dir string, env []string, argv ...string) []string {
+	l := s.cfg.Limits
+	out := []string{s.tools.systemdRun, "--wait", "--pipe", "--collect", "--quiet", "--expand-environment=no",
+		"--service-type=exec", "--unit=" + unit}
+	for _, p := range serviceProps(phase) {
+		out = append(out, "-p", p)
+	}
+	out = append(out,
+		"-p", "CPUQuota="+strconv.Itoa(l.CPUPercent)+"%",
+		"-p", "MemoryMax="+strconv.FormatInt(l.MemoryMax, 10),
+		"-p", "TasksMax="+strconv.Itoa(l.TasksMax),
+		"-p", "RuntimeMaxSec="+runtimeMaxSec(timeout),
+		"--", s.tools.env, "-i", "-C", dir, "--")
 	out = append(out, env...)
 	return append(out, argv...)
 }
@@ -435,27 +536,17 @@ func (s *Sandbox) jobEnv(phase Phase, j Job) []string {
 	return append(env, j.Env...)
 }
 
-// jobArgv is the full root command of a job: optional network namespace, a systemd scope with limits, then asUser.
+// jobArgv is the full root command of a job.
 func (s *Sandbox) jobArgv(phase Phase, unit string, j Job) []string {
 	dir, _ := relPath(j.Dir)
-	var argv []string
-	if phase == PhaseExec {
-		argv = append(argv, s.tools.ip, "netns", "exec", NetNS)
-	}
-	l := s.cfg.Limits
-	argv = append(argv, s.tools.systemdRun, "--scope", "--quiet", "--collect", "--unit="+unit,
-		"-p", "CPUQuota="+strconv.Itoa(l.CPUPercent)+"%",
-		"-p", "MemoryMax="+strconv.FormatInt(l.MemoryMax, 10),
-		"-p", "TasksMax="+strconv.Itoa(l.TasksMax),
-		"--")
-	return append(argv, s.asUser(path.Join(WorkDir, dir), s.jobEnv(phase, j), j.Argv...)...)
+	return s.unitArgv(phase, unit, j.Timeout, path.Join(WorkDir, dir), s.jobEnv(phase, j), j.Argv...)
 }
 
 func (s *Sandbox) nextUnit() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.seq++
-	return "heimdall-sbx-" + strconv.Itoa(s.seq) + ".scope"
+	return "heimdall-sbx-" + strconv.Itoa(s.seq) + ".service"
 }
 
 // Fetch runs a dependency install with egress only through the proxy.
@@ -480,7 +571,7 @@ func (s *Sandbox) run(ctx context.Context, phase Phase, j Job) (Result, error) {
 		Env:    fixedPathEnv(),
 		Stdout: &limitWriter{w: &stdout, limit: MaxOutputBytes},
 		Stderr: &limitWriter{w: &stderr, limit: MaxOutputBytes},
-		Cancel: func() error { return s.killScope(context.WithoutCancel(ctx), unit) },
+		Cancel: func() error { return s.killUnit(context.WithoutCancel(ctx), unit) },
 	}
 	code, runErr := s.exec.Run(jctx, cmd)
 	res := Result{Exit: code, TimedOut: jctx.Err() != nil && ctx.Err() == nil, Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
@@ -529,9 +620,15 @@ func (s *Sandbox) readAsUser(ctx context.Context, rel string) ([]byte, error) {
 		return nil, err
 	}
 	var out bytes.Buffer
-	argv := append([]string{s.tools.sudo, "-n", "--"}, s.asUser(WorkDir, fixedPathEnv(), s.tools.head, "-c",
-		strconv.Itoa(verify.MaxReportBytes+1), "--", path.Join(WorkDir, p))...)
-	code, err := s.exec.Run(ctx, Cmd{Argv: argv, Env: fixedPathEnv(), Stdout: &limitWriter{w: &out, limit: verify.MaxReportBytes + 1}})
+	rctx, cancel := context.WithTimeout(ctx, readTimeout)
+	defer cancel()
+	unit := s.nextUnit()
+	argv := append([]string{s.tools.sudo, "-n", "--"}, s.unitArgv(PhaseExec, unit, readTimeout, WorkDir, fixedPathEnv(),
+		s.tools.head, "-c", strconv.Itoa(verify.MaxReportBytes+1), "--", path.Join(WorkDir, p))...)
+	code, err := s.exec.Run(rctx, Cmd{
+		Argv: argv, Env: fixedPathEnv(), Stdout: &limitWriter{w: &out, limit: verify.MaxReportBytes + 1},
+		Cancel: func() error { return s.killUnit(context.WithoutCancel(ctx), unit) },
+	})
 	if err != nil {
 		return nil, fmt.Errorf("read result: %w", err)
 	}
@@ -544,7 +641,8 @@ func (s *Sandbox) readAsUser(ctx context.Context, rel string) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func (s *Sandbox) killScope(ctx context.Context, unit string) error {
+// killUnit kills every process of a job's service, then every process of the uid.
+func (s *Sandbox) killUnit(ctx context.Context, unit string) error {
 	_, _, err := s.root(ctx, nil, s.tools.systemctl, "kill", "--signal=SIGKILL", "--", unit)
 	if kerr := s.KillAll(ctx); kerr != nil {
 		return errors.Join(err, kerr)
@@ -583,7 +681,7 @@ func (s *Sandbox) KillAll(ctx context.Context) error {
 	return fmt.Errorf("%w: uid %s", ErrSurvivor, uid)
 }
 
-// Cleanup kills the uid, removes its crontab, the nftables table and the namespace, and stops the proxy.
+// Cleanup kills the uid, removes its crontab and the nftables table, and stops the proxy.
 func (s *Sandbox) Cleanup(ctx context.Context) error {
 	var errs []error
 	if s.UID() > 0 {
@@ -595,8 +693,6 @@ func (s *Sandbox) Cleanup(ctx context.Context) error {
 		}
 	}
 	_, _, err := s.root(ctx, nil, s.tools.nft, "delete", "table", "inet", nftTable)
-	errs = append(errs, err)
-	_, _, err = s.root(ctx, nil, s.tools.ip, "netns", "delete", NetNS)
 	errs = append(errs, err)
 	s.mu.Lock()
 	p := s.proxy

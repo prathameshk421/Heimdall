@@ -35,6 +35,12 @@ type config struct {
 	ProxyPort    int      `json:"proxy_port"`
 	CredFiles    []string `json:"cred_files"`
 	RunnerHome   string   `json:"runner_home"`
+	// HostSockets is every Unix socket the harness found on the host as root: paths from find, and abstract names
+	// (with a leading "@") and bound paths from the host's /proc/net/unix.
+	HostSockets []string `json:"host_sockets"`
+	// Plants are the files the execution phase writes into the shared-looking temp directories; the harness checks
+	// that none of them appears on the host.
+	Plants []string `json:"plants"`
 }
 
 func load(t *testing.T) config {
@@ -322,43 +328,180 @@ func resolveThroughHost(t *testing.T, phase string) {
 	blocked(t, phase+" DNS through NSS (getent ahosts example.com)", err)
 }
 
-// unixSockets reports which host Unix sockets the user can connect to. Reaching one is not an escape by itself;
-// the list shows what a namespace does not cut.
-func unixSockets(t *testing.T, phase string) {
-	b, err := os.ReadFile("/proc/net/unix")
-	if err != nil {
-		t.Fatalf("read /proc/net/unix: %v", err)
+func dialUnix(t *testing.T, name string) error {
+	addr := name
+	if strings.HasPrefix(name, "@") {
+		addr = "\x00" + name[1:]
 	}
-	seen := map[string]bool{}
+	var d net.Dialer
+	conn, err := d.DialContext(timeoutCtx(t), "unix", addr)
+	if conn != nil {
+		_ = conn.Close()
+	}
+	return err
+}
+
+// errClass shortens an error to its errno text, so the log can count the reasons.
+func errClass(err error) string {
+	var se syscall.Errno
+	if errors.As(err, &se) {
+		return se.Error()
+	}
+	return err.Error()
+}
+
+// hostSockets tries to connect to every Unix socket the harness found on the host, plus every one this namespace's
+// /proc/net/unix lists. Every connect must fail.
+func hostSockets(t *testing.T, phase string) {
+	c := load(t)
+	if len(c.HostSockets) == 0 {
+		t.Fatal("the harness gave no host socket list")
+	}
+	all := map[string]bool{}
+	for _, n := range c.HostSockets {
+		all[n] = true
+	}
+	for _, n := range procNetUnix(t) {
+		all[n] = true
+	}
+	reasons := map[string]int{}
 	var reached []string
-	for _, line := range strings.Split(string(b), "\n")[1:] {
-		f := strings.Fields(line)
-		if len(f) < 8 || seen[f[7]] {
+	for n := range all {
+		err := dialUnix(t, n)
+		if err == nil {
+			reached = append(reached, n)
 			continue
 		}
-		name := f[7]
-		seen[name] = true
-		addr := name
-		if strings.HasPrefix(name, "@") {
-			addr = "\x00" + name[1:]
-		}
-		var d net.Dialer
-		conn, err := d.DialContext(timeoutCtx(t), "unix", addr)
-		if err == nil {
-			_ = conn.Close()
-			reached = append(reached, name)
+		reasons[errClass(err)]++
+	}
+	if len(reached) > 0 {
+		t.Errorf("PROBE %s connect to every host Unix socket: ESCAPED: %d of %d reachable: %v", phase, len(reached), len(all), reached)
+		return
+	}
+	t.Logf("PROBE %s connect to every host Unix socket: blocked: 0 of %d reachable; errors %v", phase, len(all), reasons)
+}
+
+// procNetUnix lists the socket names of this network namespace's /proc/net/unix.
+func procNetUnix(t *testing.T) []string {
+	b, err := os.ReadFile("/proc/net/unix")
+	if err != nil {
+		t.Logf("read /proc/net/unix: %v", err)
+		return nil
+	}
+	var names []string
+	for _, line := range strings.Split(string(b), "\n")[1:] {
+		if f := strings.Fields(line); len(f) >= 8 {
+			names = append(names, f[7])
 		}
 	}
-	t.Logf("PROBE %s host Unix sockets: %d listed, reachable: %v", phase, len(seen), reached)
+	return names
+}
+
+// procNetUnixHost counts the host's sockets among those this namespace's /proc/net/unix lists.
+func procNetUnixHost(t *testing.T, phase string, mustBeEmpty bool) {
+	c := load(t)
+	host := map[string]bool{}
+	for _, n := range c.HostSockets {
+		host[n] = true
+	}
+	inside := procNetUnix(t)
+	var shared []string
+	for _, n := range inside {
+		if host[n] {
+			shared = append(shared, n)
+		}
+	}
+	if len(shared) == 0 {
+		t.Logf("PROBE %s /proc/net/unix shows host sockets: blocked: %d entries, none of the host's", phase, len(inside))
+		return
+	}
+	if mustBeEmpty {
+		t.Errorf("PROBE %s /proc/net/unix shows host sockets: ESCAPED: %d of the host's visible: %v", phase, len(shared), shared)
+		return
+	}
+	t.Logf("PROBE %s /proc/net/unix shows host sockets: visible (names only, host network namespace): %d entries, %d of the host's",
+		phase, len(inside), len(shared))
+}
+
+// namedSockets tries the sockets of the escape write-up by name.
+func namedSockets(t *testing.T, phase string) {
+	for _, p := range []string{
+		"/run/systemd/resolve/io.systemd.Resolve", "/run/systemd/resolve/io.systemd.Resolve.Monitor",
+		"/run/dbus/system_bus_socket", "/var/run/dbus/system_bus_socket", "/run/systemd/io.systemd.Manager",
+		"/run/systemd/private", "/run/systemd/notify", "/run/systemd/journal/stdout", "/run/systemd/journal/socket",
+		"/run/systemd/userdb/io.systemd.DynamicUser", "/run/snapd.socket", "/run/snapd-snap.socket",
+		"/run/polkit/agent-helper.socket", "/run/ssh-unix-local/socket", "/var/run/docker.sock",
+		"/run/containerd/containerd.sock", "/dev/log",
+	} {
+		blocked(t, phase+" connect to "+p, dialUnix(t, p))
+	}
+}
+
+func busctl(t *testing.T, phase string) {
+	out, err := exec.Command("/usr/bin/busctl", "--system", "--no-pager", "list").CombinedOutput()
+	if err != nil {
+		err = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	blocked(t, phase+" D-Bus system bus (busctl --system list)", err)
 }
 
 func TestExecHostResolver(t *testing.T) { resolveThroughHost(t, "exec phase") }
 
-func TestExecUnixSockets(t *testing.T) { unixSockets(t, "exec phase") }
+func TestExecHostSockets(t *testing.T) { hostSockets(t, "exec phase") }
+
+func TestExecNamedSockets(t *testing.T) { namedSockets(t, "exec phase") }
+
+func TestExecBusctl(t *testing.T) { busctl(t, "exec phase") }
+
+func TestExecProcNetUnix(t *testing.T) { procNetUnixHost(t, "exec phase", true) }
+
+// TestExecUnixSocketOwn is the positive check: a test suite may still use its own Unix socket in the execution
+// phase, inside the private namespaces.
+func TestExecUnixSocketOwn(t *testing.T) {
+	p := filepath.Join(os.Getenv("TMPDIR"), "own.sock")
+	l, err := net.Listen("unix", p)
+	if err != nil {
+		t.Fatalf("PROBE exec phase own Unix socket: does not work: %v", err)
+	}
+	defer l.Close()
+	if err := dialUnix(t, p); err != nil {
+		t.Fatalf("PROBE exec phase own Unix socket: does not work: %v", err)
+	}
+	t.Log("PROBE exec phase own Unix socket: works")
+}
+
+// TestExecPlant writes into /tmp, /var/tmp and /dev/shm. The harness checks the host's directories afterwards.
+func TestExecPlant(t *testing.T) {
+	c := load(t)
+	for _, p := range c.Plants {
+		if err := os.WriteFile(p, []byte("planted by heimdall-sbx\n"), 0o644); err != nil {
+			t.Logf("PROBE plant %s: write refused: %v", p, err)
+			continue
+		}
+		t.Logf("PROBE plant %s: written inside; the harness checks the host", p)
+	}
+}
 
 func TestFetchHostResolver(t *testing.T) { resolveThroughHost(t, "fetch phase") }
 
-func TestFetchUnixSockets(t *testing.T) { unixSockets(t, "fetch phase") }
+func TestFetchHostSockets(t *testing.T) { hostSockets(t, "fetch phase") }
+
+func TestFetchNamedSockets(t *testing.T) { namedSockets(t, "fetch phase") }
+
+func TestFetchBusctl(t *testing.T) { busctl(t, "fetch phase") }
+
+func TestFetchProcNetUnix(t *testing.T) { procNetUnixHost(t, "fetch phase", false) }
+
+// TestFetchUnixSocketCreate: the fetch phase may not open a Unix socket at all.
+func TestFetchUnixSocketCreate(t *testing.T) {
+	l, err := net.Listen("unix", filepath.Join(os.Getenv("TMPDIR"), "fetch.sock"))
+	if l != nil {
+		_ = l.Close()
+	}
+	blocked(t, "fetch phase create a Unix socket", err)
+	_, err = net.ListenUnixgram("unixgram", &net.UnixAddr{Name: "@heimdall-sbx-fetch", Net: "unixgram"})
+	blocked(t, "fetch phase create an abstract Unix datagram socket", err)
+}
 
 // TestExecSurvivor starts daemons that try to outlive the job. The harness checks that none is alive after cleanup.
 func TestExecSurvivor(t *testing.T) {

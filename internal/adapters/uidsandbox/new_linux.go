@@ -27,8 +27,8 @@ func findTool(name string) (string, error) {
 func lookupTools() (tools, error) {
 	var t tools
 	targets := map[string]*string{
-		"sudo": &t.sudo, "useradd": &t.useradd, "id": &t.id, "nft": &t.nft, "ip": &t.ip,
-		"systemd-run": &t.systemdRun, "systemctl": &t.systemctl, "setpriv": &t.setpriv, "env": &t.env,
+		"sudo": &t.sudo, "useradd": &t.useradd, "id": &t.id, "nft": &t.nft,
+		"systemd-run": &t.systemdRun, "systemctl": &t.systemctl, "env": &t.env,
 		"tar": &t.tar, "pkill": &t.pkill, "pgrep": &t.pgrep, "chmod": &t.chmod, "chown": &t.chown,
 		"mkdir": &t.mkdir, "rm": &t.rm, "tee": &t.tee, "head": &t.head,
 	}
