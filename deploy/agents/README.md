@@ -1,6 +1,6 @@
 # Agent runtime and controller setup
 
-`testdata/agents/agents.json` is the role manifest. `install.sh --dry-run` validates all five templates, role skills, and token file metadata without printing token contents. The real installer writes the role configs under the controller's `/var/lib/switch-agents/1000/agent/<role>/` tree, mode `0600`, and assigns the configured owner.
+`testdata/agents/agents.json` is the role manifest. `install.sh --dry-run` validates all six templates (the profiler joined in D175), role skills, and token file metadata without printing token contents. The real installer writes the role configs under the controller's `/var/lib/switch-agents/1000/agent/<role>/` tree, mode `0600`, and assigns the configured owner.
 
 ## Controller enrollment handoff
 

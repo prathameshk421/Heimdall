@@ -16,7 +16,7 @@ func TestInstallDryRunPlansEveryManifestAgentWithoutReadingTokens(t *testing.T) 
 	repo := filepath.Join("..", "..")
 	agentsDir := t.TempDir()
 	secretsDir := t.TempDir()
-	for _, name := range []string{"test-author", "reviewer-1", "reviewer-2", "reviewer-3", "resolver"} {
+	for _, name := range []string{"test-author", "reviewer-1", "reviewer-2", "reviewer-3", "resolver", "profiler"} {
 		if err := os.WriteFile(filepath.Join(secretsDir, "agent_token_"+name), []byte("dry-run-secret"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -37,7 +37,7 @@ func TestInstallDryRunPlansEveryManifestAgentWithoutReadingTokens(t *testing.T) 
 		t.Fatalf("dry-run failed: %v\n%s", err, output)
 	}
 	text := string(output)
-	for _, name := range []string{"test-author", "reviewer-1", "reviewer-2", "reviewer-3", "resolver"} {
+	for _, name := range []string{"test-author", "reviewer-1", "reviewer-2", "reviewer-3", "resolver", "profiler"} {
 		if !strings.Contains(text, "plan "+name) {
 			t.Errorf("dry-run output missing agent %q: %s", name, text)
 		}
@@ -80,7 +80,7 @@ func TestInstallDryRunRefusesMissingTokenBeforePlanning(t *testing.T) {
 // writeAgentSecrets writes a token file per manifest agent and, when key is not empty, the model key file.
 func writeAgentSecrets(t *testing.T, dir, key string) {
 	t.Helper()
-	for _, name := range []string{"test-author", "reviewer-1", "reviewer-2", "reviewer-3", "resolver"} {
+	for _, name := range []string{"test-author", "reviewer-1", "reviewer-2", "reviewer-3", "resolver", "profiler"} {
 		if err := os.WriteFile(filepath.Join(dir, "agent_token_"+name), []byte("token-"+name+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -111,7 +111,7 @@ func TestInstallWritesTheDeployKeyFromTheSecretsFileIntoEveryConfig(t *testing.T
 	if strings.Contains(string(output), "deploy-key-value") {
 		t.Fatal("install output leaked the Deploy key")
 	}
-	for _, name := range []string{"test-author", "reviewer-1", "reviewer-2", "reviewer-3", "resolver"} {
+	for _, name := range []string{"test-author", "reviewer-1", "reviewer-2", "reviewer-3", "resolver", "profiler"} {
 		raw, err := os.ReadFile(filepath.Join(agentsDir, "agent", name, "opencode.json"))
 		if err != nil {
 			t.Fatal(err)

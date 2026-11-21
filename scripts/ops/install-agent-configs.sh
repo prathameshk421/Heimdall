@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rewrites the live OpenCode config of the resolver and the three reviewers from the repo template
+# Rewrites the live OpenCode config of the resolver, the three reviewers and the profiler from the repo template
 # (testdata/agents/<name>.opencode.json): bash, web and file reads denied, only heimdall_* tools and scratch edits
 # allowed, and the MCP bearer taken from the server's own token file. Found live on KAN-19: the reviewers' Nov 5
 # configs got 401 from Heimdall's MCP and allowed bash, so they curled the endpoint and searched for token files.
@@ -11,23 +11,30 @@ secrets=/etc/heimdall/secrets
 base=/var/lib/switch-agents/1000
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 
-# slot:name for each agent unit (switch-agent-1000@<slot>).
-for pair in 04:resolver 05:reviewer-1 06:reviewer-2 07:reviewer-3; do
-  slot=${pair%%:*}
-  name=${pair#*:}
-  cfg="$base/$slot/$name/opencode.json"
+# The controller gives each agent a numbered slot (unit switch-agent-1000@<slot>, directory <base>/<slot>/<name>); the
+# slot is found by name, so an agent added later (the profiler, D175) is covered without editing this list.
+for name in resolver reviewer-1 reviewer-2 reviewer-3 profiler; do
+  dir=$(sudo find "$base" -mindepth 2 -maxdepth 2 -type d -name "$name" -path "$base/[0-9]*/$name" | sort | head -1)
+  if [ -z "$dir" ]; then
+    echo "$name: no agent directory under $base yet, skipped"
+    continue
+  fi
+  slot=$(basename "$(dirname "$dir")")
+  cfg="$dir/opencode.json"
   tok="$secrets/agent_token_$name"
   if ! sudo test -f "$tok"; then
     echo "$name: no server token file, skipped"
     continue
   fi
-  if ! sudo test -f "$cfg"; then
-    echo "$name: no config at $cfg, skipped"
-    continue
+  if sudo test -f "$cfg"; then
+    owner=$(sudo stat -c '%U:%G' "$cfg")
+    mode=$(sudo stat -c '%a' "$cfg")
+    sudo cp -p "$cfg" "$cfg.bak-$stamp"
+  else
+    # A new agent's first config: owned like its directory, readable by that agent only.
+    owner=$(sudo stat -c '%U:%G' "$dir")
+    mode=600
   fi
-  owner=$(sudo stat -c '%U:%G' "$cfg")
-  mode=$(sudo stat -c '%a' "$cfg")
-  sudo cp -p "$cfg" "$cfg.bak-$stamp"
   sudo env NAME="$name" TOK="$tok" KEY="$secrets/deploy_api_key" CFG="$cfg" python3 - <<'PY'
 import json, os
 token = open(os.environ["TOK"]).read().strip()

@@ -19,6 +19,10 @@
     "resolver": {
       "template": "resolver.opencode.json",
       "skill": "resolver"
+    },
+    "profiler": {
+      "template": "profiler.opencode.json",
+      "skill": "profiler"
     }
   }
 }
