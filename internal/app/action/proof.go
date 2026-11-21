@@ -43,18 +43,18 @@ type OverlaySandbox interface {
 	RunOverlay(ctx context.Context, j ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error)
 }
 
-// ProofConfig wires one proof use case. Every field is required: a run without a model, a sandbox, a code reader or a
-// price could prove nothing, or could not see its own spend.
+// ProofConfig wires one proof use case. Every field is required: a run without an agent loop, a sandbox or a code
+// reader could prove nothing.
 type ProofConfig struct {
-	Model   ports.ModelChat
+	// Loop is the one agent loop of the product (internal/app/agentloop). It holds the model and its price, and it
+	// refuses a model call whose worst case could pass the run's caps, so this package never sees an unpaid call.
+	Loop    ports.AgentLoop
 	Sandbox OverlaySandbox
 	// Code reads the base version of a file, for the tree with the suspected lines reverted.
 	Code  ports.CodeReader
 	Clock ports.Clock
-	// ModelName is the model id the run records and bills.
+	// ModelName is the model id the run sends to the loop and records.
 	ModelName string
-	// Price is the model's price. A run with no price is blind to its spend, so NewProof refuses one.
-	Price ModelPrice
 }
 
 // Claim is one third-party comment the ingest step turned into a candidate (ACTION_MODE 6). The proof run gives it to
@@ -162,7 +162,7 @@ type ProofResult struct {
 	Trivial proof.Decision
 	// Turns and Stop say how the loop ended, and StopDetail holds its words when it failed.
 	Turns      int
-	Stop       loopStop
+	Stop       ports.AgentStop
 	StopDetail string
 }
 
@@ -176,8 +176,8 @@ type Proof struct {
 // NewProof checks the wiring. A miswired run fails at boot, not after a model has been paid for.
 func NewProof(cfg ProofConfig) (*Proof, error) {
 	switch {
-	case cfg.Model == nil:
-		return nil, errors.New("action proof: the model port is required")
+	case cfg.Loop == nil:
+		return nil, errors.New("action proof: the agent loop is required")
 	case cfg.Sandbox == nil:
 		return nil, errors.New("action proof: the sandbox port is required: PR code runs only in it")
 	case cfg.Code == nil:
@@ -186,8 +186,6 @@ func NewProof(cfg ProofConfig) (*Proof, error) {
 		return nil, errors.New("action proof: the clock is required")
 	case cfg.ModelName == "":
 		return nil, errors.New("action proof: the model name is required")
-	case !cfg.Price.valid():
-		return nil, errors.New("action proof: a positive price for the model is required: without it the cap cannot see the spend")
 	}
 	return &Proof{cfg: cfg}, nil
 }
@@ -199,7 +197,6 @@ func (p *Proof) Run(ctx context.Context, in ProofIn) (ProofResult, error) {
 		return ProofResult{}, err
 	}
 	r := &proofRun{p: p, in: in, act: in.Action.Effective()}
-	r.budget = newRunBudget(r.act.Budget, p.cfg.Price)
 	r.res = ProofResult{Head: in.Head, Base: in.Base, PolicyHash: in.PolicyHash, WorkflowRun: in.WorkflowRun,
 		Model: p.cfg.ModelName}
 	runErr := r.execute(ctx)
@@ -211,17 +208,18 @@ func (p *Proof) Run(ctx context.Context, in ProofIn) (ProofResult, error) {
 	if err != nil {
 		return r.res, fmt.Errorf("action proof on %s: %w", in.ChangeID, err)
 	}
-	r.res.Artifact, r.res.Spend = raw, r.budget.spent
+	r.res.Artifact, r.res.Spend = raw, r.spent
 	return r.res, runErr
 }
 
 // proofRun is the state of one Run call. It holds no state between runs: a new head is a new run.
 type proofRun struct {
-	p      *Proof
-	in     ProofIn
-	act    policy.Action
-	budget *runBudget
-	res    ProofResult
+	p   *Proof
+	in  ProofIn
+	act policy.Action
+	// spent is what the loop reported: the cost and the tokens of every answer.
+	spent proof.Spend
+	res   ProofResult
 	// stop is a reason this package found that ends the run unknown, in addition to the loop's own stop.
 	stop proof.Reason
 	// proposals are the findings the model asked to have proven, in the order it made them.
@@ -260,7 +258,7 @@ func (r *proofRun) monthlyStop() proof.Reason {
 // outcome turns the facts of the run into the one answer the gate shows.
 func (r *proofRun) outcome() proof.Outcome {
 	return proof.Evaluate(proof.Facts{Action: r.act, Trivial: r.res.Trivial, Stop: r.stopReason(),
-		Tests: r.testFacts(), Findings: r.findings(), Spend: r.budget.spent})
+		Tests: r.testFacts(), Findings: r.findings(), Spend: r.spent})
 }
 
 // stopReason is the reason the run ended before it finished, or "". A reason this package found wins over the loop's,
@@ -270,17 +268,17 @@ func (r *proofRun) stopReason() proof.Reason {
 		return r.stop
 	}
 	switch r.res.Stop {
-	case loopSubmitted, loopNoSubmission:
+	case ports.AgentStopDone:
 		// The model said it was done, or answered with text and nothing to do. The run's results stand; a run with no
 		// proposal is "not reproduced", which is not a pass.
 		return ""
-	case loopBudget:
+	case ports.AgentStopBudget:
 		return proof.ReasonBudget
-	case loopDeadline:
+	case ports.AgentStopDeadline:
 		return proof.ReasonDeadline
-	case loopCancelled:
+	case ports.AgentStopCancelled:
 		return proof.ReasonSuperseded
-	case loopRefused, loopTurnCap, loopModelError:
+	case ports.AgentStopRefused, ports.AgentStopTurns, ports.AgentStopError:
 		return proof.ReasonModelFailure
 	}
 	return proof.ReasonModelFailure

@@ -18,6 +18,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/action"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/agentloop"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/external"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -30,6 +31,10 @@ import (
 // Component test of the proof use case (ACTION_MODE 4, 5.2, 6, 7; work package AM14b). Every port is an in-memory fake
 // in this file: a scripted model, a fake sandbox that answers per test name, a fake code reader and a real temporary
 // directory for the head checkout. The test drives app.action.Proof through its public API only.
+//
+// The agent loop is the product's own, agentloop.Runner, wired here over the scripted model. Only this test file
+// imports it: the dependency rule (R3) restricts production imports, and the point of the test is that the proof run
+// works with the loop that ships. proof_loop_port_test.go drives the same use case through a fake ports.AgentLoop.
 
 const (
 	proofRepo = change.Repo("acme/shop")
@@ -265,23 +270,30 @@ type evidenceClock struct{ now time.Time }
 
 func (c evidenceClock) Now() time.Time { return c.now }
 
-// newProof wires one Proof with the harness's fakes and the given price.
-func (h *proofHarness) newProof(price action.ModelPrice) (*action.Proof, error) {
-	return action.NewProof(action.ProofConfig{Model: h.model, Sandbox: h.sandbox, Code: h.code, Clock: h.clock,
-		ModelName: "deepseek/deepseek-v4-flash", Price: price})
+// loopFor is the product's agent loop over the scripted model, with the given price.
+func (h *proofHarness) loopFor(t *testing.T, price ports.ModelPrice) ports.AgentLoop {
+	t.Helper()
+	l, err := agentloop.NewRunner(h.model, h.clock, price)
+	require.NoError(t, err)
+	return l
 }
 
-// run executes one proof run.
-func (h *proofHarness) run(t *testing.T, price action.ModelPrice) (action.ProofResult, error) {
+// config is the proof wiring of the harness over the given loop and sandbox.
+func (h *proofHarness) config(loop ports.AgentLoop, sandbox action.OverlaySandbox) action.ProofConfig {
+	return action.ProofConfig{Loop: loop, Sandbox: sandbox, Code: h.code, Clock: h.clock, ModelName: "deepseek/deepseek-v4-flash"}
+}
+
+// run executes one proof run with the product's loop at the given price.
+func (h *proofHarness) run(t *testing.T, price ports.ModelPrice) (action.ProofResult, error) {
 	t.Helper()
-	p, err := h.newProof(price)
+	p, err := action.NewProof(h.config(h.loopFor(t, price), h.sandbox))
 	require.NoError(t, err)
 	return p.Run(t.Context(), h.in)
 }
 
 // cheapPrice is a price low enough that a few answers stay far under the default per-PR cap.
-func cheapPrice() action.ModelPrice {
-	return action.ModelPrice{InputPerM: 0.09, CachedInputPerM: 0.018, OutputPerM: 0.18}
+func cheapPrice() ports.ModelPrice {
+	return ports.ModelPrice{InputPerM: 0.09, CachedInputPerM: 0.018, OutputPerM: 0.18}
 }
 
 // proposeArgs is one proposal of the bug on sourcePath.
@@ -377,7 +389,7 @@ func TestATrivialDocsChangeCostsNothing(t *testing.T) {
 func TestTheBudgetStopsTheRunBeforeTheCallThatWouldPassTheCap(t *testing.T) {
 	h := newProofHarness(t, []modelStep{toolCall("c1", "finish_review", map[string]any{}, 0.001)})
 
-	res, err := h.run(t, action.ModelPrice{InputPerM: 5000, CachedInputPerM: 5000, OutputPerM: 5000})
+	res, err := h.run(t, ports.ModelPrice{InputPerM: 5000, CachedInputPerM: 5000, OutputPerM: 5000})
 	require.NoError(t, err)
 
 	require.Equal(t, proof.KindUnknown, res.Outcome.Kind)
@@ -471,8 +483,7 @@ func TestAFlakyHeadRunProvesNothing(t *testing.T) {
 	flaky := &flakySandbox{fakeSandbox: h.sandbox, call: map[int]ports.SandboxResult{
 		2: {Passed: 1, Tests: []ports.TestResult{{Name: testName, Outcome: ports.OutcomePassed}}},
 	}}
-	p, err := action.NewProof(action.ProofConfig{Model: h.model, Sandbox: flaky, Code: h.code, Clock: h.clock,
-		ModelName: "deepseek/deepseek-v4-flash", Price: cheapPrice()})
+	p, err := action.NewProof(h.config(h.loopFor(t, cheapPrice()), flaky))
 	require.NoError(t, err)
 	res, err := p.Run(t.Context(), h.in)
 	require.NoError(t, err)
@@ -562,24 +573,25 @@ func TestTheMonthlyCapStopsARunBeforeItStarts(t *testing.T) {
 	require.Empty(t, h.model.requests)
 }
 
-// TestNewProofNeedsTheSandboxAndAPrice refuses a wiring that could run PR code unsandboxed, or bill without a price.
-func TestNewProofNeedsTheSandboxAndAPrice(t *testing.T) {
+// TestNewProofNeedsTheLoopAndTheSandbox refuses a wiring that could run PR code unsandboxed, or run with no loop.
+func TestNewProofNeedsTheLoopAndTheSandbox(t *testing.T) {
 	h := newProofHarness(t, nil)
-	base := action.ProofConfig{Model: h.model, Sandbox: h.sandbox, Code: h.code, Clock: h.clock,
-		ModelName: "deepseek/deepseek-v4-flash", Price: cheapPrice()}
+	base := h.config(h.loopFor(t, cheapPrice()), h.sandbox)
 	_, err := action.NewProof(base)
 	require.NoError(t, err)
 	for name, mutate := range map[string]func(*action.ProofConfig){
-		"no model":    func(c *action.ProofConfig) { c.Model = nil },
+		"no loop":     func(c *action.ProofConfig) { c.Loop = nil },
 		"no sandbox":  func(c *action.ProofConfig) { c.Sandbox = nil },
 		"no code":     func(c *action.ProofConfig) { c.Code = nil },
 		"no clock":    func(c *action.ProofConfig) { c.Clock = nil },
 		"no model id": func(c *action.ProofConfig) { c.ModelName = "" },
-		"no price":    func(c *action.ProofConfig) { c.Price = action.ModelPrice{} },
 	} {
 		cfg := base
 		mutate(&cfg)
 		_, err := action.NewProof(cfg)
 		require.Error(t, err, name)
 	}
+	// A loop with no price cannot be built at all, so a proof run never bills blind.
+	_, err = agentloop.NewRunner(h.model, h.clock, ports.ModelPrice{})
+	require.Error(t, err)
 }
