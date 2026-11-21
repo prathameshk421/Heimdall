@@ -190,17 +190,23 @@ func checkCase(ctx context.Context, r runner, cache string, c bench.Case) caseRe
 }
 
 func runCheck(ctx context.Context, r runner, cache string, c bench.Case) caseResult {
-	if c.Language != "go" {
+	runner := c.Runner()
+	if runner == "" {
 		return caseResult{Outcome: bench.OutcomeSkipped, Reason: "no runner for " + c.Language + " yet"}
 	}
 	rp, err := openRepo(ctx, r, cache, c)
 	if err != nil {
 		return errorf("open cache: %v", err)
 	}
-	if c.Kind == bench.KindBug {
+	switch {
+	case runner == bench.ToolchainGo && c.Kind == bench.KindBug:
 		return checkBug(ctx, rp, c)
+	case runner == bench.ToolchainGo:
+		return checkClean(ctx, rp, c)
+	case c.Kind == bench.KindBug:
+		return checkToolBug(ctx, rp, c)
 	}
-	return checkClean(ctx, rp, c)
+	return checkToolClean(ctx, rp, c)
 }
 
 // writeDiagnostic writes a progress or error line. A failed write to stderr has nowhere better to go.
@@ -226,24 +232,33 @@ func runTruth(ctx context.Context, args []string, stdout, stderr io.Writer, r ru
 		return exitUsage, err
 	}
 	c := cases[0]
-	if c.Kind != bench.KindBug || c.Language != "go" {
-		return exitUsage, fmt.Errorf("truth: %s is not a Go bug case", c.ID)
+	if c.Kind != bench.KindBug || c.Runner() == "" {
+		return exitUsage, fmt.Errorf("truth: %s is not a bug case with a runner", c.ID)
 	}
-	rp, err := openRepo(ctx, r, common.cache, c)
+	truth, err := fixTruth(ctx, r, common.cache, c)
 	if err != nil {
 		return exitDisagree, err
 	}
-	if err := rp.fetch(ctx, c.Fix.SHA, c.Fix.Parent); err != nil {
-		return exitDisagree, err
-	}
-	files, err := rp.diff(ctx, c.Fix.Parent, c.Fix.SHA)
-	if err != nil {
-		return exitDisagree, err
-	}
-	b, err := yaml.Marshal(map[string][]bench.FileTruth{"truth": bench.GoTruth(files)})
+	b, err := yaml.Marshal(map[string][]bench.FileTruth{"truth": truth})
 	if err != nil {
 		return exitDisagree, fmt.Errorf("encode truth: %w", err)
 	}
 	_, err = stdout.Write(b)
 	return exitAgrees, err
+}
+
+// fixTruth fetches a bug case's fix and computes the truth of its diff.
+func fixTruth(ctx context.Context, r runner, cache string, c bench.Case) ([]bench.FileTruth, error) {
+	rp, err := openRepo(ctx, r, cache, c)
+	if err != nil {
+		return nil, err
+	}
+	if err := rp.fetch(ctx, c.Fix.SHA, c.Fix.Parent); err != nil {
+		return nil, err
+	}
+	files, err := rp.diff(ctx, c.Fix.Parent, c.Fix.SHA)
+	if err != nil {
+		return nil, err
+	}
+	return toolTruth(ctx, rp, c, files)
 }

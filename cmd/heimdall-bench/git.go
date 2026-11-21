@@ -15,7 +15,8 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/bench"
 )
 
-// runner runs one external command. Only git and go run through it, plus a clean case's test command.
+// runner runs one external command: git, go, a clean case's test command, or env with a cargo or vitest case's
+// install and test commands.
 type runner interface {
 	run(ctx context.Context, dir, name string, args ...string) (stdout, stderr []byte, err error)
 }
@@ -39,12 +40,13 @@ type repo struct {
 	r      runner
 	gitDir string
 	work   string // the parent directory of this repo's worktrees
+	cache  string // the bench cache root: the cargo and pnpm caches live under it
 }
 
 // openRepo opens the cache of the case's repository under root, and creates it on first use.
 func openRepo(ctx context.Context, r runner, root string, c bench.Case) (*repo, error) {
 	name := strings.ReplaceAll(c.RepoSlug(), "/", "__")
-	rp := &repo{r: r, gitDir: filepath.Join(root, "repos", name+".git"), work: filepath.Join(root, "work", name)}
+	rp := &repo{r: r, gitDir: filepath.Join(root, "repos", name+".git"), work: filepath.Join(root, "work", name), cache: root}
 	// #nosec G703 -- root is the operator's -cache flag and name comes from the manifest's repo slug, never a request
 	if err := os.MkdirAll(rp.work, 0o750); err != nil {
 		return nil, fmt.Errorf("make work dir: %w", err)
@@ -57,7 +59,7 @@ func openRepo(ctx context.Context, r runner, root string, c bench.Case) (*repo, 
 	}
 	steps := [][]string{
 		{"init", "--quiet", "--bare", rp.gitDir},
-		{"--git-dir", rp.gitDir, "remote", "add", "origin", c.Repo + ".git"},
+		{"--git-dir", rp.gitDir, "remote", "add", "origin", c.Remote() + ".git"},
 		{"--git-dir", rp.gitDir, "config", "remote.origin.promisor", "true"},
 		{"--git-dir", rp.gitDir, "config", "remote.origin.partialclonefilter", "blob:none"},
 		{"--git-dir", rp.gitDir, "config", "extensions.partialClone", "origin"},

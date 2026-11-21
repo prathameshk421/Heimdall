@@ -52,13 +52,19 @@ type FileTruth struct {
 type Case struct {
 	ID          string        `yaml:"id"`
 	Repo        string        `yaml:"repo"`
+	Mirror      string        `yaml:"mirror"` // optional: a synced fork the bench fetches from instead of repo
 	Language    string        `yaml:"language"`
+	Toolchain   Toolchain     `yaml:"toolchain"` // empty means go test for a Go case (toolchain.go)
 	Kind        Kind          `yaml:"kind"`
 	Status      Status        `yaml:"status"`
 	Reason      string        `yaml:"reason"`
 	Change      Commit        `yaml:"change"` // the intro change (bug) or the merged PR (clean)
 	Fix         *Commit       `yaml:"fix"`
 	TestCommand string        `yaml:"test_command"`
+	Workdir     string        `yaml:"workdir"` // cargo and vitest: the directory where install and the tests run
+	Install     []string      `yaml:"install"` // cargo and vitest: commands that run once per tree before the tests
+	Sparse      []string      `yaml:"sparse"`  // non-cone sparse-checkout patterns; empty means the whole tree
+	Tests       []string      `yaml:"tests"`   // cargo and vitest bug cases: the fix's target tests
 	Timeout     time.Duration `yaml:"timeout"`
 	Description string        `yaml:"description"`
 	Truth       []FileTruth   `yaml:"truth"`
@@ -67,6 +73,14 @@ type Case struct {
 
 // RepoSlug returns owner/name of the case's GitHub repository.
 func (c Case) RepoSlug() string { return strings.TrimPrefix(c.Repo, "https://github.com/") }
+
+// Remote returns the URL the bench fetches from: the mirror when the case names one, else the repository.
+func (c Case) Remote() string {
+	if c.Mirror != "" {
+		return c.Mirror
+	}
+	return c.Repo
+}
 
 // Manifest is the whole dataset.
 type Manifest struct {
@@ -82,7 +96,7 @@ var (
 	spanPattern = regexp.MustCompile(`^([0-9]+)(?:-([0-9]+))?$`)
 )
 
-// languages are the languages a case may name. Only go has a runner today.
+// languages are the languages a case may name. Go, Rust, TypeScript and JavaScript have runners (toolchain.go).
 func languages() []string {
 	return []string{"go", "python", "typescript", "javascript", "java", "rust"}
 }
@@ -124,12 +138,11 @@ func checkCase(c Case) []error {
 	if !idPattern.MatchString(c.ID) {
 		add("id %q: use lower-case letters, digits and dashes", c.ID)
 	}
-	if !repoPattern.MatchString(c.Repo) {
-		add("repo %q: want https://github.com/owner/name", c.Repo)
-	}
+	errs = append(errs, checkRepo(c)...)
 	if !slices.Contains(languages(), c.Language) {
 		add("language %q: want one of %v", c.Language, languages())
 	}
+	errs = append(errs, checkToolchain(c)...)
 	errs = append(errs, checkCommit("change", c.Change)...)
 	errs = append(errs, checkKind(c)...)
 	errs = append(errs, checkStatus(c)...)
@@ -149,6 +162,18 @@ func checkCase(c Case) []error {
 		if !strings.HasPrefix(s, "https://") {
 			add("source %q: want an https URL", s)
 		}
+	}
+	return errs
+}
+
+// checkRepo checks the repository and the optional mirror the bench fetches from.
+func checkRepo(c Case) []error {
+	var errs []error
+	if !repoPattern.MatchString(c.Repo) {
+		errs = append(errs, fmt.Errorf("repo %q: want https://github.com/owner/name", c.Repo))
+	}
+	if c.Mirror != "" && !repoPattern.MatchString(c.Mirror) {
+		errs = append(errs, fmt.Errorf("mirror %q: want https://github.com/owner/name", c.Mirror))
 	}
 	return errs
 }

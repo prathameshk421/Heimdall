@@ -14,13 +14,16 @@ func caseList() []bench.Case {
 		{ID: "clean-ok", Kind: bench.KindClean, Language: "go", Status: bench.StatusValid},
 		{ID: "bad", Kind: bench.KindBug, Language: "go", Status: bench.StatusInvalid},
 		{ID: "python-ok", Kind: bench.KindBug, Language: "python", Status: bench.StatusValid},
+		{ID: "ts-ok", Kind: bench.KindBug, Language: "typescript", Toolchain: bench.ToolchainVitest, Status: bench.StatusValid},
+		{ID: "rust-ok", Kind: bench.KindBug, Language: "rust", Toolchain: bench.ToolchainCargo, Status: bench.StatusValid},
+		{ID: "ts-pending", Kind: bench.KindBug, Language: "typescript", Status: bench.StatusPending},
 	}
 }
 
-func TestPickCasesTakesOnlyValidGoCases(t *testing.T) {
+func TestPickCasesTakesOnlyValidCasesWithARunner(t *testing.T) {
 	got, err := pickCases(caseList(), nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"bug-ok", "clean-ok"}, ids(got))
+	require.Equal(t, []string{"bug-ok", "clean-ok", "ts-ok", "rust-ok"}, ids(got))
 }
 
 func TestPickCasesKeepsTheAskedOrderAndSet(t *testing.T) {
@@ -29,8 +32,8 @@ func TestPickCasesKeepsTheAskedOrderAndSet(t *testing.T) {
 	require.Equal(t, []string{"bug-ok", "clean-ok"}, ids(got), "the run keeps the manifest order, not the flag order")
 }
 
-func TestPickCasesRefusesAnIDThatIsNotAValidGoCase(t *testing.T) {
-	for _, id := range []string{"bad", "python-ok", "missing"} {
+func TestPickCasesRefusesAnIDThatIsNotAValidCaseWithARunner(t *testing.T) {
+	for _, id := range []string{"bad", "python-ok", "missing", "ts-pending"} {
 		_, err := pickCases(caseList(), []string{id})
 		require.ErrorContains(t, err, id, "a named case that cannot be scored is an error, not a silent skip")
 	}

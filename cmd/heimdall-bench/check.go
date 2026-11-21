@@ -26,8 +26,9 @@ type caseResult struct {
 	Before   *bench.Run        `json:"before,omitempty"`
 	After    *bench.Run        `json:"after,omitempty"`
 	Intro    *bench.Evidence   `json:"intro,omitempty"`
-	Truth    []bench.FileTruth `json:"truth,omitempty"` // computed from the fix diff
-	Manifest string            `json:"manifest"`        // "agrees", or what to change in the manifest
+	Truth    []bench.FileTruth `json:"truth,omitempty"`  // computed from the fix diff
+	Timing   *timing           `json:"timing,omitempty"` // cargo and vitest: install and test time
+	Manifest string            `json:"manifest"`         // "agrees", or what to change in the manifest
 }
 
 // target is the set of fix tests in one Go package directory.

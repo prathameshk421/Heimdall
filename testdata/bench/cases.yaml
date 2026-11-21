@@ -367,3 +367,338 @@ cases:
     timeout: 5m
     description: KAN-26 caps a single payment at 1000000 in every currency; three reviews had no findings and a person approved it.
     sources: [https://github.com/aarush323/heimdall-fixture-pay/pull/16]
+
+# pingdotgg/t3code (TypeScript and Rust), P2.1d. Every SHA was read with GET calls only (gh api, 2026-11-21); the
+# bench fetches from the owner's synced fork (mirror). change is the intro by blame: the newest commit that last
+# touched the fix's old-side source lines. Intro evidence in docs/sota/BENCH.md says how often that holds.
+
+  - id: t3code-5025
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: bug
+    status: valid
+    change: {sha: 6b3050ee740f510ad06c12a91ecd7e338792dce0, parent: 83f0cc9e31b8c38cc3ecd3c394f882ce9ee3714f, url: https://github.com/pingdotgg/t3code/pull/2851}
+    fix: {sha: 32407df9c5ffd3c5dda2e745568997ac33c15ed1, parent: 162e774294f9e3dda15ca2f8083db019fe398837, url: https://github.com/pingdotgg/t3code/pull/5025}
+    workdir: packages/shared
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run
+    tests:
+      - "packages/shared/src/schemaJson.test.ts:schemaJson helpers > preserves commas before brackets inside string values"
+    timeout: 10m
+    description: "The lenient JSON parser deletes a comma inside a string value when a bracket follows it."
+    truth:
+      - file: packages/shared/src/schemaJson.ts
+        lines: ["193-194"]
+    sources: [https://github.com/pingdotgg/t3code/pull/5025, https://github.com/pingdotgg/t3code/pull/2851]
+
+  - id: t3code-6189
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: bug
+    status: valid
+    change: {sha: d114e2772d059c04460a7e0c25e19ac0c2468f14, parent: 0418301de79bb7b6f82305236325cb9811615e9e, url: https://github.com/pingdotgg/t3code/pull/3829}
+    fix: {sha: 6befe42eb09633f3adb500ae906a0e1da3f15f64, parent: b30a9bc4143910f12d9c990c221fb9bc20cbc293, url: https://github.com/pingdotgg/t3code/pull/6189}
+    workdir: packages/shared
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run
+    tests:
+      - "packages/shared/src/path.test.ts:path helpers > normalizes a bare Windows drive root the same as one with a trailing separator"
+    timeout: 10m
+    description: "A bare Windows drive root (C:) does not normalize to the same path as the root with a trailing separator."
+    truth:
+      - file: packages/shared/src/path.ts
+        lines: ["25"]
+    sources: [https://github.com/pingdotgg/t3code/pull/6189, https://github.com/pingdotgg/t3code/pull/3829]
+
+  - id: t3code-6175
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: bug
+    status: valid
+    change: {sha: 6d7fe2eeb7d2731da3f7f69988056ff7a5d3b921, parent: 460d9c3eb977bc0341876527af7fde591133925f, url: https://github.com/pingdotgg/t3code/pull/2435}
+    fix: {sha: 178da6bc3210b82c4a83f33c8b149f623a3375e1, parent: ddee418a8d6d3e242ca26a8053a886ecc3b56b53, url: https://github.com/pingdotgg/t3code/pull/6175}
+    workdir: packages/shared
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run
+    tests:
+      - "packages/shared/src/sourceControl.test.ts:detectSourceControlProviderFromRemoteUrl > does not match provider names embedded in unrelated DNS labels"
+      - "packages/shared/src/sourceControl.test.ts:detectSourceControlProviderFromRemoteUrl > matches self-hosted providers by complete DNS labels"
+      - "packages/shared/src/sourceControl.test.ts:detectSourceControlProviderFromRemoteUrl > preserves ports while classifying by hostname"
+    timeout: 10m
+    description: "Source-control provider detection matches a provider name inside an unrelated DNS label of the remote host."
+    truth:
+      - file: packages/shared/src/sourceControl.ts
+        lines: ["169-170", "171", "175", "191"]
+    sources: [https://github.com/pingdotgg/t3code/pull/6175, https://github.com/pingdotgg/t3code/pull/2435]
+
+  - id: t3code-6670
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: bug
+    status: valid
+    change: {sha: 8101cd044911c7dc2a2adf7c7a9ba7962abf57b6, parent: 30164cb1ba8ea05fdd6be69215dba2cc2f0e2aa8, url: https://github.com/pingdotgg/t3code/pull/5684}
+    fix: {sha: 684d703b0a8a0632a18c8453277f7e5e6312b200, parent: 40ab7bf32a81a66b20571ed280dc238c2276dc61, url: https://github.com/pingdotgg/t3code/pull/6670}
+    workdir: packages/shared
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run
+    tests:
+      - "packages/shared/src/usageFormat.test.ts:hourly usage formatting > builds an exact minute-aligned 24-hour request"
+      - "packages/shared/src/usageFormat.test.ts:hourly usage formatting > degrades an unknown resolved zone to UTC instead of crashing"
+    timeout: 10m
+    description: "Usage windows crash when the system reports a time zone that Intl does not know."
+    truth:
+      - file: packages/shared/src/usageFormat.ts
+        lines: ["182-188"]
+    sources: [https://github.com/pingdotgg/t3code/pull/6670, https://github.com/pingdotgg/t3code/pull/5684]
+
+  - id: t3code-12537
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: bug
+    status: valid
+    change: {sha: 7ce4194707e2a883ccd6a44fd2e07eba08f5369a, parent: dc0ff8f13eaa9753fdf0de60203c9e819f1cee27, url: https://github.com/pingdotgg/t3code/pull/3649}
+    fix: {sha: 29a32660d3cb2ade1f13283f889b519f73b24fbd, parent: dd8332da57355bccd7e666289267f2c94597debd, url: https://github.com/pingdotgg/t3code/pull/12537}
+    workdir: packages/shared
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run
+    tests:
+      - "packages/shared/src/sourceControl.test.ts:detectSourceControlProviderFromRemoteUrl > does not reuse SSH ports for HTTPS provider URLs"
+    timeout: 10m
+    description: "The HTTPS provider URL built from an SSH remote keeps the SSH port."
+    truth:
+      - file: packages/shared/src/sourceControl.ts
+        lines: ["148-149", "161"]
+    sources: [https://github.com/pingdotgg/t3code/pull/12537, https://github.com/pingdotgg/t3code/pull/3649]
+
+  - id: t3code-11425
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: bug
+    status: valid
+    change: {sha: 4fed6cfb3517ef9af9b2a361142152c079504530, parent: ca6416ec2d1d194738bc78a81df4b82a75cb72e2, url: https://github.com/pingdotgg/t3code/pull/11265}
+    fix: {sha: f1add18ae1560f509405a5eece07f3cfb1cc850f, parent: 21e2b7de0062a3c1dca7209ca48b736dd9a36c84, url: https://github.com/pingdotgg/t3code/pull/11425}
+    workdir: packages/shared
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run
+    tests:
+      - "packages/shared/src/delimitedPreview.test.ts:delimited file previews > with delimiter \",\" > does not invent records for empty input or a trailing line ending"
+      - "packages/shared/src/delimitedPreview.test.ts:delimited file previews > with delimiter \",\" > keeps a quoted empty record at the row limit"
+      - "packages/shared/src/delimitedPreview.test.ts:delimited file previews > with delimiter \",\" > preserves a final quoted empty record without requiring a line ending"
+      - "packages/shared/src/delimitedPreview.test.ts:delimited file previews > with delimiter \"\\t\" > does not invent records for empty input or a trailing line ending"
+      - "packages/shared/src/delimitedPreview.test.ts:delimited file previews > with delimiter \"\\t\" > keeps a quoted empty record at the row limit"
+      - "packages/shared/src/delimitedPreview.test.ts:delimited file previews > with delimiter \"\\t\" > preserves a final quoted empty record without requiring a line ending"
+    timeout: 10m
+    description: "The delimited file preview drops a final quoted empty record."
+    truth:
+      - file: packages/shared/src/delimitedPreview.ts
+        lines: ["18-19", "24", "43-44", "49"]
+    sources: [https://github.com/pingdotgg/t3code/pull/11425, https://github.com/pingdotgg/t3code/pull/11265]
+
+  - id: t3code-12763
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: bug
+    status: valid
+    change: {sha: 25d20ab7928c6aed5f613f4c3319394635869250, parent: 7307079d4063a5c546a4c277dcc3b6594b41a846, url: https://github.com/pingdotgg/t3code/commit/25d20ab7928c6aed5f613f4c3319394635869250}
+    fix: {sha: 80d9c181da41ee3890791c9b65018ce093e7bc9e, parent: d2a90b921a5843654a58448d0bc59828e1e3ccc4, url: https://github.com/pingdotgg/t3code/pull/12763}
+    workdir: packages/contracts
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/contracts... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run
+    tests:
+      - "packages/contracts/src/orchestration.test.ts:decodes a legacy message-sent event persisted without turnId"
+    timeout: 10m
+    description: "An old message-sent event persisted without turnId fails to decode, so the server does not start."
+    truth:
+      - file: packages/contracts/src/orchestration.ts
+        lines: ["1896"]
+    sources: [https://github.com/pingdotgg/t3code/pull/12763]
+
+  - id: t3code-32169
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: bug
+    status: valid
+    change: {sha: 932df4ed17ff9465053e3a1bbfdd6d2ba23500f0, parent: 63859aa072249c64153ef20faeb46018154724b8, url: https://github.com/pingdotgg/t3code/pull/2504}
+    fix: {sha: 2e0353daaeb32a497b3fff012797e1ee949a4551, parent: c910b1bbe957858da61fe889781ffd0b9ebf0e85, url: https://github.com/pingdotgg/t3code/pull/32169}
+    workdir: packages/shared
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run --config ../../vite.config.ts --dir .
+    tests:
+      - "packages/shared/src/semver.test.ts:semver helpers > compares prerelease versions before stable versions"
+    timeout: 10m
+    description: "Prerelease versions compare with the locale and lose precision on large numeric identifiers."
+    truth:
+      - file: packages/shared/src/semver.ts
+        lines: ["84", "92"]
+    sources: [https://github.com/pingdotgg/t3code/pull/32169, https://github.com/pingdotgg/t3code/pull/2504]
+
+  - id: t3code-38193
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: bug
+    status: valid
+    change: {sha: 40c0ab088308fb010a3db488c545f10aa7179ed2, parent: 33f1cb422461bf0f072b9f181734e9b654d1ca69, url: https://github.com/pingdotgg/t3code/pull/2892}
+    fix: {sha: b91ea5443c2a597899432c99be3d9b4a48058e09, parent: 983654b3b2f7267a69e3d5d049d781aadbbc3166, url: https://github.com/pingdotgg/t3code/pull/38193}
+    workdir: packages/shared
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run --config ../../vite.config.ts --dir .
+    tests:
+      - "packages/shared/src/cliArgs.test.ts:tokenizeCliArgs > preserves quoted values and escaped spaces"
+    timeout: 10m
+    description: "The launch argument tokenizer splits values on Unicode whitespace that sits inside quotes."
+    truth:
+      - file: packages/shared/src/cliArgs.ts
+        lines: ["46"]
+    sources: [https://github.com/pingdotgg/t3code/pull/38193, https://github.com/pingdotgg/t3code/pull/2892]
+
+  - id: t3code-39217
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: bug
+    status: valid
+    change: {sha: 31706f3d41edd605aaba676bd75d9f77b260f4c2, parent: ea6d3fc30fb066635f31326f49b85cdee8fbf8d7, url: https://github.com/pingdotgg/t3code/pull/38150}
+    fix: {sha: 3b4041a97a5ca84c4b8a3dac71287cf82190c7a7, parent: 8edefc8818aed1222428af5cf4d92df3bf566689, url: https://github.com/pingdotgg/t3code/pull/39217}
+    workdir: packages/shared
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run --config ../../vite.config.ts --dir .
+    tests:
+      - "packages/shared/src/themeCss.test.ts:themeCssLoadsRemoteFiles > .a::after { content: \"say \\\"@import\\\"\"; }"
+      - "packages/shared/src/themeCss.test.ts:themeCssLoadsRemoteFiles > .a::after { content: \"/*\"; } /* note */ .b::after { content: \"@import\"; }"
+      - "packages/shared/src/themeCss.test.ts:themeCssLoadsRemoteFiles > /* @import \"x.css\"; */ .a::after { content: \"*/\"; }"
+      - "packages/shared/src/themeCss.test.ts:themeCssLoadsRemoteFiles > .a { background-image: url(data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%3E%3C!--/*@import*/--%3E%3C/svg%3E); }"
+      - "packages/shared/src/themeCss.test.ts:themeCssLoadsRemoteFiles > .a\\\" {} @import \"x.css\"; .b\\\" {}"
+      - "packages/shared/src/themeCss.test.ts:themeCssLoadsRemoteFiles > .a::after { content: \"\\\\\"; } @import \"x.css\";"
+      - "packages/shared/src/themeCss.test.ts:themeCssLoadsRemoteFiles > .a { background: url(https://example.invalid/x.png); }"
+    timeout: 10m
+    description: "The theme CSS check misreads escaped quotes and quoted comment markers, so it rejects safe CSS and accepts an @import."
+    truth:
+      - file: packages/shared/src/themeCss.ts
+        lines: ["6-9", "11-15", "29", "34"]
+    sources: [https://github.com/pingdotgg/t3code/pull/39217, https://github.com/pingdotgg/t3code/pull/38150]
+
+  - id: t3code-19745
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: rust
+    toolchain: cargo
+    kind: bug
+    status: valid
+    change: {sha: 163d86a78430d23414abde323ca70d8379280c0b, parent: 8e056a0e5124775b9439751667bac483d7b5320a, url: https://github.com/pingdotgg/t3code/pull/9768}
+    fix: {sha: 105ee2e2b1b295d30d703890e70c6ed4c89087b1, parent: 3fc8e5d65534ca450877176b82ec63dfb1ce29e9, url: https://github.com/pingdotgg/t3code/pull/19745}
+    workdir: native/resource-monitor
+    sparse: ["/*", "!/*/", "/.cargo/", "/native/resource-monitor/"]
+    install: ["cargo fetch --locked"]
+    test_command: cargo test --locked --offline
+    tests: ["tests::keeps_command_lines_and_memory_out_of_the_discovery_table"]
+    timeout: 10m
+    description: The resource monitor keeps command lines and memory of every macOS process, not only the selected ones.
+    truth:
+      - file: native/resource-monitor/src/main.rs
+        lines: ["23-24", "458", "565"]
+    sources: [https://github.com/pingdotgg/t3code/pull/19745]
+  - id: t3code-23426
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: rust
+    toolchain: cargo
+    kind: bug
+    status: invalid
+    reason: "The crate does not build on macOS: smithay-client-toolkit 0.19.2 imports rustix pipe_with, which rustix gates off on Apple targets. The case needs a Linux runner, and even there the fix's test calls next_event, which the fix adds, so it cannot build before the fix."
+    change: {sha: 299404a754f52c02c69634528d8856b3c93b378c, parent: 892de47f0625183edd111dd36df45b156185bbf2, url: https://github.com/pingdotgg/t3code/pull/8103}
+    fix: {sha: 5b9c1aeca80b4634bccee7572ffbcdb2fe4253b0, parent: 515330058a07edd025954ebce22d8c8e52f72bdd, url: https://github.com/pingdotgg/t3code/pull/23426}
+    workdir: native/hyprland-snap-shot
+    sparse: ["/*", "!/*/", "/.cargo/", "/native/hyprland-snap-shot/"]
+    install: ["cargo fetch --locked"]
+    test_command: cargo test --locked --offline
+    tests: ["ipc::tests::event_wait_explains_an_activation_timeout"]
+    timeout: 10m
+    description: "Hyprland SnapShot reports a read error, not that T3 Code never became visible, when the activation wait times out."
+    truth:
+      - file: native/hyprland-snap-shot/src/ipc.rs
+        lines: ["4", "164-172", "175-176"]
+    sources: [https://github.com/pingdotgg/t3code/pull/23426, https://github.com/pingdotgg/t3code/pull/8103]
+  - id: t3code-22116
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: rust
+    toolchain: cargo
+    kind: bug
+    status: invalid
+    reason: "The crate does not build on macOS: smithay-client-toolkit 0.19.2 imports rustix pipe_with, which rustix gates off on Apple targets. The case needs a Linux runner, and even there the fix's tests call captured_metadata, which the fix adds, so they cannot build before the fix."
+    change: {sha: 299404a754f52c02c69634528d8856b3c93b378c, parent: 892de47f0625183edd111dd36df45b156185bbf2, url: https://github.com/pingdotgg/t3code/pull/8103}
+    fix: {sha: e20b1d96ed35ab41797e7031b59b87e4fec72699, parent: 9bf3d559fd891aa2d3d86c2f9b64c8ec87b91fe5, url: https://github.com/pingdotgg/t3code/pull/22116}
+    workdir: native/hyprland-snap-shot
+    sparse: ["/*", "!/*/", "/.cargo/", "/native/hyprland-snap-shot/"]
+    install: ["cargo fetch --locked"]
+    test_command: cargo test --locked --offline
+    tests: ["tests::keeps_captured_metadata_when_only_the_title_spinner_ticks", "tests::drops_metadata_when_title_whitespace_changes", "tests::drops_metadata_when_the_window_identity_or_state_changed"]
+    timeout: 10m
+    description: "Hyprland SnapShot drops the captured window metadata when a CLI title spinner changes the window title."
+    truth:
+      - file: native/hyprland-snap-shot/src/ipc.rs
+        lines: ["64-65"]
+      - file: native/hyprland-snap-shot/src/main.rs
+        lines: ["16-17", "27-30"]
+    sources: [https://github.com/pingdotgg/t3code/pull/22116, https://github.com/pingdotgg/t3code/pull/8103]
+
+  - id: t3code-18289-clean
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: clean
+    status: valid
+    change: {sha: f23d0084b6e023ffb1af9e332d8666affc99d542, parent: 8ac6846a0b855c3aad70adbf745ff113d4eb3f1f, url: https://github.com/pingdotgg/t3code/pull/18289}
+    workdir: packages/source-control-github
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/contracts/", "/packages/shared/", "/packages/provider-core/", "/packages/source-control-core/", "/packages/source-control-github/", "/packages/source-control-testing/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/source-control-github... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run --config ../../vite.config.ts --dir .
+    timeout: 10m
+    description: "The GitHub GraphQL client resolves credentials once per request instead of once per call."
+    sources: [https://github.com/pingdotgg/t3code/pull/18289]
+
+  - id: t3code-10008-clean
+    repo: https://github.com/pingdotgg/t3code
+    mirror: https://github.com/prathameshk421/t3code
+    language: typescript
+    toolchain: vitest
+    kind: clean
+    status: valid
+    change: {sha: cb58dfd6453171a88183fc7bf1587bae6929c0e4, parent: 6270a6f88bea4c2fe07a43e69693a918cf94a353, url: https://github.com/pingdotgg/t3code/pull/10008}
+    workdir: packages/shared
+    sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
+    install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
+    test_command: pnpm exec vp test run
+    timeout: 10m
+    description: "Remove an unused Clerk hostname predicate from the relay auth helpers."
+    sources: [https://github.com/pingdotgg/t3code/pull/10008]
