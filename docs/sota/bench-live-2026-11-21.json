@@ -1,0 +1,397 @@
+{
+  "heimdall_commit": "badf6d4510335f7e836f1c702e278f1686157fe5",
+  "started": "2026-11-21T13:33:53Z",
+  "machine": "darwin/arm64, 8 CPUs",
+  "go_version": "go1.27.4",
+  "manifest": "testdata/bench/cases.yaml",
+  "command": "heimdall-bench review --out docs/sota/bench-live-2026-11-21.json --md docs/sota/BENCH.md --model deepseek-ai/deepseek-v4.1-flash-1017 --base-url https://api.deploy.com/api/v1 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --max-cost 3.00",
+  "model": "deepseek-ai/deepseek-v4.1-flash-1017",
+  "price": {
+    "input_per_m": 0.5,
+    "cached_input_per_m": 0.5,
+    "output_per_m": 2
+  },
+  "max_cost_usd": 3,
+  "per_case_usd": 0.5,
+  "block_severity": "medium",
+  "sandbox": "local go test in a fresh git worktree per run, as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally",
+  "seconds": 2012.587337042,
+  "summary": {
+    "scored": 9,
+    "unfinished": 1,
+    "recall": {
+      "num": 0,
+      "den": 7
+    },
+    "false_positives": {
+      "num": 0,
+      "den": 2
+    },
+    "evidence": {
+      "num": 0,
+      "den": 0
+    },
+    "unproven": {},
+    "cost_usd": 0.8587155000000001,
+    "input_tokens": 1144471,
+    "cached_input_tokens": 959232,
+    "output_tokens": 143240,
+    "cost_p50_usd": 0.064027,
+    "cost_p95_usd": 0.27877850000000004,
+    "wall_p50_seconds": 168.4,
+    "wall_p95_seconds": 512.8
+  },
+  "cases": [
+    {
+      "id": "testify-1207",
+      "kind": "bug",
+      "scored": true,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": {},
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0773475,
+      "input_tokens": 96515,
+      "cached_input_tokens": 75008,
+      "output_tokens": 14545,
+      "seconds": 168.4,
+      "head": "3c33e07c4c233bf61e1414f5acb3cda06ffef1d1",
+      "base": "e2b56b3a384eb40136b2cff13e07e932dd95bf28",
+      "fixed": "48391ba5eb8c5f49132138e67ec112d180b88f63",
+      "stop": "no_submission",
+      "turns": 9,
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "mock/mock.go",
+            "lines": [
+              "510-511"
+            ]
+          }
+        ],
+        "moved": 0,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "testify-1795",
+      "kind": "bug",
+      "scored": true,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": {},
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.064027,
+      "input_tokens": 67978,
+      "cached_input_tokens": 51200,
+      "output_tokens": 15019,
+      "seconds": 120.1,
+      "head": "b5ce16571001d6e96e1693ac891fed5c2510c651",
+      "base": "c206b2e823e70c1e4e7ca8eded9e410acc8f71be",
+      "fixed": "a0ac157f0b1f801f449e5ae43d6cce3385bc704f",
+      "stop": "no_submission",
+      "turns": 8,
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "mock/mock.go",
+            "lines": [
+              "522-524",
+              "526"
+            ]
+          }
+        ],
+        "moved": 1,
+        "edited": 1
+      },
+      "findings": null
+    },
+    {
+      "id": "gin-4702",
+      "kind": "bug",
+      "scored": true,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": {},
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.07184950000000001,
+      "input_tokens": 73271,
+      "cached_input_tokens": 44288,
+      "output_tokens": 17607,
+      "seconds": 189.7,
+      "head": "a4baac6e5e030ca707e519a3bf209d25699e3902",
+      "base": "1eb827240e520804ea83b1aafcbaf7ba728b81dd",
+      "fixed": "d9307dbcbbe796a64d9e0ef23452da888dd7f904",
+      "stop": "submitted",
+      "turns": 11,
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "context.go",
+            "lines": [
+              "679-680",
+              "691-692",
+              "695-696"
+            ]
+          }
+        ],
+        "moved": 3,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "echo-1799",
+      "kind": "bug",
+      "scored": true,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": {},
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0283565,
+      "input_tokens": 17273,
+      "cached_input_tokens": 10752,
+      "output_tokens": 9860,
+      "seconds": 77.1,
+      "head": "2d79ff3d6c27592d01a820d93d0fd7887a87a4b4",
+      "base": "cf2fcad01b833d4bac6deb916940759cef3fb376",
+      "fixed": "5622ecc1808899388fb24aeee70d6ced353a731e",
+      "stop": "no_submission",
+      "turns": 4,
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "echo.go",
+            "lines": [
+              "618",
+              "623",
+              "833-834"
+            ]
+          },
+          {
+            "file": "middleware/middleware.go",
+            "lines": [
+              "4-6",
+              "37-42"
+            ]
+          }
+        ],
+        "moved": 3,
+        "edited": 2
+      },
+      "findings": null
+    },
+    {
+      "id": "chi-1185",
+      "kind": "bug",
+      "scored": true,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": {},
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0387585,
+      "input_tokens": 31577,
+      "cached_input_tokens": 24064,
+      "output_tokens": 11485,
+      "seconds": 88.3,
+      "head": "67be7d9cafdaeb4e04e887ff78d09e030ee43b00",
+      "base": "7957c0d4ddaee560a01110145dbf2809ffdb6663",
+      "fixed": "3d1777a1ef8881f7d1da0b02c76ca8f0a29cd2bc",
+      "stop": "no_submission",
+      "turns": 7,
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "middleware/wrap_writer.go",
+            "lines": [
+              "66-67",
+              "118-119",
+              "145-147",
+              "170-172",
+              "192-194",
+              "233-235"
+            ]
+          }
+        ],
+        "moved": 2,
+        "edited": 4
+      },
+      "findings": null
+    },
+    {
+      "id": "cli-2455",
+      "kind": "bug",
+      "scored": true,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": {},
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0508015,
+      "input_tokens": 63211,
+      "cached_input_tokens": 49408,
+      "output_tokens": 9598,
+      "seconds": 106.9,
+      "head": "b75f9c0bda65162771dd68b53c50be3c728f4f13",
+      "base": "2799fd43bd5cf6996cc5f1af206175b543c640e1",
+      "fixed": "26bd9a28850d7276700f83bd6bf0b8c763f12cdc",
+      "stop": "no_submission",
+      "turns": 7,
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "command_parse.go",
+            "lines": [
+              "80-81",
+              "90-96"
+            ]
+          }
+        ],
+        "moved": 2,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "logrus-1564",
+      "kind": "bug",
+      "scored": true,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": {},
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.17032850000000002,
+      "input_tokens": 254001,
+      "cached_input_tokens": 238848,
+      "output_tokens": 21664,
+      "seconds": 316.5,
+      "head": "f96066e3bf3d336a86255321d5436a30265c31f8",
+      "base": "89b6d460f0048bd1591d723b483f89b127257dbb",
+      "fixed": "4dffc93e185dfc8ef2c001582502412f5bac4966",
+      "stop": "no_submission",
+      "turns": 28,
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "entry.go",
+            "lines": [
+              "73",
+              "86-87",
+              "100-102",
+              "100-102",
+              "100-102",
+              "135-139",
+              "143-146",
+              "144-146",
+              "144-146",
+              "182-185",
+              "189-192",
+              "190-192",
+              "190-192",
+              "228-231",
+              "234-238",
+              "239-240"
+            ]
+          },
+          {
+            "file": "logger.go",
+            "lines": [
+              "64",
+              "95-96",
+              "99-100",
+              "99-100",
+              "127-128",
+              "135-136",
+              "135-136",
+              "135-136"
+            ]
+          }
+        ],
+        "moved": 2,
+        "edited": 22
+      },
+      "findings": null
+    },
+    {
+      "id": "chi-1051-clean",
+      "kind": "clean",
+      "scored": true,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": {},
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0494675,
+      "input_tokens": 71299,
+      "cached_input_tokens": 52992,
+      "output_tokens": 6909,
+      "seconds": 249.7,
+      "head": "3328d4d3ab8a08547fa419ed657017355e6d3c4d",
+      "base": "be60b2ec5755a9072cdf27af3ba3034e84781d12",
+      "fixed": "be60b2ec5755a9072cdf27af3ba3034e84781d12",
+      "stop": "submitted",
+      "turns": 9,
+      "findings": null
+    },
+    {
+      "id": "echo-2822-clean",
+      "kind": "clean",
+      "scored": true,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": {},
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.27877850000000004,
+      "input_tokens": 426593,
+      "cached_input_tokens": 383744,
+      "output_tokens": 32741,
+      "seconds": 512.8,
+      "head": "52d2bff1b9ebb7c581304ed2e5d72397ec40ca6d",
+      "base": "f1ebc67c5654f3c6edebd295ed4554ba645802ee",
+      "fixed": "f1ebc67c5654f3c6edebd295ed4554ba645802ee",
+      "stop": "submitted",
+      "turns": 22,
+      "findings": null
+    },
+    {
+      "id": "cobra-1643-clean",
+      "kind": "clean",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0290005,
+      "input_tokens": 42753,
+      "cached_input_tokens": 28928,
+      "output_tokens": 3812,
+      "seconds": 183,
+      "head": "70e53f62be77e03f376be845efacbd99c00024ca",
+      "base": "2e8ba6f3087bda425da42af31f7373cd2c2c08c5",
+      "fixed": "2e8ba6f3087bda425da42af31f7373cd2c2c08c5",
+      "stop": "model_error",
+      "turns": 5,
+      "error": "agent loop model call: model invalid (HTTP 400): \u003chtml\u003e\u003cbody\u003e\u003ch1\u003e400 Bad request\u003c/h1\u003e\nYour browser sent an invalid request.\n\u003c/body\u003e\u003c/html\u003e",
+      "findings": null
+    }
+  ]
+}

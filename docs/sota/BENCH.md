@@ -256,3 +256,59 @@ and 5k output tokens per case.
 
 So the expected spend is $0.15 to $0.50, and the hard cap is $3.00. The estimate is `not verified` until a live run
 exists: it rests on a token count from a scripted model, not on a real one.
+
+## Reviewer run 2026-11-21T13:33:53Z (model deepseek-ai/deepseek-v4.1-flash-1017)
+
+| Item | Value |
+|---|---|
+| Command | `heimdall-bench review --out docs/sota/bench-live-2026-11-21.json --md docs/sota/BENCH.md --model deepseek-ai/deepseek-v4.1-flash-1017 --base-url https://api.deploy.com/api/v1 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --max-cost 3.00` |
+| Heimdall commit | `badf6d4510335f7e836f1c702e278f1686157fe5` |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Price (USD per million tokens) | input 0.5, cached input 0.5, output 2 |
+| Cost cap | $3.00 for the run, $0.50 per case |
+| Blocking severity | medium and above |
+| Sandbox | local go test in a fresh git worktree per run, as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally |
+| Wall time | 2012.6 s |
+
+| Case | Kind | Scored | Stop | Turns | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| testify-1207 | bug | yes | no_submission | 9 | 0 | 0 | no | no |  | 96515/14545 | $0.0773 | 168.4 s | none |
+| testify-1795 | bug | yes | no_submission | 8 | 0 | 0 | no | no |  | 67978/15019 | $0.0640 | 120.1 s | none |
+| gin-4702 | bug | yes | submitted | 11 | 0 | 0 | no | no |  | 73271/17607 | $0.0718 | 189.7 s | none |
+| echo-1799 | bug | yes | no_submission | 4 | 0 | 0 | no | no |  | 17273/9860 | $0.0284 | 77.1 s | none |
+| chi-1185 | bug | yes | no_submission | 7 | 0 | 0 | no | no |  | 31577/11485 | $0.0388 | 88.3 s | none |
+| cli-2455 | bug | yes | no_submission | 7 | 0 | 0 | no | no |  | 63211/9598 | $0.0508 | 106.9 s | none |
+| logrus-1564 | bug | yes | no_submission | 28 | 0 | 0 | no | no |  | 254001/21664 | $0.1703 | 316.5 s | none |
+| chi-1051-clean | clean | yes | submitted | 9 | 0 | 0 |  |  | no | 71299/6909 | $0.0495 | 249.7 s | none |
+| echo-2822-clean | clean | yes | submitted | 22 | 0 | 0 |  |  | no | 426593/32741 | $0.2788 | 512.8 s | none |
+| cobra-1643-clean | clean | no | model_error | 5 | 0 | 0 |  |  | no | 42753/3812 | $0.0290 | 183.0 s | agent loop model call: model invalid (HTTP 400): <html><body><h1>400 Bad request</h1> Your browser sent an invalid request. </body></html> |
+
+| Measure | Value |
+|---|---|
+| Recall (bug cases with a proven finding on the truth) | 0/7 (0%) |
+| False positives (clean cases with a proven blocking finding) | 0/2 (0%) |
+| Evidence rate (proven / proposed) | n/a |
+| Unproven by reason | none |
+| Cases scored / not finished | 9 / 1 |
+| Cost | $0.8587 total; per case p50 $0.0640, p95 $0.2788 |
+| Tokens | 1144471 input (959232 cached), 143240 output |
+| Wall time per case | p50 168.4 s, p95 512.8 s |
+
+### Diagnosis of the first live run (coordinator, Nov 21 2026)
+
+Recall 0/7 is not a quality score: the reviewer proposed 0 findings in all 10 cases. 6 of 7 bug cases stopped with
+`no_submission`. `internal/app/agentloop` ends a run on the first model answer that has no tool call
+(`agentloop/doc.go:37`, `loop.go:139`), so a single text reply ends the review. DeepSeek is known to answer in text
+or to write a tool call as text (seen live on Nov 7 as `<｜DSML｜tool_calls>`), which this rule turns into an empty
+review. The run kept no transcripts, so which of the two happened is not verified.
+
+The cobra clean case failed on an HTML "400 Bad request" page from the Deploy endpoint, the same error that stopped
+two DeepSeek delegates today. Its cause (request size, content filter or gateway) is not verified.
+
+Prices passed were deliberately high (input $0.50, output $2.00 per million), so the real spend is below the $0.86
+shown. Cache reads were 84% of input tokens (959,232 of 1,144,471).
+
+Fixes before the next live run (AM12b): send `tool_choice: "required"` where the endpoint accepts it; parse text-form
+tool calls; on a text-only answer ask once more ("call propose_finding, or finish_review if you found nothing")
+instead of stopping; keep a bounded per-turn transcript in the results; record the HTTP status and body size of a
+refused call.
