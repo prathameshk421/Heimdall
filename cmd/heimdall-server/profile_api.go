@@ -55,6 +55,9 @@ func (a profileAPI) PreviousTrial(ctx context.Context, repo string) (string, err
 		return "", nil
 	}
 	head := fmt.Sprintf("proposal %s failed its trial: %d passed, %d failed, %d errored", p.ID[:7], p.Trial.Passed, p.Trial.Failed, p.Trial.Errored)
+	if p.Trial.Passed+p.Trial.Failed+p.Trial.Errored == 0 {
+		head += "; no test results were reported: acceptance must print the `go test -json` event stream, for example `go test -json -count=1 {dir}/...`"
+	}
 	if p.Trial.LogRef == "" {
 		return head + "; no log was kept", nil
 	}

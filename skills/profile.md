@@ -10,12 +10,12 @@
 - Declare each check with the files it applies to, and say whether it compares against the base.
 - Keep the artifact small and complete; one `report_progress` sentence per phase.
 
-**What is accepted.** The artifact is one profile YAML document under 64 KiB. Required keys: `languages` (one to four), `image` (a digest-pinned image on the runner's allowlist), `acceptance` (one command with exactly one `{dir}`), `seam`, `ac_tag`, and `paths.tests` (a clean repository-relative path). Optional keys: `setup`, `test`, `fetch_hosts` (exact DNS names), `checks` (`id`, `lens`, `when`, `image`, `run` are required; `baseline` and `history` are optional), `tests` (`runs` is required with any kind; each named kind requires `run` with one `{dir}` and either both `serve` and `ready` or neither), and `services` (`name`, `image`, `port` are required; `env` and `data` are optional). Unknown keys are refused at every level. A minimal valid artifact:
+**What is accepted.** The artifact is one profile YAML document under 64 KiB. Required keys: `languages` (one to four), `image` (a digest-pinned image on the runner's allowlist), `acceptance` (one command with exactly one `{dir}` that prints the `go test -json` event stream; plain output reports no tests and fails the trial), `seam`, `ac_tag`, and `paths.tests` (a clean repository-relative path). Optional keys: `setup`, `test`, `fetch_hosts` (exact DNS names), `checks` (`id`, `lens`, `when`, `image`, `run` are required; `baseline` and `history` are optional), `tests` (`runs` is required with any kind; each named kind requires `run` with one `{dir}` and either both `serve` and `ready` or neither), and `services` (`name`, `image`, `port` are required; `env` and `data` are optional). Unknown keys are refused at every level. A minimal valid artifact:
 
 ```yaml
 languages: [go]
 image: <one image from stack_hints, exactly as written>
-acceptance: go test {dir}/...
+acceptance: go test -json -count=1 {dir}/...
 seam: example.com/pay/internal/app
 ac_tag: "// heimdall:{ac}"
 paths: { tests: tests/heimdall }

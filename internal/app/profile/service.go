@@ -157,8 +157,9 @@ func (s *Service) Trial(ctx context.Context, proposalID string, sha id.SHA) (por
 	if err := result.Validate(); err != nil {
 		return ports.ProfileTrial{}, fmt.Errorf("profile trial result: %w", err)
 	}
+	// A trial passes only when tests ran and none failed: an acceptance command that reports no tests proves nothing.
 	outcome := ports.TrialPassed
-	if result.Failed > 0 || result.Errored > 0 {
+	if result.Failed > 0 || result.Errored > 0 || result.Passed == 0 {
 		outcome = ports.TrialFailed
 	}
 	trial := ports.ProfileTrial{Outcome: outcome, Passed: result.Passed, Failed: result.Failed, Errored: result.Errored, SHA: sha, LogRef: result.LogRef}

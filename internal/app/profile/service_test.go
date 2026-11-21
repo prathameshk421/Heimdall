@@ -235,3 +235,18 @@ func TestLifecycleRefusesUnauthorizedAndFailedTrialPromotion(t *testing.T) {
 	require.Error(t, svc.Promote(context.Background(), "owner", proposal.ID))
 	require.Empty(t, syncer.names)
 }
+
+// A trial whose acceptance command reports no tests proves nothing, so it fails and the profiler is asked again (live,
+// Nov 21: `go test {dir}/...` without -json printed plain text, the tests passed, and no result was ever recorded).
+func TestATrialWithNoTestResultsFails(t *testing.T) {
+	logRef := workflow.BlobRef("blob:sha256:" + strings.Repeat("c", 64))
+	svc, _, _, _, _ := newProfileService(t, ports.SandboxResult{LogRef: logRef})
+	proposal, _, err := svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
+	require.NoError(t, err)
+	require.NoError(t, svc.Approve(context.Background(), "owner", proposal.ID))
+	trial, err := svc.Trial(context.Background(), proposal.ID, id.SHA(strings.Repeat("d", 40)))
+	require.NoError(t, err)
+	require.Equal(t, ports.TrialFailed, trial.Outcome)
+	require.Equal(t, logRef, trial.LogRef, "the log is kept for the profiler's next task")
+	require.Error(t, svc.Promote(context.Background(), "owner", proposal.ID))
+}

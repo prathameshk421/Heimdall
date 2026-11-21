@@ -129,3 +129,19 @@ func TestTheRunnerRefusesWhatTheClientWouldNeverSend(t *testing.T) {
 	_, err := c.Run(context.Background(), ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: "nope", Profile: "acme-pay", Repo: "acme/pay", SHA: sha("a"), Timeout: time.Minute})
 	require.ErrorContains(t, err, "runner rejected job", "a check id the profile does not hold is refused by the runner")
 }
+
+// A trial whose command ran but printed no go test -json events is still an answer: the client gets a result with no
+// tests and the output kept as its log, so the profile service records a failed trial the profiler can read (live,
+// Nov 21: `go test {dir}/...` without -json passed its tests and the job died eight times as "no test results").
+func TestATrialWithoutTestEventsComesBackWithItsLog(t *testing.T) {
+	plain := "ok  \tgithub.com/acme/pay/tests/heimdall/KAN-22\t0.005s\n"
+	c, blobs := serveRunner(t, &checkExecutor{output: []byte(plain)})
+	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n"
+	res, err := c.Trial(context.Background(), ports.ProfileTrialJob{Repo: "acme/pay", SHA: sha("a"), Name: "acme-pay",
+		Artifact: []byte(artifact), TestsDir: "tests/heimdall"})
+	require.NoError(t, err)
+	require.Zero(t, res.Passed+res.Failed+res.Errored, "no test was reported")
+	require.NotEmpty(t, res.LogRef)
+	require.Contains(t, string(blobs.puts[res.LogRef]), "tests/heimdall/KAN-22", "the plain output is the log")
+}

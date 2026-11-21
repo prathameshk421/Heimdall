@@ -51,3 +51,14 @@ func TestPreviousTrialShowsTheFailedTrialOfTheNewestProposal(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, text, "no proposal yet")
 }
+
+// A trial that reported no tests says why, so the profiler fixes the command instead of guessing (live, Nov 21).
+func TestPreviousTrialNamesTheCauseWhenNoTestsWereReported(t *testing.T) {
+	ref := workflow.BlobRef("blob:sha256:" + strings.Repeat("d", 64))
+	empty := ports.ProfileProposal{ID: strings.Repeat("c", 64), Repo: "acme/pay", State: ports.ProfileApproved,
+		Trial: ports.ProfileTrial{Outcome: ports.TrialFailed, LogRef: ref}}
+	api := profileAPI{store: latestProfiles{latest: &empty}, blobs: logBlobs{logs: map[workflow.BlobRef]string{ref: "ok  \tpay/tests/heimdall/KAN-22\t0.005s\n"}}}
+	text, err := api.PreviousTrial(context.Background(), "acme/pay")
+	require.NoError(t, err)
+	require.Contains(t, text, "no test results were reported: acceptance must print the `go test -json` event stream")
+}
