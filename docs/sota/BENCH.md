@@ -134,7 +134,7 @@ real model finds, and it is not a recall result.
 | Case | Kind | Scored | Stop | Turns | Proposed | Proven | Hit | Located | Tokens in/out | Cost | Time | Note |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | testify-1207 | bug | yes | submitted | 6 | 1 | 1 | yes | yes | 29450/1080 | $0.0028 | 1.9 s | the nil mutex test fails twice on the head and passes on the fix; the finding on `mock/mock.go` 507-511 overlaps the truth 510-511 |
-| chi-1185 | bug | yes | submitted | 6 | 1 | 1 | yes | yes | 42600/1130 | $0.0040 | 105.8 s | the discard-and-flush test fails twice on the head and passes on the fix; the truth maps onto the head tree and the finding sits on a mapped span |
+| chi-1185 | bug | yes | submitted | 6 | 1 | 1 | yes | yes | 42600/1130 | $0.0040 | 105.8 s | the discard-and-flush test fails twice on the head and passes on the fix; 2 truth spans moved onto the head tree and 4 fell on lines edited between the head and the fix parent, so those 4 are approximations |
 
 ### Summary
 
