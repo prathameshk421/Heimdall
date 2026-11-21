@@ -327,21 +327,38 @@ as data. The profile at the merge base (`.heimdall/profile.yaml`) gives the comm
 
 The sandbox adapter `internal/adapters/uidsandbox` needs `sudo`, which GitHub-hosted Ubuntu runners have:
 
+`[AM11]` marks facts that the probes of Nov 21 2026 changed (`ACTION_MODE_SPIKE.md` section 9).
+
 1. At job start, as root: create user `heimdall-sbx` with no sudo rights and no docker group. Set the runner's home
-   and `_temp` to mode 0700.
+   and `_temp` to mode 0700. `[AM11]` The image ships the home as 0750 and `_temp` as 0755. The runner's own
+   `.credentials` and `.runner` live under the home (`/home/runner/actions-runner/cached/<version>`), so the home's
+   mode is what protects them. Setup also puts the user in `/etc/cron.deny` and `/etc/at.deny`.
 2. Copy the PR tree (fetched at the exact head SHA, no `.git` credentials) to `/sbx/work`, owned by `heimdall-sbx`.
+   `[AM11]` The tar stream is extracted as `heimdall-sbx`, not as root, and `.git` is excluded.
 3. **Fetch phase.** Dependency install runs as `heimdall-sbx` with egress only through a CONNECT proxy in the binary.
    The proxy allows the registries the profile names (the server's fetch-job rule, TECH_SPEC 12.2). An `nftables`
-   rule drops every other packet from that uid.
+   rule drops every other packet from that uid. `[AM11]` The proxy also refuses IP literals and a name that resolves
+   to a loopback, private, link-local or shared address.
 4. **Execution phase.** Tests run as `heimdall-sbx` in a network namespace with no interface but loopback, under
-   `systemd-run --scope` with `NoNewPrivileges`, CPU and memory limits and a deadline, with an empty environment.
-5. After each job: kill every process of the uid, and parse JUnit with `verify.ParseBytes` limits.
+   `systemd-run --scope` with CPU, memory and task limits and a deadline. `[AM11]` A scope cannot set
+   `NoNewPrivileges`: it takes only resource and kill properties. `setpriv` inside the scope sets the uid,
+   no-new-privs and empty capability sets. The environment is not empty but a fixed set (PATH, HOME, TMPDIR, USER,
+   LOGNAME, plus the profile's variables). A job cannot set PATH, HOME or a proxy variable. The deadline is the
+   job's timeout in the binary, which then kills the scope and the uid.
+5. After each job: kill every process of the uid, and parse JUnit with `verify.ParseBytes` limits. `[AM11]` The kill
+   runs in rounds until `pgrep` finds nothing. The JUnit file is read as `heimdall-sbx`, so a planted symlink gains
+   nothing.
 
 Why this is enough here: the key lives in the loop's memory and in its environment, which another uid cannot read;
 the uid has no network in the execution phase, so it has no way out even for what it can read; the runner VM is
-thrown away after the job. It is `not verified` until the escape probes of WP AM11 pass on a hosted runner: read the
-loop's `/proc/<pid>/environ`, read the runner's home and `_temp`, reach the network, reach the docker socket, keep a
-process alive after the job.
+thrown away after the job. `[AM11]` **The second half is false today.** A network namespace does not cut Unix
+sockets on the file system. From the execution phase, `resolvectl query` got answers from the host's
+systemd-resolved (run 44868368873): that is a DNS channel out. The fetch phase also reached the system D-Bus, snapd,
+polkit and the local ssh socket. The first half held in run 44868233309: the loop's `/proc/<pid>/environ` and
+memory, the home and `_temp` canaries, the runner's credential files, direct network, the docker socket, root
+escalation and a surviving process were all blocked. The isolation stays `not verified` until a fix from
+`ACTION_MODE_SPIKE.md` 9.4 lands and the probes pass again. The fix is an owner decision. The recommended one is a
+transient systemd service with `PrivateNetwork`, `NoNewPrivileges` and `/run` hidden.
 
 A self-hosted runner without `sudo` cannot isolate. The proof run then reports `unknown: runner cannot isolate PR
 code` for every part that runs PR code. There is no silent fallback to running as the runner user. A docker backend
@@ -503,7 +520,7 @@ Each WP is under 2 days, one concern, and names its files and its test. The test
 | AM8 | Git-ref event store `[S1]` | `internal/adapters/gitlog/` | Contract test of `ports.EventStore` against an `httptest` fake of the Git Data REST reads and the GraphQL `updateRefs` mutation (a `beforeOid` mismatch returns the opaque error; the store re-reads the tip to tell a lost reply, a conflict and a transient failure apart): append, conflict on own change, rebuild on another change, MAC refused, chain broken refused, size limits | – | A1 |
 | AM9 | GitHub adapter additions | `internal/adapters/github/{static_token,comments,artifacts,codescan,gitdata}.go` | Recorded-response tests; pagination; error mapping per `doc.go` traps | – | A2, A5 |
 | AM10 | Model chat with tools | `internal/ports/model.go`, `internal/adapters/openrouter/chat.go` | Recorded-response tests: tool calls, usage and cost, refusal, 429 | – | A7 |
-| AM11 | Isolated sandbox | `internal/adapters/uidsandbox/` | Escape probes (env, `/proc`, home, `_temp`, network, docker socket, a surviving process) must all fail. Build-tagged; runs only on a hosted Linux runner in CI | – | A7 |
+| AM11 | Isolated sandbox. **Built Nov 21 2026 `[AM11]`. One probe escaped (DNS through systemd-resolved's Unix socket), so not done: see 4.4 and `ACTION_MODE_SPIKE.md` 9** | `internal/adapters/uidsandbox/` | Escape probes (env, `/proc`, home, `_temp`, network, docker socket, a surviving process) must all fail. Build-tagged; runs only on a hosted Linux runner in CI | – | A7 |
 | AM12 | Agent loop | `internal/app/agentloop/` | Scripted fake model: tool dispatch, refused submission and one retry, budget stop, deadline stop, turn cap | AM10 | A7 |
 | AM13 | Action rows | `internal/domain/actionflow/rows.go` | Row table tests in the style of `change/rows_test.go` | AM3, AM4, AM5 | A2 |
 | AM14 | Gate and proof use cases | `internal/app/action/{gate,proof,ingest}.go` | Component test: fake GitHub, `gitlog` on `httptest`, fake sandbox and model; a PR goes from push to fast check to proof to summary; a forged artifact and a bad MAC fail closed | AM8, AM9, AM12, AM13, AM7 | A2, A5 |
@@ -546,6 +563,6 @@ REST `force:false` does not refuse a non-fast-forward update on `refs/heimdall/*
 Every item marked `not verified` above. The main ones: environment-scoped values in `workflow_run` under a
 default-branch rule; `workflow_run.pull_requests` for forks; the latency of the two-stage trigger-and-gate chain; an
 App token write to `refs/heimdall/*`; blobs above 10 MiB; how the web UI renders a long comment; the bot logins and
-formats; the escape probes of the sandbox; install and prompt sizes of OpenCode and Claude Code; all costs. `[S1]`
+formats; the sandbox isolation (`[AM11]`: the probes found one escape, 4.4); install and prompt sizes of OpenCode and Claude Code; all costs. `[S1]`
 settled (see `ACTION_MODE_SPIKE.md`): custom ref creation by API, the compare-and-swap call, one-stage check latency,
 the runner's cancel grace, and the size limits of comments and blobs.
