@@ -1,0 +1,7 @@
+{
+  "error": {
+    "message": "The request was rejected because it was flagged by the content filter.",
+    "type": "invalid_request_error",
+    "code": "content_policy_violation"
+  }
+}

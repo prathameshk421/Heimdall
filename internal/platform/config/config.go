@@ -81,8 +81,10 @@ type Config struct {
 	// ModelProviders are the configured [[model_providers]]. Use ModelProvider to resolve a name: it also knows
 	// the two shipped defaults.
 	ModelProviders []ModelProvider
-	byTracker      map[string]Project
-	selections     map[string]string
+	// BoardAuth is [board_auth]. A zero Mode means the section is absent and the web board is not served.
+	BoardAuth  BoardAuth
+	byTracker  map[string]Project
+	selections map[string]string
 }
 
 // PackIdentitySecrets names the server-side verification and age decryption files for one policy person.
@@ -166,6 +168,7 @@ type fileConfig struct {
 	AgentRuntime   *fileAgentRuntime           `toml:"agent_runtime"`
 	Memory         *fileProvider               `toml:"memory"`
 	ModelProviders []fileModelProvider         `toml:"model_providers"`
+	BoardAuth      *fileBoardAuth              `toml:"board_auth"`
 }
 
 type filePackIdentity struct {
@@ -296,6 +299,8 @@ func build(raw fileConfig) (Config, error) {
 	errs = append(errs, addKnowledgeSecrets(&cfg, raw)...)
 	errs = append(errs, addPaths(&cfg, raw)...)
 	errs = append(errs, addModelProviders(&cfg, raw.ModelProviders)...)
+	// After addPaths: dev mode of the board depends on the final listen address.
+	errs = append(errs, addBoardAuth(&cfg, raw.BoardAuth)...)
 	firstIndex := map[string]int{}
 	for i, p := range raw.Projects {
 		where := fmt.Sprintf("projects[%d]", i)

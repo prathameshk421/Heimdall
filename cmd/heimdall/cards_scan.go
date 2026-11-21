@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/sessions/opencode"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/cardgen"
@@ -111,6 +112,15 @@ func scanRepo(ctx context.Context, f scanFlags, env cardsEnv) (scanState, []card
 			state.PRLinks = addLink(state.PRLinks, l)
 		}
 	}
+	for _, s := range dbSessions(ctx, env, f.repo, cutoff) {
+		if len(s.Turns) > 0 {
+			used[s.Agent]++
+			turns = append(turns, s.Turns...)
+		}
+		for _, l := range s.Links {
+			state.PRLinks = addLink(state.PRLinks, l)
+		}
+	}
 	state.Sessions = sessionPlaces(env.home, f.repo, used)
 	if email == "" {
 		writeLine(env.errw, "git user.email is not set: git leads skipped")
@@ -133,9 +143,15 @@ func sessionPlaces(home, root string, used map[string]int) []cardgen.Session {
 		out = append(out, cardgen.Session{Agent: "codex", Path: filepath.Join(home, ".codex", "sessions"),
 			Note: "rollout-*.jsonl files; use only files whose session_meta cwd is inside this repository"})
 	}
-	db := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	db := opencode.DefaultPath(home)
 	if _, err := os.Stat(db); err == nil {
 		out = append(out, cardgen.Session{Agent: "opencode", Path: db, Note: "SQLite database; open it read-only and use only sessions of this repository"})
+	}
+	if used["cursor"] > 0 {
+		for _, dir := range existingCursorDirs(home) {
+			out = append(out, cardgen.Session{Agent: "cursor", Path: dir,
+				Note: "SQLite state.vscdb files; workspaceStorage/<id>/workspace.json names the folder of each workspace; chats are in globalStorage/state.vscdb, table cursorDiskKV; open read-only and use only chats of this repository"})
+		}
 	}
 	return out
 }

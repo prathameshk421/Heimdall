@@ -1,0 +1,9 @@
+{
+  "comment": {
+    "id": 1004,
+    "kind": "issue_comment",
+    "body": "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n<!-- walkthrough_start -->\n\n## Walkthrough\n\nThe change adds a retry loop to the payment client.\n\n<!-- walkthrough_end -->",
+    "user": {"login": "coderabbitai[bot]", "type": "Bot"}
+  },
+  "want": {"outcome": "dropped", "tool": "coderabbit", "drop": {"reason": "no_location", "cause": "summary"}}
+}

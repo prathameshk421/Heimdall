@@ -20,6 +20,9 @@
 //     script only sets text content.
 //   - Every dashboard response carries a content policy that allows script and style from this origin only.
 //   - Mount hands every path outside the dashboard to the handler it wraps, so other routes keep their answers.
+//   - Every dashboard route, the assets and the live stream included, runs behind Options.Access. Mount refuses a
+//     nil one, so the board is never served without a decision on who may read it. The server passes the sign-in
+//     guard of internal/transport/auth, or its dev mode on a loopback listener only.
 //
 // # Failure modes
 //
@@ -85,11 +88,16 @@ type Options struct {
 	PollEvery time.Duration
 	// NewTicker starts a ticker that sends on ticks every every until stop is called. It is required.
 	NewTicker func(every time.Duration) (ticks <-chan time.Time, stop func())
+	// Access wraps every dashboard route, the assets and the live stream among them. It decides who may read the
+	// board (internal/transport/auth). It is required, so the board is never mounted without a decision.
+	Access func(http.Handler) http.Handler
+	// SignOut is the path of the sign-out page. When it is set, the list and change pages link to it.
+	SignOut string
 }
 
 // Mount returns next with the dashboard routes in front of it. Requests for the dashboard paths are served here,
 // and every other request goes to next unchanged. It refuses a nil history, a nil logger, a nil next, a nil
-// NewTicker, and a negative poll interval.
+// NewTicker, a nil Access, and a negative poll interval.
 func Mount(next http.Handler, history appdashboard.History, logger *slog.Logger, opts Options) (http.Handler, error) {
 	if next == nil {
 		return nil, errors.New("dashboard next handler must not be nil")
@@ -99,6 +107,9 @@ func Mount(next http.Handler, history appdashboard.History, logger *slog.Logger,
 	}
 	if opts.NewTicker == nil {
 		return nil, errors.New("dashboard ticker must not be nil")
+	}
+	if opts.Access == nil {
+		return nil, errors.New("dashboard access guard must not be nil")
 	}
 	if opts.PollEvery < 0 {
 		return nil, errors.New("dashboard poll interval must not be negative")
@@ -119,7 +130,8 @@ func Mount(next http.Handler, history appdashboard.History, logger *slog.Logger,
 	if every == 0 {
 		every = defaultPollEvery
 	}
-	e := &edge{svc: svc, logger: logger, every: every, newTicker: opts.NewTicker, list: listTmpl, detail: detailTmpl}
+	e := &edge{svc: svc, logger: logger, every: every, newTicker: opts.NewTicker, list: listTmpl, detail: detailTmpl,
+		signOut: opts.SignOut}
 
 	routes := http.NewServeMux()
 	routes.HandleFunc("GET /{$}", e.listChanges)
@@ -128,7 +140,7 @@ func Mount(next http.Handler, history appdashboard.History, logger *slog.Logger,
 	routes.HandleFunc("GET /changes/{id}/report.json", e.reportSpec)
 	routes.HandleFunc("GET /sse/changes/{id}", e.stream)
 	routes.HandleFunc("GET /assets/{name}", e.asset)
-	return &mounted{routes: routes, next: next}, nil
+	return &mounted{routes: opts.Access(routes), next: next}, nil
 }
 
 // mounted sends the dashboard paths to its routes and every other path to next.
@@ -161,11 +173,13 @@ type edge struct {
 	newTicker func(every time.Duration) (<-chan time.Time, func())
 	list      *template.Template
 	detail    *template.Template
+	signOut   string
 }
 
 // listPage is the data of the list page.
 type listPage struct {
-	Rows []appdashboard.ChangeSummary
+	Rows    []appdashboard.ChangeSummary
+	SignOut string
 }
 
 // detailView is the data of the change page. Times are text, already in UTC.
@@ -175,6 +189,7 @@ type detailView struct {
 	Updated  string
 	Timeline []rowView
 	Asks     []askView
+	SignOut  string
 }
 
 // rowView is one timeline row of the change page.
@@ -209,7 +224,7 @@ func (e *edge) listChanges(w http.ResponseWriter, r *http.Request) {
 		e.fail(w, r, "list changes", err)
 		return
 	}
-	e.render(w, r, e.list, listPage{Rows: rows})
+	e.render(w, r, e.list, listPage{Rows: rows, SignOut: e.signOut})
 }
 
 func (e *edge) changeDetail(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +242,9 @@ func (e *edge) changeDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	e.render(w, r, e.detail, newDetailView(d))
+	v := newDetailView(d)
+	v.SignOut = e.signOut
+	e.render(w, r, e.detail, v)
 }
 
 // reportPage serves the empty page that the report script fills. It reads the change first, so an unknown change is 404.

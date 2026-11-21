@@ -1,0 +1,29 @@
+{
+  "comment": {
+    "id": 3002,
+    "body": "### Log line prints the whole request\n\n**Low Severity**\n\n<!-- DESCRIPTION START -->\nThe debug log writes `req` in full, so the card number can land in the log file.\n<!-- DESCRIPTION END -->\n\n<!-- BUGBOT_BUG_ID: 9a9a9a9a-0000-4000-8000-123412341234 -->",
+    "path": "pay/log.go",
+    "line": 8,
+    "original_line": 8,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "position": 2,
+    "user": {"login": "cursor[bot]", "type": "Bot"}
+  },
+  "want": {
+    "outcome": "candidate",
+    "tool": "cursor_bugbot",
+    "candidate": {
+      "tool": "cursor_bugbot",
+      "comment_id": 3002,
+      "path": "pay/log.go",
+      "start_line": 8,
+      "end_line": 8,
+      "side": "RIGHT",
+      "claim": "Log line prints the whole request. The debug log writes `req` in full, so the card number can land in the log file.",
+      "severity": "low",
+      "severity_stated": true,
+      "style": false
+    }
+  }
+}

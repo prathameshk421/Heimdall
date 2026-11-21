@@ -1,0 +1,29 @@
+{
+  "comment": {
+    "id": 1003,
+    "body": "_🧹 Nitpick_ | _🔵 Trivial_\n\n**Rename `x` to `retryCount`.**\n\nA longer name makes the loop easier to read.\n\n<!-- This is an auto-generated comment by CodeRabbit -->",
+    "path": "internal/retry/retry.go",
+    "line": 9,
+    "original_line": 9,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "position": 3,
+    "user": {"login": "coderabbitai[bot]", "type": "Bot"}
+  },
+  "want": {
+    "outcome": "candidate",
+    "tool": "coderabbit",
+    "candidate": {
+      "tool": "coderabbit",
+      "comment_id": 1003,
+      "path": "internal/retry/retry.go",
+      "start_line": 9,
+      "end_line": 9,
+      "side": "RIGHT",
+      "claim": "Rename `x` to `retryCount`. A longer name makes the loop easier to read.",
+      "severity": "low",
+      "severity_stated": true,
+      "style": true
+    }
+  }
+}

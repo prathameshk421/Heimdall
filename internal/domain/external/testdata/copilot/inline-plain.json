@@ -1,0 +1,29 @@
+{
+  "comment": {
+    "id": 2001,
+    "body": "This loop never checks `ctx.Err()`, so a cancelled request keeps retrying until the attempt limit is reached.",
+    "path": "internal/retry/retry.go",
+    "line": 21,
+    "original_line": 21,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "position": 12,
+    "user": {"login": "copilot-pull-request-reviewer[bot]", "type": "Bot"}
+  },
+  "want": {
+    "outcome": "candidate",
+    "tool": "copilot",
+    "candidate": {
+      "tool": "copilot",
+      "comment_id": 2001,
+      "path": "internal/retry/retry.go",
+      "start_line": 21,
+      "end_line": 21,
+      "side": "RIGHT",
+      "claim": "This loop never checks `ctx.Err()`, so a cancelled request keeps retrying until the attempt limit is reached.",
+      "severity": "medium",
+      "severity_stated": false,
+      "style": false
+    }
+  }
+}

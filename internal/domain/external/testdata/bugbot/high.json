@@ -1,0 +1,29 @@
+{
+  "comment": {
+    "id": 3001,
+    "body": "### Refund is issued before the charge is checked\n\n**High Severity**\n\n<!-- DESCRIPTION START -->\n`Refund` runs before `charge.Status` is read, so a failed charge still sends money back to the card.\n<!-- DESCRIPTION END -->\n\n<details>\n<summary>Additional Locations (1)</summary>\n\n[`pay/refund.go#L30-L31`](https://example.test/blob/head0001/pay/refund.go#L30-L31)\n\n</details>\n\n<details>\n<summary><b>Fix in Cursor</b></summary>\n\nOpen in Cursor\n\n</details>\n\n<!-- BUGBOT_BUG_ID: 5c0f0d0e-1111-4222-8333-444455556666 -->\n<!-- LOCATIONS START\npay/refund.go#L12\npay/refund.go#L30-L31\nLOCATIONS END -->",
+    "path": "pay/refund.go",
+    "line": 12,
+    "original_line": 12,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "position": 5,
+    "user": {"login": "cursor[bot]", "type": "Bot"}
+  },
+  "want": {
+    "outcome": "candidate",
+    "tool": "cursor_bugbot",
+    "candidate": {
+      "tool": "cursor_bugbot",
+      "comment_id": 3001,
+      "path": "pay/refund.go",
+      "start_line": 12,
+      "end_line": 12,
+      "side": "RIGHT",
+      "claim": "Refund is issued before the charge is checked. `Refund` runs before `charge.Status` is read, so a failed charge still sends money back to the card.",
+      "severity": "high",
+      "severity_stated": true,
+      "style": false
+    }
+  }
+}

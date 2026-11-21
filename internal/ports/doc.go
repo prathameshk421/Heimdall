@@ -25,6 +25,11 @@
 //	DeadEffects         reconciler, Missing              adapters/postgres           H3
 //	ToolCalls           reconciler liveness              adapters/postgres           H3
 //	ModelHealth         reconciler provider probe        adapters/openrouter         H3
+//	ModelChat           Action-mode agent loop           adapters/openrouter         AM10
+//	PRReviewCommentReader  prove-or-drop (Action mode)    adapters/github             AM9
+//	ArtifactReader      gate (proof, coverage, SARIF)    adapters/github             AM9
+//	CodeScanReader      fast check analyzers clause      adapters/github             AM9
+//	GitRefs, GitObjects git-ref event store              adapters/github             AM9 (used by AM8)
 //	TaskIndex           get_task (the active task)       adapters/postgres           T23
 //	ProfileStore        run_checks, verify, run_check    adapters/postgres           H8
 //
@@ -33,7 +38,8 @@
 // TicketDraft, RoomRequest, Message, Cursor, BlobClass) each have a Validate that names every bad field. Validation
 // is applied where the value came from outside: a PR and a ticket from GitHub or Jira, a sandbox request built by the
 // application, a memory query whose groups the server must set. Sentinel errors: ErrVersionConflict (2.3),
-// ErrNotFound and ErrUnavailable (2.5); callers branch with errors.Is.
+// ErrNotFound and ErrUnavailable (2.5); callers branch with errors.Is. ModelError adds the failure kinds of a model
+// call, and maps auth and retryable kinds to those sentinels (AM10).
 //
 // Invariants. A port takes ctx first if it does I/O. Scope is set by the caller's server-side resolution, never by a
 // caller: MemoryQuery.Groups must be set, and a Memory adapter never widens them (TECH_SPEC 9.4). Untrusted text
