@@ -77,6 +77,8 @@ type Outside struct {
 type Profile struct {
 	// Promoted says the repository has a promoted profile; TestsDir and Checks are its fields, zero when it has none.
 	Promoted bool
+	// PromotedID is the content id of the promoted proposal, empty when the repository has none (D184).
+	PromotedID string
 	// TestsDir is the folder the Heimdall tests live in, such as tests/heimdall; the ticket's folder is inside it.
 	TestsDir string
 	Checks   []ProfileCheck
@@ -85,12 +87,28 @@ type Profile struct {
 }
 
 // ProfileProposal is a proposal as the profile row reads it: its id, its state (proposed, approved or promoted) and
-// the outcome of its latest trial ("" before any, "passed" or "failed") with the trial's log.
+// the outcome of its latest trial ("" before any, "passed" or "failed") with the trial's log. CreatedAt is when the
+// proposal was first stored, which a profile.requested is compared against (D184).
 type ProfileProposal struct {
-	ID       string
-	State    string
-	Trial    string
-	TrialLog workflow.BlobRef
+	ID        string
+	State     string
+	Trial     string
+	TrialLog  workflow.BlobRef
+	CreatedAt time.Time
+}
+
+// pendingRequest is the newest profile.requested that no proposal at or after it answers, or nil. A request is answered
+// by a proposal created at or after the moment it was asked, so the profiler's new proposal settles it (D184). A
+// proposal with no recorded creation time cannot be shown to answer a request, so it does not.
+func (p Profile) pendingRequest(v View) *ProfileRequestInfo {
+	r := v.ProfileRequest
+	if r == nil {
+		return nil
+	}
+	if p.Latest != nil && !p.Latest.CreatedAt.IsZero() && !p.Latest.CreatedAt.Before(r.Asked) {
+		return nil
+	}
+	return r
 }
 
 // ProfileCheck is one check of the profile: it applies when a changed file matches one of its When globs (or always

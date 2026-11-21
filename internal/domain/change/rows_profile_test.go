@@ -1,6 +1,7 @@
 package change_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -54,6 +55,87 @@ func TestTheProfileRowSaysSoWhenNoProfilerIsConfigured(t *testing.T) {
 	got := actionsOf(profileIn(t, change.Profile{}, ""))["profile"][0]
 	require.Nil(t, got.Task)
 	require.Equal(t, "acme/pay has no sandbox profile, and no profiler is configured in [agents] to propose one", got.Text)
+}
+
+// A promoted profile can gain a check: an owner's reprofile request is pending until a proposal created at or after it
+// arrives, then that newer proposal drives approve, trial and promote, and the row is done again (D184).
+func TestAPromotedProfileTakesARevisionRequestAndWalksTheNewProposal(t *testing.T) {
+	promoted := strings.Repeat("a", 64)
+	newer := strings.Repeat("b", 64)
+	asked := t0.Add(time.Hour)
+
+	done := change.Profile{Promoted: true, PromotedID: promoted, TestsDir: "tests/heimdall",
+		Latest: &change.ProfileProposal{ID: promoted, State: "promoted", CreatedAt: t0}}
+	require.NotContains(t, actionsOf(profileIn(t, done, "profiler")), "profile", "a promoted profile with no request is done")
+
+	request := &change.ProfileRequestInfo{Repo: "acme/pay", By: "ana", Note: "add a golangci-lint check", Asked: asked}
+	reviseIn := profileIn(t, done, "profiler")
+	reviseIn.View.ProfileRequest = request
+	revise := actionsOf(reviseIn)["profile"][0]
+	require.NotNil(t, revise.Task, "a pending request revises the promoted profile")
+	require.Equal(t, "profile", revise.Task.Kind)
+	require.Equal(t, "acme/pay", revise.Task.Subject)
+	require.Equal(t, "revise-"+promoted[:12]+"-"+strconv.FormatInt(asked.Unix(), 10), revise.Task.Input)
+	require.Equal(t, "the profiler revises the sandbox profile of acme/pay", revise.Text)
+
+	// The profiler's proposal is newer than the request, so it asks for approval instead of revising again.
+	proposedIn := profileIn(t, change.Profile{Promoted: true, PromotedID: promoted,
+		Latest: &change.ProfileProposal{ID: newer, State: "proposed", CreatedAt: asked.Add(time.Minute)}}, "profiler")
+	proposedIn.View.ProfileRequest = request
+	proposed := actionsOf(proposedIn)["profile"][0]
+	require.Nil(t, proposed.Task)
+	require.NotNil(t, proposed.Ask)
+	require.Contains(t, proposed.Text, "`heimdall approve-profile "+newer+"`")
+
+	// Once the new proposal is promoted, the request is answered and the row is done again.
+	again := profileIn(t, change.Profile{Promoted: true, PromotedID: newer, TestsDir: "tests/heimdall",
+		Latest: &change.ProfileProposal{ID: newer, State: "promoted", CreatedAt: asked.Add(time.Minute)}}, "profiler")
+	again.View.ProfileRequest = request
+	require.NotContains(t, actionsOf(again), "profile")
+
+	// A newer proposal that failed its trial is not hidden by the promoted one: its failure drives the next proposal.
+	failedIn := profileIn(t, change.Profile{Promoted: true, PromotedID: promoted,
+		Latest: &change.ProfileProposal{ID: newer, State: "approved", Trial: "failed", CreatedAt: asked.Add(time.Minute)}}, "profiler")
+	failedIn.View.ProfileRequest = request
+	failed := actionsOf(failedIn)["profile"][0]
+	require.Equal(t, &change.Task{Kind: "profile", Subject: "acme/pay", Input: "after-" + newer}, failed.Task)
+}
+
+// A request with no profiler configured is words, not a task.
+func TestARevisionRequestWithNoProfilerIsWords(t *testing.T) {
+	in := profileIn(t, change.Profile{Promoted: true, PromotedID: strings.Repeat("a", 64),
+		Latest: &change.ProfileProposal{ID: strings.Repeat("a", 64), State: "promoted", CreatedAt: t0}}, "")
+	in.View.ProfileRequest = &change.ProfileRequestInfo{Repo: "acme/pay", By: "ana", Note: "add lint", Asked: t0.Add(time.Hour)}
+	got := actionsOf(in)["profile"][0]
+	require.Nil(t, got.Task)
+	require.Equal(t, "acme/pay was asked for a profile change, and no profiler is configured in [agents] to make it", got.Text)
+}
+
+// The D173 cap still applies to a revise task: two failures on the same input ask a person to resume.
+func TestAReviseTaskThatFailedTwiceWaitsForAPerson(t *testing.T) {
+	promoted := strings.Repeat("a", 64)
+	v := fold(t, opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
+		ev(t, 3, change.EventProfileRequested, change.ProfileRequested{Repo: "acme/pay", By: "ana", Note: "add lint"}))
+	asked := v.ProfileRequest.Asked
+	require.False(t, asked.IsZero())
+	input := "revise-" + promoted[:12] + "-" + strconv.FormatInt(asked.Unix(), 10)
+	v = fold(t, opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
+		ev(t, 3, change.EventProfileRequested, change.ProfileRequested{Repo: "acme/pay", By: "ana", Note: "add lint"}),
+		ev(t, 4, change.EventTaskAssigned, change.TaskAssigned{TaskID: tk("tsk_01HZX3K9QW7M2P5R8T0V4YB6C1"), Agent: "profiler",
+			Role: workflow.RoleProfiler, Deadline: asked.Add(time.Hour), Kind: "profile", Subject: "acme/pay", Input: input}),
+		ev(t, 5, change.EventTaskFailed, change.TaskFailed{TaskID: tk("tsk_01HZX3K9QW7M2P5R8T0V4YB6C1"), Agent: "profiler",
+			Role: workflow.RoleProfiler, Reason: "sandbox down"}),
+		ev(t, 6, change.EventTaskAssigned, change.TaskAssigned{TaskID: tk("tsk_01HZX3K9QW7M2P5R8T0V4YB6C2"), Agent: "profiler",
+			Role: workflow.RoleProfiler, Deadline: asked.Add(time.Hour), Kind: "profile", Subject: "acme/pay", Input: input}),
+		ev(t, 7, change.EventTaskFailed, change.TaskFailed{TaskID: tk("tsk_01HZX3K9QW7M2P5R8T0V4YB6C2"), Agent: "profiler",
+			Role: workflow.RoleProfiler, Reason: "sandbox down"}))
+	in := inOf("pr-acme-pay-7", v, asked.Add(2*time.Hour))
+	in.Settings.Profiler = "profiler"
+	in.Profile = change.Profile{Promoted: true, PromotedID: promoted, Latest: &change.ProfileProposal{ID: promoted, State: "promoted", CreatedAt: t0}}
+	got := actionsOf(in)["profile"][0]
+	require.Nil(t, got.Task, "two failures on the same input stop the seat")
+	require.NotNil(t, got.Ask)
+	require.Contains(t, got.Text, "`heimdall resume pr-acme-pay-7 profile` tries again")
 }
 
 // Review never waits for a profile: the row has no dependents.

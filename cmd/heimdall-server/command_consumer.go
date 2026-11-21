@@ -164,12 +164,32 @@ func (r *commandRuntime) directory(ctx context.Context, target collaboration.Tar
 }
 
 func commandPRBinding(events []change.Event, target collaboration.Target) (change.Repo, int, error) {
-	var repo change.Repo
+	repo, eventNumber, err := repoOf(events, target.ChangeID)
+	if err != nil {
+		return "", 0, err
+	}
+	if target.Repo != "" {
+		repo = target.Repo
+	}
+	if repo == "" {
+		return "", 0, errors.New("command target has no repository binding")
+	}
 	number := target.PR
+	if number == 0 {
+		number = eventNumber
+	}
+	return repo, number, nil
+}
+
+// repoOf is the repository and the first pull request number a change's own events name: the trigger's repository, or
+// the pull request's when the change started there.
+func repoOf(events []change.Event, cid id.ChangeID) (change.Repo, int, error) {
+	var repo change.Repo
+	number := 0
 	for _, ev := range events {
 		payload, err := change.Decode(ev)
 		if err != nil {
-			return "", 0, fmt.Errorf("decode change %s event %s: %w", target.ChangeID, ev.ID, err)
+			return "", 0, fmt.Errorf("decode change %s event %s: %w", cid, ev.ID, err)
 		}
 		switch v := payload.(type) {
 		case change.Triggered:
@@ -185,12 +205,6 @@ func commandPRBinding(events []change.Event, target collaboration.Target) (chang
 				number = v.Number
 			}
 		}
-	}
-	if target.Repo != "" {
-		repo = target.Repo
-	}
-	if repo == "" {
-		return "", 0, errors.New("command target has no repository binding")
 	}
 	return repo, number, nil
 }
@@ -414,7 +428,7 @@ func (r *commandRuntime) forgetKnowledge(ctx context.Context, person string, cmd
 
 func profileCommand(cmd commands.Command) bool {
 	switch cmd.(type) {
-	case commands.ApproveProfile, commands.PromoteProfile:
+	case commands.ApproveProfile, commands.PromoteProfile, commands.Reprofile:
 		return true
 	default:
 		return false
@@ -453,6 +467,9 @@ func (r *commandRuntime) commandEvents(cid id.ChangeID, state []change.Event, pe
 	}
 	if resume, ok := cmd.(commands.Resume); ok {
 		return r.resumeEvents(cid, state, person, source, sourceRef, actor, resume)
+	}
+	if reprofile, ok := cmd.(commands.Reprofile); ok {
+		return r.reprofileEvents(cid, state, person, source, sourceRef, actor, reprofile)
 	}
 	if ans, ok := cmd.(commands.Answer); ok {
 		return r.answerEvents(cid, state, person, source, sourceRef, actor, ans)
@@ -820,6 +837,8 @@ func actionReply(cmd commands.Command) string {
 		return "On it. I'm starting this ticket."
 	case commands.Resume:
 		return "Done. I'm picking that step up again."
+	case commands.Reprofile:
+		return "Sent to the profiler. It will propose a revised sandbox profile for an owner to approve."
 	case commands.Answer:
 		return "Thanks. I passed your answer to the agent."
 	case commands.Review:

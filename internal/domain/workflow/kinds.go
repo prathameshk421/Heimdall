@@ -46,7 +46,7 @@ func Kinds() []Kind {
 			Tools:  []string{"read_code", "run_check", "read_card", "ask_knowledge", "submit_verdict"}},
 		{Name: "profile", Holder: RoleProfiler, Output: "Profile@1", Label: "the Profiler", Skill: "profile.md", Timeout: time.Hour,
 			Work:   "propose a sandbox profile for the repository",
-			Inputs: []string{"repo_map", "stack_hints", "previous_trial"},
+			Inputs: []string{"repo_map", "stack_hints", "previous_trial", "revision"},
 			Tools:  []string{"read_code", "search_code", "propose_profile"}},
 	}
 }

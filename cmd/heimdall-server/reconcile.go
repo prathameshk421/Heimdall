@@ -79,7 +79,7 @@ func (r reconcileInputs) Profile(ctx context.Context, repo change.Repo) (change.
 	}
 	if ok {
 		out.Latest = &change.ProfileProposal{ID: latest.ID, State: string(latest.State), Trial: string(latest.Trial.Outcome),
-			TrialLog: latest.Trial.LogRef}
+			TrialLog: latest.Trial.LogRef, CreatedAt: latest.CreatedAt}
 	}
 	p, ok, err := r.profiles.ActiveProfile(ctx, string(repo))
 	if err != nil {
@@ -88,7 +88,7 @@ func (r reconcileInputs) Profile(ctx context.Context, repo change.Repo) (change.
 	if !ok {
 		return out, nil
 	}
-	out.Promoted, out.TestsDir = true, p.Spec.TestsDir
+	out.Promoted, out.TestsDir, out.PromotedID = true, p.Spec.TestsDir, p.ID
 	for _, c := range p.Spec.Checks {
 		out.Checks = append(out.Checks, change.ProfileCheck{ID: c.ID, When: c.When})
 	}

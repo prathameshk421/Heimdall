@@ -51,6 +51,8 @@ type Assignment struct {
 	Leads   []string
 	Attempt int
 	Task    workflow.TaskEnvelope
+	// Revision is the newest person's request to revise the repository's sandbox profile, nil before one (D184).
+	Revision *change.ProfileRequestInfo
 }
 
 // FindingError reports a validation failure for one finding in a review.

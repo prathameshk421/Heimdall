@@ -34,8 +34,18 @@ type View struct {
 	Resumes map[string]int `json:"resumes"`
 	// Checks are the profile check results per head.
 	Checks map[id.SHA]CheckInfo `json:"checks"`
+	// ProfileRequest is the latest person's request to revise the repository's sandbox profile (D184), nil before one.
+	ProfileRequest *ProfileRequestInfo `json:"profile_request,omitempty"`
 	// Provider is the last model-provider probe's health ("ok", "refusing"); empty before any probe.
 	Provider *ProviderInfo `json:"provider,omitempty"`
+}
+
+// ProfileRequestInfo is the newest profile.requested: who asked, what they want changed, and when.
+type ProfileRequestInfo struct {
+	Repo  Repo      `json:"repo"`
+	By    ActorID   `json:"by"`
+	Note  string    `json:"note"`
+	Asked time.Time `json:"asked"`
 }
 
 // ProviderInfo is what the last provider.probed said.
@@ -295,8 +305,8 @@ func (v *View) apply(e Event, p Payload) {
 		v.applyReview(p)
 	case CaseOpened, VerdictSubmitted, VerdictApplied, VerdictEscalated:
 		v.applyCase(e, p)
-	case StepResumed, ChecksReported, FindingRecheckRequested:
-		v.applyRecords(p)
+	case StepResumed, ChecksReported, FindingRecheckRequested, ProfileRequested:
+		v.applyRecords(e, p)
 	case FindingFiled, FindingVerified, FindingStateChanged:
 		v.applyFindingEvent(e, p)
 	default:
@@ -450,13 +460,15 @@ func (v *View) applyFindingEvent(e Event, p Payload) {
 	}
 }
 
-// applyRecords folds the counters and reports the reconciler reads: resumes and check results.
-func (v *View) applyRecords(p Payload) {
+// applyRecords folds the counters and reports the reconciler reads: resumes, check results and profile requests.
+func (v *View) applyRecords(e Event, p Payload) {
 	switch p := p.(type) {
 	case StepResumed:
 		v.Resumes[p.Step]++
 	case ChecksReported:
 		v.Checks[p.Head] = CheckInfo{Ran: true, Results: nonNil(p.Results), Errors: nonNil(p.Errors), More: p.More}
+	case ProfileRequested:
+		v.ProfileRequest = &ProfileRequestInfo{Repo: p.Repo, By: p.By, Note: p.Note, Asked: e.OccurredAt}
 	case FindingRecheckRequested:
 		if f, ok := v.Findings[p.Ref.String()]; ok {
 			f.Rechecks++

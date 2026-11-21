@@ -1,0 +1,5 @@
+{
+  "repo": "acme/pay",
+  "by": "ana",
+  "note": "add a golangci-lint check that writes SARIF"
+}

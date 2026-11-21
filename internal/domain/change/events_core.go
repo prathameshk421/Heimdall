@@ -31,6 +31,7 @@ const (
 	EventStepEscalated       EventType = "step.escalated"
 	EventStepResumed         EventType = "step.resumed"
 	EventProfileProposed     EventType = "profile.proposed"
+	EventProfileRequested    EventType = "profile.requested"
 	EventTicketChanged       EventType = "ticket.changed"
 	EventPROpened            EventType = "pr.opened"
 	EventPRPushed            EventType = "pr.pushed"
@@ -63,6 +64,7 @@ func corePayloads() map[EventType]payloadEntry {
 		EventStepEscalated:       entry[StepEscalated](),
 		EventStepResumed:         entry[StepResumed](),
 		EventProfileProposed:     entry[ProfileProposed](),
+		EventProfileRequested:    entry[ProfileRequested](),
 		EventTicketChanged:       entry[TicketChanged](),
 		EventPROpened:            entry[PROpened](),
 		EventPRPushed:            entry[PRPushed](),
@@ -344,6 +346,32 @@ func (p ProfileProposed) Validate() error {
 	v.require("proposal_id", reHash.MatchString(p.ProposalID), "must be 64 lowercase hex characters")
 	v.add("repo", checkRepo(p.Repo))
 	return v.join()
+}
+
+// ProfileRequested is the payload of profile.requested: a policy owner asked the profiler to revise the repository's
+// promoted sandbox profile (D184). By is the person who asked and Note is what they want changed, in one bounded line.
+// The request stays pending until a proposal created at or after it exists.
+type ProfileRequested struct {
+	Repo Repo    `json:"repo"`
+	By   ActorID `json:"by"`
+	Note string  `json:"note"`
+}
+
+// maxProfileNote bounds the note of a profile.requested. It is one line of what to change, not a document.
+const maxProfileNote = 500
+
+// Validate returns every problem with the payload.
+func (p ProfileRequested) Validate() error {
+	var v problems
+	v.add("repo", checkRepo(p.Repo))
+	v.add("by", checkActor(p.By))
+	v.require("note", noteIsOneLine(p.Note), "must be one line of 1 to 500 bytes")
+	return v.join()
+}
+
+// noteIsOneLine reports whether a profile request note is bounded text without a line break.
+func noteIsOneLine(s string) bool {
+	return strings.TrimSpace(s) != "" && len(s) <= maxProfileNote && !strings.ContainsAny(s, "\r\n")
 }
 
 // StepResumed is the payload of step.resumed: a person released an escalated step (A10 item 5). Step is the workflow

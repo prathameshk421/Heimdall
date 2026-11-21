@@ -106,6 +106,9 @@ func (f *commandProfileFake) PreviousTrial(context.Context, string) (string, err
 	return "", nil
 }
 func (f *commandProfileFake) AllowedImages(context.Context) ([]string, error) { return nil, nil }
+func (f *commandProfileFake) PromotedArtifact(context.Context, string) (string, error) {
+	return "", nil
+}
 func (f *commandProfileFake) Promote(_ context.Context, p mcp.Principal, _ string) error {
 	f.promotions = append(f.promotions, p.Person)
 	return nil
@@ -130,6 +133,45 @@ func TestProfileHumanCommandsRequireMappedPolicyOwnerAndUseMappedIdentity(t *tes
 	promoted := ports.Message{ID: "profile-promoted", Room: room.RoomID, Sender: "ana", Text: "heimdall promote-profile " + proposalID}
 	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, promoted))
 	require.Equal(t, []string{"ana"}, profiles.promotions)
+}
+
+// A policy owner can ask the profiler to revise a promoted profile; the request is one event on the change it was posted
+// in, and a person who may not approve a profile may not ask for one either (D184).
+func TestReprofileRecordsTheRequestForAPolicyOwnerOnly(t *testing.T) {
+	cid := id.ChangeID("KAN-44")
+	runtime, store, chat, _ := setupCommandRuntime(t, cid, nil, ports.PR{})
+	runtime.profiles = &commandProfileFake{}
+	room := ports.RoomBinding{ChangeID: cid, RoomID: "profile-room"}
+
+	denied := ports.Message{ID: "reprofile-denied", Room: room.RoomID, Sender: "bob", Text: "heimdall reprofile add a lint check"}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, denied))
+	require.Contains(t, chat.posts[len(chat.posts)-1], "not allowed")
+	events, err := store.Load(context.Background(), cid)
+	require.NoError(t, err)
+	require.NotContains(t, eventTypes(events), change.EventProfileRequested)
+
+	asked := ports.Message{ID: "reprofile-asked", Room: room.RoomID, Sender: "ana",
+		Text: "heimdall reprofile add a golangci-lint check that writes SARIF"}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, asked))
+	events, err = store.Load(context.Background(), cid)
+	require.NoError(t, err)
+	require.Equal(t, []change.EventType{change.EventProfileRequested}, eventTypes(events[len(events)-1:]))
+	request, ok := mustPayload[change.ProfileRequested](events[len(events)-1])
+	require.True(t, ok)
+	require.Equal(t, change.Repo("aarush323/PBL_TOS_RISK_ANALYZER"), request.Repo, "the change's own repository")
+	require.Equal(t, change.ActorID("ana"), request.By)
+	require.Equal(t, "add a golangci-lint check that writes SARIF", request.Note)
+	require.Equal(t, change.ActorHuman, events[len(events)-1].Actor.Kind)
+	require.Equal(t, "Sent to the profiler. It will propose a revised sandbox profile for an owner to approve.", chat.posts[len(chat.posts)-1])
+}
+
+// eventTypes is the types of events in order.
+func eventTypes(events []change.Event) []change.EventType {
+	out := make([]change.EventType, 0, len(events))
+	for _, ev := range events {
+		out = append(out, ev.Type)
+	}
+	return out
 }
 
 type commandKnowledgeFiles struct{ approvals, forgets []string }
@@ -233,7 +275,7 @@ func TestServerCommandRuntimeSelectsReviewersForFanout(t *testing.T) {
 			require.True(t, ok)
 			assigned[string(payload.Agent)] = true
 		case change.EventChangeTriggered, change.EventRoomOpened, change.EventBranchEnsured,
-			change.EventTaskSuperseded, change.EventTaskRewoken, change.EventProviderProbed, change.EventProfileProposed, change.EventChecksReported,
+			change.EventTaskSuperseded, change.EventTaskRewoken, change.EventProviderProbed, change.EventProfileProposed, change.EventProfileRequested, change.EventChecksReported,
 			change.EventTaskAcked, change.EventTaskTimedOut, change.EventTaskFailed, change.EventTaskProgress,
 			change.EventStepRetried, change.EventStepEscalated, change.EventStepResumed, change.EventQuestionAsked, change.EventQuestionAnswered, change.EventCommandProposed, change.EventCommandConfirmed,
 			change.EventTestsSubmitted, change.EventTestsVerified, change.EventTestsRejected, change.EventTestsCommitted,

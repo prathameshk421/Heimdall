@@ -80,6 +80,9 @@ func (s *Server) inputDeps(p Principal, a Assignment) taskinput.Deps {
 		d.Providers["previous_trial"] = func(ctx context.Context, _ taskinput.Source) (string, error) {
 			return s.deps.Profiles.PreviousTrial(ctx, a.Task.Change.Repo)
 		}
+		d.Providers["revision"] = func(ctx context.Context, _ taskinput.Source) (string, error) {
+			return s.revisionInput(ctx, a)
+		}
 		d.Providers["stack_hints"] = func(ctx context.Context, _ taskinput.Source) (string, error) {
 			images, err := s.deps.Profiles.AllowedImages(ctx)
 			if err != nil {

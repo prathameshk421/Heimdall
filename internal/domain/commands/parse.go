@@ -129,6 +129,7 @@ func parseCommand(src Source, verb, args string) (Command, error) {
 		"approve-profile":   command(parseApproveProfile),
 		"approve-knowledge": command(parseApproveKnowledge),
 		"promote-profile":   command(parsePromoteProfile),
+		"reprofile":         command(parseReprofile),
 		"challenge":         command(parseChallenge),
 		"remember":          command(parseRemember),
 		"forget":            command(parseForget),

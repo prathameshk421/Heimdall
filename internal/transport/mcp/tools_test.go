@@ -737,3 +737,25 @@ func TestGetTaskShowsTheProfilerTheAllowedImages(t *testing.T) {
 	_, content := section(t, res.text(), "stack_hints")
 	require.Contains(t, content, img)
 }
+
+// A profiler asked to revise a promoted profile reads the person's request and that profile, as untrusted data (D184).
+func TestGetTaskShowsTheProfilerTheRevisionRequestAndThePromotedProfile(t *testing.T) {
+	r := newRig(t, workflow.RoleProfiler)
+	r.tasks.current.AssignedAt = t0
+	r.tasks.current.Revision = &change.ProfileRequestInfo{Repo: "acme/pay-demo", By: "ana",
+		Note: "add a golangci-lint check that writes SARIF", Asked: t0}
+	r.server.deps.Profiles = &fakeProfiles{artifact: "languages: [go]\nacceptance: go test -json -count=1 {dir}/...\n"}
+	res := r.call("get_task", `{}`)
+	require.False(t, res.IsError, res.text())
+	_, content := section(t, res.text(), "revision")
+	require.Contains(t, content, "Requested by ana: add a golangci-lint check that writes SARIF")
+	require.Contains(t, content, "acceptance: go test -json -count=1 {dir}/...")
+	require.Contains(t, content, "written outside Heimdall", "the request and the profile are data, not instructions")
+
+	// No request and nothing promoted: the section says there is nothing to show.
+	plain := newRig(t, workflow.RoleProfiler)
+	plain.server.deps.Profiles = &fakeProfiles{}
+	note, empty := section(t, plain.call("get_task", `{}`).text(), "revision")
+	require.Empty(t, empty)
+	require.Contains(t, note, "Nothing to show")
+}

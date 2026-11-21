@@ -220,3 +220,17 @@ func TestAProfileProposalEndsTheProfilerTask(t *testing.T) {
 	require.Error(t, change.ProfileProposed{TaskID: tk(fTask), Repo: "acme/pay"}.Validate(), "a proposal id is required")
 	require.Error(t, change.ProfileProposed{TaskID: tk(fTask), ProposalID: "short", Repo: "acme/pay"}.Validate(), "the id is 64 hex")
 }
+
+// A profile request is the newest one a person made: who asked, what they want changed, and when (D184).
+func TestAProfileRequestIsKeptAsTheNewestRequest(t *testing.T) {
+	v := fold(t,
+		ev(t, 1, change.EventProfileRequested, change.ProfileRequested{Repo: "acme/pay", By: "ana", Note: "add lint"}),
+		ev(t, 2, change.EventProfileRequested, change.ProfileRequested{Repo: "acme/pay", By: "bob", Note: "drop vet"}))
+	require.Equal(t, &change.ProfileRequestInfo{Repo: "acme/pay", By: "bob", Note: "drop vet", Asked: v.ProfileRequest.Asked}, v.ProfileRequest)
+	require.Equal(t, time.Date(2026, 11, 4, 9, 2, 0, 0, time.UTC), v.ProfileRequest.Asked, "the time of its own event")
+
+	require.NoError(t, change.ProfileRequested{Repo: "acme/pay", By: "ana", Note: "add lint"}.Validate())
+	require.Error(t, change.ProfileRequested{Repo: "acme/pay", By: "ana"}.Validate(), "a note is required")
+	require.Error(t, change.ProfileRequested{Repo: "acme/pay", By: "ana", Note: "two\nlines"}.Validate(), "the note is one line")
+	require.Error(t, change.ProfileRequested{Repo: "acme/pay", By: "ana", Note: strings.Repeat("x", 501)}.Validate(), "the note is bounded")
+}

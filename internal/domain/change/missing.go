@@ -184,3 +184,11 @@ func short(sha string) string {
 	}
 	return sha
 }
+
+// prefix returns at most the first n characters of s: a short id for a task input.
+func prefix(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}

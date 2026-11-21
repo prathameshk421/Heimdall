@@ -18,6 +18,7 @@ const (
 	useApproveProfile   = "approve-profile <proposal_id>"
 	useApproveKnowledge = "approve-knowledge <knowledge_id>"
 	usePromoteProfile   = "promote-profile <proposal_id>"
+	useReprofile        = "reprofile <what to change>"
 	useChallenge        = "challenge <finding> <evidence>"
 	useRemember         = "remember <text>"
 	useForget           = "forget <memory_ref> <reason>"
@@ -125,6 +126,22 @@ func parsePromoteProfile(p, args string) (PromoteProfile, error) {
 		return PromoteProfile{}, fail(p, usePromoteProfile, err)
 	}
 	return PromoteProfile{ID: id}, nil
+}
+
+// maxReprofileNote bounds the note of a reprofile, in bytes: one line of what to change, not a document.
+const maxReprofileNote = 500
+
+// parseReprofile takes free text: what the profiler must change. It is one line, so the note folds into one task input,
+// and it is bounded, so a long post cannot become an unbounded event payload.
+func parseReprofile(p, args string) (Reprofile, error) {
+	text := strings.Join(strings.Fields(args), " ")
+	switch {
+	case text == "":
+		return Reprofile{}, fail(p, useReprofile, errors.New("reprofile needs text: what the profiler should change"))
+	case len(text) > maxReprofileNote:
+		return Reprofile{}, fail(p, useReprofile, fmt.Errorf("the note must be at most %d bytes", maxReprofileNote))
+	}
+	return Reprofile{Note: text}, nil
 }
 
 // parseChallenge takes a finding and the evidence, which may run to several

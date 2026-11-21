@@ -44,6 +44,19 @@ func (a profileAPI) AllowedImages(ctx context.Context) ([]string, error) {
 	return a.service.AllowedImages(ctx)
 }
 
+// PromotedArtifact is the YAML of the repository's promoted profile, for a profiler asked to revise it (D184). It is
+// empty when the repository has no promoted profile.
+func (a profileAPI) PromotedArtifact(ctx context.Context, repo string) (string, error) {
+	p, ok, err := a.store.ActiveProfile(ctx, repo)
+	if err != nil {
+		return "", fmt.Errorf("read the promoted profile of %s: %w", repo, err)
+	}
+	if !ok {
+		return "", nil
+	}
+	return string(p.Artifact), nil
+}
+
 // PreviousTrial is the failed trial of the repository's newest proposal, for the profiler that proposes again (D175):
 // the outcome, the counts and the end of the log. It is empty when the newest proposal did not fail a trial.
 func (a profileAPI) PreviousTrial(ctx context.Context, repo string) (string, error) {

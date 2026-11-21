@@ -67,6 +67,7 @@ func renderers() map[string]renderer {
 		"prior_decisions": absent("prior_decisions", "earlier decisions on similar findings", "they are part of the case file"),
 		"previous_trial":  provided("previous_trial", "the failed trial of the last proposal: its counts and the end of its log"),
 		"stack_hints":     provided("stack_hints", "hints about the repository's stack: the images the runner allows"),
+		"revision":        provided("revision", "a person's request to revise the promoted profile, with that profile as it is now"),
 	}
 }
 

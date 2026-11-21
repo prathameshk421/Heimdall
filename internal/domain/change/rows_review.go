@@ -89,39 +89,69 @@ func rowChecks() Row {
 }
 
 // rowProfile walks the repository to a promoted sandbox profile (D175): the profiler proposes, an owner approves,
-// Heimdall runs the trial, an owner promotes. No row waits on it, so review never blocks on a profile, and it is last
-// in the table so a status lists the pull request's own merge work first. The proposal's
+// Heimdall runs the trial, an owner promotes. A policy owner may ask for a revision of a promoted profile with
+// `heimdall reprofile <note>`; the request is pending until a proposal created at or after it arrives, and that newer
+// proposal then drives the same approve, trial and promote steps (D184). No row waits on the profile, so review never
+// blocks on it, and it is last in the table so a status lists the pull request's own merge work first. The proposal's
 // state lives in the profile store and comes in through In.Profile.Latest.
 func rowProfile() Row {
 	return Row{ID: "profile", Flow: FlowReview, After: []string{"slop"}, Jobs: []EffectKind{EffectProfileTrial},
-		Done: func(in In) bool { return in.Profile.Promoted },
-		Next: func(in In) []Action {
-			repo := in.View.PR.Repo
-			latest := in.Profile.Latest
-			switch {
-			case latest == nil || (latest.State == "approved" && latest.Trial == "failed"):
-				if in.Settings.Profiler == "" {
-					return []Action{say(string(repo) + " has no sandbox profile, and no profiler is configured in [agents] to propose one")}
-				}
-				input := "first"
-				if latest != nil {
-					input = "after-" + latest.ID
-				}
-				return []Action{{Task: &Task{Kind: "profile", Subject: string(repo), Input: input},
-					Text: "the profiler proposes a sandbox profile for " + string(repo)}}
-			case latest.State == "proposed":
-				text := "approve the sandbox profile " + short(latest.ID) + " for " + string(repo) + ": `heimdall approve-profile " + latest.ID + "`"
-				return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
-			case latest.State == "approved" && latest.Trial == "":
-				p := ProfileTrialPayload{Repo: repo, ProposalID: latest.ID, SHA: in.View.PR.HeadSHA}
-				return []Action{{Text: "the sandbox profile " + short(latest.ID) + " runs its trial on " + short(string(in.View.PR.HeadSHA)),
-					Job: &Job{Kind: EffectProfileTrial, Key: in.jobKey("profile", latest.ID), Target: string(repo), Payload: p}}}
-			case latest.State == "approved" && latest.Trial == "passed":
-				text := "the sandbox profile " + short(latest.ID) + " passed its trial; promote it: `heimdall promote-profile " + latest.ID + "`"
-				return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
-			}
-			return []Action{say("the sandbox profile " + short(latest.ID) + " is " + latest.State + " but not active for " + string(repo))}
-		}}
+		// A promoted profile is done only while no request and no newer proposal is in flight: a request or a newer
+		// proposal must be handled before the row closes (D184).
+		Done: func(in In) bool {
+			return in.Profile.Promoted && in.Profile.pendingRequest(in.View) == nil &&
+				(in.Profile.Latest == nil || in.Profile.Latest.State == "promoted")
+		},
+		Next: profileNext}
+}
+
+// profileNext is what the profile row does while it is open: a revision the profiler must make, a first proposal, or
+// one of the approval, trial and promotion steps of the newest proposal.
+func profileNext(in In) []Action {
+	repo := in.View.PR.Repo
+	latest := in.Profile.Latest
+	switch {
+	case in.Profile.Promoted && in.Profile.pendingRequest(in.View) != nil:
+		return reviseProfileActions(in, repo)
+	case latest == nil || (latest.State == "approved" && latest.Trial == "failed"):
+		return proposeProfileActions(in, repo, latest)
+	case latest.State == "proposed":
+		text := "approve the sandbox profile " + short(latest.ID) + " for " + string(repo) + ": `heimdall approve-profile " + latest.ID + "`"
+		return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
+	case latest.State == "approved" && latest.Trial == "":
+		p := ProfileTrialPayload{Repo: repo, ProposalID: latest.ID, SHA: in.View.PR.HeadSHA}
+		return []Action{{Text: "the sandbox profile " + short(latest.ID) + " runs its trial on " + short(string(in.View.PR.HeadSHA)),
+			Job: &Job{Kind: EffectProfileTrial, Key: in.jobKey("profile", latest.ID), Target: string(repo), Payload: p}}}
+	case latest.State == "approved" && latest.Trial == "passed":
+		text := "the sandbox profile " + short(latest.ID) + " passed its trial; promote it: `heimdall promote-profile " + latest.ID + "`"
+		return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
+	}
+	return []Action{say("the sandbox profile " + short(latest.ID) + " is " + latest.State + " but not active for " + string(repo))}
+}
+
+// reviseProfileActions asks the profiler to change the promoted profile as a person requested. The input names the
+// promoted proposal and the request's time, so one request makes one task and a later request makes another.
+func reviseProfileActions(in In, repo Repo) []Action {
+	if in.Settings.Profiler == "" {
+		return []Action{say(string(repo) + " was asked for a profile change, and no profiler is configured in [agents] to make it")}
+	}
+	request := *in.Profile.pendingRequest(in.View)
+	input := "revise-" + prefix(in.Profile.PromotedID, 12) + "-" + strconv.FormatInt(request.Asked.Unix(), 10)
+	return []Action{{Task: &Task{Kind: "profile", Subject: string(repo), Input: input},
+		Text: "the profiler revises the sandbox profile of " + string(repo)}}
+}
+
+// proposeProfileActions asks the profiler for a first profile, or a new one after the newest failed its trial.
+func proposeProfileActions(in In, repo Repo, latest *ProfileProposal) []Action {
+	if in.Settings.Profiler == "" {
+		return []Action{say(string(repo) + " has no sandbox profile, and no profiler is configured in [agents] to propose one")}
+	}
+	input := "first"
+	if latest != nil {
+		input = "after-" + latest.ID
+	}
+	return []Action{{Task: &Task{Kind: "profile", Subject: string(repo), Input: input},
+		Text: "the profiler proposes a sandbox profile for " + string(repo)}}
 }
 
 func rowPick() Row {

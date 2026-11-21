@@ -45,6 +45,8 @@ type Assignment struct {
 	Attempt   int
 	// Leads are the profile check results on the head, one line each.
 	Leads []string
+	// Revision is the newest person's request to revise the repository's sandbox profile, nil before one (D184).
+	Revision *change.ProfileRequestInfo
 }
 
 // ErrInvalidSubmission marks a problem the application found in what the agent submitted. Its message names only the
@@ -159,6 +161,8 @@ type Profiles interface {
 	Approve(context.Context, Principal, string) error
 	// PreviousTrial is the failed trial of the repository's newest proposal, empty when there is none (D175).
 	PreviousTrial(ctx context.Context, repo string) (string, error)
+	// PromotedArtifact is the YAML of the repository's promoted profile, empty when it has none (D184).
+	PromotedArtifact(ctx context.Context, repo string) (string, error)
 	// AllowedImages is the runner's image allowlist; a proposal may name only these images.
 	AllowedImages(ctx context.Context) ([]string, error)
 	Promote(context.Context, Principal, string) error
