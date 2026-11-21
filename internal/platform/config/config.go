@@ -103,11 +103,13 @@ type AgentRuntimeConfig struct {
 
 const defaultAgentModel = "deploy/deepseek-ai/deepseek-v4.1-flash-1017"
 
-// Agents is [agents]. TestAuthor, Reviewers and Resolver name the agents participating in the workflow.
+// Agents is [agents]. TestAuthor, Reviewers and Resolver name the agents participating in the workflow. Profiler is
+// optional (D175): it holds the profile tasks that propose a repository's sandbox profile.
 type Agents struct {
 	TestAuthor string
 	Reviewers  []string
 	Resolver   string
+	Profiler   string
 }
 
 // Database is [database]. URLSecret names the file under SecretsDir that holds the Postgres URL. The URL
@@ -176,6 +178,7 @@ type fileAgents struct {
 	TestAuthor *string   `toml:"test_author"`
 	Reviewers  *[]string `toml:"reviewers"`
 	Resolver   *string   `toml:"resolver"`
+	Profiler   *string   `toml:"profiler"`
 }
 
 // fileDatabase is [database]. url_secret is a secret file name, not the URL.
@@ -638,11 +641,19 @@ func checkAgents(out *Agents, raw *fileAgents) []error {
 	} else if err := checkAgentName("agents.resolver", *raw.Resolver); err != nil {
 		errs = append(errs, err)
 	}
+	profiler := ""
+	if raw.Profiler != nil {
+		if err := checkAgentName("agents.profiler", *raw.Profiler); err != nil {
+			errs = append(errs, err)
+		}
+		profiler = *raw.Profiler
+	}
 	if len(errs) == 0 {
 		*out = Agents{
 			TestAuthor: *raw.TestAuthor,
 			Reviewers:  revs,
 			Resolver:   *raw.Resolver,
+			Profiler:   profiler,
 		}
 	}
 	return errs

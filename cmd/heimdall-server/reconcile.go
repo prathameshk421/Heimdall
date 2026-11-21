@@ -91,8 +91,8 @@ type keyReader struct{ cfg config.Config }
 // Get reads one named key.
 func (k keyReader) Get(name string) (string, error) { return k.cfg.Secret(name) }
 
-// agentFor says which agent holds a task: the test author and the resolver are configured, a review seat is its own
-// agent name.
+// agentFor says which agent holds a task: the test author, the resolver and the profiler are configured, a review seat
+// is its own agent name.
 func agentFor(agents config.Agents) func(kind, subject string) (id.AgentName, bool) {
 	return func(kind, subject string) (id.AgentName, bool) {
 		switch kind {
@@ -100,6 +100,8 @@ func agentFor(agents config.Agents) func(kind, subject string) (id.AgentName, bo
 			return id.AgentName(agents.TestAuthor), agents.TestAuthor != ""
 		case "verdict":
 			return id.AgentName(agents.Resolver), agents.Resolver != ""
+		case "profile":
+			return id.AgentName(agents.Profiler), agents.Profiler != ""
 		case "review":
 			name, err := id.ParseAgentName(subject)
 			return name, err == nil

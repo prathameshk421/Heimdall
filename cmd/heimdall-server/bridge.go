@@ -308,6 +308,9 @@ func newTokenStore(cfg config.Config) (*tokenStore, error) {
 	if cfg.Agents.Resolver != "" {
 		list = append(list, agentRole{agent: cfg.Agents.Resolver, role: workflow.RoleResolver})
 	}
+	if cfg.Agents.Profiler != "" {
+		list = append(list, agentRole{agent: cfg.Agents.Profiler, role: workflow.RoleProfiler})
+	}
 
 	for _, ar := range list {
 		if previous, exists := seenAgents[ar.agent]; exists {

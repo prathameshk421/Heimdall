@@ -21,6 +21,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
@@ -351,6 +352,21 @@ func TestTokenStoreRejectsAgentConfiguredForMultipleRoles(t *testing.T) {
 	}}
 	_, err := newTokenStore(cfg)
 	require.Error(t, err, "one Switch identity cannot receive two role-scoped MCP principals")
+}
+
+// The profiler's MCP token resolves to the profiler role, which propose_profile requires (D175).
+func TestTokenStoreMapsTheProfilerTokenToTheProfilerRole(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"test-author", "reviewer", "resolver", "profiler"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent_token_"+name), []byte("token-of-"+name), 0o400))
+	}
+	store, err := newTokenStore(config.Config{SecretsDir: dir, Agents: config.Agents{
+		TestAuthor: "test-author", Reviewers: []string{"reviewer"}, Resolver: "resolver", Profiler: "profiler",
+	}})
+	require.NoError(t, err)
+	principal, err := store.Resolve(context.Background(), mcp.HashToken("token-of-profiler"))
+	require.NoError(t, err)
+	require.Equal(t, mcp.Principal{Agent: "profiler", Role: workflow.RoleProfiler}, principal)
 }
 
 func TestTokenStoreRejectsTokenSharedByDifferentAgents(t *testing.T) {
