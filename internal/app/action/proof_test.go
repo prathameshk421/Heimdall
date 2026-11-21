@@ -339,6 +339,8 @@ func TestAProvenBugInEnforceIsBlocked(t *testing.T) {
 	require.Equal(t, proof.KindBlocked, a.Kind)
 	require.Len(t, a.Candidates, 1)
 	require.True(t, a.Candidates[0].Blocking)
+	require.Positive(t, a.Cost.USDMicros, "the artifact carries the run's spend: a paid run never looks free")
+	require.Equal(t, int64(res.Spend.InputTokens), a.Cost.PromptTokens)
 }
 
 // TestACleanChangeProvesNothing makes the sandbox pass the proposed test on the head. The run is not reproduced, which is

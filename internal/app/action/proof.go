@@ -200,6 +200,8 @@ func (p *Proof) Run(ctx context.Context, in ProofIn) (ProofResult, error) {
 	r.res = ProofResult{Head: in.Head, Base: in.Base, PolicyHash: in.PolicyHash, WorkflowRun: in.WorkflowRun,
 		Model: p.cfg.ModelName}
 	runErr := r.execute(ctx)
+	// The spend goes into the result before the artifact is built from it, so the artifact records what the run cost.
+	r.res.Spend = r.spent
 	artifact, artifactErr := artifactOf(r)
 	if artifactErr != nil {
 		return r.res, fmt.Errorf("action proof on %s: %w", in.ChangeID, artifactErr)
@@ -208,7 +210,7 @@ func (p *Proof) Run(ctx context.Context, in ProofIn) (ProofResult, error) {
 	if err != nil {
 		return r.res, fmt.Errorf("action proof on %s: %w", in.ChangeID, err)
 	}
-	r.res.Artifact, r.res.Spend = raw, r.spent
+	r.res.Artifact = raw
 	return r.res, runErr
 }
 

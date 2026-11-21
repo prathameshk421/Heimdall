@@ -136,6 +136,14 @@ func NewAction(cfg ActionConfig) (*ActionAPI, error) {
 	return &ActionAPI{c: c, tokens: cfg.Tokens, author: cfg.Author}, nil
 }
 
+// Adapter returns the VCS ports (ports.PRReader, ports.ReviewReader, ports.CheckWriter, ports.CodeReader and the rest
+// of Adapter) on this ActionAPI's client and tokens, so the Action gate reads the pull request and posts check runs
+// with the workflow's static token. The two share one client: one rate-limit wait, one circuit breaker, one cache.
+// The base branch of every repository is its default branch.
+func (x *ActionAPI) Adapter() *Adapter {
+	return &Adapter{c: x.c, tokens: x.tokens, baseBranches: map[change.Repo]string{}}
+}
+
 // Action returns the Action operations on this adapter's client and App tokens. author is the login of the App's
 // bot, for example heimdall[bot].
 func (a *Adapter) Action(author string) *ActionAPI {

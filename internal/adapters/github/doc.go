@@ -31,6 +31,10 @@
 //     ports.GitRefs, ports.GitObjects, ports.GitReader (GetCommit, recursive GetTree, GetBlob) and ports.GitRefSwapper
 //     (SwapRef, GraphQL updateRefs, for the git-ref event store AM8). It shares the client, pagination and error
 //     mapping with Adapter.
+//   - ActionAPI.Adapter() (AM15) returns an Adapter on the ActionAPI's client and tokens, so the Action gate reads the
+//     pull request, files, reviews and code, and posts check runs, with the workflow's static token. Its Tokens() is
+//     nil, because it has no App. ActionAPI.UpsertComment is Comment that also returns the comment id, which the gate
+//     records in summary.posted; a reply without an id is an error.
 //
 // # Traps
 //

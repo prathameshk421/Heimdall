@@ -159,7 +159,7 @@ func TestTransportFailureIsUnavailable(t *testing.T) {
 	dead := httptest.NewServer(http.NotFoundHandler())
 	dead.Close()
 	a, err := New(Config{
-		BaseURL: dead.URL, App: env.a.tokens.app, HTTPClient: dead.Client(), Clock: env.clock, Wait: env.wait.wait,
+		BaseURL: dead.URL, App: env.a.app.app, HTTPClient: dead.Client(), Clock: env.clock, Wait: env.wait.wait,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
