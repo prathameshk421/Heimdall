@@ -23,7 +23,7 @@ type runner interface {
 type execRunner struct{}
 
 func (execRunner) run(ctx context.Context, dir, name string, args ...string) (stdout, stderr []byte, err error) {
-	// #nosec G204 -- name is git, go or the test command of a case in the repo's own manifest; no shell is involved
+	// #nosec G204,G702 -- name is git, go or the test command of a case in the repo's own manifest; no shell is involved
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	var out, errOut bytes.Buffer

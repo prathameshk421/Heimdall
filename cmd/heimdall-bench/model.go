@@ -27,8 +27,8 @@ func liveModel(o reviewOptions) (ports.ModelChat, error) {
 		return nil, errors.New("review: -model and -key-file are required")
 	}
 	if !(o.price.InputPerM > 0) || !(o.price.OutputPerM > 0) || o.price.CachedInputPerM < 0 {
-		return nil, errors.New("review: set -price-input and -price-output (USD per million tokens) from the provider's page; " +
-			"without them the cost cap cannot see the spend")
+		return nil, errors.New("review: set -price-input and -price-output (USD per million tokens), or name a model in the " +
+			"price table; without a price the cost cap cannot see the spend")
 	}
 	abs, err := filepath.Abs(o.keyFile)
 	if err != nil {

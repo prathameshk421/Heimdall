@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,6 +31,52 @@ const (
 
 // testingCapUSD is the repo's testing cap (CLAUDE.md), the default of -max-cost.
 const testingCapUSD = 3.0
+
+// modelPrices returns the OpenRouter prices in USD per million tokens, read on 2026-11-21. The bench bills the model
+// the brief names, so a live run needs no price flags; a flag still wins, because a provider can change a price.
+func modelPrices() map[string]bench.Price {
+	return map[string]bench.Price{
+		"deepseek/deepseek-v4-flash": {InputPerM: 0.09, CachedInputPerM: 0.018, OutputPerM: 0.18},
+	}
+}
+
+// priceFor picks the price of the run: the flags when they are set, the table when they are not. A model the table
+// does not know needs both price flags, because a run with no price would be blind to its spend.
+func priceFor(model string, flags bench.Price) (bench.Price, error) {
+	set := flags.InputPerM != 0 || flags.OutputPerM != 0
+	if set {
+		if !(flags.InputPerM > 0) || !(flags.OutputPerM > 0) {
+			return bench.Price{}, errors.New("review: -price-input and -price-output must both be positive USD per million tokens")
+		}
+		if flags.CachedInputPerM < 0 {
+			flags.CachedInputPerM = flags.InputPerM
+		}
+		return flags, nil
+	}
+	p, ok := modelPrices()[model]
+	if !ok {
+		return bench.Price{}, fmt.Errorf("review: no price for %s: pass -price-input and -price-output from the provider's page", model)
+	}
+	return p, nil
+}
+
+// parseCaseIDs splits the -only flag: commas or spaces, with a repeated or empty id refused as a typo.
+func parseCaseIDs(s string) ([]string, error) {
+	fields := strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
+	seen := map[string]bool{}
+	var out []string
+	for _, id := range fields {
+		if seen[id] {
+			return nil, fmt.Errorf("-only names %q twice", id)
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	if strings.TrimSpace(s) != "" && len(out) == 0 {
+		return nil, errors.New("-only: want one case id or a comma-separated list")
+	}
+	return out, nil
+}
 
 // reviewOptions are the flags of the review command.
 type reviewOptions struct {
@@ -59,9 +106,9 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	fs.StringVar(&o.model, "model", "", "the model id, such as deepseek/deepseek-v4-flash (required)")
 	fs.StringVar(&o.keyFile, "key-file", "", "the file that holds the model key, read through internal/platform/config (required)")
 	fs.StringVar(&o.baseURL, "base-url", "https://openrouter.ai/api/v1", "the OpenAI-compatible API root")
-	fs.Float64Var(&o.price.InputPerM, "price-input", 0, "USD per million input tokens (required)")
-	fs.Float64Var(&o.price.CachedInputPerM, "price-cached", -1, "USD per million cache-read tokens; default the input price")
-	fs.Float64Var(&o.price.OutputPerM, "price-output", 0, "USD per million output tokens (required)")
+	fs.Float64Var(&o.price.InputPerM, "price-input", 0, "USD per million input tokens; default the table's price for -model")
+	fs.Float64Var(&o.price.CachedInputPerM, "price-cached", -1, "USD per million cache-read tokens; unset means the input price")
+	fs.Float64Var(&o.price.OutputPerM, "price-output", 0, "USD per million output tokens; default the table's price for -model")
 	fs.Float64Var(&o.maxCost, "max-cost", testingCapUSD, "hard cap in USD for the whole run; no call that could pass it is made")
 	fs.Float64Var(&o.perCase, "per-case-cost", 0.50, "the agent loop budget in USD for one case (ACTION_MODE 7)")
 	block := fs.String("block-severity", "medium", "a proven finding at or above this severity blocks")
@@ -72,8 +119,13 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	if o.out == "" {
 		return o, errors.New("review: -out is required")
 	}
-	if o.price.CachedInputPerM < 0 {
-		o.price.CachedInputPerM = o.price.InputPerM
+	p, err := priceFor(o.model, o.price)
+	if err != nil {
+		return o, err
+	}
+	o.price = p
+	if _, err := parseCaseIDs(o.only); err != nil {
+		return o, fmt.Errorf("review: -only: %w", err)
 	}
 	sev, err := finding.ParseSeverity(*block)
 	if err != nil {
@@ -181,21 +233,41 @@ func reviewCases(o reviewOptions) ([]bench.Case, error) {
 	if err != nil {
 		return nil, err
 	}
-	picked, err := selectCases(m, o.only)
+	ids, err := parseCaseIDs(o.only)
 	if err != nil {
 		return nil, err
 	}
-	var out []bench.Case
-	for _, c := range picked {
-		switch {
-		case c.Status == bench.StatusValid && c.Language == "go":
-			out = append(out, c)
-		case o.only != "":
-			return nil, fmt.Errorf("review: %s is not a valid Go case", c.ID)
-		}
+	out, err := pickCases(m.Cases, ids)
+	if err != nil {
+		return nil, err
 	}
 	if len(out) == 0 {
 		return nil, errors.New("review: no valid Go case to review")
+	}
+	return out, nil
+}
+
+// pickCases keeps the valid Go cases, or, when ids is not empty, exactly those ids, which must all be valid Go cases.
+func pickCases(cases []bench.Case, ids []string) ([]bench.Case, error) {
+	var out []bench.Case
+	have := map[string]bool{}
+	for _, c := range cases {
+		if len(ids) > 0 && !slices.Contains(ids, c.ID) {
+			continue
+		}
+		if c.Status != bench.StatusValid || c.Language != "go" {
+			if len(ids) > 0 {
+				return nil, fmt.Errorf("review: %s is not a valid Go case", c.ID)
+			}
+			continue
+		}
+		out = append(out, c)
+		have[c.ID] = true
+	}
+	for _, id := range ids {
+		if !have[id] {
+			return nil, fmt.Errorf("review: -only %q names no valid Go case in the manifest", id)
+		}
 	}
 	return out, nil
 }
