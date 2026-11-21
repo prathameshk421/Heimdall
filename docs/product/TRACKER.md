@@ -44,7 +44,8 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | AM12 agent loop | Claude Personal / Sonnet | `am12-agentloop` | merged | delegate `a9b75ad`; coordinator review added the section 7 per-run input and output token caps (stop as `StopBudget`) and made the per-answer output cap required. Lint 0 issues, archcheck holds (104 packages), unit 3776 tests after merge. No live model run, no real sandbox tools (AM11): not verified. AM5 must map `StopNoSubmission` and `StopModelError` |
 | AM3 Action events | waiting | | blocked | needs Stage 0 to release `change` |
 | A9b sign-in by stable id | Claude Personal / Sonnet | `a9b-stable-id` | merged | `2d96eb1`: GitHub by numeric `id` (int64, zero, negative, text, float, huge refused), OIDC `sub` by default, no login fallback, config refuses a GitHub person without `github_id`, session identity re-checked per request in constant time, old cookies fail to open. Break attempt: guard mutated, test caught it. Lint 0 issues, archcheck holds, unit 4129 after merge. Live provider sign-in not verified. Operators: GitHub configs need `github_id`; email OIDC needs `login_claim = "email"`; everyone signs in once after deploy |
-| AM7 third-party comment parsers | Claude Personal / Sonnet | `am7-external` | running | |
+| AM7 third-party comment parsers | Claude Personal / Sonnet | `am7-external` | merged | `3b68d20`: CodeRabbit, Copilot, Cursor Bugbot, Greptile by Bot type + login in `sources` + body mark; mapping through diff hunks reviewed by coordinator; typed drops; bounds in doc.go. Fuzz pass, 64 KiB pathological bodies under 200 ms. Lint 0 issues, archcheck holds (108 packages), unit 4210 after merge. Goldens hand-made from documented formats: real bot comments not verified (A5) |
+| AM11 isolated sandbox + escape probes | Claude Personal / Opus | `am11-sandbox` | running | owner yes ("go with everything") for throwaway runs on the fixture repo, S1 guardrails |
 | AM9 GitHub adapter additions | Claude Personal / Sonnet | `am9-github` | merged | `40b792d`: static token, comments by marker and author, artifact zip (streaming cap, entry count, per-entry limit read through, path escape, symlink and duplicate refusal), code scanning, Git Data (no CAS claimed). New ports in `internal/ports/vcs_action.go`. Coordinator kept 422 untyped: the shared adapter's test asserts it on purpose and the live gate uses it; AM8 calls GetRef instead. Lint 0 issues, unit 4109 after merge. Live GitHub calls, cross-host artifact redirect, comment size limit not verified |
 
 ## Owner decisions (Nov 21 2026: "go with your recommendations")
@@ -58,6 +59,11 @@ in the shared checkout. This track works on `product-build` in its own worktree
 - DeepSeek is out of implementation lanes for now (free limit, a paid run hung for 5 hours); Sonnet takes them.
 
 ## Follow-ups and noticed
+
+- AM7 for A5: the default `action.sources` Copilot login is `copilot-pull-request-reviewer[bot]`; newer APIs may say
+  `Copilot`. Check the real login on a live PR before A5 ships, or Copilot comments are silently ignored.
+- AM7 for AM14: the caller sets `Outdated` (REST `position` null or GraphQL `isOutdated`); LEFT-side comments stay
+  unmapped with `Side` set; duplicate merging with our findings (6.2 step 5) is AM14's.
 
 - AM9 for AM14: `Adapter.tokens` is the concrete App token source, so the existing PR, files, reviews and checks calls
   cannot use the Action's static token yet. Make the field the `Tokens` interface when AM14 wires Action mode.
