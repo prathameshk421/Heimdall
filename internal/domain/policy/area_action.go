@@ -142,9 +142,15 @@ func defaultTrivial() []string {
 	}
 }
 
+// defaultSources is the list of review sources that a policy with no action area counts (ACTION_MODE 6.1). Copilot is
+// listed under both of its logins; the reader accepts either, so a policy written from the older documentation and the
+// real login agree. Macroscope, the Codex connector and Devin are listed because they post inline findings on the
+// repositories this product was measured on (docs/product/research/13-t3code-bot-comments.md); a repository without
+// them gains nothing and loses nothing.
 func defaultSources() []string {
 	return []string{
-		"coderabbitai[bot]", "copilot-pull-request-reviewer[bot]", "cursor[bot]", "greptile-apps[bot]",
+		"coderabbitai[bot]", "copilot-pull-request-reviewer[bot]", "Copilot", "cursor[bot]", "greptile-apps[bot]",
+		"macroscopeapp[bot]", "chatgpt-codex-connector[bot]", "devin-ai-integration[bot]",
 	}
 }
 

@@ -1,0 +1,32 @@
+{
+  "comment": {
+    "id": 3694746613,
+    "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Preserve the closing overlay mode during the exit animation**\n\nWhen the file picker or content-search overlay closes via its shortcut, backdrop, or result selection, `reduceCommandPaletteUiState` immediately resets `state.mode` to `\"command\"`. Keeping this subtree alive for Base UI's 200 ms ending transition therefore replaces the visible picker/search contents with `OpenCommandPaletteDialog` before the popup fades out, producing a flash of the wrong UI and, for content search, a height change during the new closing animation. Preserve the rendered mode until the exit completes rather than rendering directly from the reset mode.\n\nUseful? React with 👍 / 👎.",
+    "path": "apps/web/src/components/CommandPalette.tsx",
+    "line": 482,
+    "start_line": 481,
+    "original_line": 482,
+    "original_start_line": 481,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "original_commit_id": "head0001",
+    "outdated": false,
+    "user": {
+      "login": "chatgpt-codex-connector[bot]",
+      "type": "Bot"
+    }
+  },
+  "want": {
+    "tool": "codex",
+    "severity": "medium",
+    "severity_stated": true,
+    "outdated": false,
+    "claim_contains": [
+      "Preserve the closing overlay mode"
+    ],
+    "claim_excludes": [
+      "P2 Badge",
+      "img.shields.io"
+    ]
+  }
+}

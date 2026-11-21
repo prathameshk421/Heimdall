@@ -1,0 +1,32 @@
+{
+  "comment": {
+    "id": 2795723437,
+    "body": "_⚠️ Potential issue_ | _🟡 Minor_\n\n**Use `bunx` instead of `npx` in the verification snippet.**  \nThis keeps docs consistent with the Bun-only tooling standard.\n\n<details>\n<summary>✏️ Proposed doc fix</summary>\n\n```diff\n-# Or just the git test file\n-npx vitest run apps/desktop/src/git.test.ts\n+# Or just the git test file\n+bunx vitest run apps/desktop/src/git.test.ts\n```\n\n</details>\n  \nBased on learnings: Use Bun as the package manager. Use `bunx <BIN>` when executing scripts from npm packages not installed as a project dependency.\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\n```\nIn @.plans/git-flows-integration-tests.md around lines 93 - 99, The\ndocumentation uses \"npx vitest run apps/desktop/src/git.test.ts\" which\ncontradicts the Bun-centric tooling elsewhere; update the verification snippet\nto use Bun's runner by replacing the \"npx\" invocation with \"bunx\" (so the second\ncommand uses bunx vitest run apps/desktop/src/git.test.ts) and keep the existing\n\"cd apps/desktop && bun run test\" line unchanged; ensure both examples\nconsistently recommend Bun tooling.\n```\n\n</details>\n\n<!-- fingerprinting:phantom:poseidon:eagle -->\n\n<!-- This is an auto-generated comment by CodeRabbit -->",
+    "path": ".plans/git-flows-integration-tests.md",
+    "line": 99,
+    "start_line": 93,
+    "original_line": 99,
+    "original_start_line": 93,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "original_commit_id": "head0001",
+    "outdated": false,
+    "user": {
+      "login": "coderabbitai[bot]",
+      "type": "Bot"
+    }
+  },
+  "want": {
+    "tool": "coderabbit",
+    "severity": "medium",
+    "severity_stated": true,
+    "outdated": false,
+    "claim_contains": [
+      "bunx"
+    ],
+    "claim_excludes": [
+      "Potential issue",
+      "Minor"
+    ]
+  }
+}

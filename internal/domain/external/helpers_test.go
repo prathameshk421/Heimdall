@@ -51,7 +51,10 @@ func readFile(t *testing.T, path string, v any) {
 }
 
 func allSources() []string {
-	return []string{"coderabbitai[bot]", "copilot-pull-request-reviewer[bot]", "cursor[bot]", "greptile-apps[bot]"}
+	return []string{
+		"coderabbitai[bot]", "copilot-pull-request-reviewer[bot]", "cursor[bot]", "greptile-apps[bot]",
+		"macroscopeapp[bot]", "chatgpt-codex-connector[bot]", "devin-ai-integration[bot]",
+	}
 }
 
 func newPR() external.PR { return external.PR{Head: head, Sources: allSources()} }

@@ -1,0 +1,34 @@
+{
+  "comment": {
+    "id": 3025046337,
+    "body": "🟢 **Low**\n\nhttps://github.com/pingdotgg/t3code/blob/81eabe2f7b436dafb24a20d19ae9fd1724032fb6/apps/web/src/components/GitActionsControl.tsx#L40\n\n`buildGitActionProgressStages` returns early for `push` and `create_pr` actions without including `branchStages`, so when `featureBranch` is true the progress UI omits the \"Preparing feature branch...\" stage. This occurs when a user on the default branch triggers push or create_pr and clicks \"Checkout feature branch & continue\" — the `checkoutFeatureBranchAndContinuePendingAction` callback passes `featureBranch: true` with the original action, but the branch preparation stage is never shown.\n\n\n<details>\n<summary>🚀 Reply \"<strong>fix it for me</strong>\" or copy this <strong>AI Prompt</strong> for your agent:</summary>\n\n```text\nIn file apps/web/src/components/GitActionsControl.tsx around line 40:\n\n`buildGitActionProgressStages` returns early for `push` and `create_pr` actions without including `branchStages`, so when `featureBranch` is true the progress UI omits the \"Preparing feature branch...\" stage. This occurs when a user on the default branch triggers push or create_pr and clicks \"Checkout feature branch & continue\" — the `checkoutFeatureBranchAndContinuePendingAction` callback passes `featureBranch: true` with the original action, but the branch preparation stage is never shown.\n\nEvidence trail:\napps/web/src/components/GitActionsControl.logic.ts lines 40-68: `buildGitActionProgressStages` function shows that `branchStages` is calculated on line 48 but the early returns for `push` (line 51-52) and `create_pr` (line 53-55) do not include it, while `commit`, `commit_push`, and the default case do include it.\n\napps/web/src/components/GitActionsControl.tsx lines 625-637: `checkoutFeatureBranchAndContinuePendingAction` passes `featureBranch: true` with the original action from `pendingDefaultBranchAction`.\n\napps/web/src/components/GitActionsControl.logic.ts lines 33-37: `DefaultBranchConfirmableAction` type includes `push` and `create_pr`.\n```\n</details>",
+    "path": "apps/web/src/components/GitActionsControl.tsx",
+    "line": 1,
+    "start_line": null,
+    "original_line": 1,
+    "original_start_line": null,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "original_commit_id": "head0001",
+    "outdated": false,
+    "user": {
+      "login": "macroscopeapp[bot]",
+      "type": "Bot"
+    }
+  },
+  "want": {
+    "tool": "macroscope",
+    "severity": "low",
+    "severity_stated": true,
+    "outdated": false,
+    "claim_contains": [
+      "buildGitActionProgressStages"
+    ],
+    "claim_excludes": [
+      "https://github.com",
+      "#L40",
+      "Reply \"fix it for me\"",
+      "AI Prompt"
+    ]
+  }
+}

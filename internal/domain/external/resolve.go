@@ -13,6 +13,8 @@ type place struct {
 	path       string
 	start, end int
 	side       Side
+	outdated   bool   // GitHub lost the line: the range is the original pair
+	commit     string // the commit the range is on when outdated
 }
 
 // failure is the typed reason a comment has no place.
@@ -27,6 +29,11 @@ func outdated(c Cause) *failure   { return &failure{proof.DropOutdated, c} }
 // locate finds the place of a review comment at head (ACTION_MODE 6.2, step 3). A comment on an older commit is mapped
 // through the diff from that commit to head. A comment on the LEFT side points into the base file, which head does not
 // change, so it is not mapped.
+//
+// A comment that GitHub calls outdated, or whose line is null, has no line at head. 145 of the 411 real comments in
+// docs/product/research/13-t3code-bot-comments.md are like that, so it is not dropped: its original_line and
+// original_commit_id are the anchor, the place says Outdated, and a caller that only proves at head knows it cannot use
+// it.
 func (pr PR) locate(c Comment) (place, *failure) {
 	if c.Kind != "" && c.Kind != KindReviewComment {
 		return place{}, noLocation(CauseSummary)
@@ -49,8 +56,18 @@ func (pr PR) locate(c Comment) (place, *failure) {
 		p.side = SideLeft
 		return p, nil
 	}
+	return pr.placeOnCommit(c, p, commit)
+}
+
+// placeOnCommit finishes a place that needs a commit: a comment GitHub calls outdated keeps its original pair and is
+// marked, a comment on head needs no diff, and a comment on an older commit is mapped through the diff.
+func (pr PR) placeOnCommit(c Comment, p place, commit string) (place, *failure) {
 	if commit == "" {
 		return place{}, noLocation(CauseNoCommit)
+	}
+	if p.outdated = c.Outdated || c.Line <= 0; p.outdated {
+		p.commit = commit
+		return p, nil
 	}
 	if commit == pr.Head {
 		return p, nil

@@ -1,0 +1,34 @@
+{
+  "comment": {
+    "id": 2780685578,
+    "body": "`src/main.ts:333` Replacing `/` with `-` can cause collisions (e.g., `feature/test` and `feature-test` both become `feature-test`). Consider using a more unique transformation or appending a hash to avoid conflicts.\n\nNo longer relevant as of 79fdda9deea9abd21c3036f6a1d1f5004db4a8b2",
+    "path": "apps/desktop/src/main.ts",
+    "line": null,
+    "start_line": null,
+    "original_line": 333,
+    "original_start_line": null,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "original_commit_id": "head0001",
+    "outdated": true,
+    "user": {
+      "login": "macroscopeapp[bot]",
+      "type": "Bot"
+    }
+  },
+  "want": {
+    "tool": "macroscope",
+    "severity": "medium",
+    "severity_stated": false,
+    "outdated": true,
+    "claim_contains": [
+      "Replacing",
+      "collisions"
+    ],
+    "claim_excludes": [
+      "src/main.ts:333",
+      "No longer relevant",
+      "79fdda9"
+    ]
+  }
+}
