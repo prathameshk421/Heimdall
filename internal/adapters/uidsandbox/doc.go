@@ -55,14 +55,19 @@
 //     resolvectl reach the host's systemd-resolved through /run/systemd/resolve/io.systemd.Resolve from both phases,
 //     and the fetch phase reached the system D-Bus, snapd, polkit and the local ssh socket. That is why both phases
 //     hide /run with TemporaryFileSystem=/run (/var/run links to it), hide /tmp with PrivateTmp and the homes with
-//     ProtectHome, and why the fetch phase may open no AF_UNIX socket. Run 44869764001 proved the fix. Do not
-//     remove one of these properties to make a tool work; a tool that needs one is an owner decision.
+//     ProtectHome, and why the fetch phase may open no AF_UNIX socket. Run 44910812111 proved the fix (0 of 77 host
+//     sockets reachable from the execution phase, 0 of 79 from the fetch phase). Do not remove one of these
+//     properties to make a tool work; a tool that needs one is an owner decision.
+//   - PrivateDevices= binds the host's /dev/shm into the service's new /dev. Run 44909950640 read a 0644 canary of
+//     the runner user there from both phases. That is why /dev/shm gets its own tmpfs (TemporaryFileSystem=/run
+//     /dev/shm:mode=1777), and why Setup leaves a root-owned marker in the host's /tmp, /var/tmp and /dev/shm for
+//     the self check to look for.
 //   - A scope takes only resource and kill properties. That is why jobs run as a service, not a scope, and why
 //     setpriv is gone: User=, NoNewPrivileges= and an empty CapabilityBoundingSet= do its work.
 //   - systemd-run expands "$X" and "${X}" in the command line unless --expand-environment=no. It is always passed,
 //     so PR argv stays literal.
-//   - The fetch phase shares the host network namespace, so its /proc/net/unix lists the host's socket names (112 in
-//     run 44869764001). None can be reached: socket(AF_UNIX) fails with EAFNOSUPPORT.
+//   - The fetch phase shares the host network namespace, so its /proc/net/unix lists the host's socket names (118
+//     entries in run 44910812111). None can be reached: socket(AF_UNIX) fails with EAFNOSUPPORT.
 //   - A real package manager that needs AF_UNIX in the fetch phase fails there. Only Go's was tried (it works).
 //   - The runner user cannot signal the root sudo process. A cancelled job is killed through sudo: systemctl kill on
 //     its scope, then pkill on the uid, in rounds until pgrep finds nothing.
@@ -76,8 +81,8 @@
 //   - systemd skips PrivateNetwork= on a kernel without network namespaces, and RestrictAddressFamilies= and the
 //     other seccomp properties on a kernel without seccomp, and the service still starts. Exit status 0 is no proof.
 //     The self check reads what the service got (uid, NoNewPrivs, every capability set, Seccomp mode 2, only lo in
-//     the execution phase, and no /run/systemd, /run/dbus, /run/user, /proc/1, runner home or _temp) and refuses the
-//     runner on any doubt. This is the rule for an escape that cannot be closed: the sandbox refuses to run, and the
+//     the execution phase, and no /run/systemd, /run/dbus, /run/user, /proc/1, runner home, _temp or host marker)
+//     and refuses the runner on any doubt. This is the rule for an escape that cannot be closed: the sandbox refuses to run, and the
 //     proof run reports unknown.
 //
 // # Tests
@@ -94,8 +99,11 @@
 //     argv chain of an execution job, the deadline rounding, the fetch job's proxy variables, job validation, a
 //     survivor after the kill, the JUnit file read in the hardened service, jobs before Setup.
 //   - probe_linux_test.go (tags linux, sbxprobe) is the escape probe harness. It runs only on a throwaway hosted
-//     runner, with the probe module in testdata/probe. Evidence: run 44869764001 (Nov 21 2026, ubuntu-latest =
-//     Ubuntu 26.04.1, systemd 259.9): all 34 probe tests in both phases blocked their escapes, including connects to
-//     all 75 host Unix sockets found as root, and the allowed fetch worked. Runs 44868233309 and 44868368873 were the
-//     scope design and found the escape above. Details are in ACTION_MODE_SPIKE.md section 9.
+//     runner, with the probe module in testdata/probe. A probe that cannot make its attempt is UNKNOWN, and UNKNOWN
+//     fails the harness. Evidence: run 44910812111 (Nov 21 2026, ubuntu-latest = Ubuntu 26.04.1, systemd 259.9,
+//     kernel 7.0.0-1016-aws): the self check passed in both phases, 34 fetch and 36 execution probe tests blocked
+//     their escapes with 0 unknown, the 45 s hang job ended at 45 s with no survivor, no plant reached any of 39
+//     host world-writable directories, the journal holds no sandbox line, and the allowed fetch worked. Run
+//     44909950640 (Azure kernel) found the /dev/shm escape above; every other probe was blocked there too. Runs
+//     44868233309 and 44868368873 were the scope design. Details are in ACTION_MODE_SPIKE.md section 9.
 package uidsandbox
