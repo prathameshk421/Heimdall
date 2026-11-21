@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 99 24" width="198" height="48" role="img" aria-label="Heimdall">
+  <g fill="none" stroke="#1d1c1a" stroke-linecap="butt" stroke-linejoin="miter">
+    <g stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g>
+    <g transform="translate(31 6.5) scale(0.92)" stroke-width="1.7" stroke-miterlimit="3"><path d="M0.8 0V12M7.8 0V12M0.8 6H7.8"/><path d="M17.6 0.8H11.8V11.2H17.6M11.8 6H16.6"/><path d="M21.6 0V12"/><path d="M25.6 12V0.8L29.85 9L34.1 0.8V12"/><path d="M38.1 0.8H41.4A3.9 5.2 0 0 1 41.4 11.2H38.1Z"/><path d="M48.4 12L52.4 0.6L56.4 12M49.9 7.8H54.9"/><path d="M60.4 0V11.2H71.6M66.2 0V11.2"/></g>
+  </g>
+</svg>

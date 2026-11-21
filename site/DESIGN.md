@@ -51,3 +51,72 @@ artifact next to its prompt, charts sit over plain tables, and the voice is a me
 - Pill buttons with a spring animation. We use a plain rectangular button with a 2 px radius.
 - Radar charts. Our data is small; a table with inline bars is clearer.
 - Prev and next post links. We have one page, so anchored sections and a "back to contents" link do that job.
+
+## 4. Identity
+
+### Logo
+
+Three candidates are in `site/brand/logo-options.html`: A Gate (a doorway with a check inside), B Crossing (a doorway
+open at one corner, the check leaving through the gap) and C Gateposts (two posts with a check in the gap).
+
+We chose **C, Gateposts**. Reasons:
+
+- It says the product in one shape: two gateposts, and nothing passes unless the check holds.
+- It has three strokes and no closed box. At 16 px it stays sharp, and it does not read as a checkbox. A and B both
+  read as a checked box at small sizes, which is the most common "done" icon there is.
+- It works in one color and in reverse with no change, because it is stroke only.
+- A first try joined the check to both posts to make the letter H. It read as "M" or "И", so the check floats.
+
+The wordmark is drawn as strokes on a 12-unit cap height, uppercase and spaced, so the SVG files need no font. The two
+Ls share one base line: a small bridge.
+
+Files: `site/brand/logo.svg` (mark and wordmark), `site/brand/logo-mark.svg`, `site/brand/favicon.svg` (it switches to
+a light stroke in a dark browser theme). The mark is drawn on a 24-unit grid with a 2.5-unit stroke. Keep clear space
+of half the mark's width on every side. Do not fill it, add a gradient, or rotate it.
+
+### Color
+
+One accent, and neutrals. The accent marks only proven things: the finding that blocks, its proof, and the focus ring.
+Everything else is ink on paper.
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--paper` | `#fbfaf7` | `#121211` | Page background |
+| `--fill` | `#f2f0eb` | `#1b1a18` | Figure panels, table header band |
+| `--rule` | `#e4e1da` | `#2d2b28` | 1 px rules and borders |
+| `--muted` | `#67645e` | `#a29e95` | Captions, dates, footnotes, UI labels |
+| `--text` | `#2c2b28` | `#d9d6cf` | Body text |
+| `--ink` | `#1d1c1a` | `#eeece7` | Headings, logo, primary button |
+| `--accent` | `#b3341b` | `#f0805f` | Signal vermilion. Proven findings, proof labels, focus ring |
+
+All text pairs pass WCAG AA (4.5:1) on `--paper` and `--fill`; the check is in section 5.
+
+### Type
+
+Two Google fonts. **Newsreader** for reading text and headings. **IBM Plex Sans** for UI: navigation, contents,
+captions, tables, buttons and numbers. Code uses the system monospace font (`ui-monospace`, SF Mono, Menlo), so there
+is no third web font.
+
+| Step | Size / line height | Font | Use |
+|---|---|---|---|
+| Title | 34 px / 1.2 (28 px under 600 px) | Newsreader 600 | Page title only |
+| Section | 24 px / 1.3 | Newsreader 600 | h2 |
+| Subsection | 19 px / 1.4 | Newsreader 600 | h3 |
+| Body | 18 px / 1.65 | Newsreader 400 | Paragraphs, 680 px column (about 72 characters) |
+| UI | 14 px / 1.5 | Plex Sans 400 and 500 | Nav, tables, captions, buttons |
+| Micro | 12.5 px / 1.45 | Plex Sans 400 | Footnotes, labels |
+
+### Space, borders, numbers, footnotes
+
+- Spacing scale: 4, 8, 12, 16, 24, 32, 48, 64, 96 px. Sections are 64 px apart; a head has 16 px below it.
+- Borders: 1 px `--rule` only. No shadows. Radius 2 px on buttons and panels, 0 on tables.
+- Tables: Plex Sans 14 px, tabular figures, numbers right-aligned, a rule under the header and between rows, no
+  vertical rules. A missing value is "–" and a footnote says why.
+- Numbers: every number has a unit and a condition ("10 cases, DeepSeek V4.1 Flash, 21 Nov 2026"), and it links to the
+  source line on `product-build`.
+- Footnotes: a superscript number in Plex Sans links to a numbered note at the end of the section. The note gives the
+  condition and the source. Each note links back.
+- Figures: a `--fill` panel, then "Figure N:" in Plex Sans 500 and a 14 px `--muted` caption. A caption says plainly
+  which parts are illustration.
+- Motion: color and opacity fades of 0.2 to 0.3 s. The hero demo is the only sequence. Under
+  `prefers-reduced-motion: reduce`, nothing moves and the demo shows its final state.
