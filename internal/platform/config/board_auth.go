@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -44,17 +45,21 @@ type BoardAuth struct {
 	// RedirectURL is the callback the identity provider sends the browser back to. Its path is /auth/callback.
 	RedirectURL string
 	SessionTTL  time.Duration
-	// LoginClaim is the ID token claim that names a person in oidc mode: "email" (verified only) or "sub".
+	// LoginClaim is the ID token claim that names a person in oidc mode: "sub" (the default, stable per issuer) or
+	// "email" (an explicit choice; verified only; an email can be reassigned to another person).
 	LoginClaim string
-	// People are the only logins that may read the board, sorted by person name.
+	// People are the only identities that may read the board, sorted by person name.
 	People []BoardPerson
 }
 
-// BoardPerson maps one login to a person of the people map and a board role: viewer, approver or admin.
+// BoardPerson maps one stable identity to a person of the people map and a board role: viewer, approver or admin.
+// In github mode the identity is GitHubID (Login is empty). In oidc mode it is Login, the value of the login claim
+// (GitHubID is zero).
 type BoardPerson struct {
-	Name  string
-	Login string
-	Role  string
+	Name     string
+	Login    string
+	GitHubID int64
+	Role     string
 }
 
 // fileBoardAuth mirrors [board_auth].
@@ -71,8 +76,9 @@ type fileBoardAuth struct {
 }
 
 type fileBoardPerson struct {
-	Login *string `toml:"login"`
-	Role  *string `toml:"role"`
+	Login    *string `toml:"login"`
+	GitHubID *int64  `toml:"github_id"`
+	Role     *string `toml:"role"`
 }
 
 // addBoardAuth validates [board_auth]. It runs after cfg.Listen is set, because dev mode depends on it.
@@ -224,7 +230,7 @@ func checkBoardIssuer(mode BoardAuthMode, raw *fileBoardAuth) (string, string, [
 	if err := checkBaseURL("board_auth.issuer", raw.Issuer); err != nil {
 		errs = append(errs, err)
 	}
-	claim := "email"
+	claim := "sub"
 	if raw.LoginClaim != nil {
 		claim = *raw.LoginClaim
 	}
@@ -237,29 +243,32 @@ func checkBoardIssuer(mode BoardAuthMode, raw *fileBoardAuth) (string, string, [
 	return *raw.Issuer, claim, nil
 }
 
-// checkBoardPeople validates the role map. A login is folded to lower case when the board will match it that way
-// (GitHub logins and emails), so two people never share a login.
+// checkBoardPeople validates the role map. A person is named by a stable identity: the numeric GitHub id in github
+// mode, the value of the login claim in oidc mode. An email is folded to lower case, because the board matches it
+// that way, so two people never share an identity.
 func checkBoardPeople(mode BoardAuthMode, claim string, raw map[string]fileBoardPerson) ([]BoardPerson, []error) {
 	if len(raw) == 0 {
 		return nil, []error{errors.New("board_auth.people must name at least one person")}
 	}
-	fold := mode == BoardAuthGitHub || claim == "email"
 	var errs []error
 	var out []BoardPerson
 	owner := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(raw)) {
 		where := "board_auth.people." + name
-		p, perrs := checkBoardPerson(where, name, raw[name])
+		p, perrs := checkBoardPerson(where, name, mode, raw[name])
 		if len(perrs) > 0 {
 			errs = append(errs, perrs...)
 			continue
 		}
-		key := p.Login
-		if fold {
+		key, label := p.Login, "login"
+		switch {
+		case mode == BoardAuthGitHub:
+			key, label = strconv.FormatInt(p.GitHubID, 10), "github_id"
+		case claim == "email":
 			key = strings.ToLower(key)
 		}
 		if other, dup := owner[key]; dup {
-			errs = append(errs, fmt.Errorf("%s.login is also the login of board_auth.people.%s", where, other))
+			errs = append(errs, fmt.Errorf("%s.%s is also the %s of board_auth.people.%s", where, label, label, other))
 			continue
 		}
 		owner[key] = name
@@ -268,12 +277,19 @@ func checkBoardPeople(mode BoardAuthMode, claim string, raw map[string]fileBoard
 	return out, errs
 }
 
-func checkBoardPerson(where, name string, raw fileBoardPerson) (BoardPerson, []error) {
+func checkBoardPerson(where, name string, mode BoardAuthMode, raw fileBoardPerson) (BoardPerson, []error) {
 	var errs []error
 	if name == "" || len(name) > 64 || !printableNoSpace(name) {
 		errs = append(errs, fmt.Errorf("%s: person key must be a policy person name of at most 64 characters", where))
 	}
-	if err := checkPersonLogin(where, raw.Login); err != nil {
+	var p BoardPerson
+	var err error
+	if mode == BoardAuthGitHub {
+		p.GitHubID, err = checkPersonGitHubID(where, raw)
+	} else {
+		p.Login, err = checkPersonLogin(where, raw)
+	}
+	if err != nil {
 		errs = append(errs, err)
 	}
 	if raw.Role == nil || (*raw.Role != "viewer" && *raw.Role != "approver" && *raw.Role != "admin") {
@@ -282,18 +298,38 @@ func checkBoardPerson(where, name string, raw fileBoardPerson) (BoardPerson, []e
 	if len(errs) > 0 {
 		return BoardPerson{}, errs
 	}
-	return BoardPerson{Name: name, Login: *raw.Login, Role: *raw.Role}, nil
+	p.Name, p.Role = name, *raw.Role
+	return p, nil
 }
 
-// checkPersonLogin requires a login of printable text with no space.
-func checkPersonLogin(where string, login *string) error {
+// checkPersonGitHubID requires the numeric GitHub id of a github mode person. It never falls back to a login: a
+// GitHub login can be renamed, and a freed login can be claimed by another account.
+func checkPersonGitHubID(where string, raw fileBoardPerson) (int64, error) {
 	switch {
-	case login == nil || *login == "":
-		return fmt.Errorf("%s.login is required", where)
-	case len(*login) > maxBoardLogin || !printableNoSpace(*login):
-		return fmt.Errorf("%s.login must be printable text of at most 256 characters with no space", where)
+	case raw.GitHubID == nil:
+		return 0, fmt.Errorf("%s.github_id is required in github mode: it is the number "+
+			"(find it with: gh api user --jq .id), because a GitHub login can be renamed and then claimed by another "+
+			"account, so the login is never matched", where)
+	case raw.Login != nil:
+		return 0, fmt.Errorf("%s.login is not used in github mode: remove it, the board matches %s.github_id only", where, where)
+	case *raw.GitHubID <= 0:
+		return 0, fmt.Errorf("%s.github_id must be a positive whole number", where)
 	}
-	return nil
+	return *raw.GitHubID, nil
+}
+
+// checkPersonLogin requires the login of an oidc mode person: printable text with no space.
+func checkPersonLogin(where string, raw fileBoardPerson) (string, error) {
+	login := raw.Login
+	switch {
+	case raw.GitHubID != nil:
+		return "", fmt.Errorf("%s.github_id is used only when mode is github", where)
+	case login == nil || *login == "":
+		return "", fmt.Errorf("%s.login is required", where)
+	case len(*login) > maxBoardLogin || !printableNoSpace(*login):
+		return "", fmt.Errorf("%s.login must be printable text of at most 256 characters with no space", where)
+	}
+	return *login, nil
 }
 
 // printableNoSpace reports whether s is printable ASCII with no space.

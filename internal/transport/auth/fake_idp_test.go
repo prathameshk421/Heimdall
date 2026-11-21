@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +28,8 @@ type grant struct {
 	challenge string
 	claims    map[string]any // OIDC: the ID token claims
 	login     string         // GitHub: the user login
+	githubID  int64          // GitHub: the numeric user id
+	userBody  string         // GitHub: when set, GET /user answers with this raw JSON instead
 }
 
 // fakeIDP is an OpenID Connect provider and a GitHub OAuth server in one httptest server. It checks what a real one
@@ -37,7 +41,7 @@ type fakeIDP struct {
 	redirectURL string
 	mu          sync.Mutex
 	codes       map[string]grant
-	tokens      map[string]string
+	tokens      map[string]grant
 	exchanged   int
 	// forgeKey, when set, signs the ID tokens instead of the key the JWKS publishes.
 	forgeKey *rsa.PrivateKey
@@ -47,7 +51,7 @@ func newFakeIDP(t *testing.T) *fakeIDP {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
-	f := &fakeIDP{t: t, key: key, codes: map[string]grant{}, tokens: map[string]string{}}
+	f := &fakeIDP{t: t, key: key, codes: map[string]grant{}, tokens: map[string]grant{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/openid-configuration", f.discovery)
 	mux.HandleFunc("GET /jwks", f.jwks)
@@ -132,22 +136,27 @@ func (f *fakeIDP) githubToken(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	token := "gho_" + base64.RawURLEncoding.EncodeToString([]byte(g.login))
 	f.mu.Lock()
-	f.tokens[token] = g.login
+	token := fmt.Sprintf("gho_%d", f.exchanged)
+	f.tokens[token] = g
 	f.mu.Unlock()
 	writeJSON(w, map[string]any{"access_token": token, "token_type": "bearer", "scope": ""})
 }
 
 func (f *fakeIDP) githubUser(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
-	login, ok := f.tokens[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
+	g, ok := f.tokens[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
 	f.mu.Unlock()
 	if !ok {
 		http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
 		return
 	}
-	writeJSON(w, map[string]any{"login": login, "id": 7})
+	if g.userBody != "" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, g.userBody)
+		return
+	}
+	writeJSON(w, map[string]any{"login": g.login, "id": g.githubID})
 }
 
 // sign makes a compact RS256 JWT of the claims with the fake's key.

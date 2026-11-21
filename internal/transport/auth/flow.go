@@ -51,7 +51,7 @@ func (g *Gate) Require(least Role) func(http.Handler) http.Handler {
 				g.unauthenticated(w, r)
 				return
 			}
-			p, ok := g.people.current(s.Person, s.Login)
+			p, ok := g.people.current(s.Person, s.Identity)
 			if !ok || p.Role < least {
 				http.Error(w, "your sign-in does not give access to this page", http.StatusForbidden)
 				return
@@ -60,7 +60,7 @@ func (g *Gate) Require(least Role) func(http.Handler) http.Handler {
 				http.Error(w, "request refused: it must come from this site with its token", http.StatusForbidden)
 				return
 			}
-			pr := Principal{Person: p.Name, Login: s.Login, Role: p.Role, CSRF: s.CSRF}
+			pr := Principal{Person: p.Name, Login: s.Display, Role: p.Role, CSRF: s.CSRF}
 			next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), pr)))
 		})
 	}
@@ -124,8 +124,8 @@ func (g *Gate) start(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusFound)
 }
 
-// callback finishes a sign-in. The login cookie is used once. The state must match it, the provider must prove the
-// login, and the login must be in the role map. Only then is a session issued.
+// callback finishes a sign-in. The login cookie is used once. The state must match it, the provider must prove an
+// identity, and the identity must be in the role map. Only then is a session issued.
 func (g *Gate) callback(w http.ResponseWriter, r *http.Request) {
 	ls, ok := g.loginState(r)
 	clearCookie(w, loginCookie)
@@ -141,7 +141,7 @@ func (g *Gate) callback(w http.ResponseWriter, r *http.Request) {
 		g.fail(w, r, http.StatusBadRequest, "this sign-in does not match; start again", nil)
 		return
 	}
-	login, err := g.provider.identify(r.Context(), q.Get("code"), ls.Verifier, ls.Nonce)
+	proven, err := g.provider.identify(r.Context(), q.Get("code"), ls.Verifier, ls.Nonce)
 	switch {
 	case errors.Is(err, errUnavailable):
 		g.fail(w, r, http.StatusBadGateway, "the identity provider is not reachable; try again later", err)
@@ -150,13 +150,13 @@ func (g *Gate) callback(w http.ResponseWriter, r *http.Request) {
 		g.fail(w, r, http.StatusUnauthorized, "the identity provider's answer did not prove who you are", err)
 		return
 	}
-	p, ok := g.people.byProof(login)
+	p, ok := g.people.byProof(proven)
 	if !ok {
-		g.logger.WarnContext(r.Context(), "board sign-in refused: the login is not in board_auth.people")
+		g.logger.WarnContext(r.Context(), "board sign-in refused: the identity is not in board_auth.people")
 		g.pages.message(w, r, g.logger, http.StatusForbidden, "Your account is not on this board. Ask an admin to add you.")
 		return
 	}
-	if err := g.issue(w, p, login); err != nil {
+	if err := g.issue(w, p, proven); err != nil {
 		g.fail(w, r, http.StatusInternalServerError, "sign-in could not finish", err)
 		return
 	}

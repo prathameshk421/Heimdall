@@ -24,14 +24,18 @@ const (
 	clockSkew = time.Minute
 )
 
-// session is the sealed content of the session cookie. Times are Unix seconds.
+// session is the sealed content of the session cookie. Times are Unix seconds. Identity is the stable key the
+// provider proved (a GitHub id or an OIDC claim); Require checks it against the role map on every request. Display
+// is only what the page may show. A session of an earlier shape carried a "login" key: it does not decode here
+// (unknown fields are refused), and so it never opens as any person.
 type session struct {
-	ID      string `json:"sid"`
-	Person  string `json:"person"`
-	Login   string `json:"login"`
-	Issued  int64  `json:"iat"`
-	Expires int64  `json:"exp"`
-	CSRF    string `json:"csrf"`
+	ID       string `json:"sid"`
+	Person   string `json:"person"`
+	Identity string `json:"identity"`
+	Display  string `json:"display"`
+	Issued   int64  `json:"iat"`
+	Expires  int64  `json:"exp"`
+	CSRF     string `json:"csrf"`
 }
 
 // loginState is the sealed content of the login cookie, from /auth/start to /auth/callback.
@@ -145,7 +149,7 @@ func (g *Gate) session(r *http.Request) (session, bool) {
 	}
 	now := g.now()
 	switch {
-	case s.ID == "" || s.CSRF == "" || s.Person == "":
+	case s.ID == "" || s.CSRF == "" || s.Person == "" || s.Identity == "":
 		return session{}, false
 	case now.Unix() >= s.Expires || s.Issued > now.Add(clockSkew).Unix():
 		return session{}, false
@@ -158,7 +162,7 @@ func (g *Gate) session(r *http.Request) (session, bool) {
 }
 
 // issue seals a new session for p and sets its cookie. Every sign-in gets a new id and CSRF token.
-func (g *Gate) issue(w http.ResponseWriter, p Person, login string) error {
+func (g *Gate) issue(w http.ResponseWriter, p Person, id identity) error {
 	sid, err := randomToken()
 	if err != nil {
 		return err
@@ -169,7 +173,7 @@ func (g *Gate) issue(w http.ResponseWriter, p Person, login string) error {
 	}
 	now := g.now()
 	value, err := g.sealer.seal(sessionCookie, session{
-		ID: sid, Person: p.Name, Login: login, Issued: now.Unix(), Expires: now.Add(g.ttl).Unix(), CSRF: csrf,
+		ID: sid, Person: p.Name, Identity: id.key, Display: id.display, Issued: now.Unix(), Expires: now.Add(g.ttl).Unix(), CSRF: csrf,
 	})
 	if err != nil {
 		return err

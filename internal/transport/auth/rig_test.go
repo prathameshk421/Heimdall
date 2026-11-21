@@ -53,6 +53,15 @@ func defaultPeople() []auth.Person {
 	}
 }
 
+// githubPeople is the role map of a GitHub rig. People are matched by the numeric id, never by the login.
+func githubPeople() []auth.Person {
+	return []auth.Person{
+		{Name: "vera", GitHubID: 1001, Role: auth.RoleViewer},
+		{Name: "ana", GitHubID: 1002, Role: auth.RoleApprover},
+		{Name: "alice", GitHubID: 1003, Role: auth.RoleAdmin},
+	}
+}
+
 // fakeClock is the rig's clock. Tests move it forward to expire sessions and login states.
 type fakeClock struct {
 	mu  sync.Mutex
@@ -121,7 +130,9 @@ func (r *rig) config(o rigOptions, redirect string) auth.Config {
 	if cfg.SessionKey == nil {
 		cfg.SessionKey = sessionKey
 	}
-	if cfg.People == nil {
+	if cfg.People == nil && o.github {
+		cfg.People = githubPeople()
+	} else if cfg.People == nil {
 		cfg.People = defaultPeople()
 	}
 	if o.github {
@@ -129,8 +140,11 @@ func (r *rig) config(o rigOptions, redirect string) auth.Config {
 		cfg.HTTPClient = &http.Client{Transport: toFake{fake: r.idp}}
 	} else {
 		claim := o.claim
-		if claim == "" {
+		switch claim {
+		case "":
 			claim = "email"
+		case "default":
+			claim = "" // the gate's own default
 		}
 		cfg.OIDC = &auth.OIDC{Issuer: r.idp.issuer(), Claim: claim}
 	}
@@ -287,15 +301,21 @@ func (r *rig) finish(s started, g grant) reply {
 	return r.callback(s, "code-1")
 }
 
-// loginAs signs in with an OIDC email, or a GitHub login on a GitHub rig, and returns the session cookie.
-func (r *rig) loginAs(login string) *http.Cookie {
+// loginAs signs in with an OIDC email and returns the session cookie.
+func (r *rig) loginAs(email string) *http.Cookie {
 	r.t.Helper()
 	s := r.start("/")
-	g := grant{login: login}
-	if !r.github {
-		g.claims = r.claimsFor(s, login)
-	}
-	resp := r.finish(s, g)
+	return r.sessionOf(r.finish(s, grant{claims: r.claimsFor(s, email)}))
+}
+
+// loginGitHub signs in on a GitHub rig as the account with this login and numeric id.
+func (r *rig) loginGitHub(login string, id int64) *http.Cookie {
+	r.t.Helper()
+	return r.sessionOf(r.finish(r.start("/"), grant{login: login, githubID: id}))
+}
+
+func (r *rig) sessionOf(resp reply) *http.Cookie {
+	r.t.Helper()
 	require.Equal(r.t, http.StatusSeeOther, resp.Status, resp.Body)
 	c := cookieNamed(resp.Cookies, sessionCookie)
 	require.NotNil(r.t, c)
