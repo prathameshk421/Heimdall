@@ -13,8 +13,14 @@ on:
 permissions:
   contents: read
 
+# The record names the event and the head, so a newer run for the same event and head replaces an older one.
+concurrency:
+  group: heimdall-trigger-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}-${{ github.sha }}
+  cancel-in-progress: true
+
 jobs:
   trigger:
+    name: Heimdall trigger
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
