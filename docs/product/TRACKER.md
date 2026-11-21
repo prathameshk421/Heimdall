@@ -79,6 +79,8 @@ Not pushed.
 
 ## Follow-ups and noticed
 
+- Harness: T3 keeps a checkpoint ref per delegate turn under `refs/t3/orchestration-v2/checkpoints/` (287 on Nov 21). `make verify` runs `gitleaks git .` over all refs, so a bad delegate commit stays visible after its branch is deleted until its checkpoint ref is removed too (owner only, R11). Seen with AM7b `4ab3614`.
+
 - AM6r for A2: `Prefix` can only strip. A Java report (`com/example/Foo.java` under `src/main/java/`), a Go module in a
   subdirectory and coverage.py run from a subdirectory all give Missing, which fails closed (unknown) but is a setup
   gap. A2 needs a path mapping (strip and add) in `action.diff_coverage`.
