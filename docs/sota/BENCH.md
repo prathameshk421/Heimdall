@@ -329,7 +329,7 @@ was pushed, opened, commented or labelled. The cases sit in `testdata/bench/case
 | Started | 2026-11-21T14:12:59Z (run 1, empty cache), then a second run with a warm cache |
 | Machine | darwin/arm64, 8 CPUs (Apple Mac), go1.27.4, network on. The fixture's go.mod says go 1.22 |
 | Exit status | run 1: 1, because every case was still `pending` and the manifest was updated from its output. Run 2: 0, every case agrees with its manifest status |
-| Wall time | run 1: 13.5 s. Run 2: about 1.3 s in all |
+| Wall time | run 1: 13.5 s. Run 2: 1.2 s |
 
 ### Results
 
