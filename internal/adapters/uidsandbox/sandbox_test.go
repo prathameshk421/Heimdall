@@ -108,6 +108,9 @@ func TestSetupCommands(t *testing.T) {
 		"/usr/bin/tee -a /etc/cron.deny",
 		"/usr/bin/chown --no-dereference heimdall-sbx:heimdall-sbx -- /sbx/work",
 		"/usr/sbin/nft -f -",
+		"/usr/bin/tee -- /tmp/heimdall-sbx-host-marker",
+		"/usr/bin/tee -- /var/tmp/heimdall-sbx-host-marker",
+		"/usr/bin/tee -- /dev/shm/heimdall-sbx-host-marker",
 	} {
 		assert.Contains(t, joined, want)
 	}
@@ -183,7 +186,7 @@ var commonProps = []string{
 	"ProtectSystem=strict",
 	"ReadWritePaths=/sbx/work /sbx/home /sbx/tmp",
 	"ProtectHome=yes",
-	"TemporaryFileSystem=/run",
+	"TemporaryFileSystem=/run /dev/shm:mode=1777",
 	"PrivateTmp=yes",
 	"PrivateDevices=yes",
 	"PrivateIPC=yes",

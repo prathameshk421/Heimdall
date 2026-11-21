@@ -15,8 +15,9 @@
 //   - New(ctx, Config, Exec) checks the runner (Linux, systemd as init, passwordless root, nftables, every tool at a
 //     fixed path) and returns a *Sandbox or a *CannotIsolateError. Off Linux it always returns that error.
 //   - Sandbox.Setup checks the limits, creates the user, sets the runner home and _temp to 0700, denies cron and at,
-//     makes /sbx/home, /sbx/tmp and /sbx/work, starts the fetch proxy, loads the nftables table, then runs env in one
-//     service of each phase. A systemd that rejects a property returns a *CannotIsolateError there.
+//     makes /sbx/home, /sbx/tmp and /sbx/work, starts the fetch proxy, loads the nftables table, then runs the self
+//     check (selfcheck.go) in one service of each phase. A systemd that rejects a property, or a service that started
+//     with less isolation than asked, returns a *CannotIsolateError there, so no job runs on a weak service.
 //   - Sandbox.Stage extracts a tar stream (the tarball of the head SHA, which holds no .git) into /sbx/work, as the
 //     sandbox user, in an execution-phase service.
 //   - Sandbox.Fetch runs a job in the fetch phase: host network, but nftables drops every packet of the uid except
@@ -69,13 +70,24 @@
 //     the home's mode protects them; Setup sets it to 0700 (the image ships 0750).
 //   - The fetch phase can still send data to an allowed registry, for example a module path that makes the Go proxy
 //     contact another host. The sandbox user reads no secret, so this carries only what the PR already has.
-//   - /proc/<pid>/cmdline of every process is readable by the sandbox user. The loop must never put the key in argv.
+//   - ProtectProc=invisible hides every process of another uid, so the loop's /proc/<pid>/cmdline is out of reach
+//     (probed with the canary in the loop's argv). The loop must still never put the key in argv: a runner whose
+//     kernel ignores the property would show it.
+//   - systemd skips PrivateNetwork= on a kernel without network namespaces, and RestrictAddressFamilies= and the
+//     other seccomp properties on a kernel without seccomp, and the service still starts. Exit status 0 is no proof.
+//     The self check reads what the service got (uid, NoNewPrivs, every capability set, Seccomp mode 2, only lo in
+//     the execution phase, and no /run/systemd, /run/dbus, /run/user, /proc/1, runner home or _temp) and refuses the
+//     runner on any doubt. This is the rule for an escape that cannot be closed: the sandbox refuses to run, and the
+//     proof run reports unknown.
 //
 // # Tests
 //
 //   - proxy_test.go: the allowlist (case, trailing dot, IP literals in every form, ports, labels, suffix tricks),
 //     the CONNECT line parser (bad lines, other methods, userinfo), the public-address guard, and the proxy end to
 //     end on loopback (tunnel, each refusal never dials, a private resolution is refused, Close ends tunnels).
+//   - selfcheck_test.go: the self check report is accepted per phase and refused for each weakness (host network in
+//     the execution phase, no seccomp, no no-new-privs, each capability set, a root uid, a visible host path, a
+//     missing, repeated or unknown line, a cut output), its exact argv, and Setup failing on a weak service.
 //   - sandbox_test.go: with a fake Exec, the setup commands and the nftables rules, the self check per phase, a
 //     refused self check is ErrCannotIsolate, a zero limit is refused, a user with extra groups is refused, the exact
 //     property list of each phase, that no hostile argv, Dir or Env changes the command up to env's "--", the full

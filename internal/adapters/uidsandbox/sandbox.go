@@ -219,7 +219,25 @@ func (s *Sandbox) Setup(ctx context.Context) error {
 	if err := s.installNft(ctx, p.Port()); err != nil {
 		return err
 	}
+	if err := s.plantMarkers(ctx); err != nil {
+		return err
+	}
 	return s.selfCheck(ctx)
+}
+
+// hostMarkers are root-owned empty files Setup leaves in the host's shared temp directories. The self check lists
+// them among the paths no service may see, so a service whose /tmp, /var/tmp or /dev/shm is the host's is refused.
+func hostMarkers() []string {
+	return []string{"/tmp/heimdall-sbx-host-marker", "/var/tmp/heimdall-sbx-host-marker", "/dev/shm/heimdall-sbx-host-marker"}
+}
+
+func (s *Sandbox) plantMarkers(ctx context.Context) error {
+	for _, m := range hostMarkers() {
+		if err := s.mustRoot(ctx, strings.NewReader(""), s.tools.tee, "--", m); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // selfCheck runs selfCheckScript in a service of each phase. A systemd that rejects a property fails here, and so
@@ -402,7 +420,9 @@ func serviceProps(phase Phase) []string {
 		"ProtectSystem=strict",
 		"ReadWritePaths=" + WorkDir + " " + HomeDir + " " + TmpDir,
 		"ProtectHome=yes",
-		"TemporaryFileSystem=/run",
+		// A fresh tmpfs on /dev/shm: PrivateDevices= binds the host's /dev/shm into the new /dev (run 44909950640
+		// read a 0644 canary there from both phases).
+		"TemporaryFileSystem=/run /dev/shm:mode=1777",
 		"PrivateTmp=yes",
 		"PrivateDevices=yes",
 		"PrivateIPC=yes",
@@ -698,6 +718,8 @@ func (s *Sandbox) Cleanup(ctx context.Context) error {
 		}
 	}
 	_, _, err := s.root(ctx, nil, s.tools.nft, "delete", "table", "inet", nftTable)
+	errs = append(errs, err)
+	_, _, err = s.root(ctx, nil, append([]string{s.tools.rm, "-f", "--"}, hostMarkers()...)...)
 	errs = append(errs, err)
 	s.mu.Lock()
 	p := s.proxy

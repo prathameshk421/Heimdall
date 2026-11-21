@@ -102,6 +102,17 @@ func TestSelfCheckArgv(t *testing.T) {
 	assert.Contains(t, hiddenPaths(s.cfg), "/home/runner/work/_temp")
 	assert.Contains(t, hiddenPaths(s.cfg), "/run/systemd")
 	assert.Contains(t, hiddenPaths(s.cfg), "/proc/1")
+	for _, m := range []string{"/tmp/heimdall-sbx-host-marker", "/var/tmp/heimdall-sbx-host-marker", "/dev/shm/heimdall-sbx-host-marker"} {
+		assert.Contains(t, hiddenPaths(s.cfg), m, "a marker Setup leaves in a shared host directory must be invisible inside")
+	}
+}
+
+// Run 44909950640: the host's /dev/shm was visible in both phases. Its marker in the report refuses the runner.
+func TestSelfReportRefusesSharedDevShm(t *testing.T) {
+	r := strings.Replace(goodReport(PhaseFetch), "end\n", "visible /dev/shm/heimdall-sbx-host-marker\nend\n", 1)
+	err := checkSelfReport(PhaseFetch, 1500, r)
+	require.ErrorIs(t, err, ErrCannotIsolate)
+	assert.Contains(t, err.Error(), "/dev/shm/heimdall-sbx-host-marker")
 }
 
 // A service that ran but reports weaker isolation than asked makes Setup fail with ErrCannotIsolate.

@@ -21,9 +21,11 @@ for p in "$@"; do if [ -e "$p" ] || [ -L "$p" ]; then printf 'visible %s\n' "$p"
 printf 'end\n'`
 
 // hiddenPaths are host paths that no sandbox service may see: the host's systemd and D-Bus sockets under /run, the
-// user runtime directories, init's /proc entry (ProtectProc=invisible), the runner home and _temp (ProtectHome=yes).
+// user runtime directories, init's /proc entry (ProtectProc=invisible), the runner home and _temp (ProtectHome=yes),
+// and the markers Setup leaves in the host's /tmp, /var/tmp (PrivateTmp=yes) and /dev/shm (its own tmpfs).
 func hiddenPaths(cfg Config) []string {
-	return []string{"/run/systemd", "/run/dbus", "/run/user", "/proc/1", cfg.RunnerHome, cfg.RunnerTemp}
+	return append([]string{"/run/systemd", "/run/dbus", "/run/user", "/proc/1", cfg.RunnerHome, cfg.RunnerTemp},
+		hostMarkers()...)
 }
 
 func phaseName(p Phase) string {
