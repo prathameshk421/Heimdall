@@ -507,6 +507,9 @@ A3 (the summary renderer), A4 (the shadow check text and weekly digest), A6 (tes
 
 ## 9. Open questions for the owner
 
+Owner decision, Nov 21 2026: take every recommendation below. Q3 stays open until S1 reports, because S1 found that
+REST `force:false` does not refuse a non-fast-forward update on `refs/heimdall/*`.
+
 | # | Question | My recommendation |
 |---|---|---|
 | Q1 | Enforce mode needs a GitHub App identity so a writer cannot forge `heimdall/fast`. Do we ask each customer to create a BYO App by manifest (`heimdall action init`), or wait for a hosted Heimdall App? | BYO App by manifest now. Shadow mode needs no App |

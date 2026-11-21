@@ -43,8 +43,19 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | AM5 proof outcome and trivial skip | Claude Personal / Sonnet | `am5-proof` | merged | delegate `e26824d`; coordinator review moved the duplicated Heimdall-file rule into one `policy.Action.Protects` used by both the fast check and the trivial skip (two copies could drift into a bypass), with a table test. Lint 0 issues, archcheck holds (105 packages), unit 3906 tests after merge. Real GitHub file lists (binary, rename) and AM14 integration not verified |
 | AM12 agent loop | Claude Personal / Sonnet | `am12-agentloop` | merged | delegate `a9b75ad`; coordinator review added the section 7 per-run input and output token caps (stop as `StopBudget`) and made the per-answer output cap required. Lint 0 issues, archcheck holds (104 packages), unit 3776 tests after merge. No live model run, no real sandbox tools (AM11): not verified. AM5 must map `StopNoSubmission` and `StopModelError` |
 | AM3 Action events | waiting | | blocked | needs Stage 0 to release `change` |
+| A9b sign-in by stable id | Claude Personal / Sonnet | `a9b-stable-id` | running | |
 | AM7 third-party comment parsers | Claude Personal / Sonnet | `am7-external` | running | |
 | AM9 GitHub adapter additions | Claude Personal / Sonnet | `am9-github` | running | no CAS claimed in `gitdata`; AM8 owns the conflict mechanism after S1 |
+
+## Owner decisions (Nov 21 2026: "go with your recommendations")
+
+- ACTION_MODE Q1 to Q10 take the doc's recommendations; Q3 waits on S1.
+- AM5 decisions stand: not reproduced is unknown; the size rule counts test lines; an unknown mode is the strictest.
+- Trivial globs: a team's list replaces the defaults (the stricter choice: a surprise costs proof runs, never a
+  missed check). A4 setup prints the effective list.
+- A9 sign-in matches GitHub by numeric user id and OIDC by `sub` by default (A9b running).
+- Coverage: Cobertura moves to an adapter on `encoding/xml`; the domain allowlist is not widened.
+- DeepSeek is out of implementation lanes for now (free limit, a paid run hung for 5 hours); Sonnet takes them.
 
 ## Follow-ups and noticed
 
