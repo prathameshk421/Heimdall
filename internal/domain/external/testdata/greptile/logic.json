@@ -1,0 +1,29 @@
+{
+  "comment": {
+    "id": 4001,
+    "body": "**logic:** `limit` is compared with `<=`, so one page too many is fetched when the total is an exact multiple of the page size.\n\n<details><summary>Prompt To Fix With AI</summary>\n\n`In api/page.go line 33, change <= to <.`\n\n</details>\n\n<sub>Reviews (1): Last reviewed commit: \"add paging\"</sub>",
+    "path": "api/page.go",
+    "line": 33,
+    "original_line": 33,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "position": 6,
+    "user": {"login": "greptile-apps[bot]", "type": "Bot"}
+  },
+  "want": {
+    "outcome": "candidate",
+    "tool": "greptile",
+    "candidate": {
+      "tool": "greptile",
+      "comment_id": 4001,
+      "path": "api/page.go",
+      "start_line": 33,
+      "end_line": 33,
+      "side": "RIGHT",
+      "claim": "`limit` is compared with `<=`, so one page too many is fetched when the total is an exact multiple of the page size.",
+      "severity": "medium",
+      "severity_stated": false,
+      "style": false
+    }
+  }
+}

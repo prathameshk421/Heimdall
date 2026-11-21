@@ -1,0 +1,32 @@
+{
+  "comment": {
+    "id": 1001,
+    "body": "_⚠️ Potential issue_ | _🟠 Major_\n\n**Guard against a nil pointer before reading `cfg.Timeout`.**\n\n`LoadConfig` returns `nil, nil` when the file is empty, so `cfg.Timeout` panics.\n\n<details>\n<summary>🛠️ Suggested fix</summary>\n\n```diff\n-\td := cfg.Timeout\n+\tif cfg == nil {\n+\t\treturn errEmptyConfig\n+\t}\n```\n\n</details>\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\n```\nIn internal/config/load.go around lines 40 to 44, check cfg for nil before use.\n```\n\n</details>\n\n<!-- This is an auto-generated comment by CodeRabbit -->",
+    "path": "internal/config/load.go",
+    "line": 44,
+    "start_line": 40,
+    "original_line": 44,
+    "original_start_line": 40,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "original_commit_id": "head0001",
+    "position": 9,
+    "user": {"login": "coderabbitai[bot]", "type": "Bot"}
+  },
+  "want": {
+    "outcome": "candidate",
+    "tool": "coderabbit",
+    "candidate": {
+      "tool": "coderabbit",
+      "comment_id": 1001,
+      "path": "internal/config/load.go",
+      "start_line": 40,
+      "end_line": 44,
+      "side": "RIGHT",
+      "claim": "Guard against a nil pointer before reading `cfg.Timeout`. `LoadConfig` returns `nil, nil` when the file is empty, so `cfg.Timeout` panics.",
+      "severity": "high",
+      "severity_stated": true,
+      "style": false
+    }
+  }
+}
