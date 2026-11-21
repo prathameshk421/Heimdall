@@ -56,6 +56,7 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | P2.1b Proof Bench reviewer harness | Claude / Opus | `p2.1b-bench-review` | running | fake model only. Owner said yes (Nov 21) to one live run, cap $3, DeepSeek V4 Flash; the owner runs it in their own terminal because R8 keeps the key file away from agents |
 | AM13 Action rows | Claude / Sonnet | `am13-action-rows` | merged | `8054225`: `actionflow.Decide` gives 9 rows (state, fast, ingest, proof, findings, budget, break_glass, sweep, publish) with typed effects; results count only for their head, base and policy hash; fail closed on bad policy or failed log. Tested on hand-built views, not on Fold of real events. AM14 must pass HeadAt (push time) |
 | AM14 Action gate, proof and ingest use cases | Claude / Opus | `am14-action-app` | running | |
+| t3code third-party comment dataset | Claude / Sonnet | `bench-t3code` | running | read-only on pingdotgg/t3code; owner asked (Nov 21) to test on t3code; fork `prathameshk421/t3code` exists and becomes the live Action trial target after AM15/AM16 |
 
 ## Merge into heimdall-build (owner yes, Nov 21 2026)
 
