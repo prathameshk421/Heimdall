@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/profileyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -17,9 +18,13 @@ import (
 type memoryProfiles struct {
 	records map[string]ports.ProfileProposal
 	active  map[string]string
+	putErr  error
 }
 
 func (m *memoryProfiles) PutProfile(_ context.Context, p ports.ProfileProposal) (bool, error) {
+	if m.putErr != nil {
+		return false, m.putErr
+	}
 	if old, ok := m.records[p.ID]; ok {
 		if string(old.Artifact) != string(p.Artifact) {
 			return false, errors.New("conflict")
@@ -97,9 +102,12 @@ func (imagePolicy) AllowedImages(context.Context) ([]string, error) {
 	return []string{"registry.example/go@sha256:" + strings.Repeat("a", 64)}, nil
 }
 
-type profileParser struct{}
+type profileParser struct{ err error }
 
-func (profileParser) Parse([]byte, []string) (ports.ProfileSpec, error) {
+func (p profileParser) Parse([]byte, []string) (ports.ProfileSpec, error) {
+	if p.err != nil {
+		return ports.ProfileSpec{}, p.err
+	}
 	return ports.ProfileSpec{Languages: []string{"go"}, Image: "registry.example/go@sha256:" + strings.Repeat("a", 64), Acceptance: "go test {dir}", Seam: "api", ACTag: "// ac", TestsDir: "tests/heimdall"}, nil
 }
 
@@ -175,6 +183,39 @@ func TestLifecycleRequiresAuthorizedApprovalPassingTrialAndPromotion(t *testing.
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, ports.ProfilePromoted, active.State)
+}
+
+// A parser problem is the artifact's own: the error carries InvalidProfileError so the tool can show the reason. A store
+// failure is not, so that error must stay internal.
+func TestProposeMarksOnlyAnArtifactProblemAsTheAgentsInput(t *testing.T) {
+	svc, store, _, _, _ := newProfileService(t, ports.SandboxResult{})
+	_, _, err := svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
+	require.NoError(t, err)
+
+	svc.cfg.Parser = profileParser{err: errors.New("yaml: unmarshal errors:\n  line 10: field evidence not found")}
+	_, _, err = svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
+	var invalid *ports.InvalidProfileError
+	require.ErrorAs(t, err, &invalid)
+	require.Contains(t, err.Error(), "line 10: field evidence not found")
+
+	svc.cfg.Parser = profileParser{}
+	store.putErr = errors.New("put profile: postgres: connection refused")
+	_, _, err = svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
+	require.ErrorContains(t, err, "connection refused")
+	require.NotErrorAs(t, err, &invalid, "a store failure is not the agent's input")
+}
+
+// The live artifact (Nov 21) had the unknown key `evidence`. Through the real profileyaml parser the error still names
+// that key, so the tool's refusal does too.
+func TestAProfileWithAnUnknownKeyCarriesTheRealParserReason(t *testing.T) {
+	svc, _, _, _, _ := newProfileService(t, ports.SandboxResult{})
+	svc.cfg.Parser = profileyaml.Parser{}
+	artifact := "languages: [go]\nimage: registry.example/go@sha256:" + strings.Repeat("a", 64) +
+		"\nacceptance: go test {dir}\nseam: api\nac_tag: '// ac'\npaths: {tests: tests/heimdall}\nevidence: []\n"
+	_, _, err := svc.Propose(context.Background(), "acme/pay", "profiler", []byte(artifact))
+	var invalid *ports.InvalidProfileError
+	require.ErrorAs(t, err, &invalid)
+	require.Contains(t, invalid.Error(), "field evidence not found in type profileyaml.RepoProfile")
 }
 
 func TestLifecycleRefusesUnauthorizedAndFailedTrialPromotion(t *testing.T) {

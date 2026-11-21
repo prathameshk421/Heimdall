@@ -82,7 +82,8 @@ func (s *Service) Propose(ctx context.Context, repo change.Repo, author string, 
 	}
 	spec, err := s.cfg.Parser.Parse(artifact, images)
 	if err != nil {
-		return ports.ProfileProposal{}, false, fmt.Errorf("parse proposed profile: %w", err)
+		// The parser's own words name the artifact's problem; the wrapper keeps the stage in the server log.
+		return ports.ProfileProposal{}, false, fmt.Errorf("parse proposed profile: %w", &ports.InvalidProfileError{Reason: err})
 	}
 	h := sha256.New()
 	_, _ = h.Write([]byte(strings.ToLower(string(repo))))

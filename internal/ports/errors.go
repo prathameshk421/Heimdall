@@ -15,6 +15,15 @@ var ErrConflict = errors.New("conflict")
 // ErrInvalidRequest means the caller supplied a malformed or stale setup receipt.
 var ErrInvalidRequest = errors.New("invalid request")
 
+// InvalidProfileError reports a proposed profile artifact that the agent must fix. Reason names only the artifact's
+// own problem (the parser's words), never a store or another internal failure, so a tool can show it to the agent as
+// the refusal reason. The caller that answers the agent supplies the sentence around it.
+type InvalidProfileError struct{ Reason error }
+
+func (e *InvalidProfileError) Error() string { return e.Reason.Error() }
+
+func (e *InvalidProfileError) Unwrap() error { return e.Reason }
+
 // ErrUnauthorized is returned when a remote system refuses the credentials or the token's permissions. Unlike
 // ErrUnavailable it is not retried through the outbox: retrying cannot fix it, and doctor reports it.
 var ErrUnauthorized = errors.New("unauthorized")
