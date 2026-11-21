@@ -42,7 +42,7 @@ func (OSExec) Run(ctx context.Context, c Cmd) (int, error) {
 	if len(c.Argv) == 0 {
 		return -1, errors.New("exec: empty argv")
 	}
-	cmd := exec.CommandContext(ctx, c.Argv[0], c.Argv[1:]...) //nolint:gosec // G204: argv is explicit and built by this package, never a shell string
+	cmd := exec.CommandContext(ctx, c.Argv[0], c.Argv[1:]...) // #nosec G204 -- argv is explicit and built by this package, never a shell string
 	cmd.Env = c.Env
 	if cmd.Env == nil {
 		cmd.Env = []string{}
