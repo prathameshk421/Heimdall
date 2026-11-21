@@ -17,14 +17,16 @@ umask 077
 code=$(KEY="$secrets/$key_name" python3 - "$out" <<'PY'
 import json, os, sys, urllib.request
 key = open(os.environ["KEY"]).read().strip()
-req = urllib.request.Request("http://127.0.0.1:8080/admin/agents/prepare", data=b"{}", method="POST",
-                             headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+req = urllib.request.Request("http://127.0.0.1:8080/admin/agents/prepare", data=b"", method="POST",
+                             headers={"Authorization": "Bearer " + key})
 try:
     with urllib.request.urlopen(req, timeout=60) as r:
         body = r.read()
         open(sys.argv[1], "wb").write(body)
         print(r.status)
 except urllib.error.HTTPError as e:
+    # The server's refusal text names the cause; it holds no credential.
+    sys.stderr.write("prepare refused: " + e.read(400).decode("utf-8", "replace") + "\n")
     print(e.code)
 PY
 )
