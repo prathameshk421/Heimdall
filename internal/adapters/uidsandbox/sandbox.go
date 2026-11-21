@@ -122,7 +122,7 @@ type Config struct {
 
 // tools are the absolute paths of every binary the sandbox runs.
 type tools struct {
-	sudo, useradd, id, nft, systemdRun, systemctl, env, tar, pkill, pgrep, chmod, chown, mkdir, rm, crontab, tee, head string
+	sudo, useradd, id, nft, systemdRun, systemctl, env, tar, pkill, pgrep, chmod, chown, mkdir, rm, crontab, tee, head, sh string
 }
 
 // Sandbox runs PR code as the heimdall-sbx user (ACTION_MODE 4.4).
@@ -222,17 +222,18 @@ func (s *Sandbox) Setup(ctx context.Context) error {
 	return s.selfCheck(ctx)
 }
 
-// selfCheck runs env inside env (it prints the empty environment and exits 0) in a service of each phase. A systemd
-// that rejects a property fails here, before any PR code runs, and the runner cannot isolate. env needs a command
-// with -C, so the inner env is that command.
+// selfCheck runs selfCheckScript in a service of each phase. A systemd that rejects a property fails here, and so
+// does a service that started with less isolation than asked (checkSelfReport), before any PR code runs. Both
+// return a *CannotIsolateError, so the caller reports unknown and no job ever runs on a weak service.
 func (s *Sandbox) selfCheck(ctx context.Context) error {
 	for _, phase := range []Phase{PhaseExec, PhaseFetch} {
 		var out bytes.Buffer
 		lw := &limitWriter{w: &out, limit: MaxOutputBytes}
 		cctx, cancel := context.WithTimeout(ctx, readTimeout)
 		unit := s.nextUnit()
+		argv := append([]string{s.tools.sh, "-c", selfCheckScript, "sh"}, hiddenPaths(s.cfg)...)
 		code, err := s.exec.Run(cctx, Cmd{
-			Argv: append([]string{s.tools.sudo, "-n", "--"}, s.unitArgv(phase, unit, readTimeout, WorkDir, nil, s.tools.env)...),
+			Argv: append([]string{s.tools.sudo, "-n", "--"}, s.unitArgv(phase, unit, readTimeout, WorkDir, nil, argv...)...),
 			Env:  fixedPathEnv(), Stdout: lw, Stderr: lw,
 			Cancel: func() error { return s.killUnit(context.WithoutCancel(ctx), unit) },
 		})
@@ -244,9 +245,13 @@ func (s *Sandbox) selfCheck(ctx context.Context) error {
 			return fmt.Errorf("sandbox self check: %w", err)
 		}
 		if code != 0 {
-			return &CannotIsolateError{Reason: fmt.Sprintf("systemd refused the hardened service (phase %d, exit %d): %s",
-				phase, code, strings.TrimSpace(out.String()))}
+			return &CannotIsolateError{Reason: fmt.Sprintf("systemd refused the hardened service (%s phase, exit %d): %s",
+				phaseName(phase), code, strings.TrimSpace(out.String()))}
 		}
+		if err := checkSelfReport(phase, s.UID(), out.String()); err != nil {
+			return err
+		}
+		s.log.InfoContext(ctx, "sandbox self check passed", "phase", phaseName(phase))
 	}
 	return nil
 }

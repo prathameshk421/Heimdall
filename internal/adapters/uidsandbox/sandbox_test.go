@@ -42,12 +42,15 @@ func testTools() tools {
 		systemdRun: "/usr/bin/systemd-run", systemctl: "/usr/bin/systemctl",
 		env: "/usr/bin/env", tar: "/usr/bin/tar", pkill: "/usr/bin/pkill", pgrep: "/usr/bin/pgrep",
 		chmod: "/usr/bin/chmod", chown: "/usr/bin/chown", mkdir: "/usr/bin/mkdir", rm: "/usr/bin/rm",
-		tee: "/usr/bin/tee", head: "/usr/bin/head",
+		tee: "/usr/bin/tee", head: "/usr/bin/head", sh: "/usr/bin/sh",
 	}
 }
 
 // readyAnswer is a host where the user exists with uid 1500 in its own group only and no process survives.
 func readyAnswer(argv []string) (int, string) {
+	if isSelfCheck(argv) {
+		return selfCheckAnswer(argv)
+	}
 	cmd := strings.Join(argv[3:], " ")
 	switch {
 	case cmd == "/usr/bin/id -u heimdall-sbx":
@@ -108,12 +111,11 @@ func TestSetupCommands(t *testing.T) {
 	} {
 		assert.Contains(t, joined, want)
 	}
-	// The self check starts one empty service per phase with the full hardening.
+	// The self check starts one service per phase with the full hardening (TestSelfCheckArgv pins its argv).
 	var checks []string
 	for _, c := range f.calls {
 		if c[3] == "/usr/bin/systemd-run" {
-			assert.Equal(t, []string{"--", "/usr/bin/env", "-i", "-C", "/sbx/work", "--", "/usr/bin/env"}, c[len(c)-7:],
-				"the self check runs only env")
+			require.True(t, isSelfCheck(c), "only the self check starts a service during Setup")
 			checks = append(checks, strings.Join(c, " "))
 		}
 	}
