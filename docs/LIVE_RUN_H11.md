@@ -291,3 +291,36 @@ waits on B4: reviewer-3's review, then the gate, the approval and the merge.
   config's key returned 200. The test author already had the key inline. Values were never printed.
 - Open: `deploy/agents/install.sh` and the templates still use `{env:DEPLOY_API_KEY}`, so a fresh install has the same gap.
   Its checks live in the guarded `docs/harness/test-install.sh`; the change needs the owner's edit there.
+
+## Finish, Nov 20 to 21, 2026 (UTC): KAN-26 merged
+
+| UTC | What | Source |
+|---|---|---|
+| 11-20 19:33:00 | PR #16 reopened (as `prathameshk421`) | GitHub |
+| 19:33:17 | `pr.reopened`; 19:33:20 `task.rewoken` n=2 with a session reset for reviewer-3's task | event |
+| 19:36:05 | `review.submitted` by reviewer-3 (no findings); `gate.evaluated` red only on the approval | event |
+| 19:37:37 | approval by `temporaryhameshakagroup-alt` on head `f91f0a5`; `approval.recorded` | GitHub, event |
+| 19:37:52 | `gate.evaluated ok: true`; `heimdall/gate` success posted 19:37:55 (outbox 248) | event, GitHub |
+| 23:30:36 | PR #16 merged into `heimdall-test/demo-base`, merge commit `d79cd08` | GitHub |
+| 23:33:28 | `pr.closed merged: true` | event |
+
+- All ten gate rules were green on the head commit before the merge. Three reviews, no findings, so E1 to E3
+  verification had nothing to verify (not run).
+- D6 holds on Deploy: reviewer-3's run used 17,323 reasoning tokens, more than the old 8,000 output limit, and still submitted.
+- **Spent in this half:** reviewer-3 only, 64,098 input, 131,072 cache read, 18,134 output and reasoning tokens (OpenCode
+  database; the other agents logged none). Estimated at the rates of the first half: about $0.02. Run total: about
+  $0.26, estimated; the provider balance was not read.
+
+### D9. `agent_reset` can never run: Heimdall has no Switch route to reset a session (needs the owner)
+
+**Seen.** Outbox row 245 (`KAN-26/tsk_01M7X5KPNE17Q95JFNK21EHMBA/reset/2`) failed 6 times with
+`no executor for effect kind "agent_reset"`. The ladder's reset rung only re-wakes the agent.
+**Traced in Switch 0.31 (`switch-switch-1`, `switch_core`).** A session reset is the room command `!reset @agent`
+(`bridges/agent/commands.py`), carried as a `com.switch.command` event. Only two writers exist: the platform chat
+bridges (a person typing `!reset`) and the gateway route `POST /chats/{room_id}/controls`
+(`{requestId, agentId, command: "reset"}`, idempotent by `requestId`, `chats/service.py`), which needs a gateway user
+(`get_current_user`). Heimdall talks to Switch as the coordinator agent (`/agents/{id}/...`), and no agent operation
+writes a command event. This confirms V63. A plain room post of `!reset` from the coordinator is a message, not a command.
+**Needs an owner decision:** (a) give Heimdall a gateway user for this one route, which reverses D145, or (b) take the
+reset rung out of the ladder (spec 6, `liveness.Next`), so `reset_and_repeat` becomes a repeat and the failing job goes
+away. I did not choose either, because (a) changes D145 and (b) drops a designed step (R13).
