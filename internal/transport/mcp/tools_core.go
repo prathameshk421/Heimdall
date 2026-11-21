@@ -86,6 +86,10 @@ func (s *Server) proposeProfile(ctx context.Context, p Principal, args json.RawM
 	if err != nil {
 		return "", fmt.Errorf("propose sandbox profile: %w", err)
 	}
+	// The store accepted it; a replay of the same artifact returns the same id, so a retry after a failed record is safe.
+	if err := s.deps.Reviews.RecordProfileProposed(ctx, a, proposal.ID, change.Repo(a.Task.Change.Repo)); err != nil {
+		return "", fmt.Errorf("record the profile proposal on the change: %w", err)
+	}
 	return marshalText(struct {
 		ID      string `json:"id"`
 		Created bool   `json:"created"`

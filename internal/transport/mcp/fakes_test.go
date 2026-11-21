@@ -175,6 +175,12 @@ type fakeReviews struct {
 	receipt        SubmitReceipt
 	reviewSubmits  []reviewSubmitCall
 	verdictSubmits []verdictSubmitCall
+	proposals      []string // proposal ids recorded on the change
+}
+
+func (f *fakeReviews) RecordProfileProposed(_ context.Context, _ Assignment, proposalID string, _ change.Repo) error {
+	f.proposals = append(f.proposals, proposalID)
+	return nil
 }
 
 func (f *fakeReviews) SubmitReview(_ context.Context, a Assignment, r finding.Review, late bool) (SubmitReceipt, error) {

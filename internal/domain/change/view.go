@@ -289,7 +289,7 @@ func (v *View) apply(e Event, p Payload) {
 		v.applyPR(e, p)
 	case ProviderProbed:
 		v.Provider = &ProviderInfo{Health: p.Health, Detail: p.Detail}
-	case TaskAssigned, TaskAcked, TaskTimedOut, TaskFailed, TaskProgress, TaskSuperseded, TaskRewoken:
+	case TaskAssigned, TaskAcked, TaskTimedOut, TaskFailed, TaskProgress, TaskSuperseded, TaskRewoken, ProfileProposed:
 		v.applyTask(e, p)
 	case ReviewSubmitted, ReviewUnavailable, ReviewWaived:
 		v.applyReview(p)
@@ -338,6 +338,8 @@ func (v *View) applyTask(e Event, p Payload) {
 		}
 	case TaskAcked:
 		v.setTask(p.TaskID, TaskAckedStatus, "")
+	case ProfileProposed:
+		v.endTask(p.TaskID) // the proposal ends the profiler's task, as a submission does (D175)
 	case TaskTimedOut:
 		v.setTask(p.TaskID, TaskTimedOutStatus, "")
 	case TaskFailed:

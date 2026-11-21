@@ -93,6 +93,8 @@ type SubmitReceipt struct {
 type Reviews interface {
 	SubmitReview(ctx context.Context, a Assignment, r finding.Review, late bool) (SubmitReceipt, error)
 	SubmitVerdict(ctx context.Context, a Assignment, v deliberation.Verdict, late bool) error
+	// RecordProfileProposed records the profiler's proposal on the change, which ends its task (D175).
+	RecordProfileProposed(ctx context.Context, a Assignment, proposalID string, repo change.Repo) error
 }
 
 // Code reads one file at one commit. The adapter is the GitHub code reader (ports.CodeReader).

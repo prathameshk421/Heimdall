@@ -3,6 +3,7 @@ package change_test
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -205,4 +206,17 @@ func TestOldPayloadsDecode(t *testing.T) {
 		_, err := change.Decode(eventWith(typ, raw))
 		require.NoError(t, err, string(typ))
 	}
+}
+
+// A profile proposal ends the profiler's task, as a submission does (D175).
+func TestAProfileProposalEndsTheProfilerTask(t *testing.T) {
+	proposal := strings.Repeat("ab", 32)
+	v := fold(t,
+		ev(t, 1, change.EventTaskAssigned, change.TaskAssigned{TaskID: tk(fTask), Agent: "profiler", Role: "profiler",
+			Deadline: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC), Kind: "profile", Subject: "acme/pay", Input: "base-" + fBase}),
+		ev(t, 2, change.EventProfileProposed, change.ProfileProposed{TaskID: tk(fTask), ProposalID: proposal, Repo: "acme/pay"}))
+	require.Equal(t, change.TaskDoneStatus, v.Tasks[tk(fTask)].Status)
+
+	require.Error(t, change.ProfileProposed{TaskID: tk(fTask), Repo: "acme/pay"}.Validate(), "a proposal id is required")
+	require.Error(t, change.ProfileProposed{TaskID: tk(fTask), ProposalID: "short", Repo: "acme/pay"}.Validate(), "the id is 64 hex")
 }

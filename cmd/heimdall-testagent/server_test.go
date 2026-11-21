@@ -198,6 +198,10 @@ func (f *testReviews) SubmitVerdict(_ context.Context, _ mcp.Assignment, v delib
 	return nil
 }
 
+func (f *testReviews) RecordProfileProposed(context.Context, mcp.Assignment, string, change.Repo) error {
+	return nil
+}
+
 // world is the real MCP server wired to the fakes, and the fakes a test asserts on.
 type world struct {
 	tokens  *testTokens

@@ -493,6 +493,10 @@ func (r *mcpReviewsAdapter) SubmitVerdict(ctx context.Context, a mcp.Assignment,
 	return r.svc.SubmitVerdict(ctx, r.tracker.toAgenttools(a), v, late)
 }
 
+func (r *mcpReviewsAdapter) RecordProfileProposed(ctx context.Context, a mcp.Assignment, proposalID string, repo change.Repo) error {
+	return r.svc.RecordProfileProposed(ctx, r.tracker.toAgenttools(a), proposalID, repo)
+}
+
 func toMCPAssignment(a agenttools.Assignment) mcp.Assignment {
 	return mcp.Assignment{
 		Task:       a.Task,

@@ -90,6 +90,7 @@ func TestProfileLifecycleToolsEnforceProfilerAndMappedHumanBoundaries(t *testing
 	require.False(t, proposed.IsError, proposed.text())
 	require.Equal(t, 1, profiles.proposals)
 	require.Equal(t, workflow.RoleProfiler, profiles.lastPrincipal.Role)
+	require.Equal(t, []string{strings.Repeat("a", 64)}, r.reviews.proposals, "the proposal is recorded on the change, which ends the task (D175)")
 
 	trial := r.call("trial_profile", `{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sha":"a01b2c3d4e5f60718293a4b5c6d7e8f901234567"}`)
 	require.False(t, trial.IsError, trial.text())

@@ -30,6 +30,7 @@ const (
 	EventStepRetried         EventType = "step.retried"
 	EventStepEscalated       EventType = "step.escalated"
 	EventStepResumed         EventType = "step.resumed"
+	EventProfileProposed     EventType = "profile.proposed"
 	EventTicketChanged       EventType = "ticket.changed"
 	EventPROpened            EventType = "pr.opened"
 	EventPRPushed            EventType = "pr.pushed"
@@ -61,6 +62,7 @@ func corePayloads() map[EventType]payloadEntry {
 		EventStepRetried:         entry[StepRetried](),
 		EventStepEscalated:       entry[StepEscalated](),
 		EventStepResumed:         entry[StepResumed](),
+		EventProfileProposed:     entry[ProfileProposed](),
 		EventTicketChanged:       entry[TicketChanged](),
 		EventPROpened:            entry[PROpened](),
 		EventPRPushed:            entry[PRPushed](),
@@ -324,6 +326,24 @@ type StepEscalated struct {
 	Step     string `json:"step"`
 	Attempts int    `json:"attempts"`
 	Reason   string `json:"reason"`
+}
+
+// ProfileProposed is the payload of profile.proposed: the profiler proposed a sandbox profile for the repository
+// (D175). It ends the profiler's task, as a submission does. The proposal itself, its approval, trial and promotion
+// live in the profile store; ProposalID is its content identifier (64 hex).
+type ProfileProposed struct {
+	TaskID     id.TaskID `json:"task_id"`
+	ProposalID string    `json:"proposal_id"`
+	Repo       Repo      `json:"repo"`
+}
+
+// Validate returns every problem with the payload.
+func (p ProfileProposed) Validate() error {
+	var v problems
+	v.add("task_id", checkTask(p.TaskID))
+	v.require("proposal_id", reHash.MatchString(p.ProposalID), "must be 64 lowercase hex characters")
+	v.add("repo", checkRepo(p.Repo))
+	return v.join()
 }
 
 // StepResumed is the payload of step.resumed: a person released an escalated step (A10 item 5). Step is the workflow
