@@ -67,7 +67,7 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | P2.1d t3code cases, cargo and vitest runners | Claude Personal / Opus | `p2.1d-t3code-cases` | merged `bac8dc9` | 13 valid t3code cases; see BENCH.md |
 | P2.1g validator per-test copy and injection canary | Claude Personal / Sonnet | `p2.1g-pertest-canary` | running | go/ast copy of the target Go tests only (so `fixture-refunds` can validate); `canary:` manifest field and an `injected` flag in review |
 | Live Proof Bench run 2 | owner's terminal, DeepSeek V4.1 Flash on Deploy | `e681328` | done | 18 cases; loop works (a real tool call every turn; fixture-injection proposed 2, unproven build_error_fixed, no FP), but 15 calls in 14 cases failed HTTP 500 from Deploy with no retry. Recall not judged. $1.18 at high stated prices |
-| AM12c retry on 429 and 5xx | Claude Personal / Opus | `am12c-retry` | running | backoff with jitter through the clock port, Retry-After, budget guard on each retry, breaker after 5 consecutive failures |
+| AM12c retry on 429 and 5xx | Claude / Opus (Claude Personal run stopped at its limit) | `am12c-retry` | merged | up to 3 attempts, full-jitter backoff (2 s base, 30 s cap), Retry-After (60 s cap), waits through `ports.Waiter`, budget guard before each retry, breaker trips at the 5th failed call in a row. Replay: testify-1207 recovers from a 500 on call 2, proven hit. Lint 0, unit 5192 (after freeing the disk). HTML 400 is typed invalid, so never retried. Production Action wiring must call `WithRetry` (AM15) |
 
 ## Merge into heimdall-build (owner yes, Nov 21 2026)
 
@@ -87,6 +87,8 @@ Not pushed.
 - DeepSeek was out of implementation lanes (free limit, a paid run hung for 5 hours). Nov 21 afternoon: both Claude providers hit their limits and the owner said to use DeepSeek in OpenCode (deploy and free) instead of Sonnet. Delegates commit after every step; the coordinator reviews every DeepSeek diff before merging.
 
 ## Follow-ups and noticed
+
+- Disk: on Nov 21 the Mac's startup disk filled (202 MB free); builds and git failed at random as `[build failed]` and `No space left on device`. The Go build cache held 29 GB; `go clean -cache` freed it. Watch `df -h /` when many delegates build at once.
 
 - Bench replay tests share `$TMPDIR/heimdall-bench` and fixed worktree names, so two agents running them at once
   delete each other's trees. Run them with a private TMPDIR until the cache is per run.
