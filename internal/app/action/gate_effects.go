@@ -324,17 +324,18 @@ func loginOf(p policy.Policy, person string) string {
 }
 
 // ingest reads the third-party comments. A failed read leaves no candidate: a comment is only ever a claim, never
-// evidence, so a missing read costs candidates and never turns a check to pass (ACTION_MODE 2.7).
-func (r *run) ingest(ctx context.Context) IngestResult {
+// evidence, so a missing read costs candidates and never turns a check to pass (ACTION_MODE 2.7). The failure is
+// returned as text for Result.IngestFailed, so the caller reports it instead of the gate swallowing it (R6).
+func (r *run) ingest(ctx context.Context) (IngestResult, string) {
 	if r.g.cfg.Ingester == nil {
-		return IngestResult{}
+		return IngestResult{}, ""
 	}
 	out, err := r.g.cfg.Ingester.Ingest(ctx, IngestIn{Repo: r.in.Repo, Number: r.in.Number, Head: r.head,
 		Sources: r.act.Sources, Ours: oursOf(r.events)})
 	if err != nil {
-		return IngestResult{}
+		return IngestResult{}, fmt.Sprintf("read third-party comments: %v", err)
 	}
-	return out
+	return out, ""
 }
 
 // in2 is the decision input of package actionflow.

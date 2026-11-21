@@ -415,6 +415,12 @@ type harness struct {
 // newHarness wires the gate with a clean fast check, a valid enforce-mode policy and one changed source file.
 func newHarness(t *testing.T, mode string) *harness {
 	t.Helper()
+	return newHarnessWith(t, mode, nil)
+}
+
+// newHarnessWith is newHarness with a third-party comment ingester wired in (nil for none).
+func newHarnessWith(t *testing.T, mode string, ing *action.Ingester) *harness {
+	t.Helper()
 	cid, err := id.PRChangeID(string(testRepo), testNumber)
 	require.NoError(t, err)
 	h := &harness{
@@ -430,7 +436,7 @@ func newHarness(t *testing.T, mode string) *harness {
 	h.code = &code{policy: map[id.SHA][]byte{testBase: raw}}
 	g, err := action.NewGate(action.Config{Store: h.store, PRs: h.github, Reviews: h.github, Checks: h.checks,
 		Summary: h.summary, Facts: h.facts, Code: h.code, Decode: policyyaml.Decode, Clock: h.clock, IDs: h.ids,
-		IsUnverified: func(err error) bool { return errors.As(err, &errBadMAC{}) }})
+		Ingester: ing, IsUnverified: func(err error) bool { return errors.As(err, &errBadMAC{}) }})
 	require.NoError(t, err)
 	h.gate = g
 	return h
@@ -784,4 +790,20 @@ func TestMovedHeadRecordsAPushAndReDecides(t *testing.T) {
 		}
 		require.Equal(t, want, h.checks.shas[id], "a check run names its own head in its external id")
 	}
+}
+
+// TestFailedCommentReadIsReportedAndNeverPasses proves that a failed read of the third-party comments is reported in
+// the result (not swallowed, R6) and changes nothing else: the clean fast check still decides the verdict, and no
+// candidate is invented.
+func TestFailedCommentReadIsReportedAndNeverPasses(t *testing.T) {
+	ing, err := action.NewIngester(&commentReader{err: errors.New("github: 502 bad gateway")})
+	require.NoError(t, err)
+	h := newHarnessWith(t, policy.ActionModeEnforce, ing)
+
+	res := h.run(t)
+
+	require.Contains(t, res.IngestFailed, "502 bad gateway")
+	require.NotContains(t, h.log(t), change.EventExternalIngested)
+	base := newHarness(t, policy.ActionModeEnforce).run(t)
+	require.Equal(t, base.Verdict, res.Verdict, "a failed comment read must not change the verdict")
 }

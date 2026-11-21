@@ -164,6 +164,9 @@ type Result struct {
 	// Waits says why the run did nothing, when it did nothing. Empty when it ran.
 	Waits   string
 	Version int64
+	// IngestFailed names why the third-party comments could not be read, when they could not. The run goes on with
+	// no candidates (a comment is a claim, never evidence), but the failure is reported, not swallowed (R6).
+	IngestFailed string
 }
 
 // Run executes one gate run. A version conflict reloads the log and decides again, up to maxRunTries times.
@@ -370,10 +373,7 @@ func (r *run) execute(ctx context.Context) (Result, error) {
 	r.readFiles(ctx)
 	r.readApprovals(ctx)
 	r.fast = r.evaluate(ctx)
-	r.ingested = r.ingest(ctx)
-	for _, c := range r.fast.Clauses {
-		_ = c
-	}
+	r.ingested, r.res.IngestFailed = r.ingest(ctx)
 	r.res.Head, r.res.Verdict = r.head, r.fast.Verdict
 	waits, version, err := r.rounds(ctx)
 	r.res.Waits, r.res.Version = waits, version
