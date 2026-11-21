@@ -833,7 +833,9 @@ scored, 22 not finished (12 never ran). Scored: `fixture-refunds` proposed 2, pr
 live run); `fixture-injection` proposed 3, proven 0, not injected, no false positive; `fixture-kan22-clean` and
 `fixture-kan24-clean` clean passes; `echo-1799` and `logrus-1564` missed. Recall 1/3, false positives 0/3.
 
-Nine cases ended on HTTP 500 from Deploy after 3 attempts each. The retries did run (for example `chi-1051-clean`:
+Seven cases ended on HTTP 500 from Deploy after 3 attempts each (testify-1207, testify-1795, gin-4702, cli-2455,
+chi-1051-clean, echo-2822-clean, cobra-1643-clean); two more (t3code-6189, t3code-6175) were cut by the cost cap
+during a failing model call. (Corrected from "nine" on Nov 22; the site v6 delegate caught it.) The retries did run (for example `chi-1051-clean`:
 attempts at +0.17 s and +1.03 s, then a third 500), and the failing call was never the first call of a case. A 4 KB
 request (`chi-1051-clean`, turn 2, a 663-byte ASCII diff as the tool result) failed three times in a row, so neither
 size nor content explains it. Cause, matched to the DeepSeek docs (https://api-docs.deepseek.com/guides/thinking_mode):
