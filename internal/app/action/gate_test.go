@@ -23,6 +23,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/gate"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testintegrity"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -504,6 +505,34 @@ func TestForgedArtifactClaimingPassGivesUnknown(t *testing.T) {
 	c, ok := h.checks.fast()
 	require.True(t, ok)
 	require.Equal(t, change.CIActionRequired, c.Conclusion)
+}
+
+// TestWarningOnlyIntegrityDoesNotBlock pins the rule that only testintegrity's blocking violations reach the clause:
+// a warning is shown elsewhere and never makes the fast check fail (A6, ACTION_MODE 5.1).
+func TestWarningOnlyIntegrityDoesNotBlock(t *testing.T) {
+	h := newHarness(t, policy.ActionModeEnforce)
+	h.facts.integrity = action.IntegrityFacts{Known: true, Result: testintegrity.Result{Violations: []testintegrity.Violation{{
+		ID: "v1", Rule: testintegrity.RuleMocksChangedSource, Level: testintegrity.LevelWarn,
+		Path: "internal/pay/refund_test.go", Message: "the test mocks a file this change edits"}}}}
+
+	res := h.run(t)
+
+	require.Equal(t, gate.VerdictPass, res.Verdict, "a warning is not a blocking violation")
+	c, ok := h.checks.fast()
+	require.True(t, ok)
+	require.Equal(t, change.CISuccess, c.Conclusion)
+}
+
+// TestNoProofResultPostsOneCheck keeps the proof check off the roll-up when the log holds no proof result for the
+// head: a run must never post a pass it does not have (ACTION_MODE 5.4).
+func TestNoProofResultPostsOneCheck(t *testing.T) {
+	h := newHarness(t, policy.ActionModeEnforce)
+
+	h.run(t)
+
+	require.Equal(t, 1, h.checks.count(), "only the fast check is posted")
+	_, ok := h.checks.fast()
+	require.True(t, ok)
 }
 
 // TestBadMACResetsState makes the store's Load fail as a bad MAC does, over a log that holds a forged fast result
