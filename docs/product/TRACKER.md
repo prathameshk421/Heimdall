@@ -36,7 +36,7 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | 11 MergeHarbor and rivals | Claude Personal / Sonnet | `research/11-mergeharbor-and-rivals.md` | done | MergeHarbor claims true in its docs; no users found; Heal fail-twice rule |
 | A1 Action mode design | Claude Personal / Opus | `a1-action-design` | merged `c1f662b` | design only; GitHub facts not verified until spike S1; Q1 to Q10 take the doc's recommendations until the owner says otherwise |
 | AM1, AM2, AM4 verdict, action policy, fast check | Claude Personal / Sonnet | `am-fastcheck` | merged `3dd6c24` | reviewed by coordinator: gate change additive, `Evaluate` never sets `Unknown`, merge rule unchanged; lint 0 issues, archcheck holds (102 packages), unit 3692 tests; make verify not verified |
-| AM8 git-ref event store | Claude Personal / Opus | `am8-gitlog` | running (restarted) | on S1 1.7: create by REST POST, update only by GraphQL `updateRefs` with `beforeOid`, reread the tip after an opaque error; old pre-S1 code committed as WIP first, then reworked |
+| AM8 git-ref event store | Claude Personal / Opus | `am8-gitlog` | merged (code `0dacc6e`) | create by REST POST, move only by GraphQL `updateRefs` with `beforeOid` (the store's `Git` interface has no PATCH), tip reread after any refusal: tip = after is success, tip = before retries 1/2/4 s through an injected wait, other tip is a conflict; FORBIDDEN fails closed. New ports `GitReader`, `GitRefSwapper` (`internal/ports/vcs_gitstate.go`). Breaks caught: swapped tip comparison, and REST PATCH (15 tests fail). Coordinator reviewed `moveRef` edge cases. Lint 0 issues, archcheck holds (109 packages), swap and race tests pass `-count=20`, unit 4305 after merge. The branch's `docs/PROGRESS.md` commit `7f44590` is left out of product-build (Stage 0 owns that file). Live GitHub, App token path, GHES GraphQL, `-race` (needs cgo) not verified |
 | AM6 coverage parsers | OpenCode / DeepSeek free; rework on Claude Personal / Sonnet | `am6-coverage` | merged | rework `ab75685`: Cobertura in `internal/adapters/coverage` on `encoding/xml` (Strict, depth 32, size checked first, one external DOCTYPE allowed because coverage.py and Java Cobertura write it, internal subsets refused); domain `Builder`; `Missing` and `Measurable()` fail closed. Fuzz 30 s each, 3M+ execs, pass. Lint 0 issues, archcheck holds (107 packages), unit 4060 tests after merge. Real reports beyond one golden and the gate wiring (AM14) not verified |
 | AM10 model chat with tools | OpenCode / DeepSeek free | `am10-model-chat` | merged | reviewed by coordinator (cost math, bounded body, no key in errors); lint 0 issues, unit 3579 tests; no live model call |
 | S1 GitHub spike | Claude Personal / Sonnet | `s1-github-spike` | merged `1d31cfd` | `52ed487`, `ACTION_MODE_SPIKE.md`: REST `force:false` is no CAS on `refs/heimdall/*` (stale, rewind, unrelated all 200); GraphQL `updateRefs` with `beforeOid` is a real CAS with `GITHUB_TOKEN`; Q3 closed: the ref (clones skip it, writes start no workflows); comment API took 262,144 bytes (docs say 65,536); blob 10 MiB ok; push to check p50 6.1 s, p95 8.8 s (n=10); cancel cut at 300 s. `workflow_run` facts blocked: need a default-branch workflow, an environment and a fork from `rekdfr`, each a separate owner yes. Cleanup verified; closed PR #17 and two check runs cannot be deleted by API |
@@ -59,6 +59,12 @@ in the shared checkout. This track works on `product-build` in its own worktree
 - DeepSeek is out of implementation lanes for now (free limit, a paid run hung for 5 hours); Sonnet takes them.
 
 ## Follow-ups and noticed
+
+- AM8: `github.ActionAPI.GetRef` does not check that the ref points at a commit; the store fails on the next
+  `GetCommit` with an untyped error. `ports/vcs_action.go` and `github/gitdata.go` still call the S1 PATCH finding
+  "to be confirmed"; S1 confirmed it, so update those comments in the next GitHub adapter change.
+- Harness: the stop hook checks the main checkout, so it blocks delegates in worktrees while another thread has Go
+  edits open there (seen by S1 and AM8).
 
 - AM7 for A5: the default `action.sources` Copilot login is `copilot-pull-request-reviewer[bot]`; newer APIs may say
   `Copilot`. Check the real login on a live PR before A5 ships, or Copilot comments are silently ignored.
