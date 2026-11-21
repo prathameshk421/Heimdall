@@ -16,7 +16,6 @@ func TestParsersRefuseInputOverTheLimit(t *testing.T) {
 		in    []byte
 	}{
 		{"lcov", ParseLCOV, []byte("SF:a.go\nDA:1,1\nend_of_record\n")},
-		{"cobertura", ParseCobertura, []byte(`<coverage><class filename="a.go"><line number="1" hits="1"/></class></coverage>`)},
 		{"go cover", ParseGoCover, []byte("mode: set\nexample.com/app/a.go:1.1,2.2 1 1\n")},
 	}
 	for _, c := range parsers {
@@ -37,7 +36,6 @@ func TestParsersRefuseANonPositiveLimit(t *testing.T) {
 		parse func([]byte, Options) (Result, error)
 	}{
 		{"lcov", ParseLCOV},
-		{"cobertura", ParseCobertura},
 		{"go cover", ParseGoCover},
 	}
 	for _, c := range parsers {
@@ -55,7 +53,6 @@ func TestParsersRefuseABadPrefix(t *testing.T) {
 		parse func([]byte, Options) (Result, error)
 	}{
 		{"lcov", ParseLCOV},
-		{"cobertura", ParseCobertura},
 		{"go cover", ParseGoCover},
 	}
 	for _, c := range parsers {
@@ -74,17 +71,6 @@ func FuzzParseLCOV(f *testing.F) {
 	f.Add([]byte("SF:C:\\work\\app\\a.go\nDA:1,1\n"))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		res, err := ParseLCOV(data, Options{MaxBytes: 1 << 20})
-		checkFuzzed(t, res, err)
-	})
-}
-
-func FuzzParseCobertura(f *testing.F) {
-	f.Add([]byte(`<coverage><class filename="a.go"><line number="1" hits="1"/></class></coverage>`))
-	f.Add([]byte(""))
-	f.Add([]byte(`<?xml version="1.0"?><!DOCTYPE coverage SYSTEM "x"><coverage/>`))
-	f.Add([]byte(`<coverage><class filename="../a.go"/></coverage>`))
-	f.Fuzz(func(t *testing.T, data []byte) {
-		res, err := ParseCobertura(data, Options{MaxBytes: 1 << 20})
 		checkFuzzed(t, res, err)
 	})
 }

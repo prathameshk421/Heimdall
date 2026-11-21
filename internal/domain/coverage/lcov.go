@@ -6,21 +6,23 @@ import "strings"
 // informational records a real generator writes. One record may appear more than once for a file,
 // as a merged report does; the counts add.
 func ParseLCOV(data []byte, opt Options) (Result, error) {
-	prefix, err := checkSize(data, opt)
+	b, err := NewBuilder(opt)
 	if err != nil {
 		return Result{}, err
 	}
-	st := newState(prefix)
-	reader := &lcovReader{st: st}
+	if err := b.CheckSize(data); err != nil {
+		return Result{}, err
+	}
+	reader := &lcovReader{b: b}
 	if err := reader.run(splitLines(data)); err != nil {
 		return Result{}, err
 	}
-	return Result{Files: st.files}, nil
+	return b.Result(), nil
 }
 
 // lcovReader walks one tracefile. file and opened describe the SF record that is open.
 type lcovReader struct {
-	st     *parseState
+	b      *Builder
 	file   string
 	opened int
 }
@@ -68,7 +70,7 @@ func (l *lcovReader) start(srcLine int, raw string) error {
 	if l.file != "" {
 		return malformed(srcLine, "SF before end_of_record, the record opened on line %d is still open", l.opened)
 	}
-	file, err := l.st.file(raw, srcLine)
+	file, err := l.b.file(raw, srcLine)
 	if err != nil {
 		return err
 	}
@@ -92,7 +94,7 @@ func (l *lcovReader) da(srcLine int, value string) error {
 	if err != nil {
 		return err
 	}
-	return l.st.add(srcLine, l.file, number, hits)
+	return l.b.addNormalized(srcLine, l.file, number, hits)
 }
 
 // informationalLCOV lists the records this package accepts and does not read. A record outside the

@@ -6,8 +6,11 @@ import "strings"
 // line it spans, so a multi-line statement counts as covered when the block ran. A record for the same
 // line that appears twice adds up.
 func ParseGoCover(data []byte, opt Options) (Result, error) {
-	prefix, err := checkSize(data, opt)
+	b, err := NewBuilder(opt)
 	if err != nil {
+		return Result{}, err
+	}
+	if err := b.CheckSize(data); err != nil {
 		return Result{}, err
 	}
 	records := splitLines(data)
@@ -15,16 +18,15 @@ func ParseGoCover(data []byte, opt Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	st := newState(prefix)
 	for i, record := range records[1:] {
 		if record == "" {
 			continue
 		}
-		if err := addGoCoverRecord(st, mode, record, i+2); err != nil {
+		if err := addGoCoverRecord(b, mode, record, i+2); err != nil {
 			return Result{}, err
 		}
 	}
-	return Result{Files: st.files}, nil
+	return b.Result(), nil
 }
 
 // goCoverMode reads the mode line, which must be the first line and must name a known mode.
@@ -43,7 +45,7 @@ func goCoverMode(records []string) (string, error) {
 }
 
 // addGoCoverRecord adds one file:startLine.startCol,endLine.endCol statements count line.
-func addGoCoverRecord(st *parseState, mode, record string, srcLine int) error {
+func addGoCoverRecord(b *Builder, mode, record string, srcLine int) error {
 	colon := strings.LastIndexByte(record, ':')
 	if colon <= 0 || colon == len(record)-1 {
 		return malformed(srcLine, "record %q has no file:span", record)
@@ -67,12 +69,12 @@ func addGoCoverRecord(st *parseState, mode, record string, srcLine int) error {
 	if mode == "set" && hits > 1 {
 		return malformed(srcLine, "mode set counts a block once, got %d", hits)
 	}
-	file, err := st.file(raw, srcLine)
+	file, err := b.file(raw, srcLine)
 	if err != nil {
 		return err
 	}
 	for line := start; line <= end; line++ {
-		if err := st.add(srcLine, file, line, hits); err != nil {
+		if err := b.addNormalized(srcLine, file, line, hits); err != nil {
 			return err
 		}
 	}
