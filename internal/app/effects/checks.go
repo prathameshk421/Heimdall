@@ -3,6 +3,7 @@ package effects
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -121,7 +122,13 @@ func (c Checks) runAt(ctx context.Context, p change.RunChecksPayload, row ports.
 	res, err := c.deps.Sandbox.Run(ctx, ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: row.ID, Repo: p.Repo, SHA: sha,
 		Change: p.Change, Head: head, Timeout: checkTimeout})
 	if err != nil {
-		return nil, fmt.Errorf("the check did not run: %w", ports.ErrUnavailable)
+		// The runner's own words name the cause ("job wrote no result file", an image it refused); a bare
+		// "unavailable" hid both causes on PR #18 (D190). The reason is one bounded line.
+		why := strings.Join(strings.Fields(err.Error()), " ")
+		if len(why) > 300 {
+			why = why[:300] + "..."
+		}
+		return nil, fmt.Errorf("the check did not run: %s: %w", why, ports.ErrUnavailable)
 	}
 	results, err := sarif.Parse(res.Sarif, row.ID, row.Lens)
 	if err != nil {

@@ -135,6 +135,13 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 			changeRef.BaseSHA = p.BaseSHA
 		case change.PROpened:
 			changeRef.HeadSHA = p.HeadSHA
+			// A ticketless pull request has no trigger or branch event; its repository and base come from here (D189).
+			if changeRef.Repo == "" {
+				changeRef.Repo = string(p.Repo)
+			}
+			if changeRef.BaseSHA == "" {
+				changeRef.BaseSHA = p.BaseSHA
+			}
 		case change.PRPushed:
 			changeRef.HeadSHA = p.HeadSHA
 		}

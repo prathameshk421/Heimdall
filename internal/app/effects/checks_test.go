@@ -119,6 +119,7 @@ func TestACheckThatCannotRunIsAnErrorEntryNotAFailedJob(t *testing.T) {
 	require.Len(t, got.Results, 1)
 	require.Len(t, got.Errors, 2)
 	require.Equal(t, "slow", got.Errors[0].Check)
+	require.Contains(t, got.Errors[0].Reason, "runner down", "the runner's reason reaches the reviewers and the log (D190)")
 	require.Equal(t, "gone", got.Errors[1].Check)
 	require.Contains(t, got.Errors[1].Reason, "no such check")
 }
