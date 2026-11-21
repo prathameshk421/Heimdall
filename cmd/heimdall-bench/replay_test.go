@@ -399,3 +399,71 @@ func (w testWriter) Write(p []byte) (int, error) {
 }
 
 var _ io.Writer = testWriter{}
+
+func TestReplayThreeRealCasesAtThreeWorkersWithAScriptedModel(t *testing.T) {
+	// Three real cases of three repositories, all in flight at once. The results keep the manifest order, every case
+	// writes its progress lines, and the one cost cap covers all three workers.
+	ids := []string{"testify-1207", "chi-1185", "cobra-1643-clean"}
+	o := replayOptions(t, strings.Join(ids, ","), testingCapUSD)
+	o.parallel = 3
+	model := loadScripts(t, ids...)
+	var stderr strings.Builder
+	code, err := reviewRun(context.Background(), o, execRunner{}, model, &stderr)
+	require.NoError(t, err)
+	require.Equal(t, exitAgrees, code)
+
+	rep := readReport(t, o.out)
+	require.Len(t, rep.Cases, 3)
+	var spent float64
+	for i, c := range rep.Cases {
+		require.Equal(t, ids[i], c.ID, "slot %d keeps the manifest order", i)
+		require.True(t, c.Scored, c.Error)
+		require.Len(t, c.TurnSeconds, c.Turns, "the model latency of every turn is recorded")
+		spent += c.CostUSD
+	}
+	require.InDelta(t, spent, rep.Summary.CostUSD, 1e-9)
+	require.LessOrEqual(t, rep.Summary.CostUSD, testingCapUSD)
+
+	log := stderr.String()
+	for _, c := range rep.Cases {
+		require.Contains(t, log, "bench case="+c.ID+" start kind="+string(c.Kind))
+		require.Contains(t, log, "bench case="+c.ID+" turn=1 tool=list_changes")
+		require.Contains(t, log, "bench case="+c.ID+" test=")
+		require.Contains(t, log, "bench case="+c.ID+" end scored=yes")
+	}
+}
+
+func TestReplayTheCostCapHoldsAcrossThreeWorkers(t *testing.T) {
+	// The same three cases on a $0.004 cap, which a single case's script already passes. Three workers reserve at
+	// once, so the cap must hold across them: the total spend never passes it, and no case is scored after the cap cut
+	// it short.
+	const capUSD = 0.004
+	ids := []string{"testify-1207", "chi-1185", "cobra-1643-clean"}
+	o := replayOptions(t, strings.Join(ids, ","), capUSD)
+	o.out = filepath.Join(t.TempDir(), "capped-parallel.json")
+	o.md = ""
+	o.parallel = 3
+	model := loadScripts(t, ids...)
+	var stderr strings.Builder
+	code, err := reviewRun(context.Background(), o, execRunner{}, model, &stderr)
+	require.NoError(t, err)
+	require.Equal(t, exitDisagree, code, "the cap leaves at least one case unscored")
+
+	rep := readReport(t, o.out)
+	require.Len(t, rep.Cases, 3)
+	var spent float64
+	cut := 0
+	for i, c := range rep.Cases {
+		require.Equal(t, ids[i], c.ID, "slot %d keeps the manifest order", i)
+		t.Logf("case %s: turns=%d cost=$%.6f scored=%v err=%q", c.ID, c.Turns, c.CostUSD, c.Scored, c.Error)
+		spent += c.CostUSD
+		if !c.Scored {
+			require.Contains(t, c.Error, "cost cap", "an unscored case says the cap cut it")
+			cut++
+		}
+	}
+	require.Positive(t, cut)
+	require.LessOrEqual(t, spent, capUSD, "the spend of all workers together never passes the cap")
+	require.LessOrEqual(t, rep.Summary.CostUSD, capUSD)
+	require.Contains(t, stderr.String(), "run$=", "the progress lines carry the run's spend")
+}

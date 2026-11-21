@@ -307,6 +307,20 @@ part of the cap is not scored, its error starts `cut short by the shared cost ca
 `-parallel 1` nothing is ever held by another worker, so the rule is the old one: a case that the cap cut short stops
 the run. Tests: `internal/bench/score_test.go` (Share, Covers) and `cmd/heimdall-bench/sharedcap_test.go`.
 
+### Harness check at `-parallel 3`, fake model (bench-integrate)
+
+| Item | Value |
+|---|---|
+| Command | `CGO_ENABLED=0 go test -tags benchreplay -count=1 -run 'TestReplayThreeRealCasesAtThreeWorkers\|TestReplayTheCostCapHoldsAcrossThreeWorkers' -v ./cmd/heimdall-bench` |
+| Model | scripted fake from `testdata/bench/scripts`, no network call to a model |
+| Cases | testify-1207, chi-1185, cobra-1643-clean (three repositories, three workers) |
+| Exit status | 0 (both tests pass, 105.97 s) |
+| $3.00 cap | all three scored, JSON in manifest order, a start, turn, test and end line for each case; 104.8 s |
+| $0.004 cap | all three cut by the cap; spend $0.000527 + $0.000142 + $0.002043 = $0.002712, under the cap; each error names the cost cap; 0.7 s |
+
+With nothing left for a full case, the cap rule stopped the run as designed: no case was scored after the cap cut
+it. The `cut short by the shared cost cap` path (holds only) is proven by unit tests, not by this replay.
+
 ## Cost estimate for the live run
 
 The live run is all 10 valid Go cases (7 bug and 3 clean) on `deepseek/deepseek-v4-flash` through OpenRouter, at
