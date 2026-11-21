@@ -64,7 +64,8 @@ in the shared checkout. This track works on `product-build` in its own worktree
 | Live Proof Bench run 1 | owner's terminal, DeepSeek V4.1 Flash on Deploy | `21a0a91` | done | recall 0/7, FP 0/2, 0 findings proposed in any case; 6 of 7 bug cases `no_submission` (agent loop stops on the first answer without a tool call); cobra clean hit an HTML 400 from Deploy; $0.86 at high stated prices, 84% of input from cache, p50 168 s per case. Not a quality score yet; transcripts not kept |
 | AM12b robust agent loop | Claude Personal / Opus | `am12b-robust-loop` | merged | `57558b5`..`d1431d2`: `tool_choice: required` behind a capability flag with one fallback to auto (refusal recorded with HTTP status, content type, request size); text tool calls (DSML, V3 tokens, `<tool_call>`, fenced JSON) accepted only when every call names a run tool and fits its schema (all or nothing, 64 KB and 8-call bounds, fuzz 30 s); 2 fixed nudges counted in caps; bounded per-turn transcript in the bench JSON; both reviewer prompts open with `propose_finding` and `finish_review`. End-to-end replay on testify-1207 through every failure shape still proves the hit. Breaks caught (unknown tool from text, nudge limit 3). Coordinator reviewed `textCalls`. Lint 0, archcheck holds, unit 5115. Live run 2 not run (owner holds the key) |
 | P2.1f fixture-pay bench cases | Claude Personal / Sonnet | `p2.1f-fixture-cases` | merged | valid: `fixture-injection` (adversarial, canary `HEIMDALL-CANARY-4f9a21c7`, scored clean), `fixture-kan22-clean`, `fixture-kan24-clean`, `fixture-kan26-clean`. Invalid: `fixture-refunds`: the fix changes `svc.Get` to take the merchant, so the whole fix test file does not build on head; its `TestSeveralPartialRefundsCannotExceedThePayment` alone is red on head. KAN-23 has no fix tree. Next (P2.1g): copy only the target test functions in validate; canary check in review |
-| P2.1g validator per-test copy and injection canary | next | | waiting | after P2.1d (same files) |
+| P2.1d t3code cases, cargo and vitest runners | Claude Personal / Opus | `p2.1d-t3code-cases` | merged `bac8dc9` | 13 valid t3code cases; see BENCH.md |
+| P2.1g validator per-test copy and injection canary | Claude Personal / Sonnet | `p2.1g-pertest-canary` | running | go/ast copy of the target Go tests only (so `fixture-refunds` can validate); `canary:` manifest field and an `injected` flag in review |
 
 ## Merge into heimdall-build (owner yes, Nov 21 2026)
 
@@ -84,6 +85,9 @@ Not pushed.
 - DeepSeek was out of implementation lanes (free limit, a paid run hung for 5 hours). Nov 21 afternoon: both Claude providers hit their limits and the owner said to use DeepSeek in OpenCode (deploy and free) instead of Sonnet. Delegates commit after every step; the coordinator reviews every DeepSeek diff before merging.
 
 ## Follow-ups and noticed
+
+- Bench replay tests share `$TMPDIR/heimdall-bench` and fixed worktree names, so two agents running them at once
+  delete each other's trees. Run them with a private TMPDIR until the cache is per run.
 
 - Bench fix `220ef1c` (coordinator): after AM14c a case stopped by the budget was scored as a reviewer that found
   nothing; now it is unscored with its reason and the run stops when the run's cap set the budget. The two replay
