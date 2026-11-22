@@ -72,3 +72,11 @@ refund branch, which carries the fixture's seeded defects. Three heads. Seats (f
 2. L3: record and enforce lenses, then measure overlap.
 3. L5 and L4 in the Phase 2 suite (clean PR, planted race).
 4. L6, L7.
+
+## Live update (Nov 22, PR #20)
+
+L1 and L2 were re-tested live after Phase 1. Recall held (both planted defects found, F1 verified E1 and F2 verified E2),
+and three gaps in the merge rule were fixed with tests built from the live claims (`aff303a`, `7758670`): the 0.6 claim
+threshold (now 0.34, same category), code moved by a later head (3-line slack), and E4 findings that were never merge
+candidates. Remaining: same-defect paraphrases scoring 0.29 to 0.33 by word overlap, which overlaps the highest
+different-defect score on PR #18 (0.29). Word overlap is not enough; a code-identifier or embedding signal is the next step.

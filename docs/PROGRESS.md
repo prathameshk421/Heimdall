@@ -124,6 +124,12 @@ Notes for H9 (from H8):
 
 ### Phase 1 live check (Nov 22, stated before the run)
 - Expected cost: $0.30 to $0.60 with `deploy/deepseek-ai/deepseek-v4.1-flash-1017` (three reviews on each of two heads of one small ticketless PR). Under the daily token cap (4,000,000). Checks: U1 asks posted to people, L1/L2 one finding per defect across seats and heads, O2 quick lane not blocked by sandbox jobs, O1 no stream stop. Not covered: F1 tracker write-back and F2 room close (they need a Jira ticket and a merge; owner's step).
+- **Result (Nov 22, 09:44 to 10:04 UTC, ticketless PR #20 on `heimdall-test/e2e-20261122b`, server `b893a7a3` then `dd31c824`).** Planted: `ExportPayment` ignores `os.WriteFile`'s error and never checks the payment's merchant.
+  - **U1 live:** the pick ask was posted to `#heimdall-reviews` as "@prathameshk421: pick reviewers with `heimdall review`" (room_post done, first attempt).
+  - **Checks:** golangci-lint ran and reported the planted errcheck at `export.go`; `vet` did not run (writes no SARIF, L7).
+  - **Reviews:** three in 5 min (PR #18 took 40). Both planted defects found: F1 tenant leak by the security seat (in its lane), **verified E1** by a repro test (09:51); F2 ignored error **verified E2** by golangci-lint (09:52). Both verify jobs done on the first attempt.
+  - **Dedup (L1/L2), found live and fixed test first:** on head 1, F3 repeated F2 (claim overlap 0.36 under the 0.6 threshold); on head 2, a one-line comment moved the defect from line 19 to 20 and it was filed again (F5, F7), and E4 findings were never candidates (F8 repeated F4). `aff303a`: threshold 0.34 and same category (calibrated on PR #18: 133 same-defect pairs, 105 under 0.6; 108 different-defect pairs, highest 0.29). `7758670`: ranges up to 3 lines apart overlap (no false merge on 144 different-defect pairs) and every non-terminal finding is a candidate. **Still open:** paraphrases scoring 0.29 to 0.33 (F1 vs F6, F9) do not merge, and word overlap cannot separate them from different defects; needs a better signal (Phase 2).
+  - **Spent:** 236,623 tokens today (usage file), about $0.10 to $0.20, estimated. Merge of `product-build` pushed (`7b5c504`); CI failed only at `harness-check` (lint template drift from product-build), fixed in `861a03b`, CI green.
 
 ### Noticed (H13, Nov 21)
 - Nov 22: `cmd/heimdall/action_test.go` and `internal/platform/config/action_test.go` on `product-build` still hold the fake keys as one string. An edit to those lines makes a new gitleaks finding. Split them as `"ghs_" + "..."` before that branch merges.
