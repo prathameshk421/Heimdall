@@ -80,8 +80,9 @@
 // Config.Retry (Runner.WithRetry) sends a model call again when it failed with a rate limit (ModelErrorRateLimited,
 // HTTP 429) or a server error (ModelErrorServer, HTTP 5xx). Any other failure is never retried: an ordinary 4xx is a
 // fault of the request. The adapter types an HTML 400 page as ModelErrorInvalid, so it is not retried either. A call
-// is sent at most 3 times. The wait before attempt n+1 is the provider's Retry-After, capped at 60 s, or else a
-// random time in [0, min(30 s, 2 s * 2^(n-1))] (exponential backoff with full jitter, drawn from the Random port).
+// is sent at most 6 times. The wait before attempt n+1 is the provider's Retry-After, capped at 60 s, or else step n of
+// 5, 10, 20, 30 and 45 s, moved by up to 20% each way (jitter drawn from the Random port): about 110 s in all. Live run
+// 8 showed why: Deploy's 500s come and go over minutes, so three attempts within 2 s failed inside one bad window.
 // The loop waits only through the Waiter port, never time.Sleep. Before each wait the loop checks, in order: the
 // caller and the deadline; the cost the provider billed for the failed attempt, which is added once (most failures
 // bill nothing and report nothing); the retry rule; that the wait ends before the deadline (else StopDeadline, with no

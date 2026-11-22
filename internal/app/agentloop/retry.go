@@ -7,17 +7,21 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
-// The retry rule of a model call (AM12c). Live run 2 lost 14 of 18 cases to single HTTP 500 answers.
+// The retry rule of a model call (AM12c, AM12h). Live run 2 lost 14 of 18 cases to single HTTP 500 answers. Live run 8
+// showed that Deploy's 500s come and go over minutes and do not depend on the body: one saved refused body got 200, 500,
+// 500, 200 over three minutes. Three attempts within about 2 s retried inside the same bad window, so the waits now
+// spread over about two minutes.
 const (
 	// modelAttempts is the number of times one model call is sent at most.
-	modelAttempts = 3
-	// retryBase and retryCap bound the exponential backoff: attempt n waits a random time in
-	// [0, min(retryCap, retryBase * 2^(n-1))] (full jitter).
-	retryBase = 2 * time.Second
-	retryCap  = 30 * time.Second
+	modelAttempts = 6
+	// retryJitterPercent is how far a wait may move from its step (retryStep), each way.
+	retryJitterPercent = 20
 	// retryAfterCap bounds the provider's Retry-After hint.
 	retryAfterCap = time.Minute
 )
+
+// retrySteps are the waits before attempts 2 to 6: about 110 s in all.
+var retrySteps = [...]time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, 45 * time.Second}
 
 // Retry is how the loop waits before it sends a failed model call again. The zero value retries nothing. A rule that
 // retries needs both fields: Wait is the only way the loop pauses (never time.Sleep), and Random draws the jitter.
@@ -35,7 +39,9 @@ func (rt Retry) check() error {
 
 // delay returns the wait before attempt+1, and false when the call must not be sent again: the rule is off, the
 // attempts are used up, or the failure is not one that may pass. Only a rate limit (429) and a server error (5xx) may
-// pass; any other 4xx is a fault of the request and is never retried. Retry-After, when given, is the wait.
+// pass; any other 4xx is a fault of the request and is never retried. Retry-After, when given, is the wait. Else the
+// wait is the attempt's step (retryStep) moved by a random amount of up to retryJitterPercent each way, so workers that
+// failed together do not send again together. The caller checks the deadline and the budget before it waits.
 func (rt Retry) delay(err error, attempt int) (time.Duration, bool) {
 	if rt.Wait == nil || attempt >= modelAttempts {
 		return 0, false
@@ -50,17 +56,14 @@ func (rt Retry) delay(err error, attempt int) (time.Duration, bool) {
 	if modelErr.RetryAfter > 0 {
 		return min(modelErr.RetryAfter, retryAfterCap), true
 	}
-	ceiling := backoffCeiling(attempt)
-	return time.Duration(rt.Random.Int63n(int64(ceiling) + 1)), true
+	step := retryStep(attempt)
+	spread := step * retryJitterPercent / 100
+	return step - spread + time.Duration(rt.Random.Int63n(int64(2*spread)+1)), true
 }
 
-// backoffCeiling is min(retryCap, retryBase * 2^(attempt-1)), computed without overflow.
-func backoffCeiling(attempt int) time.Duration {
-	ceiling := retryBase
-	for i := 1; i < attempt && ceiling < retryCap; i++ {
-		ceiling *= 2
-	}
-	return min(ceiling, retryCap)
+// retryStep is the wait before the attempt after attempt; past the list it is the last step.
+func retryStep(attempt int) time.Duration {
+	return retrySteps[min(max(attempt, 1), len(retrySteps))-1]
 }
 
 // attemptOf is the record of one failed attempt: the kind, the status, the request size and the request hash of a
