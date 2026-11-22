@@ -3,6 +3,8 @@
 # copying the two Linux binaries (and, when it changed, deploy/compose.yaml) to /tmp:
 #   scp heimdall-server heimdall-vm:/tmp/heimdall-server.new
 #   scp heimdall-runner heimdall-vm:/tmp/heimdall-runner.new
+#   shasum -a 256 heimdall-server | cut -d' ' -f1 | ssh heimdall-vm 'cat > /tmp/heimdall-server.new.sha256'
+#   shasum -a 256 heimdall-runner | cut -d' ' -f1 | ssh heimdall-vm 'cat > /tmp/heimdall-runner.new.sha256'
 #   scp deploy/compose.yaml heimdall-vm:/tmp/heimdall-compose.yaml.new      (optional)
 #   ssh heimdall-vm 'sudo sh -s' < scripts/ops/hot-deploy.sh
 # Rollback (puts the .prev copies back and restarts):
@@ -53,6 +55,15 @@ esac
 [ -f /tmp/heimdall-server.new ] || { echo "hot-deploy: /tmp/heimdall-server.new is missing" >&2; exit 1; }
 [ -f /tmp/heimdall-runner.new ] || { echo "hot-deploy: /tmp/heimdall-runner.new is missing" >&2; exit 1; }
 
+# Each binary must match the SHA-256 the caller computed before copying (<file>.sha256, the hash alone). An SSH drop once
+# left a truncated server in /tmp, which this script installed and the stack restart-looped (Nov 21, 11 min down).
+for f in /tmp/heimdall-server.new /tmp/heimdall-runner.new; do
+	[ -f "$f.sha256" ] || { echo "hot-deploy: $f.sha256 is missing; copy the hash with the binary" >&2; exit 1; }
+	want=$(tr -d ' \n' <"$f.sha256")
+	got=$(sha256sum "$f" | cut -d' ' -f1)
+	[ "$want" = "$got" ] || { echo "hot-deploy: $f does not match its .sha256 (truncated or wrong copy); nothing installed" >&2; exit 1; }
+done
+
 stamp=$(date -u +%Y%m%dT%H%M%S)
 install -d -o root -g root -m 0755 "$backups"
 docker exec heimdall-postgres-1 pg_dump -U heimdall heimdall | gzip >"$backups/heimdall-$stamp.sql.gz"
@@ -69,7 +80,7 @@ replace() {
 		install -o root -g root -m "$mode" "$new" "$target"
 		echo "replaced: $target (previous kept as $target.prev)"
 	fi
-	rm -f "$new"
+	rm -f "$new" "$new.sha256"
 }
 replace /tmp/heimdall-server.new "$server" 0755
 replace /tmp/heimdall-runner.new "$runner" 0755
