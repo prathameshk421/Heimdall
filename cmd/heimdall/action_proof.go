@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/github"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/gitlog"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/openrouter"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/uidsandbox"
@@ -66,6 +67,9 @@ type proofStep struct {
 	// (nil when no model ran).
 	summary    *action.StepSummaryIn
 	transcript []byte
+	// monthKnown and monthSpentUSD are the month's spend before this run, read from the state ref (ACTION_MODE 7).
+	monthKnown    bool
+	monthSpentUSD float64
 }
 
 // runActionProof is the unprivileged step. It runs PR code only through uidsandbox, holds the model key in this
@@ -146,8 +150,30 @@ func (s *proofStep) run(ctx context.Context, deps actionDeps) ([]byte, error) {
 		return s.unknown(proof.ReasonInputMissing,
 			errors.New("HEIMDALL_MODEL_KEY is not set on a same-repository pull request: set it on the proof step"))
 	}
+	// The monthly spend is read before the first call, so a month at its cap costs nothing (ACTION_MODE 7).
+	s.monthKnown, s.monthSpentUSD = s.monthSpend(ctx)
 	return s.prove(ctx, deps)
 }
+
+// monthSpend reads the month's spend from the state ref before the first model call. The reader holds no MAC key, and
+// a read that failed leaves the month unknown: the run then makes no monthly stop, and the provider's own spend limit
+// is the hard stop. The gate adds the run's cost to the month when it records the result.
+func (s *proofStep) monthSpend(ctx context.Context) (bool, float64) {
+	reader, err := gitlog.NewMonthReader(gitlog.MonthConfig{Repo: s.repo, Git: s.api})
+	if err != nil {
+		writeDiagnostic(s.stderr, fmt.Sprintf("heimdall action proof: the monthly spend was not read: %v\n", err))
+		return false, 0
+	}
+	micros, known, err := reader.ReadMonthlySpend(ctx, monthNow())
+	if err != nil || !known {
+		writeDiagnostic(s.stderr, fmt.Sprintf("heimdall action proof: the monthly spend was not read: %v\n", err))
+		return false, 0
+	}
+	return true, float64(micros) / microsPerUSD
+}
+
+// monthNow is the budget file's month, in UTC. The gate and the proof step read the same month from the same clock.
+func monthNow() string { return clock.System{}.Now().UTC().Format(gitlog.MonthLayout) }
 
 // readPolicy reads the policy at the merge base and its hash. No file is the empty policy, as the gate reads it.
 func (s *proofStep) readPolicy(ctx context.Context) (string, []byte, error) {
@@ -213,7 +239,8 @@ func (s *proofStep) prove(ctx context.Context, deps actionDeps) ([]byte, error) 
 	}
 	res, runErr := p.Run(ctx, action.ProofIn{ChangeID: changeID, Repo: s.repo, Number: s.ev.Number, Head: s.key.Head,
 		Base: s.key.Base, PolicyHash: s.key.PolicyHash, WorkflowRun: s.key.WorkflowRun, Action: s.pol.Action,
-		Policy: s.pol, Files: s.files, Checkout: s.env.Workspace, Claims: s.claims(ctx)})
+		Policy: s.pol, Files: s.files, Checkout: s.env.Workspace, Claims: s.claims(ctx),
+		MonthKnown: s.monthKnown, MonthSpentUSD: s.monthSpentUSD})
 	if res.Artifact == nil {
 		return s.unknown(proof.ReasonNoResult, fmt.Errorf("proof: %w", runErr))
 	}

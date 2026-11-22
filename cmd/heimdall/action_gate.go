@@ -37,6 +37,9 @@ func proofLimits() ports.ArtifactLimits {
 // pull request's summary key and by the author login of the token, and never edits a comment of anyone else.
 type summaryPoster struct{ api *github.ActionAPI }
 
+// The git-ref store is the gate's Resetter: a log that fails its MAC or its chain is replaced by a fresh one.
+var _ action.Resetter = (*gitlog.Store)(nil)
+
 func (s summaryPoster) UpsertSummary(ctx context.Context, repo change.Repo, n int, body string) (int64, error) {
 	got, err := s.api.UpsertComment(ctx, repo, n, change.EffectKey("action-summary:"+strconv.Itoa(n)), body)
 	if err != nil {
@@ -47,11 +50,14 @@ func (s summaryPoster) UpsertSummary(ctx context.Context, repo change.Repo, n in
 
 // gateWiring is one gate step's ports.
 type gateWiring struct {
-	env  config.ActionEnv
-	repo change.Repo
-	api  *github.ActionAPI
-	gh   *github.Adapter
-	gate *action.Gate
+	env   config.ActionEnv
+	repo  change.Repo
+	api   *github.ActionAPI
+	gh    *github.Adapter
+	store *gitlog.Store
+	gate  *action.Gate
+	// month is the budget file's month, in UTC, read once when the step starts.
+	month string
 }
 
 func newGateWiring(env config.ActionEnv, deps actionDeps) (*gateWiring, error) {
@@ -67,20 +73,21 @@ func newGateWiring(env config.ActionEnv, deps actionDeps) (*gateWiring, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ingester: %w", err)
 	}
-	facts, err := newDiffFacts()
+	facts, err := newDiffFacts(api)
 	if err != nil {
 		return nil, err
 	}
 	gh := api.Adapter()
-	// Resetter stays nil: the git-ref store has no way to replace a change's log yet, so a log that fails its MAC or
-	// its chain stops the gate with ErrStateUnverified and nothing is posted (fail closed).
+	// The store is the Resetter too: a log that failed its MAC or its chain is replaced by a fresh one that starts with
+	// state.reset, by compare-and-swap, and the gate reads and decides again (ACTION_MODE 2.7).
 	gate, err := action.NewGate(action.Config{Store: store, PRs: gh, Reviews: gh, Checks: gh, Summary: summaryPoster{api: api},
 		Ingester: ingester, Facts: facts, Code: gh, Decode: policyyaml.Decode, Clock: clock.System{}, IDs: ids.New(),
-		IsUnverified: func(err error) bool { return errors.Is(err, gitlog.ErrIntegrity) }})
+		Resetter: store, IsUnverified: func(err error) bool { return errors.Is(err, gitlog.ErrIntegrity) }})
 	if err != nil {
 		return nil, fmt.Errorf("gate: %w", err)
 	}
-	return &gateWiring{env: env, repo: repo, api: api, gh: gh, gate: gate}, nil
+	return &gateWiring{env: env, repo: repo, api: api, gh: gh, store: store, gate: gate,
+		month: clock.System{}.Now().UTC().Format(gitlog.MonthLayout)}, nil
 }
 
 // runActionGate is the privileged step. It never runs PR code and never checks the PR out: it reads the PR as data,
@@ -242,7 +249,54 @@ func (w *gateWiring) serveProof(ctx context.Context, run workflowRun, rec trigge
 		line += "; artifact refused: " + clipText(got.Refused, 300)
 	}
 	writeDiagnostic(stdout, line+"\n")
+	// The month is keyed by the proof run, so the second gate run of this workflow (the one after the record) and a
+	// repeated run of the same event cannot count this proof twice.
+	w.recordProofSpend(ctx, run.ID, proofSpend{known: got.Accepted, micros: monthMicros(got.Outcome.Cost.USD)}, stdout)
 	return w.runOne(ctx, n, stdout)
+}
+
+// ProofRecord is what one proof run cost, as the log recorded it. It is what the gate adds to the month.
+type proofSpend struct {
+	// known is false when the proof record's cost could not be read: the month is then not changed, rather than
+	// counting a run at $0.
+	known bool
+	// micros is the run's cost in whole micro dollars.
+	micros int64
+}
+
+// microsPerUSD is how many whole micro dollars make one dollar, the unit of the budget file and of cost.recorded.
+const microsPerUSD = 1_000_000
+
+// monthSpend reads the month's spend at the current tip. A read that failed leaves the month unknown: the budget row
+// then says so, and the run makes no monthly stop. The provider's own spend limit stays the hard stop (ACTION_MODE 7).
+func (w *gateWiring) monthSpend(ctx context.Context, stdout io.Writer) (bool, float64) {
+	micros, known, err := w.store.ReadMonthlySpend(ctx, w.month)
+	if err != nil || !known {
+		writeDiagnostic(stdout, fmt.Sprintf("heimdall action gate: the monthly spend could not be read: %v\n", err))
+		return false, 0
+	}
+	return true, float64(micros) / microsPerUSD
+}
+
+// recordProofSpend adds one proof run's cost to the month, keyed by the run. A repeat of the same gate run on the same
+// proof run is a no-op, so the month never counts one proof run twice (ACTION_MODE 7). A failed write is reported and
+// does not fail the run: the result is already recorded, and the next gate run reads the log's own cost records again.
+func (w *gateWiring) recordProofSpend(ctx context.Context, runID int64, p proofSpend, stdout io.Writer) {
+	if !p.known || p.micros <= 0 {
+		return
+	}
+	if err := w.store.AddMonthlySpend(ctx, w.month, p.micros, strconv.FormatInt(runID, 10)); err != nil {
+		writeDiagnostic(stdout, fmt.Sprintf("heimdall action gate: proof run %d not added to the month: %v\n", runID, err))
+	}
+}
+
+// monthMicros is the whole micro dollar form of a dollar amount, or 0 when it is not a number the budget file would
+// accept. The bound is the one cost.recorded enforces: $1,000,000.
+func monthMicros(usd float64) int64 {
+	if !(usd >= 0 && usd <= 1_000_000) { // false for a NaN, which no ordering holds
+		return 0
+	}
+	return int64(usd*microsPerUSD + 0.5)
 }
 
 // artifactFile downloads one file of one artifact of a run. A run with no such artifact, or an artifact without the
@@ -291,7 +345,9 @@ func (w *gateWiring) runOne(ctx context.Context, n int, stdout io.Writer) error 
 	if err != nil {
 		return fmt.Errorf("#%d: %w", n, err)
 	}
-	res, err := w.gate.Run(ctx, action.RunIn{ChangeID: changeID, Repo: w.repo, Number: n, WorkflowRun: w.env.RunID})
+	known, spent := w.monthSpend(ctx, stdout)
+	res, err := w.gate.Run(ctx, action.RunIn{ChangeID: changeID, Repo: w.repo, Number: n, WorkflowRun: w.env.RunID,
+		MonthKnown: known, MonthSpentUSD: spent})
 	if err != nil {
 		return fmt.Errorf("#%d: %w", n, err)
 	}

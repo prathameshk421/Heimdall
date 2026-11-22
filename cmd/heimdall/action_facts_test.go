@@ -27,7 +27,7 @@ func TestParseFileDiffNumbersTheAddedLines(t *testing.T) {
 }
 
 func TestTheSecretScanFindsAnAddedKeyAndIsUnknownWithoutAPatch(t *testing.T) {
-	d, err := newDiffFacts()
+	d, err := newDiffFacts(nil)
 	require.NoError(t, err)
 	key := "AKIA" + "Q3EGRZ7BHT5LWXMP"
 	files := []ports.ChangedFile{{Path: "cfg.go", Status: ports.FileModified, Additions: 1,

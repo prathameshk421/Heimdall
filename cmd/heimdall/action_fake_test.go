@@ -38,6 +38,12 @@ type fakeGitHub struct {
 	artifacts map[int64][]fakeArtifact
 	nextID    int64
 	calls     []string
+	// codeScanAlerts is what the code scanning endpoint answers, and codeScanStatus is the status it answers with. A
+	// status of 0 answers 200 with the list.
+	codeScanAlerts []map[string]any
+	codeScanStatus int
+	// codeScanRefs records the ref of every code scanning call.
+	codeScanRefs []string
 }
 
 type fakeEntry struct{ mode, sha string }
@@ -147,6 +153,7 @@ func (f *fakeGitHub) routes() []fakeRoute {
 		route("PATCH", `/check-runs/(\d+)`, ok(func(*http.Request) any { return map[string]any{} })),
 		route("GET", `/actions/runs/(\d+)/artifacts`, f.listArtifacts),
 		route("GET", `/actions/artifacts/(\d+)/zip`, f.artifactZip),
+		route("GET", "/code-scanning/alerts", f.listCodeScanAlerts),
 	}
 }
 
@@ -340,6 +347,18 @@ func (f *fakeGitHub) postCheck(w http.ResponseWriter, _ *http.Request, _ []strin
 	return true
 }
 
+// listCodeScanAlerts answers the code scanning alert list. A non-zero codeScanStatus is GitHub's refusal for a
+// repository without code scanning (404) or a token that may not read it (403).
+func (f *fakeGitHub) listCodeScanAlerts(w http.ResponseWriter, r *http.Request, _ []string, _ []byte) bool {
+	f.codeScanRefs = append(f.codeScanRefs, r.URL.Query().Get("ref"))
+	if f.codeScanStatus != 0 {
+		writeFakeJSON(w, f.codeScanStatus, map[string]string{"message": "Not Found"})
+		return true
+	}
+	writeFakeJSON(w, http.StatusOK, f.codeScanAlerts)
+	return true
+}
+
 func (f *fakeGitHub) listArtifacts(w http.ResponseWriter, _ *http.Request, m []string, _ []byte) bool {
 	run, _ := strconv.ParseInt(m[1], 10, 64)
 	list := []map[string]any{}
@@ -363,6 +382,54 @@ func (f *fakeGitHub) artifactZip(w http.ResponseWriter, _ *http.Request, m []str
 		}
 	}
 	return false
+}
+
+// putFile stores content at path on the ref tip, as a person with write access would. The fake's tree is flat, which
+// is enough for a reader that looks a path up as stored.
+func (f *fakeGitHub) putFile(path string, content []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	sha := gitSHA("blob", string(content))
+	f.blobs[sha] = content
+	tip := f.refs["refs/heimdall/state"]
+	base := ""
+	if tip != "" {
+		base = f.commits[tip].tree
+	}
+	next := map[string]fakeEntry{}
+	for k, v := range f.trees[base] {
+		next[k] = v
+	}
+	next[path] = fakeEntry{mode: "100644", sha: sha}
+	keys := []string{"tree", base, path, sha}
+	tree := gitSHA(keys...)
+	f.trees[tree] = next
+	commit := gitSHA("commit", "external", tree, tip)
+	f.commits[commit] = fakeCommit{tree: tree}
+	if tip != "" {
+		f.commits[commit] = fakeCommit{tree: tree, parents: []string{tip}}
+	}
+	f.refs["refs/heimdall/state"] = commit
+}
+
+// flatFile returns the content of a path in the fake's flat tree, or nil. The fake stores paths whole ("a/b/c"), so a
+// reader that walks directories does not see them; this one looks the path up as stored.
+func (f *fakeGitHub) flatFile(path string) []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	e, ok := f.trees[f.tipTree()][path]
+	if !ok {
+		return nil
+	}
+	return f.blobs[e.sha]
+}
+
+func (f *fakeGitHub) tipTree() string {
+	tip, ok := f.refs["refs/heimdall/state"]
+	if !ok {
+		return ""
+	}
+	return f.commits[tip].tree
 }
 
 func zipOf(t *testing.T, files map[string][]byte) []byte {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -352,6 +353,47 @@ func TestActionProofArtifactIsAcceptedByTheGate(t *testing.T) {
 		names = append(names, c["name"])
 	}
 	require.ElementsMatch(t, []any{"heimdall/fast", "heimdall/proof"}, names)
+
+	// The month now holds the proof run's cost, keyed by the run, so a second gate run cannot count it twice.
+	month := time.Now().UTC().Format("2006-01")
+	raw := gh.flatFile("budget/" + month + ".json")
+	require.NotEmpty(t, raw, "the gate wrote the month's budget file")
+	var b struct {
+		Version int              `json:"version"`
+		Month   string           `json:"month"`
+		Runs    map[string]int64 `json:"runs"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &b))
+	require.Equal(t, month, b.Month)
+	require.Contains(t, b.Runs, strconv.FormatInt(proofRun, 10))
+	first := b.Runs[strconv.FormatInt(proofRun, 10)]
+	require.Positive(t, first, "a model call is never recorded at $0")
+
+	code, _, stderr = runStep(t, smokeDeps(env, nil), "gate")
+	require.Equal(t, exitActionOK, code, stderr)
+	require.NoError(t, json.Unmarshal(gh.flatFile("budget/"+month+".json"), &b))
+	require.Equal(t, first, b.Runs[strconv.FormatInt(proofRun, 10)], "the same run is counted once")
+}
+
+// A fresh install has no budget file, and nothing says the month could not be read: the row is $0 spent, known
+// (AM16_LIVE finding 4). A month that cannot be read says so in the run's own output instead.
+func TestActionGateKnowsTheMonthOnAFreshInstall(t *testing.T) {
+	gh := newFakeGitHub(t)
+	env := gateEnv(gh, "schedule", writeEvent(t, map[string]any{}))
+	code, stdout, stderr := runStep(t, smokeDeps(env, nil), "gate")
+	require.Equal(t, exitActionOK, code, stderr)
+	require.NotContains(t, stdout, "budget")
+	require.NotContains(t, stdout, "the monthly spend could not be read")
+	require.Empty(t, gh.flatFile("budget/"+monthNow()+".json"),
+		"a gate run that records no proof spend writes no budget file")
+
+	// A malformed month file is unknown, and the run says so and goes on: a broken budget file must never stop the
+	// fast check.
+	gh.putFile("budget/"+monthNow()+".json", []byte("{"))
+	code, stdout, stderr = runStep(t, smokeDeps(env, nil), "gate")
+	require.Equal(t, exitActionOK, code, stderr)
+	require.Contains(t, stdout, "the monthly spend could not be read")
+	require.Contains(t, stdout, "budget:")
 }
 
 // The sweep serves every open pull request.
@@ -362,4 +404,46 @@ func TestActionGateSweepServesTheOpenPullRequests(t *testing.T) {
 	require.Equal(t, exitActionOK, code, stderr)
 	require.Contains(t, stdout, "#7 at "+string(testHead))
 	require.Len(t, gh.checks, 1)
+}
+
+// commentBodies joins every comment body the fake holds, which is where the fast check lists its clauses.
+func commentBodies(gh *fakeGitHub) string {
+	var b strings.Builder
+	for _, c := range gh.comments {
+		body, _ := c["body"].(string)
+		b.WriteString(body)
+	}
+	return b.String()
+}
+
+// The analyzers clause reads the code scanning alerts of the pull request's merge ref, and a repository without code
+// scanning (403/404) leaves the clause unknown without failing the step (ACTION_MODE 5.1).
+func TestActionGateReadsCodeScanningAlertsForTheMergeRef(t *testing.T) {
+	gh := newFakeGitHub(t)
+	env := gateEnv(gh, "schedule", writeEvent(t, map[string]any{}))
+	code, _, stderr := runStep(t, smokeDeps(env, nil), "gate")
+	require.Equal(t, exitActionOK, code, stderr)
+	require.Equal(t, []string{"refs/pull/7/merge"}, gh.codeScanRefs)
+	body := commentBodies(gh)
+	require.Contains(t, body, "analyzers")
+	require.Contains(t, body, "not known", "a 404 is unknown, never met")
+
+	gh2 := newFakeGitHub(t)
+	gh2.codeScanAlerts = []map[string]any{{"number": 3, "state": "open",
+		"rule": map[string]any{"id": "go/sql-injection", "severity": "error", "security_severity_level": "high"},
+		"tool": map[string]any{"name": "CodeQL"},
+		"most_recent_instance": map[string]any{"ref": "refs/pull/7/merge", "commit_sha": string(testHead),
+			"message":  map[string]any{"text": "tainted"},
+			"location": map[string]any{"path": "pay/refund.go", "start_line": 2, "end_line": 2}}}}
+	env2 := gateEnv(gh2, "schedule", writeEvent(t, map[string]any{}))
+	code, _, stderr = runStep(t, smokeDeps(env2, nil), "gate")
+	require.Equal(t, exitActionOK, code, stderr)
+	require.Contains(t, commentBodies(gh2), "go/sql-injection")
+
+	gh3 := newFakeGitHub(t)
+	gh3.codeScanStatus = http.StatusForbidden
+	env3 := gateEnv(gh3, "schedule", writeEvent(t, map[string]any{}))
+	code, _, stderr = runStep(t, smokeDeps(env3, nil), "gate")
+	require.Equal(t, exitActionOK, code, stderr, "a token that may not read alerts does not fail the step")
+	require.Contains(t, commentBodies(gh3), "not known")
 }
