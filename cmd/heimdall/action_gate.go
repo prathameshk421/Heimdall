@@ -81,7 +81,7 @@ func newGateWiring(env config.ActionEnv, deps actionDeps) (*gateWiring, error) {
 	// The store is the Resetter too: a log that failed its MAC or its chain is replaced by a fresh one that starts with
 	// state.reset, by compare-and-swap, and the gate reads and decides again (ACTION_MODE 2.7).
 	gate, err := action.NewGate(action.Config{Store: store, PRs: gh, Reviews: gh, Checks: gh, Summary: summaryPoster{api: api},
-		Ingester: ingester, Facts: facts, Code: gh, Decode: policyyaml.Decode, Clock: clock.System{}, IDs: ids.New(),
+		Ingester: ingester, BreakGlassComments: api, Facts: facts, Code: gh, Decode: policyyaml.Decode, Clock: clock.System{}, IDs: ids.New(),
 		Resetter: store, IsUnverified: func(err error) bool { return errors.Is(err, gitlog.ErrIntegrity) }})
 	if err != nil {
 		return nil, fmt.Errorf("gate: %w", err)

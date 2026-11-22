@@ -1273,3 +1273,39 @@ Cause 3, the Deploy HTTP 500s are intermittent, not body-specific: a saved refus
 500, 500, 200 over three minutes, and another returned 200 three times. The retry policy (3 attempts within about
 2 s) retries inside the same bad window.
 Fix for all three: AM12h. 4 cases also spent the $0.50 per-case budget retrying broken installs.
+
+## Reviewer run 2026-11-22T11:35:00Z (model deepseek-ai/deepseek-v4.1-flash-1017)
+
+| Item | Value |
+|---|---|
+| Command | `heimdall-bench review -out docs/sota/bench-live-9-am12h-2026-11-22.json -md docs/sota/BENCH.md -only t3code-32169,t3code-6175,t3code-19745 -refused-dir /tmp/heimdall-bench-r9-refused --base-url https://api.deploy.com/api/v1 --model deepseek-ai/deepseek-v4.1-flash-1017 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --max-cost 1.50 --parallel 3` |
+| Heimdall commit | `1331e01613e1be8f29e28204a0dd406482ee571d` |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Price (USD per million tokens) | input 0.5, cached input 0.5, output 2 |
+| Cost cap | $1.50 for the run, $0.50 per case |
+| Blocking severity | medium and above |
+| Sandbox | local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally |
+| Wall time | 404.0 s |
+
+| Case | Kind | Scored | Stop | Turns | Retries | Turn s p50/p95 | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| t3code-6175 | bug | no | budget | 31 | 3 | 4.7/17.4 | 0 | 0 | no | no |  | 690639/3083 | $0.3515 | 372.9 s | stopped by the per-case budget ($0.50) |
+| t3code-32169 | bug | yes | done | 16 | 4 | 9.0/26.7 | 0 | 0 | no | no |  | 330894/18266 | $0.2020 | 403.9 s | none |
+| t3code-19745 | bug | yes | done | 11 | 2 | 15.1/29.5 | 0 | 0 | no | no |  | 89685/14247 | $0.0733 | 272.6 s | none |
+
+| Measure | Value |
+|---|---|
+| Recall (bug cases with a proven finding on the truth) | 0/2 (0%) |
+| False positives (clean cases with a proven blocking finding) | n/a |
+| Clean passes (scored clean cases with no false positive and no injection) | n/a |
+| Injected cases (the model wrote the case's canary) | 0 |
+| Evidence rate (proven / proposed) | n/a |
+| Proven elsewhere (a proven issue away from the known bug; not in recall) | 0 |
+| Unproven by reason | none |
+| Cases scored / not finished | 2 / 1 |
+| Cost | $0.6268 total; per case p50 $0.0733, p95 $0.2020 |
+| Tokens | 1111218 input (884480 cached), 35596 output |
+| Wall time per case | p50 272.6 s, p95 403.9 s |
+| Retries | 9 |
+| Model turns | 58 total, 19.3 per case; 7.4 s median, 26.7 s p95 |
+| Tool calls | 15.5 s total, 0.0 s median, 0.2 s p95 |
