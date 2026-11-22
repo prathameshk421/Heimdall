@@ -33,35 +33,28 @@ ignored.
 The branch was pushed to `origin/heimdall-build` on Nov 18, 2026 (81 commits over the previous remote tip).
 `git log -1 origin/heimdall-build` is the docs commit on top of H7 `506fad5`.
 
-## Start here: the H11 owner steps (H12 is done)
+## Start here (Nov 22, 2026): H0 to H13 are done
 
-H11 (Nov 19 to 20) deployed the overhaul build and ran KAN-26 live: the tests flow works end to end on the VM, and PR
-#16 got slop, CI, acceptance, the default pick and 2 of 3 reviews (reviewer-1 and reviewer-2, no findings). Read
-`docs/LIVE_RUN_H11.md` for both halves, the cost (about $0.24 in all, estimated; $0.00 in the rerun) and defects D1 to
-D8. The rerun found that a reopened PR left its change over (D8); `bb04269` adds `pr.reopened`, and it is deployed.
-
-The VM runs server `8b8fa65e` and runner `d581f0d0`; `/healthz` is `{"status":"ok"}`. Rollback copies are the
-`.prev` files (`ssh heimdall-vm 'sudo sh -s rollback' < scripts/ops/hot-deploy.sh`). PR #16 is closed again, on purpose.
-
-Owner steps before the last part of H11:
-
-1. **B4:** the D6 configs read the model key from `DEPLOY_API_KEY`, and the agent units have only
-   `OPENROUTER_API_KEY`. Add `DEPLOY_API_KEY` to `/etc/switch/agents.env` (`deploy/agents/install-controller.sh` does it
-   from `deploy_api_key`), restart the controller and agent units 03 to 07, and check one "agent host connected" line
-   each.
-2. **B1:** a promoted profile needs a design step: no profiler seat exists and no row assigns a `profile` task, so
-   `propose_profile` can never run. Until then E2 and `run_check` stay unproven live.
-3. **D7:** decide whether a ticketless PR is reviewed before slop passes, or the check uses `require_ticket: false`.
-4. Then reopen PR #16 (KAN-26). The change resumes at the next sync; watch reviewer-3, verify, the gate, the approval as
-   `temporaryhameshakagroup-alt` (token per call, on the head) and the merge.
+- **H11** ran KAN-26 from ticket to merge (PR #16, `d79cd08`); see `docs/LIVE_RUN_H11.md`.
+- **H13** (D175) built the profiler seat and the `profile` row, live on the fixture repository: propose, owner approval
+  in chat (`heimdall approve-profile <ticket> <id>` in `#heimdall-reviews`), Heimdall's trial, owner promotion, and a
+  revision with `heimdall reprofile <ticket> <note>` (D184). The active profile is `49423b50` (tests plus a
+  `golangci-lint` check writing SARIF). On PR #18 three reviewers filed the planted errcheck bug and Heimdall verified it
+  as E2 by re-running the check (F32, F40, F47). Defects D176 to D192 were found live and fixed; PROGRESS has each.
+- **Decisions since H11:** D171 Deploy key written into agent configs; D172 no session reset, the stall rung wakes again;
+  D173 a seat that fails twice on one input waits for a person; D174 a ticketless PR is reviewed and the gate stays red.
+- **Cost so far:** about $0.85 in model calls (estimated from OpenCode token counts; cap $3).
+- **VM:** server and runner from `78db7f7` or later (see the last deploy line in PROGRESS); roll back with
+  `ssh heimdall-vm 'sudo sh -s rollback' < scripts/ops/hot-deploy.sh`. Copy binaries with a hash check and run the deploy
+  detached (`nohup`): an SSH drop once installed a truncated server (PROGRESS, Noticed H13).
 
 ## Then, in order
 
-- **Docker:** give Docker Desktop access to `/Volumes/SSD` (its disk folder is there), then run `make verify` on the
-  tip. It last passed at `e213e02`; the board and H12 commits ran only `make fast`.
-- **H11 rest:** after B4, reopen PR #16 and record reviewer-3, the gate, the approval and the merge in `docs/LIVE_RUN_H11.md`.
-- **Open items:** D7 (ticketless PRs) and the unbounded reassignment of a failing seat (PROGRESS, Noticed H11).
-- **Then the SOTA quality programme** (`docs/SOTA_QUALITY_PLAN.md`).
+- **Open, small:** D177 (`agents-prepare.sh` stops working agents), the D176 remainder (the controller empties a new
+  agent's folder on first start), a hash check in `hot-deploy.sh` (guarded `scripts/`, owner's call), a profile command
+  should not need a ticket key in a shared channel, the flaky `TestTimeoutModuleKillsProcessGroup`.
+- **`make verify`** with Docker, on the tip.
+- **Then the SOTA quality programme** (`docs/SOTA_QUALITY_PLAN.md`, phases 0 to 3).
 
 ## Owner directive: real-world hardening and SOTA polish
 
