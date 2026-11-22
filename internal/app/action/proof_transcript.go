@@ -63,10 +63,15 @@ type TranscriptTurn struct {
 	Text      string `json:"text,omitempty"`
 }
 
-// TranscriptCall is one tool call: its name and the size of its arguments, never the arguments.
+// TranscriptCall is one tool call: its name, the size of its arguments, and the product's own error when it failed.
+// It never holds the arguments or the result.
 type TranscriptCall struct {
 	Name          string `json:"name"`
 	ArgumentBytes int    `json:"argument_bytes"`
+	// Failed is set when the tool returned an error, and Error holds its first bytes: it is how a run that ended with
+	// no result explains itself. The text is this product's own message, never anything the pull request wrote.
+	Failed bool   `json:"failed,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 // transcriptOf writes the bounded transcript of a run whose review reached the loop. To fit MaxTranscriptBytes it
@@ -127,14 +132,17 @@ func transcriptTurn(n int, at ports.AgentTurn) TranscriptTurn {
 		OutputTokens: at.Usage.OutputTokens, ReasoningBytes: at.ReasoningBytes, TextBytes: len(at.Text),
 		Text: clip(at.Text, MaxTranscriptText)}
 	for _, c := range at.Calls[:min(len(at.Calls), maxTranscriptCalls)] {
-		tt.Calls = append(tt.Calls, TranscriptCall{Name: clip(c.Name, maxToolName), ArgumentBytes: c.ArgumentBytes})
+		tt.Calls = append(tt.Calls, TranscriptCall{Name: clip(c.Name, maxToolName), ArgumentBytes: c.ArgumentBytes,
+			Failed: c.Failed, Error: clip(c.Error, maxTranscriptToolError)})
 	}
 	return tt
 }
 
 // maxToolName bounds a tool name in the transcript: a model can call a name no tool has. maxTranscriptCalls bounds
-// the calls of one turn, as the loop's own record does; ToolCalls keeps the full count.
+// the calls of one turn, as the loop's own record does; ToolCalls keeps the full count. maxTranscriptToolError bounds
+// the error of one failed call, which the loop already cuts to turnToolErrorBytes.
 const (
-	maxToolName        = 64
-	maxTranscriptCalls = 16
+	maxToolName            = 64
+	maxTranscriptCalls     = 16
+	maxTranscriptToolError = 300
 )

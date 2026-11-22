@@ -573,6 +573,18 @@ type turnRecord struct {
 type callRecord struct {
 	Name          string `json:"name"`
 	ArgumentBytes int    `json:"argument_bytes"`
+	// Failed and Error are the tool's own failure, as the loop recorded it, so a bench run that ended with no result
+	// says which tool failed and why.
+	Failed bool   `json:"failed,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+func callRecords(calls []ports.AgentCallBrief) []callRecord {
+	out := make([]callRecord, 0, len(calls))
+	for _, c := range calls {
+		out = append(out, callRecord{Name: c.Name, ArgumentBytes: c.ArgumentBytes, Failed: c.Failed, Error: c.Error})
+	}
+	return out
 }
 
 func turnRecords(turns []ports.AgentTurn) []turnRecord {
@@ -580,10 +592,8 @@ func turnRecords(turns []ports.AgentTurn) []turnRecord {
 	for _, t := range turns {
 		r := turnRecord{Text: t.Text, Reasoning: t.Reasoning, ReasoningBytes: t.ReasoningBytes, ToolCalls: t.ToolCalls, Finish: t.Finish, TextCalls: t.TextCalls, Nudged: t.Nudged,
 			ToolChoice: string(t.ToolChoice), Fallback: t.Fallback, CostUSD: t.CostUSD, Attempts: t.Attempts,
-			Failed: attemptRecords(t.Failed), RequestBytes: t.RequestBytes, Trimmed: t.TrimmedResults, StallNudged: t.StallNudged}
-		for _, c := range t.Calls {
-			r.Calls = append(r.Calls, callRecord(c))
-		}
+			Failed: attemptRecords(t.Failed), RequestBytes: t.RequestBytes, Trimmed: t.TrimmedResults, StallNudged: t.StallNudged,
+			Calls: callRecords(t.Calls)}
 		out = append(out, r)
 	}
 	return out

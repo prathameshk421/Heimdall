@@ -205,10 +205,15 @@ type AgentAttempt struct {
 	Wait         time.Duration
 }
 
-// AgentCallBrief is one tool call in the bounded transcript: its name and the size of its arguments in bytes.
+// AgentCallBrief is one tool call in the bounded transcript: its name, the size of its arguments in bytes, and the
+// product's own error when the call failed. The error is what the model read as the tool result, clipped: it is how a
+// run that ended with no result explains itself. It never holds the arguments or the result.
 type AgentCallBrief struct {
 	Name          string
 	ArgumentBytes int
+	// Failed is set when the tool returned an error, and Error holds its first bytes.
+	Failed bool
+	Error  string
 }
 
 // AgentResult is the typed end of a run. It is always filled, also when Run returns an error.

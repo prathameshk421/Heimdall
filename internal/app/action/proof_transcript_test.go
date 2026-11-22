@@ -62,6 +62,19 @@ func TestTheTranscriptNamesEachTurnWithoutToolResults(t *testing.T) {
 	require.Equal(t, 5000, second.TextBytes)
 }
 
+// TestTheTranscriptNamesAFailedToolCall: a proof that ends with no result says which tool failed and why. The error is
+// the product's own message, bounded, and never the call's arguments or its result.
+func TestTheTranscriptNamesAFailedToolCall(t *testing.T) {
+	h := newProofHarness(t, nil)
+	turns := []ports.AgentTurn{{Calls: []ports.AgentCallBrief{
+		{Name: "read_file", ArgumentBytes: 20},
+		{Name: "run_test", ArgumentBytes: 900, Failed: true, Error: "sandbox: stage the tree: tar exited 2"},
+	}, ToolCalls: 2, Finish: ports.ModelFinishToolCalls, CostUSD: 0.002}}
+	res, err := h.runWith(t, &fakeLoop{result: ports.AgentResult{Stop: ports.AgentStopTurns, Turns: turns}})
+	require.NoError(t, err)
+	require.Contains(t, string(res.Transcript), "sandbox: stage the tree: tar exited 2")
+}
+
 // TestTheTranscriptStaysInsideItsBound fills every turn to its limit. The file keeps the newest turns whole, says how
 // many it left out, and never passes MaxTranscriptBytes.
 func TestTheTranscriptStaysInsideItsBound(t *testing.T) {

@@ -21,6 +21,9 @@ const maxNudges = 2
 const (
 	turnTextBytes  = 2 << 10
 	turnCallBriefs = 16
+	// turnToolErrorBytes bounds the error of one failed tool call in the turn's record. A tool's error is this
+	// product's own message, so it is safe to keep, but a long one (a sandbox's output tail) must not fill the record.
+	turnToolErrorBytes = 300
 )
 
 // retriesAfterRefusal is the number of retries the model gets after a refused submission (ACTION_MODE 4.1: refused
@@ -437,48 +440,66 @@ func clipText(s string, limit int) string {
 // dispatch runs the tool calls of one answer in order. It reports true when the run ended: a submission was accepted,
 // a retried submission was refused, or the caller or the deadline interrupted it.
 func (r *run) dispatch(calls []ports.ModelToolCall) bool {
-	for _, c := range calls {
+	for i, c := range calls {
 		if r.interrupted() {
 			return true
 		}
-		if r.call(c) {
+		if r.call(i, c) {
 			return true
 		}
 	}
 	return false
 }
 
-func (r *run) call(c ports.ModelToolCall) bool {
+func (r *run) call(i int, c ports.ModelToolCall) bool {
 	args, argErr := parseArguments(c.Arguments)
 	if s, ok := r.l.submitters[c.Name]; ok {
-		return r.submit(c, s, args, argErr)
+		return r.submit(i, c, s, args, argErr)
 	}
-	r.toolResult(c.ID, r.runTool(c, args, argErr))
+	out, err := r.runTool(c, args, argErr)
+	if err != nil {
+		r.noteCallError(i, err)
+	}
+	r.toolResult(c.ID, out)
 	return false
 }
 
-func (r *run) runTool(c ports.ModelToolCall, args json.RawMessage, argErr error) string {
+func (r *run) runTool(c ports.ModelToolCall, args json.RawMessage, argErr error) (string, error) {
 	t, ok := r.l.tools[c.Name]
 	if !ok {
-		return fmt.Sprintf("error: unknown tool %q", c.Name)
+		err := fmt.Errorf("unknown tool %q", c.Name)
+		return "error: " + err.Error(), err
 	}
 	if argErr != nil {
-		return "error: " + argErr.Error()
+		return "error: " + argErr.Error(), argErr
 	}
 	out, err := t.Run(r.ctx, args)
 	if err != nil {
-		return "error: " + err.Error()
+		return "error: " + err.Error(), err
 	}
-	return out
+	return out, nil
 }
 
-func (r *run) submit(c ports.ModelToolCall, s Submitter, args json.RawMessage, argErr error) bool {
+// noteCallError records a failed tool call on the turn, so a run that ended with no result says which call failed and
+// why. The model already read the same text as the tool result, so nothing new is revealed.
+func (r *run) noteCallError(i int, err error) {
+	turn := &r.res.Turn[len(r.res.Turn)-1]
+	if i >= len(turn.Calls) {
+		// The call was past the brief bound: ToolCalls still counts it, and there is no brief to hold the error.
+		return
+	}
+	turn.Calls[i].Failed = true
+	turn.Calls[i].Error = clipText(err.Error(), turnToolErrorBytes)
+}
+
+func (r *run) submit(i int, c ports.ModelToolCall, s Submitter, args json.RawMessage, argErr error) bool {
 	verdict := Verdict{Reason: ""}
 	if argErr != nil {
 		verdict.Reason = argErr.Error()
 	} else {
 		v, err := s.Submit(r.ctx, args)
 		if err != nil {
+			r.noteCallError(i, err)
 			r.toolResult(c.ID, "error: "+err.Error())
 			return false
 		}

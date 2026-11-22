@@ -2,6 +2,8 @@ package agentloop
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -137,6 +139,35 @@ func TestEachTurnKeepsABoundedTranscript(t *testing.T) {
 	assert.Equal(t, "short", res.Turn[1].Text)
 	assert.True(t, res.Turn[1].Nudged)
 	assert.Equal(t, ports.ModelFinishStop, res.Turn[1].Finish)
+}
+
+// TestAFailedToolCallKeepsItsErrorOnTheTurn: a run that ends with no result has to say which tool failed and why. The
+// error is this product's own message, bounded, and the model still reads the same text as the tool result.
+func TestAFailedToolCallKeepsItsErrorOnTheTurn(t *testing.T) {
+	h := newHarness(t, answer(0.01, call("c1", "read_code", `{"path":"a.go"}`)),
+		answer(0.01, call("c2", "submit_plan", `{"plan":"p"}`)))
+	h.read.run = func(json.RawMessage) (string, error) {
+		return "", errors.New("sandbox: stage the tree: tar exited 2")
+	}
+	res, err := h.run(context.Background(), t)
+	require.NoError(t, err)
+	require.Len(t, res.Turn[0].Calls, 1)
+	assert.True(t, res.Turn[0].Calls[0].Failed)
+	assert.Equal(t, "sandbox: stage the tree: tar exited 2", res.Turn[0].Calls[0].Error)
+	assert.Contains(t, toolTexts(res), "error: sandbox: stage the tree: tar exited 2",
+		"the model reads the same error as the tool result")
+	assert.False(t, res.Turn[1].Calls[0].Failed, "a call that worked is not marked failed")
+}
+
+// TestAFailedToolErrorIsBounded stops a long error from filling the record or the transcript.
+func TestAFailedToolErrorIsBounded(t *testing.T) {
+	h := newHarness(t, answer(0.01, call("c1", "read_code", `{"path":"a.go"}`)),
+		answer(0.01, call("c2", "submit_plan", `{"plan":"p"}`)))
+	h.read.run = func(json.RawMessage) (string, error) { return "", errors.New(strings.Repeat("e", 5000)) }
+	res, err := h.run(context.Background(), t)
+	require.NoError(t, err)
+	require.Len(t, res.Turn[0].Calls, 1)
+	assert.LessOrEqual(t, len(res.Turn[0].Calls[0].Error), turnToolErrorBytes)
 }
 
 func TestTheTranscriptKeepsABoundedNumberOfCallsPerTurn(t *testing.T) {
