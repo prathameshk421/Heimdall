@@ -1068,3 +1068,30 @@ New defaults, the same in the bench (`-stall-turns 18`, grace 6) and in the prod
 streak before a proposal, stop after the longest streak before a first test, stop at least 10 turns before the cap),
 and the replay `TestReplayFixtureRefundsReachesItsLateProposalUnderTheStallRule` plays fixture-refunds' run-3 shape
 to its proven proposals on turn 18 with no nudge. Both fail with 10+4. Not verified: a live run with 18+6.
+
+### Saved refusals and the resend command (AM12g, Nov 22 2026)
+
+A live `review` run now keeps the body of every request the endpoint refuses, so the refusal can be bisected offline.
+
+- `-refused-dir` names the folder (default `$TMPDIR/heimdall-bench-refused`); an empty value saves nothing.
+- One file per refusal: `<case>-turn<N>-<status>.json`, where N is the call's place in the case. A second body on the
+  same call and status (the `tool_choice` fallback) adds its hash to the name, so two bodies never share one file.
+- Each file holds the JSON request body only. No header is written, so no key is written; the client also refuses to
+  keep a body that holds its own key, and a body past 1 MiB is not saved.
+- `index.json` in the same folder lists every refusal (case, turn, status, kind, bytes, SHA-256, attempts, file) with a
+  note that says a file holds no key. A later run into the same folder keeps the earlier entries.
+- `results.json` names the folder in `refused_dir`, and each `failed_call` attempt names its file in `saved`.
+
+Resend one body once, with the parts a reader asks to drop, against a chosen endpoint:
+
+```
+heimdall-bench resend -base-url https://openrouter.ai/api/v1 -model deepseek/deepseek-v4-flash \
+  -key-file /tmp/openrouter/key -body /tmp/heimdall-bench-refused/fixture-refunds-turn1-500.json \
+  [-drop-tools] [-drop-system] [-keep-last N]
+```
+
+It prints `HTTP <status> <content-type>` and the first 300 bytes of the answer, and nothing else. It reads the key
+through `internal/platform/config` from `-key-file`, sends it in the `Authorization` header only, never prints it,
+makes exactly one request (no retry, no redirect), and exits 0 when a request was made and 2 on a usage error.
+Not verified: a live resend against the Deploy endpoint, and any bisection result from a real refused body.
+
