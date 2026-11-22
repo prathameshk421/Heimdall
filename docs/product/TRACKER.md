@@ -111,6 +111,18 @@ archcheck holds (109 packages), `make unit` 4326 tests. The Stage 0 session was 
 `product-build` into heimdall-build at its next clean point and run `make fast`; it reports back here on a conflict.
 Not pushed.
 
+## Final verification (Nov 22 2026)
+
+On `product-build` `8663d0e` (heimdall-build `cca87a6` merged in, conflicts resolved as unions): go vet ok,
+golangci-lint 0 issues (also `-tags benchreplay`), archcheck holds (120 packages), `make unit` 5727 tests,
+`make fast` exit 0 before the merge (5646 tests), action-lint clean, gitleaks over the full history no leaks
+(four AM15 fixture findings listed in `.gitleaksignore`: the ascending 0011...eeff test log key).
+Live: the Action ran end to end on `prathameshk421/heimdall-fixture-pay` PR #1 (trigger, proof, gate; `heimdall/fast`
+and `heimdall/proof` posted neutral in shadow mode; the summary comment updated in place for head `266a5e2`).
+Live Proof Bench run 7: recall 1/5 scored, 0 false positives on 4 clean cases, 2 of 2 proposed findings proven;
+Deploy HTTP 500 on 6 cases is the main loss, refused bodies saved for `heimdall-bench resend`.
+The merge into heimdall-build is handed to the Stage 0 fork session (queued message) at its next clean point.
+
 ## Owner decisions (Nov 21 2026: "go with your recommendations")
 
 - ACTION_MODE Q1 to Q10 take the doc's recommendations; Q3 closed by S1: the ref `refs/heimdall/state`.
