@@ -1029,3 +1029,42 @@ HTTP 500 from Deploy: 7 cases (2 in 5a, 5 in 5b), each the same request body ref
 `reasoning_content` cannot be the whole cause. Something in particular request bodies makes Deploy refuse them
 deterministically. Next: save each refused body locally and bisect it offline (AM12g). Two more cases were cut by the
 cap.
+
+### Stall defaults from the recorded runs (AM12g, Nov 22 2026)
+
+`CGO_ENABLED=0 go test -count=1 -v -run TestStallTable ./cmd/heimdall-bench` prints, per case of runs 3, 4, 5a and
+5b, the first `run_test` turn, the first `propose_finding` turn, the total turns, the stop, and the longest streak of
+answers with no progress call (the count the stall rule keeps; a `run_test` or a proposal resets it). The rows that
+set the numbers, from runs 3 and 4 (no stall rule):
+
+| Run | Case | First test | First proposal | Turns | Stop | Streak before proposal | Streak before test |
+|---|---|---|---|---|---|---|---|
+| 3 | fixture-refunds | 13 | 18 | 19 | done | 12 | 12 |
+| 3 | fixture-injection | 11 | 26 | 27 | done | 10 | 10 |
+| 4 | testify-1207 | 6 | 15 | 16 | done | 5 | 5 |
+| 3 | fixture-kan26-clean | 22 | - | 39 | budget | 21 | 21 |
+| 4 | t3code-10008-clean | - | - | 21 | done | 21 | 21 |
+| 3 | fixture-kan24-clean | 15 | - | 40 | turns | 14 | 14 |
+| 4 | cli-2455 | 15 | - | 17 | error | 14 | 14 |
+
+A correction to the run-5 diagnosis: the 10+4 rule would not have stopped the three runs that proposed in runs 3 and
+4, because their tests reset the count (longest streak 12). It would have nudged two of them. What it did stop in run
+5 was runs that had not yet called `run_test` after 14 answers, and in runs 3 and 4 a first test came as late as
+turn 22. Run 5 nudged 16 runs; no run proposed after the nudge, and one called `finish_review`.
+
+New defaults, the same in the bench (`-stall-turns 18`, grace 6) and in the product proof
+(`internal/app/action/proof.go`):
+
+- Nudge after 18 answers with no progress: the longest streak before a proposal was 12, so 6 turns spare and no run
+  that proposed gets the nudge.
+- Stop 6 answers later, at 24: the longest streak before a first test was 21, so every recorded run reaches its
+  first test.
+- A run that only reads stops at 24 turns, 16 before the 40-turn cap.
+- A test run that passes still counts as progress. The transcripts do not record test outcomes, so the data cannot
+  split passing from failing tests; three run-5 runs tested often and never proposed, but nothing shows a rule on
+  failing tests only would have helped them.
+
+`TestStallDefaultsFitTheRecordedRuns` holds the defaults to this data (nudge at least 4 turns after the longest
+streak before a proposal, stop after the longest streak before a first test, stop at least 10 turns before the cap),
+and the replay `TestReplayFixtureRefundsReachesItsLateProposalUnderTheStallRule` plays fixture-refunds' run-3 shape
+to its proven proposals on turn 18 with no nudge. Both fail with 10+4. Not verified: a live run with 18+6.

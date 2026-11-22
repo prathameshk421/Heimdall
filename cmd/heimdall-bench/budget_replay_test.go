@@ -55,8 +55,8 @@ func TestReplayTestify1207UnderTheContextBudgetAndTheStallRule(t *testing.T) {
 
 func TestReplayTestify1207ReadingAloneIsTrimmedNudgedAndStopped(t *testing.T) {
 	// A reviewer that only reads, as four t3code cases did in live run 4. With a 16 KB budget the old reads become
-	// stubs and every request after the trim stays near the budget; after 10 answers with no test run or proposal the
-	// loop nudges once, and after 4 more it stops the case as no_proposal before a 15th call.
+	// stubs and every request after the trim stays near the budget; after 18 answers with no test run or proposal the
+	// loop nudges once, and after 6 more it stops the case as no_proposal before a 25th call, well before the cap.
 	const budget = 16 << 10
 	o := replayOptions(t, "testify-1207", testingCapUSD)
 	o.contextBytes, o.stallTurns = budget, defaultStallTurns
@@ -78,8 +78,10 @@ func TestReplayTestify1207ReadingAloneIsTrimmedNudgedAndStopped(t *testing.T) {
 	require.Zero(t, mock.Proposed)
 	require.False(t, mock.Hit)
 	require.Len(t, mock.Transcript, defaultStallTurns+stallGraceTurns)
+	require.Less(t, len(mock.Transcript), maxTurnsPerCase-10, "a run that only reads stops well before the turn cap")
 	for i, turn := range mock.Transcript {
-		require.Equal(t, i == defaultStallTurns-1, turn.StallNudged, "turn %d: one nudge, after the tenth answer", i+1)
+		require.Equal(t, i == defaultStallTurns-1, turn.StallNudged, "turn %d: one nudge, after answer %d", i+1,
+			defaultStallTurns)
 	}
 	trimmed := false
 	for i, turn := range mock.Transcript {
@@ -91,7 +93,7 @@ func TestReplayTestify1207ReadingAloneIsTrimmedNudgedAndStopped(t *testing.T) {
 			require.LessOrEqual(t, turn.RequestBytes, budget+24<<10, "turn %d", i+1)
 		}
 	}
-	require.True(t, trimmed, "a 14-turn read of mock.go passes 16 KB, so old results are trimmed")
+	require.True(t, trimmed, "a 24-turn read of mock.go passes 16 KB, so old results are trimmed")
 	last := mock.Transcript[len(mock.Transcript)-1]
 	t.Logf("last request %d bytes with %d results trimmed", last.RequestBytes, last.Trimmed)
 }

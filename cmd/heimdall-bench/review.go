@@ -28,12 +28,17 @@ const (
 	caseDeadline       = 15 * time.Minute
 )
 
-// The context and stall defaults of a review (live run 4: requests of 57 KB to 211 KB ended on HTTP 500, and four
-// cases spent their budget without a proposal).
+// The context and stall defaults of a review. Live run 4: requests of 57 KB to 211 KB ended on HTTP 500, and four
+// cases spent their budget without a proposal. The stall numbers come from the recorded runs 3 and 4, which had no
+// stall rule (stall_data_test.go prints the table, AM12g). The longest streak with no test run or proposal before a
+// first proposal was 12 answers (fixture-refunds, run 3), so the nudge at 18 leaves 6 to spare and no run that
+// proposed gets it. The longest streak before a first run_test was 21 (fixture-kan26-clean, run 3), so the stop at
+// 18+6=24 lets every recorded run reach its first test. A run that only reads stops at 24, 16 turns before the
+// 40-turn cap. Run 5 used 10+4: 16 runs got the nudge, none proposed after it, and 13 stopped as no_proposal.
 const (
 	defaultContextBytes = 48 << 10
-	defaultStallTurns   = 10
-	stallGraceTurns     = 4
+	defaultStallTurns   = 18
+	stallGraceTurns     = 6
 	keptToolResults     = 3
 )
 
@@ -136,7 +141,7 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	fs.Float64Var(&o.perCase, "per-case-cost", 0.50, "the agent loop budget in USD for one case (ACTION_MODE 7)")
 	fs.IntVar(&o.parallel, "parallel", 1, "how many cases to review at once, at most 8; the cost cap stays shared")
 	fs.IntVar(&o.contextBytes, "context-bytes", defaultContextBytes, "trim old tool results so a request stays near this many bytes; the 3 newest stay whole; 0 trims nothing")
-	fs.IntVar(&o.stallTurns, "stall-turns", defaultStallTurns, "turns with no proposal or test run before one nudge; 4 more stop the case as no_proposal; 0 is off")
+	fs.IntVar(&o.stallTurns, "stall-turns", defaultStallTurns, "turns with no proposal or test run before one nudge; 6 more stop the case as no_proposal; 0 is off")
 	block := fs.String("block-severity", "medium", "a proven finding at or above this severity blocks")
 	if err := fs.Parse(args); err != nil {
 		return o, err

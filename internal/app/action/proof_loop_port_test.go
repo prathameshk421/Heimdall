@@ -80,8 +80,9 @@ func TestTheProofRunAsksTheLoopWithThePolicyCapsAndItsOwnTools(t *testing.T) {
 	require.Equal(t, []string{"finish_review"}, req.FinalTools)
 }
 
-// TestTheProofRunSetsTheContextBudgetAndTheStallRule holds the product run to the limits the bench proved (AM14e): a
-// 48 KB request target with the 3 newest results whole, and a stall rule of 10 turns, one nudge and 4 grace turns.
+// TestTheProofRunSetsTheContextBudgetAndTheStallRule holds the product run to the limits the bench proved (AM14e,
+// stall numbers from AM12g): a 48 KB request target with the 3 newest results whole, and a stall rule of 18 turns,
+// one nudge and 6 grace turns.
 // The nudge names the product's own tools, and the progress tools are tools of the run.
 func TestTheProofRunSetsTheContextBudgetAndTheStallRule(t *testing.T) {
 	h := newProofHarness(t, nil)
@@ -92,8 +93,8 @@ func TestTheProofRunSetsTheContextBudgetAndTheStallRule(t *testing.T) {
 	req := loop.req
 	require.Equal(t, 48<<10, req.ContextBytes)
 	require.Equal(t, 3, req.KeepResults)
-	require.Equal(t, 10, req.Stall.Turns)
-	require.Equal(t, 4, req.Stall.Grace)
+	require.Equal(t, 18, req.Stall.Turns)
+	require.Equal(t, 6, req.Stall.Grace)
 	require.ElementsMatch(t, []string{"run_test", "propose_finding"}, req.Stall.Progress)
 	require.Contains(t, req.Stall.Nudge, "propose_finding")
 	require.Contains(t, req.Stall.Nudge, "finish_review")
