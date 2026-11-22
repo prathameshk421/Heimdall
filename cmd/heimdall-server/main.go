@@ -81,7 +81,7 @@ func run(
 		_ = ln.Close()
 		return err
 	}
-	srv := &http.Server{Handler: handler, ReadHeaderTimeout: readHeaderTimeout}
+	srv := &http.Server{Handler: handler, ReadHeaderTimeout: readHeaderTimeout, IdleTimeout: 60 * time.Second}
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
 

@@ -291,7 +291,7 @@ func productionDeps(cfg config.Config, logger *slog.Logger) (deps, error) {
 	}
 	return deps{
 		databaseURL:   databaseURL,
-		httpClient:    &http.Client{},
+		httpClient:    tunedHTTPClient(),
 		logger:        logger,
 		configuration: cfg,
 		endpoints: endpoints{
@@ -656,4 +656,18 @@ func executors(ad adapters, store ports.EventStore, profiles ports.ProfileStore,
 		maps.Copy(all, area)
 	}
 	return all, nil
+}
+
+// tunedHTTPClient returns an HTTP client with bounded connection pooling for server-side GitHub, Jira, Switch and
+// model calls (SECURITY_AND_PERF_AUDIT.md PERF-04).
+func tunedHTTPClient() *http.Client {
+	tr, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return &http.Client{Timeout: 60 * time.Second}
+	}
+	cloned := tr.Clone()
+	cloned.MaxIdleConns = 64
+	cloned.MaxIdleConnsPerHost = 16
+	cloned.IdleConnTimeout = 90 * time.Second
+	return &http.Client{Transport: cloned, Timeout: 60 * time.Second}
 }
