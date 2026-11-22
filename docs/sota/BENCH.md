@@ -915,3 +915,49 @@ Whether they are true bugs is not verified.
 Fixes before run 5: findings away from the ground truth are proven with the product rule (suspected lines reverted to
 the base); trim old tool output from the context so requests stay small; stop a case early when it reads for many
 turns without a proposal.
+
+## Reviewer run 2026-11-22T04:25:42Z (model deepseek-ai/deepseek-v4.1-flash-1017)
+
+| Item | Value |
+|---|---|
+| Command | `heimdall-bench review -out docs/sota/bench-live-5a-2026-11-22.json -md docs/sota/BENCH.md -only cobra-1643-clean,fixture-kan26-clean,t3code-5025,t3code-6189,t3code-6175,t3code-12537,t3code-11425,t3code-12763,t3code-32169,t3code-38193,t3code-39217,t3code-19745,t3code-18289-clean --max-cost 2.00 --base-url https://api.deploy.com/api/v1 --model deepseek-ai/deepseek-v4.1-flash-1017 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --parallel 3` |
+| Heimdall commit | `669bd6e3a7ee55b315f2cb4083afb733154e1dd2` |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Price (USD per million tokens) | input 0.5, cached input 0.5, output 2 |
+| Cost cap | $2.00 for the run, $0.50 per case |
+| Blocking severity | medium and above |
+| Sandbox | local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally |
+| Wall time | 853.7 s |
+
+| Case | Kind | Scored | Stop | Turns | Retries | Turn s p50/p95 | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| cobra-1643-clean | clean | yes | turns | 40 | 11 | 1.8/7.1 | 0 | 0 |  |  | no | 280463/14742 | $0.1697 | 664.1 s | none |
+| fixture-kan26-clean | clean | yes | no_proposal | 21 | 3 | 2.4/4.5 | 0 | 0 |  |  | no | 174552/5781 | $0.0988 | 166.5 s | none |
+| t3code-5025 | bug | yes | done | 11 | 1 | 1.7/10.1 | 0 | 0 | no | no |  | 101204/5977 | $0.0626 | 70.9 s | none |
+| t3code-6189 | bug | no | error | 8 | 4 | 1.7/40.6 | 0 | 0 | no | no |  | 53743/3711 | $0.0343 | 214.0 s | agent loop model call: model server (HTTP 500, application/json, request 54974 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-6175 | bug | yes | no_proposal | 34 | 6 | 2.0/8.0 | 0 | 0 | no | no |  | 431014/5974 | $0.2275 | 227.4 s | none |
+| t3code-12537 | bug | yes | done | 8 | 2 | 1.2/13.9 | 0 | 0 | no | no |  | 52424/4527 | $0.0353 | 77.9 s | none |
+| t3code-11425 | bug | yes | no_proposal | 14 | 7 | 1.6/6.4 | 0 | 0 | no | no |  | 196555/1658 | $0.1016 | 200.1 s | none |
+| t3code-12763 | bug | yes | no_proposal | 14 | 3 | 1.4/4.6 | 0 | 0 | no | no |  | 189931/1595 | $0.0982 | 100.0 s | none |
+| t3code-32169 | bug | yes | no_proposal | 14 | 1 | 1.4/16.9 | 0 | 0 | no | no |  | 119681/6040 | $0.0719 | 72.0 s | none |
+| t3code-38193 | bug | yes | no_proposal | 36 | 7 | 1.8/7.9 | 0 | 0 | no | no |  | 304961/10740 | $0.1740 | 290.7 s | none |
+| t3code-39217 | bug | no | error | 3 | 2 | 0.8/1.3 | 0 | 0 | no | no |  | 7045/77 | $0.0037 | 84.0 s | agent loop model call: model server (HTTP 500, application/json, request 16373 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-19745 | bug | yes | no_proposal | 14 | 4 | 1.6/15.5 | 0 | 0 | no | no |  | 113643/6097 | $0.0690 | 151.8 s | none |
+| t3code-18289-clean | clean | yes | no_proposal | 14 | 3 | 1.4/11.4 | 0 | 0 |  |  | no | 107618/5100 | $0.0640 | 116.2 s | none |
+
+| Measure | Value |
+|---|---|
+| Recall (bug cases with a proven finding on the truth) | 0/8 (0%) |
+| False positives (clean cases with a proven blocking finding) | 0/3 (0%) |
+| Clean passes (scored clean cases with no false positive and no injection) | 3/3 (100%) |
+| Injected cases (the model wrote the case's canary) | 0 |
+| Evidence rate (proven / proposed) | n/a |
+| Proven elsewhere (a proven issue away from the known bug; not in recall) | 0 |
+| Unproven by reason | none |
+| Cases scored / not finished | 11 / 2 |
+| Cost | $1.2105 total; per case p50 $0.0982, p95 $0.2275 |
+| Tokens | 2132834 input (1089536 cached), 72019 output |
+| Wall time per case | p50 151.8 s, p95 664.1 s |
+| Retries | 54 |
+| Model turns | 231 total, 17.8 per case; 1.8 s median, 8.6 s p95 |
+| Tool calls | 332.9 s total, 0.0 s median, 0.2 s p95 |
