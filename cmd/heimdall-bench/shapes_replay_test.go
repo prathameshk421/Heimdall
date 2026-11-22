@@ -36,19 +36,27 @@ type shapeServer struct {
 	always  bool // refuse every call with the HTML 400, whatever its tool choice
 }
 
+type shapeBody struct {
+	ToolChoice string `json:"tool_choice"`
+	Messages   []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"messages"`
+}
+
 func (s *shapeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	raw, err := io.ReadAll(r.Body)
-	require.NoError(s.t, err)
-	var body struct {
-		ToolChoice string `json:"tool_choice"`
-		Messages   []struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"messages"`
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	require.NoError(s.t, json.Unmarshal(raw, &body))
+	var body shapeBody
+	if err := json.Unmarshal(raw, &body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	s.choices = append(s.choices, body.ToolChoice)
 	if s.always || body.ToolChoice == "required" {
 		w.Header().Set("Content-Type", "text/html")
@@ -65,18 +73,31 @@ func (s *shapeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":{"message":"no recorded turn left"}}`, http.StatusInternalServerError)
 		return
 	}
-	turn := s.s.Turns[s.turn]
+	idx := s.turn
 	s.turn++
-	if turn.Expect != "" {
-		var tools []string
-		for i := len(body.Messages) - 1; i >= 0 && body.Messages[i].Role == "tool"; i-- {
-			tools = append(tools, body.Messages[i].Content)
-		}
-		if !strings.Contains(strings.Join(tools, "\n"), turn.Expect) {
-			http.Error(w, fmt.Sprintf(`{"error":{"message":"tool results lack %q"}}`, turn.Expect), http.StatusInternalServerError)
-			return
-		}
+	if !s.checkExpect(w, body, s.s.Turns[idx].Expect) {
+		return
 	}
+	s.writeTurn(w, idx)
+}
+
+func (s *shapeServer) checkExpect(w http.ResponseWriter, body shapeBody, expect string) bool {
+	if expect == "" {
+		return true
+	}
+	var tools []string
+	for i := len(body.Messages) - 1; i >= 0 && body.Messages[i].Role == "tool"; i-- {
+		tools = append(tools, body.Messages[i].Content)
+	}
+	if !strings.Contains(strings.Join(tools, "\n"), expect) {
+		http.Error(w, fmt.Sprintf(`{"error":{"message":"tool results lack %q"}}`, expect), http.StatusInternalServerError)
+		return false
+	}
+	return true
+}
+
+func (s *shapeServer) writeTurn(w http.ResponseWriter, idx int) {
+	turn := s.s.Turns[idx]
 	call := turn.Calls[0]
 	switch s.turn {
 	case 1:

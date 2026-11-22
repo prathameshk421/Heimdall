@@ -122,6 +122,8 @@ type reviewOptions struct {
 	commandFor   string // the command line written into the report
 	// refusedDir is where the bodies of refused requests are saved (AM12g); empty saves none.
 	refusedDir string
+	// resume loads already-scored cases from an existing -out file and reviews only the remaining cases.
+	resume bool
 }
 
 // MaxParallel is the most cases a review runs at once.
@@ -148,6 +150,7 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	fs.IntVar(&o.contextBytes, "context-bytes", defaultContextBytes, "trim old tool results so a request stays near this many bytes; the 3 newest stay whole; 0 trims nothing")
 	fs.IntVar(&o.stallTurns, "stall-turns", defaultStallTurns, "turns with no proposal or test run before one nudge; 6 more stop the case as no_proposal; 0 is off")
 	fs.StringVar(&o.refusedDir, "refused-dir", defaultRefusedDir(), "save the body of each request the endpoint refuses here, one file per refusal; empty saves none")
+	fs.BoolVar(&o.resume, "resume", false, "keep already-scored cases from an existing -out file and review only the remaining ones")
 	block := fs.String("block-severity", "medium", "a proven finding at or above this severity blocks")
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -279,15 +282,24 @@ func reviewRun(ctx context.Context, o reviewOptions, r runner, model ports.Model
 		GoVersion: base.GoVersion, Manifest: o.manifest, Command: o.commandFor, Model: o.model, Price: o.price,
 		MaxCostUSD: o.maxCost, PerCaseUSD: o.perCase, BlockSeverity: string(o.blockAt), Sandbox: sandboxNote,
 		RefusedDir: o.refusedDir}
-	prog := newProgress(stderr)
-	rep.Cases, rep.Stopped = runCases(ctx, o, r, model, costCap, prog, cases)
-	rep.Seconds = time.Since(start).Seconds()
-	scores := make([]bench.CaseScore, len(rep.Cases))
-	for i, c := range rep.Cases {
-		scores[i] = c.CaseScore
+	var prior map[string]reviewCase
+	if o.resume {
+		prior, err = loadPriorScored(o.out)
+		if err != nil {
+			return exitUsage, err
+		}
 	}
-	rep.Summary = bench.Summarize(scores)
-	rep.Turns = bench.TurnSummary(scores)
+	prog := newProgress(stderr)
+	onDone := func(snapshot []reviewCase) {
+		partial := rep
+		partial.Cases = snapshot
+		partial.Seconds = time.Since(start).Seconds()
+		partial.Summary, partial.Turns = summarizeReviewCases(snapshot)
+		_ = writeReportAtomic(o.out, partial)
+	}
+	rep.Cases, rep.Stopped = runCasesWithResume(ctx, o, r, model, costCap, prog, cases, prior, onDone)
+	rep.Seconds = time.Since(start).Seconds()
+	rep.Summary, rep.Turns = summarizeReviewCases(rep.Cases)
 	if err := writeReview(o, rep); err != nil {
 		return exitUsage, err
 	}
@@ -300,14 +312,16 @@ func reviewRun(ctx context.Context, o reviewOptions, r runner, model ports.Model
 // stopCostCap is the stop reason of a run the cost cap ended.
 const stopCostCap = "cost cap"
 
-// runCases reviews the cases with up to -parallel workers and returns one result per case, in the manifest order.
-// stopped is "cost cap" when the cap ended the run, or stopProviderFailing when the breaker did. The workers share one
-// breaker, so calls that fail in a row on any worker trip it, and one cache per repository.
-func runCases(ctx context.Context, o reviewOptions, r runner, model ports.ModelChat, costCap *bench.CostCap,
-	prog *progress, cases []bench.Case) (out []reviewCase, stopped string) {
+// runCasesWithResume reviews the cases with up to -parallel workers, optional pre-scored cases from a prior run, and a
+// per-case checkpoint callback, returning one result per case in manifest order.
+func runCasesWithResume(ctx context.Context, o reviewOptions, r runner, model ports.ModelChat, costCap *bench.CostCap,
+	prog *progress, cases []bench.Case, prior map[string]reviewCase, onDone func([]reviewCase)) (out []reviewCase, stopped string) {
 	cr := &caseRun{o: o, r: r, model: model, costCap: costCap, prog: prog, repos: newRepoSet(),
 		refused: newRefusedStore(o.refusedDir)}
 	run := func(i int) (reviewCase, string) {
+		if prev, ok := prior[cases[i].ID]; ok {
+			return prev, ""
+		}
 		rc, capStop := cr.review(ctx, cases[i])
 		switch {
 		case capStop:
@@ -317,7 +331,7 @@ func runCases(ctx context.Context, o reviewOptions, r runner, model ports.ModelC
 		}
 		return rc, ""
 	}
-	out, stopped = runPool(o.parallel, len(cases), run)
+	out, stopped = runPoolWithHook(o.parallel, len(cases), run, onDone)
 	if stopped == "" {
 		return out, ""
 	}
@@ -327,6 +341,38 @@ func runCases(ctx context.Context, o reviewOptions, r runner, model ports.ModelC
 		}
 	}
 	return out, stopped
+}
+
+func summarizeReviewCases(cases []reviewCase) (bench.Summary, bench.TurnStats) {
+	var scores []bench.CaseScore
+	for _, c := range cases {
+		if c.ID == "" {
+			continue
+		}
+		scores = append(scores, c.CaseScore)
+	}
+	return bench.Summarize(scores), bench.TurnSummary(scores)
+}
+
+func loadPriorScored(path string) (map[string]reviewCase, error) {
+	raw, err := os.ReadFile(path) // #nosec G304 -- the operator names the -out file
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("resume: read %s: %w", path, err)
+	}
+	var prev reviewReport
+	if err := json.Unmarshal(raw, &prev); err != nil {
+		return nil, fmt.Errorf("resume: parse %s: %w", path, err)
+	}
+	out := make(map[string]reviewCase, len(prev.Cases))
+	for _, c := range prev.Cases {
+		if c.ID != "" && c.Scored {
+			out[c.ID] = c
+		}
+	}
+	return out, nil
 }
 
 // caseRun is what every worker of one review run shares: the options, the model, the cost cap, the breaker, the
@@ -345,6 +391,10 @@ type caseRun struct {
 // runPool runs one case at a time in each of n workers, and returns the results in slot order whatever order the work
 // ends in. A non-empty reason from run ends the run: no case starts after it, and stopped is the first such reason.
 func runPool(n, count int, run func(i int) (reviewCase, string)) (out []reviewCase, stopped string) {
+	return runPoolWithHook(n, count, run, nil)
+}
+
+func runPoolWithHook(n, count int, run func(i int) (reviewCase, string), onDone func([]reviewCase)) (out []reviewCase, stopped string) {
 	out = make([]reviewCase, count)
 	workers := max(min(n, count), 1)
 	var mu sync.Mutex
@@ -369,7 +419,14 @@ func runPool(n, count int, run func(i int) (reviewCase, string)) (out []reviewCa
 				if stopped == "" {
 					stopped = reason
 				}
+				var snap []reviewCase
+				if onDone != nil {
+					snap = append([]reviewCase(nil), out...)
+				}
 				mu.Unlock()
+				if snap != nil {
+					onDone(snap)
+				}
 			}
 		}()
 	}
@@ -691,13 +748,27 @@ func reviewerUser(c bench.Case, rep *replay) string {
 		c.RepoSlug(), len(files), strings.Join(files, ", "))
 }
 
-func writeReview(o reviewOptions, rep reviewReport) error {
+func writeReportAtomic(path string, rep reviewReport) error {
+	if path == "" {
+		return nil
+	}
 	b, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode results: %w", err)
 	}
-	if err := os.WriteFile(o.out, append(b, '\n'), 0o600); err != nil {
-		return fmt.Errorf("write results: %w", err)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil { // #nosec G703 -- operator names the -out path
+		return fmt.Errorf("write results temp: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil { // #nosec G703 -- operator names the -out path
+		return fmt.Errorf("rename results: %w", err)
+	}
+	return nil
+}
+
+func writeReview(o reviewOptions, rep reviewReport) error {
+	if err := writeReportAtomic(o.out, rep); err != nil {
+		return err
 	}
 	if o.md == "" {
 		return nil
