@@ -36,7 +36,10 @@ const (
 // 18+6=24 lets every recorded run reach its first test. A run that only reads stops at 24, 16 turns before the
 // 40-turn cap. Run 5 used 10+4: 16 runs got the nudge, none proposed after it, and 13 stopped as no_proposal.
 const (
-	defaultContextBytes = 48 << 10
+	// defaultContextBytes keeps a request near 96 KB by trimming old read/search tool results while keeping the newest
+	// results, the latest list_changes diff, and the latest run_test output whole (run 6 showed 48 KB cut both the diff
+	// and test results, driving recall to 0/6).
+	defaultContextBytes = 96 << 10
 	defaultStallTurns   = 18
 	stallGraceTurns     = 6
 	keptToolResults     = 3

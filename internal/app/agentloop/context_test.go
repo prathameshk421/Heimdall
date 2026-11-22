@@ -164,3 +164,39 @@ func TestContextBudgetNeverTrimsTheTaskOrTheAnswersOrTheirReasoning(t *testing.T
 	}
 	require.Equal(t, 3, stubs, "only the tool results older than the last three are stubs")
 }
+
+func TestContextBudgetProtectsLatestListChangesAndRunTest(t *testing.T) {
+	diffBody := strings.Repeat("d", 4000)
+	testBody := strings.Repeat("t", 4000)
+	readBody := strings.Repeat("r", 4000)
+	steps := []modelStep{
+		answer(0.001, call("c1", "list_changes", `{}`)),
+		answer(0.001, call("c2", "run_test", `{"test_path":"a_test.go"}`)),
+		answer(0.001, call("c3", "read_code", `{"path":"a.go"}`)),
+		answer(0.001, call("c4", "read_code", `{"path":"b.go"}`)),
+		answer(0.001, call("c5", "read_code", `{"path":"c.go"}`)),
+		answer(0.001, call("c6", "read_code", `{"path":"d.go"}`)),
+		answer(0.001, call("s", "submit_plan", `{}`)),
+	}
+	h := newHarness(t, steps...)
+	h.read.run = func(json.RawMessage) (string, error) { return readBody, nil }
+	listTool := &fakeTool{
+		name: "list_changes",
+		run:  func(json.RawMessage) (string, error) { return diffBody, nil },
+	}
+	testTool := &fakeTool{
+		name: "run_test",
+		run:  func(json.RawMessage) (string, error) { return testBody, nil },
+	}
+	h.cfg.ContextBytes = 10_000
+	l, err := New(h.model, h.clock, h.cfg, []Tool{h.read, listTool, testTool}, []Submitter{h.sub})
+	require.NoError(t, err)
+	res, err := l.Run(context.Background(), []ports.ModelMessage{{Role: ports.ModelRoleUser, Content: "go"}})
+	require.NoError(t, err)
+	require.Equal(t, StopSubmitted, res.Reason)
+	texts := readTexts(res)
+	require.Len(t, texts, 6)
+	require.Equal(t, diffBody, texts[0], "latest list_changes must stay whole")
+	require.Equal(t, testBody, texts[1], "latest run_test must stay whole")
+	require.True(t, strings.HasPrefix(texts[2], "[result of read_code a.go trimmed"), "older read_code is trimmed first: %s", texts[2])
+}

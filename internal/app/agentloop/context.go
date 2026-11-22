@@ -33,28 +33,32 @@ func (cfg Config) checkContext() error {
 }
 
 // fitContext sizes the next request and, when it passes Config.ContextBytes, replaces the oldest tool results with a
-// stub (trimStub) until it fits. The KeepResults newest results are never cut, so the request can stay over the budget;
-// the budget is a target, and the caps of overBudget still guard the spend. A trim copies the conversation first, so a
-// request already sent keeps the messages it was sent with.
+// stub (trimStub) until it fits. The KeepResults newest results are never cut, the latest list_changes result is never
+// cut (so the reviewer always sees the PR diff), and read/search results are cut before run_test results (keeping the
+// latest run_test whole). Because protected results are never cut, the request can stay over the budget; the budget is
+// a target, and the caps of overBudget still guard the spend. A trim copies the conversation first, so a request
+// already sent keeps the messages it was sent with.
 func (r *run) fitContext() {
 	size := r.requestBytes()
 	budget := r.l.cfg.ContextBytes
 	if budget > 0 && size > budget {
-		keep := r.l.cfg.KeepResults
-		if keep == 0 {
-			keep = defaultKeepResults
-		}
-		var tools []int
-		for i, m := range r.messages {
-			if m.Role == ports.ModelRoleTool {
-				tools = append(tools, i)
-			}
-		}
-		calls := r.callsByID()
-		copied := false
-		for _, i := range tools[:max(len(tools)-keep, 0)] {
+		size = r.trimToBudget(size, budget)
+	}
+	r.ctxw.sentBytes = size
+}
+
+func (r *run) trimToBudget(size, budget int) int {
+	keep := r.l.cfg.KeepResults
+	if keep == 0 {
+		keep = defaultKeepResults
+	}
+	calls := r.callsByID()
+	regular, tests := r.trimCandidates(keep, calls)
+	copied := false
+	for _, pass := range [][]int{regular, tests} {
+		for _, i := range pass {
 			if size <= budget {
-				break
+				return size
 			}
 			if r.ctxw.trimmed[i] {
 				continue
@@ -63,17 +67,49 @@ func (r *run) fitContext() {
 				r.messages = slices.Clone(r.messages)
 				copied = true
 			}
-			m := r.messages[i]
-			m.Content = trimStub(calls[m.ToolCallID], len(m.Content))
-			r.messages[i] = m
-			if r.ctxw.trimmed == nil {
-				r.ctxw.trimmed = map[int]bool{}
-			}
-			r.ctxw.trimmed[i] = true
+			r.trimMessage(i, calls)
 			size = r.requestBytes()
 		}
 	}
-	r.ctxw.sentBytes = size
+	return size
+}
+
+func (r *run) trimCandidates(keep int, calls map[string]ports.ModelToolCall) (regular, tests []int) {
+	var tools []int
+	lastDiff, lastTest := -1, -1
+	for i, m := range r.messages {
+		if m.Role != ports.ModelRoleTool {
+			continue
+		}
+		tools = append(tools, i)
+		switch calls[m.ToolCallID].Name {
+		case "list_changes":
+			lastDiff = i
+		case "run_test":
+			lastTest = i
+		}
+	}
+	for _, i := range tools[:max(len(tools)-keep, 0)] {
+		if i == lastDiff || i == lastTest {
+			continue
+		}
+		if calls[r.messages[i].ToolCallID].Name == "run_test" {
+			tests = append(tests, i)
+		} else {
+			regular = append(regular, i)
+		}
+	}
+	return regular, tests
+}
+
+func (r *run) trimMessage(i int, calls map[string]ports.ModelToolCall) {
+	m := r.messages[i]
+	m.Content = trimStub(calls[m.ToolCallID], len(m.Content))
+	r.messages[i] = m
+	if r.ctxw.trimmed == nil {
+		r.ctxw.trimmed = map[int]bool{}
+	}
+	r.ctxw.trimmed[i] = true
 }
 
 // requestBytes is the JSON size of the next request, the measure overBudget also uses. A request that cannot be
