@@ -8,7 +8,11 @@ All 6 local coding items of SOTA Phase 1 are implemented on `heimdall-build`:
 3. **O1, O2** (`6c68910`): chat stream dead-letters poison messages after `MaxAttempts` without stalling rooms; outbox split into quick lane (3 workers) and sandbox lane (3 workers).
 4. **L1, L2, P2** (`e029fd8`): cross-seat and cross-head finding deduplication reusing original `F<n>` refs and tracking `Reporters` for consensus.
 5. **O6, P4, R6** (`cfbcf19`): `GET /admin/ops` operator snapshot + per-role scorecard (`ScorecardFromEvents`), daily spend-cap pause in rows/`Missing`.
-6. **T1/U6, T2**: `@heimdall <question>` from mapped humans replies with factual change status (ignoring agents and unmapped senders); `ticket.changed` with updated acceptance criteria re-opens `write_tests` for uncovered criteria.
+6. **T1/U6, T2** (`4bced18`): `@heimdall <question>` from mapped humans replies with factual change status (ignoring agents and unmapped senders); `ticket.changed` with updated acceptance criteria re-opens `write_tests` for uncovered criteria.
+7. **Additional local SOTA hardening** (`bd489ef`, `7eb62b3`, and Batch C):
+   - **O3, O4, O8/F7**: per-kind effect timeout budgets declared beside `EffectKind`, stale head-scoped dead jobs filtered from `Missing`, second PR after an unmerged close resumes the change (View + Postgres `reopenedAfterSQL`).
+   - **U2, U4, R3**: 7+ hex prefix resolution for `approve-profile`/`promote-profile` + short IDs in asks; ticketless PR headers show `PR #<n>` instead of `pr-...`; automated parser test over `skills/profile.md` YAML examples.
+   - **P5, P7, L6, R5**: `blobfs.Store.SweepExpired` retention sweeper; `rowGate` unchanged single-post test; per-card & per-category scorecard on `/admin/ops`; MCP guard converting 3 consecutive identical failing tool calls into a guidance refusal.
 - **Not verified**: Docker component tests (`make verify` blocked locally by Docker Desktop read-only `meta.db`; runs in CI on push) and live VM/Jira/Switch runs (Phase 2).
 
 ## Product track (Nov 21, 2026, session "Make Heimdall a Sellable Product")

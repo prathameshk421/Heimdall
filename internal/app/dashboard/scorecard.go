@@ -9,13 +9,23 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
 
-// RoleScorecard summarizes quality metrics per agent role computed purely from the event log (R6).
+// RoleScorecard summarizes quality metrics per agent role, seat, card and category computed purely from the event log (R6, L6).
 type RoleScorecard struct {
 	TestAuthor TestAuthorScore         `json:"test_author"`
 	Reviewer   ReviewerScore           `json:"reviewer"`
 	BySeat     map[string]ReviewerSeat `json:"by_seat,omitempty"`
+	ByCard     map[string]CardScore    `json:"by_card,omitempty"`
+	ByCategory map[string]CardScore    `json:"by_category,omitempty"`
 	Resolver   ResolverScore           `json:"resolver"`
 	Profiler   ProfilerScore           `json:"profiler"`
+}
+
+// CardScore tracks finding outcomes for one rule card or finding category (L6).
+type CardScore struct {
+	Filed     int `json:"filed"`
+	Verified  int `json:"verified"`
+	Upheld    int `json:"upheld"`
+	Dismissed int `json:"dismissed"`
 }
 
 // TestAuthorScore tracks test submissions, red-first verifications, rejections, and commits.
@@ -78,16 +88,26 @@ func (s *Service) Scorecard(ctx context.Context) (RoleScorecard, error) {
 	return ScorecardFromEvents(all), nil
 }
 
-// ScorecardFromEvents computes the per-role quality scorecard from a slice of events (R6).
+type findingMeta struct {
+	owner    string
+	category string
+	cards    []string
+}
+
+// ScorecardFromEvents computes the per-role, per-card and per-category quality scorecard from a slice of events (R6, L6).
 func ScorecardFromEvents(events []change.Event) RoleScorecard {
-	sc := RoleScorecard{BySeat: map[string]ReviewerSeat{}}
-	owner := map[id.FindingID]string{}
+	sc := RoleScorecard{
+		BySeat:     map[string]ReviewerSeat{},
+		ByCard:     map[string]CardScore{},
+		ByCategory: map[string]CardScore{},
+	}
+	meta := map[id.FindingID]findingMeta{}
 	for _, ev := range events {
 		p, err := change.Decode(ev)
 		if err != nil {
 			continue
 		}
-		applyScorecardEvent(&sc, owner, p)
+		applyScorecardEvent(&sc, meta, p)
 	}
 	if sc.TestAuthor.Submitted > 0 {
 		sc.TestAuthor.RedFirstRate = float64(sc.TestAuthor.Verified) / float64(sc.TestAuthor.Submitted)
@@ -95,7 +115,7 @@ func ScorecardFromEvents(events []change.Event) RoleScorecard {
 	return sc
 }
 
-func applyScorecardEvent(sc *RoleScorecard, owner map[id.FindingID]string, p change.Payload) {
+func applyScorecardEvent(sc *RoleScorecard, meta map[id.FindingID]findingMeta, p change.Payload) {
 	switch v := p.(type) {
 	case change.TestsSubmitted:
 		sc.TestAuthor.Submitted++
@@ -115,49 +135,67 @@ func applyScorecardEvent(sc *RoleScorecard, owner map[id.FindingID]string, p cha
 			sc.Reviewer.Failed++
 		}
 	case change.FindingFiled, change.FindingVerified, change.FindingStateChanged:
-		applyScorecardFinding(sc, owner, p)
+		applyScorecardFinding(sc, meta, p)
 	default:
 		applyScorecardOther(sc, p)
 	}
 }
 
-func applyScorecardFinding(sc *RoleScorecard, owner map[id.FindingID]string, p change.Payload) {
+func applyScorecardFinding(sc *RoleScorecard, meta map[id.FindingID]findingMeta, p change.Payload) {
 	switch v := p.(type) {
 	case change.FindingFiled:
 		sc.Reviewer.Filed++
-		who := string(v.By)
-		owner[v.FindingID] = who
-		seat := sc.BySeat[who]
+		m := findingMeta{owner: string(v.By), category: string(v.Category), cards: v.CardRefs}
+		meta[v.FindingID] = m
+		seat := sc.BySeat[m.owner]
 		seat.Filed++
-		sc.BySeat[who] = seat
+		sc.BySeat[m.owner] = seat
+		bumpCardScore(sc, m, func(cs *CardScore) { cs.Filed++ })
 	case change.FindingVerified:
 		sc.Reviewer.Verified++
-		if who := owner[v.FindingID]; who != "" {
-			seat := sc.BySeat[who]
+		m := meta[v.FindingID]
+		if m.owner != "" {
+			seat := sc.BySeat[m.owner]
 			seat.Verified++
-			sc.BySeat[who] = seat
+			sc.BySeat[m.owner] = seat
 		}
+		bumpCardScore(sc, m, func(cs *CardScore) { cs.Verified++ })
 	case change.FindingStateChanged:
-		applyFindingOutcome(sc, owner[v.FindingID], v.State)
+		applyFindingOutcome(sc, meta[v.FindingID], v.State)
 	}
 }
 
-func applyFindingOutcome(sc *RoleScorecard, who string, st finding.State) {
+func bumpCardScore(sc *RoleScorecard, m findingMeta, fn func(*CardScore)) {
+	if m.category != "" {
+		cs := sc.ByCategory[m.category]
+		fn(&cs)
+		sc.ByCategory[m.category] = cs
+	}
+	for _, card := range m.cards {
+		cs := sc.ByCard[card]
+		fn(&cs)
+		sc.ByCard[card] = cs
+	}
+}
+
+func applyFindingOutcome(sc *RoleScorecard, m findingMeta, st finding.State) {
 	switch st {
 	case finding.StateUpheld:
 		sc.Reviewer.Upheld++
-		if who != "" {
-			seat := sc.BySeat[who]
+		if m.owner != "" {
+			seat := sc.BySeat[m.owner]
 			seat.Upheld++
-			sc.BySeat[who] = seat
+			sc.BySeat[m.owner] = seat
 		}
+		bumpCardScore(sc, m, func(cs *CardScore) { cs.Upheld++ })
 	case finding.StateDismissed:
 		sc.Reviewer.Dismissed++
-		if who != "" {
-			seat := sc.BySeat[who]
+		if m.owner != "" {
+			seat := sc.BySeat[m.owner]
 			seat.Dismissed++
-			sc.BySeat[who] = seat
+			sc.BySeat[m.owner] = seat
 		}
+		bumpCardScore(sc, m, func(cs *CardScore) { cs.Dismissed++ })
 	case finding.StateResolved:
 		sc.Reviewer.Resolved++
 	case finding.StateProposed, finding.StateOpen, finding.StateUnverified, finding.StateDisputed,
