@@ -69,7 +69,10 @@ type Facts struct {
 	// Trivial is the decision of Trivial for this change. A zero value is "not trivial".
 	Trivial Decision
 	// Stop is why the run ended before it finished, or "". It must be one of StopReasons.
-	Stop     Reason
+	Stop Reason
+	// Ended is why the review ended early with nothing to prove, or "". It must be one of NoteReasons, and it notes a
+	// run that is not reproduced; it never makes a run unknown and never makes it pass.
+	Ended    Reason
 	Tests    TestFacts
 	Findings []Finding
 	Spend    Spend
@@ -92,10 +95,12 @@ type Counts struct {
 // Dropped is the number of dropped candidates, whatever the reason.
 func (c Counts) Dropped() int { return c.Refuted + c.NoProof + c.Outdated + c.NoLocation }
 
-// Outcome is the result of a proof run. Reason is set only when Kind is KindUnknown.
+// Outcome is the result of a proof run. Reason is set only when Kind is KindUnknown, and Note only when Kind is
+// KindNotReproduced and the review ended early (Facts.Ended).
 type Outcome struct {
 	Kind   Kind
 	Reason Reason
+	Note   Reason
 	Counts Counts
 	Cost   Spend
 }
@@ -117,7 +122,7 @@ func Evaluate(f Facts) Outcome {
 	counts, ok := tally(f.Findings)
 	out := Outcome{Counts: counts, Cost: f.Spend}
 	switch {
-	case !ok || !validStop(f.Stop) || f.Tests.Accepted < 0 || f.Tests.Rejected < 0:
+	case !ok || malformed(f):
 		return out.unknown(ReasonNoResult)
 	case f.Stop.invalidatesResults():
 		return out.unknown(f.Stop)
@@ -133,6 +138,7 @@ func Evaluate(f Facts) Outcome {
 		return out.unknown(ReasonNoResult)
 	case f.Tests.Accepted == 0:
 		out.Kind = KindNotReproduced
+		out.Note = f.Ended
 	default:
 		out.Kind = KindProven
 	}
@@ -158,6 +164,12 @@ func (o Outcome) unknown(r Reason) Outcome {
 }
 
 func validStop(r Reason) bool { return r == "" || r.CanStop() }
+
+// malformed reports a fact that cannot be true: a stop that is not a stop reason, an end that is not a note reason, or
+// a negative test count.
+func malformed(f Facts) bool {
+	return !validStop(f.Stop) || (f.Ended != "" && !f.Ended.notes()) || f.Tests.Accepted < 0 || f.Tests.Rejected < 0
+}
 
 // tally counts the findings. ok is false when a record is malformed: a class that does not exist, a dropped candidate
 // with no drop reason, a candidate not checked for a reason it may not carry, or a blocking flag on a finding that is
@@ -239,6 +251,9 @@ func (o Outcome) Headline() string {
 	case KindBlocked:
 		return "blocked: a proven finding blocks the merge"
 	case KindNotReproduced:
+		if o.Note.notes() {
+			return "not reproduced: no test failed on base and passed on head (" + o.Note.Text() + ")"
+		}
 		return "not reproduced: no test failed on base and passed on head"
 	case KindUnknown:
 		return "unknown: " + o.Reason.Text()

@@ -141,6 +141,7 @@ func reasonPhrases() map[proof.Reason]string {
 		proof.ReasonPlanRefused:     "the test plan was refused twice",
 		proof.ReasonModelFailure:    "a model call failed",
 		proof.ReasonNoResult:        "proof run reported no result",
+		proof.ReasonTurnCap:         "proof run used every model turn without an end",
 	}
 }
 

@@ -78,6 +78,8 @@ type ActionEnv struct {
 	// SandboxPath is the PATH inside a sandbox job, HEIMDALL_SANDBOX_PATH, /usr/bin:/bin by default. The workflow puts
 	// the toolchain's bin directory first. Every element is an absolute directory.
 	SandboxPath string
+	// StepSummary is GITHUB_STEP_SUMMARY, the file the proof step appends its job summary to. Empty outside Actions.
+	StepSummary string
 }
 
 // HasModelKey reports whether the step got a model key. A fork PR gets none by GitHub's rule.
@@ -121,6 +123,7 @@ func LoadAction(getenv func(string) string, role ActionRole) (ActionEnv, error) 
 		e.RunnerTemp = r.absPath("RUNNER_TEMP", false)
 		e.Home = r.absPath("HOME", false)
 		e.SandboxPath = r.searchPath("HEIMDALL_SANDBOX_PATH", defaultSandboxPath)
+		e.StepSummary = r.absPath("GITHUB_STEP_SUMMARY", false)
 		r.model(&e)
 	case ActionTrigger:
 	}

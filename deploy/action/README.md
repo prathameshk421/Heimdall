@@ -64,6 +64,12 @@ first: 44 seconds on `ubuntu-latest` in the AM16 live test. In that test the tri
 run 5 minutes 45 seconds (`docs/product/design/AM16_LIVE.md`). The time from install to the first summary is not
 measured yet.
 
+The proof job ends green whenever its step wrote a result. Green means the job ran, not that the change passed. The
+job summary of the proof run shows the outcome, its reason, the turns and the cost, and in shadow mode what enforce
+mode would block. The `heimdall-proof` artifact also holds `heimdall-proof-transcript.json`: a bounded record of each
+model turn (tool names and sizes, request size, nudges, finish reason, the first 2 KB of text), so a proof that ends
+`unknown` explains itself. The gate reads only `heimdall-proof.json`.
+
 ## Moving to enforce mode
 
 Stay in shadow mode until the summaries match what your reviewers would say. Then set `mode: enforce`, run

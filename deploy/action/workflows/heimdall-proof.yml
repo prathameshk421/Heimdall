@@ -63,6 +63,11 @@ jobs:
         if: always()
         with:
           name: heimdall-proof
-          path: ${{ runner.temp }}/heimdall-out/heimdall-proof.json
+          # The result the gate reads, and the bounded transcript of the run's turns for people. The gate reads only
+          # heimdall-proof.json. The job is green whenever the proof step wrote its result: the job summary says that
+          # green is not a pass, and the gate's heimdall/proof check carries the verdict.
+          path: |
+            ${{ runner.temp }}/heimdall-out/heimdall-proof.json
+            ${{ runner.temp }}/heimdall-out/heimdall-proof-transcript.json
           if-no-files-found: warn
           retention-days: 7

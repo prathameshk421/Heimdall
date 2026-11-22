@@ -22,7 +22,18 @@ const (
 	ReasonPlanRefused     Reason = "plan_refused"     // CheckPlan refused the test plan twice
 	ReasonModelFailure    Reason = "model_failure"    // the model call failed, or its output could not be used
 	ReasonNoResult        Reason = "no_result"        // the run reported nothing, or what it reported is malformed
+	// ReasonTurnCap: the model used every answer it had and never ended the review. With the stall rule on, a run that
+	// only reads stops early as no_proposal, so a run at the turn cap was still at work: its result is a missing fact.
+	ReasonTurnCap Reason = "turn_cap"
 )
+
+// ReasonNoProposal says why a run is not reproduced: the stall rule of the agent loop ended a review that read for its
+// stall and grace turns with no test run and no proposal. The review ran and proved nothing, so the run is not
+// reproduced, never unknown and never a pass. It is a note on the outcome, not a stop reason.
+const ReasonNoProposal Reason = "no_proposal"
+
+// NoteReasons lists the reasons that may note why a run is not reproduced.
+func NoteReasons() []Reason { return []Reason{ReasonNoProposal} }
 
 // Two reasons that never leave a run unknown. A candidate carries one of them when it is not checked by design, so
 // they are not stop reasons.
@@ -36,7 +47,7 @@ func StopReasons() []Reason {
 	return []Reason{
 		ReasonBudget, ReasonMonthlyCap, ReasonDeadline, ReasonSuperseded, ReasonForkNoKey, ReasonCannotIsolate,
 		ReasonInputMissing, ReasonWorkflowChanged, ReasonStateUnverified, ReasonSandbox, ReasonNoIntent,
-		ReasonPlanRefused, ReasonModelFailure, ReasonNoResult,
+		ReasonPlanRefused, ReasonModelFailure, ReasonNoResult, ReasonTurnCap,
 	}
 }
 
@@ -68,12 +79,19 @@ func reasonTexts() map[Reason]string {
 		ReasonPlanRefused:     "test plan refused",
 		ReasonModelFailure:    "model failure",
 		ReasonNoResult:        "no result",
+		ReasonTurnCap:         "turn cap reached",
+		ReasonNoProposal:      "no proposal before the stall limit",
 		ReasonTrivial:         "trivial PR",
 		ReasonNotProvable:     "not provable by a test or tool",
 	}
 }
 
-func allReasons() []Reason { return append(StopReasons(), ReasonTrivial, ReasonNotProvable) }
+func allReasons() []Reason {
+	return append(append(StopReasons(), ReasonTrivial, ReasonNotProvable), NoteReasons()...)
+}
+
+// notes reports whether r may note why a run is not reproduced.
+func (r Reason) notes() bool { return slices.Contains(NoteReasons(), r) }
 
 // CanStop reports whether r can end a whole run unknown.
 func (r Reason) CanStop() bool { return slices.Contains(StopReasons(), r) }

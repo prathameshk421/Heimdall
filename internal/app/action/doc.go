@@ -76,6 +76,11 @@
 //     loop sizes every request before it: the worst case of the request plus the full output cap must fit the caps
 //     (ACTION_MODE 7). A run it stops for that reason ends unknown for the reason budget. The guard lives in
 //     internal/app/agentloop, so the bench gets it too.
+//   - The loop's limits are the bench's. The proof run sets a 48 KB context budget (3 newest results whole) and a stall
+//     rule of 10 turns, one nudge naming propose_finding and finish_review, and 4 grace turns. The action area has no
+//     key for these, so they are constants (proof.go). A turn cap ends unknown: turn_cap, and claims not reached are
+//     "not checked: budget". A stall stop ends not reproduced with the note no_proposal. Only a failed model call or a
+//     twice refused answer is model_failure.
 //   - The artifact is untrusted. The gate checks its version, its size, its head, base, policy hash and workflow run, and
 //     its counts against its candidates. It also recomputes each proven candidate's blocking flag from the policy at the
 //     merge base and refuses a disagreement, because that flag drives the check conclusion.

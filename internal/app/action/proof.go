@@ -35,6 +35,20 @@ const (
 	maxPromptFiles = 100
 )
 
+// The context budget and the stall rule of one proof run: the defaults the bench proved (cmd/heimdall-bench review.go,
+// live run 4: requests of 57 KB to 211 KB ended on HTTP 500, and cases spent their budget without a proposal). The
+// action area of the policy has no key for them, so they are constants here, not policy.
+const (
+	// proofContextBytes is the request size the loop trims old tool results toward.
+	proofContextBytes = 48 << 10
+	// proofKeptResults is how many of the newest tool results stay whole whatever the size.
+	proofKeptResults = 3
+	// proofStallTurns answers in a row with no test run and no proposal get one stall nudge, and proofStallGrace more
+	// such answers stop the run as no_proposal. 14 is well under maxProofTurns, so a run that only reads ends early.
+	proofStallTurns = 10
+	proofStallGrace = 4
+)
+
 // OverlaySandbox is the sandbox port with the overlay extension: it writes files into the tree before it runs. A repro
 // test is an overlay, so a proof needs it. internal/app/effects declares the same shape for the server's verification;
 // R3 keeps this package from importing that one, so the interface is repeated here.
@@ -158,6 +172,9 @@ type ProofResult struct {
 	Candidates  []CandidateOutcome
 	// Artifact is the versioned JSON the gate validates and records (artifact.go).
 	Artifact []byte
+	// Transcript is the bounded record of the run's turns (proof_transcript.go), for people. It is nil when the run
+	// made no model call. The gate never reads it.
+	Transcript []byte
 	// Trivial is the skip decision. It is why a run made no model call.
 	Trivial proof.Decision
 	// Turns and Stop say how the loop ended, and StopDetail holds its words when it failed.
@@ -211,6 +228,11 @@ func (p *Proof) Run(ctx context.Context, in ProofIn) (ProofResult, error) {
 		return r.res, fmt.Errorf("action proof on %s: %w", in.ChangeID, err)
 	}
 	r.res.Artifact = raw
+	if r.reviewed {
+		if r.res.Transcript, err = transcriptOf(r); err != nil {
+			return r.res, fmt.Errorf("action proof on %s: %w", in.ChangeID, err)
+		}
+	}
 	return r.res, runErr
 }
 
@@ -228,6 +250,8 @@ type proofRun struct {
 	proposals []proposal
 	// reviewed is true once the review step ran, whatever it found.
 	reviewed bool
+	// turns is the loop's record of each answer, for the transcript.
+	turns []ports.AgentTurn
 }
 
 // execute is the run: the trivial skip, the monthly cap, the review, then the proof of each proposal.
@@ -260,7 +284,7 @@ func (r *proofRun) monthlyStop() proof.Reason {
 // outcome turns the facts of the run into the one answer the gate shows.
 func (r *proofRun) outcome() proof.Outcome {
 	return proof.Evaluate(proof.Facts{Action: r.act, Trivial: r.res.Trivial, Stop: r.stopReason(),
-		Tests: r.testFacts(), Findings: r.findings(), Spend: r.spent})
+		Ended: r.endedReason(), Tests: r.testFacts(), Findings: r.findings(), Spend: r.spent})
 }
 
 // stopReason is the reason the run ended before it finished, or "". A reason this package found wins over the loop's,
@@ -272,8 +296,8 @@ func (r *proofRun) stopReason() proof.Reason {
 	switch r.res.Stop {
 	case ports.AgentStopDone, ports.AgentStopNoProposal:
 		// The model said it was done, answered with text and nothing to do, or read without progress until the stall
-		// rule stopped it (this package sets no stall rule today). The run's results stand; a run with no proposal is
-		// "not reproduced", which is not a pass.
+		// rule stopped it (endedReason notes that). The run's results stand; a run with no proposal is "not
+		// reproduced", which is not a pass.
 		return ""
 	case ports.AgentStopBudget:
 		return proof.ReasonBudget
@@ -281,10 +305,21 @@ func (r *proofRun) stopReason() proof.Reason {
 		return proof.ReasonDeadline
 	case ports.AgentStopCancelled:
 		return proof.ReasonSuperseded
-	case ports.AgentStopRefused, ports.AgentStopTurns, ports.AgentStopError:
+	case ports.AgentStopTurns:
+		// The model used every answer and never ended the review. That is a limit of the run, not a failed model call.
+		return proof.ReasonTurnCap
+	case ports.AgentStopRefused, ports.AgentStopError:
 		return proof.ReasonModelFailure
 	}
 	return proof.ReasonModelFailure
+}
+
+// endedReason notes why a review ended early with nothing to prove: the stall rule stopped it. It is "" otherwise.
+func (r *proofRun) endedReason() proof.Reason {
+	if r.res.Stop == ports.AgentStopNoProposal {
+		return proof.ReasonNoProposal
+	}
+	return ""
 }
 
 // testFacts is the red-first half of the outcome. This run has no separate plan step: the accepted test is the test

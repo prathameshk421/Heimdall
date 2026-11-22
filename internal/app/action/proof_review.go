@@ -72,12 +72,14 @@ func (r *proofRun) review(ctx context.Context) error {
 		Budget: ports.AgentBudget{USD: r.act.Budget.PerPRUSD, InputTokens: int64(r.act.Budget.PerPRTokens.Input),
 			OutputTokens: int64(r.act.Budget.PerPRTokens.Output)},
 		MaxOutputTokens: r.act.Budget.CallOutputTokens, MaxTurns: maxProofTurns,
-		Deadline: r.p.cfg.Clock.Now().Add(proofTimeout), RequireToolCall: true, Nudge: reviewerNudge})
+		Deadline: r.p.cfg.Clock.Now().Add(proofTimeout), RequireToolCall: true, Nudge: reviewerNudge,
+		ContextBytes: proofContextBytes, KeepResults: proofKeptResults, Stall: reviewerStall()})
 	if res.Stop == "" {
 		// The loop refused the request before it ran: a wiring fault, not an outcome of the run.
 		return fmt.Errorf("action proof on %s: agent loop: %w", r.in.ChangeID, runErr)
 	}
 	r.res.Turns, r.res.Stop = len(res.Turns), res.Stop
+	r.turns = res.Turns
 	r.spent = proof.Spend{USD: res.CostUSD, InputTokens: int(res.Usage.InputTokens), OutputTokens: int(res.Usage.OutputTokens)}
 	if runErr != nil {
 		// The loop reports a cancellation, a model failure or a usage report that cannot be true as an error.
@@ -91,6 +93,17 @@ func (r *proofRun) review(ctx context.Context) error {
 
 // reviewerNudge is the fixed message the agent loop sends after an answer with no tool call, at most twice a run.
 const reviewerNudge = "Call a tool now. If you found no bug you can prove, call finish_review."
+
+// reviewerStallNudge is the fixed message the loop sends once a run after proofStallTurns answers with no test run
+// and no proposal. It names the tools, not a finding.
+const reviewerStallNudge = "Propose your strongest finding with propose_finding now, or call finish_review."
+
+// reviewerStall is the early stop of a review that reads and never proves: a test run or a proposal counts as
+// progress.
+func reviewerStall() ports.AgentStall {
+	return ports.AgentStall{Turns: proofStallTurns, Grace: proofStallGrace, Nudge: reviewerStallNudge,
+		Progress: []string{runTestName, proposeFindingName}}
+}
 
 // reviewerPrompt is the system prompt. It states the tools to call and the proof rule, not how to reason.
 const reviewerPrompt = `Answer only with tool calls. Propose each bug with propose_finding, which takes the Go test
@@ -205,7 +218,7 @@ func (rv *reviewer) tools() []reviewTool {
 			Description: "Search the pull request head for a literal string. At most 50 matches.",
 			Parameters:  json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1},"path_prefix":{"type":"string"}},"required":["query"],"additionalProperties":false}`)},
 			run: rv.search},
-		fnTool{spec: ports.ModelTool{Name: "run_test",
+		fnTool{spec: ports.ModelTool{Name: runTestName,
 			Description: "Write one new Go test file into the pull request head and run its package's tests in the sandbox. Returns each test's outcome and the output.",
 			Parameters:  json.RawMessage(`{"type":"object","properties":{"test_path":{"type":"string"},"test_source":{"type":"string"}},"required":["test_path","test_source"],"additionalProperties":false}`)},
 			run: rv.runTest},
@@ -552,7 +565,7 @@ type proposeFinding struct{ rv *reviewer }
 
 // Spec describes the tool to the model.
 func (p proposeFinding) Spec() ports.ModelTool {
-	return ports.ModelTool{Name: "propose_finding",
+	return ports.ModelTool{Name: proposeFindingName,
 		Description: "Propose one bug the change brings in, with a Go test that fails on this head because of the bug and passes once the bug is fixed. At most 10 findings.",
 		Parameters:  json.RawMessage(`{"type":"object","properties":{"comment_id":{"type":"integer","description":"The comment id of the third-party claim this finding answers, or 0 for a bug you found"},"file":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"severity":{"type":"string","enum":["low","medium","high","critical"]},"claim":{"type":"string","maxLength":600},"test_path":{"type":"string"},"test_name":{"type":"string"},"test_source":{"type":"string"}},"required":["file","start_line","end_line","severity","claim","test_path","test_name","test_source"],"additionalProperties":false}`)}
 }
@@ -654,6 +667,12 @@ func decodeArgs(raw json.RawMessage, v any) error {
 
 // finishReviewName is the name of the final tool.
 const finishReviewName = "finish_review"
+
+// The two progress tools of the stall rule.
+const (
+	runTestName        = "run_test"
+	proposeFindingName = "propose_finding"
+)
 
 // finishReview ends the run. The proof run's output is the proposals, so any summary is accepted.
 type finishReview struct{}
