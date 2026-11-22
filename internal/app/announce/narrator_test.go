@@ -3,6 +3,7 @@ package announce_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -190,4 +191,54 @@ func TestNarratorSkipsTheTicketRoomUntilItExists(t *testing.T) {
 		require.NotEqual(t, change.RoomID("dc-kan14"), p.room)
 	}
 	require.NotEmpty(t, c.posts)
+}
+
+// Several checks report the same milestone on one commit, and the chat hears it once. A new commit speaks again.
+// Live on heimdall-vm one "Acceptance tests passed" line reached Telegram four times in 21 seconds, because each
+// report is its own event with its own id.
+func TestNarratorPostsAMilestoneOncePerCommit(t *testing.T) {
+	const head = "8131fcd4a3e0d3b95d2b0b7e1f0d9a2b3c4d5e6f"
+	const next = "9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d"
+	log := &tail{events: []change.Event{roomOpened(t)}}
+	cur := &cursors{m: map[string]string{}}
+	c := &chat{}
+	n := newNarrator(t, log, cur, c)
+	_, err := n.RunOnce(context.Background())
+	require.NoError(t, err)
+
+	ci := func(eid string, sha string) change.Event {
+		e := ev(t, change.EventCIReported, change.CIReported{Check: "heimdall/acceptance", SHA: id.SHA(sha), Conclusion: change.CISuccess})
+		e.ID = change.EventID(eid)
+		return e
+	}
+	log.events = append(log.events, ci("ev-ci-1", head), ci("ev-ci-2", head))
+	for i := range log.events {
+		log.events[i].Version = int64(i + 1)
+	}
+	posted, err := n.RunOnce(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 2, posted, "both reports are announced")
+
+	passed := map[change.RoomID]int{}
+	for _, p := range c.posts {
+		if strings.Contains(p.text, "Acceptance tests passed") {
+			passed[p.room]++
+		}
+	}
+	require.Equal(t, map[change.RoomID]int{"dc-kan14": 1, "tg-dev": 1, "mm-review": 1}, passed,
+		"the same milestone on the same commit is one post per room")
+
+	log.events = append(log.events, ci("ev-ci-3", next))
+	log.events[len(log.events)-1].Version = int64(len(log.events))
+	posted, err = n.RunOnce(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, posted)
+	passed = map[change.RoomID]int{}
+	for _, p := range c.posts {
+		if strings.Contains(p.text, "Acceptance tests passed") {
+			passed[p.room]++
+		}
+	}
+	require.Equal(t, map[change.RoomID]int{"dc-kan14": 2, "tg-dev": 2, "mm-review": 2}, passed,
+		"a milestone on a new commit is posted again")
 }

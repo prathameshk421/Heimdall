@@ -1,5 +1,23 @@
 # Heimdall progress
 
+## Announce dedupe (Nov 22, 2026, branch `heimdall-build`)
+
+A live run spammed Telegram four times in 21 seconds with the same `Acceptance tests passed · pr-prathameshk421-t3code-1`
+line on commit `8131fcd`. Cause: several `ci.reported` events landed for one `(change, sha)`, and the chat `EffectKey`
+was built from the event id, so each report was a new post.
+
+**Fix** in `internal/app/announce/narrator.go`: `postDiscriminator` now keys a milestone that names a commit
+(`ci.reported`, `gate.evaluated`, `tests.verified`, `tests.rejected`, `tests.committed`, `change.merged`) on
+`sha256(sha + "\n" + rendered line)` instead of the event id. The same news on one head is one post per room; a new
+head speaks again. Every other event keeps its event-id key, so a line that may legitimately repeat is not dropped.
+The narrator stays pure: no clock, no global state, and the key still passes `change.IdempotencyKey`.
+
+**Evidence:** `go test ./internal/app/announce` passes (new `TestNarratorPostsAMilestoneOncePerCommit`; red first, it
+read 2 posts per room before the fix). `golangci-lint run ./internal/app/announce/...` 0 issues. `make fast` exit 0
+(5770 tests). `go test -race ./internal/app/announce` passes.
+**Not verified:** `make verify` (45 component tests blocked by Docker Desktop's read-only `meta.db`, and 3 harness plus
+7 script cases fail on BSD `stat -c`; both are the recorded environment issues, not this change), and a live VM run.
+
 ## P-AM11 sandbox hardening (Nov 21, 2026, branch `am11-harden`)
 
 Status: done for GitHub-hosted ubuntu-latest. Evidence is in `ACTION_MODE_SPIKE.md` 9.6. Run 44910812111 blocked every
