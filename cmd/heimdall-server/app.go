@@ -50,19 +50,8 @@ const (
 	drainWorkers = 3
 	// slowDrainWorkers is how many sandbox effects can run at once in their own lane without blocking quick effects (O2).
 	slowDrainWorkers = 3
-	// effectTimeout bounds one executor call. The lease must exceed outboxBatch times this (outbox.New).
+	// effectTimeout bounds one executor call when no kind budget is configured. Per-kind budgets live in EffectKind.Budget (O3).
 	effectTimeout = 20 * time.Second
-	// testQualityTimeout bounds a test_quality effect: two sandbox jobs of up to 3 minutes each, plus the runner's
-	// margin. With the 20 s default the outbox cancelled the run and every retry started another container (KAN-9).
-	testQualityTimeout = 7 * time.Minute
-	// verifyEvidenceTimeout bounds a verify_evidence effect: a source fetch, one sandbox job of up to 3 minutes, and the
-	// event ingest after it. With the 20 s default the run was cut and the ingest after it timed out on every retry, so
-	// E1 findings dropped to E4 or never settled (KAN-23, Nov 8).
-	verifyEvidenceTimeout = 5 * time.Minute
-	// runChecksTimeout bounds a run_checks effect: a source fetch, the profile's checks on the head (each up to 5
-	// minutes, effects.checkTimeout) and the checks.reported ingest. With the 20 s default the vet and golangci-lint run
-	// used the whole budget and the ingest timed out on every retry, so review never started (PR #18, Nov 21, D187).
-	runChecksTimeout = 12 * time.Minute
 	// outboxLease is how long a claimed effect stays leased to one drainer. It must exceed outboxBatch times the longest
 	// effect timeout (outbox.New). An effect that was running when the server stopped is in doubt and is not re-run on
 	// lease expiry (T22), so a long lease does not delay recovery.
@@ -639,24 +628,33 @@ func assembleHumanEdges(d deps, ad adapters, store *postgres.Store) (http.Handle
 // sandboxEffectKinds are the long-running sandbox effects that run in their own lane so they never block wakes,
 // status posts or GitHub checks (O2).
 func sandboxEffectKinds() []change.EffectKind {
-	return []change.EffectKind{
-		change.EffectTestQuality,
-		change.EffectAcceptance,
-		change.EffectVerifyEvidence,
-		change.EffectRunChecks,
-		change.EffectProfileTrial,
+	var out []change.EffectKind
+	for _, k := range change.EffectKinds() {
+		if k.IsSandbox() {
+			out = append(out, k)
+		}
 	}
+	return out
+}
+
+// effectKindBudgets builds the per-kind timeout map from the domain's EffectKind.Budget declarations (O3).
+func effectKindBudgets(execs map[change.EffectKind]outbox.Executor) (map[change.EffectKind]time.Duration, error) {
+	out := make(map[change.EffectKind]time.Duration, len(execs))
+	for k := range execs {
+		b := k.Budget()
+		if b <= 0 {
+			return nil, fmt.Errorf("effect kind %q has no timeout budget declared", k)
+		}
+		out[k] = b
+	}
+	return out, nil
 }
 
 // quickEffectKinds are every registered effect kind that is not a long-running sandbox job (O2).
 func quickEffectKinds(execs map[change.EffectKind]outbox.Executor) []change.EffectKind {
-	slow := map[change.EffectKind]bool{}
-	for _, k := range sandboxEffectKinds() {
-		slow[k] = true
-	}
 	var out []change.EffectKind
 	for k := range execs {
-		if !slow[k] {
+		if !k.IsSandbox() {
 			out = append(out, k)
 		}
 	}
@@ -666,11 +664,9 @@ func quickEffectKinds(execs map[change.EffectKind]outbox.Executor) []change.Effe
 // newDrainers builds two outbox drainers over the same store: a quick lane (wakes, posts, checks, tracker writes)
 // and a sandbox lane (long-running container jobs), so slow effects never starve fast ones (O2).
 func newDrainers(d deps, store *postgres.Store, execs map[change.EffectKind]outbox.Executor) (quick, slow *outbox.Drainer, err error) {
-	timeouts := map[change.EffectKind]time.Duration{
-		change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout,
-		change.EffectVerifyEvidence: verifyEvidenceTimeout,
-		change.EffectRunChecks:      runChecksTimeout,
-		change.EffectProfileTrial:   testQualityTimeout, // a trial runs the profile's tests in the sandbox, like acceptance
+	timeouts, err := effectKindBudgets(execs)
+	if err != nil {
+		return nil, nil, err
 	}
 	quick, err = outbox.New(outbox.Config{
 		Outbox: store, Executors: execs, Logger: d.logger,

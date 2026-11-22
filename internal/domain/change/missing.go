@@ -110,9 +110,13 @@ func rowOfJob(k EffectKind) string {
 }
 
 // deadNeeds are the jobs that failed for good or are in doubt. Nothing retries them by itself: a person decides.
+// Head-scoped dead jobs for a superseded PR head are history, not live needs (O4).
 func deadNeeds(in In) []Need {
 	var out []Need
 	for _, d := range in.Dead {
+		if isStaleDeadEffect(in.View, d) {
+			continue
+		}
 		row := rowOfJob(d.Kind)
 		text := string(d.Kind) + " failed " + strconv.Itoa(d.Attempts) + " times: " + d.LastError
 		if d.InDoubt {
@@ -124,6 +128,22 @@ func deadNeeds(in In) []Need {
 		out = append(out, Need{Step: row, Text: text})
 	}
 	return out
+}
+
+func isStaleDeadEffect(v View, d DeadJob) bool {
+	if v.PR == nil || v.PR.HeadSHA == "" || d.Key == "" {
+		return false
+	}
+	switch d.Kind {
+	case EffectRunChecks, EffectVerifyEvidence, EffectAcceptance, EffectGitHubCheck:
+		return !strings.Contains(string(d.Key), string(v.PR.HeadSHA))
+	case EffectGitHubComment, EffectGitHubBranch, EffectRoomOpen, EffectRoomPost, EffectRoomClose,
+		EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign, EffectGitHubCommitTests,
+		EffectTestQuality, EffectProfileTrial:
+		return false
+	default:
+		return false
+	}
 }
 
 // findingRefs are the finding refs in number order (F2 before F10).

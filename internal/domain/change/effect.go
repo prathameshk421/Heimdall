@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
@@ -37,11 +38,54 @@ const (
 	EffectProfileTrial EffectKind = "profile_trial"
 )
 
+// EffectKinds returns every valid effect kind in declaration order.
+func EffectKinds() []EffectKind {
+	return []EffectKind{
+		EffectGitHubCheck, EffectGitHubComment, EffectGitHubBranch,
+		EffectRoomOpen, EffectRoomPost, EffectRoomClose,
+		EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign,
+		EffectGitHubCommitTests, EffectTestQuality, EffectVerifyEvidence,
+		EffectAcceptance, EffectRunChecks, EffectProfileTrial,
+	}
+}
+
 // Valid reports whether k is an effect kind.
 func (k EffectKind) Valid() bool {
-	return slices.Contains([]EffectKind{EffectGitHubCheck, EffectGitHubComment, EffectGitHubBranch,
-		EffectRoomOpen, EffectRoomPost, EffectRoomClose, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign,
-		EffectGitHubCommitTests, EffectTestQuality, EffectVerifyEvidence, EffectAcceptance, EffectRunChecks, EffectProfileTrial}, k)
+	return slices.Contains(EffectKinds(), k)
+}
+
+// IsSandbox reports whether k runs a container job in the sandbox lane (O2, O3).
+func (k EffectKind) IsSandbox() bool {
+	switch k {
+	case EffectTestQuality, EffectAcceptance, EffectVerifyEvidence, EffectRunChecks, EffectProfileTrial:
+		return true
+	case EffectGitHubCheck, EffectGitHubComment, EffectGitHubBranch, EffectRoomOpen, EffectRoomPost,
+		EffectRoomClose, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign, EffectGitHubCommitTests:
+		return false
+	default:
+		return false
+	}
+}
+
+// Budget is the execution timeout sized to k's real work (O3). Declared beside the kind so a new kind
+// cannot ship with a too-short default.
+func (k EffectKind) Budget() time.Duration {
+	switch k {
+	case EffectRunChecks:
+		return 12 * time.Minute
+	case EffectTestQuality, EffectAcceptance, EffectProfileTrial:
+		return 7 * time.Minute
+	case EffectVerifyEvidence:
+		return 5 * time.Minute
+	case EffectGitHubCommitTests, EffectMemoryEpisode:
+		return 60 * time.Second
+	case EffectGitHubCheck, EffectGitHubComment, EffectGitHubBranch,
+		EffectRoomOpen, EffectRoomPost, EffectRoomClose,
+		EffectTrackerWrite, EffectTaskAssign:
+		return 30 * time.Second
+	default:
+		return 0
+	}
 }
 
 // EffectKey is the deterministic idempotency key of an outbox row (TECH_SPEC 2.4). An external system that sees the

@@ -415,8 +415,7 @@ func (v *View) applyClose(p Payload) bool {
 
 func (v *View) applyPR(e Event, p Payload) {
 	if o, ok := p.(PROpened); ok {
-		v.PR = &PRInfo{Repo: o.Repo, Number: o.Number, Author: o.Author, Ticket: o.Ticket, HeadSHA: o.HeadSHA, Base: o.BaseSHA,
-			Suggested: nonNil(o.SuggestedReviewers), CI: map[id.SHA]map[string]CIConclusion{}}
+		v.applyPROpened(o)
 		return
 	}
 	if v.applyClose(p) {
@@ -445,6 +444,16 @@ func (v *View) applyPR(e Event, p Payload) {
 		v.PR.applyGate(p)
 	case ReviewersPicked:
 		v.PR.Picked = &PickedInfo{People: nonNil(p.People), By: p.By, Method: p.Method}
+	}
+}
+
+func (v *View) applyPROpened(o PROpened) {
+	v.PR = &PRInfo{Repo: o.Repo, Number: o.Number, Author: o.Author, Ticket: o.Ticket, HeadSHA: o.HeadSHA, Base: o.BaseSHA,
+		Suggested: nonNil(o.SuggestedReviewers), CI: map[id.SHA]map[string]CIConclusion{}}
+	if v.Closed != nil && !v.Closed.Merged {
+		v.Closed = nil
+		v.Approvals = []ApprovalInfo{}
+		v.uncheckLiveFindings()
 	}
 }
 

@@ -23,12 +23,13 @@ WHERE NOT EXISTS (
          OR (x.type = 'pr.closed' AND NOT EXISTS (` + reopenedAfterSQL + `))))
 ORDER BY e.change_id`
 
-// reopenedAfterSQL finds a pr.reopened of the pull request that the pr.closed x closed without a merge, after x.
+// reopenedAfterSQL finds a pr.reopened of the same unmerged PR or a replacement pr.opened after an unmerged pr.closed x (O8).
 const reopenedAfterSQL = `
   SELECT 1 FROM event r
-  WHERE r.change_id = x.change_id AND r.type = 'pr.reopened' AND r.version > x.version
+  WHERE r.change_id = x.change_id AND r.version > x.version
     AND COALESCE((x.payload->>'merged')::boolean, false) = false
-    AND r.payload->>'repo' = x.payload->>'repo' AND r.payload->'number' = x.payload->'number'`
+    AND (r.type = 'pr.opened'
+         OR (r.type = 'pr.reopened' AND r.payload->>'repo' = x.payload->>'repo' AND r.payload->'number' = x.payload->'number'))`
 
 // OpenChanges implements ports.OpenChanges.
 func (s *Store) OpenChanges(ctx context.Context) ([]id.ChangeID, error) {

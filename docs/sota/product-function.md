@@ -54,7 +54,7 @@ A team connects a repository, a tracker and chat once. From then on:
 | F4 | **Ticket edits are ignored.** | high | `agent-triggering.md` T2 | see T2 | see T2 |
 | F5 | **Onboarding is a manual runbook.** Connecting a new repository needs config edits, secret files, installer scripts and Switch console clicks; a buyer cannot self-serve. | high | `docs/RUNBOOK.md`; `deploy/agents/README.md`; H13 provisioning (D176, D177) | A `heimdall init` that writes the config, checks every credential and runs prepare and activate; the board shows what is missing | End-to-end setup test on a fresh VM (Phase 2.5) |
 | F6 | **Approval invalidation, sign-off and force-push are unverified live.** | medium | table above | Phase 2 scenarios | Phase 2 |
-| F7 | **Second PR for one ticket.** | medium | `orchestration.md` O8 | see O8 | see O8 |
+| F7 | **Fixed Nov 22 (with O8).** Second PR opened after an unmerged close resumes the change. | done | `orchestration.md` O8 | — | `TestSecondPROpenedAfterUnmergedCloseResumesChange` |
 
 ## 4. Order of work
 
