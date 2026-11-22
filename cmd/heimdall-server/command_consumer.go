@@ -94,6 +94,11 @@ func (r *commandRuntime) Authorize(ctx context.Context, target collaboration.Tar
 			return slices.Contains(id.Roles, people.RolePolicyOwner)
 		}, "sandbox profile approval and promotion require a mapped policy owner")
 	}
+	if _, ok := cmd.(commands.Unlink); ok {
+		return mappedHuman(d, source, sender, func(id people.Identity) bool {
+			return slices.Contains(id.Roles, people.RolePolicyOwner)
+		}, "unlinking chat accounts requires a mapped policy owner")
+	}
 	if _, ok := cmd.(commands.ApproveKnowledge); ok {
 		return mappedHuman(d, source, sender, func(id people.Identity) bool {
 			return slices.Contains(id.Roles, people.RoleApprover) || slices.Contains(id.Roles, people.RolePolicyOwner)
@@ -400,6 +405,10 @@ func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Targe
 // executeDirect runs the approval commands that act on the file and profile services rather than the change
 // log. handled is false for every other command.
 func (r *commandRuntime) executeDirect(ctx context.Context, person string, cmd commands.Command) (reply string, handled bool, err error) {
+	if unlink, ok := cmd.(commands.Unlink); ok {
+		reply, err := r.executeUnlink(ctx, unlink.Target)
+		return reply, true, err
+	}
 	if approval, ok := cmd.(commands.ApproveKnowledge); ok {
 		if r.files == nil {
 			return "", true, errors.New("knowledge file approval is unavailable")
@@ -425,6 +434,22 @@ func (r *commandRuntime) executeDirect(ctx context.Context, person string, cmd c
 		return "The passing sandbox profile is active for production jobs.", true, nil
 	}
 	return "", false, nil
+}
+
+// executeUnlink deletes proven chat links matching a GitHub login or Switch sender id (D194).
+func (r *commandRuntime) executeUnlink(ctx context.Context, target string) (string, error) {
+	remover, ok := r.links.(ports.ChatLinkRemover)
+	if !ok {
+		return "", errors.New("chat account unlinking is unavailable")
+	}
+	n, err := remover.DeleteChatLinks(ctx, target)
+	if err != nil {
+		return "", err
+	}
+	if n == 0 {
+		return fmt.Sprintf("No linked chat accounts found for %s.", target), nil
+	}
+	return fmt.Sprintf("Unlinked %d chat account(s) for %s.", n, target), nil
 }
 
 // forgetKnowledge forgets the knowledge source a forget command names. A retry of an already recorded command

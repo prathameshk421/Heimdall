@@ -37,3 +37,8 @@ type ChatLinks interface {
 	// ChatLinks returns every link.
 	ChatLinks(ctx context.Context) ([]ChatLink, error)
 }
+
+// ChatLinkRemover deletes proven chat links by Switch sender id or GitHub login (D194 unlink).
+type ChatLinkRemover interface {
+	DeleteChatLinks(ctx context.Context, target string) (int, error)
+}

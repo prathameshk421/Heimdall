@@ -29,6 +29,7 @@ const (
 	useIncident         = "incident <text>"
 	useResume           = "resume <step>"
 	useAnswer           = "answer <Q> <text>"
+	useUnlink           = "unlink <@github|sender_id>"
 )
 
 // parseUphold takes exactly one finding.
@@ -242,6 +243,22 @@ func parseWaiveReviewer(p, args string) (WaiveReviewer, error) {
 		return WaiveReviewer{}, fail(p, useWaive, errors.New("waive-reviewer needs a reason"))
 	}
 	return WaiveReviewer{Reviewer: reviewer, Reason: reason}, nil
+}
+
+// parseUnlink takes one GitHub login (with or without @) or one Switch sender id (D194).
+func parseUnlink(p, args string) (Unlink, error) {
+	target, rest := cutWord(args)
+	if target == "" || rest != "" {
+		return Unlink{}, fail(p, useUnlink, errors.New("unlink takes one GitHub login or chat sender id"))
+	}
+	if strings.HasPrefix(target, "@") && !strings.Contains(target, ":") {
+		h, err := parseHandle(target)
+		if err != nil {
+			return Unlink{}, fail(p, useUnlink, err)
+		}
+		target = h
+	}
+	return Unlink{Target: target}, nil
 }
 
 // freeText returns the trimmed text, or the usage error when it is empty.

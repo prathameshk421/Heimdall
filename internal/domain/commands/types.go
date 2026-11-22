@@ -119,6 +119,12 @@ type Reprofile struct{ Note string }
 // Verb returns the command word.
 func (Reprofile) Verb() string { return "reprofile" }
 
+// Unlink removes proven chat-account links (D194) for a GitHub login or Switch sender id.
+type Unlink struct{ Target string }
+
+// Verb returns the command word.
+func (Unlink) Verb() string { return "unlink" }
+
 // Challenge asks for a finding to be re-checked against new evidence.
 type Challenge struct{ Finding, Evidence string }
 

@@ -15,6 +15,7 @@ import (
 )
 
 var _ ports.ChatLinks = (*Store)(nil)
+var _ ports.ChatLinkRemover = (*Store)(nil)
 
 // linkCodeAlphabet has no 0/O or 1/I, so a code read off a phone screen is typed right.
 const linkCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -105,6 +106,19 @@ func (s *Store) ChatLinks(ctx context.Context) ([]ports.ChatLink, error) {
 		out = append(out, l)
 	}
 	return out, rows.Err()
+}
+
+// DeleteChatLinks removes proven chat links matching a Switch sender id or a GitHub login (case-insensitive).
+func (s *Store) DeleteChatLinks(ctx context.Context, target string) (int, error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return 0, errors.New("delete chat links: target is empty")
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM chat_link WHERE sender = $1 OR lower(github) = lower($1)`, target)
+	if err != nil {
+		return 0, fmt.Errorf("delete chat links for %s: %w", target, err)
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 // newLinkCode draws a code from crypto/rand. Rejection sampling keeps every letter equally likely.

@@ -142,6 +142,7 @@ func parseCommand(src Source, verb, args string) (Command, error) {
 		"incident":          command(parseIncident),
 		"resume":            command(parseResume),
 		"answer":            command(parseAnswer),
+		"unlink":            command(parseUnlink),
 	}
 	parse, ok := parsers[verb]
 	if !ok {
@@ -204,5 +205,5 @@ func VerbOf(in Input) string {
 // RepositoryScoped says a verb acts on the repository rather than on one ticket: approving or promoting a sandbox
 // profile names the proposal, whose repository the profile service checks. In a shared channel it needs no ticket key.
 func RepositoryScoped(verb string) bool {
-	return verb == "approve-profile" || verb == "promote-profile"
+	return verb == "approve-profile" || verb == "promote-profile" || verb == "unlink"
 }
