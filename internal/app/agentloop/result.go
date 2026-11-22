@@ -25,6 +25,9 @@ const (
 	StopCancelled StopReason = "cancelled"
 	// StopModelError means the model call failed for another reason. Run also returns that error.
 	StopModelError StopReason = "model_error"
+	// StopNoProgress means the run made no call to a progress tool for Config.StallTurns answers and then
+	// Config.StallGrace more after the stall nudge.
+	StopNoProgress StopReason = "no_progress"
 )
 
 // Submission is the accepted final answer: the tool the model called and the JSON arguments it wrote.

@@ -28,6 +28,18 @@ const (
 	caseDeadline       = 15 * time.Minute
 )
 
+// The context and stall defaults of a review (live run 4: requests of 57 KB to 211 KB ended on HTTP 500, and four
+// cases spent their budget without a proposal).
+const (
+	defaultContextBytes = 48 << 10
+	defaultStallTurns   = 10
+	stallGraceTurns     = 4
+	keptToolResults     = 3
+)
+
+// stallNudge is the fixed message after stall turns with no proposal or test run. It names the tools, not a finding.
+const stallNudge = "Propose your strongest finding with a test now, or call finish_review"
+
 // testingCapUSD is the repo's testing cap (CLAUDE.md), the default of -max-cost.
 const testingCapUSD = 3.0
 
@@ -94,8 +106,12 @@ type reviewOptions struct {
 	maxCost            float64
 	perCase            float64
 	parallel           int
-	blockAt            finding.Severity
-	commandFor         string // the command line written into the report
+	// contextBytes is the loop's target request size, and stallTurns the turns with no proposal or test run before the
+	// loop nudges once; stallGrace more such turns stop the case with "no_proposal" (live run 4).
+	contextBytes int
+	stallTurns   int
+	blockAt      finding.Severity
+	commandFor   string // the command line written into the report
 }
 
 // MaxParallel is the most cases a review runs at once.
@@ -119,6 +135,8 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	fs.Float64Var(&o.maxCost, "max-cost", testingCapUSD, "hard cap in USD for the whole run; no call that could pass it is made")
 	fs.Float64Var(&o.perCase, "per-case-cost", 0.50, "the agent loop budget in USD for one case (ACTION_MODE 7)")
 	fs.IntVar(&o.parallel, "parallel", 1, "how many cases to review at once, at most 8; the cost cap stays shared")
+	fs.IntVar(&o.contextBytes, "context-bytes", defaultContextBytes, "trim old tool results so a request stays near this many bytes; the 3 newest stay whole; 0 trims nothing")
+	fs.IntVar(&o.stallTurns, "stall-turns", defaultStallTurns, "turns with no proposal or test run before one nudge; 4 more stop the case as no_proposal; 0 is off")
 	block := fs.String("block-severity", "medium", "a proven finding at or above this severity blocks")
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -155,6 +173,10 @@ func checkRequired(o reviewOptions) error {
 		return errors.New("review: -key-file is required")
 	case o.parallel < 1 || o.parallel > maxParallel:
 		return fmt.Errorf("review: -parallel %d: want 1 to %d", o.parallel, maxParallel)
+	case o.contextBytes < 0:
+		return fmt.Errorf("review: -context-bytes %d: want 0 or more", o.contextBytes)
+	case o.stallTurns < 0:
+		return fmt.Errorf("review: -stall-turns %d: want 0 or more", o.stallTurns)
 	}
 	return nil
 }
@@ -492,7 +514,17 @@ func runReviewer(ctx context.Context, o reviewOptions, model ports.ModelChat, bu
 		Tools: tb.specs(), FinalTools: []string{finalTool}, Dispatcher: tb,
 		Budget:          ports.AgentBudget{USD: budget, InputTokens: inputTokensPerCase, OutputTokens: outputTokensPerCas},
 		MaxOutputTokens: maxOutputPerAnswer, MaxTurns: maxTurnsPerCase, Deadline: time.Now().Add(caseDeadline),
-		RequireToolCall: true, Nudge: reviewerNudge})
+		RequireToolCall: true, Nudge: reviewerNudge, ContextBytes: o.contextBytes, KeepResults: keptToolResults,
+		Stall: stallRule(o.stallTurns)})
+}
+
+// stallRule is the loop's early stop for -stall-turns; zero is off. A test run or a proposal counts as progress.
+func stallRule(turns int) ports.AgentStall {
+	if turns == 0 {
+		return ports.AgentStall{}
+	}
+	return ports.AgentStall{Turns: turns, Grace: stallGraceTurns, Nudge: stallNudge,
+		Progress: []string{"run_test", "propose_finding"}}
 }
 
 // reviewerNudge is the fixed message the loop sends after an answer with no tool call (at most twice a case).
@@ -515,6 +547,11 @@ type turnRecord struct {
 	// Attempts is the number of times the call was sent, and Failed its failed attempts (kind, status, wait).
 	Attempts int             `json:"attempts,omitempty"`
 	Failed   []attemptRecord `json:"failed,omitempty"`
+	// RequestBytes is the size of the request after the trim, Trimmed the tool results held as stubs then, and
+	// StallNudged marks the answer after which the stall nudge went out.
+	RequestBytes int  `json:"request_bytes"`
+	Trimmed      int  `json:"trimmed_results,omitempty"`
+	StallNudged  bool `json:"stall_nudged,omitempty"`
 }
 
 type callRecord struct {
@@ -527,7 +564,7 @@ func turnRecords(turns []ports.AgentTurn) []turnRecord {
 	for _, t := range turns {
 		r := turnRecord{Text: t.Text, Reasoning: t.Reasoning, ReasoningBytes: t.ReasoningBytes, ToolCalls: t.ToolCalls, Finish: t.Finish, TextCalls: t.TextCalls, Nudged: t.Nudged,
 			ToolChoice: string(t.ToolChoice), Fallback: t.Fallback, CostUSD: t.CostUSD, Attempts: t.Attempts,
-			Failed: attemptRecords(t.Failed)}
+			Failed: attemptRecords(t.Failed), RequestBytes: t.RequestBytes, Trimmed: t.TrimmedResults, StallNudged: t.StallNudged}
 		for _, c := range t.Calls {
 			r.Calls = append(r.Calls, callRecord(c))
 		}

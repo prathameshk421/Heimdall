@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -97,17 +99,43 @@ func (rp *repo) tree(ctx context.Context, sha string) (string, error) {
 
 // prove runs the proof rule on one proposal: two separate runs on the head and, when both fail, one run on the fixed
 // tree. testintegrity.Prove decides. Each run is a fresh worktree, so the two head runs share nothing.
+//
+// The fixed tree follows bench.ProofRuleFor. A finding on the truth, and every finding of a clean case, uses the case's
+// fixed tree (the fix commit, or the base). A bug case's finding away from the truth uses the product's rule: the head
+// with the finding's own lines reverted to the base (testintegrity.RevertLines, as internal/app/action does), so a real
+// bug that the fix commit does not touch can still be proven. It is then "proven elsewhere", not a hit.
 func (r *replay) prove(ctx context.Context, n int, p proposal) bench.ScoredFinding {
 	f := bench.ScoredFinding{File: p.File, Lines: p.Lines, Severity: p.Severity, Claim: p.Claim, TestPath: p.TestPath, TestName: p.TestName}
-	facts := testintegrity.ProofFacts{HeadTree: r.headTree, FixedTree: r.fixedTree}
-	plan := []struct{ label, sha, tree string }{
-		{"head-1", r.head, r.headTree}, {"head-2", r.head, r.headTree}, {"fixed-1", r.fixed, r.fixedTree},
+	var truth []bench.FileTruth
+	if r.truth != nil {
+		truth = r.truth.Truth
+	}
+	f.Rule = bench.ProofRuleFor(r.c.Kind, truth, p.File, p.Lines)
+	fixedSHA, fixedTree := r.fixed, r.fixedTree
+	var reverted []ports.File
+	if f.Rule == bench.RuleRevertLines {
+		var err error
+		if reverted, err = r.revertedOverlay(ctx, p); err != nil {
+			f.NotRun = "revert the suspected lines: " + err.Error()
+			return f
+		}
+		fixedSHA, fixedTree = r.head, revertedTreeID(r.headTree, reverted)
+	}
+	facts := testintegrity.ProofFacts{HeadTree: r.headTree, FixedTree: fixedTree}
+	plan := []struct {
+		label, sha, tree string
+		over             []ports.File
+	}{
+		{"head-1", r.head, r.headTree, nil}, {"head-2", r.head, r.headTree, nil}, {"fixed-1", fixedSHA, fixedTree, reverted},
 	}
 	for i, step := range plan {
+		if facts.HeadTree == facts.FixedTree {
+			break // the lines are the same at the base: Prove says there is no fixed tree, and no run can change that
+		}
 		if i == 2 && (facts.Runs[0].Outcome != testintegrity.OutcomeFail || facts.Runs[1].Outcome != testintegrity.OutcomeFail) {
 			break // Prove reads the fixed tree only after two red head runs
 		}
-		res, err := r.sandboxRun(ctx, step.sha, p.TestPath, p.TestSource)
+		res, err := r.sandboxRun(ctx, step.sha, p.TestPath, p.TestSource, step.over...)
 		if err != nil {
 			f.NotRun = "sandbox: " + err.Error()
 			return f
@@ -118,6 +146,49 @@ func (r *replay) prove(ctx context.Context, n int, p proposal) bench.ScoredFindi
 	f.Runs = facts.Runs
 	f.Proof = testintegrity.Prove(facts)
 	return f
+}
+
+// revertedOverlay is the proposal's file on the head with its lines reverted to the base. A file the base does not
+// have reverts to an empty base. When the lines are the same at the base, the overlay is empty.
+func (r *replay) revertedOverlay(ctx context.Context, p proposal) ([]ports.File, error) {
+	head, err := r.headFile(p.File)
+	if err != nil {
+		return nil, err
+	}
+	var base []byte
+	has, err := r.rp.hasFile(ctx, r.base, p.File)
+	if err != nil {
+		return nil, err
+	}
+	if has {
+		if base, err = r.rp.show(ctx, r.base, p.File); err != nil {
+			return nil, err
+		}
+	}
+	merged, err := testintegrity.RevertLines(string(head), string(base), p.Lines.Start, p.Lines.End)
+	if err != nil {
+		return nil, err
+	}
+	if merged == string(head) {
+		return nil, nil
+	}
+	return []ports.File{{Path: p.File, Content: []byte(merged)}}, nil
+}
+
+// revertedTreeID names the head with the overlay written in. It is the head tree when the overlay is empty, so Prove
+// refuses a fixed tree that is the head itself.
+func revertedTreeID(headTree string, reverted []ports.File) string {
+	if len(reverted) == 0 {
+		return headTree
+	}
+	sum := sha256.New()
+	for _, f := range reverted {
+		sum.Write([]byte(f.Path))
+		sum.Write([]byte{0})
+		sum.Write(f.Content)
+		sum.Write([]byte{0})
+	}
+	return headTree + ":reverted:" + hex.EncodeToString(sum.Sum(nil))[:16]
 }
 
 // outcomeOf reads the named test's outcome from a sandbox result. A build failure is a build error. A skip, or a test

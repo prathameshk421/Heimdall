@@ -16,6 +16,9 @@
 //     text of a fastcheck IntegrityViolation. The caller maps Blocking() to IntegrityFacts, because that clause treats
 //     every violation it gets as unmet.
 //   - Prove(ProofFacts) ProofResult: proven, not_reproduced, flaky or build_error, with a stable ProofWhy and a reason.
+//   - RevertLines(head, base, first, last): the head text with the suspected lines put back to the base. It follows the
+//     line diff, so a change that moved lines still reverts the right code. The proof run and the bench build the
+//     fixed tree of a finding with it.
 //   - Retries([]RunOutcome) Stability: pass, fail, build_error, flaky or no_runs for the runs of one test on one tree.
 //   - LanguageOf(path) Language: go, python, js (TypeScript too), java (Kotlin too), rust.
 //

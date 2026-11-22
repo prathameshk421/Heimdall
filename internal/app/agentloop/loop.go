@@ -52,6 +52,16 @@ type Config struct {
 	Nudge string
 	// Retry is how a model call that failed for now is sent again (retry.go). The zero value retries nothing.
 	Retry Retry
+	// ContextBytes is the target JSON size of a request; zero trims nothing. KeepResults is how many of the newest tool
+	// results are never trimmed, 3 when zero (context.go).
+	ContextBytes int
+	KeepResults  int
+	// StallTurns, StallGrace, StallNudge and ProgressTools are the early stop of a run with no progress (stall.go).
+	// StallTurns zero turns it off.
+	StallTurns    int
+	StallGrace    int
+	StallNudge    string
+	ProgressTools []string
 }
 
 // check refuses a config that would let a run go on without an end.
@@ -64,6 +74,12 @@ func (cfg Config) check() error {
 	}
 	if !cfg.Price.Valid() {
 		return errors.New("agent loop config needs a positive price for the model: without it the caps cannot see the spend")
+	}
+	if err := cfg.checkContext(); err != nil {
+		return err
+	}
+	if err := cfg.checkStall(); err != nil {
+		return err
 	}
 	return cfg.Retry.check()
 }
@@ -135,6 +151,9 @@ type run struct {
 	autoOnly bool
 	// failed holds the failed attempts of the model call in progress.
 	failed []ports.AgentAttempt
+	// ctxw is the context budget state (context.go), and stall the early stop state (stall.go).
+	ctxw  contextWindow
+	stall stallState
 }
 
 // Run sends the conversation to the model and executes its tool calls until a stop condition holds. The returned
@@ -159,6 +178,7 @@ func (l *Loop) Run(parent context.Context, messages []ports.ModelMessage) (Resul
 
 func (r *run) loop() error {
 	for {
+		r.fitContext()
 		if r.stopBeforeCall() {
 			return r.cancelErr()
 		}
@@ -170,12 +190,14 @@ func (r *run) loop() error {
 		if err := r.record(resp, calls, fromText, modelTime); err != nil {
 			return err
 		}
+		r.observeProgress(calls)
 		if len(calls) == 0 {
 			if r.res.Nudges >= maxNudges {
 				r.res.Reason = StopNoSubmission
 				return nil
 			}
 			r.nudge()
+			r.stallNudge()
 			continue
 		}
 		started := r.l.clock.Now()
@@ -184,6 +206,7 @@ func (r *run) loop() error {
 		if done {
 			return r.cancelErr()
 		}
+		r.stallNudge()
 	}
 }
 
@@ -251,6 +274,8 @@ func (r *run) stopBeforeCall() bool {
 		r.res.Reason = StopBudget
 	case r.res.Turns >= r.l.cfg.MaxTurns:
 		r.res.Reason = StopTurnCap
+	case r.stalled():
+		r.res.Reason = StopNoProgress
 	default:
 		return false
 	}
@@ -371,7 +396,7 @@ func (r *run) record(resp ports.ModelResponse, calls []ports.ModelToolCall, from
 		ToolCalls: len(calls), Text: clipText(resp.Content, turnTextBytes), Calls: briefs(calls), Finish: resp.Finish,
 		TextCalls: fromText, ToolChoice: resp.ToolChoice, Fallback: clipText(resp.Fallback, turnTextBytes),
 		Attempts: len(r.failed) + 1, Failed: r.failed, Reasoning: clipText(resp.Reasoning.Text, turnTextBytes),
-		ReasoningBytes: len(resp.Reasoning.Text)})
+		ReasoningBytes: len(resp.Reasoning.Text), RequestBytes: r.ctxw.sentBytes, TrimmedResults: len(r.ctxw.trimmed)})
 	if resp.Fallback != "" {
 		r.autoOnly = true
 	}

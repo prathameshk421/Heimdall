@@ -528,3 +528,45 @@ func TestAnInjectedCaseIsNeverACleanPass(t *testing.T) {
 	require.Zero(t, none.Injected)
 	require.Equal(t, Ratio{Num: 1, Den: 1}, none.CleanPasses)
 }
+
+func elsewhere(file string, span Span, class testintegrity.ProofClass, why testintegrity.ProofWhy) ScoredFinding {
+	return ScoredFinding{File: file, Lines: span, Severity: finding.SeverityHigh, Rule: RuleRevertLines,
+		Proof: testintegrity.ProofResult{Class: class, Why: why}}
+}
+
+func TestProofRuleForAFindingAwayFromTheTruthRevertsItsLines(t *testing.T) {
+	truth := []FileTruth{{File: "a.go", Lines: []string{"10-12"}}}
+	require.Equal(t, RuleFixCommit, ProofRuleFor(KindBug, truth, "a.go", Span{11, 14}), "on the truth: the fix commit")
+	require.Equal(t, RuleRevertLines, ProofRuleFor(KindBug, truth, "a.go", Span{40, 41}), "away from it: revert the lines")
+	require.Equal(t, RuleRevertLines, ProofRuleFor(KindBug, truth, "b.go", Span{11, 11}), "another file is away from it")
+	require.Equal(t, RuleRevertLines, ProofRuleFor(KindBug, nil, "a.go", Span{11, 11}), "a bug case with no mapped truth")
+	require.Equal(t, RuleFixCommit, ProofRuleFor(KindClean, nil, "a.go", Span{1, 1}),
+		"a clean case keeps its fixed tree, the base, so a proven blocking finding stays a false positive")
+}
+
+func TestScoreCaseCountsAFindingProvenElsewhereApart(t *testing.T) {
+	truth := []FileTruth{{File: "a.go", Lines: []string{"10-12"}}}
+	findings := []ScoredFinding{
+		elsewhere("a.go", Span{40, 41}, testintegrity.ClassProven, testintegrity.WhyProven),
+		elsewhere("a.go", Span{50, 50}, testintegrity.ClassBuildError, testintegrity.WhyBuildFixed),
+	}
+	s := ScoreCase(KindBug, truth, findings, finding.SeverityMedium)
+	require.Equal(t, 2, s.Proposed)
+	require.Equal(t, 0, s.Proven, "a finding away from the truth is not the case's known bug")
+	require.Equal(t, 1, s.ProvenElsewhere)
+	require.False(t, s.Hit, "it does not count toward recall")
+	require.False(t, s.Located)
+	require.Equal(t, map[string]int{"build_error_fixed": 1}, s.Unproven)
+}
+
+func TestSummarizeCountsProvenElsewhereAsEvidenceButNotRecall(t *testing.T) {
+	cases := []CaseScore{
+		{Kind: KindBug, Scored: true, Proposed: 2, Proven: 0, ProvenElsewhere: 2},
+		{Kind: KindBug, Scored: true, Proposed: 1, Proven: 1, Hit: true},
+		{Kind: KindBug, Scored: false, Proposed: 1, ProvenElsewhere: 1},
+	}
+	s := Summarize(cases)
+	require.Equal(t, Ratio{Num: 1, Den: 2}, s.Recall)
+	require.Equal(t, 2, s.ProvenElsewhere, "only scored cases count")
+	require.Equal(t, Ratio{Num: 3, Den: 3}, s.Evidence, "a finding proven elsewhere is still a proven finding")
+}

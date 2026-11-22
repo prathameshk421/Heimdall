@@ -97,6 +97,21 @@
 // the model or tool call honours the context. A tool that ignores its context can delay the stop until it returns.
 // The loop does not cap the size of a tool result. Each tool bounds its own output.
 //
+// # Context budget
+//
+// Before each call the loop sizes the request. Over Config.ContextBytes, it replaces the oldest tool results with a
+// stub that names the call and the size cut, but never one of the KeepResults newest, so a request may stay over the
+// target. The system prompt, the task, the answers and their reasoning are never cut: DeepSeek needs the reasoning
+// sent back whole. A trim clones the message slice, so a request already sent keeps its messages. Each turn records
+// the bytes it sent and the stubs it held.
+//
+// # Stall rule
+//
+// With Config.StallTurns set, the loop counts answers in a row with no call to a progress tool (the bench names
+// run_test and propose_finding). At StallTurns it sends StallNudge once a run; at StallTurns plus StallGrace it stops
+// before the next call with StopNoProgress (ports.AgentStopNoProposal). A progress call resets the count. A later
+// stall gets no second nudge and stops at the same count.
+//
 // # Tests
 //
 // loop_test.go uses a scripted fake model and a fake clock: tool dispatch, one retry after a refusal, a second
@@ -110,5 +125,9 @@
 // robust_test.go covers text calls, nudges against the turn and budget caps, the tool choice and its fallback, and
 // the bounded transcript. reasoning_test.go covers the reasoning kept through tool calls, text calls and nudges, its
 // 2 KB record, and the same-body mark on failed attempts. textcall_test.go covers each text format, the refusals, the bounds and a fuzz target.
+// context_test.go covers the budget, the three newest results kept whole over the budget, the stub text, no trim of
+// a request already sent, and no trim of the task, the answers or their reasoning.
+// stall_test.go covers the one nudge and the stop, the reset by a progress call, a second stall with no nudge, the
+// rule off, and the config it needs.
 // runner_test.go is the contract test of ports.AgentLoop, run through the port only.
 package agentloop

@@ -83,6 +83,23 @@ type AgentRun struct {
 	// Nudge is the fixed user message the loop sends after an answer with no tool call, at most twice a run. Empty
 	// means a default that names the final tools. It is a protocol message, never reasoning for the model.
 	Nudge string
+	// ContextBytes is the target size of one request in bytes. Before each model call the loop replaces the oldest
+	// tool results with a short stub until the request fits, but never one of the KeepResults newest (3 when zero).
+	// Zero trims nothing.
+	ContextBytes int
+	KeepResults  int
+	// Stall ends a run that reads for many turns and never calls a progress tool. Its zero value is off.
+	Stall AgentStall
+}
+
+// AgentStall is the early stop of a run that makes no progress. After Turns answers in a row with no call to one of
+// the Progress tools, the loop sends Nudge once a run; after Grace more such answers, it stops with
+// AgentStopNoProposal. Turns zero turns the rule off; when it is on, every field is required.
+type AgentStall struct {
+	Turns    int
+	Grace    int
+	Nudge    string
+	Progress []string
 }
 
 // ToolDispatcher is what the caller implements: it runs one tool call and returns the text the model sees.
@@ -127,6 +144,9 @@ const (
 	AgentStopCancelled AgentStop = "cancelled"
 	// AgentStopError means the model call failed. Run also returns that error.
 	AgentStopError AgentStop = "error"
+	// AgentStopNoProposal means the run made no progress call for the stall turns and the grace turns after its nudge
+	// (AgentStall), so the loop stopped it before the next call.
+	AgentStopNoProposal AgentStop = "no_proposal"
 )
 
 // AgentSubmission is the accepted final answer: the tool the model called and the JSON arguments it wrote.
@@ -164,6 +184,12 @@ type AgentTurn struct {
 	// The conversation keeps the whole reasoning; only this record is cut.
 	Reasoning      string
 	ReasoningBytes int
+	// RequestBytes is the JSON size of the request this answer came from, after any trim, and TrimmedResults the
+	// number of tool results the conversation held as stubs then (AgentRun.ContextBytes). StallNudged is set when the
+	// loop sent the stall nudge after this answer.
+	RequestBytes   int
+	TrimmedResults int
+	StallNudged    bool
 }
 
 // AgentAttempt is one failed attempt of a model call. Kind, Status, RequestBytes and RequestHash come from the

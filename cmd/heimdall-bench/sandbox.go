@@ -210,8 +210,14 @@ func (s *localSandbox) runTool(ctx context.Context, rp *repo, c bench.Case, j po
 	defer func() { _ = rp.remove(context.WithoutCancel(ctx), tree) }() // a leftover tree is pruned by the next run
 	var files, modules []string
 	for _, f := range overlays {
+		// The reviewer's test is always a new file (checkTestFile). An overlay on a file the tree has is source, such
+		// as the suspected lines reverted for a proof, so it is written but never run or wired as a test.
+		_, statErr := os.Stat(filepath.Join(tree, filepath.FromSlash(f.Path)))
 		if err := writeOverlay(tree, f); err != nil {
 			return ports.SandboxResult{}, err
+		}
+		if statErr == nil {
+			continue
 		}
 		files = append(files, f.Path)
 		if c.Runner() == bench.ToolchainCargo {

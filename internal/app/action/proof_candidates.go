@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path"
 	"slices"
-	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -181,8 +180,10 @@ func (r *proofRun) sandboxRunAt(ctx context.Context, sha id.SHA, testPath string
 }
 
 // revertedOverlay reads the base version of the file a proposal points at and returns the overlay that puts the
-// proposal's lines back to their base text on the head tree. A line range the base cannot cover is refused: the fixed
-// tree would then not exist, and the proof must say so rather than guess.
+// proposal's lines back to their base text on the head tree (testintegrity.RevertLines, which follows the line diff, so
+// lines the change moved still revert the right code). A range the head cannot cover is refused: the fixed tree
+// would then not exist, and the proof must say so rather than guess. When the lines are the same at the base, the
+// overlay is empty, so the fixed tree is the head and proveOne drops the claim.
 func (r *proofRun) revertedOverlay(ctx context.Context, p proposal) ([]ports.File, error) {
 	head, err := r.headFileBytes(p.File)
 	if err != nil {
@@ -192,9 +193,12 @@ func (r *proofRun) revertedOverlay(ctx context.Context, p proposal) ([]ports.Fil
 	if err != nil {
 		return nil, fmt.Errorf("base version of %s: %w", p.File, err)
 	}
-	merged, err := revertLines(string(head), string(base), p.First, p.Last)
+	merged, err := testintegrity.RevertLines(string(head), string(base), p.First, p.Last)
 	if err != nil {
 		return nil, fmt.Errorf("revert %s lines %d-%d: %w", p.File, p.First, p.Last, err)
+	}
+	if merged == string(head) {
+		return nil, nil
 	}
 	return []ports.File{{Path: p.File, Content: []byte(merged)}}, nil
 }
@@ -203,34 +207,6 @@ func (r *proofRun) revertedOverlay(ctx context.Context, p proposal) ([]ports.Fil
 func (r *proofRun) headFileBytes(p string) ([]byte, error) {
 	rv := &reviewer{run: r, checkout: r.in.Checkout}
 	return rv.headFile(p)
-}
-
-// revertLines returns head with the lines first to last replaced by the base text of the same lines. The base must have
-// that many lines: a proposal on a line the base does not have names no suspected line to revert, and the caller reports
-// the claim as not checked instead of proving it against a tree that never existed.
-func revertLines(head, base string, first, last int) (string, error) {
-	headLines := splitLines(head)
-	baseLines := splitLines(base)
-	if first < 1 || last < first || last > len(headLines) {
-		return "", fmt.Errorf("want 1 <= first <= last <= %d lines at the head", len(headLines))
-	}
-	if last > len(baseLines) {
-		return "", fmt.Errorf("the base has %d lines and the range ends at %d", len(baseLines), last)
-	}
-	out := make([]string, 0, len(headLines)-last+first+len(baseLines[first-1:last]))
-	out = append(out, headLines[:first-1]...)
-	out = append(out, baseLines[first-1:last]...)
-	out = append(out, headLines[last:]...)
-	return strings.Join(out, "\n"), nil
-}
-
-// splitLines splits text into lines, without the final empty line a trailing newline leaves. A file that ends with a
-// newline is written back with one, so the reverted file differs from the head only in the reverted lines.
-func splitLines(s string) []string {
-	if s == "" {
-		return nil
-	}
-	return strings.Split(strings.TrimSuffix(s, "\n"), "\n")
 }
 
 // addUnreached records every claim no proposal answered. A claim the model had its chance at and did not prove is

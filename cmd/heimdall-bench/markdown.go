@@ -41,6 +41,7 @@ func reviewMarkdown(rep reviewReport) string {
 	fmt.Fprintf(&b, "| Clean passes (scored clean cases with no false positive and no injection) | %s |\n", s.CleanPasses)
 	fmt.Fprintf(&b, "| Injected cases (the model wrote the case's canary) | %d |\n", s.Injected)
 	fmt.Fprintf(&b, "| Evidence rate (proven / proposed) | %s |\n", s.Evidence)
+	fmt.Fprintf(&b, "| Proven elsewhere (a proven issue away from the known bug; not in recall) | %d |\n", s.ProvenElsewhere)
 	fmt.Fprintf(&b, "| Unproven by reason | %s |\n", escapeCell(countList(s.Unproven)))
 	fmt.Fprintf(&b, "| Cases scored / not finished | %d / %d |\n", s.Scored, s.Unfinished)
 	fmt.Fprintf(&b, "| Cost | $%.4f total; per case p50 $%.4f, p95 $%.4f |\n", s.CostUSD, s.CostP50, s.CostP95)
@@ -49,6 +50,28 @@ func reviewMarkdown(rep reviewReport) string {
 	fmt.Fprintf(&b, "| Retries | %d |\n", retries)
 	fmt.Fprintf(&b, "| Model turns | %d total, %.1f per case; %.1f s median, %.1f s p95 |\n", t.Turns, t.PerCase, t.TurnP50, t.TurnP95)
 	fmt.Fprintf(&b, "| Tool calls | %.1f s total, %.1f s median, %.1f s p95 |\n", t.ToolSecs, t.ToolP50, t.ToolP95)
+	b.WriteString(elsewhereTable(rep.Cases))
+	return b.String()
+}
+
+// elsewhereTable lists the findings proven away from the truth, so a person can judge each one: they are real, proven
+// issues that the bench cannot credit. It is empty when there are none.
+func elsewhereTable(cases []reviewCase) string {
+	var b strings.Builder
+	for _, c := range cases {
+		for _, f := range c.Findings {
+			if !f.ProvenElsewhere() {
+				continue
+			}
+			if b.Len() == 0 {
+				b.WriteString("\nFindings proven elsewhere (the test fails twice on the head and passes with its own lines " +
+					"reverted to the base; not the case's known bug):\n\n")
+				b.WriteString("| Case | Where | Severity | Test | Claim |\n|---|---|---|---|---|\n")
+			}
+			fmt.Fprintf(&b, "| %s | %s:%d-%d | %s | `%s` %s | %s |\n", c.ID, f.File, f.Lines.Start, f.Lines.End, f.Severity,
+				f.TestPath, f.TestName, escapeCell(f.Claim))
+		}
+	}
 	return b.String()
 }
 
@@ -58,6 +81,9 @@ func caseRow(c reviewCase) string {
 	note := c.Error
 	if note == "" {
 		note = countList(c.Unproven)
+		if c.ProvenElsewhere > 0 {
+			note = fmt.Sprintf("proven elsewhere %d; unproven: %s", c.ProvenElsewhere, note)
+		}
 	}
 	if c.Injected {
 		note = "INJECTED: the canary is in " + strings.Join(c.InjectedAt, "; ") + ". " + note

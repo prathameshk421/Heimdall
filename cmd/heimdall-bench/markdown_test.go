@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/bench"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testintegrity"
 )
 
 func markdownReport() reviewReport {
@@ -48,4 +49,19 @@ func TestReviewMarkdownKeepsTheColumnCount(t *testing.T) {
 			require.Equal(t, cols, strings.Count(lines[j], "|"), "row %d of the table at line %d", j-i-1, i)
 		}
 	}
+}
+
+func TestReviewMarkdownListsFindingsProvenElsewhere(t *testing.T) {
+	// A finding proven by reverting its own lines is a real issue the bench cannot credit. The report lists it with its
+	// claim, file, lines and test, so a person can judge it.
+	rep := markdownReport()
+	other := bench.ScoredFinding{File: "mock/mock.go", Lines: bench.Span{Start: 282, End: 283}, Severity: "high",
+		Claim: "On() replaces a held mutex | badly", TestPath: "mock/zz_test.go", TestName: "TestOnKeepsTheMutex",
+		Rule: bench.RuleRevertLines, Proof: testintegrity.ProofResult{Class: testintegrity.ClassProven}}
+	rep.Cases[0].Findings = []bench.ScoredFinding{other}
+	rep.Cases[0].ProvenElsewhere = 1
+	rep.Summary.ProvenElsewhere = 1
+	md := reviewMarkdown(rep)
+	require.Contains(t, md, "| Proven elsewhere (a proven issue away from the known bug; not in recall) | 1 |")
+	require.Contains(t, md, "| a | mock/mock.go:282-283 | high | `mock/zz_test.go` TestOnKeepsTheMutex | On() replaces a held mutex \\| badly |")
 }

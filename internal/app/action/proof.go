@@ -270,9 +270,10 @@ func (r *proofRun) stopReason() proof.Reason {
 		return r.stop
 	}
 	switch r.res.Stop {
-	case ports.AgentStopDone:
-		// The model said it was done, or answered with text and nothing to do. The run's results stand; a run with no
-		// proposal is "not reproduced", which is not a pass.
+	case ports.AgentStopDone, ports.AgentStopNoProposal:
+		// The model said it was done, answered with text and nothing to do, or read without progress until the stall
+		// rule stopped it (this package sets no stall rule today). The run's results stand; a run with no proposal is
+		// "not reproduced", which is not a pass.
 		return ""
 	case ports.AgentStopBudget:
 		return proof.ReasonBudget

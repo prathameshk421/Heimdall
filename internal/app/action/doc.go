@@ -44,7 +44,8 @@
 //  3. Ask the model to review the change. Its tools read only the head checkout, bound every result, and run tests only
 //     through the sandbox port. Third-party claims are given to it as claims, never as facts.
 //  4. Prove each proposal with testintegrity.Prove: two runs on the head tree and, when both are red, one on a tree with
-//     the suspected lines reverted to the base text. A proven finding blocks when gate.BlockingSet says so.
+//     the suspected lines reverted to the base text (testintegrity.RevertLines: the diff hunks the lines touch go back
+//     to the base side). A proven finding blocks when gate.BlockingSet says so.
 //  5. Write the artifact: version, head, base, policy hash, workflow run, kind, counts, cost and each candidate.
 //
 // # What a gate run does

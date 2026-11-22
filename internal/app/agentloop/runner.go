@@ -58,7 +58,9 @@ func (r *Runner) Run(ctx context.Context, req ports.AgentRun) (ports.AgentResult
 	}
 	l, err := New(r.model, r.clock, Config{Model: req.Model, MaxOutputTokens: req.MaxOutputTokens, BudgetUSD: req.Budget.USD,
 		InputTokenCap: req.Budget.InputTokens, OutputTokenCap: req.Budget.OutputTokens, Price: r.price,
-		Deadline: req.Deadline, MaxTurns: req.MaxTurns, RequireToolCall: req.RequireToolCall, Nudge: req.Nudge, Retry: r.retry}, tools, finals)
+		Deadline: req.Deadline, MaxTurns: req.MaxTurns, RequireToolCall: req.RequireToolCall, Nudge: req.Nudge, Retry: r.retry,
+		ContextBytes: req.ContextBytes, KeepResults: req.KeepResults, StallTurns: req.Stall.Turns, StallGrace: req.Stall.Grace,
+		StallNudge: req.Stall.Nudge, ProgressTools: req.Stall.Progress}, tools, finals)
 	if err != nil {
 		return ports.AgentResult{}, err
 	}
@@ -154,6 +156,8 @@ func portStop(r StopReason) ports.AgentStop {
 		return ports.AgentStopCancelled
 	case StopModelError:
 		return ports.AgentStopError
+	case StopNoProgress:
+		return ports.AgentStopNoProposal
 	}
 	return ports.AgentStopError
 }

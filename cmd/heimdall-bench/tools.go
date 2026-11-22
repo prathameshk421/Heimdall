@@ -370,17 +370,21 @@ func (rp *replay) checkTestFile(testPath, source string) error {
 	return nil
 }
 
-// sandboxRun runs the package of testPath at sha with the test file written in. The case's progress gets one start
-// line and one end line per run, so a slow suite is visible while the run is still going.
-func (rp *replay) sandboxRun(ctx context.Context, sha, testPath string, source []byte) (ports.SandboxResult, error) {
+// sandboxRun runs the package of testPath at sha with the test file written in, after the source overlays over (the
+// suspected lines reverted, for a proof). The case's progress gets one start line and one end line per run, so a slow
+// suite is visible while the run is still going.
+func (rp *replay) sandboxRun(ctx context.Context, sha, testPath string, source []byte, over ...ports.File) (ports.SandboxResult, error) {
 	job := ports.SandboxJob{Kind: ports.SandboxRepro, Repo: change.Repo(rp.c.RepoSlug()), SHA: id.SHA(sha),
 		Dir: path.Dir(testPath), Timeout: min(rp.c.Timeout, maxSandboxTimout)}
 	label := treeLabel(sha)
+	if len(over) > 0 {
+		label += "+reverted"
+	}
 	if rp.cp != nil {
 		rp.cp.testStart(label)
 	}
 	start := time.Now()
-	res, err := rp.sandbox.RunOverlay(ctx, job, []ports.File{{Path: testPath, Content: source}})
+	res, err := rp.sandbox.RunOverlay(ctx, job, append(slices.Clone(over), ports.File{Path: testPath, Content: source}))
 	if rp.cp != nil {
 		rp.cp.testEnd(label, res, err, time.Since(start).Seconds())
 	}
