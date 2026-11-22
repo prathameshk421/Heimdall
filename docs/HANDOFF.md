@@ -50,9 +50,7 @@ The branch was pushed to `origin/heimdall-build` on Nov 18, 2026 (81 commits ove
 
 ## Then, in order
 
-- **Open, small:** D177 (`agents-prepare.sh` stops working agents), the D176 remainder (the controller empties a new
-  agent's folder on first start), a hash check in `hot-deploy.sh` (guarded `scripts/`, owner's call), a profile command
-  should not need a ticket key in a shared channel, the flaky `TestTimeoutModuleKillsProcessGroup`.
+- **Open, small:** done Nov 22 (D193, D177, the deploy hash check, the D176 restore, the flaky test); see PROGRESS "After H13". Left: verify the D176 restore when the next agent is added.
 - **`make verify`** with Docker, on the tip.
 - **Then the SOTA quality programme** (`docs/SOTA_QUALITY_PLAN.md`, phases 0 to 3).
 
