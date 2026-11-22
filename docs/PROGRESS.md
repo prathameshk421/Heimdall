@@ -1,5 +1,20 @@
 # Heimdall progress
 
+## Switch truncated read pages back (Nov 22, 2026, branch `heimdall-build`)
+
+Live, after the 13:44 UTC restart: `Switch room stream stopped ... switch history truncated` every minute, so Heimdall read
+no room message (no command, mention or status reached it). Room `PR prathameshk421/t3code#1` had more than 50 messages
+since its cursor (the profiler's retries plus triple posts). Switch's `read_context` (0.31.0, `agent_core.py`) lists a
+room newest first and sets `truncated` when older entries in the window were left out: a page boundary, not lost history.
+The earlier contract (`ErrTruncated` on any truncated page, PROGRESS T26 "not verified: a live Switch truncated read")
+was wrong; this real result changes it.
+
+**Fix:** `internal/adapters/switch/messages.go` `Read` asks for Switch's maximum page (500) and, while a page is
+truncated, pages back with `before` = Switch's `oldest_timestamp` + 1 ms, deduping the overlap by ID. A truncated page
+that brings nothing new, or has no `oldest_timestamp`, is still `ErrTruncated`.
+**Evidence:** `TestReadPagesBackThroughATruncatedHistory` (red before the fix, a Switch-shaped fake with 3-entry pages
+and 7 messages), `TestReadThatCannotPageFurtherIsTruncated`; `make fast` exit 0 (5805 tests).
+
 ## Chat polish (Nov 22, 2026, branch `heimdall-build`)
 
 The live Telegram room `Banking Application Engineers` showed chat text as typed rather than as Markdown: posts read

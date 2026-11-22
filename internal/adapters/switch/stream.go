@@ -22,7 +22,7 @@ import (
 // ErrEvicted says Switch took the connection over. Stream returns it and does not reconnect.
 var ErrEvicted = errors.New("switch connection evicted")
 
-// ErrTruncated says Switch no longer holds the history from the cursor. It is an escalation, not an outage: retrying
+// ErrTruncated says a read could not page past a truncated read_context answer. It is an escalation, not an outage: retrying
 // the same read cannot succeed, so the stream does not retry it.
 var ErrTruncated = errors.New("switch history truncated")
 

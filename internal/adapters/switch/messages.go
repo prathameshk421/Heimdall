@@ -70,41 +70,86 @@ type readThread struct {
 	Replies []readEntry `json:"replies"`
 }
 
+// readPageSize is how many entries one read_context call asks for: Switch's HISTORY_MAX_LIMIT, so a catch-up needs as
+// few pages as Switch allows.
+const readPageSize = 500
+
 // Read returns the messages at or after the cursor, oldest first, and the cursor of the newest one. Switch returns the
-// message at the cursor again, so callers dedupe by ID. A truncated history is unavailable: nothing is returned, and
-// the caller reads again from an earlier cursor.
+// message at the cursor again, so callers dedupe by ID.
+//
+// Switch lists a room newest first and sets truncated when older entries in the window were left out (agent_core
+// read_context: it asks for one row more than the limit). That is a page boundary, not lost history, so Read pages
+// back with before until a page is not truncated. before is strict, so it is one millisecond past the oldest entry
+// seen and the overlap is deduped by ID. A truncated page that brings nothing new cannot be paged past: ErrTruncated.
 func (c *Client) Read(ctx context.Context, room change.RoomID, after ports.Cursor) ([]ports.Message, ports.Cursor, error) {
+	seen := map[change.MessageID]bool{}
 	var msgs []ports.Message
+	var before time.Time
+	for {
+		page, oldest, err := c.readPage(ctx, room, after, before)
+		if err != nil {
+			return nil, after, err
+		}
+		added := 0
+		for _, m := range page {
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				msgs = append(msgs, m)
+				added++
+			}
+		}
+		if oldest == nil {
+			break
+		}
+		if added == 0 {
+			return nil, after, fmt.Errorf("%w: room %s: a page before %s brought no new message", ErrTruncated, room, before.Format(time.RFC3339Nano))
+		}
+		before = time.UnixMilli(*oldest).Add(time.Millisecond)
+	}
+	sort.SliceStable(msgs, func(i, j int) bool { return msgs[i].At.Before(msgs[j].At) })
+	next := after
+	if n := len(msgs); n > 0 {
+		next = cursorOf(msgs[n-1].At)
+	}
+	return msgs, next, nil
+}
+
+// readPage is one read_context call: the messages at or after the cursor and before before (no upper bound when
+// before is zero), oldest first. When Switch left older ones out it also returns oldest_timestamp, the oldest entry of
+// the page itself; a thread root fetched from outside the page does not count, so paging from it skips nothing.
+func (c *Client) readPage(ctx context.Context, room change.RoomID, after ports.Cursor, before time.Time) ([]ports.Message, *int64, error) {
+	var msgs []ports.Message
+	var oldest *int64
 	err := c.guarded(ctx, "read", func(ctx context.Context) error {
-		args := map[string]any{"room_id": string(room)}
+		args := map[string]any{"room_id": string(room), "limit": readPageSize}
 		if after != "" {
 			args["since"] = string(after)
+		}
+		if !before.IsZero() {
+			args["before"] = string(cursorOf(before))
 		}
 		var reply struct {
 			Threads   []readThread `json:"threads"`
 			Truncated bool         `json:"truncated"`
+			Oldest    *int64       `json:"oldest_timestamp"`
 		}
 		if err := c.operation(ctx, "read_context", args, &reply); err != nil {
 			return err
-		}
-		if reply.Truncated {
-			return fmt.Errorf("%w: read again from an earlier cursor", ErrTruncated)
 		}
 		out, err := flattenThreads(room, reply.Threads)
 		if err != nil {
 			return err
 		}
 		msgs = out
+		if reply.Truncated {
+			if reply.Oldest == nil {
+				return fmt.Errorf("%w: room %s: a truncated page has no oldest_timestamp", ErrTruncated, room)
+			}
+			oldest = reply.Oldest
+		}
 		return nil
 	})
-	if err != nil {
-		return nil, after, err
-	}
-	next := after
-	if n := len(msgs); n > 0 {
-		next = cursorOf(msgs[n-1].At)
-	}
-	return msgs, next, nil
+	return msgs, oldest, err
 }
 
 // flattenThreads turns each root and its replies into messages, ordered by time.
