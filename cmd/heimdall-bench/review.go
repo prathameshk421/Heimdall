@@ -117,6 +117,8 @@ type reviewOptions struct {
 	stallTurns   int
 	blockAt      finding.Severity
 	commandFor   string // the command line written into the report
+	// refusedDir is where the bodies of refused requests are saved (AM12g); empty saves none.
+	refusedDir string
 }
 
 // MaxParallel is the most cases a review runs at once.
@@ -142,6 +144,7 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	fs.IntVar(&o.parallel, "parallel", 1, "how many cases to review at once, at most 8; the cost cap stays shared")
 	fs.IntVar(&o.contextBytes, "context-bytes", defaultContextBytes, "trim old tool results so a request stays near this many bytes; the 3 newest stay whole; 0 trims nothing")
 	fs.IntVar(&o.stallTurns, "stall-turns", defaultStallTurns, "turns with no proposal or test run before one nudge; 6 more stop the case as no_proposal; 0 is off")
+	fs.StringVar(&o.refusedDir, "refused-dir", defaultRefusedDir(), "save the body of each request the endpoint refuses here, one file per refusal; empty saves none")
 	block := fs.String("block-severity", "medium", "a proven finding at or above this severity blocks")
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -200,23 +203,25 @@ func runReview(ctx context.Context, args []string, stderr io.Writer, r runner) (
 
 // reviewReport is the results file of a review run.
 type reviewReport struct {
-	HeimdallCommit string          `json:"heimdall_commit"`
-	Started        string          `json:"started"`
-	Machine        string          `json:"machine"`
-	GoVersion      string          `json:"go_version"`
-	Manifest       string          `json:"manifest"`
-	Command        string          `json:"command"`
-	Model          string          `json:"model"`
-	Price          bench.Price     `json:"price"`
-	MaxCostUSD     float64         `json:"max_cost_usd"`
-	PerCaseUSD     float64         `json:"per_case_usd"`
-	BlockSeverity  string          `json:"block_severity"`
-	Sandbox        string          `json:"sandbox"`
-	Seconds        float64         `json:"seconds"`
-	Stopped        string          `json:"stopped,omitempty"`
-	Summary        bench.Summary   `json:"summary"`
-	Turns          bench.TurnStats `json:"turns"`
-	Cases          []reviewCase    `json:"cases"`
+	HeimdallCommit string      `json:"heimdall_commit"`
+	Started        string      `json:"started"`
+	Machine        string      `json:"machine"`
+	GoVersion      string      `json:"go_version"`
+	Manifest       string      `json:"manifest"`
+	Command        string      `json:"command"`
+	Model          string      `json:"model"`
+	Price          bench.Price `json:"price"`
+	MaxCostUSD     float64     `json:"max_cost_usd"`
+	PerCaseUSD     float64     `json:"per_case_usd"`
+	BlockSeverity  string      `json:"block_severity"`
+	Sandbox        string      `json:"sandbox"`
+	// RefusedDir names the folder that holds the bodies the endpoint refused (refused.go); empty when the run saved none.
+	RefusedDir string          `json:"refused_dir,omitempty"`
+	Seconds    float64         `json:"seconds"`
+	Stopped    string          `json:"stopped,omitempty"`
+	Summary    bench.Summary   `json:"summary"`
+	Turns      bench.TurnStats `json:"turns"`
+	Cases      []reviewCase    `json:"cases"`
 }
 
 // reviewCase is one case in the results file.
@@ -236,13 +241,13 @@ type reviewCase struct {
 	Transcript []turnRecord `json:"transcript,omitempty"`
 	// Retries is the number of model calls the loop sent again after a rate limit or a server error, and FailedCall
 	// the attempts of the call that ended the case, when one did.
-	Retries    int                   `json:"retries,omitempty"`
+	Retries    int             `json:"retries,omitempty"`
 	FailedCall []attemptRecord `json:"failed_call,omitempty"`
 	// SaveError says why a refused body named in FailedCall could not be saved.
 	SaveError string                `json:"save_error,omitempty"`
 	Error     string                `json:"error,omitempty"`
-	Truth      *bench.TruthMap       `json:"truth_on_head,omitempty"`
-	Findings   []bench.ScoredFinding `json:"findings"`
+	Truth     *bench.TruthMap       `json:"truth_on_head,omitempty"`
+	Findings  []bench.ScoredFinding `json:"findings"`
 }
 
 // reviewRun reviews every selected valid case with model behind the hard cost cap, then writes the results. The exit
@@ -267,7 +272,8 @@ func reviewRun(ctx context.Context, o reviewOptions, r runner, model ports.Model
 	base := newReport(ctx, r, o.manifest, start)
 	rep := reviewReport{HeimdallCommit: base.HeimdallCommit, Started: base.Started, Machine: base.Machine,
 		GoVersion: base.GoVersion, Manifest: o.manifest, Command: o.commandFor, Model: o.model, Price: o.price,
-		MaxCostUSD: o.maxCost, PerCaseUSD: o.perCase, BlockSeverity: string(o.blockAt), Sandbox: sandboxNote}
+		MaxCostUSD: o.maxCost, PerCaseUSD: o.perCase, BlockSeverity: string(o.blockAt), Sandbox: sandboxNote,
+		RefusedDir: o.refusedDir}
 	prog := newProgress(stderr)
 	rep.Cases, rep.Stopped = runCases(ctx, o, r, model, costCap, prog, cases)
 	rep.Seconds = time.Since(start).Seconds()
@@ -294,7 +300,8 @@ const stopCostCap = "cost cap"
 // breaker, so calls that fail in a row on any worker trip it, and one cache per repository.
 func runCases(ctx context.Context, o reviewOptions, r runner, model ports.ModelChat, costCap *bench.CostCap,
 	prog *progress, cases []bench.Case) (out []reviewCase, stopped string) {
-	cr := &caseRun{o: o, r: r, model: model, costCap: costCap, prog: prog, repos: newRepoSet()}
+	cr := &caseRun{o: o, r: r, model: model, costCap: costCap, prog: prog, repos: newRepoSet(),
+		refused: newRefusedStore(o.refusedDir)}
 	run := func(i int) (reviewCase, string) {
 		rc, capStop := cr.review(ctx, cases[i])
 		switch {
@@ -318,7 +325,7 @@ func runCases(ctx context.Context, o reviewOptions, r runner, model ports.ModelC
 }
 
 // caseRun is what every worker of one review run shares: the options, the model, the cost cap, the breaker, the
-// progress writer and the repository caches. Each part locks itself.
+// progress writer, the repository caches and the refused-body store. Each part locks itself.
 type caseRun struct {
 	o       reviewOptions
 	r       runner
@@ -327,6 +334,7 @@ type caseRun struct {
 	breaker providerBreaker
 	prog    *progress
 	repos   *repoSet
+	refused *refusedStore
 }
 
 // runPool runs one case at a time in each of n workers, and returns the results in slot order whatever order the work
@@ -442,7 +450,7 @@ func (cr *caseRun) review(ctx context.Context, c bench.Case) (rc reviewCase, sto
 	capped := cappedModel{inner: cr.model, cap: costCap, price: o.price, prog: cp}
 	res, runErr := runReviewer(ctx, o, capped, share.Budget, cp, c, rep)
 	rc.recordLoop(res, cp)
-	rc.recordRefused(o, c.ID, res.FailedCall, cr.model)
+	rc.recordRefused(cr.refused, c.ID, res.FailedCall, cr.model)
 	rc.recordInjection(c.Canary, res, rep.proposals)
 	cr.breaker.observe(res)
 	if runErr != nil {
@@ -596,15 +604,18 @@ func (rc *reviewCase) recordLoop(res ports.AgentResult, cp *caseProgress) {
 }
 
 // recordRefused saves the bodies of the call that ended the case, when model keeps them (a live run), and names each
-// saved file in FailedCall. A scripted model keeps none, so a replay writes nothing.
-func (rc *reviewCase) recordRefused(o reviewOptions, caseID string, failed []ports.AgentAttempt, model ports.ModelChat) {
+// saved file in FailedCall. A scripted model keeps none, so a replay writes nothing. The turn is the call's place in
+// the case, so a saved file says which request of the conversation was refused.
+func (rc *reviewCase) recordRefused(store *refusedStore, caseID string, failed []ports.AgentAttempt, model ports.ModelChat) {
 	src, ok := model.(refusedSource)
 	if !ok {
 		return
 	}
-	paths, err := saveRefused(filepath.Dir(o.out), caseID, failed, src)
+	paths, err := store.save(caseID, rc.Turns+1, failed, src)
 	for i, p := range paths {
-		rc.FailedCall[i].Saved = p
+		if i < len(rc.FailedCall) {
+			rc.FailedCall[i].Saved = p
+		}
 	}
 	if err != nil {
 		rc.SaveError = err.Error()
