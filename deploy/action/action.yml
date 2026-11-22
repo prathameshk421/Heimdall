@@ -73,7 +73,7 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p "$RUNNER_TEMP/heimdall-bin"
-        go build -trimpath -buildvcs=false -o "$RUNNER_TEMP/heimdall-bin/heimdall" ./cmd/heimdall
+        go build -trimpath -buildvcs=false -ldflags="-s -w" -o "$RUNNER_TEMP/heimdall-bin/heimdall" ./cmd/heimdall
         sha256sum "$RUNNER_TEMP/heimdall-bin/heimdall"
 
     - name: Run heimdall action

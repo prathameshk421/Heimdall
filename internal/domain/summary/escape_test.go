@@ -65,4 +65,6 @@ func TestBreakWWWOnlyBeforeADot(t *testing.T) {
 	require.Equal(t, "www"+zwsp+".a www"+zwsp+".", breakWWW("www.a www."))
 	require.Equal(t, "awww b", breakWWW("awww b"))
 	require.Equal(t, "xWWW"+zwsp+".y", breakWWW("xWWW.y"))
+	require.Equal(t, "\u0130www"+zwsp+".example.com", breakWWW("\u0130www.example.com"))
+	require.Equal(t, "\u0130\u0130WWW"+zwsp+".a", breakWWW("\u0130\u0130WWW.a"))
 }

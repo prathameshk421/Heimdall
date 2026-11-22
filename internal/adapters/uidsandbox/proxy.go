@@ -13,6 +13,14 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
+)
+
+const (
+	// maxProxyConns caps simultaneous CONNECT tunnels from the sandbox so a hostile fetch job cannot exhaust host FDs.
+	maxProxyConns    = 64
+	proxyDialTimeout = 15 * time.Second
+	proxyHeadTimeout = 10 * time.Second
 )
 
 // Errors of the fetch proxy. Each one is a refused request; the client gets a status line and the connection closes.
@@ -186,6 +194,7 @@ type Proxy struct {
 	log   *slog.Logger
 	dial  dialFunc
 	ln    net.Listener
+	sem   chan struct{}
 
 	mu     sync.Mutex
 	conns  map[net.Conn]bool
@@ -195,7 +204,7 @@ type Proxy struct {
 
 // StartProxy listens on 127.0.0.1 on a free port and serves until Close.
 func StartProxy(ctx context.Context, allow Allowlist, log *slog.Logger) (*Proxy, error) {
-	d := &net.Dialer{Control: guardControl}
+	d := &net.Dialer{Timeout: proxyDialTimeout, Control: guardControl}
 	return startProxy(ctx, allow, log, d.DialContext)
 }
 
@@ -205,7 +214,7 @@ func startProxy(ctx context.Context, allow Allowlist, log *slog.Logger, dial dia
 	if err != nil {
 		return nil, fmt.Errorf("proxy listen: %w", err)
 	}
-	p := &Proxy{allow: allow, log: log, dial: dial, ln: ln, conns: map[net.Conn]bool{}}
+	p := &Proxy{allow: allow, log: log, dial: dial, ln: ln, sem: make(chan struct{}, maxProxyConns), conns: map[net.Conn]bool{}}
 	p.wg.Add(1)
 	go p.serve(context.WithoutCancel(ctx))
 	return p, nil
@@ -261,12 +270,20 @@ func (p *Proxy) serve(ctx context.Context) {
 		if err != nil {
 			return
 		}
+		select {
+		case p.sem <- struct{}{}:
+		default:
+			_ = c.Close()
+			continue
+		}
 		if !p.track(c) {
+			<-p.sem
 			return
 		}
 		p.wg.Add(1)
 		go func() {
 			defer p.wg.Done()
+			defer func() { <-p.sem }()
 			defer p.untrack(c)
 			p.handle(ctx, c)
 		}()
@@ -332,7 +349,11 @@ func (p *Proxy) refuse(ctx context.Context, c net.Conn, target string, err error
 
 func (p *Proxy) handle(ctx context.Context, c net.Conn) {
 	br := bufio.NewReaderSize(c, 4096)
+	headCtx, cancelHead := context.WithTimeout(ctx, proxyHeadTimeout)
+	stopClose := context.AfterFunc(headCtx, func() { _ = c.Close() })
 	line, err := readHead(br)
+	stopClose()
+	cancelHead()
 	if err != nil {
 		p.refuse(ctx, c, "", fmt.Errorf("%w: %w", ErrBadRequestLine, err))
 		return

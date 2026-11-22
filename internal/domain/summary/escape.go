@@ -91,24 +91,25 @@ func replacements() map[rune]string {
 const backslashed = "\\`*_[]()~|!${}"
 
 // breakWWW puts a zero width space after each "www" that is followed by a dot, so no bare "www." link forms.
+// It scans ASCII bytes directly rather than indexing s with offsets from strings.ToLower(s), which would panic on
+// Unicode characters whose lowercase form has a different byte length (such as U+0130 'İ').
 func breakWWW(s string) string {
-	lower := strings.ToLower(s)
 	var b strings.Builder
 	last := 0
-	for from := 0; ; {
-		i := strings.Index(lower[from:], "www.")
-		if i < 0 {
-			break
+	for i := 0; i+3 < len(s); i++ {
+		if isASCIIW(s[i]) && isASCIIW(s[i+1]) && isASCIIW(s[i+2]) && s[i+3] == '.' {
+			at := i + 3
+			b.WriteString(s[last:at])
+			b.WriteString(zwsp)
+			last = at
+			i = at
 		}
-		at := from + i + len("www")
-		b.WriteString(s[last:at])
-		b.WriteString(zwsp)
-		last = at
-		from = at
 	}
 	b.WriteString(s[last:])
 	return b.String()
 }
+
+func isASCIIW(c byte) bool { return c == 'w' || c == 'W' }
 
 // text cleans, cuts and escapes one untrusted string for a line of Markdown.
 func text(s string, limit int) string { return escape(clean(s, limit)) }

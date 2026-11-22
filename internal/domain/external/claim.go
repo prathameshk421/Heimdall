@@ -314,6 +314,9 @@ func flatten(s string) string {
 		}
 		if strings.HasPrefix(raw, "#") || (strings.HasPrefix(raw, "**") && strings.HasSuffix(raw, "**")) {
 			line = strings.TrimSpace(strings.TrimLeft(line, "#"))
+			if line == "" {
+				continue
+			}
 			if !strings.ContainsAny(line[len(line)-1:], ".!?:;") {
 				line += "."
 			}
