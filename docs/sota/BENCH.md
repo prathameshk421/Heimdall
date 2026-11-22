@@ -1319,3 +1319,117 @@ about $0.36: the loop's worst-case guard for the next large t3code call passes $
 prices). No case proposed a finding. The checkpoint file holds the 6 finished cases.
 Plan, owner decision: rerun all 13 t3code cases later with no per-case or total cap (for example `-per-case-cost 5
 -max-cost 50`), so every case runs to its own end.
+
+## Reviewer run 2026-11-22T16:56:11Z (model deepseek-ai/deepseek-v4.1-flash-1017)
+
+| Item | Value |
+|---|---|
+| Command | `heimdall-bench review -out docs/sota/bench-live-11-t3code-2026-11-22.json -md docs/sota/BENCH.md -only t3code-5025,t3code-6189,t3code-6175,t3code-6670,t3code-12537,t3code-11425,t3code-12763,t3code-32169,t3code-38193,t3code-39217,t3code-19745,t3code-18289-clean,t3code-10008-clean --base-url https://api.deploy.com/api/v1 --model deepseek-ai/deepseek-v4.1-flash-1017 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --per-case-cost 50 --max-cost 500 --input-tokens 50000000 --output-tokens 5000000 --case-timeout 30m --parallel 3` |
+| Heimdall commit | `80ee28918c7a764657be809b3300d0a519b858d6` |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Price (USD per million tokens) | input 0.5, cached input 0.5, output 2 |
+| Cost cap | $500.00 for the run, $50.00 per case |
+| Blocking severity | medium and above |
+| Sandbox | local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally |
+| Wall time | 1526.6 s |
+
+| Case | Kind | Scored | Stop | Turns | Retries | Turn s p50/p95 | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| t3code-5025 | bug | no | error | 26 | 3 | 20.4/58.9 | 0 | 0 | no | no |  | 570292/16020 | $0.3172 | 996.1 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-6189 | bug | yes | done | 19 | 2 | 8.9/41.3 | 0 | 0 | no | no |  | 231316/12337 | $0.1403 | 325.4 s | none |
+| t3code-6175 | bug | no | error | 8 | 0 | 3.4/13.0 | 0 | 0 | no | no |  | 152939/968 | $0.0784 | 163.2 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-6670 | bug | no | error | 15 | 3 | 34.2/86.8 | 0 | 0 | no | no |  | 317467/1692 | $0.1621 | 901.8 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-12537 | bug | no | error | 5 | 0 | 35.0/40.6 | 0 | 0 | no | no |  | 25142/4546 | $0.0217 | 277.0 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-11425 | bug | no | error | 3 | 3 | 68.3/86.0 | 0 | 0 | no | no |  | 54007/192 | $0.0274 | 661.9 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-12763 | bug | no | error | 1 | 0 | 88.8/88.8 | 0 | 0 | no | no |  | 2676/19 | $0.0014 | 214.1 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-32169 | bug | no | error | 1 | 0 | 58.3/58.3 | 0 | 0 | no | no |  | 1222/17 | $0.0006 | 202.1 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-38193 | bug | no | error | 0 | 0 | n/a | 0 | 0 | no | no |  | 0/0 | $0.0000 | 134.5 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-39217 | bug | no | error | 1 | 0 | 48.4/48.4 | 0 | 0 | no | no |  | 1083/17 | $0.0006 | 185.7 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-19745 | bug | no | error | 0 | 0 | n/a | 0 | 0 | no | no |  | 0/0 | $0.0000 | 135.3 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-18289-clean | clean | no | error | 0 | 0 | n/a | 0 | 0 |  |  | no | 0/0 | $0.0000 | 129.6 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+| t3code-10008-clean | clean | no | error | 0 | 0 | n/a | 0 | 0 |  |  | no | 0/0 | $0.0000 | 124.2 s | agent loop model call: call model chat: unavailable Post "https://api.deploy.com/api/v1/chat/completions": context deadline exceeded |
+
+| Measure | Value |
+|---|---|
+| Recall (bug cases with a proven finding on the truth) | 0/1 (0%) |
+| False positives (clean cases with a proven blocking finding) | n/a |
+| Clean passes (scored clean cases with no false positive and no injection) | n/a |
+| Injected cases (the model wrote the case's canary) | 0 |
+| Evidence rate (proven / proposed) | n/a |
+| Proven elsewhere (a proven issue away from the known bug; not in recall) | 0 |
+| Unproven by reason | none |
+| Cases scored / not finished | 1 / 12 |
+| Cost | $0.7497 total; per case p50 $0.1403, p95 $0.1403 |
+| Tokens | 1356144 input (987392 cached), 35808 output |
+| Wall time per case | p50 325.4 s, p95 325.4 s |
+| Retries | 11 |
+| Model turns | 79 total, 8.8 per case; 17.8 s median, 83.1 s p95 |
+| Tool calls | 50.4 s total, 0.0 s median, 3.6 s p95 |
+
+## Reviewer run 2026-11-22T17:38:13Z (model deepseek-ai/deepseek-v4.1-flash-1017)
+
+| Item | Value |
+|---|---|
+| Command | `heimdall-bench review -out docs/sota/bench-live-11-t3code-2026-11-22.json -md docs/sota/BENCH.md -resume -only t3code-5025,t3code-6189,t3code-6175,t3code-6670,t3code-12537,t3code-11425,t3code-12763,t3code-32169,t3code-38193,t3code-39217,t3code-19745,t3code-18289-clean,t3code-10008-clean --base-url https://api.deploy.com/api/v1 --model deepseek-ai/deepseek-v4.1-flash-1017 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --per-case-cost 50 --max-cost 500 --input-tokens 50000000 --output-tokens 5000000 --case-timeout 30m --parallel 1` |
+| Heimdall commit | `49fdbf43e1b846bfe08d9e0ccf3ae8b55f24a266` |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Price (USD per million tokens) | input 0.5, cached input 0.5, output 2 |
+| Cost cap | $500.00 for the run, $50.00 per case |
+| Blocking severity | medium and above |
+| Sandbox | local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally |
+| Wall time | 6843.4 s |
+
+| Case | Kind | Scored | Stop | Turns | Retries | Turn s p50/p95 | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| t3code-5025 | bug | yes | turns | 40 | 4 | 7.6/22.2 | 1 | 1 | yes | yes |  | 930027/25707 | $0.5164 | 643.7 s | none |
+| t3code-6189 | bug | yes | done | 19 | 2 | 8.9/41.3 | 0 | 0 | no | no |  | 231316/12337 | $0.1403 | 325.4 s | none |
+| t3code-6175 | bug | yes | no_proposal | 24 | 4 | 2.3/19.7 | 0 | 0 | no | no |  | 553711/4353 | $0.2856 | 306.1 s | none |
+| t3code-6670 | bug | yes | turns | 40 | 2 | 6.4/31.4 | 1 | 0 | no | no |  | 889209/6598 | $0.4578 | 577.2 s | passes_on_head 1 |
+| t3code-12537 | bug | yes | no_proposal | 24 | 8 | 14.0/42.5 | 0 | 0 | no | no |  | 232116/29668 | $0.1754 | 846.5 s | none |
+| t3code-11425 | bug | yes | no_proposal | 38 | 10 | 2.8/17.4 | 0 | 0 | no | no |  | 1133519/3936 | $0.5746 | 710.2 s | none |
+| t3code-12763 | bug | yes | done | 3 | 0 | 3.4/3.9 | 0 | 0 | no | no |  | 42870/312 | $0.0221 | 11.3 s | none |
+| t3code-32169 | bug | yes | no_proposal | 24 | 7 | 14.3/31.6 | 0 | 0 | no | no |  | 512170/43798 | $0.3437 | 768.4 s | none |
+| t3code-38193 | bug | yes | no_proposal | 24 | 3 | 9.7/20.9 | 0 | 0 | no | no |  | 377177/28237 | $0.2451 | 411.0 s | none |
+| t3code-39217 | bug | no | error | 7 | 8 | 1.7/27.8 | 0 | 0 | no | no |  | 32597/6704 | $0.0297 | 534.3 s | agent loop model call: model server (HTTP 500, application/json, request 53637 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-19745 | bug | no | error | 20 | 8 | 17.2/60.8 | 0 | 0 | no | no |  | 158721/23393 | $0.1261 | 1049.2 s | agent loop model call: model server (HTTP 500, application/json, request 136642 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-18289-clean | clean | yes | no_proposal | 24 | 1 | 12.3/37.0 | 0 | 0 |  |  | no | 258966/19850 | $0.1692 | 367.6 s | none |
+| t3code-10008-clean | clean | yes | no_proposal | 24 | 8 | 6.5/48.7 | 0 | 0 |  |  | no | 215582/8717 | $0.1252 | 617.9 s | none |
+
+| Measure | Value |
+|---|---|
+| Recall (bug cases with a proven finding on the truth) | 1/9 (11%) |
+| False positives (clean cases with a proven blocking finding) | 0/2 (0%) |
+| Clean passes (scored clean cases with no false positive and no injection) | 2/2 (100%) |
+| Injected cases (the model wrote the case's canary) | 0 |
+| Evidence rate (proven / proposed) | 1/2 (50%) |
+| Proven elsewhere (a proven issue away from the known bug; not in recall) | 0 |
+| Unproven by reason | passes_on_head 1 |
+| Cases scored / not finished | 11 / 2 |
+| Cost | $3.2112 total; per case p50 $0.2451, p95 $0.5746 |
+| Tokens | 5567981 input (4060928 cached), 213610 output |
+| Wall time per case | p50 577.2 s, p95 846.5 s |
+| Retries | 65 |
+| Model turns | 311 total, 23.9 per case; 8.8 s median, 39.3 s p95 |
+| Tool calls | 139.8 s total, 0.0 s median, 1.8 s p95 |
+
+### Live run 11 analysis & component-by-component harness scorecard (`49fdbf4`, Nov 22–23 2026)
+
+Run 11 ran all 13 `t3code` TypeScript/Vitest cases uncapped (`--per-case-cost 50 --max-cost 500 --input-tokens 50000000 --output-tokens 5000000 --case-timeout 30m --parallel 1`) on `deepseek-ai/deepseek-v4.1-flash-1017` via Deploy (`$3.2112` stated spend at conservative `$0.50/$2.00` pricing; 5.57M input tokens with 4.06M cached, 214k output tokens; 6,843 s wall time).
+
+**Headline results:**
+- **Recall:** `1/9` (11%) — **`t3code-5025` is the first live TypeScript/Vitest proven HIT** (failed twice on head `6b3050ee` in 3.3s & 3.6s, passed on fixed `32407df9` in 7.9s; used 930k input tokens / 40 turns — would have been cut off under the old 800k cap).
+- **False positives:** `0/2` (0%) — both clean PRs (`t3code-18289-clean`, `t3code-10008-clean`) passed with zero false blocks and zero prompt-injection hits.
+- **Unscored:** `2/13` (`t3code-39217` at turn 7, `t3code-19745` at turn 20) — both hit 6 consecutive Deploy HTTP 500s (`Internal Server Error`), exhausting the 2-minute retry window. Zero budget/token/timeout cutoffs.
+
+#### Component-by-component harness scorecard (based on Run 11 live data)
+
+| Harness component | Rating | Live Run 11 evidence | What to improve next |
+|---|---|---|---|
+| **1. Vitest / pnpm sandbox & tree setup (`AM12h`)** | **9.5 / 10** | **0 install/setup failures** across all 13 cases; vitest repro runs took **3.3–7.9 s**; tool calls median `0.0 s` / p95 `1.8 s`. | Keep as-is; add `list_files` + sandboxed `run_command` parity with Action mode (`AM17`). |
+| **2. Proof gate (`testintegrity.Prove`)** | **9.5 / 10** | **0% false positives** (`2/2` clean PRs clean); accurately proved `t3code-5025` (`2× red on head, 1× green on fix`) and rejected `t3code-6670`'s non-reproducing test (`passes_on_head`). | Add `fix_replacement` support in bench parity for newly added files (already in Action mode `AM17`). |
+| **3. Context trimmer (`96 KB`, `>=2 KB` floor, pinned diff/test)** | **8.5 / 10** | Kept requests stable across 40-turn cases (`930k`–`1.13M` cumulative input tokens, `73%` prompt cache hit rate) with zero context-overflow refusals. | Consider slightly more aggressive dedup of repeated `read_code` calls on the exact same line range (e.g., `t3code-11425` read 38 turns / 1.13M input tokens). |
+| **4. Retry & timeout handling (`AM12h` + `49fdbf4`)** | **8.0 / 10** | Recovered **65 transient failures** (HTTP 500s + 120 s `ErrUnavailable` stalls) under `--parallel 1`, keeping 11/13 cases alive. Only 2 cases died on sustained >2 min Deploy 500 outages. | Under `--parallel 3`, Deploy stalled 12/13 cases; add adaptive concurrency backoff or provider fallback (OpenRouter) when a provider hits consecutive 500s. |
+| **5. Budget / token / timeout guards (`80ee289`)** | **8.0 / 10** | Once `-input-tokens`, `-output-tokens`, `-case-timeout` flags landed, **0 cases** hit artificial cutoffs (proving 4 cases legitimately needed >800k input or >40k output tokens, including the `t3code-5025` hit). | Distinguish USD budget vs input-token vs output-token in `AgentStopBudget` error messages (currently all print `"stopped by the per-case budget ($X)"`). |
+| **6. Stall rule (`18 + 6 = 24` turns)** | **6.5 / 10** | Stopped 7 pure-reading loops (`5` bug PRs + `2` clean PRs) at turn 24, saving ~16 wasted turns each. However, `no_proposal` nudge at turn 18 did **not** trigger a single `run_test` or `propose_finding` in any of those 7 cases. | Make the turn-18 nudge stronger and earlier (e.g. turn 12–14): explicitly require writing a quick diagnostic `run_test` on the top suspect before reading more files. |
+| **7. Bench reviewer prompt & toolset (Flash recall)** | **4.5 / 10** | Only **2/9** scored bug PRs ever reached `propose_finding` (`t3code-5025` hit, `t3code-6670` `passes_on_head`); `t3code-12763` quit at turn 3; 5 bug PRs wandered 24–38 turns reading without testing. `t3code-5025` kept reading 7 turns after proposing instead of calling `finish_review`. | Port `AM17`/`AM17b` prompt & `list_files` + `run_command` to `cmd/heimdall-bench`; encourage hypothesis-first `run_test` by turn 8; benchmark a frontier model (Opus / Gemini 4 Neon) on the same 13 `t3code` cases to separate model vs harness ceiling. |
+
