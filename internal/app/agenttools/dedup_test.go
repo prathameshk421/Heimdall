@@ -82,3 +82,36 @@ func TestCrossSeatAndCrossHeadDuplicateMergesIntoOneFinding(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, evs3, 1, "cross-head re-report emits only review.submitted, keeping F1")
 }
+
+// Two seats' paraphrases of one defect merge; two different defects on the same lines stay apart. The claims are the real
+// ones (PR #20 F2 and F3, Nov 22: same defect, claim overlap 0.36; PR #18 F39 and F41: a race and an overflow on
+// overlapping lines, 0.29). On PR #18, 105 of 133 same-defect pairs scored under the old 0.6 threshold and no different-
+// defect pair reached 0.30.
+func TestParaphrasesOfOneDefectMergeAndDifferentDefectsOnTheSameLinesDoNot(t *testing.T) {
+	at := func(file string, from, to int) *finding.Location {
+		return &finding.Location{File: file, Lines: [2]int{from, to}}
+	}
+	ref := func(s string) id.FindingRef {
+		r, err := id.ParseFindingRef(s)
+		require.NoError(t, err)
+		return r
+	}
+	known := []knownFinding{{ref: ref("F2"), claim: "os.WriteFile's error is discarded, so ExportPayment returns nil even when the reconciliation file could not be written (disk full, permission denied, bad path). The nightly job then believes the export succeeded while the file is missing or truncated, silently losing reconciliation data.", category: finding.Category("correctness"),
+		location: at("internal/payments/export.go", 19, 19), state: finding.StateOpen}}
+	in := finding.Input{Claim: "The result of os.WriteFile is discarded and the function returns nil unconditionally, so a failed write (permissions, full disk, bad path) is reported as a successful export and the nightly reconciliation file is silently missing.", Category: finding.Category("correctness"),
+		Location: *at("internal/payments/export.go", 19, 20)}
+	got, ok := matchFinding(known, in, "")
+	require.True(t, ok, "a paraphrase of the same defect is one finding")
+	require.Equal(t, ref("F2"), got.ref)
+
+	in.Category = finding.Category("security")
+	_, ok = matchFinding(known, in, "")
+	require.False(t, ok, "another category is another finding")
+
+	race := []knownFinding{{ref: ref("F39"), claim: "The refund cap is not atomic: Refund reads s.refunds.total at internal/payments/refund.go:67 and records at :71 under two separate lock acquisitions. Two concurrent refunds of 600 on a 1000 payment both see total 0, both pass the check, and both record, so 1200 is refunded against a 1000 payment.", category: finding.Category("correctness"),
+		location: at("internal/payments/refund.go", 67, 71), state: finding.StateOpen}}
+	overflow := finding.Input{Claim: "The cap check `s.refunds.total(p.ID)+amount > p.Amount` at internal/payments/refund.go:67 overflows int64. On a payment of 9223372036854775807 a full refund followed by a refund of 1 wraps the sum negative, passes the check and returns 201 for money beyond the payment.", Category: finding.Category("correctness"),
+		Location: *at("internal/payments/refund.go", 67, 68)}
+	_, ok = matchFinding(race, overflow, "")
+	require.False(t, ok, "a race and an overflow on the same lines are two findings")
+}

@@ -9,13 +9,16 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
 
-// duplicateClaimJaccard is the token-overlap threshold for merging two findings on overlapping lines (TECH_SPEC 11.2b, L1/L2).
-const duplicateClaimJaccard = 0.6
+// duplicateClaimJaccard is the token-overlap threshold for merging two findings of one category on overlapping lines
+// (TECH_SPEC 11.2b, L1/L2). Calibrated on live findings: on PR #18, 105 of 133 same-defect pairs scored under 0.6 while no
+// different-defect pair reached 0.30 (highest 0.29); 0.34 keeps a margin and merged PR #20's paraphrased pair (0.36).
+const duplicateClaimJaccard = 0.34
 
 type knownFinding struct {
 	ref         id.FindingRef
 	fingerprint string
 	claim       string
+	category    finding.Category
 	location    *finding.Location
 	state       finding.State
 }
@@ -51,7 +54,7 @@ func applyKnownEvent(ev change.Event, byRef map[id.FindingRef]knownFinding, orde
 		if _, seen := byRef[f.Ref]; !seen {
 			*order = append(*order, f.Ref)
 		}
-		byRef[f.Ref] = knownFinding{ref: f.Ref, fingerprint: f.Fingerprint, claim: f.Claim, location: f.Location, state: f.State}
+		byRef[f.Ref] = knownFinding{ref: f.Ref, fingerprint: f.Fingerprint, claim: f.Claim, category: f.Category, location: f.Location, state: f.State}
 	case change.FindingStateChanged:
 		updateKnownState(byRef, v.Ref, v.State)
 	case change.FindingVerified:
@@ -72,7 +75,8 @@ func matchFinding(known []knownFinding, input finding.Input, fp string) (knownFi
 		if fp != "" && k.fingerprint == fp {
 			return k, true
 		}
-		if k.location != nil && locationsOverlap(*k.location, input.Location) && claimJaccard(k.claim, input.Claim) >= duplicateClaimJaccard {
+		if k.location != nil && k.category == input.Category && locationsOverlap(*k.location, input.Location) &&
+			claimJaccard(k.claim, input.Claim) >= duplicateClaimJaccard {
 			return k, true
 		}
 	}
