@@ -77,11 +77,11 @@ Severity: **high** breaks a journey or hides a failure; **medium** costs time, m
 | O8 | **A second PR for a ticket whose first closed is folded into the ended change.** Nothing reopens it. | medium | PROGRESS Noticed H11; `checkSecondPR` | A new PR on an over change starts a new attempt (or reopens it with `pr.reopened` semantics) | Intake test: PR 1 closed unmerged, PR 2 opened: the change resumes on PR 2 |
 | O9 | **The stream's sender-identity read is per message.** Each command resolves people from the policy at the merge base; a slow GitHub read delays every room. | low | `internal/app/collaboration/commands.go:113-122` | Cache the directory per change and base like the policy | Benchmark, not a unit test |
 | O10 | **Deploy of a new runner can take the stack down.** The compose unit depends on the runner; a runner that fails to start fails compose (Nov 21, 15:19 and 19:06). | medium | PROGRESS Noticed H13; `heimdall-compose.service` dependency | The hash check now refuses bad copies; also start the runner first and roll back automatically when its health fails, before touching compose | Script test with a runner stub that exits 1: the old runner is restored and compose is not restarted |
-| O11 | **`make verify` has not run since the H12 board commits.** Docker cannot start on this Mac, so race and component tests (including Postgres SQL) are unverified for every change since `e213e02`. | high | HANDOFF "Then, in order"; PROGRESS H13 rows ("Not verified: make verify") | Run `make verify` in CI on each push (GitHub Actions with Docker), not on the developer Mac | n/a: the fix is the gate itself |
+| O11 | **Fixed Nov 22.** The gap said `make verify` had not run since H12. Wrong: `.github/workflows/ci.yml` runs `make ci` (= `make verify`, with Docker) on each push. Run 44987109073 (`dab504b`) passed unit, race and component (4,481 tests), lint self-test, hooks, harness drift, scripts and govulncheck. It failed only at `secrets`: 4 gitleaks `generic-api-key` findings, made-up values in the P-AM15 action tests on the `product-build` branch (CI fetches all branches). The 4 exact fingerprints are now in `.gitleaksignore`; `make secrets` locally: 833 commits, no leaks. The real gap was a red CI that nobody read. | done | CI run 44987109073; `.gitleaksignore` | Keep CI green; read the run after each push. |
 
 ## 4. Order of work
 
-1. O11 (CI for `make verify`): every other fix needs the race and component layer.
+1. O11 (CI for `make verify`): done Nov 22. CI already ran it; only the secrets step was red.
 2. O1 and O2: the two ways one slow or bad input stops everything.
 3. O6: make the next defect visible without SQL.
 4. O3 and O4: remove the two failure classes that recurred.

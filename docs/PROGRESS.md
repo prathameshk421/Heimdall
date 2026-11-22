@@ -77,8 +77,10 @@ Notes for H9 (from H8):
 
 ### SOTA Phase 0 (Nov 22)
 - Seven area files under `docs/sota/` with desired state, evidence-backed gaps (54 in all) and the cross-area order in `docs/sota/README.md`. Built from the code at `cffca6e` and the live record (KAN-26, PR #16, PR #18, the profile runs). Next: Phase 1 (fix in the README's order, each fix test first), starting with O11 (CI for `make verify`).
+- **O11 done (Nov 22).** CI (`ci.yml`, `make ci` = `make verify`) already ran on each push. Run 44987109073 passed every step, race and component included (4,481 tests), and failed only at `secrets`: 4 `generic-api-key` findings, made-up keys in the P-AM15 action tests on `product-build`. Their 4 fingerprints are in `.gitleaksignore` (same rule as the T18 and Nov 4 entries). `make secrets`: 833 commits, no leaks. Next: O-area item 2 in `docs/sota/README.md`.
 
 ### Noticed (H13, Nov 21)
+- Nov 22: `cmd/heimdall/action_test.go` and `internal/platform/config/action_test.go` on `product-build` still hold the fake keys as one string. An edit to those lines makes a new gitleaks finding. Split them as `"ghs_" + "..."` before that branch merges.
 - **Deploy outage, 19:06 to 19:17 UTC (about 11 min).** An SSH drop cut the `scp` of the server short; `hot-deploy.sh` installed the truncated 5.7 MB file, the server container restart-looped and compose failed. Recovered by keeping the last good binary as `heimdall-server.good-1544`, copying again (hash checked), and running the script detached with `nohup`. `hot-deploy.sh` checks no hash or size of the `.new` files; it should refuse a file whose SHA-256 differs from one the caller passes (a `scripts/` change: guarded, owner's call). Deployed `daafd9d` (D184 `reprofile`): server `e8bb983f`, runner `9b7fa578`, `/healthz` ok, no new warnings.
 
 ### Noticed (H11, Nov 20)
