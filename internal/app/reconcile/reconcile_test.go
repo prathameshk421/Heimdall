@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -295,4 +296,49 @@ type invalidPolicyInputs struct{ fakeInputs }
 
 func (invalidPolicyInputs) Policy(context.Context, change.Repo, id.SHA) (policy.Policy, error) {
 	return policy.Policy{}, errors.Join(policy.ErrInvalid, errors.New("heimdall.yaml: version 3 is not known"))
+}
+
+// Over the daily token cap, no new agent task is assigned and Missing says why (P4). An unreadable usage pauses new
+// tasks too and says so, instead of failing the whole run: the cap protects money, so it fails closed for new work only.
+func TestTheDailyTokenCapPausesNewTasksAndSaysWhy(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		usage func(context.Context) (int64, int64, error)
+		want  string
+	}{
+		{"over the cap", func(context.Context) (int64, int64, error) { return 2_000_000, 1_500_000, nil }, "daily token cap reached (2000000 of 1500000 tokens)"},
+		{"usage unreadable", func(context.Context) (int64, int64, error) {
+			return 0, 1_500_000, errors.New("open usage.json: no such file")
+		}, "token usage is unreadable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			r.rec.cfg.Usage = tc.usage
+			r.pr(t)
+			r.room(t, prc)
+			r.add(t, prc, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1"}, By: "heimdall", Method: change.PickDefault})
+			r.run(t, prc)
+			require.Zero(t, r.store.count(prc, change.EventTaskAssigned), "no new task while paused")
+
+			evs, err := r.store.Load(context.Background(), prc)
+			require.NoError(t, err)
+			v, err := change.Fold(evs)
+			require.NoError(t, err)
+			in := change.In{Change: prc, View: v, Settings: r.rec.cfg.Settings, Now: r.clock.Now()}
+			r.rec.checkUsage(context.Background(), &in)
+			var texts []string
+			for _, n := range change.Missing(in) {
+				texts = append(texts, n.Text)
+			}
+			require.Contains(t, strings.Join(texts, "\n"), tc.want)
+		})
+	}
+
+	r := newRig(t)
+	r.rec.cfg.Usage = func(context.Context) (int64, int64, error) { return 10, 1_500_000, nil }
+	r.pr(t)
+	r.room(t, prc)
+	r.add(t, prc, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1"}, By: "heimdall", Method: change.PickDefault})
+	r.run(t, prc)
+	require.Equal(t, 1, r.store.count(prc, change.EventTaskAssigned), "under the cap, work goes on")
 }

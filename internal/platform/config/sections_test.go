@@ -219,3 +219,17 @@ func TestLoadReportsEveryBadLiveKeyAtOnce(t *testing.T) {
 		require.ErrorContains(t, err, key)
 	}
 }
+
+// [usage] is optional (P4): a daily token cap for all agents, and the file a host job writes today's tokens to.
+func TestLoadReadsAnOptionalUsageCap(t *testing.T) {
+	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n[usage]\ndaily_token_cap = 1500000\n"+liveSections))
+	require.NoError(t, err)
+	require.Equal(t, Usage{DailyTokenCap: 1_500_000, File: "/var/lib/heimdall/usage.json"}, cfg.Usage)
+
+	cfg, err = Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+liveSections))
+	require.NoError(t, err)
+	require.Zero(t, cfg.Usage.DailyTokenCap, "no section, no cap")
+
+	_, err = Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n[usage]\ndaily_token_cap = -1\n"+liveSections))
+	require.ErrorContains(t, err, "usage.daily_token_cap")
+}

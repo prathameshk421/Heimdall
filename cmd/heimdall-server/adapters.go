@@ -56,6 +56,7 @@ type adapters struct {
 	vcs               vcsPort
 	chat              ports.Chat
 	agents            config.Agents
+	usage             config.Usage // the daily token cap (P4); zero cap means none
 	tokens            mcp.Tokens
 	projects          projectRepos
 	projectKeys       []string
@@ -125,7 +126,7 @@ func selectAdapters(cfg config.Config, d deps) (adapters, error) {
 		return adapters{}, fmt.Errorf("heimdall.toml: %w", errors.Join(problems...))
 	}
 	trackerProvider, _ := cfg.Selection(string(registry.KindTracker))
-	out := adapters{projects: projects, projectKeys: keys, repos: repos, agents: cfg.Agents, trackerProvider: trackerProvider, runnerSocket: d.endpoints.runnerSocket,
+	out := adapters{projects: projects, projectKeys: keys, repos: repos, agents: cfg.Agents, usage: cfg.Usage, trackerProvider: trackerProvider, runnerSocket: d.endpoints.runnerSocket,
 		testsRoom: change.RoomID(cfg.Rooms.Tests), reviewsRoom: change.RoomID(cfg.Rooms.Reviews), standingRooms: standingRoomsOf(cfg)}
 	if out.projectTickets, err = projectTicketReaders(cfg, f, keys); err != nil {
 		return adapters{}, err

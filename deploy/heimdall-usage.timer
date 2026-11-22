@@ -1,0 +1,9 @@
+[Unit]
+Description=Heimdall: refresh the agent token count every 5 minutes (P4)
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

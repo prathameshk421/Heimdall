@@ -131,7 +131,7 @@ func newReconciler(ad adapters, store *postgres.Store, openrouter ports.ModelHea
 	for _, r := range ad.agents.Reviewers {
 		reviewers = append(reviewers, change.ActorID(r))
 	}
-	return reconcile.New(reconcile.Config{
+	cfg := reconcile.Config{
 		Store: store, Effects: store, Open: store, Dead: store, Calls: store, Health: openrouter,
 		Inputs: reconcileInputs{code: ad.vcs, gate: gate, profiles: store},
 		Agents: agentFor(ad.agents), IDs: gen, Clock: clk, Logger: logger, Wait: clock.Wait,
@@ -139,7 +139,11 @@ func newReconciler(ad adapters, store *postgres.Store, openrouter ports.ModelHea
 		Settings: change.Settings{Reviewers: reviewers, TestAttempts: testAttempts, PickWait: pickWait, Profiler: ad.agents.Profiler,
 			Timeouts: map[string]time.Duration{"tests": testsTimeout, "review": reviewTimeout, "verdict": verdictTimeout, "profile": profileTimeout}},
 		Windows: liveness.Windows{Ack: ackWindow, Stall: stallWindow},
-	})
+	}
+	if ad.usage.DailyTokenCap > 0 {
+		cfg.Usage = usageFromFile(ad.usage.File, ad.usage.DailyTokenCap, clk.Now)
+	}
+	return reconcile.New(cfg)
 }
 
 // profileChecks reads the checks of a repository's promoted profile for run_check.

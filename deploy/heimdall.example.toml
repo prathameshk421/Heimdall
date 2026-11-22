@@ -161,3 +161,9 @@ base_branch = "heimdall-demo"
 # [board_auth.people.alice]
 # github_id = 1234567        # from: gh api user --jq .id
 # role = "approver"
+
+# Optional (P4): a daily cap on all agents' tokens (input, output and reasoning; cache reads not counted). Over the cap,
+# or when the count cannot be read, new agent tasks pause and the status says why. scripts/ops/usage-sum.sh, run by
+# deploy/heimdall-usage.timer, writes the count. Nov 21, 2026 used about 1.1M tokens.
+[usage]
+daily_token_cap = 4000000

@@ -54,9 +54,10 @@ type Config struct {
 	// internal working room of a change (U1).
 	TestsRoom  change.RoomID
 	ReviewRoom change.RoomID
-	// Spend, when set, returns today's spent USD and the configured daily cap USD (P4). A positive cap that has been
-	// reached pauses new agent task assignments and records the cap in Missing.
-	Spend func(ctx context.Context) (spentUSD, capUSD float64, err error)
+	// Usage, when set, returns the agents' tokens used today and the configured daily token cap (P4). A positive cap
+	// that has been reached pauses new agent task assignments and records the cap in Missing. Tokens, not dollars: the
+	// provider reports no price to the agents, so a dollar figure would be a guess.
+	Usage func(ctx context.Context) (usedTokens, capTokens int64, err error)
 	// Wait pauses for d or until ctx is done (clock.Wait); the app layer may not import the platform package.
 	Wait func(ctx context.Context, d time.Duration) error
 }
@@ -239,25 +240,25 @@ func (r *Reconciler) buildIn(ctx context.Context, changeID id.ChangeID, v change
 	if in.Dead, err = r.cfg.Dead.DeadEffects(ctx, changeID); err != nil {
 		return in, fmt.Errorf("read dead jobs: %w", err)
 	}
-	if err := r.checkSpend(ctx, &in); err != nil {
-		return in, err
-	}
+	r.checkUsage(ctx, &in)
 	return in, nil
 }
 
-func (r *Reconciler) checkSpend(ctx context.Context, in *change.In) error {
-	if r.cfg.Spend == nil {
-		return nil
+func (r *Reconciler) checkUsage(ctx context.Context, in *change.In) {
+	if r.cfg.Usage == nil {
+		return
 	}
-	spent, capUSD, err := r.cfg.Spend(ctx)
+	used, capTokens, err := r.cfg.Usage(ctx)
 	if err != nil {
-		return fmt.Errorf("read daily spend: %w", err)
-	}
-	if capUSD > 0 && spent >= capUSD {
+		// The cap protects money, so an unreadable usage pauses new agent work; every other row goes on.
 		in.SpendCapExceeded = true
-		in.SpendSummary = fmt.Sprintf("daily spend cap reached ($%.2f / $%.2f); new agent tasks are paused", spent, capUSD)
+		in.SpendSummary = fmt.Sprintf("token usage is unreadable (%v); new agent tasks are paused until it can be read", err)
+		return
 	}
-	return nil
+	if capTokens > 0 && used >= capTokens {
+		in.SpendCapExceeded = true
+		in.SpendSummary = fmt.Sprintf("daily token cap reached (%d of %d tokens); new agent tasks are paused until tomorrow (UTC)", used, capTokens)
+	}
 }
 
 // repoAndBase is the repository of the change and the commit its policy is read at: the pull request's base when there

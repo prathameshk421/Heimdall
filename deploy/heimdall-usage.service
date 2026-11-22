@@ -1,0 +1,6 @@
+[Unit]
+Description=Heimdall: write today's agent token count for the daily cap (P4)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/heimdall-usage-sum

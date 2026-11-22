@@ -65,10 +65,12 @@ type Config struct {
 	SecretsDir string
 	Listen     string
 	// CardsDir holds the personal context cards, <CardsDir>/<person>/<file>. Empty disables the read_card tool.
-	CardsDir       string
-	Projects       []Project
-	Feeds          []Feed
-	Rooms          Rooms
+	CardsDir string
+	Projects []Project
+	Feeds    []Feed
+	Rooms    Rooms
+	// Usage is the optional daily token cap for all agents (P4); zero means no cap.
+	Usage          Usage
 	HumanTokens    map[string]string
 	PackIdentities map[string]PackIdentitySecrets
 	Database       Database
@@ -169,6 +171,23 @@ type fileConfig struct {
 	Memory         *fileProvider               `toml:"memory"`
 	ModelProviders []fileModelProvider         `toml:"model_providers"`
 	BoardAuth      *fileBoardAuth              `toml:"board_auth"`
+	Usage          *fileUsage                  `toml:"usage"`
+}
+
+// Usage is [usage]: a daily cap on the agents' tokens (input, output and reasoning; cache reads are not counted) and the
+// file a host job writes today's count to, as {"date":"YYYY-MM-DD","tokens":N} in UTC.
+type Usage struct {
+	DailyTokenCap int64
+	File          string
+}
+
+// defaultUsageFile is inside the server's data volume, where the host job can write it.
+const defaultUsageFile = "/var/lib/heimdall/usage.json"
+
+// fileUsage is [usage] (P4).
+type fileUsage struct {
+	DailyTokenCap *int64  `toml:"daily_token_cap"`
+	File          *string `toml:"file"`
 }
 
 type filePackIdentity struct {
@@ -316,6 +335,18 @@ func build(raw fileConfig) (Config, error) {
 		proj := Project(p)
 		cfg.Projects = append(cfg.Projects, proj)
 		cfg.byTracker[p.TrackerProject] = proj
+	}
+	if raw.Usage != nil {
+		cfg.Usage = Usage{File: defaultUsageFile}
+		if raw.Usage.DailyTokenCap != nil {
+			if *raw.Usage.DailyTokenCap < 1 {
+				errs = append(errs, errors.New("usage.daily_token_cap must be a positive number of tokens"))
+			}
+			cfg.Usage.DailyTokenCap = *raw.Usage.DailyTokenCap
+		}
+		if raw.Usage.File != nil && *raw.Usage.File != "" {
+			cfg.Usage.File = *raw.Usage.File
+		}
 	}
 	if raw.Rooms != nil {
 		cfg.Rooms = Rooms{Tests: raw.Rooms.Tests, Reviews: raw.Rooms.Reviews}
