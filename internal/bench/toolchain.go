@@ -31,6 +31,22 @@ func (c Case) Runner() Toolchain {
 	return ""
 }
 
+// At returns the case as it builds at sha: the change commands (ChangeInstall, ChangeTestCommand) at the change and
+// its parent, and Install and TestCommand everywhere else. Every tree of a cargo or vitest case takes its commands from
+// here, so validate and review install the same way at the same commit.
+func (c Case) At(sha string) Case {
+	if sha != c.Change.SHA && sha != c.Change.Parent {
+		return c
+	}
+	if len(c.ChangeInstall) > 0 {
+		c.Install = c.ChangeInstall
+	}
+	if c.ChangeTestCommand != "" {
+		c.TestCommand = c.ChangeTestCommand
+	}
+	return c
+}
+
 // toolchainLanguages lists the languages each toolchain runs.
 func toolchainLanguages() map[Toolchain][]string {
 	return map[Toolchain][]string{
@@ -64,8 +80,8 @@ func checkToolchain(c Case) []error {
 		return []error{fmt.Errorf("toolchain %s runs %s, not %s", c.Toolchain, strings.Join(langs, " or "), c.Language)}
 	}
 	if c.Toolchain == "" || c.Toolchain == ToolchainGo {
-		if c.Workdir != "" || len(c.Install) > 0 || len(c.Sparse) > 0 {
-			return []error{errors.New("a go case, or a case with no toolchain, has no workdir, install or sparse: go test finds them")}
+		if c.Workdir != "" || len(c.Install) > 0 || len(c.Sparse) > 0 || len(c.ChangeInstall) > 0 || c.ChangeTestCommand != "" {
+			return []error{errors.New("a go case, or a case with no toolchain, has no workdir, install, change commands or sparse: go test finds them")}
 		}
 		return checkGoTests(c)
 	}
@@ -75,7 +91,8 @@ func checkToolchain(c Case) []error {
 	}
 	errs = append(errs, checkLines("install step", c.Install)...)
 	errs = append(errs, checkLines("sparse pattern", c.Sparse)...)
-	errs = append(errs, checkTestCommand(c)...)
+	errs = append(errs, checkTestCommand(c.Toolchain, c.TestCommand)...)
+	errs = append(errs, checkChangeCommands(c)...)
 	errs = append(errs, checkTests(c)...)
 	return errs
 }
@@ -130,21 +147,37 @@ func checkLines(what string, lines []string) []error {
 	return errs
 }
 
-func checkTestCommand(c Case) []error {
-	argv := strings.Fields(c.TestCommand)
-	switch c.Toolchain {
+// checkChangeCommands checks the change's own install steps and test command. A clean case has none: it runs only at
+// its change, so its install and test_command are the change's already.
+func checkChangeCommands(c Case) []error {
+	if len(c.ChangeInstall) == 0 && c.ChangeTestCommand == "" {
+		return nil
+	}
+	if c.Kind == KindClean {
+		return []error{errors.New("change_install and change_test_command: a clean case runs at its change, so install and test_command are its change's")}
+	}
+	errs := checkLines("change_install step", c.ChangeInstall)
+	if c.ChangeTestCommand != "" {
+		errs = append(errs, checkTestCommand(c.Toolchain, c.ChangeTestCommand)...)
+	}
+	return errs
+}
+
+func checkTestCommand(toolchain Toolchain, command string) []error {
+	argv := strings.Fields(command)
+	switch toolchain {
 	case ToolchainGo:
 	case ToolchainCargo:
 		if len(argv) < 2 || argv[0] != "cargo" || argv[1] != "test" {
-			return []error{fmt.Errorf("test_command %q: a cargo case runs cargo test", c.TestCommand)}
+			return []error{fmt.Errorf("test_command %q: a cargo case runs cargo test", command)}
 		}
 		if slices.Contains(argv, "--") {
-			return []error{fmt.Errorf("test_command %q: the runner adds -- and the test names", c.TestCommand)}
+			return []error{fmt.Errorf("test_command %q: the runner adds -- and the test names", command)}
 		}
 	case ToolchainVitest:
 		for _, a := range argv {
 			if strings.HasPrefix(a, "--reporter") || strings.HasPrefix(a, "--outputFile") {
-				return []error{fmt.Errorf("test_command %q: the runner sets the reporter and the output file", c.TestCommand)}
+				return []error{fmt.Errorf("test_command %q: the runner sets the reporter and the output file", command)}
 			}
 		}
 	}

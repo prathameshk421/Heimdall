@@ -71,14 +71,14 @@ func TestRetryAServerErrorThenTheCallSucceeds(t *testing.T) {
 	assert.Equal(t, StopSubmitted, res.Reason)
 	assert.Len(t, h.model.requests, 2, "one retry")
 	assert.Equal(t, h.model.requests[0], h.model.requests[1], "the retry sends the same request")
-	assert.Equal(t, []int64{int64(2*time.Second) + 1}, j.asked, "the first backoff draws from [0, 2 s]")
-	assert.Equal(t, []time.Duration{2 * time.Second}, w.waits)
-	assert.Equal(t, start.Add(2*time.Second), h.clock.now, "the wait goes through the clock")
+	assert.Equal(t, []int64{int64(2*time.Second) + 1}, j.asked, "the first wait draws from [4 s, 6 s]")
+	assert.Equal(t, []time.Duration{6 * time.Second}, w.waits)
+	assert.Equal(t, start.Add(6*time.Second), h.clock.now, "the wait goes through the clock")
 	assert.Equal(t, 1, res.Retries)
 	assert.Nil(t, res.FailedCall, "the call that ended the run did not fail")
 	require.Len(t, res.Turn, 1)
 	assert.Equal(t, 2, res.Turn[0].Attempts)
-	assert.Equal(t, []ports.AgentAttempt{{Kind: ports.ModelErrorServer, Status: 500, Wait: 2 * time.Second}}, res.Turn[0].Failed)
+	assert.Equal(t, []ports.AgentAttempt{{Kind: ports.ModelErrorServer, Status: 500, Wait: 6 * time.Second}}, res.Turn[0].Failed)
 	assert.InDelta(t, 0.02, res.CostUSD, 1e-12, "the failed attempt reported no usage, so only the answer is charged")
 	assert.Equal(t, 1, res.Turns, "a retried call is one turn")
 }
@@ -103,8 +103,20 @@ func TestRetryAfterIsCappedAtOneMinute(t *testing.T) {
 	assert.Equal(t, []time.Duration{time.Minute}, w.waits)
 }
 
-func TestThreeServerErrorsEndTheRunWithTheWrappedError(t *testing.T) {
-	h := newHarness(t, serverError(), serverError(), serverError())
+func TestA500Then500Then200Succeeds(t *testing.T) {
+	// Deploy's 500s come and go over minutes (live run 8): the call is sent again after spread waits.
+	h := newHarness(t, serverError(), serverError(), submitted(0.02))
+	w, _ := h.withRetry()
+	res, err := h.run(context.Background(), t)
+	require.NoError(t, err)
+	assert.Equal(t, StopSubmitted, res.Reason)
+	assert.Len(t, h.model.requests, 3)
+	assert.Equal(t, []time.Duration{6 * time.Second, 12 * time.Second}, w.waits)
+	assert.Equal(t, 2, res.Retries)
+}
+
+func TestSixServerErrorsEndTheRunWithTheWrappedError(t *testing.T) {
+	h := newHarness(t, serverError(), serverError(), serverError(), serverError(), serverError(), serverError())
 	w, j := h.withRetry()
 	res, err := h.run(context.Background(), t)
 	require.Error(t, err)
@@ -113,24 +125,78 @@ func TestThreeServerErrorsEndTheRunWithTheWrappedError(t *testing.T) {
 	assert.Equal(t, ports.ModelErrorServer, modelErr.Kind)
 	require.ErrorIs(t, err, ports.ErrUnavailable)
 	assert.Equal(t, StopModelError, res.Reason)
-	assert.Len(t, h.model.requests, 3, "at most 3 attempts per call")
-	assert.Equal(t, []int64{int64(2*time.Second) + 1, int64(4*time.Second) + 1}, j.asked, "the ceiling doubles")
-	assert.Equal(t, []time.Duration{2 * time.Second, 4 * time.Second}, w.waits)
-	assert.Equal(t, 2, res.Retries)
+	assert.Len(t, h.model.requests, 6, "at most 6 attempts per call")
+	assert.Equal(t, []int64{int64(2*time.Second) + 1, int64(4*time.Second) + 1, int64(8*time.Second) + 1,
+		int64(12*time.Second) + 1, int64(18*time.Second) + 1}, j.asked, "each wait draws from its step, plus or minus 20%")
+	assert.Equal(t, []time.Duration{6 * time.Second, 12 * time.Second, 24 * time.Second, 36 * time.Second, 54 * time.Second}, w.waits)
+	assert.Equal(t, 5, res.Retries)
 	assert.Equal(t, []ports.AgentAttempt{
-		{Kind: ports.ModelErrorServer, Status: 500, Wait: 2 * time.Second},
-		{Kind: ports.ModelErrorServer, Status: 500, Wait: 4 * time.Second},
+		{Kind: ports.ModelErrorServer, Status: 500, Wait: 6 * time.Second},
+		{Kind: ports.ModelErrorServer, Status: 500, Wait: 12 * time.Second},
+		{Kind: ports.ModelErrorServer, Status: 500, Wait: 24 * time.Second},
+		{Kind: ports.ModelErrorServer, Status: 500, Wait: 36 * time.Second},
+		{Kind: ports.ModelErrorServer, Status: 500, Wait: 54 * time.Second},
 		{Kind: ports.ModelErrorServer, Status: 500},
 	}, res.FailedCall)
 	assert.Zero(t, res.Turns)
 }
 
-func TestTheBackoffCeilingStopsAtThirtySeconds(t *testing.T) {
-	assert.Equal(t, 2*time.Second, backoffCeiling(1))
-	assert.Equal(t, 4*time.Second, backoffCeiling(2))
-	assert.Equal(t, 16*time.Second, backoffCeiling(4))
-	assert.Equal(t, 30*time.Second, backoffCeiling(5))
-	assert.Equal(t, 30*time.Second, backoffCeiling(63), "no overflow on a large attempt number")
+func TestTheRetryStepsSpreadOverAboutTwoMinutes(t *testing.T) {
+	var total time.Duration
+	for attempt := 1; attempt < modelAttempts; attempt++ {
+		total += retryStep(attempt)
+	}
+	assert.Equal(t, []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, 45 * time.Second},
+		[]time.Duration{retryStep(1), retryStep(2), retryStep(3), retryStep(4), retryStep(5)})
+	assert.Equal(t, 110*time.Second, total)
+	assert.Equal(t, 45*time.Second, retryStep(63), "a step past the list keeps the last one")
+}
+
+// bottomJitter always draws 0, so each wait is the bottom of its range.
+type bottomJitter struct{}
+
+func (bottomJitter) Int63n(int64) int64 { return 0 }
+
+func TestTheJitterKeepsEachWaitWithinTwentyPercentOfItsStep(t *testing.T) {
+	h := newHarness(t, serverError(), serverError(), submitted(0.02))
+	w := &fakeWaiter{clock: h.clock}
+	h.cfg.Retry = Retry{Wait: w.wait, Random: bottomJitter{}}
+	_, err := h.run(context.Background(), t)
+	require.NoError(t, err)
+	assert.Equal(t, []time.Duration{4 * time.Second, 8 * time.Second}, w.waits)
+}
+
+func TestRetryWaitsNeverPassTheDeadline(t *testing.T) {
+	// 6 s and 12 s fit in 30 s; the third wait (24 s) would end past it, so the run stops at the deadline unsent.
+	h := newHarness(t, serverError(), serverError(), serverError(), submitted(0.02))
+	w, _ := h.withRetry()
+	deadline := h.clock.now.Add(30 * time.Second)
+	h.cfg.Deadline = deadline
+	res, err := h.run(context.Background(), t)
+	require.NoError(t, err, "the deadline is an outcome of the run")
+	assert.Equal(t, StopDeadline, res.Reason)
+	assert.Equal(t, []time.Duration{6 * time.Second, 12 * time.Second}, w.waits)
+	assert.True(t, h.clock.now.Before(deadline), "no wait ran past the deadline")
+	assert.Len(t, h.model.requests, 3)
+}
+
+func TestTheBudgetGuardAppliesBeforeEveryRetry(t *testing.T) {
+	// Each failed attempt bills $0.15 of the $0.50 budget. The first two retries fit; after the third bill the worst
+	// case of another attempt does not, so the fourth attempt is never sent.
+	billed := func() modelStep {
+		s := serverError()
+		s.resp = ports.ModelResponse{CostUSD: 0.15, Usage: ports.ModelUsage{InputTokens: 10, OutputTokens: 10}}
+		return s
+	}
+	h := newHarness(t, billed(), billed(), billed(), submitted(0.02))
+	h.cfg.Price = ports.ModelPrice{InputPerM: 10, CachedInputPerM: 10, OutputPerM: 20}
+	w, _ := h.withRetry()
+	res, err := h.run(context.Background(), t)
+	require.NoError(t, err)
+	assert.Equal(t, StopBudget, res.Reason)
+	assert.Len(t, h.model.requests, 3, "the fourth attempt is not sent")
+	assert.Len(t, w.waits, 2, "no wait for a retry the budget refuses")
+	assert.InDelta(t, 0.45, res.CostUSD, 1e-12)
 }
 
 func TestARetryThatCannotFinishBeforeTheDeadlineStopsWithoutWaiting(t *testing.T) {
@@ -247,5 +313,5 @@ func TestTheRunnerRetriesThroughThePort(t *testing.T) {
 	assert.Equal(t, 1, res.Retries)
 	require.Len(t, res.Turns, 1)
 	assert.Equal(t, 2, res.Turns[0].Attempts)
-	assert.Equal(t, []time.Duration{2 * time.Second}, w.waits)
+	assert.Equal(t, []time.Duration{6 * time.Second}, w.waits)
 }

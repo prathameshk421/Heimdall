@@ -199,38 +199,40 @@ func boundTail(s string, n int) string {
 	return "[earlier output cut]\n" + cut
 }
 
-// runTool runs the overlay tests of a cargo or vitest case at the job's commit, in a fresh plain tree: write the
-// overlays, declare a Rust test module in the crate root, install, and run only the reviewer's tests.
+// runTool runs the overlay tests of a cargo or vitest case at the job's commit, in a fresh plain tree built the way
+// validate builds one (toolTree): write the overlays, declare a Rust test module in the crate root, install with the
+// case's steps at that commit, and run only the reviewer's tests.
 func (s *localSandbox) runTool(ctx context.Context, rp *repo, c bench.Case, j ports.SandboxJob, overlays []ports.File,
 	label string) (ports.SandboxResult, error) {
-	tree, err := rp.plainTree(ctx, string(j.SHA), label, c.Sparse)
+	var files, modules []string
+	bt, err := rp.toolTree(ctx, c, string(j.SHA), label, func(tree string, c bench.Case) error {
+		for _, f := range overlays {
+			// The reviewer's test is always a new file (checkTestFile). An overlay on a file the tree has is source,
+			// such as the suspected lines reverted for a proof, so it is written but never run or wired as a test.
+			_, statErr := os.Stat(filepath.Join(tree, filepath.FromSlash(f.Path)))
+			if err := writeOverlay(tree, f); err != nil {
+				return err
+			}
+			if statErr == nil {
+				continue
+			}
+			files = append(files, f.Path)
+			if c.Runner() == bench.ToolchainCargo {
+				module := strings.TrimSuffix(filepath.Base(f.Path), ".rs")
+				if err := wireCrateRoot(tree, c, module); err != nil {
+					return err
+				}
+				modules = append(modules, module+"::")
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return ports.SandboxResult{}, err
 	}
+	tree := bt.dir
 	defer func() { _ = rp.remove(context.WithoutCancel(ctx), tree) }() // a leftover tree is pruned by the next run
-	var files, modules []string
-	for _, f := range overlays {
-		// The reviewer's test is always a new file (checkTestFile). An overlay on a file the tree has is source, such
-		// as the suspected lines reverted for a proof, so it is written but never run or wired as a test.
-		_, statErr := os.Stat(filepath.Join(tree, filepath.FromSlash(f.Path)))
-		if err := writeOverlay(tree, f); err != nil {
-			return ports.SandboxResult{}, err
-		}
-		if statErr == nil {
-			continue
-		}
-		files = append(files, f.Path)
-		if c.Runner() == bench.ToolchainCargo {
-			module := strings.TrimSuffix(filepath.Base(f.Path), ".rs")
-			if err := wireCrateRoot(tree, c, module); err != nil {
-				return ports.SandboxResult{}, err
-			}
-			modules = append(modules, module+"::")
-		}
-	}
-	if _, err := rp.install(ctx, c, tree); err != nil {
-		return ports.SandboxResult{}, err
-	}
+	c = bt.c
 	c.Timeout = j.Timeout
 	tr, err := rp.runOverlayTests(ctx, c, tree, label, files, modules)
 	if err != nil {

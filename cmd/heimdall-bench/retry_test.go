@@ -103,8 +103,8 @@ func (m *failingModel) Complete(context.Context, ports.ModelRequest) (ports.Mode
 }
 
 func TestTheReviewerRetriesThroughTheBenchWiring(t *testing.T) {
-	// runReviewer builds the product loop with the retry rule. A model that always fails is sent 3 times, and the
-	// waits go through the injected waiter, so the test does not wait.
+	// runReviewer builds the product loop with the retry rule. A model that always fails is sent 6 times, and the
+	// waits go through the injected waiter, so the test does not wait. The middle of each jitter range is the step.
 	model := &failingModel{}
 	var waits []time.Duration
 	wait := func(_ context.Context, d time.Duration) error {
@@ -115,9 +115,9 @@ func TestTheReviewerRetriesThroughTheBenchWiring(t *testing.T) {
 		bench.Price{InputPerM: 0.09, CachedInputPerM: 0.018, OutputPerM: 0.18}, oneFinalRun())
 	require.ErrorIs(t, err, ports.ErrUnavailable)
 	assert.Equal(t, ports.AgentStopError, res.Stop)
-	assert.Equal(t, 3, model.calls)
-	assert.Equal(t, 2, res.Retries)
-	assert.Equal(t, []time.Duration{time.Second, 2 * time.Second}, waits)
+	assert.Equal(t, 6, model.calls)
+	assert.Equal(t, 5, res.Retries)
+	assert.Equal(t, []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, 45 * time.Second}, waits)
 }
 
 type halfJitter struct{}

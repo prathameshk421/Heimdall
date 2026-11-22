@@ -22,6 +22,12 @@
 // cases find their tests from the fix diff (TestFuncs) unless the case names them as "dir:TestName" (SplitGoTestID),
 // for a fix whose other tests do not build on the fix parent.
 //
+// The install steps and test command fit the fix parent. A repository can build differently at the change: t3code
+// used bun (bun.lock) before it moved to pnpm (pnpm-lock.yaml), so pnpm install --frozen-lockfile fails on an older
+// tree. A bug case then names change_install and change_test_command, and every tree at the change or its parent takes
+// them (Case.At): the reviewer's run_test on the head, the proof runs on the head, and the intro evidence. Trees at the
+// fix and its parent keep install and test_command.
+//
 // # Target tests of a Go case
 //
 // The before tree is the fix parent plus the fix's tests. For a Go case the tests are the targets: the ones the manifest

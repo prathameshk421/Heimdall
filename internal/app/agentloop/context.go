@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,6 +18,16 @@ const defaultKeepResults = 3
 
 // maxStubBrief bounds the argument brief inside a trim stub.
 const maxStubBrief = 120
+
+// minTrimBytes is the smallest tool result the loop trims. A stub is about 0.1 KB, so cutting a smaller result saves
+// little and hides what it said (live run 8 stubbed test results of 0.1 to 0.3 KB).
+const minTrimBytes = 2 << 10
+
+// maxOutcomeDetail bounds the first error line a run_test stub keeps.
+const maxOutcomeDetail = 160
+
+// runHead is the first line of a run_test result, as the bench and the product write it (describeRun).
+var runHead = regexp.MustCompile(`^passed (\d+), failed (\d+), errored (\d+)$`)
 
 // contextWindow is the state of the context budget in one run: which tool messages are stubs now, and the size of the
 // request the next call sends.
@@ -34,8 +45,8 @@ func (cfg Config) checkContext() error {
 
 // fitContext sizes the next request and, when it passes Config.ContextBytes, replaces the oldest tool results with a
 // stub (trimStub) until it fits. The KeepResults newest results are never cut, the latest list_changes result is never
-// cut (so the reviewer always sees the PR diff), and read/search results are cut before run_test results (keeping the
-// latest run_test whole). Because protected results are never cut, the request can stay over the budget; the budget is
+// cut (so the reviewer always sees the PR diff), a result under minTrimBytes is never cut, and read/search results are
+// cut before run_test results (keeping the latest run_test whole). A run_test stub keeps the test outcome. Because protected results are never cut, the request can stay over the budget; the budget is
 // a target, and the caps of overBudget still guard the spend. A trim copies the conversation first, so a request
 // already sent keeps the messages it was sent with.
 func (r *run) fitContext() {
@@ -90,7 +101,7 @@ func (r *run) trimCandidates(keep int, calls map[string]ports.ModelToolCall) (re
 		}
 	}
 	for _, i := range tools[:max(len(tools)-keep, 0)] {
-		if i == lastDiff || i == lastTest {
+		if i == lastDiff || i == lastTest || len(r.messages[i].Content) < minTrimBytes {
 			continue
 		}
 		if calls[r.messages[i].ToolCallID].Name == "run_test" {
@@ -104,7 +115,12 @@ func (r *run) trimCandidates(keep int, calls map[string]ports.ModelToolCall) (re
 
 func (r *run) trimMessage(i int, calls map[string]ports.ModelToolCall) {
 	m := r.messages[i]
-	m.Content = trimStub(calls[m.ToolCallID], len(m.Content))
+	c := calls[m.ToolCallID]
+	if c.Name == "run_test" {
+		m.Content = testStub(c, m.Content)
+	} else {
+		m.Content = trimStub(c, len(m.Content))
+	}
 	r.messages[i] = m
 	if r.ctxw.trimmed == nil {
 		r.ctxw.trimmed = map[int]bool{}
@@ -145,6 +161,72 @@ func trimStub(c ports.ModelToolCall, size int) string {
 		head += " " + brief
 	}
 	return fmt.Sprintf("%s trimmed, %.1f KB]", head, float64(size)/1024)
+}
+
+// testStub is the text that replaces a trimmed run_test result. It keeps the outcome, so the model still knows what
+// the run showed: "[run_test packages/x/a.test.ts: FAIL 1 of 3 (expected 2, got 3); full output trimmed, 6.1 KB]".
+func testStub(c ports.ModelToolCall, result string) string {
+	head := "[run_test"
+	if brief := argBrief(c.Arguments); brief != "" {
+		head += " " + brief
+	}
+	return fmt.Sprintf("%s: %s; full output trimmed, %.1f KB]", head, testOutcome(result), float64(len(result))/1024)
+}
+
+// testOutcome reads a run_test result: PASS, FAIL, BUILD ERROR or NO TESTS RAN from its first line (runHead) with the
+// first error line of its output, or ERROR with the message of a tool error (an install that failed, say). A result of
+// another shape keeps its first line.
+func testOutcome(result string) string {
+	if msg, ok := strings.CutPrefix(result, "error: "); ok {
+		return "ERROR (" + clipText(firstLine(msg), maxOutcomeDetail) + ")"
+	}
+	first, rest, _ := strings.Cut(result, "\n")
+	m := runHead.FindStringSubmatch(first)
+	if m == nil {
+		return clipText(first, maxOutcomeDetail)
+	}
+	passed, _ := strconv.Atoi(m[1])
+	failed, _ := strconv.Atoi(m[2])
+	errored, _ := strconv.Atoi(m[3])
+	total := passed + failed + errored
+	var out string
+	switch {
+	case errored > 0 && strings.Contains(rest, "[build]: error"):
+		out = "BUILD ERROR"
+	case errored > 0:
+		out = fmt.Sprintf("ERROR %d of %d", errored, total)
+	case failed > 0:
+		out = fmt.Sprintf("FAIL %d of %d", failed, total)
+	case passed > 0:
+		return fmt.Sprintf("PASS %d of %d", passed, total)
+	default:
+		return "NO TESTS RAN"
+	}
+	if _, output, ok := strings.Cut(rest, "output:\n"); ok {
+		if line := firstErrorLine(output); line != "" {
+			out += " (" + clipText(line, maxOutcomeDetail) + ")"
+		}
+	}
+	return out
+}
+
+// firstErrorLine is the first output line that names a failure: an error, a failed expectation or a panic.
+func firstErrorLine(output string) string {
+	for line := range strings.Lines(output) {
+		line = strings.TrimSpace(line)
+		low := strings.ToLower(line)
+		for _, mark := range []string{"error", "expected", "panicked", "assert"} {
+			if strings.Contains(low, mark) {
+				return line
+			}
+		}
+	}
+	return ""
+}
+
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return strings.TrimSpace(line)
 }
 
 // argBrief names what a call read: a path with its line range when the arguments hold one, else the short string
