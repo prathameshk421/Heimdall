@@ -207,7 +207,7 @@ func (in *Intake) facts(ctx context.Context, repo change.Repo, pr ports.PR, file
 	f := slop.Facts{Title: pr.Title, Branch: pr.Branch, Body: pr.Body, TicketKey: string(ticket), ExpectedPaths: expected}
 	for _, cf := range files {
 		f.Files = append(f.Files, slop.File{Path: cf.Path, Added: cf.Additions, Deleted: cf.Deletions})
-		if inDir(cf.Path, testsDir) {
+		if inDir(cf.Path, testsDir) || isTestFile(cf.Path) {
 			f.TestsChanged = true
 		}
 	}
