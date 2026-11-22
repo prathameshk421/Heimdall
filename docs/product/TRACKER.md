@@ -121,7 +121,7 @@ Live: the Action ran end to end on `prathameshk421/heimdall-fixture-pay` PR #1 (
 and `heimdall/proof` posted neutral in shadow mode; the summary comment updated in place for head `266a5e2`).
 Live Proof Bench run 7: recall 1/5 scored, 0 false positives on 4 clean cases, 2 of 2 proposed findings proven;
 Deploy HTTP 500 on 6 cases is the main loss, refused bodies saved for `heimdall-bench resend`.
-The merge into heimdall-build is handed to the Stage 0 fork session (queued message) at its next clean point.
+Merged into heimdall-build by the Stage 0 session as `7b5c504` (product-build `617a33c`, no conflicts, `make fast` 5,732 tests) and pushed to origin on the owner's word; CI runs `make verify` on it.
 
 ## Owner decisions (Nov 21 2026: "go with your recommendations")
 
