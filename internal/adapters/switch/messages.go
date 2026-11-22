@@ -80,7 +80,8 @@ const readPageSize = 500
 // Switch lists a room newest first and sets truncated when older entries in the window were left out (agent_core
 // read_context: it asks for one row more than the limit). That is a page boundary, not lost history, so Read pages
 // back with before until a page is not truncated. before is strict, so it is one millisecond past the oldest entry
-// seen and the overlap is deduped by ID. A truncated page that brings nothing new cannot be paged past: ErrTruncated.
+// seen and the overlap is deduped by ID. A truncated page whose oldest entry is no older than the last cannot be
+// paged past: ErrTruncated.
 func (c *Client) Read(ctx context.Context, room change.RoomID, after ports.Cursor) ([]ports.Message, ports.Cursor, error) {
 	seen := map[change.MessageID]bool{}
 	var msgs []ports.Message
@@ -90,21 +91,20 @@ func (c *Client) Read(ctx context.Context, room change.RoomID, after ports.Curso
 		if err != nil {
 			return nil, after, err
 		}
-		added := 0
 		for _, m := range page {
 			if !seen[m.ID] {
 				seen[m.ID] = true
 				msgs = append(msgs, m)
-				added++
 			}
 		}
 		if oldest == nil {
 			break
 		}
-		if added == 0 {
-			return nil, after, fmt.Errorf("%w: room %s: a page before %s brought no new message", ErrTruncated, room, before.Format(time.RFC3339Nano))
+		next := time.UnixMilli(*oldest).Add(time.Millisecond)
+		if !before.IsZero() && !next.Before(before) {
+			return nil, after, fmt.Errorf("%w: room %s: a page before %s reached no older entry", ErrTruncated, room, before.Format(time.RFC3339Nano))
 		}
-		before = time.UnixMilli(*oldest).Add(time.Millisecond)
+		before = next
 	}
 	sort.SliceStable(msgs, func(i, j int) bool { return msgs[i].At.Before(msgs[j].At) })
 	next := after
@@ -152,11 +152,16 @@ func (c *Client) readPage(ctx context.Context, room change.RoomID, after ports.C
 	return msgs, oldest, err
 }
 
-// flattenThreads turns each root and its replies into messages, ordered by time.
+// flattenThreads turns each root and its replies into messages, ordered by time. An entry with no body is skipped:
+// Switch stores a `!` command it handled itself as a com.switch.command row with no body, and it holds no words for
+// Heimdall. A body of only whitespace is still refused by toMessage.
 func flattenThreads(room change.RoomID, threads []readThread) ([]ports.Message, error) {
 	var out []ports.Message
 	for _, th := range threads {
 		for _, e := range append([]readEntry{th.Root}, th.Replies...) {
+			if e.Body == "" {
+				continue
+			}
 			m, err := toMessage(room, e)
 			if err != nil {
 				return nil, err

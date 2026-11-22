@@ -11,9 +11,14 @@ was wrong; this real result changes it.
 
 **Fix:** `internal/adapters/switch/messages.go` `Read` asks for Switch's maximum page (500) and, while a page is
 truncated, pages back with `before` = Switch's `oldest_timestamp` + 1 ms, deduping the overlap by ID. A truncated page
-that brings nothing new, or has no `oldest_timestamp`, is still `ErrTruncated`.
+whose oldest entry is no older than the last page's, or that has no `oldest_timestamp`, is still `ErrTruncated`.
+Second live block, right after that deploy: `read_context: message "sw_fc06...": text: must not be blank`. Switch stores
+a `!` command it handled itself as a `com.switch.command` row with no body (14 on the VM, all bodiless), and
+`read_context` returns it as a message. `flattenThreads` now skips an entry with no body; a whitespace-only body is still
+refused.
 **Evidence:** `TestReadPagesBackThroughATruncatedHistory` (red before the fix, a Switch-shaped fake with 3-entry pages
-and 7 messages), `TestReadThatCannotPageFurtherIsTruncated`; `make fast` exit 0 (5805 tests).
+and 7 messages), `TestReadThatCannotPageFurtherIsTruncated`, `TestReadSkipsASwitchCommandEventWithNoBody` (red before),
+`TestReadStillRefusesABlankBody`; `make fast` exit 0 (5807 tests).
 
 ## Chat polish (Nov 22, 2026, branch `heimdall-build`)
 

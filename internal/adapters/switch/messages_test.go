@@ -268,8 +268,41 @@ func TestReadThatCannotPageFurtherIsTruncated(t *testing.T) {
 	}
 	c, _ := newTestClient(t, f)
 	msgs, cur, err := c.Read(context.Background(), roomID(t, testRoomUUID), "2026-11-04T12:00:01Z")
-	require.ErrorIs(t, err, ErrTruncated, "a truncated page that brings nothing new cannot be paged past")
+	require.ErrorIs(t, err, ErrTruncated, "a truncated page that reaches no older entry cannot be paged past")
 	require.False(t, retryable(err), "it is not retried as an outage")
 	require.Nil(t, msgs)
 	require.Equal(t, ports.Cursor("2026-11-04T12:00:01Z"), cur, "a failed read returns the cursor it was given")
+}
+
+// Live, Nov 22: Switch keeps a `!` command it handled itself as a com.switch.command row with no body, and read_context
+// returns it as a message with an empty body. It holds no words for Heimdall, so it is skipped; a whitespace body is
+// still refused.
+func TestReadSkipsASwitchCommandEventWithNoBody(t *testing.T) {
+	f := newFakeSwitch(t)
+	command := entryMap("sw_command", testHumanSender, "", at(1))
+	command["body"] = nil
+	f.ops["read_context"] = func(map[string]any) (int, any) {
+		return http.StatusOK, map[string]any{"threads": []any{
+			map[string]any{"root": command, "replies": []any{}},
+			map[string]any{"root": entryMap("msg-2", testHumanSender, "heimdall status", at(2)), "replies": []any{}},
+		}, "truncated": false}
+	}
+	c, _ := newTestClient(t, f)
+	msgs, cur, err := c.Read(context.Background(), roomID(t, testRoomUUID), "")
+	require.NoError(t, err)
+	require.Len(t, msgs, 1)
+	require.Equal(t, change.MessageID("msg-2"), msgs[0].ID)
+	require.Equal(t, cursorOf(at(2)), cur)
+}
+
+func TestReadStillRefusesABlankBody(t *testing.T) {
+	f := newFakeSwitch(t)
+	f.ops["read_context"] = func(map[string]any) (int, any) {
+		return http.StatusOK, map[string]any{"threads": []any{
+			map[string]any{"root": entryMap("msg-1", testHumanSender, "   ", at(1)), "replies": []any{}},
+		}, "truncated": false}
+	}
+	c, _ := newTestClient(t, f)
+	_, _, err := c.Read(context.Background(), roomID(t, testRoomUUID), "")
+	require.Error(t, err)
 }
