@@ -75,12 +75,20 @@ func (b *sandboxBridge) RunOverlay(ctx context.Context, j ports.SandboxJob, over
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	tree, err := stageTree(b.checkout, overlays)
-	if err != nil {
-		return ports.SandboxResult{}, fmt.Errorf("sandbox: build the tree: %w", err)
+	pr, pw := io.Pipe()
+	writeErr := make(chan error, 1)
+	go func() {
+		err := writeStageTree(pw, b.checkout, overlays)
+		_ = pw.CloseWithError(err)
+		writeErr <- err
+	}()
+	stageErr := b.sbx.Stage(ctx, pr, 0)
+	_ = pr.Close()
+	if werr := <-writeErr; werr != nil {
+		return ports.SandboxResult{}, fmt.Errorf("sandbox: build the tree: %w", werr)
 	}
-	if err := b.sbx.Stage(ctx, bytes.NewReader(tree), 0); err != nil {
-		return ports.SandboxResult{}, fmt.Errorf("sandbox: stage the tree: %w", err)
+	if stageErr != nil {
+		return ports.SandboxResult{}, fmt.Errorf("sandbox: stage the tree: %w", stageErr)
 	}
 	if err := b.fetchOnce(ctx, j.Dir); err != nil {
 		return ports.SandboxResult{}, err
@@ -141,31 +149,40 @@ func outputTail(res uidsandbox.Result) string {
 // It reads the checkout through os.Root, so a symlink in the PR cannot make it read outside the checkout: a symlink is
 // written as a symlink, and the sandbox user is the one that follows it.
 func stageTree(checkout string, overlays []ports.File) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := writeStageTree(&buf, checkout, overlays); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// writeStageTree streams the tar archive of checkout + overlays directly to w so large repositories do not buffer up
+// to 256 MiB in memory (SECURITY_AND_PERF_AUDIT.md PERF-02).
+func writeStageTree(w io.Writer, checkout string, overlays []ports.File) error {
 	over := make(map[string][]byte, len(overlays))
 	for _, f := range overlays {
 		if err := f.Validate(); err != nil {
-			return nil, fmt.Errorf("overlay %q: %w", clipText(f.Path, 80), err)
+			return fmt.Errorf("overlay %q: %w", clipText(f.Path, 80), err)
 		}
 		over[path.Clean(f.Path)] = f.Content
 	}
 	root, err := os.OpenRoot(checkout)
 	if err != nil {
-		return nil, fmt.Errorf("open the checkout: %w", err)
+		return fmt.Errorf("open the checkout: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
+	tw := tar.NewWriter(w)
 	st := &stager{root: root, tw: tw, over: over}
 	if err := fs.WalkDir(root.FS(), ".", st.visit); err != nil {
-		return nil, err
+		return err
 	}
 	if err := st.writeOverlays(); err != nil {
-		return nil, err
+		return err
 	}
 	if err := tw.Close(); err != nil {
-		return nil, fmt.Errorf("close the tree: %w", err)
+		return fmt.Errorf("close the tree: %w", err)
 	}
-	return buf.Bytes(), nil
+	return nil
 }
 
 // stager is one walk of the checkout into a tar stream.
