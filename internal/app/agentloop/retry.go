@@ -35,23 +35,28 @@ func (rt Retry) check() error {
 }
 
 // delay returns the wait before attempt+1, and false when the call must not be sent again: the rule is off, the
-// attempts are used up, or the failure is not one that may pass. Only a rate limit (429) and a server error (5xx) may
-// pass; any other 4xx is a fault of the request and is never retried. Retry-After, when given, is the wait. Else the
-// wait is the attempt's step (retryStep) moved by a random amount of up to retryJitterPercent each way, so workers that
-// failed together do not send again together. The caller checks the deadline and the budget before it waits.
+// attempts are used up, or the failure is not one that may pass. Only a rate limit (429), a server error (5xx) and a
+// transient transport failure (ports.ErrUnavailable: a timeout or a reset while the run context is still alive) may
+// pass; any other 4xx is a fault of the request and is never retried. The ModelError case is read first because a 429
+// and a 5xx also unwrap to ports.ErrUnavailable, and their Retry-After hint must keep its place. Retry-After, when
+// given, is the wait. Else the wait is the attempt's step (retryStep) moved by a random amount of up to
+// retryJitterPercent each way, so workers that failed together do not send again together. The caller checks the
+// deadline and the budget before it waits, and it stops at once when the parent context is cancelled or expired.
 func (rt Retry) delay(err error, attempt int) (time.Duration, bool) {
 	if rt.Wait == nil || attempt >= modelAttempts {
 		return 0, false
 	}
 	var modelErr *ports.ModelError
-	if !errors.As(err, &modelErr) {
+	switch {
+	case errors.As(err, &modelErr):
+		if modelErr.Kind != ports.ModelErrorRateLimited && modelErr.Kind != ports.ModelErrorServer {
+			return 0, false
+		}
+		if modelErr.RetryAfter > 0 {
+			return min(modelErr.RetryAfter, retryAfterCap), true
+		}
+	case !errors.Is(err, ports.ErrUnavailable):
 		return 0, false
-	}
-	if modelErr.Kind != ports.ModelErrorRateLimited && modelErr.Kind != ports.ModelErrorServer {
-		return 0, false
-	}
-	if modelErr.RetryAfter > 0 {
-		return min(modelErr.RetryAfter, retryAfterCap), true
 	}
 	step := retryStep(attempt)
 	spread := step * retryJitterPercent / 100

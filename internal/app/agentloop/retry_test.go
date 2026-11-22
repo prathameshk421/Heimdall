@@ -3,6 +3,8 @@ package agentloop
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -269,14 +271,47 @@ func TestAnOrdinaryClientErrorIsNotRetried(t *testing.T) {
 	}
 }
 
-func TestAnErrorThatIsNotAModelErrorIsNotRetried(t *testing.T) {
-	h := newHarness(t, modelStep{err: errors.New("dial tcp: connection refused")})
-	w, _ := h.withRetry()
+func TestRetryATransientUnavailableErrorThenTheCallSucceeds(t *testing.T) {
+	// Live run 11: a single per-call timeout (a 2-minute HTTP request deadline inside a live run context) came back as
+	// ports.ErrUnavailable, not as a *ports.ModelError, and the run died on attempt 1. It is a fault of the moment.
+	timeout := fmt.Errorf("call model chat: %w", errors.Join(ports.ErrUnavailable,
+		errors.New(`Post "https://openrouter.ai/api/v1/chat/completions": context deadline exceeded`)))
+	h := newHarness(t, modelStep{err: timeout}, submitted(0.02))
+	w, j := h.withRetry()
 	res, err := h.run(context.Background(), t)
-	require.Error(t, err)
-	assert.Equal(t, StopModelError, res.Reason)
-	assert.Empty(t, w.waits)
-	assert.Equal(t, []ports.AgentAttempt{{}}, res.FailedCall)
+	require.NoError(t, err)
+	assert.Equal(t, StopSubmitted, res.Reason)
+	assert.Len(t, h.model.requests, 2, "the transient failure is sent again")
+	assert.Equal(t, []int64{int64(2*time.Second) + 1}, j.asked, "the first wait draws from [4 s, 6 s], as for a 5xx")
+	assert.Equal(t, []time.Duration{6 * time.Second}, w.waits)
+	assert.Equal(t, 1, res.Retries)
+	assert.Nil(t, res.FailedCall, "the call that ended the run did not fail")
+	require.Len(t, res.Turn, 1)
+	assert.Equal(t, 2, res.Turn[0].Attempts)
+	assert.Equal(t, []ports.AgentAttempt{{Wait: 6 * time.Second}}, res.Turn[0].Failed,
+		"a transport failure is not a model error, so the attempt records only its wait")
+}
+
+func TestAnErrorThatIsNotAModelErrorIsNotRetried(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"plain", errors.New("dial tcp: connection refused")},
+		{"unexpected end of body", fmt.Errorf("read body: %w", io.ErrUnexpectedEOF)},
+		{"a wrapped fault that does not claim unavailable", fmt.Errorf("parse answer: %w", errors.New("unexpected token"))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, modelStep{err: tc.err})
+			w, _ := h.withRetry()
+			res, err := h.run(context.Background(), t)
+			require.Error(t, err)
+			assert.Equal(t, StopModelError, res.Reason)
+			assert.Empty(t, w.waits)
+			assert.Len(t, h.model.requests, 1)
+			assert.Equal(t, []ports.AgentAttempt{{}}, res.FailedCall)
+		})
+	}
 }
 
 func TestWithoutARetryRuleAServerErrorEndsTheRun(t *testing.T) {

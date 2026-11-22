@@ -78,8 +78,10 @@
 // # Retries
 //
 // Config.Retry (Runner.WithRetry) sends a model call again when it failed with a rate limit (ModelErrorRateLimited,
-// HTTP 429) or a server error (ModelErrorServer, HTTP 5xx). Any other failure is never retried: an ordinary 4xx is a
-// fault of the request. The adapter types an HTML 400 page as ModelErrorInvalid, so it is not retried either. A call
+// HTTP 429), a server error (ModelErrorServer, HTTP 5xx) or a transient transport failure (ports.ErrUnavailable: a
+// per-call timeout or a connection reset while the run context is still alive). Any other failure is never retried:
+// an ordinary 4xx is a fault of the request. The adapter types an HTML 400 page as ModelErrorInvalid, so it is not
+// retried either. A call
 // is sent at most 6 times. The wait before attempt n+1 is the provider's Retry-After, capped at 60 s, or else step n of
 // 5, 10, 20, 30 and 45 s, moved by up to 20% each way (jitter drawn from the Random port): about 110 s in all. Live run
 // 8 showed why: Deploy's 500s come and go over minutes, so three attempts within 2 s failed inside one bad window.
@@ -122,7 +124,8 @@
 // caps, usage that cannot be true, per-turn latency, the per-answer output cap, deadline stop (before a call and between
 // tool calls), turn cap, unknown tool, bad arguments, tool error, no submission, cancellation and a model error.
 // retry_test.go covers the retry rule with a fake waiter and a fixed jitter: a 500 then success, a 429 with
-// Retry-After then success, the Retry-After cap, three 500s and the wrapped error, the backoff ceiling, a deadline with
+// Retry-After then success, the Retry-After cap, three 500s and the wrapped error, a transient ports.ErrUnavailable
+// (a per-call timeout) then success, the backoff ceiling, a deadline with
 // no time for the wait, a cancel during the wait, the budget guard on a retry after a billed failure, usage that
 // cannot be true on a failure, ordinary 4xx and other errors with no retry, and the Runner through the port.
 // robust_test.go covers text calls, nudges against the turn and budget caps, the tool choice and its fallback, and
