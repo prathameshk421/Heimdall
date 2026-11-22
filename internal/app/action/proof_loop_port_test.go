@@ -76,13 +76,13 @@ func TestTheProofRunAsksTheLoopWithThePolicyCapsAndItsOwnTools(t *testing.T) {
 		names = append(names, spec.Name)
 	}
 	slices.Sort(names)
-	require.Equal(t, []string{"finish_review", "list_changes", "propose_finding", "read_file", "run_test", "search"}, names)
+	require.Equal(t, []string{"finish_review", "list_changes", "list_files", "propose_finding", "read_file", "run_test", "search"}, names)
 	require.Equal(t, []string{"finish_review"}, req.FinalTools)
 }
 
 // TestTheProofRunSetsTheContextBudgetAndTheStallRule holds the product run to the limits the bench proved (AM14e,
-// stall numbers from AM12g): a 48 KB request target with the 3 newest results whole, and a stall rule of 18 turns,
-// one nudge and 6 grace turns.
+// stall numbers from AM12g, 96 KiB context from AM12h): a 96 KB request target with the 3 newest results whole, and a
+// stall rule of 18 turns, one nudge and 6 grace turns.
 // The nudge names the product's own tools, and the progress tools are tools of the run.
 func TestTheProofRunSetsTheContextBudgetAndTheStallRule(t *testing.T) {
 	h := newProofHarness(t, nil)
@@ -91,7 +91,7 @@ func TestTheProofRunSetsTheContextBudgetAndTheStallRule(t *testing.T) {
 	require.NoError(t, err)
 
 	req := loop.req
-	require.Equal(t, 48<<10, req.ContextBytes)
+	require.Equal(t, 96<<10, req.ContextBytes)
 	require.Equal(t, 3, req.KeepResults)
 	require.Equal(t, 18, req.Stall.Turns)
 	require.Equal(t, 6, req.Stall.Grace)

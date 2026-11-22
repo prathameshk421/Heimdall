@@ -396,7 +396,7 @@ func (s *Sandbox) Stage(ctx context.Context, tree io.Reader, stripComponents int
 	var out bytes.Buffer
 	lw := &limitWriter{w: &out, limit: MaxOutputBytes}
 	code, err := s.exec.Run(sctx, Cmd{
-		Argv: append([]string{s.tools.sudo, "-n", "--"}, s.unitArgv(PhaseExec, unit, stageTimeout, WorkDir, fixedPathEnv(),
+		Argv: append([]string{s.tools.sudo, "-n", "--"}, s.stageUnitArgv(unit, stageTimeout, WorkDir, fixedPathEnv(),
 			s.tools.tar, "-x", "-f", "-", "-C", WorkDir, "--no-same-owner", "--no-same-permissions",
 			"--exclude=.git", "--strip-components="+strconv.Itoa(stripComponents))...),
 		Env: fixedPathEnv(), Stdin: tree, Stdout: lw, Stderr: lw,
@@ -472,10 +472,29 @@ func runtimeMaxSec(d time.Duration) string {
 // job's stdio and exit status. --expand-environment=no keeps every argv element literal: systemd does not expand
 // "$X" or "${X}" in it.
 func (s *Sandbox) unitArgv(phase Phase, unit string, timeout time.Duration, dir string, env []string, argv ...string) []string {
+	return s.unitArgvWithProps(serviceProps(phase), unit, timeout, dir, env, argv...)
+}
+
+// stageUnitArgv is the transient service for Stage (trusted /usr/bin/tar only, no PR code). It keeps every PhaseExec
+// hardening property except RestrictSUIDSGID=yes, because systemd's RestrictSUIDSGID seccomp filter blocks openat2()
+// with ENOSYS, breaking GNU tar on Ubuntu 26.04 when extracting subdirectories (live run 44996783227). tar runs with
+// --no-same-owner --no-same-permissions and UMask=0077 under NoNewPrivileges=yes and empty capabilities.
+func (s *Sandbox) stageUnitArgv(unit string, timeout time.Duration, dir string, env []string, argv ...string) []string {
+	var props []string
+	for _, p := range serviceProps(PhaseExec) {
+		if p == "RestrictSUIDSGID=yes" {
+			continue
+		}
+		props = append(props, p)
+	}
+	return s.unitArgvWithProps(props, unit, timeout, dir, env, argv...)
+}
+
+func (s *Sandbox) unitArgvWithProps(props []string, unit string, timeout time.Duration, dir string, env []string, argv ...string) []string {
 	l := s.cfg.Limits
 	out := []string{s.tools.systemdRun, "--wait", "--pipe", "--collect", "--quiet", "--expand-environment=no",
 		"--service-type=exec", "--unit=" + unit}
-	for _, p := range serviceProps(phase) {
+	for _, p := range props {
 		out = append(out, "-p", p)
 	}
 	out = append(out,

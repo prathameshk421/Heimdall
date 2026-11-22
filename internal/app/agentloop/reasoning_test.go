@@ -96,11 +96,13 @@ func hashedServerError(hash string) modelStep {
 func TestAFailedAttemptRecordsWhetherItSentTheSameBody(t *testing.T) {
 	h := newHarness(t, hashedServerError("aaa"), hashedServerError("aaa"), hashedServerError("bbb"))
 	h.withRetry()
+	h.cfg.Deadline = h.clock.now.Add(30 * time.Second) // the third wait (24 s) does not fit, so the run ends there
 	res, err := h.run(context.Background(), t)
-	require.Error(t, err)
+	require.NoError(t, err)
+	assert.Equal(t, StopDeadline, res.Reason)
 	assert.Equal(t, []ports.AgentAttempt{
-		{Kind: ports.ModelErrorServer, Status: 500, RequestBytes: 4267, RequestHash: "aaa", Wait: 2 * time.Second},
-		{Kind: ports.ModelErrorServer, Status: 500, RequestBytes: 4267, RequestHash: "aaa", SameRequest: true, Wait: 4 * time.Second},
+		{Kind: ports.ModelErrorServer, Status: 500, RequestBytes: 4267, RequestHash: "aaa", Wait: 6 * time.Second},
+		{Kind: ports.ModelErrorServer, Status: 500, RequestBytes: 4267, RequestHash: "aaa", SameRequest: true, Wait: 12 * time.Second},
 		{Kind: ports.ModelErrorServer, Status: 500, RequestBytes: 4267, RequestHash: "bbb"},
 	}, res.FailedCall)
 }

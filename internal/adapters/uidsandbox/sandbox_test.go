@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -387,4 +388,23 @@ func TestCannotIsolateIs(t *testing.T) {
 	require.ErrorIs(t, err, ErrCannotIsolate)
 	assert.Equal(t, "runner cannot isolate PR code: missing tool nft", err.Error())
 	require.NotErrorIs(t, ErrSurvivor, ErrCannotIsolate)
+}
+
+func TestStageOmitsRestrictSUIDSGIDWhileExecKeepsIt(t *testing.T) {
+	f := &fakeExec{answer: readyAnswer}
+	s := setupSandbox(t, f)
+	require.NoError(t, s.Stage(t.Context(), strings.NewReader(""), 0))
+	var stageCall []string
+	for _, c := range f.calls {
+		if len(c) > 3 && c[3] == "/usr/bin/systemd-run" && slices.Contains(c, "/usr/bin/tar") {
+			stageCall = c
+		}
+	}
+	require.NotNil(t, stageCall)
+	assert.False(t, hasProp(stageCall, "RestrictSUIDSGID=yes"), "Stage omits RestrictSUIDSGID=yes so GNU tar openat2 works on Ubuntu 26.04")
+	assert.True(t, hasProp(stageCall, "NoNewPrivileges=yes"))
+	assert.True(t, hasProp(stageCall, "PrivateNetwork=yes"))
+	assert.True(t, hasProp(stageCall, "ProtectSystem=strict"))
+	assert.Contains(t, serviceProps(PhaseExec), "RestrictSUIDSGID=yes", "PR code execution keeps RestrictSUIDSGID=yes")
+	assert.Contains(t, serviceProps(PhaseFetch), "RestrictSUIDSGID=yes", "PR fetch keeps RestrictSUIDSGID=yes")
 }

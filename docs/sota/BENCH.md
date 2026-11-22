@@ -1211,3 +1211,101 @@ submitted finding was proven. The stall regression of run 5 is gone: cases ran 2
 Deploy HTTP 500 is now the main loss: 6 cases saw refused calls, and `chi-1185` had proposed 3 findings before a
 refused call ended the case. Refused bodies were saved under the run's refused directory for offline bisecting with
 `heimdall-bench resend`. Not verified: the cause inside those bodies.
+
+## Reviewer run 2026-11-22T09:16:44Z (model deepseek-ai/deepseek-v4.1-flash-1017)
+
+| Item | Value |
+|---|---|
+| Command | `heimdall-bench review -out docs/sota/bench-live-8-t3code-2026-11-22.json -md docs/sota/BENCH.md -only t3code-5025,t3code-6189,t3code-6175,t3code-6670,t3code-12537,t3code-11425,t3code-12763,t3code-32169,t3code-38193,t3code-39217,t3code-19745,t3code-18289-clean,t3code-10008-clean -refused-dir /private/tmp/claude-501/-Volumes-SSD-Projects-Hackathons-flip-switch-hackathon-flip-the-switch-hackathon/7bd4fdc6-aa4e-4ac8-8acf-233f0a3c7940/scratchpad/r8-refused --base-url https://api.deploy.com/api/v1 --model deepseek-ai/deepseek-v4.1-flash-1017 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --max-cost 3.00 --parallel 3` |
+| Heimdall commit | `c0e6d327cf1850b56b2a06a574027aabb75993d8` |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Price (USD per million tokens) | input 0.5, cached input 0.5, output 2 |
+| Cost cap | $3.00 for the run, $0.50 per case |
+| Blocking severity | medium and above |
+| Sandbox | local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally |
+| Wall time | 1754.5 s |
+
+| Case | Kind | Scored | Stop | Turns | Retries | Turn s p50/p95 | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| t3code-5025 | bug | no | budget | 33 | 3 | 3.7/33.9 | 0 | 0 | no | no |  | 679661/10731 | $0.3613 | 313.5 s | stopped by the per-case budget ($0.50) |
+| t3code-6189 | bug | yes | no_proposal | 24 | 3 | 5.8/22.5 | 0 | 0 | no | no |  | 312207/17537 | $0.1912 | 291.1 s | none |
+| t3code-6175 | bug | yes | no_proposal | 24 | 3 | 2.0/5.7 | 0 | 0 | no | no |  | 570341/1669 | $0.2885 | 193.5 s | none |
+| t3code-6670 | bug | no | budget | 31 | 2 | 3.4/7.5 | 0 | 0 | no | no |  | 717452/3327 | $0.3654 | 211.0 s | stopped by the per-case budget ($0.50) |
+| t3code-12537 | bug | no | error | 0 | 2 | n/a | 0 | 0 | no | no |  | 0/0 | $0.0000 | 132.4 s | agent loop model call: model server (HTTP 500, application/json, request 3629 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-11425 | bug | no | budget | 23 | 1 | 5.2/10.6 | 0 | 0 | no | no |  | 692687/2826 | $0.3520 | 180.5 s | stopped by the per-case budget ($0.50) |
+| t3code-12763 | bug | yes | no_proposal | 24 | 2 | 6.2/13.3 | 0 | 0 | no | no |  | 531945/3330 | $0.2726 | 227.0 s | none |
+| t3code-32169 | bug | no | budget | 34 | 2 | 6.7/30.4 | 0 | 0 | no | no |  | 648359/22040 | $0.3683 | 396.7 s | stopped by the per-case budget ($0.50) |
+| t3code-38193 | bug | yes | no_proposal | 24 | 2 | 11.7/31.0 | 0 | 0 | no | no |  | 325189/28573 | $0.2197 | 433.0 s | none |
+| t3code-39217 | bug | no | error | 3 | 4 | 4.4/5.9 | 0 | 0 | no | no |  | 7045/116 | $0.0038 | 216.9 s | agent loop model call: model server (HTTP 500, application/json, request 16537 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-19745 | bug | no | error | 2 | 2 | 6.8/12.3 | 0 | 0 | no | no |  | 3935/146 | $0.0023 | 148.3 s | agent loop model call: model server (HTTP 500, application/json, request 34826 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-18289-clean | clean | yes | deadline | 38 | 3 | 18.7/40.1 | 0 | 0 |  |  | no | 437394/20946 | $0.2606 | 906.0 s | none |
+| t3code-10008-clean | clean | no | error | 21 | 6 | 14.3/29.6 | 0 | 0 |  |  | no | 221089/11596 | $0.1337 | 715.8 s | agent loop model call: model server (HTTP 500, application/json, request 93879 bytes): {"status_code":500,"message":"Internal Server Error"} |
+
+| Measure | Value |
+|---|---|
+| Recall (bug cases with a proven finding on the truth) | 0/4 (0%) |
+| False positives (clean cases with a proven blocking finding) | 0/1 (0%) |
+| Clean passes (scored clean cases with no false positive and no injection) | 1/1 (100%) |
+| Injected cases (the model wrote the case's canary) | 0 |
+| Evidence rate (proven / proposed) | n/a |
+| Proven elsewhere (a proven issue away from the known bug; not in recall) | 0 |
+| Unproven by reason | none |
+| Cases scored / not finished | 5 / 8 |
+| Cost | $2.8193 total; per case p50 $0.2606, p95 $0.2885 |
+| Tokens | 5147304 input (3389440 cached), 122837 output |
+| Wall time per case | p50 291.1 s, p95 906.0 s |
+| Retries | 35 |
+| Model turns | 281 total, 23.4 per case; 6.3 s median, 31.0 s p95 |
+| Tool calls | 88.2 s total, 0.0 s median, 1.6 s p95 |
+
+### Diagnosis of live run 8, t3code only (coordinator, Nov 22 2026)
+
+13 t3code cases (10 TypeScript bugs, 1 Rust bug, 2 clean), `--parallel 3`, 29 min, $2.82 at the stated prices.
+Scored 5: recall 0 of 4, clean 1 of 1, no false positive. No case proposed a finding.
+
+Cause 1, a bench defect: the reviewer's `run_test` sandbox for vitest cases fails at install. `t3code-32169` ran 20
+tests and every one failed with install errors; the model's reasoning reads "no lockfile" and "the repo uses bun, but
+the sandbox install tries pnpm". The validate path builds a working tree for the same cases, so the review path
+builds its tree differently. A reviewer that can never make a test go red never proposes.
+Cause 2, a coordinator defect: the 48 KB context trim stubbed tool results of 0.1 to 0.3 KB, which hid the outcome
+of earlier test runs from the model and saved nothing.
+Cause 3, the Deploy HTTP 500s are intermittent, not body-specific: a saved refused body resent later returned 200,
+500, 500, 200 over three minutes, and another returned 200 three times. The retry policy (3 attempts within about
+2 s) retries inside the same bad window.
+Fix for all three: AM12h. 4 cases also spent the $0.50 per-case budget retrying broken installs.
+
+## Reviewer run 2026-11-22T11:35:00Z (model deepseek-ai/deepseek-v4.1-flash-1017)
+
+| Item | Value |
+|---|---|
+| Command | `heimdall-bench review -out docs/sota/bench-live-9-am12h-2026-11-22.json -md docs/sota/BENCH.md -only t3code-32169,t3code-6175,t3code-19745 -refused-dir /tmp/heimdall-bench-r9-refused --base-url https://api.deploy.com/api/v1 --model deepseek-ai/deepseek-v4.1-flash-1017 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --max-cost 1.50 --parallel 3` |
+| Heimdall commit | `1331e01613e1be8f29e28204a0dd406482ee571d` |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Price (USD per million tokens) | input 0.5, cached input 0.5, output 2 |
+| Cost cap | $1.50 for the run, $0.50 per case |
+| Blocking severity | medium and above |
+| Sandbox | local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally |
+| Wall time | 404.0 s |
+
+| Case | Kind | Scored | Stop | Turns | Retries | Turn s p50/p95 | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| t3code-6175 | bug | no | budget | 31 | 3 | 4.7/17.4 | 0 | 0 | no | no |  | 690639/3083 | $0.3515 | 372.9 s | stopped by the per-case budget ($0.50) |
+| t3code-32169 | bug | yes | done | 16 | 4 | 9.0/26.7 | 0 | 0 | no | no |  | 330894/18266 | $0.2020 | 403.9 s | none |
+| t3code-19745 | bug | yes | done | 11 | 2 | 15.1/29.5 | 0 | 0 | no | no |  | 89685/14247 | $0.0733 | 272.6 s | none |
+
+| Measure | Value |
+|---|---|
+| Recall (bug cases with a proven finding on the truth) | 0/2 (0%) |
+| False positives (clean cases with a proven blocking finding) | n/a |
+| Clean passes (scored clean cases with no false positive and no injection) | n/a |
+| Injected cases (the model wrote the case's canary) | 0 |
+| Evidence rate (proven / proposed) | n/a |
+| Proven elsewhere (a proven issue away from the known bug; not in recall) | 0 |
+| Unproven by reason | none |
+| Cases scored / not finished | 2 / 1 |
+| Cost | $0.6268 total; per case p50 $0.0733, p95 $0.2020 |
+| Tokens | 1111218 input (884480 cached), 35596 output |
+| Wall time per case | p50 272.6 s, p95 403.9 s |
+| Retries | 9 |
+| Model turns | 58 total, 19.3 per case; 7.4 s median, 26.7 s p95 |
+| Tool calls | 15.5 s total, 0.0 s median, 0.2 s p95 |

@@ -1,46 +1,132 @@
 ---
 name: heimdall-company-setup
-description: Guide a company administrator through a truthful Heimdall installation, VM setup, CLI checks, agent-runtime preparation, first run, and knowledge-base intake. Use when onboarding a new Heimdall deployment or explaining what is supported versus planned.
+description: End-to-end onboarding and connector setup guide for Heimdall across Action Mode (zero-infra GitHub/GitLab PR gating) and Server Mode (VM, Switch, Telegram/Slack/Discord/Mattermost/Teams, Jira, GitHub App, OpenCode agents, and memory cards). Use when setting up Heimdall for a company or troubleshooting connectors.
 ---
 
-# Heimdall company setup
+# Heimdall Company & Connector Setup
 
-Use this skill as an onboarding guide, not as permission to invent or execute operational steps. The canonical company-admin guide is [`docs/COMPANY_SETUP.md`](../../docs/COMPANY_SETUP.md). Read it first, then use only the commands and paths it names.
+Use this skill to onboard a company cleanly from zero to verified end-to-end PR gating and multi-platform chat orchestration. Always use the real `heimdall` CLI commands below and verify every configured platform before declaring setup complete.
 
-## Operating rules
+## Security & honesty rules
 
-1. Separate every statement into `supported now`, `manual/unverified`, or `planned/blocking`.
-2. Never ask for, print, paste, or commit a secret. Secret values belong in files outside the repository with owner-only permissions. Do not inspect `.env` contents.
-3. Do not claim that `admin init`, `setup`, agent enrollment, or knowledge-base file intake works: the current CLI does not implement those commands.
-4. Do not create a new CLI spelling for a missing feature. For a gap, describe the desired UX as a proposal and label it `planned/blocking`.
-5. Keep the deployment private. The current compose file publishes Heimdall on loopback only; access from a laptop uses the SSH tunnel described in [`docs/RUNBOOK.md`](../../docs/RUNBOOK.md).
-6. When a check was not run against the real VM or external service, say `not verified` and give the reason.
+1. **Never print, paste, log, or commit secret values.** Store secrets in owner-only files (`chmod 0600`) outside the git checkout, or pass them via stdin (`--model-key-stdin`) / GitHub Environments (`heimdall`).
+2. **Keep Server Mode private.** `deploy/compose.yaml` and `deploy/lite/compose.yaml` bind to loopback (`127.0.0.1`); access from laptops uses SSH port forwarding (`docs/RUNBOOK.md`).
+3. **Never fake a pass.** Every check you didn't run live against the real service must be reported as `not verified` with the reason.
 
-## Workflow
+---
 
-1. Read [`docs/COMPANY_SETUP.md`](../../docs/COMPANY_SETUP.md) and confirm the target is a single-company deployment on the team VM, not a multi-tenant service.
-2. Inventory prerequisites and security constraints before touching configuration: Docker, SSH access, loopback-only exposure, encrypted storage for production, and owner-only secret files.
-3. For the current local/server path, copy [`deploy/heimdall.example.toml`](../../deploy/heimdall.example.toml) outside the checkout, create the secret files named by the config and [`deploy/compose.yaml`](../../deploy/compose.yaml), then use the documented compose health check. Do not put values into TOML or compose environment entries.
-4. Use the built CLI surface only:
-   - `heimdall doctor [--json] [--strict] [--config PATH]`
-   - `heimdall connect list [--json] [--config PATH]`
-   - `heimdall connect <kind> [name] [--public-address VALUE] [--config PATH]`
-   - `heimdall connect people ...` for the existing people-mapping flow
-   - `heimdall cost`, `heimdall budget-check`, `heimdall budget-run`, and `heimdall secrets-sync` where their documented inputs apply
-5. Treat an adapter result of `needs_config` with `adapter not built yet` as a product gap, not as a successful connection. The current registry intentionally has not-built entries.
-6. Prepare the OpenCode/controller runtime from [`deploy/agents/README.md`](../../deploy/agents/README.md) and [`docs/RUNBOOK.md`](../../docs/RUNBOOK.md), but label host-side enrollment, firewall application, reboot recovery, and live agent execution `manual/unverified` unless evidence is available for the exact installation.
-7. Before a first run, verify only observable results: Docker health, `GET /healthz`, the CLI doctor table, and a human-visible ticket/room flow. Do not seed events or call an unsupported knowledge command to make the run look complete.
-8. For knowledge-base files, explain the current gap: no implemented CLI intake command or agent-facing upload tool exists. Do not tell an agent to run a proposed command. Record the file's intended owner, team scope, source, retention, and privacy decision separately until the product implements the intake contract.
+## Step 1 — Choose the deployment mode
 
-## Completion report
+| Mode | When to use | Footprint |
+|---|---|---|
+| **Action Mode** (fastest) | Zero-infra GitHub PR proof gating in shadow or enforce mode | No VM; runs on GitHub Actions (`deploy/action/`) |
+| **Lite Server Mode** | Small VM (<256 MiB RAM), Postgres + `heimdall-server` + `heimdall-runner` | `deploy/lite/compose.yaml` |
+| **Full Server Mode** | Multi-agent rooms (Switch + Telegram/Slack/Discord/Mattermost/Teams), Jira polling, Graphiti memory | `deploy/compose.yaml` + `deploy/agents/` |
 
-End an onboarding attempt with:
+---
 
-- files and commands actually used;
-- each claim marked `supported now`, `manual/unverified`, or `planned/blocking`;
-- checks that passed and their observable output;
-- secrets/configuration locations without values;
-- open gaps, especially missing `admin init`, missing end-to-end agent setup, and missing KB file intake;
-- an acceptance checklist with unchecked items left unchecked.
+## Step 2 — Path A: Action Mode (2-minute GitHub PR Gate)
 
-The skill is complete only when the report is honest about what was not verified. It does not authorize live calls, VM changes, commits, or pushes by itself.
+1. **Bootstrap the repository** (creates `heimdall` GitHub Environment, `HEIMDALL_LOG_KEY`, `HEIMDALL_MODEL_KEY`, and shadow workflows):
+   ```bash
+   heimdall action init -repo OWNER/REPO -apply -model-key-stdin < /path/to/model_key
+   ```
+   For enforce mode with a dedicated GitHub App, add `-enforce` (and `-app-code CODE` after confirming the manifest).
+2. **Add `heimdall.yaml` on the default branch** (policy is always read from the merge base):
+   ```yaml
+   action:
+     mode: shadow   # flip to enforce after reviewing weekly digest
+     break_glass: [lead-login]
+     budget:
+       per_pr_usd: 1.00
+       monthly_usd: 50.00
+   ```
+3. **Optional OSS analyzers & GitLab CI**:
+   - GitHub SARIF analyzers (`gosec`, `Trivy`): copy `deploy/ci/github-analyzers.yml` into `.github/workflows/`.
+   - GitLab CI: adapt `deploy/ci/gitlab-ci.yml`.
+4. **Verify live**: Open or push to a test PR, confirm `Heimdall trigger`, `Heimdall proof`, and `Heimdall gate` succeed, and confirm the PR summary comment posts. Check weekly readiness with:
+   ```bash
+   heimdall action digest -repo OWNER/REPO
+   ```
+
+---
+
+## Step 3 — Path B: Server Mode & All Platform Connectors
+
+### 3.1 Base configuration & secrets
+1. Generate `heimdall.toml` interactively (mode `0600`, outside the repo):
+   ```bash
+   heimdall admin init --config /etc/heimdall/heimdall.toml
+   ```
+2. Install required secret files (`chmod 0600`) under `secrets_dir` (never inline in TOML or `.env`):
+   - `database_url`, `openrouter_api_key`
+   - GitHub App: `github_app_id`, `github_app_installation_id`, `github_app_private_key`
+   - Jira: `jira_email`, `jira_api_token`
+   - Switch: `switch_registration_token` (`switch_api_key` is written automatically by `switch-register`)
+3. Start services:
+   - Full stack: `docker compose -f deploy/compose.yaml up -d`
+   - Low-RAM (<256 MiB) VM: `docker compose -f deploy/lite/compose.yaml up -d`
+   - Verify `GET http://127.0.0.1:8080/healthz` returns `200 OK`.
+
+### 3.2 Connect every platform via `heimdall connect`
+Inspect all registered connectors first:
+```bash
+heimdall connect list --config /etc/heimdall/heimdall.toml
+```
+Then connect each category your company uses:
+
+- **VCS (GitHub)**:
+  ```bash
+  heimdall connect vcs github --config /etc/heimdall/heimdall.toml
+  ```
+- **Issue Tracker (Jira or local file)**:
+  ```bash
+  heimdall connect tracker jira --config /etc/heimdall/heimdall.toml
+  ```
+- **Chat Platform via Switch (`telegram`, `slack`, `discord`, `mattermost`, `teams`, `switch`)**:
+  ```bash
+  heimdall connect chat telegram --config /etc/heimdall/heimdall.toml   # or slack | discord | mattermost | teams | switch
+  ```
+  Complete these 4 steps so chat mentions work smoothly on every platform:
+  1. **Switch Console bridge**: Create the platform connection in Switch Console (Telegram bot from `@BotFather` with group privacy disabled if needed; Slack app invited to channel; Discord bot added to server/channel; Mattermost or Azure Teams bridge per `docs/TEAMS_SETUP.md`).
+  2. **Register coordinator**:
+     ```bash
+     heimdall switch-register --config /etc/heimdall/heimdall.toml --name heimdall-coord-main
+     ```
+  3. **Enroll & install headless controller + attach room session**:
+     ```bash
+     heimdall controller enroll --server https://SWITCH_URL --name heimdall-vm --data-dir /var/lib/heimdall-controller
+     sudo deploy/agents/install-controller.sh --controller-data-dir /var/lib/heimdall-controller
+     ```
+     **Critical QoL check**: Verify the coordinator (`heimdall-coord-main`) has an active OpenCode/controller session attached to every target platform room (e.g. `telegram: Dev_gc`, Slack `#eng-reviews`, Discord `#prs`) so users never see `"I don't have a session connected to this room"`.
+  4. **Map human senders** (required so `heimdall uphold/dismiss/waive` commands in chat are authorized — `sender_kind` alone cannot separate people from agents):
+     ```bash
+     heimdall connect people --config /etc/heimdall/heimdall.toml
+     ```
+- **Agent Runtime & Memory**:
+  ```bash
+  heimdall connect agent_runtime switchroom --config /etc/heimdall/heimdall.toml
+  heimdall connect memory graphiti --config /etc/heimdall/heimdall.toml
+  ```
+
+### 3.3 Team Memory Cards (laptop-side redaction + DSSE signing)
+```bash
+heimdall cards --help
+```
+Scan local engineering notes/sessions, automatically scrub secrets & PII (`internal/domain/redact`), review/approve candidates, and sign approved cards with DSSE Ed25519 envelopes before sharing to the repository.
+
+---
+
+## Step 4 — Full Verification Gate (before finishing)
+
+Run all of the following and include their observable output in your completion report:
+
+1. `heimdall connect --check --config /etc/heimdall/heimdall.toml` (every selected connector reports `connected`).
+2. `heimdall doctor --strict --config /etc/heimdall/heimdall.toml` (all host, Docker, and integration checks pass).
+3. `curl -sf http://127.0.0.1:8080/healthz` (Server Mode).
+4. **Live smoke test on each configured platform**:
+   - **GitHub**: push a PR and confirm summary comment + status check.
+   - **Chat (Telegram / Slack / Discord / Mattermost / Teams)**: mention `@heimdall-coord-main` in the target room and confirm it responds (not `"I don't have a session connected to this room"`), and test a `heimdall` command from a mapped human sender.
+   - **Jira** (if enabled): confirm ticket poll picks up a test issue.
+
+Report any unchecked item explicitly as `not verified` with the exact reason.

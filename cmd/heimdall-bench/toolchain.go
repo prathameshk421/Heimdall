@@ -48,6 +48,38 @@ func (rp *repo) plainTree(ctx context.Context, sha, label string, sparse []strin
 	return dir, nil
 }
 
+// builtTree is a plain tree ready for tests: its directory, the case as it builds at the tree's commit (bench.Case.At),
+// and how long install took.
+type builtTree struct {
+	dir     string
+	c       bench.Case
+	install time.Duration
+}
+
+// toolTree builds the tree of one cargo or vitest run at sha. It is the one way validate and review build a tree: a
+// plain tree of the case's sparse set at sha, the files put writes, then the case's install steps at sha. The install
+// steps and the test command come from bench.Case.At, so a commit that built with another package manager installs with
+// its own. On an error the tree is gone and install holds the time install took; the caller removes a returned tree.
+func (rp *repo) toolTree(ctx context.Context, c bench.Case, sha, label string, put func(tree string, c bench.Case) error) (builtTree, error) {
+	bt := builtTree{c: c.At(sha)}
+	dir, err := rp.plainTree(ctx, sha, label, c.Sparse)
+	if err != nil {
+		return bt, fmt.Errorf("checkout: %w", err)
+	}
+	if put != nil {
+		err = put(dir, bt.c)
+	}
+	if err == nil {
+		bt.install, err = rp.install(ctx, bt.c, dir)
+	}
+	if err != nil {
+		_ = rp.remove(context.WithoutCancel(ctx), dir) // a leftover tree is pruned by the next run
+		return bt, err
+	}
+	bt.dir = dir
+	return bt, nil
+}
+
 // toolEnv is the environment of install and test commands: no prompts, and every cache under the bench cache, so a
 // run never fills the operator's own stores.
 func (rp *repo) toolEnv(c bench.Case) []string {
@@ -55,6 +87,7 @@ func (rp *repo) toolEnv(c bench.Case) []string {
 	return []string{
 		"CI=1",
 		"npm_config_store_dir=" + filepath.Join(rp.cache, "pnpm-store"),
+		"BUN_INSTALL_CACHE_DIR=" + filepath.Join(rp.cache, "bun-cache"),
 		"CARGO_HOME=" + filepath.Join(rp.cache, "cargo-home"),
 		"CARGO_TARGET_DIR=" + filepath.Join(rp.cache, "cargo-target", target),
 	}
@@ -328,30 +361,32 @@ func checkToolBug(ctx context.Context, rp *repo, c bench.Case) caseResult {
 // same tree with the whole fix written over it (after). So install runs once, and again only when the fix changes an
 // install input. It fills res.Before and res.After, or returns why it could not.
 func (rp *repo) beforeAndAfter(ctx context.Context, c bench.Case, files []bench.FileDiff, res *caseResult) string {
-	tree, err := rp.plainTree(ctx, c.Fix.Parent, c.ID+"-fix", c.Sparse)
+	bt, err := rp.toolTree(ctx, c, c.Fix.Parent, c.ID+"-fix", func(tree string, c bench.Case) error {
+		if err := rp.putFixTests(ctx, c, tree, files); err != nil {
+			return fmt.Errorf("put the fix's tests: %w", err)
+		}
+		return nil
+	})
+	res.Timing.addInstall(bt.install)
 	if err != nil {
-		return "checkout: " + err.Error()
-	}
-	defer func() { _ = rp.remove(context.WithoutCancel(ctx), tree) }() // a leftover tree is pruned by the next run
-	if err := rp.putFixTests(ctx, c, tree, files); err != nil {
-		return "put the fix's tests: " + err.Error()
-	}
-	if err := rp.timedInstall(ctx, c, tree, res.Timing); err != nil {
 		return err.Error()
 	}
-	before, err := rp.timedTests(ctx, c, tree, "before", res.Timing)
+	tree := bt.dir
+	defer func() { _ = rp.remove(context.WithoutCancel(ctx), tree) }() // a leftover tree is pruned by the next run
+	before, err := rp.timedTests(ctx, bt.c, tree, "before", res.Timing)
 	if err != nil {
 		return "before the fix: " + err.Error()
 	}
 	if err := rp.applyDiff(ctx, tree, c.Fix.SHA, files); err != nil {
 		return "apply the fix: " + err.Error()
 	}
+	fixed := c.At(c.Fix.SHA)
 	if bench.ChangesInstall(files) {
-		if err := rp.timedInstall(ctx, c, tree, res.Timing); err != nil {
+		if err := rp.timedInstall(ctx, fixed, tree, res.Timing); err != nil {
 			return "after the fix: " + err.Error()
 		}
 	}
-	after, err := rp.timedTests(ctx, c, tree, "after", res.Timing)
+	after, err := rp.timedTests(ctx, fixed, tree, "after", res.Timing)
 	if err != nil {
 		return "after the fix: " + err.Error()
 	}
@@ -423,18 +458,14 @@ func toolIntroEvidence(ctx context.Context, rp *repo, c bench.Case, files []benc
 
 // toolRunAt checks sha out with the fix's tests put in, installs and runs the targets.
 func (rp *repo) toolRunAt(ctx context.Context, c bench.Case, sha, label string, files []bench.FileDiff) (bench.Run, error) {
-	tree, err := rp.plainTree(ctx, sha, c.ID+"-"+label, c.Sparse)
+	bt, err := rp.toolTree(ctx, c, sha, c.ID+"-"+label, func(tree string, c bench.Case) error {
+		return rp.putFixTests(ctx, c, tree, files)
+	})
 	if err != nil {
 		return bench.Run{}, err
 	}
-	defer func() { _ = rp.remove(context.WithoutCancel(ctx), tree) }()
-	if err := rp.putFixTests(ctx, c, tree, files); err != nil {
-		return bench.Run{}, err
-	}
-	if _, err := rp.install(ctx, c, tree); err != nil {
-		return bench.Run{}, err
-	}
-	tr, err := rp.runTests(ctx, c, tree, c.ID+"-"+label, c.Tests)
+	defer func() { _ = rp.remove(context.WithoutCancel(ctx), bt.dir) }()
+	tr, err := rp.runTests(ctx, bt.c, bt.dir, c.ID+"-"+label, c.Tests)
 	return tr.run, err
 }
 
@@ -448,16 +479,14 @@ func checkToolClean(ctx context.Context, rp *repo, c bench.Case) caseResult {
 		return invalid(err.Error())
 	}
 	res := caseResult{Timing: &timing{}}
-	tree, err := rp.plainTree(ctx, c.Change.SHA, c.ID+"-merge", c.Sparse)
+	bt, err := rp.toolTree(ctx, c, c.Change.SHA, c.ID+"-merge", nil)
+	res.Timing.addInstall(bt.install)
 	if err != nil {
-		return withReason(res, bench.OutcomeError, "checkout: "+err.Error())
-	}
-	defer func() { _ = rp.remove(context.WithoutCancel(ctx), tree) }()
-	if err := rp.timedInstall(ctx, c, tree, res.Timing); err != nil {
 		return withReason(res, bench.OutcomeError, err.Error())
 	}
+	defer func() { _ = rp.remove(context.WithoutCancel(ctx), bt.dir) }()
 	start := time.Now()
-	tr, err := rp.runTests(ctx, c, tree, c.ID+"-merge", nil)
+	tr, err := rp.runTests(ctx, bt.c, bt.dir, c.ID+"-merge", nil)
 	res.Timing.addTest(time.Since(start))
 	if err != nil {
 		return withReason(res, bench.OutcomeError, err.Error())

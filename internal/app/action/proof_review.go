@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -30,25 +31,30 @@ const (
 	maxPatchBytes  = 48 << 10 // the whole diff one list returns
 	maxDiffFiles   = 40       // files one list names
 	maxTestSource  = 60 << 10 // the largest repro test file a proposal may carry
+	maxFixBytes    = 32 << 10 // the largest fix_replacement a proposal may carry
 	maxClaimRunes  = 600      // the domain's claim bound
 	maxToolOutput  = 8 << 10  // the tail of one sandbox run
 	maxResultTests = 30       // tests one sandbox result lists
 	maxPromptClaim = 300      // bytes of one claim in the prompt
 	maxDetailBytes = 300      // bytes of one proof detail in the artifact
+	maxListFiles   = 200      // files one list_files call returns
+	maxCommandArgs = 64       // arguments one run_command call may pass
+	commandTimeout = 2 * time.Minute
 )
 
 // proposal is one finding the model asked to have proven, with the test it wrote. The test runs only in the sandbox.
 type proposal struct {
 	// Comment is the third-party claim this proposal answers, or 0 for a bug the review pass found.
-	Comment  int64
-	File     string
-	First    int
-	Last     int
-	Severity finding.Severity
-	Claim    string
-	TestPath string
-	TestName string
-	Test     []byte
+	Comment        int64
+	File           string
+	First          int
+	Last           int
+	Severity       finding.Severity
+	Claim          string
+	TestPath       string
+	TestName       string
+	Test           []byte
+	FixReplacement string
 }
 
 // reviewer is the model's view of one proof run: the changed files, the head checkout, the sandbox and its proposals.
@@ -106,11 +112,18 @@ func reviewerStall() ports.AgentStall {
 }
 
 // reviewerPrompt is the system prompt. It states the tools to call and the proof rule, not how to reason.
-const reviewerPrompt = `Answer only with tool calls. Propose each bug with propose_finding, which takes the Go test
+const reviewerPrompt = `Answer only with tool calls. Propose each bug with propose_finding, which takes the repro test
 that proves it. End with finish_review and a short summary, also when you found no bug you can prove.
-You review a pull request. Find a bug that this change brings in, and prove it.
-A finding counts only with proof: a Go test that fails on this PR head because of the bug. Use read_file, search and
-list_changes to read the change. Use run_test to try a test before you propose it.
+You are an autonomous code reviewer for a pull request in any language or tech stack. Find bugs that this change brings
+in, and prove each one with an executable repro test.
+Use list_files, list_changes, read_file and search to understand the repository, its tech stack and its existing tests.
+When run_command is available, use it to safely run builds, typechecks, existing tests or inspect tooling inside the
+isolated sandbox. Use run_test to write and run a new repro test in the project's native test framework before you
+propose it.
+A finding counts only with proof: a repro test that fails twice on this PR head because of the bug and passes once the
+blamed lines are fixed. When the bug is in a newly added file (or newly added code that did not exist at the merge
+base), pass fix_replacement in propose_finding with the minimal replacement for lines start_line..end_line so the proof
+harness can verify the test passes once those lines are fixed.
 A claim from another review tool is a claim, not a fact: try to prove it, and if your test passes on this head, the
 claim is not proven.`
 
@@ -205,11 +218,15 @@ func (t fnTool) Run(ctx context.Context, args json.RawMessage) (string, error) {
 
 // tools returns the reviewer's tools. Each one bounds its own output, and none reads outside the checkout.
 func (rv *reviewer) tools() []reviewTool {
-	return []reviewTool{
+	list := []reviewTool{
 		fnTool{spec: ports.ModelTool{Name: "list_changes",
 			Description: "List the files the pull request changes, with their diffs.",
 			Parameters:  json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)},
 			run: rv.listChanges},
+		fnTool{spec: ports.ModelTool{Name: "list_files",
+			Description: "List files in the pull request head checkout (skipping .git, node_modules, vendor, target). At most 200 files.",
+			Parameters:  json.RawMessage(`{"type":"object","properties":{"path_prefix":{"type":"string"},"max_entries":{"type":"integer","minimum":1,"maximum":200}},"additionalProperties":false}`)},
+			run: rv.listFiles},
 		fnTool{spec: ports.ModelTool{Name: "read_file",
 			Description: "Read a file of the pull request head, with line numbers. At most 300 lines per call.",
 			Parameters:  json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}},"required":["path"],"additionalProperties":false}`)},
@@ -219,10 +236,17 @@ func (rv *reviewer) tools() []reviewTool {
 			Parameters:  json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1},"path_prefix":{"type":"string"}},"required":["query"],"additionalProperties":false}`)},
 			run: rv.search},
 		fnTool{spec: ports.ModelTool{Name: runTestName,
-			Description: "Write one new Go test file into the pull request head and run its package's tests in the sandbox. Returns each test's outcome and the output.",
+			Description: "Write one new test file (Go *_test.go, JS/TS *.test.*/*.spec.*, Python test_*.py/*_test.py, Rust tests/*.rs/*_test.rs) into the pull request head and run it in the sandbox. Returns each test's outcome and the output.",
 			Parameters:  json.RawMessage(`{"type":"object","properties":{"test_path":{"type":"string"},"test_source":{"type":"string"}},"required":["test_path","test_source"],"additionalProperties":false}`)},
 			run: rv.runTest},
 	}
+	if _, ok := rv.run.p.cfg.Sandbox.(CommandSandbox); ok {
+		list = append(list, fnTool{spec: ports.ModelTool{Name: "run_command",
+			Description: "Run a command (build, typecheck, existing tests, tooling inspection) safely inside the isolated no-network sandbox on the pull request head. Optionally overlay temporary files.",
+			Parameters:  json.RawMessage(`{"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":64},"dir":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"],"additionalProperties":false}}},"required":["argv"],"additionalProperties":false}`)},
+			run: rv.runCommand})
+	}
+	return list
 }
 
 // listChanges writes the changed paths and their patches, cut at the size bound.
@@ -453,31 +477,224 @@ func (rv *reviewer) runTest(ctx context.Context, args json.RawMessage) (string, 
 	if err != nil {
 		return "", err
 	}
-	return describeRun(res, declaredTests(in.TestSource)), nil
+	return describeRun(res, declaredTests(in.TestPath, in.TestSource)), nil
 }
 
-// checkTestFile refuses a test path or source the sandbox should not take. The path must be a new Go test file, so a
-// proof never replaces a test the change has.
+// listFiles walks the head checkout and lists regular files under path_prefix, skipping common generated/VCS dirs.
+func (rv *reviewer) listFiles(ctx context.Context, args json.RawMessage) (string, error) {
+	var in struct {
+		PathPrefix string `json:"path_prefix"`
+		MaxEntries int    `json:"max_entries"`
+	}
+	if err := decodeArgs(args, &in); err != nil {
+		return "", err
+	}
+	prefix := strings.TrimSuffix(in.PathPrefix, "/")
+	if prefix != "" && (path.Clean(prefix) != prefix || !filepath.IsLocal(filepath.FromSlash(prefix))) {
+		return "", fmt.Errorf("path_prefix %q: want a clean relative path", in.PathPrefix)
+	}
+	limit := in.MaxEntries
+	if limit <= 0 || limit > maxListFiles {
+		limit = maxListFiles
+	}
+	root, err := os.OpenRoot(rv.checkout)
+	if err != nil {
+		return "", fmt.Errorf("open the head tree: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	lister := &fileLister{ctx: ctx, prefix: prefix, limit: limit}
+	walkErr := fs.WalkDir(root.FS(), ".", lister.visit)
+	if walkErr != nil && !errors.Is(walkErr, errSearchFull) {
+		return "", fmt.Errorf("list_files: %w", walkErr)
+	}
+	return lister.report(), nil
+}
+
+type fileLister struct {
+	ctx       context.Context
+	prefix    string
+	limit     int
+	files     []string
+	truncated bool
+}
+
+func (l *fileLister) visit(p string, d fs.DirEntry, _ error) error {
+	if d == nil {
+		return nil
+	}
+	if err := l.ctx.Err(); err != nil {
+		return err
+	}
+	if d.IsDir() {
+		if skipWalkDir(d.Name()) {
+			return fs.SkipDir
+		}
+		return nil
+	}
+	if !d.Type().IsRegular() || !matchesPrefix(p, l.prefix) {
+		return nil
+	}
+	if len(l.files) >= l.limit {
+		l.truncated = true
+		return errSearchFull
+	}
+	l.files = append(l.files, p)
+	return nil
+}
+
+func matchesPrefix(p, prefix string) bool {
+	return prefix == "" || p == prefix || strings.HasPrefix(p, prefix+"/")
+}
+
+func (l *fileLister) report() string {
+	if len(l.files) == 0 {
+		return "no files"
+	}
+	out := strings.Join(l.files, "\n")
+	if l.truncated {
+		out += fmt.Sprintf("\n[stopped at %d files; narrow path_prefix]", l.limit)
+	}
+	return out
+}
+
+func skipWalkDir(name string) bool {
+	switch name {
+	case ".git", "node_modules", "vendor", "target", ".venv", "__pycache__", "dist", "build":
+		return true
+	}
+	return false
+}
+
+type runCommandArgs struct {
+	argv     []string
+	dir      string
+	overlays []ports.File
+}
+
+func decodeCommandArgs(args json.RawMessage) (runCommandArgs, error) {
+	var in struct {
+		Argv  []string `json:"argv"`
+		Dir   string   `json:"dir"`
+		Files []struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		} `json:"files"`
+	}
+	if err := decodeArgs(args, &in); err != nil {
+		return runCommandArgs{}, err
+	}
+	if len(in.Argv) == 0 || len(in.Argv) > maxCommandArgs || strings.TrimSpace(in.Argv[0]) == "" {
+		return runCommandArgs{}, fmt.Errorf("argv: want 1 to %d arguments with a non-empty command", maxCommandArgs)
+	}
+	dir := in.Dir
+	if dir == "" {
+		dir = "."
+	} else if err := repoPath(dir); err != nil {
+		return runCommandArgs{}, fmt.Errorf("dir: %w", err)
+	}
+	overlays := make([]ports.File, 0, len(in.Files))
+	for _, f := range in.Files {
+		if err := repoPath(f.Path); err != nil {
+			return runCommandArgs{}, fmt.Errorf("files: %w", err)
+		}
+		if len(f.Content) > maxTestSource {
+			return runCommandArgs{}, fmt.Errorf("files %q: content exceeds %d bytes", f.Path, maxTestSource)
+		}
+		overlays = append(overlays, ports.File{Path: f.Path, Content: []byte(f.Content)})
+	}
+	return runCommandArgs{argv: in.Argv, dir: dir, overlays: overlays}, nil
+}
+
+// runCommand runs an exploratory command inside the isolated execution sandbox (PhaseExec: no network, read-only
+// rootfs, CPU/RAM/tasks/time limits).
+func (rv *reviewer) runCommand(ctx context.Context, args json.RawMessage) (string, error) {
+	cs, ok := rv.run.p.cfg.Sandbox.(CommandSandbox)
+	if !ok {
+		return "", errors.New("run_command is not available in this sandbox")
+	}
+	in, err := decodeCommandArgs(args)
+	if err != nil {
+		return "", err
+	}
+	res, err := cs.RunCommand(ctx, rv.run.in.Head, in.dir, in.argv, in.overlays, commandTimeout)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "exit %d", res.Exit)
+	if res.TimedOut {
+		b.WriteString(" (timed out)")
+	}
+	b.WriteString("\noutput:\n")
+	b.WriteString(boundTail(res.Output, maxToolOutput))
+	return b.String(), nil
+}
+
+// checkTestFile refuses a test path or source the sandbox should not take. The path must be a new test file in a
+// supported language, so a proof never replaces a test the change has.
 func (rv *reviewer) checkTestFile(testPath, source string) error {
 	if err := repoPath(testPath); err != nil {
 		return err
 	}
-	if !strings.HasSuffix(testPath, "_test.go") {
-		return fmt.Errorf("test_path %q: want a *_test.go file", testPath)
+	if !isSupportedTestPath(testPath) {
+		return fmt.Errorf("test_path %q: want a new test file (*_test.go, *.test.*/*.spec.*, test_*.py/*_test.py, tests/*.rs/*_test.rs, *Test.java/*Test.kt)", testPath)
 	}
 	if _, err := rv.headFile(testPath); err == nil {
 		return fmt.Errorf("test_path %q exists at the head: use a new file name", testPath)
 	}
 	if source == "" || len(source) > maxTestSource {
-		return errors.New("test_source: want a Go file of at most 60 KiB")
+		return errors.New("test_source: want a test file of at most 60 KiB")
 	}
 	return nil
 }
 
-// declaredTests lists the top-level test functions a Go test file declares. It reads the "func TestXxx(" shape and not
-// the Go grammar, because server code names no language (archcheck C4). A name it misses costs one refusal the model
-// can fix; a name it invents would let a proof run a test that does not exist, and Prove refuses that anyway.
-func declaredTests(source string) []string {
+// isSupportedTestPath reports whether p names a test file for a supported language/runner.
+func isSupportedTestPath(p string) bool {
+	base := path.Base(p)
+	return strings.HasSuffix(base, "_test.go") ||
+		isJSTestFile(base) ||
+		isPythonTestFile(base) ||
+		isRustTestFile(p, base) ||
+		isJVMTestFile(base)
+}
+
+func isJSTestFile(base string) bool {
+	for _, ext := range []string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"} {
+		if stem, ok := strings.CutSuffix(base, ext); ok && (strings.HasSuffix(stem, ".test") || strings.HasSuffix(stem, ".spec")) {
+			return true
+		}
+	}
+	return false
+}
+
+func isPythonTestFile(base string) bool {
+	return strings.HasSuffix(base, ".py") && (strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py"))
+}
+
+func isRustTestFile(p, base string) bool {
+	return strings.HasSuffix(base, ".rs") && (strings.HasSuffix(base, "_test.rs") || strings.HasPrefix(p, "tests/") || strings.Contains(p, "/tests/"))
+}
+
+func isJVMTestFile(base string) bool {
+	return strings.HasSuffix(base, "Test.java") || strings.HasSuffix(base, "Tests.java") || strings.HasSuffix(base, "Test.kt")
+}
+
+// declaredTests lists the top-level test names a test file declares. It uses simple line scanning and never imports
+// language-specific parsers (archcheck C4).
+func declaredTests(testPath, source string) []string {
+	switch {
+	case strings.HasSuffix(testPath, "_test.go"):
+		return declaredGoTests(source)
+	case strings.HasSuffix(testPath, ".py"):
+		return declaredPythonTests(source)
+	case strings.HasSuffix(testPath, ".rs"):
+		return declaredRustTests(source)
+	default:
+		return nil
+	}
+}
+
+func declaredGoTests(source string) []string {
 	var out []string
 	for _, line := range strings.Split(source, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -490,6 +707,49 @@ func declaredTests(source string) []string {
 			continue
 		}
 		out = append(out, name)
+	}
+	return out
+}
+
+func declaredPythonTests(source string) []string {
+	var out []string
+	for _, line := range strings.Split(source, "\n") {
+		trimmed := strings.TrimSpace(line)
+		trimmed = strings.TrimPrefix(trimmed, "async ")
+		rest, ok := strings.CutPrefix(trimmed, "def ")
+		if !ok || !strings.HasPrefix(rest, "test_") {
+			continue
+		}
+		if name, _, ok := strings.Cut(rest, "("); ok && name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func declaredRustTests(source string) []string {
+	var out []string
+	sawAttr := false
+	for _, line := range strings.Split(source, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#[") && strings.Contains(trimmed, "test") {
+			sawAttr = true
+			continue
+		}
+		if !sawAttr {
+			continue
+		}
+		if trimmed == "" || strings.HasPrefix(trimmed, "#[") || strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		rest := strings.TrimPrefix(trimmed, "pub ")
+		rest = strings.TrimPrefix(rest, "async ")
+		if rest, ok := strings.CutPrefix(rest, "fn "); ok {
+			if name, _, ok := strings.Cut(rest, "("); ok && name != "" {
+				out = append(out, strings.TrimSpace(name))
+			}
+		}
+		sawAttr = false
 	}
 	return out
 }
@@ -566,8 +826,8 @@ type proposeFinding struct{ rv *reviewer }
 // Spec describes the tool to the model.
 func (p proposeFinding) Spec() ports.ModelTool {
 	return ports.ModelTool{Name: proposeFindingName,
-		Description: "Propose one bug the change brings in, with a Go test that fails on this head because of the bug and passes once the bug is fixed. At most 10 findings.",
-		Parameters:  json.RawMessage(`{"type":"object","properties":{"comment_id":{"type":"integer","description":"The comment id of the third-party claim this finding answers, or 0 for a bug you found"},"file":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"severity":{"type":"string","enum":["low","medium","high","critical"]},"claim":{"type":"string","maxLength":600},"test_path":{"type":"string"},"test_name":{"type":"string"},"test_source":{"type":"string"}},"required":["file","start_line","end_line","severity","claim","test_path","test_name","test_source"],"additionalProperties":false}`)}
+		Description: "Propose one bug the change brings in, with a repro test that fails on this head because of the bug and passes once the bug is fixed. For bugs in newly added files (not at base) or newly added code, pass fix_replacement with the minimal replacement for lines start_line..end_line. At most 10 findings.",
+		Parameters:  json.RawMessage(`{"type":"object","properties":{"comment_id":{"type":"integer","description":"The comment id of the third-party claim this finding answers, or 0 for a bug you found"},"file":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"severity":{"type":"string","enum":["low","medium","high","critical"]},"claim":{"type":"string","maxLength":600},"test_path":{"type":"string"},"test_name":{"type":"string"},"test_source":{"type":"string"},"fix_replacement":{"type":"string","description":"Optional minimal replacement for lines start_line..end_line of file that fixes the bug. Required when file is newly added in this PR."}},"required":["file","start_line","end_line","severity","claim","test_path","test_name","test_source"],"additionalProperties":false}`)}
 }
 
 // Run records the proposal and says so. The finding is proven after the review ends, so the model can go on.
@@ -581,15 +841,16 @@ func (p proposeFinding) Run(_ context.Context, args json.RawMessage) (string, er
 // addProposal decodes, checks and records one proposal.
 func (rv *reviewer) addProposal(args json.RawMessage) error {
 	var in struct {
-		CommentID  int64  `json:"comment_id"`
-		File       string `json:"file"`
-		StartLine  int    `json:"start_line"`
-		EndLine    int    `json:"end_line"`
-		Severity   string `json:"severity"`
-		Claim      string `json:"claim"`
-		TestPath   string `json:"test_path"`
-		TestName   string `json:"test_name"`
-		TestSource string `json:"test_source"`
+		CommentID      int64  `json:"comment_id"`
+		File           string `json:"file"`
+		StartLine      int    `json:"start_line"`
+		EndLine        int    `json:"end_line"`
+		Severity       string `json:"severity"`
+		Claim          string `json:"claim"`
+		TestPath       string `json:"test_path"`
+		TestName       string `json:"test_name"`
+		TestSource     string `json:"test_source"`
+		FixReplacement string `json:"fix_replacement"`
 	}
 	if err := decodeArgs(args, &in); err != nil {
 		return err
@@ -607,10 +868,18 @@ func (rv *reviewer) addProposal(args json.RawMessage) error {
 	if err := rv.checkTestFile(in.TestPath, in.TestSource); err != nil {
 		return err
 	}
-	if names := declaredTests(in.TestSource); !slices.Contains(names, in.TestName) {
-		return fmt.Errorf("test_name %q: test_source declares no top-level test of that name (it declares %v)", in.TestName, names)
+	if len(in.FixReplacement) > maxFixBytes {
+		return fmt.Errorf("fix_replacement: exceeds %d bytes", maxFixBytes)
 	}
-	p.Comment, p.TestPath, p.TestName, p.Test = in.CommentID, in.TestPath, in.TestName, []byte(in.TestSource)
+	if strings.TrimSpace(in.TestName) == "" {
+		return errors.New("test_name: want a non-empty test name")
+	}
+	if strings.HasSuffix(in.TestPath, "_test.go") {
+		if names := declaredTests(in.TestPath, in.TestSource); !slices.Contains(names, in.TestName) {
+			return fmt.Errorf("test_name %q: test_source declares no top-level test of that name (it declares %v)", in.TestName, names)
+		}
+	}
+	p.Comment, p.TestPath, p.TestName, p.Test, p.FixReplacement = in.CommentID, in.TestPath, in.TestName, []byte(in.TestSource), in.FixReplacement
 	rv.proposals = append(rv.proposals, p)
 	return nil
 }
