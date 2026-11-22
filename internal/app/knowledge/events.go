@@ -314,7 +314,7 @@ func eventRepositoryAndBase(events []change.Event) (change.Repo, id.SHA) {
 			}
 		// Remaining event kinds carry no workflow memory signal.
 		case change.EventTaskSuperseded, change.EventTaskRewoken, change.EventProviderProbed, change.EventProfileProposed, change.EventProfileRequested, change.EventChecksReported,
-			change.EventRoomOpened, change.EventTaskAssigned, change.EventTaskAcked,
+			change.EventRoomOpened, change.EventRoomClosed, change.EventTrackerUpdated, change.EventTaskAssigned, change.EventTaskAcked,
 			change.EventTaskTimedOut, change.EventTaskFailed, change.EventTaskProgress,
 			change.EventStepRetried, change.EventStepEscalated, change.EventStepResumed, change.EventQuestionAsked,
 			change.EventQuestionAnswered, change.EventCommandProposed, change.EventCommandConfirmed, change.EventTestsSubmitted, change.EventTestsVerified,
@@ -344,7 +344,7 @@ func workflowMemoryStatus(event change.Event) (ports.EpisodeStatus, bool) {
 	case change.EventFindingStateChanged:
 		return findingStateMemoryStatus(event)
 	// Remaining event kinds carry no workflow memory signal.
-	case change.EventChangeTriggered, change.EventRoomOpened, change.EventBranchEnsured,
+	case change.EventChangeTriggered, change.EventRoomOpened, change.EventRoomClosed, change.EventBranchEnsured, change.EventTrackerUpdated,
 		change.EventTaskSuperseded, change.EventTaskRewoken, change.EventProviderProbed, change.EventProfileProposed, change.EventProfileRequested, change.EventChecksReported,
 		change.EventTaskAssigned, change.EventTaskAcked, change.EventTaskTimedOut,
 		change.EventTaskFailed, change.EventTaskProgress, change.EventStepRetried,

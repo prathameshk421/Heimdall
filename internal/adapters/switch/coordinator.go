@@ -215,6 +215,23 @@ func (c *Client) InviteAgent(ctx context.Context, room change.RoomID, agentName 
 	})
 }
 
+// CloseRoom archives a room in Switch (TECH_SPEC 13, F2). It implements ports.RoomCloser.
+func (c *Client) CloseRoom(ctx context.Context, room change.RoomID) error {
+	return c.guarded(ctx, "close room", func(ctx context.Context) error {
+		var reply struct {
+			OK bool `json:"ok"`
+		}
+		args := map[string]any{"room_id": string(room)}
+		if err := c.operation(ctx, "archive_room", args, &reply); err != nil {
+			return err
+		}
+		if !reply.OK {
+			return errors.New("switch archive_room: refused")
+		}
+		return nil
+	})
+}
+
 // Reference is a pointer to external content a room can carry.
 type Reference struct {
 	Type, Name, Description, Instructions string

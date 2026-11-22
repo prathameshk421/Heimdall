@@ -17,7 +17,7 @@ type EventType string
 // not allowed in the domain.
 func All() []EventType {
 	return []EventType{
-		EventChangeTriggered, EventRoomOpened, EventBranchEnsured,
+		EventChangeTriggered, EventRoomOpened, EventRoomClosed, EventBranchEnsured, EventTrackerUpdated,
 		EventTaskAssigned, EventTaskAcked, EventTaskTimedOut, EventTaskFailed, EventTaskProgress,
 		EventTaskSuperseded, EventTaskRewoken, EventProviderProbed,
 		EventStepRetried, EventStepEscalated, EventStepResumed,

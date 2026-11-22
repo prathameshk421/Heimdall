@@ -45,7 +45,7 @@ func personByGitHub(in In, login string) (string, bool) {
 }
 
 func testsRows() []Row {
-	return []Row{rowBranch(), rowWriteTests(), rowTestQA(), rowSignoff(), rowCommit()}
+	return []Row{rowBranch(), rowWriteTests(), rowTestQA(), rowSignoff(), rowCommit(), rowTrackerCommit()}
 }
 
 func rowBranch() Row {

@@ -18,7 +18,9 @@ import (
 const (
 	EventChangeTriggered     EventType = "change.triggered"
 	EventRoomOpened          EventType = "room.opened"
+	EventRoomClosed          EventType = "room.closed"
 	EventBranchEnsured       EventType = "branch.ensured"
+	EventTrackerUpdated      EventType = "tracker.updated"
 	EventTaskAssigned        EventType = "task.assigned"
 	EventTaskAcked           EventType = "task.acked"
 	EventTaskTimedOut        EventType = "task.timed_out"
@@ -51,7 +53,9 @@ func corePayloads() map[EventType]payloadEntry {
 	return map[EventType]payloadEntry{
 		EventChangeTriggered:     entry[Triggered](),
 		EventRoomOpened:          entry[RoomOpened](),
+		EventRoomClosed:          entry[RoomClosed](),
 		EventBranchEnsured:       entry[BranchEnsured](),
+		EventTrackerUpdated:      entry[TrackerUpdated](),
 		EventTaskAssigned:        entry[TaskAssigned](),
 		EventTaskAcked:           entry[TaskAcked](),
 		EventTaskTimedOut:        entry[TaskTimedOut](),
@@ -144,6 +148,37 @@ func (p RoomOpened) Validate() error {
 	var v problems
 	_, err := ParseRoomID(string(p.RoomID))
 	v.add("room_id", err)
+	return v.join()
+}
+
+// RoomClosed is the payload of room.closed: the change's Switch room was archived after merge (F2).
+type RoomClosed struct {
+	RoomID RoomID `json:"room_id"`
+}
+
+// Validate returns every problem with the payload.
+func (p RoomClosed) Validate() error {
+	var v problems
+	_, err := ParseRoomID(string(p.RoomID))
+	v.add("room_id", err)
+	return v.join()
+}
+
+// TrackerUpdated is the payload of tracker.updated: the ticket tracker was commented or moved (F1).
+type TrackerUpdated struct {
+	Ticket     id.ChangeID `json:"ticket"`
+	Stage      string      `json:"stage"`
+	Transition string      `json:"transition,omitempty"`
+}
+
+// Validate returns every problem with the payload.
+func (p TrackerUpdated) Validate() error {
+	var v problems
+	v.add("ticket", checkTicket(p.Ticket))
+	v.require("stage", p.Stage == TrackerStageCommit || p.Stage == TrackerStageMerge, "must be commit or merge")
+	if p.Transition != "" {
+		v.add("transition", checkText(p.Transition))
+	}
 	return v.join()
 }
 

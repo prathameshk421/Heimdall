@@ -296,7 +296,9 @@ func TestEachRowDeclaresTheJobKindsItStarts(t *testing.T) {
 		ev(t, 3, change.EventBranchEnsured, change.BranchEnsured{Repo: "acme/pay", Branch: "KAN-5-x", BaseSHA: fBase}),
 		submission(t, 4, blobA),
 		ev(t, 5, change.EventTestsVerified, change.TestsVerified{RunIDs: []id.RunID{"run_01HZX3K9QW7M2P5R8T0V4YB6CD"}, SHA: fHead, TreeHash: fBase}),
-		opened(t), ev(t, 7, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true})}
+		ev(t, 6, change.EventTestsCommitted, change.TestsCommitted{SHA: fHead, TreeHash: fBase}),
+		opened(t), ev(t, 8, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
+		ev(t, 9, change.EventPRClosed, change.PRClosed{Repo: "acme/pay", Number: 7, HeadSHA: fHead, Merged: true})}
 	review := []change.Event{opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
 		ev(t, 3, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1"}, By: "heimdall", Method: change.PickDefault}),
 		ev(t, 4, change.EventChecksReported, change.ChecksReported{Head: fHead}),

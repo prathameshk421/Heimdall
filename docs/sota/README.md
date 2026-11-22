@@ -17,7 +17,7 @@ code are marked `not verified`.
 ## Order of work across areas (Phase 1 input)
 
 1. **O11** `make verify` in CI with Docker: done Nov 22. CI already ran it on each push; it was red only on 4 fake test keys in gitleaks, now ignored by exact fingerprint.
-2. **U1** post every Ask to the person who must act; **F1** write back to the tracker; **F2** close the room with a summary.
+2. **U1** post every Ask to the person who must act; **F1** write back to the tracker; **F2** close the room with a summary: done Nov 22 (`make fast` 4,390 tests, 0 lint issues; live VM/Jira/Switch run and Docker component tests not verified yet).
 3. **O1** one failing chat message must not stop every room; **O2** slow sandbox jobs must not block wakes and posts.
 4. **L1, L2** one defect is one finding across heads and seats (50 filings for 8 issues on PR #18); this also cuts
    **P1, P2** most of the review cost.

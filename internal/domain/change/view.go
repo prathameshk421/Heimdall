@@ -38,6 +38,10 @@ type View struct {
 	ProfileRequest *ProfileRequestInfo `json:"profile_request,omitempty"`
 	// Provider is the last model-provider probe's health ("ok", "refusing"); empty before any probe.
 	Provider *ProviderInfo `json:"provider,omitempty"`
+	// RoomClosed is true once the change's Switch room was archived after merge (F2).
+	RoomClosed bool `json:"room_closed,omitempty"`
+	// TrackerUpdated records which tracker write-back stages (commit, merge) have finished (F1).
+	TrackerUpdated map[string]bool `json:"tracker_updated,omitempty"`
 }
 
 // ProfileRequestInfo is the newest profile.requested: who asked, what they want changed, and when.
@@ -305,7 +309,7 @@ func (v *View) apply(e Event, p Payload) {
 		v.applyReview(p)
 	case CaseOpened, VerdictSubmitted, VerdictApplied, VerdictEscalated:
 		v.applyCase(e, p)
-	case StepResumed, ChecksReported, FindingRecheckRequested, ProfileRequested:
+	case StepResumed, ChecksReported, FindingRecheckRequested, ProfileRequested, RoomClosed, TrackerUpdated:
 		v.applyRecords(e, p)
 	case FindingFiled, FindingVerified, FindingStateChanged:
 		v.applyFindingEvent(e, p)
@@ -469,6 +473,13 @@ func (v *View) applyRecords(e Event, p Payload) {
 		v.Checks[p.Head] = CheckInfo{Ran: true, Results: nonNil(p.Results), Errors: nonNil(p.Errors), More: p.More}
 	case ProfileRequested:
 		v.ProfileRequest = &ProfileRequestInfo{Repo: p.Repo, By: p.By, Note: p.Note, Asked: e.OccurredAt}
+	case RoomClosed:
+		v.RoomClosed = true
+	case TrackerUpdated:
+		if v.TrackerUpdated == nil {
+			v.TrackerUpdated = map[string]bool{}
+		}
+		v.TrackerUpdated[p.Stage] = true
 	case FindingRecheckRequested:
 		if f, ok := v.Findings[p.Ref.String()]; ok {
 			f.Rechecks++

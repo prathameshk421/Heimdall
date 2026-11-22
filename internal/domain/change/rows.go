@@ -20,11 +20,12 @@ import (
 // Flow names which part of a change a row belongs to. A change carries up to two flows; each starts on its own fact.
 type Flow string
 
-// The flows. FlowBoth rows start when either flow has started.
+// The flows. FlowBoth rows start when either flow has started. FlowMerge rows run only after a pull request merges.
 const (
 	FlowTests  Flow = "tests"
 	FlowReview Flow = "review"
 	FlowBoth   Flow = "both"
+	FlowMerge  Flow = "merge"
 )
 
 // Row is one piece of work of a change.
@@ -179,6 +180,8 @@ func (r Row) started(v View) bool {
 		return v.PR != nil
 	case FlowBoth:
 		return v.Trigger != nil || v.PR != nil
+	case FlowMerge:
+		return v.Closed != nil && v.Closed.Merged
 	}
 	return false
 }
@@ -187,7 +190,8 @@ func (r Row) started(v View) bool {
 func Rows() []Row {
 	out := []Row{rowOpenRoom()}
 	out = append(out, testsRows()...)
-	return append(out, reviewRows()...)
+	out = append(out, reviewRows()...)
+	return append(out, mergeRows()...)
 }
 
 // RowJobKinds are the effect kinds the rows may start, each once, in table order.
@@ -216,7 +220,7 @@ func Open(in In) []Row {
 	}
 	var open []Row
 	for _, r := range rows {
-		if in.View.Over() || done[r.ID] || !r.started(in.View) || !allDone(done, r.After) {
+		if (in.View.Over() && r.Flow != FlowMerge) || done[r.ID] || !r.started(in.View) || !allDone(done, r.After) {
 			continue
 		}
 		open = append(open, r)

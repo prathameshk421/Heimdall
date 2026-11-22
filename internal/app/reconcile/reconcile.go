@@ -50,6 +50,10 @@ type Config struct {
 	Settings change.Settings
 	Windows  liveness.Windows
 	Logger   *slog.Logger
+	// TestsRoom and ReviewRoom, when both are set, are the standing channels where people read asks instead of the
+	// internal working room of a change (U1).
+	TestsRoom  change.RoomID
+	ReviewRoom change.RoomID
 	// Wait pauses for d or until ctx is done (clock.Wait); the app layer may not import the platform package.
 	Wait func(ctx context.Context, d time.Duration) error
 }
@@ -182,7 +186,9 @@ func (r *Reconciler) runOnce(ctx context.Context, changeID id.ChangeID) error {
 	if err != nil {
 		return fmt.Errorf("reconcile %s: fold: %w", changeID, err)
 	}
-	if v.Over() || (v.Trigger == nil && v.PR == nil) {
+	// Merged changes still run their post-merge rows (tracker write-back and room close, F1/F2). Rejected and
+	// unmerged-closed changes have no open rows.
+	if (v.Over() && (v.Closed == nil || !v.Closed.Merged)) || (v.Trigger == nil && v.PR == nil) {
 		return nil
 	}
 	in, err := r.buildIn(ctx, changeID, v)
@@ -217,12 +223,14 @@ func (r *Reconciler) buildIn(ctx context.Context, changeID id.ChangeID, v change
 	case err != nil:
 		return in, fmt.Errorf("read policy at %q: %w", base, err)
 	}
-	if in.Profile, err = r.cache.profile(ctx, r.cfg.Inputs, repo); err != nil {
-		return in, fmt.Errorf("read profile: %w", err)
-	}
-	if v.PR != nil {
-		if in.Outside, err = r.cache.outside(ctx, r.cfg.Inputs, changeID, v); err != nil {
-			return in, fmt.Errorf("read outside facts: %w", err)
+	if !v.Over() {
+		if in.Profile, err = r.cache.profile(ctx, r.cfg.Inputs, repo); err != nil {
+			return in, fmt.Errorf("read profile: %w", err)
+		}
+		if v.PR != nil {
+			if in.Outside, err = r.cache.outside(ctx, r.cfg.Inputs, changeID, v); err != nil {
+				return in, fmt.Errorf("read outside facts: %w", err)
+			}
 		}
 	}
 	if in.Dead, err = r.cfg.Dead.DeadEffects(ctx, changeID); err != nil {

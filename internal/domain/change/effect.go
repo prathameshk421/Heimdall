@@ -16,11 +16,13 @@ type EffectKind string
 // The effect kinds the spec names: a GitHub check, comment and branch, the room (open and post), a tracker write
 // (rejection tickets, comments), and a memory episode.
 const (
-	EffectGitHubCheck       EffectKind = "github_check"
-	EffectGitHubComment     EffectKind = "github_comment"
-	EffectGitHubBranch      EffectKind = "github_branch"
-	EffectRoomOpen          EffectKind = "room_open"
-	EffectRoomPost          EffectKind = "room_post"
+	EffectGitHubCheck   EffectKind = "github_check"
+	EffectGitHubComment EffectKind = "github_comment"
+	EffectGitHubBranch  EffectKind = "github_branch"
+	EffectRoomOpen      EffectKind = "room_open"
+	EffectRoomPost      EffectKind = "room_post"
+	// EffectRoomClose removes agents and archives the change's Switch room after merge (F2).
+	EffectRoomClose         EffectKind = "room_close"
 	EffectTrackerWrite      EffectKind = "tracker_write"
 	EffectMemoryEpisode     EffectKind = "memory_episode"
 	EffectTaskAssign        EffectKind = "task_assign"
@@ -38,7 +40,7 @@ const (
 // Valid reports whether k is an effect kind.
 func (k EffectKind) Valid() bool {
 	return slices.Contains([]EffectKind{EffectGitHubCheck, EffectGitHubComment, EffectGitHubBranch,
-		EffectRoomOpen, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign,
+		EffectRoomOpen, EffectRoomPost, EffectRoomClose, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign,
 		EffectGitHubCommitTests, EffectTestQuality, EffectVerifyEvidence, EffectAcceptance, EffectRunChecks, EffectProfileTrial}, k)
 }
 

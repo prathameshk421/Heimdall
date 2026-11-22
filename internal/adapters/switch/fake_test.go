@@ -134,6 +134,7 @@ func (f *fakeSwitch) installDefaults() {
 		return http.StatusOK, map[string]any{"id": id, "name": args["name"], "caller_is_member": true}
 	}
 	f.ops["invite_agent_to_room"] = func(map[string]any) (int, any) { return http.StatusOK, map[string]any{"ok": true} }
+	f.ops["archive_room"] = func(map[string]any) (int, any) { return http.StatusOK, map[string]any{"ok": true} }
 	f.ops["attach_reference_to_room"] = func(map[string]any) (int, any) {
 		return http.StatusOK, map[string]any{"ok": true}
 	}

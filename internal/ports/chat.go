@@ -55,6 +55,12 @@ type RoomInviter interface {
 	InviteAgent(ctx context.Context, room change.RoomID, agentName string) error
 }
 
+// RoomCloser archives a change's Switch room after merge (F2). Consumer: the room_close executor. Adapter:
+// internal/adapters/switch.
+type RoomCloser interface {
+	CloseRoom(ctx context.Context, room change.RoomID) error
+}
+
 // RoomSummarizer extracts an observed change-room digest from already redacted Switch messages.
 type RoomSummarizer interface {
 	SummarizeRoom(context.Context, string, []Message) (string, error)

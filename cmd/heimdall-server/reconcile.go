@@ -135,6 +135,7 @@ func newReconciler(ad adapters, store *postgres.Store, openrouter ports.ModelHea
 		Store: store, Effects: store, Open: store, Dead: store, Calls: store, Health: openrouter,
 		Inputs: reconcileInputs{code: ad.vcs, gate: gate, profiles: store},
 		Agents: agentFor(ad.agents), IDs: gen, Clock: clk, Logger: logger, Wait: clock.Wait,
+		TestsRoom: ad.testsRoom, ReviewRoom: ad.reviewsRoom,
 		Settings: change.Settings{Reviewers: reviewers, TestAttempts: testAttempts, PickWait: pickWait, Profiler: ad.agents.Profiler,
 			Timeouts: map[string]time.Duration{"tests": testsTimeout, "review": reviewTimeout, "verdict": verdictTimeout, "profile": profileTimeout}},
 		Windows: liveness.Windows{Ack: ackWindow, Stall: stallWindow},

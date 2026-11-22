@@ -87,29 +87,19 @@ func subjectOf(ra RowAction) string {
 func RowOfJob(k EffectKind) string { return rowOfJob(k) }
 
 func rowOfJob(k EffectKind) string {
-	switch k {
-	case EffectRoomOpen:
-		return "open_room"
-	case EffectGitHubBranch:
-		return "branch"
-	case EffectTestQuality:
-		return "test_qa"
-	case EffectGitHubCommitTests:
-		return "commit"
-	case EffectRunChecks:
-		return "checks"
-	case EffectProfileTrial:
-		return "profile"
-	case EffectVerifyEvidence:
-		return "verify"
-	case EffectAcceptance:
-		return "acceptance"
-	case EffectGitHubCheck:
-		return "gate"
-	case EffectGitHubComment, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign:
-		return ""
-	}
-	return ""
+	return map[EffectKind]string{
+		EffectRoomOpen:          "open_room",
+		EffectGitHubBranch:      "branch",
+		EffectTestQuality:       "test_qa",
+		EffectGitHubCommitTests: "commit",
+		EffectRunChecks:         "checks",
+		EffectProfileTrial:      "profile",
+		EffectVerifyEvidence:    "verify",
+		EffectAcceptance:        "acceptance",
+		EffectGitHubCheck:       "gate",
+		EffectTrackerWrite:      "tracker_merge",
+		EffectRoomClose:         "close",
+	}[k]
 }
 
 // deadNeeds are the jobs that failed for good or are in doubt. Nothing retries them by itself: a person decides.

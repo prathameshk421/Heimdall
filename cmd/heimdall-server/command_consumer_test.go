@@ -280,7 +280,7 @@ func TestServerCommandRuntimeSelectsReviewersForFanout(t *testing.T) {
 			payload, ok := mustPayload[change.TaskAssigned](ev)
 			require.True(t, ok)
 			assigned[string(payload.Agent)] = true
-		case change.EventChangeTriggered, change.EventRoomOpened, change.EventBranchEnsured,
+		case change.EventChangeTriggered, change.EventRoomOpened, change.EventRoomClosed, change.EventBranchEnsured, change.EventTrackerUpdated,
 			change.EventTaskSuperseded, change.EventTaskRewoken, change.EventProviderProbed, change.EventProfileProposed, change.EventProfileRequested, change.EventChecksReported,
 			change.EventTaskAcked, change.EventTaskTimedOut, change.EventTaskFailed, change.EventTaskProgress,
 			change.EventStepRetried, change.EventStepEscalated, change.EventStepResumed, change.EventQuestionAsked, change.EventQuestionAnswered, change.EventCommandProposed, change.EventCommandConfirmed,

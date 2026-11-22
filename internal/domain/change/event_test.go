@@ -13,7 +13,7 @@ import (
 
 // catalog is TECH_SPEC 3.2, spelled exactly. A typo in the enum fails here, not in production.
 var catalog = []string{
-	"change.triggered", "room.opened", "branch.ensured",
+	"change.triggered", "room.opened", "room.closed", "branch.ensured", "tracker.updated",
 	"task.assigned", "task.acked", "task.timed_out", "task.failed", "task.progress", "task.superseded", "task.rewoken", "provider.probed", "step.retried", "step.escalated", "step.resumed",
 	"profile.proposed", "profile.requested",
 	"question.asked", "question.answered", "command.proposed", "command.confirmed",
@@ -33,7 +33,7 @@ var catalog = []string{
 }
 
 func TestAllEventTypesMatchTheSpecCatalogInOrder(t *testing.T) {
-	require.Len(t, catalog, 53)
+	require.Len(t, catalog, 55)
 	var got []string
 	for _, et := range change.All() {
 		require.True(t, et.Valid(), et)

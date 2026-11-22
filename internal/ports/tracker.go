@@ -24,3 +24,8 @@ type TicketWriter interface {
 	// CreateTicket creates a ticket and returns its key.
 	CreateTicket(ctx context.Context, d TicketDraft) (id.ChangeID, error)
 }
+
+// TicketTransitioner moves a ticket to a named status (F1). Consumer: the tracker_write executor.
+type TicketTransitioner interface {
+	Transition(ctx context.Context, ticket id.ChangeID, key change.EffectKey, status string) error
+}

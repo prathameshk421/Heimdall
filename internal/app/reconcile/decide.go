@@ -2,8 +2,12 @@ package reconcile
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -26,8 +30,8 @@ func (d *decision) job(j change.Job) error {
 	return nil
 }
 
-// decide reads the actions of every open row and turns them into facts and jobs. Asks and texts need nothing done:
-// they are what Missing says.
+// decide reads the actions of every open row and turns them into facts and jobs. Asks become idempotent room_post jobs
+// so the people who must act hear about them once (U1).
 func (r *Reconciler) decide(ctx context.Context, in change.In) (decision, error) {
 	var d decision
 	for _, ra := range change.Next(in) {
@@ -42,9 +46,67 @@ func (r *Reconciler) decide(ctx context.Context, in change.In) (decision, error)
 			if err := r.task(ctx, &d, in, *ra.Task); err != nil {
 				return d, fmt.Errorf("row %s: %w", ra.Row, err)
 			}
+		case ra.Ask != nil:
+			if err := r.ask(&d, in, ra.Row, *ra.Ask); err != nil {
+				return d, fmt.Errorf("row %s: %w", ra.Row, err)
+			}
 		}
 	}
 	return d, nil
+}
+
+// ask turns a row Ask into one deterministic room_post job. A repeated Run with the same Ask produces the same key and
+// payload, which EnsureEffects deduplicates so people are pinged once (U1).
+func (r *Reconciler) ask(d *decision, in change.In, row string, a change.Ask) error {
+	room := r.askRoom(in.View, row)
+	if room == "" {
+		return nil
+	}
+	who := sortedUniqueActors(a.Who)
+	text := formatAsk(in.Change, who, a.What)
+	sum := sha256.Sum256([]byte(strings.Join(who, ",") + "\n" + a.What))
+	key := change.EffectKey(string(in.Change) + "/ask/" + row + "/" + hex.EncodeToString(sum[:8]))
+	return d.job(change.Job{
+		Kind:    change.EffectRoomPost,
+		Key:     key,
+		Target:  string(room),
+		Payload: change.RoomPostPayload{RoomID: room, Text: text},
+	})
+}
+
+func (r *Reconciler) askRoom(v change.View, row string) change.RoomID {
+	if r.cfg.TestsRoom != "" && r.cfg.ReviewRoom != "" {
+		switch row {
+		case "write_tests", "signoff":
+			return r.cfg.TestsRoom
+		default:
+			return r.cfg.ReviewRoom
+		}
+	}
+	return v.Room
+}
+
+func sortedUniqueActors(actors []change.ActorID) []string {
+	var out []string
+	for _, a := range actors {
+		s := strings.TrimSpace(string(a))
+		if s != "" && !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+func formatAsk(cid id.ChangeID, who []string, what string) string {
+	if len(who) == 0 {
+		return fmt.Sprintf("🔔 %s: %s", cid, what)
+	}
+	mentions := make([]string, len(who))
+	for i, w := range who {
+		mentions[i] = "@" + w
+	}
+	return fmt.Sprintf("🔔 %s · %s: %s", cid, strings.Join(mentions, " "), what)
 }
 
 // apply appends the facts with the jobs attached to the last one, or only attaches the jobs when there is no fact.

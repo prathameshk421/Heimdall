@@ -145,6 +145,18 @@ func (dummyTickets) Ticket(context.Context, id.ChangeID) (ports.Ticket, error) {
 	return ports.Ticket{}, nil
 }
 
+func (dummyTickets) Comment(context.Context, id.ChangeID, change.EffectKey, string) error {
+	return nil
+}
+
+func (dummyTickets) CreateTicket(context.Context, ports.TicketDraft) (id.ChangeID, error) {
+	return "KAN-99", nil
+}
+
+func (dummyTickets) Transition(context.Context, id.ChangeID, change.EffectKey, string) error {
+	return nil
+}
+
 type dummyChat struct{}
 
 func (dummyChat) OpenRoom(context.Context, ports.RoomRequest) (change.RoomID, error) {
@@ -156,6 +168,10 @@ func (dummyChat) Post(context.Context, change.RoomID, change.EffectKey, string) 
 }
 
 func (dummyChat) InviteAgent(context.Context, change.RoomID, string) error {
+	return nil
+}
+
+func (dummyChat) CloseRoom(context.Context, change.RoomID) error {
 	return nil
 }
 

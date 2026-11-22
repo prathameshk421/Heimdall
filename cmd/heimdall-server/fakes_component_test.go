@@ -88,6 +88,14 @@ func (f *fakeJira) serve(w http.ResponseWriter, r *http.Request) {
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(f.issue)
+	case "/rest/api/3/issue/KAN-1/comment":
+		writeJSON(w, http.StatusCreated, map[string]any{"id": "10001"})
+	case "/rest/api/3/issue/KAN-1/transitions":
+		if r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, map[string]any{"transitions": []any{map[string]any{"id": "31", "name": "Done", "to": map[string]any{"name": "Done"}}}})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"errorMessage": "no route " + r.URL.Path})
 	}
@@ -192,6 +200,8 @@ func (f *fakeSwitch) serve(w http.ResponseWriter, r *http.Request) {
 		f.rooms = append(f.rooms, map[string]any{"room_id": acceptanceRoomID, "name": title, "archived": false})
 		f.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{"result": map[string]any{"id": acceptanceRoomID, "name": title}})
+	case "/agents/" + acceptanceAgentID + "/ops/archive_room":
+		writeJSON(w, http.StatusOK, map[string]any{"result": map[string]any{"ok": true}})
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"detail": "no route " + r.URL.Path})
 	}
