@@ -116,16 +116,16 @@ func (ing *Ingester) collect(batch external.Batch, in IngestIn) IngestResult {
 	return out
 }
 
-// comments converts the port's comments into the shape package external reads. The port carries no position, no
-// outdated flag and no original commit, so a comment whose current line GitHub dropped is placed through its original
-// line only when the port kept the commit; otherwise external drops it with a typed reason.
+// comments converts the port's comments into the shape package external reads. The port carries no position and no
+// original commit, so the outdated flag is what says GitHub lost the comment's line: external then places the comment
+// through its original line when the port kept one, and drops it with a typed reason otherwise.
 func comments(in []ports.ReviewComment) []external.Comment {
 	out := make([]external.Comment, 0, len(in))
 	for _, c := range in {
 		out = append(out, external.Comment{
 			ID: c.ID, Kind: external.KindReviewComment, Body: c.Body, Path: c.Path,
 			Line: c.Line, StartLine: c.StartLine, OriginalLine: c.OriginalLine, Side: c.Side,
-			CommitID: c.CommitID, InReplyTo: c.InReplyTo, UserLogin: c.Login, UserType: c.UserType,
+			CommitID: c.CommitID, Outdated: c.Outdated, InReplyTo: c.InReplyTo, UserLogin: c.Login, UserType: c.UserType,
 		})
 	}
 	return out

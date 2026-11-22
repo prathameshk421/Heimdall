@@ -154,6 +154,10 @@ type RunIn struct {
 	// WorkflowRun is the GitHub Actions run id of this gate run. A result the gate records itself (a trivial skip, an
 	// unknown) names it, as proof.reported requires a run id. A run that has none fails when it must record one.
 	WorkflowRun int64
+	// MonthKnown and MonthSpentUSD are the month's spend before this run, read from the state ref (ACTION_MODE 7).
+	// A month total that was not read makes the budget row unknown; it never reads as $0.
+	MonthKnown    bool
+	MonthSpentUSD float64
 }
 
 // Result is what one gate run did. It is a fact for the CLI and the tests: the log is the record of what happened.

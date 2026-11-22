@@ -417,6 +417,7 @@ func (r *run) ingest(ctx context.Context) (IngestResult, string) {
 func (r *run) in2() actionflow.In {
 	in := actionflow.In{View: r.view, Action: r.act, PolicyProblem: r.policyProblem, PolicyHash: r.hash,
 		Candidates: r.ingested.Candidates, SummaryVersion: summaryVersion(r.events),
+		MonthKnown: r.in.MonthKnown, MonthSpentUSD: r.in.MonthSpentUSD,
 		HeadAt: headAt(r.events), Now: r.g.cfg.Clock.Now().UTC()}
 	in.Files = proofFiles(r.files)
 	in.ProofWorkflowChanged = slices.ContainsFunc(in.Files, func(f proof.File) bool { return f.Path == proofWorkflow })

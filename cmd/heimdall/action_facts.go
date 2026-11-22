@@ -12,6 +12,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/action"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/fastcheck"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/sarif"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testintegrity"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
@@ -22,25 +23,31 @@ import (
 // patches GitHub returns, so a file whose patch GitHub withholds (binary, or too large) makes each group that needs it
 // unknown.
 //
-// The analyzer results, the coverage report and the rule cards need inputs this reader does not fetch (code scanning
-// alerts or a SARIF artifact, the declared test workflow's coverage artifact, the cards at the merge base). Their Known
-// flags stay false, so a clause the policy turns on for them reads unknown, never met.
+// The analyzers clause reads the customer's code scanning alerts for the pull request's merge ref, when the policy at
+// the merge base names that source (the default). A repository without code scanning answers 403 or 404, which cannot
+// be told apart from a token that may not read them, so the clause stays unknown: unknown blocks in enforce mode, never
+// a false pass. A policy that names the SARIF artifact source is not wired yet, and its clause stays unknown too.
+//
+// The coverage report and the rule cards still need inputs this reader does not fetch (the declared test workflow's
+// coverage artifact, the cards at the merge base). Their Known flags stay false.
 type diffFacts struct {
 	scanner *secretscan.SecretScanner
+	// alerts reads code scanning alerts. Nil leaves the analyzers clause unknown.
+	alerts ports.CodeScanReader
 }
 
 var _ action.FactsReader = diffFacts{}
 
-func newDiffFacts() (diffFacts, error) {
+func newDiffFacts(alerts ports.CodeScanReader) (diffFacts, error) {
 	s, err := secretscan.NewSecretScanner()
 	if err != nil {
 		return diffFacts{}, fmt.Errorf("secret scanner: %w", err)
 	}
-	return diffFacts{scanner: s}, nil
+	return diffFacts{scanner: s, alerts: alerts}, nil
 }
 
 // FastFacts reads the groups of one change.
-func (d diffFacts) FastFacts(_ context.Context, req action.FactRequest) (action.FastFacts, error) {
+func (d diffFacts) FastFacts(ctx context.Context, req action.FactRequest) (action.FastFacts, error) {
 	diffs := make([]fileDiff, 0, len(req.Files))
 	for _, f := range req.Files {
 		diffs = append(diffs, parseFileDiff(f))
@@ -51,9 +58,92 @@ func (d diffFacts) FastFacts(_ context.Context, req action.FactRequest) (action.
 	}
 	return action.FastFacts{
 		Secrets:   secrets,
+		Analyzers: d.analyzers(ctx, req),
 		Tests:     pinnedChanges(diffs, req.Policy.Pinned),
 		Integrity: integrity(diffs, req.Tests),
 	}, nil
+}
+
+// analyzers reads the code scanning alerts for the pull request's merge ref. A read that failed leaves the group
+// unknown and does not fail the other groups: a broken analyzer feed must not hide the secret scan.
+//
+// Only alerts open at the head's merge ref count. ACTION_MODE 5.1 keeps what is new against the merge base
+// (sarif.New(base, head)), and this reader leaves Base empty: reading the base's alerts needs the base branch name,
+// which the fact request does not carry. A pre-existing open alert therefore counts too, which is stricter than the
+// design, never weaker: it can block a change and can never pass one.
+//
+// A 403 or a 404 cannot be told apart ("the token may not read them" from "code scanning is not enabled"), and the
+// fastcheck contract has no "not checked" state for this clause, so both leave the clause unknown. Unknown blocks in
+// enforce mode and reads as neutral in shadow mode (ACTION_MODE 5.4); it never reads as a pass.
+func (d diffFacts) analyzers(ctx context.Context, req action.FactRequest) fastcheck.AnalyzerFacts {
+	if d.alerts == nil || req.Policy.Analyzers.Source != policy.AnalyzerSourceCodeScanning {
+		return fastcheck.AnalyzerFacts{}
+	}
+	ref, err := codeScanningRef(req.Number)
+	if err != nil {
+		return fastcheck.AnalyzerFacts{}
+	}
+	alerts, err := d.alerts.CodeScanAlerts(ctx, req.Repo, ref, "open")
+	if err != nil {
+		return fastcheck.AnalyzerFacts{}
+	}
+	head := make([]sarif.Result, 0, len(alerts))
+	for _, a := range alerts {
+		if r, ok := codeScanResult(a); ok {
+			head = append(head, r)
+		}
+	}
+	return fastcheck.AnalyzerFacts{Known: true, Head: head}
+}
+
+// codeScanningRef is the ref GitHub analyses for a pull request: the merge commit of the PR. The fast check judges that
+// commit, so its alerts are the ones that count.
+func codeScanningRef(n int) (string, error) {
+	if n < 1 || n > maxPRNumber {
+		return "", fmt.Errorf("pull request number %d is out of range", n)
+	}
+	return "refs/pull/" + strconv.Itoa(n) + "/merge", nil
+}
+
+// codeScanResult maps one alert to a SARIF result. Check and Finger name the alert by its repo-wide number, which GitHub
+// keeps for the life of the alert, so an alert that only moves to another line is not a new result. The level is the
+// strongest of the security severity and the rule severity, because the policy threshold is a severity: a critical
+// security alert counts as an error, which is high. "none" is the lowest level, so it never blocks at the default.
+func codeScanResult(a ports.CodeScanAlert) (sarif.Result, bool) {
+	if a.Number < 1 {
+		return sarif.Result{}, false
+	}
+	return sarif.Result{
+		Check:   "code-scanning:" + a.Tool,
+		Rule:    a.RuleID,
+		Level:   codeScanLevel(a),
+		File:    a.Path,
+		Lines:   [2]int{a.StartLine, a.EndLine},
+		Message: a.Message,
+		Finger:  "alert:" + strconv.Itoa(a.Number) + ":" + a.RuleID + ":" + a.Path,
+	}, true
+}
+
+// codeScanLevel maps the two severities GitHub reports to the SARIF levels the fast check reads.
+func codeScanLevel(a ports.CodeScanAlert) string {
+	switch strings.ToLower(a.SecuritySeverity) {
+	case "critical", "high":
+		return "error"
+	case "medium":
+		return "warning"
+	case "low":
+		return "note"
+	}
+	switch strings.ToLower(a.Severity) {
+	case "error":
+		return "error"
+	case "warning":
+		return "warning"
+	case "note", "none":
+		return "note"
+	}
+	// An alert GitHub classified with neither severity is counted at the default threshold rather than ignored.
+	return "warning"
 }
 
 // fileDiff is one changed file with its patch read into lines.
