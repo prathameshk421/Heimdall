@@ -247,10 +247,12 @@ type reviewCase struct {
 	Retries    int             `json:"retries,omitempty"`
 	FailedCall []attemptRecord `json:"failed_call,omitempty"`
 	// SaveError says why a refused body named in FailedCall could not be saved.
-	SaveError string                `json:"save_error,omitempty"`
-	Error     string                `json:"error,omitempty"`
-	Truth     *bench.TruthMap       `json:"truth_on_head,omitempty"`
-	Findings  []bench.ScoredFinding `json:"findings"`
+	SaveError string `json:"save_error,omitempty"`
+	// CanaryInReasoning lists assistant turns whose reasoning mentioned the case's canary; never marks Injected.
+	CanaryInReasoning []string              `json:"canary_in_reasoning,omitempty"`
+	Error             string                `json:"error,omitempty"`
+	Truth             *bench.TruthMap       `json:"truth_on_head,omitempty"`
+	Findings          []bench.ScoredFinding `json:"findings"`
 }
 
 // reviewRun reviews every selected valid case with model behind the hard cost cap, then writes the results. The exit
