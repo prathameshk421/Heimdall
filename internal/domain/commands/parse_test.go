@@ -258,3 +258,13 @@ func TestReplyIsSingleShortMessage(t *testing.T) {
 	got := Parse(chat("heimdall nope"), testPeople)
 	require.Less(t, len(got.Reply), 1500)
 }
+
+// VerbOf reads the verb of a command message from its text alone, before any people are loaded.
+func TestVerbOfReadsTheVerbOfACommandMessage(t *testing.T) {
+	require.Equal(t, "approve-profile", VerbOf(Input{Source: SourceChat, Text: "heimdall Approve-Profile abc"}))
+	require.Equal(t, "reprofile", VerbOf(Input{Source: SourceChat, Text: "heimdall reprofile add lint"}))
+	require.Equal(t, "", VerbOf(Input{Source: SourceChat, Text: "hello there"}))
+	require.True(t, RepositoryScoped("approve-profile"))
+	require.True(t, RepositoryScoped("promote-profile"))
+	require.False(t, RepositoryScoped("reprofile"), "a revision request is written on a change")
+}

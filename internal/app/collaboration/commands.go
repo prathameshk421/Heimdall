@@ -183,6 +183,12 @@ func (p *Processor) HandleSharedRoomMessage(ctx context.Context, _ change.RoomID
 			named = append(named, c)
 		}
 	}
+	switch {
+	case len(named) == 0 && len(candidates) == 1:
+		named = candidates // one open ticket here: it is the one meant
+	case len(named) == 0 && len(candidates) > 0 && commands.RepositoryScoped(commands.VerbOf(in)):
+		named = candidates[:1] // the proposal id names the repository; any binding carries the command
+	}
 	if len(named) != 1 {
 		keys := make([]string, 0, len(candidates))
 		for _, c := range candidates {

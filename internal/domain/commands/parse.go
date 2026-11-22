@@ -184,3 +184,19 @@ func IsCommand(in Input) bool {
 	_, ok := commandBody(in)
 	return ok
 }
+
+// VerbOf is the lower-cased verb of a command message, read from its text alone; "" when the text is not a command.
+func VerbOf(in Input) string {
+	body, ok := commandBody(in)
+	if !ok {
+		return ""
+	}
+	verb, _ := cutWord(body)
+	return strings.ToLower(verb)
+}
+
+// RepositoryScoped says a verb acts on the repository rather than on one ticket: approving or promoting a sandbox
+// profile names the proposal, whose repository the profile service checks. In a shared channel it needs no ticket key.
+func RepositoryScoped(verb string) bool {
+	return verb == "approve-profile" || verb == "promote-profile"
+}

@@ -438,3 +438,31 @@ func TestAProfileStepOutOfOrderGetsAReplyAndDoesNotStopTheStream(t *testing.T) {
 	msg := ports.Message{ID: "runner-down", Room: room.RoomID, Sender: "ana", Text: "heimdall promote-profile " + proposalID}
 	require.Error(t, runtime.processor.HandleRoomMessage(context.Background(), room, msg), "an outage is still retried")
 }
+
+// In a channel shared by several tickets, approving or promoting a profile needs no ticket key: a profile belongs to a
+// repository and the proposal id names it. A revision request is written on a change, so it still asks, unless the
+// channel has one open ticket.
+func TestAProfileCommandInASharedChannelNeedsNoTicketKey(t *testing.T) {
+	cid := id.ChangeID("KAN-42")
+	runtime, _, chat, _ := setupCommandRuntime(t, cid, nil, ports.PR{})
+	profiles := &commandProfileFake{}
+	runtime.profiles = profiles
+	shared := change.RoomID("reviews-room")
+	two := []ports.RoomBinding{{ChangeID: cid, RoomID: shared}, {ChangeID: "KAN-43", RoomID: shared}}
+	proposalID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	approve := ports.Message{ID: "shared-approve", Room: shared, Sender: "ana", Text: "heimdall approve-profile " + proposalID}
+	require.NoError(t, runtime.processor.HandleSharedRoomMessage(context.Background(), shared, two, approve))
+	require.Equal(t, []string{"ana"}, profiles.approvals, "approved without a ticket key")
+
+	revise := ports.Message{ID: "shared-revise", Room: shared, Sender: "ana", Text: "heimdall reprofile add a lint check"}
+	require.NoError(t, runtime.processor.HandleSharedRoomMessage(context.Background(), shared, two, revise))
+	require.Contains(t, chat.posts[len(chat.posts)-1], "Which ticket", "two tickets: the revision asks which one")
+
+	posts := len(chat.posts)
+	one := []ports.RoomBinding{{ChangeID: cid, RoomID: shared}}
+	revise.ID = "shared-revise-one"
+	require.NoError(t, runtime.processor.HandleSharedRoomMessage(context.Background(), shared, one, revise))
+	require.Greater(t, len(chat.posts), posts)
+	require.NotContains(t, chat.posts[len(chat.posts)-1], "Which ticket", "one open ticket: no question")
+}
