@@ -91,6 +91,14 @@ func TestEvaluateOutcomeTable(t *testing.T) {
 		{"unknown: plan refused", func(f *proof.Facts) { f.Stop = proof.ReasonPlanRefused }, proof.KindUnknown, proof.ReasonPlanRefused, gate.VerdictUnknown},
 		{"unknown: model failure", func(f *proof.Facts) { f.Stop = proof.ReasonModelFailure }, proof.KindUnknown, proof.ReasonModelFailure, gate.VerdictUnknown},
 		{"unknown: no result", func(f *proof.Facts) { f.Stop = proof.ReasonNoResult }, proof.KindUnknown, proof.ReasonNoResult, gate.VerdictUnknown},
+		{"unknown: turn cap", func(f *proof.Facts) { f.Stop = proof.ReasonTurnCap }, proof.KindUnknown, proof.ReasonTurnCap, gate.VerdictUnknown},
+		{"unknown: no proposal is not a stop reason", func(f *proof.Facts) { f.Stop = proof.ReasonNoProposal }, proof.KindUnknown, proof.ReasonNoResult, gate.VerdictUnknown},
+		{"not reproduced: the review ended with no proposal", func(f *proof.Facts) {
+			f.Tests = proof.TestFacts{Ran: true}
+			f.Findings = nil
+			f.Ended = proof.ReasonNoProposal
+		}, proof.KindNotReproduced, "", gate.VerdictUnknown},
+		{"unknown: an end that is not a note reason", func(f *proof.Facts) { f.Ended = proof.ReasonTurnCap }, proof.KindUnknown, proof.ReasonNoResult, gate.VerdictUnknown},
 		{"unknown: a stop wins over finished tests", func(f *proof.Facts) { f.Stop = proof.ReasonDeadline; f.Tests.Accepted = 5 }, proof.KindUnknown, proof.ReasonDeadline, gate.VerdictUnknown},
 		{"unknown: a stop that is not a stop reason", func(f *proof.Facts) { f.Stop = proof.ReasonTrivial }, proof.KindUnknown, proof.ReasonNoResult, gate.VerdictUnknown},
 		{"unknown: a stop that no one knows", func(f *proof.Facts) { f.Stop = "gremlins" }, proof.KindUnknown, proof.ReasonNoResult, gate.VerdictUnknown},
@@ -243,4 +251,32 @@ func TestSpendExceeds(t *testing.T) {
 	require.True(t, proof.Spend{USD: 0.5000001}.Exceeds(b))
 	require.True(t, proof.Spend{InputTokens: -1}.Exceeds(b))
 	require.True(t, proof.Spend{OutputTokens: 40_001}.Exceeds(b))
+}
+
+// TestANoProposalEndIsNotedOnlyOnANotReproducedRun: the stall rule's end says why a run proved nothing, but it never
+// turns a run into a pass, and it is dropped when the run proved something before it stalled.
+func TestANoProposalEndIsNotedOnlyOnANotReproducedRun(t *testing.T) {
+	f := finished()
+	f.Tests = proof.TestFacts{Ran: true}
+	f.Findings = nil
+	f.Ended = proof.ReasonNoProposal
+	got := proof.Evaluate(f)
+	require.Equal(t, proof.KindNotReproduced, got.Kind)
+	require.Equal(t, proof.ReasonNoProposal, got.Note)
+	require.Empty(t, got.Reason, "only an unknown run has a reason")
+	require.NotEqual(t, gate.VerdictPass, got.Verdict())
+
+	proven := finished()
+	proven.Ended = proof.ReasonNoProposal
+	got = proof.Evaluate(proven)
+	require.Equal(t, proof.KindProven, got.Kind)
+	require.Empty(t, got.Note)
+
+	stopped := finished()
+	stopped.Ended = proof.ReasonNoProposal
+	stopped.Stop = proof.ReasonTurnCap
+	got = proof.Evaluate(stopped)
+	require.Equal(t, proof.KindUnknown, got.Kind)
+	require.Equal(t, proof.ReasonTurnCap, got.Reason)
+	require.Empty(t, got.Note)
 }
