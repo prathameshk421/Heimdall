@@ -166,3 +166,29 @@ func idSHA(s string) id.SHA { return id.SHA(s) }
 // unknownVerdict and gatePass name the two verdicts these cases assert on.
 func unknownVerdict() gate.Verdict { return gate.VerdictUnknown }
 func gatePass() gate.Verdict       { return gate.VerdictPass }
+
+// TestTheArtifactNotesWhyARunIsNotReproduced: the note says why a run proved nothing (the stall rule), and only a run
+// that is not reproduced may carry it, with a reason of proof.NoteReasons. Anything else is refused, never a pass.
+func TestTheArtifactNotesWhyARunIsNotReproduced(t *testing.T) {
+	noted := goodArtifact()
+	noted.Kind = proof.KindNotReproduced
+	noted.Note = proof.ReasonNoProposal
+	a, err := action.ParseProofArtifact(mustEncode(t, noted), artifactKey())
+	require.NoError(t, err)
+	out := a.Outcome()
+	require.Equal(t, proof.KindNotReproduced, out.Kind)
+	require.Equal(t, proof.ReasonNoProposal, out.Note)
+	require.Equal(t, unknownVerdict(), out.Verdict())
+
+	onSkip := goodArtifact()
+	onSkip.Note = proof.ReasonNoProposal
+	onUnknown := goodArtifact()
+	onUnknown.Kind, onUnknown.Reason, onUnknown.Note = proof.KindUnknown, proof.ReasonTurnCap, proof.ReasonNoProposal
+	notANote := goodArtifact()
+	notANote.Kind, notANote.Note = proof.KindNotReproduced, proof.ReasonBudget
+	for name, bad := range map[string]action.ProofArtifact{"on a skip": onSkip, "on an unknown": onUnknown,
+		"not a note reason": notANote} {
+		_, err := action.ParseProofArtifact(mustEncode(t, bad), artifactKey())
+		require.ErrorIs(t, err, action.ErrProofArtifact, name)
+	}
+}

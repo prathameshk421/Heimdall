@@ -63,17 +63,20 @@ type ArtifactCandidate struct {
 
 // ProofArtifact is the versioned JSON a proof run uploads and the gate validates.
 type ProofArtifact struct {
-	Version     int                 `json:"version"`
-	Head        id.SHA              `json:"head"`
-	Base        id.SHA              `json:"base"`
-	PolicyHash  string              `json:"policy_hash"`
-	WorkflowRun int64               `json:"workflow_run"`
-	Model       string              `json:"model,omitempty"`
-	Kind        proof.Kind          `json:"kind"`
-	Reason      proof.Reason        `json:"reason,omitempty"`
-	Counts      change.ProofCounts  `json:"counts"`
-	Cost        change.Cost         `json:"cost"`
-	Candidates  []ArtifactCandidate `json:"candidates,omitempty"`
+	Version     int          `json:"version"`
+	Head        id.SHA       `json:"head"`
+	Base        id.SHA       `json:"base"`
+	PolicyHash  string       `json:"policy_hash"`
+	WorkflowRun int64        `json:"workflow_run"`
+	Model       string       `json:"model,omitempty"`
+	Kind        proof.Kind   `json:"kind"`
+	Reason      proof.Reason `json:"reason,omitempty"`
+	// Note says why a run is not reproduced, when the review ended early (proof.NoteReasons). It is for people and the
+	// step summary: the log record (Payload) does not carry it, and it never changes the verdict.
+	Note       proof.Reason        `json:"note,omitempty"`
+	Counts     change.ProofCounts  `json:"counts"`
+	Cost       change.Cost         `json:"cost"`
+	Candidates []ArtifactCandidate `json:"candidates,omitempty"`
 }
 
 // encodeProofArtifact writes the artifact in its one form.
@@ -128,6 +131,9 @@ func (a ProofArtifact) check(want ArtifactKey) error {
 		return fmt.Errorf("%w: policy hash %q is not the policy at the merge base", ErrProofArtifact, a.PolicyHash)
 	case a.WorkflowRun != want.WorkflowRun:
 		return fmt.Errorf("%w: workflow run %d is not run %d", ErrProofArtifact, a.WorkflowRun, want.WorkflowRun)
+	}
+	if a.Note != "" && (a.Kind != proof.KindNotReproduced || !slices.Contains(proof.NoteReasons(), a.Note)) {
+		return fmt.Errorf("%w: note %q is only for a run that is not reproduced", ErrProofArtifact, a.Note)
 	}
 	if len(a.Candidates) > change.MaxProofResults {
 		return fmt.Errorf("%w: %d candidates is over the %d limit", ErrProofArtifact, len(a.Candidates), change.MaxProofResults)
@@ -241,7 +247,7 @@ func notCheckedReason(r proof.Reason) bool {
 
 // Outcome is the result the gate shows for the artifact.
 func (a ProofArtifact) Outcome() proof.Outcome {
-	return proof.Outcome{Kind: a.Kind, Reason: a.Reason, Counts: a.Counts.Counts(), Cost: a.Cost.Spend()}
+	return proof.Outcome{Kind: a.Kind, Reason: a.Reason, Note: a.Note, Counts: a.Counts.Counts(), Cost: a.Cost.Spend()}
 }
 
 // Payload is the log record of the artifact: one proof.reported. A candidate without a ref is only counted, because the

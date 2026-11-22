@@ -241,6 +241,9 @@ func (r *proofRun) stoppedFor() (proof.Reason, bool) {
 		return r.stopReason(), true
 	case proof.ReasonSuperseded:
 		return proof.ReasonDeadline, true
+	case proof.ReasonTurnCap:
+		// The turn cap is part of the run's budget, and a candidate may be "not checked" only for the reasons of 6.3.
+		return proof.ReasonBudget, true
 	case "", proof.ReasonStateUnverified, proof.ReasonWorkflowChanged, proof.ReasonNoIntent, proof.ReasonPlanRefused,
 		proof.ReasonModelFailure, proof.ReasonNoResult, proof.ReasonTrivial, proof.ReasonNotProvable:
 		// A completed run gave every claim its chance, and a failure is reported on the run itself. A claim it never
@@ -274,7 +277,8 @@ func artifactOf(r *proofRun) (ProofArtifact, error) {
 	}
 	a := ProofArtifact{Head: r.res.Head, Base: r.res.Base, PolicyHash: r.res.PolicyHash,
 		WorkflowRun: r.res.WorkflowRun, Model: r.p.cfg.ModelName, Kind: r.res.Outcome.Kind,
-		Reason: r.res.Outcome.Reason, Counts: change.NewProofCounts(r.res.Outcome.Counts), Cost: cost}
+		Reason: r.res.Outcome.Reason, Note: r.res.Outcome.Note, Counts: change.NewProofCounts(r.res.Outcome.Counts),
+		Cost: cost}
 	for _, c := range r.res.Candidates {
 		a.Candidates = append(a.Candidates, r.candidateArtifact(c))
 	}
