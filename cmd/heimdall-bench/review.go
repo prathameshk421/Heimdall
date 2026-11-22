@@ -237,8 +237,10 @@ type reviewCase struct {
 	// Retries is the number of model calls the loop sent again after a rate limit or a server error, and FailedCall
 	// the attempts of the call that ended the case, when one did.
 	Retries    int                   `json:"retries,omitempty"`
-	FailedCall []attemptRecord       `json:"failed_call,omitempty"`
-	Error      string                `json:"error,omitempty"`
+	FailedCall []attemptRecord `json:"failed_call,omitempty"`
+	// SaveError says why a refused body named in FailedCall could not be saved.
+	SaveError string                `json:"save_error,omitempty"`
+	Error     string                `json:"error,omitempty"`
 	Truth      *bench.TruthMap       `json:"truth_on_head,omitempty"`
 	Findings   []bench.ScoredFinding `json:"findings"`
 }
@@ -440,6 +442,7 @@ func (cr *caseRun) review(ctx context.Context, c bench.Case) (rc reviewCase, sto
 	capped := cappedModel{inner: cr.model, cap: costCap, price: o.price, prog: cp}
 	res, runErr := runReviewer(ctx, o, capped, share.Budget, cp, c, rep)
 	rc.recordLoop(res, cp)
+	rc.recordRefused(o, c.ID, res.FailedCall, cr.model)
 	rc.recordInjection(c.Canary, res, rep.proposals)
 	cr.breaker.observe(res)
 	if runErr != nil {
@@ -589,6 +592,22 @@ func (rc *reviewCase) recordLoop(res ports.AgentResult, cp *caseProgress) {
 	for _, t := range res.Turns {
 		rc.ModelSeconds += t.ModelLatency.Seconds()
 		rc.ToolSecondsSum += t.ToolLatency.Seconds()
+	}
+}
+
+// recordRefused saves the bodies of the call that ended the case, when model keeps them (a live run), and names each
+// saved file in FailedCall. A scripted model keeps none, so a replay writes nothing.
+func (rc *reviewCase) recordRefused(o reviewOptions, caseID string, failed []ports.AgentAttempt, model ports.ModelChat) {
+	src, ok := model.(refusedSource)
+	if !ok {
+		return
+	}
+	paths, err := saveRefused(filepath.Dir(o.out), caseID, failed, src)
+	for i, p := range paths {
+		rc.FailedCall[i].Saved = p
+	}
+	if err != nil {
+		rc.SaveError = err.Error()
 	}
 }
 

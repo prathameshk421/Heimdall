@@ -93,7 +93,8 @@ func (cryptoJitter) Int63n(n int64) int64 {
 
 // attemptRecord is one failed attempt of a model call in the results file. RequestBytes and RequestSHA256 name the
 // body that was refused, never its content, and SameRequest marks an attempt that sent the same body as the one before
-// it: a refusal that repeats on it is a fault of the request, not a passing one.
+// it: a refusal that repeats on it is a fault of the request, not a passing one. Saved is the file that holds the
+// refused body (refused.go), set only on a live run's call that ended the case.
 type attemptRecord struct {
 	Kind          string  `json:"kind,omitempty"`
 	Status        int     `json:"status,omitempty"`
@@ -101,6 +102,7 @@ type attemptRecord struct {
 	RequestSHA256 string  `json:"request_sha256,omitempty"`
 	SameRequest   bool    `json:"same_request,omitempty"`
 	WaitSeconds   float64 `json:"wait_seconds,omitempty"`
+	Saved         string  `json:"saved,omitempty"`
 }
 
 func attemptRecords(attempts []ports.AgentAttempt) []attemptRecord {
