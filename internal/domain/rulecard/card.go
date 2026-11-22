@@ -7,7 +7,13 @@
 // tells the reviewer what to look at. Proof still comes from a test, a tool or a confirmed decision.
 package rulecard
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
+)
 
 // The kinds of card.
 const (
@@ -26,9 +32,11 @@ type Status string
 // reason or a remembered note in a chat room cannot steer a reviewer by itself. A rejected card stays on disk so the
 // same proposal does not come back.
 const (
-	StatusActive   Status = "active"
-	StatusProposed Status = "proposed"
-	StatusRejected Status = "rejected"
+	StatusActive    Status = "active"
+	StatusCandidate Status = "candidate"
+	StatusApproved  Status = "approved"
+	StatusProposed  Status = "proposed"
+	StatusRejected  Status = "rejected"
 )
 
 // Limits of the fields that shape a ranking, so one card cannot match everything or fill a brief.
@@ -42,18 +50,23 @@ const (
 
 // Card is one parsed rule. A card without AppliesTo, Symbols and Triggers is general and applies to every change.
 type Card struct {
-	Name      string
-	Body      string
-	AppliesTo []string
-	Symbols   []string
-	Triggers  []string
-	Check     string // the one question that decides whether the rule holds
-	Proof     string // how to turn a violation into a test or a tool result
-	Kind      string
-	Source    string
-	Status    Status
-	Scope     Scope  // who wrote the card; empty means person, the scope of cards written before scopes existed
-	Lens      string // the lens a lens-scope card belongs to
+	Name            string
+	Body            string
+	AppliesTo       []string
+	Symbols         []string
+	Triggers        []string
+	Check           string // the one question that decides whether the rule holds
+	Proof           string // how to turn a violation into a test or a tool result
+	Kind            string
+	Source          string
+	Status          Status
+	ApprovedBy      string
+	ApprovedAt      time.Time
+	RejectedBy      string
+	RejectedAt      time.Time
+	RejectionReason string
+	Scope           Scope  // who wrote the card; empty means person, the scope of cards written before scopes existed
+	Lens            string // the lens a lens-scope card belongs to
 }
 
 // Scope says who wrote a card and where it lives (REVIEW_ARCH 5.1).
@@ -98,11 +111,23 @@ func (c Card) Validate() error {
 	case len(c.Proof) > MaxProofChars:
 		return fmt.Errorf("proof has %d characters, at most %d", len(c.Proof), MaxProofChars)
 	}
+	for _, glob := range c.AppliesTo {
+		if err := policy.ValidateGlob(glob); err != nil {
+			return err
+		}
+	}
 	for _, trigger := range c.Triggers {
 		if len(trigger) < MinTriggerChars {
 			return fmt.Errorf("trigger %q is shorter than %d characters and would match almost every change", trigger, MinTriggerChars)
 		}
 	}
+	if err := validateCardScope(c); err != nil {
+		return err
+	}
+	return validateCardStatus(c)
+}
+
+func validateCardScope(c Card) error {
 	switch c.Scope {
 	case "", ScopePerson, ScopeTeam, ScopeCodebase:
 	case ScopeLens:
@@ -112,9 +137,28 @@ func (c Card) Validate() error {
 	default:
 		return fmt.Errorf("scope %q is not person, lens, team or codebase", c.Scope)
 	}
+	return nil
+}
+
+func validateCardStatus(c Card) error {
 	switch c.Status {
-	case StatusActive, StatusProposed, StatusRejected:
+	case StatusActive, StatusProposed:
+		return nil
+	case StatusCandidate:
+		if strings.TrimSpace(c.Body) == "" {
+			return fmt.Errorf("a candidate card must have text")
+		}
+		return nil
+	case StatusApproved:
+		if strings.TrimSpace(c.Body) == "" {
+			return fmt.Errorf("an approved card must have text")
+		}
+		if strings.TrimSpace(c.ApprovedBy) == "" || c.ApprovedAt.IsZero() {
+			return fmt.Errorf("an approved card must record its approver and time")
+		}
+		return nil
+	case StatusRejected:
 		return nil
 	}
-	return fmt.Errorf("status %q is not active, proposed or rejected", c.Status)
+	return fmt.Errorf("status %q is not active, proposed, candidate, approved or rejected", c.Status)
 }
