@@ -79,6 +79,7 @@ func (r *proofRun) review(ctx context.Context) error {
 		return fmt.Errorf("action proof on %s: agent loop: %w", r.in.ChangeID, runErr)
 	}
 	r.res.Turns, r.res.Stop = len(res.Turns), res.Stop
+	r.turns = res.Turns
 	r.spent = proof.Spend{USD: res.CostUSD, InputTokens: int(res.Usage.InputTokens), OutputTokens: int(res.Usage.OutputTokens)}
 	if runErr != nil {
 		// The loop reports a cancellation, a model failure or a usage report that cannot be true as an error.

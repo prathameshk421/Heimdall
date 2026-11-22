@@ -172,6 +172,9 @@ type ProofResult struct {
 	Candidates  []CandidateOutcome
 	// Artifact is the versioned JSON the gate validates and records (artifact.go).
 	Artifact []byte
+	// Transcript is the bounded record of the run's turns (proof_transcript.go), for people. It is nil when the run
+	// made no model call. The gate never reads it.
+	Transcript []byte
 	// Trivial is the skip decision. It is why a run made no model call.
 	Trivial proof.Decision
 	// Turns and Stop say how the loop ended, and StopDetail holds its words when it failed.
@@ -225,6 +228,11 @@ func (p *Proof) Run(ctx context.Context, in ProofIn) (ProofResult, error) {
 		return r.res, fmt.Errorf("action proof on %s: %w", in.ChangeID, err)
 	}
 	r.res.Artifact = raw
+	if r.reviewed {
+		if r.res.Transcript, err = transcriptOf(r); err != nil {
+			return r.res, fmt.Errorf("action proof on %s: %w", in.ChangeID, err)
+		}
+	}
 	return r.res, runErr
 }
 
@@ -242,6 +250,8 @@ type proofRun struct {
 	proposals []proposal
 	// reviewed is true once the review step ran, whatever it found.
 	reviewed bool
+	// turns is the loop's record of each answer, for the transcript.
+	turns []ports.AgentTurn
 }
 
 // execute is the run: the trivial skip, the monthly cap, the review, then the proof of each proposal.
