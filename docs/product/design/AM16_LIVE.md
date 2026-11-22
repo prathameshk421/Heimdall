@@ -286,7 +286,8 @@ Total on the Deploy endpoint: **$0.3982** of the $1.00 per-PR cap, under the $3 
    `heimdall` environment on a `workflow_run`, wrote `refs/heimdall/state`, and posted the two checks and the comment.
    None of that had run before.
 3. **The summary comment as one editable comment.** Two heads, four gate runs, one comment, eight versions.
-4. **The state ref.** `refs/heimdall/state` is at `3669195`, written through the API.
+4. **The state ref.** `refs/heimdall/state` was created on the first gate run and moved as the gate recorded each
+   result: `3669195` after the first pair of runs, `693a796` after the second.
 5. **The three files a customer copies are enough.** No edit beyond the pin, the policy line and the variables.
 6. **The cost cap.** $0.20 a run of the $1.00, about 355k of the 800k input tokens.
 7. **The proof ends fail-closed.** A run that proved nothing is `unknown`, never `pass`, and the gate says so.
@@ -303,11 +304,12 @@ run_test | sandbox: stage the tree: sandbox setup step failed: tar exited 2:
   /usr/bin/tar: cmd/pay: Cannot mkdir: Function not implemented
 ```
 
-`ENOSYS` on `openat`/`mkdirat` inside the service is what a seccomp filter that allows `openat` but not the second
-argument set of `openat2`, or a `ProtectSystem=strict` mount that cannot be written, reports. The sandbox self check
-passed for both phases, so the service starts and is isolated; only a write into `WorkDir` fails. The self check
-script uses shell builtins only and never writes a file, so it cannot catch this. **Not fixed in this run:** the
-sandbox adapter needs a write in its self check and a decision on the syscall set. That is the next task.
+`Function not implemented` is ENOSYS, on `openat` for a file and on `mkdirat` for a directory of an ordinary Go
+repository. The failing syscalls are recorded; which part of the hardened service denies them is not. The sandbox self
+check passed in both phases in the same job, before the stage ran, so the service starts and is isolated. That check
+runs `selfCheckScript`, which reads `/proc`, `/proc/net/dev` and tests paths with `[ -e ]`: it writes no file, so it
+cannot see that `WorkDir` is unwritable. A self check that writes one file into `WorkDir` is the next step; it would
+report this as `cannot isolate` at setup, before a model is paid.
 
 Because the model got `error: ...` on every `run_test`, it read files for 20 more turns and hit the 40-turn cap. The
 proof never proposed a finding, so the planted refund bug was not proven.
@@ -367,8 +369,8 @@ workflows on `main`, and PR #1 open with one comment.
 
 - A proof that proves a finding. `run_test` never staged, so no candidate was proposed or proven in either attempt.
 - The planted refund bug in the diff: not found, not proven, not refuted. It was not reached.
-- The ENOSYS cause: `openat2` against `RestrictNamespaces`/`ProtectSystem`, or the seccomp profile, is not confirmed.
-  The next run needs a sandbox self check that writes a file into `WorkDir`.
+- Which part of the hardened service returns ENOSYS to `openat` and `mkdirat` in `WorkDir`. The next run needs a
+  sandbox self check that writes a file there.
 - `heimdall/fast` and `heimdall/proof` as `failure` or `action_required`: shadow mode posts `neutral` only.
 - Enforce mode, the GitHub App, the ruleset and the `proof_required` failure path: not run.
 - A fork pull request with no model key: the PR came from the same repository.

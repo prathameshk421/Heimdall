@@ -12,7 +12,8 @@ mode posts `neutral` checks that say what would block, and blocks nothing. The d
 - A model key for any OpenAI-compatible endpoint. Use a dedicated key with a spend limit at the provider: anyone who
   can push a branch to the repository can read a repository secret (ACTION_MODE 3.5).
 
-On a fork, turn Actions on first. A fresh fork has them off, and every run is skipped without a message:
+On a fork, check that Actions are enabled before you add the workflows. A repository with Actions off accepts the
+workflow files and then starts no run:
 
 ```sh
 gh api -X PUT repos/OWNER/REPO/actions/permissions -F enabled=true -f allowed_actions=all
