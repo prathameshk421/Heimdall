@@ -216,16 +216,18 @@ func (c *Client) InviteAgent(ctx context.Context, room change.RoomID, agentName 
 }
 
 // CloseRoom archives a room in Switch (TECH_SPEC 13, F2). It implements ports.RoomCloser.
+// Switch returns HTTP 200 with the archived room object (not an {"ok": true} wrapper), so only an explicit
+// {"ok": false} is treated as a refusal (found live on KAN-27, Nov 22).
 func (c *Client) CloseRoom(ctx context.Context, room change.RoomID) error {
 	return c.guarded(ctx, "close room", func(ctx context.Context) error {
 		var reply struct {
-			OK bool `json:"ok"`
+			OK *bool `json:"ok"`
 		}
 		args := map[string]any{"room_id": string(room)}
 		if err := c.operation(ctx, "archive_room", args, &reply); err != nil {
 			return err
 		}
-		if !reply.OK {
+		if reply.OK != nil && !*reply.OK {
 			return errors.New("switch archive_room: refused")
 		}
 		return nil
