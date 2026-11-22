@@ -97,19 +97,24 @@ func findingFingerprint(input finding.Input) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func countFiledFindings(existing []change.Event) int {
+	n := 0
+	for _, ev := range existing {
+		if ev.Type == change.EventFindingFiled {
+			n++
+		}
+	}
+	return n
+}
+
 func (s *Service) buildReviewEvents(
 	a Assignment,
 	existing []change.Event,
 	valids []validFinding,
 	ruleChecks []finding.RuleCheck,
 ) ([]change.Event, error) {
-	findingCount := 0
-	for _, ev := range existing {
-		if ev.Type == change.EventFindingFiled {
-			findingCount++
-		}
-	}
-
+	findingCount := countFiledFindings(existing)
+	known := liveFindingsFrom(existing)
 	var evs []change.Event
 	var filedRefs []id.FindingRef
 	baseVer := int64(len(existing))
@@ -117,16 +122,25 @@ func (s *Service) buildReviewEvents(
 	firstID := s.ids.NewEvent()
 	corr := correlationIDOf(existing, firstID)
 
-	for i, vf := range valids {
+	for _, vf := range valids {
+		fp := findingFingerprint(vf.input)
+		if dup, ok := matchFinding(known, vf.input, fp); ok {
+			if !slices.Contains(filedRefs, dup.ref) {
+				filedRefs = append(filedRefs, dup.ref)
+			}
+			continue
+		}
 		findingCount++
 		fRef, err := id.ParseFindingRef(fmt.Sprintf("F%d", findingCount))
 		if err != nil {
 			return nil, err
 		}
 		filedRefs = append(filedRefs, fRef)
+		loc := vf.input.Location
+		known = append(known, knownFinding{ref: fRef, fingerprint: fp, claim: vf.input.Claim, location: &loc, state: finding.StateOpen})
 
 		eid := firstID
-		if i > 0 {
+		if len(evs) > 0 {
 			eid = s.ids.NewEvent()
 		}
 		ev, err := s.buildFindingFiledEvent(a, vf, fRef, baseVer+int64(len(evs)+1), eid, corr, causation)
@@ -138,18 +152,14 @@ func (s *Service) buildReviewEvents(
 	}
 
 	reviewPayload := change.ReviewSubmitted{
-		Reviewer:    a.Agent,
-		FindingRefs: filedRefs,
-		PackDate:    s.clock.Now().UTC().Format("2006-01-02"),
-		RuleChecks:  ruleChecks,
-		TaskID:      a.TaskID,
+		Reviewer: a.Agent, FindingRefs: filedRefs, PackDate: s.clock.Now().UTC().Format("2006-01-02"),
+		RuleChecks: ruleChecks, TaskID: a.TaskID,
 	}
 	revEv, err := s.buildEventWithID(s.ids.NewEvent(), a.ChangeID, baseVer+int64(len(evs)+1), change.EventReviewSubmitted, a.Agent, corr, causation, reviewPayload, nil)
 	if err != nil {
 		return nil, err
 	}
-	evs = append(evs, revEv)
-	return evs, nil
+	return append(evs, revEv), nil
 }
 
 // SubmitReview validates findings and records review.submitted and finding.filed events.

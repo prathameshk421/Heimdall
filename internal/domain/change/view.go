@@ -241,6 +241,8 @@ type FindingInfo struct {
 	ReproTest  *finding.ReproTest  `json:"repro_test,omitempty"`
 	ToolResult *finding.ToolResult `json:"tool_result,omitempty"`
 	MemoryRef  *string             `json:"memory_ref,omitempty"`
+	// Reporters are additional seats that reported the same defect after cross-seat merge (L2).
+	Reporters []ActorID `json:"reporters,omitempty"`
 }
 
 // DecisionInfo is one human decision.
@@ -525,11 +527,25 @@ func (v *View) applyReview(p Payload) {
 	case ReviewSubmitted:
 		v.Reviews[string(p.Reviewer)] = ReviewInfo{HeadSHA: v.head(), FindingRefs: nonNil(p.FindingRefs),
 			Clean: len(p.FindingRefs) == 0, PackDate: p.PackDate, Outcome: ReviewSubmittedOutcome}
+		v.addFindingReporters(ActorID(p.Reviewer), p.FindingRefs)
 		v.endTask(p.TaskID)
 	case ReviewUnavailable:
 		v.Reviews[string(p.Reviewer)] = ReviewInfo{HeadSHA: v.head(), FindingRefs: []id.FindingRef{}, Outcome: ReviewUnavailableOutcome}
 	case ReviewWaived:
 		v.Reviews[string(p.Reviewer)] = ReviewInfo{HeadSHA: v.head(), FindingRefs: []id.FindingRef{}, Outcome: ReviewWaivedOutcome}
+	}
+}
+
+// addFindingReporters records additional seats that cited an existing finding after cross-seat merge (L2).
+func (v *View) addFindingReporters(reviewer ActorID, refs []id.FindingRef) {
+	for _, ref := range refs {
+		k := ref.String()
+		f, ok := v.Findings[k]
+		if !ok || reviewer == "" || reviewer == f.By || slices.Contains(f.Reporters, reviewer) {
+			continue
+		}
+		f.Reporters = append(f.Reporters, reviewer)
+		v.Findings[k] = f
 	}
 }
 

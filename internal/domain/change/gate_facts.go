@@ -147,20 +147,26 @@ func approvalsOnHead(v View) []gate.Approval {
 func findingStates(v View, rules policy.Consensus) []gate.FindingState {
 	refs := findingRefs(v)
 	states := make([]gate.FindingState, 0, len(refs))
+	extra := make([][]ActorID, 0, len(refs))
 	for _, ref := range refs {
 		f := v.Findings[ref]
 		states = append(states, gate.FindingState{ID: f.ID, Tier: f.Tier, Severity: f.Severity, State: f.State,
 			Fingerprint: f.Fingerprint, Reporter: string(f.By), Confidence: f.Confidence})
+		extra = append(extra, f.Reporters)
 	}
-	return withConsensus(states, rules)
+	return withConsensusExtra(states, extra, rules)
 }
 
 // withConsensus sets the consensus flag on each finding whose fingerprint enough distinct reporters hold at high
 // confidence (TECH_SPEC 11.2b, D40). Only a live report counts: a dismissed, withdrawn or resolved report is a rejected
 // claim, not a second opinion. The weighted score is Later and must not decide a hold today.
 func withConsensus(states []gate.FindingState, rules policy.Consensus) []gate.FindingState {
+	return withConsensusExtra(states, nil, rules)
+}
+
+func withConsensusExtra(states []gate.FindingState, extra [][]ActorID, rules policy.Consensus) []gate.FindingState {
 	reporters := map[string]map[string]bool{}
-	for _, s := range states {
+	for i, s := range states {
 		if s.Fingerprint == "" || s.Reporter == "" || s.Confidence != finding.ConfidenceHigh || !s.State.CanBlock() {
 			continue
 		}
@@ -168,6 +174,13 @@ func withConsensus(states []gate.FindingState, rules policy.Consensus) []gate.Fi
 			reporters[s.Fingerprint] = map[string]bool{}
 		}
 		reporters[s.Fingerprint][s.Reporter] = true
+		if i < len(extra) {
+			for _, r := range extra[i] {
+				if r != "" {
+					reporters[s.Fingerprint][string(r)] = true
+				}
+			}
+		}
 	}
 	out := append([]gate.FindingState(nil), states...)
 	for i := range out {
