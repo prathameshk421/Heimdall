@@ -20,11 +20,35 @@ import (
 )
 
 // apply runs the effects of the rows and reports whether it appended an event, which is the only progress the fold can
-// see. The check runs go first, so a crash between the two writes of the publish row repeats an idempotent check post
-// rather than losing it. The proof rows that record a result the gate makes itself (a trivial skip, an unknown) are
-// run here too, through the same write as RecordProof. The result of a real proof run is not made here: RecordProof
-// reads its artifact.
+// see. State-recording effects (RunFast, IngestExternal, SkipProof, ReportProofUnknown) run before publishing so a
+// round never posts stale or forged check runs before recording an override (SEC-02). When no state-recording effect
+// ran, PostChecks goes before PostSummary so a crash repeats an idempotent check post rather than losing it.
 func (r *run) apply(ctx context.Context, rows []actionflow.Row) (bool, error) {
+	appended, err := r.applyState(ctx, rows)
+	if err != nil || appended {
+		return appended, err
+	}
+	return r.applyPublish(ctx, rows)
+}
+
+func (r *run) applyState(ctx context.Context, rows []actionflow.Row) (bool, error) {
+	appended := false
+	for _, row := range rows {
+		for _, fx := range row.Effects {
+			if isPublishEffect(fx) {
+				continue
+			}
+			done, err := r.effect(ctx, fx)
+			if err != nil {
+				return appended, err
+			}
+			appended = appended || done
+		}
+	}
+	return appended, nil
+}
+
+func (r *run) applyPublish(ctx context.Context, rows []actionflow.Row) (bool, error) {
 	for _, row := range rows {
 		for _, fx := range row.Effects {
 			if _, ok := fx.(actionflow.PostChecks); !ok {
@@ -38,7 +62,7 @@ func (r *run) apply(ctx context.Context, rows []actionflow.Row) (bool, error) {
 	appended := false
 	for _, row := range rows {
 		for _, fx := range row.Effects {
-			if _, ok := fx.(actionflow.PostChecks); ok {
+			if _, ok := fx.(actionflow.PostSummary); !ok {
 				continue
 			}
 			done, err := r.effect(ctx, fx)
@@ -49,6 +73,14 @@ func (r *run) apply(ctx context.Context, rows []actionflow.Row) (bool, error) {
 		}
 	}
 	return appended, nil
+}
+
+func isPublishEffect(fx actionflow.Effect) bool {
+	switch fx.(type) {
+	case actionflow.PostChecks, actionflow.PostSummary:
+		return true
+	}
+	return false
 }
 
 // effect runs one effect. ResetState is impossible here: the reset happened before the log was read.
