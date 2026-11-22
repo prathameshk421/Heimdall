@@ -341,13 +341,20 @@ func (s *Sandbox) makeDirs(ctx context.Context) error {
 }
 
 func (s *Sandbox) resetWork(ctx context.Context) error {
-	if err := s.mustRoot(ctx, nil, s.tools.rm, "-rf", "--one-file-system", "--", WorkDir); err != nil {
-		return err
+	// Reset both WorkDir and TmpDir before every Stage so a hostile test cannot persist state in TMPDIR across
+	// Prove runs (SECURITY_AND_PERF_AUDIT.md MED-01). HomeDir stays intact to keep the fetched module cache.
+	for _, d := range []string{WorkDir, TmpDir} {
+		if err := s.mustRoot(ctx, nil, s.tools.rm, "-rf", "--one-file-system", "--", d); err != nil {
+			return err
+		}
+		if err := s.mustRoot(ctx, nil, s.tools.mkdir, "-m", "0700", "--", d); err != nil {
+			return err
+		}
+		if err := s.mustRoot(ctx, nil, s.tools.chown, "--no-dereference", User+":"+User, "--", d); err != nil {
+			return err
+		}
 	}
-	if err := s.mustRoot(ctx, nil, s.tools.mkdir, "-m", "0700", "--", WorkDir); err != nil {
-		return err
-	}
-	return s.mustRoot(ctx, nil, s.tools.chown, "--no-dereference", User+":"+User, "--", WorkDir)
+	return nil
 }
 
 // nftRuleset drops every packet the uid sends, except TCP to the proxy on loopback. It covers IPv4 and IPv6.
