@@ -40,8 +40,9 @@ const (
 // stall numbers are the bench's AM12g defaults, chosen from the recorded runs 3 and 4 (docs/sota/BENCH.md). The
 // action area of the policy has no key for them, so they are constants here, not policy.
 const (
-	// proofContextBytes is the request size the loop trims old tool results toward.
-	proofContextBytes = 48 << 10
+	// proofContextBytes is the request size the loop trims old tool results toward (96 KiB matches bench live run 9,
+	// avoiding the 48 KiB truncation of diffs and test outputs that drove recall to 0/6 in run 6).
+	proofContextBytes = 96 << 10
 	// proofKeptResults is how many of the newest tool results stay whole whatever the size.
 	proofKeptResults = 3
 	// proofStallTurns answers in a row with no test run and no proposal get one stall nudge, and proofStallGrace more
@@ -58,6 +59,20 @@ const (
 type OverlaySandbox interface {
 	ports.Sandbox
 	RunOverlay(ctx context.Context, j ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error)
+}
+
+// CommandResult is the bounded outcome of one exploratory sandbox command (run_command).
+type CommandResult struct {
+	Exit     int
+	TimedOut bool
+	Output   string
+}
+
+// CommandSandbox is an optional extension of OverlaySandbox that lets the reviewer run exploratory commands (builds,
+// typechecks, existing test suites, tooling checks) safely inside the isolated execution sandbox (no network, read-only
+// rootfs, CPU/memory/time caps). A sandbox that does not implement it still runs run_test and proofs normally.
+type CommandSandbox interface {
+	RunCommand(ctx context.Context, sha id.SHA, dir string, argv []string, overlays []ports.File, timeout time.Duration) (CommandResult, error)
 }
 
 // ProofConfig wires one proof use case. Every field is required: a run without an agent loop, a sandbox or a code

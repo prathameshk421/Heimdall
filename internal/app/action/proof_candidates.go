@@ -2,9 +2,11 @@ package action
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"slices"
+	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -58,11 +60,17 @@ func severityRank(s finding.Severity) int {
 //
 // A missing fact stops the whole run unknown: the base version of the lines could not be read, or the sandbox could not
 // run. The candidate is then dropped with no proof. It is never proven, and it is never called false.
+// errNewFileNeedsFix marks a proposal against a file that does not exist at the merge base and supplied no
+// fix_replacement. It drops the candidate cleanly without marking the whole run unknown: input_missing.
+var errNewFileNeedsFix = errors.New("file does not exist at base and no fix_replacement was provided")
+
 func (r *proofRun) proveOne(ctx context.Context, n int, p proposal) CandidateOutcome {
 	oc := r.candidateOf(p)
 	reverted, err := r.revertedOverlay(ctx, p)
 	if err != nil {
-		r.stop = proof.ReasonInputMissing
+		if !errors.Is(err, errNewFileNeedsFix) {
+			r.stop = proof.ReasonInputMissing
+		}
 		return dropNoProof(oc, err)
 	}
 	head, fixed := string(r.in.Head), treeID(r.in.Head, reverted)
@@ -147,10 +155,7 @@ func (r *proofRun) mapProof(oc *CandidateOutcome, res testintegrity.ProofResult)
 // testOutcomeOf reads the named test's outcome from a sandbox result. A build failure is a build error. A skip, or a
 // test that did not run, is an outcome Prove does not know, and Prove counts it as a build error.
 func testOutcomeOf(res ports.SandboxResult, name string) testintegrity.RunOutcome {
-	for _, t := range res.Tests {
-		if t.Name != name {
-			continue
-		}
+	if t, ok := findNamedTest(res.Tests, name); ok {
 		switch t.Outcome {
 		case ports.OutcomePassed:
 			return testintegrity.OutcomePass
@@ -167,6 +172,22 @@ func testOutcomeOf(res ports.SandboxResult, name string) testintegrity.RunOutcom
 	return testintegrity.OutcomeBuildError
 }
 
+// findNamedTest matches a test by exact name first, then by framework-qualified suffix (pytest "::name", vitest
+// ":name" or " > name", cargo "::name").
+func findNamedTest(tests []ports.TestResult, name string) (ports.TestResult, bool) {
+	for _, t := range tests {
+		if t.Name == name {
+			return t, true
+		}
+	}
+	for _, t := range tests {
+		if strings.HasSuffix(t.Name, "::"+name) || strings.HasSuffix(t.Name, ":"+name) || strings.HasSuffix(t.Name, " > "+name) {
+			return t, true
+		}
+	}
+	return ports.TestResult{}, false
+}
+
 // sandboxRunAt runs one repro test at one commit with the overlays written in. The job names the head the run serves, so
 // the runner cancels this job when a newer head arrives (ports.SandboxJob.Head).
 func (r *proofRun) sandboxRunAt(ctx context.Context, sha id.SHA, testPath string, test []byte, over []ports.File) (ports.SandboxResult, error) {
@@ -179,18 +200,30 @@ func (r *proofRun) sandboxRunAt(ctx context.Context, sha id.SHA, testPath string
 	return r.p.cfg.Sandbox.RunOverlay(ctx, job, overlays)
 }
 
-// revertedOverlay reads the base version of the file a proposal points at and returns the overlay that puts the
-// proposal's lines back to their base text on the head tree (testintegrity.RevertLines, which follows the line diff, so
-// lines the change moved still revert the right code). A range the head cannot cover is refused: the fixed tree
-// would then not exist, and the proof must say so rather than guess. When the lines are the same at the base, the
-// overlay is empty, so the fixed tree is the head and proveOne drops the claim.
+// revertedOverlay builds the fixed-tree overlay for a proposal. When the proposal supplies a fix_replacement, it
+// replaces only lines [p.First, p.Last] of p.File on the head tree (enabling proofs on newly added files or newly added
+// functions that do not exist at the merge base). Otherwise it reads the base version of p.File and reverts lines
+// [p.First, p.Last] to their base text via testintegrity.RevertLines.
 func (r *proofRun) revertedOverlay(ctx context.Context, p proposal) ([]ports.File, error) {
 	head, err := r.headFileBytes(p.File)
 	if err != nil {
 		return nil, err
 	}
+	if p.FixReplacement != "" {
+		merged, err := replaceLines(string(head), p.First, p.Last, p.FixReplacement)
+		if err != nil {
+			return nil, fmt.Errorf("apply fix_replacement to %s lines %d-%d: %w", p.File, p.First, p.Last, err)
+		}
+		if merged == string(head) {
+			return nil, nil
+		}
+		return []ports.File{{Path: p.File, Content: []byte(merged)}}, nil
+	}
 	base, err := r.p.cfg.Code.ReadFile(ctx, r.in.Repo, r.in.Base, p.File)
 	if err != nil {
+		if errors.Is(err, ports.ErrNotFound) {
+			return nil, fmt.Errorf("%s lines %d-%d: %w", p.File, p.First, p.Last, errNewFileNeedsFix)
+		}
 		return nil, fmt.Errorf("base version of %s: %w", p.File, err)
 	}
 	merged, err := testintegrity.RevertLines(string(head), string(base), p.First, p.Last)
@@ -201,6 +234,26 @@ func (r *proofRun) revertedOverlay(ctx context.Context, p proposal) ([]ports.Fil
 		return nil, nil
 	}
 	return []ports.File{{Path: p.File, Content: []byte(merged)}}, nil
+}
+
+// replaceLines replaces 1-based inclusive lines [first, last] of text with replacement, preserving trailing newline
+// conventions.
+func replaceLines(text string, first, last int, replacement string) (string, error) {
+	trailingNL := strings.HasSuffix(text, "\n")
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if first < 1 || last < first || last > len(lines) {
+		return "", fmt.Errorf("lines %d-%d out of range 1..%d", first, last, len(lines))
+	}
+	repLines := strings.Split(strings.TrimSuffix(replacement, "\n"), "\n")
+	out := make([]string, 0, len(lines)-(last-first+1)+len(repLines))
+	out = append(out, lines[:first-1]...)
+	out = append(out, repLines...)
+	out = append(out, lines[last:]...)
+	res := strings.Join(out, "\n")
+	if trailingNL {
+		res += "\n"
+	}
+	return res, nil
 }
 
 // headFileBytes reads one file of the head checkout, with the same path rule the tools use.

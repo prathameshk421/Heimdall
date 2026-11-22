@@ -27,9 +27,21 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
-// proofRegistries are the hosts the fetch phase may reach: the Go module proxy and checksum database, because run_test
-// writes and runs Go tests only.
-func proofRegistries() []string { return []string{"proxy.golang.org", "sum.golang.org"} }
+// proofRegistries are the standard package registries the fetch phase may reach over HTTPS 443 through the allowlisted
+// fetch proxy (Go, npm/yarn/pnpm, PyPI, crates.io). Execution phase always runs with PrivateNetwork=yes (no egress).
+func proofRegistries() []string {
+	return []string{
+		"proxy.golang.org",
+		"sum.golang.org",
+		"registry.npmjs.org",
+		"registry.yarnpkg.com",
+		"pypi.org",
+		"files.pythonhosted.org",
+		"crates.io",
+		"static.crates.io",
+		"index.crates.io",
+	}
+}
 
 // sandboxLimits are the limits of one sandbox job. They leave the runner room for the loop.
 func sandboxLimits() uidsandbox.Limits {

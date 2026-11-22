@@ -124,3 +124,41 @@ func TestSandboxBridgeRunsTheGoTestsOfTheJobDirectory(t *testing.T) {
 	_, err := b.Run(context.Background(), job)
 	require.Error(t, err)
 }
+
+func TestSandboxBridgePolyglotAndRunCommand(t *testing.T) {
+	t.Run("detectStack_and_fetch_commands", func(t *testing.T) {
+		nodeDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(nodeDir, "package.json"), []byte(`{"devDependencies":{"vitest":"^1.0.0"}}`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(nodeDir, "pnpm-lock.yaml"), []byte("lockfileVersion: 9\n"), 0o644))
+		require.Equal(t, stackNode, detectStack(nodeDir, "src/pay.test.ts"))
+		fetchJob, ok := fetchJobFor(nodeDir, stackNode, ".")
+		require.True(t, ok)
+		require.Equal(t, []string{"pnpm", "install", "--frozen-lockfile"}, fetchJob.Argv)
+		argv, fmtKind, resPath := nodeTestCommand(nodeDir, "src/pay.test.ts", ".heimdall-junit.xml")
+		require.Equal(t, uidsandbox.ResultJUnit, fmtKind)
+		require.Equal(t, ".heimdall-junit.xml", resPath)
+		require.Contains(t, argv, "vitest")
+
+		pyDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(pyDir, "requirements.txt"), []byte("pytest\n"), 0o644))
+		require.Equal(t, stackPython, detectStack(pyDir, "tests/test_pay.py"))
+		pyFetch, ok := fetchJobFor(pyDir, stackPython, ".")
+		require.True(t, ok)
+		require.Equal(t, []string{"pip", "install", "--user", "-r", "requirements.txt"}, pyFetch.Argv)
+
+		rustDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(rustDir, "Cargo.toml"), []byte("[package]\nname=\"pay\"\n"), 0o644))
+		require.Equal(t, stackRust, detectStack(rustDir, "tests/refund_test.rs"))
+	})
+
+	t.Run("RunCommand_runs_in_PhaseExec", func(t *testing.T) {
+		jobs := &fakeJobs{report: "go version go1.25"}
+		b := &sandboxBridge{sbx: jobs, checkout: checkoutDir(t), head: testHead, base: testBase}
+		res, err := b.RunCommand(context.Background(), testHead, ".", []string{"go", "version"}, nil, time.Minute)
+		require.NoError(t, err)
+		require.Equal(t, 1, res.Exit)
+		require.Contains(t, res.Output, "go version")
+		require.Len(t, jobs.execs, 1)
+		require.Equal(t, uidsandbox.ResultNone, jobs.execs[0].Result)
+	})
+}

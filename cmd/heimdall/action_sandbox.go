@@ -21,6 +21,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/testevents"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/uidsandbox"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/action"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/bench"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -58,23 +59,87 @@ type sandboxBridge struct {
 	fetched bool
 }
 
-var _ action.OverlaySandbox = (*sandboxBridge)(nil)
+var (
+	_ action.OverlaySandbox = (*sandboxBridge)(nil)
+	_ action.CommandSandbox = (*sandboxBridge)(nil)
+)
+
+// repoStack identifies the build/test toolchain of a staged repository or test file.
+type repoStack string
+
+const (
+	stackGo      repoStack = "go"
+	stackNode    repoStack = "node"
+	stackPython  repoStack = "python"
+	stackRust    repoStack = "rust"
+	stackUnknown repoStack = "unknown"
+)
 
 // Run runs a job with no overlay.
 func (b *sandboxBridge) Run(ctx context.Context, j ports.SandboxJob) (ports.SandboxResult, error) {
 	return b.RunOverlay(ctx, j, nil)
 }
 
-// RunOverlay stages the head tree with the overlays and runs the Go tests of the job's directory.
+// RunOverlay stages the head tree with the overlays and runs the tests of the detected stack in PhaseExec.
 func (b *sandboxBridge) RunOverlay(ctx context.Context, j ports.SandboxJob, overlays []ports.File) (ports.SandboxResult, error) {
-	if j.SHA != b.head && j.SHA != b.base {
-		return ports.SandboxResult{}, fmt.Errorf("sandbox: commit %s is neither the head nor the merge base of this run", j.SHA)
+	if err := b.checkSHA(j.SHA); err != nil {
+		return ports.SandboxResult{}, err
 	}
 	if j.Timeout <= 0 {
 		return ports.SandboxResult{}, errors.New("sandbox: the job has no timeout")
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := b.stage(ctx, overlays); err != nil {
+		return ports.SandboxResult{}, err
+	}
+	testPath := overlayTestPath(overlays)
+	stack := detectStack(b.checkout, testPath)
+	if err := b.fetchOnce(ctx, stack, j.Dir); err != nil {
+		return ports.SandboxResult{}, err
+	}
+	return b.execTest(ctx, stack, j, testPath)
+}
+
+// RunCommand stages the head tree with optional overlays and runs an arbitrary exploratory command inside PhaseExec
+// (no network, read-only rootfs, CPU/RAM/tasks/time limits).
+func (b *sandboxBridge) RunCommand(ctx context.Context, sha id.SHA, dir string, argv []string, overlays []ports.File, timeout time.Duration) (action.CommandResult, error) {
+	if err := b.checkSHA(sha); err != nil {
+		return action.CommandResult{}, err
+	}
+	if len(argv) == 0 || strings.TrimSpace(argv[0]) == "" {
+		return action.CommandResult{}, errors.New("sandbox: command argv is empty")
+	}
+	if timeout <= 0 {
+		return action.CommandResult{}, errors.New("sandbox: command timeout must be positive")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := b.stage(ctx, overlays); err != nil {
+		return action.CommandResult{}, err
+	}
+	stack := detectStack(b.checkout, "")
+	// Best-effort dependency warm for known stacks so builds/tests work offline inside PhaseExec.
+	if stack != stackUnknown {
+		_ = b.fetchOnce(ctx, stack, dir)
+	}
+	res, err := b.sbx.Exec(ctx, uidsandbox.Job{
+		Argv: argv, Dir: dir, Timeout: timeout, Result: uidsandbox.ResultNone,
+	})
+	if err != nil {
+		return action.CommandResult{}, fmt.Errorf("sandbox: run %s in %s: %w", argv[0], dir, err)
+	}
+	return action.CommandResult{Exit: res.Exit, TimedOut: res.TimedOut, Output: outputTail(res)}, nil
+}
+
+func (b *sandboxBridge) checkSHA(sha id.SHA) error {
+	if sha != b.head && sha != b.base {
+		return fmt.Errorf("sandbox: commit %s is neither the head nor the merge base of this run", sha)
+	}
+	return nil
+}
+
+func (b *sandboxBridge) stage(ctx context.Context, overlays []ports.File) error {
 	pr, pw := io.Pipe()
 	writeErr := make(chan error, 1)
 	go func() {
@@ -85,14 +150,83 @@ func (b *sandboxBridge) RunOverlay(ctx context.Context, j ports.SandboxJob, over
 	stageErr := b.sbx.Stage(ctx, pr, 0)
 	_ = pr.Close()
 	if werr := <-writeErr; werr != nil {
-		return ports.SandboxResult{}, fmt.Errorf("sandbox: build the tree: %w", werr)
+		return fmt.Errorf("sandbox: build the tree: %w", werr)
 	}
 	if stageErr != nil {
-		return ports.SandboxResult{}, fmt.Errorf("sandbox: stage the tree: %w", stageErr)
+		return fmt.Errorf("sandbox: stage the tree: %w", stageErr)
 	}
-	if err := b.fetchOnce(ctx, j.Dir); err != nil {
-		return ports.SandboxResult{}, err
+	return nil
+}
+
+// overlayTestPath returns the last overlay path (which proof_candidates appends as the repro test file).
+func overlayTestPath(overlays []ports.File) string {
+	if len(overlays) == 0 {
+		return ""
 	}
+	return overlays[len(overlays)-1].Path
+}
+
+// detectStack infers the toolchain from the repro test file extension first, then from repository manifests.
+func detectStack(checkout, testPath string) repoStack {
+	if s := stackFromPath(testPath); s != stackUnknown {
+		return s
+	}
+	switch {
+	case checkoutHas(checkout, "go.mod"):
+		return stackGo
+	case checkoutHas(checkout, "package.json"):
+		return stackNode
+	case checkoutHas(checkout, "Cargo.toml"):
+		return stackRust
+	case checkoutHas(checkout, "pyproject.toml") || checkoutHas(checkout, "requirements.txt") || checkoutHas(checkout, "setup.py"):
+		return stackPython
+	}
+	return stackGo
+}
+
+func stackFromPath(p string) repoStack {
+	if p == "" {
+		return stackUnknown
+	}
+	base := path.Base(p)
+	switch {
+	case strings.HasSuffix(base, "_test.go"):
+		return stackGo
+	case strings.HasSuffix(base, ".py"):
+		return stackPython
+	case strings.HasSuffix(base, ".rs"):
+		return stackRust
+	case bench.VitestTestFile(p):
+		return stackNode
+	}
+	return stackUnknown
+}
+
+func checkoutHas(checkout, name string) bool {
+	root, err := os.OpenRoot(checkout)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = root.Close() }()
+	_, err = root.Stat(name)
+	return err == nil
+}
+
+func (b *sandboxBridge) execTest(ctx context.Context, stack repoStack, j ports.SandboxJob, testPath string) (ports.SandboxResult, error) {
+	switch stack {
+	case stackNode:
+		return b.execNodeTest(ctx, j, testPath)
+	case stackPython:
+		return b.execPythonTest(ctx, j, testPath)
+	case stackRust:
+		return b.execRustTest(ctx, j, testPath)
+	case stackGo, stackUnknown:
+		return b.execGoTest(ctx, j)
+	}
+	return b.execGoTest(ctx, j)
+}
+
+func (b *sandboxBridge) execGoTest(ctx context.Context, j ports.SandboxJob) (ports.SandboxResult, error) {
 	res, err := b.sbx.Exec(ctx, uidsandbox.Job{
 		Argv: []string{"go", "test", "-json", "-count=1", "."}, Dir: j.Dir,
 		Env:     []string{"GOFLAGS=-mod=mod", "GOTOOLCHAIN=local", "GOPROXY=off"},
@@ -106,22 +240,168 @@ func (b *sandboxBridge) RunOverlay(ctx context.Context, j ports.SandboxJob, over
 	return out, nil
 }
 
-// fetchOnce downloads the modules once per run, in the fetch phase, where egress goes only through the proxy. The
-// module cache lives in the sandbox home, which a new stage keeps.
-func (b *sandboxBridge) fetchOnce(ctx context.Context, dir string) error {
+func (b *sandboxBridge) execNodeTest(ctx context.Context, j ports.SandboxJob, testPath string) (ports.SandboxResult, error) {
+	const junitPath = ".heimdall-junit.xml"
+	argv, resultFmt, resPath := nodeTestCommand(b.checkout, testPath, junitPath)
+	res, err := b.sbx.Exec(ctx, uidsandbox.Job{
+		Argv: argv, Dir: ".", Timeout: j.Timeout, Result: resultFmt, ResultPath: resPath,
+	})
+	if err != nil {
+		return ports.SandboxResult{}, fmt.Errorf("sandbox: run node tests for %s: %w", testPath, err)
+	}
+	out := testevents.ReportToSandboxResult(res.Report, logRefOf(res))
+	out.Exit, out.Output = res.Exit, outputTail(res)
+	return out, nil
+}
+
+func nodeTestCommand(checkout, testPath, junitPath string) ([]string, uidsandbox.ResultFormat, string) {
+	pkg := readCheckoutFile(checkout, "package.json")
+	if strings.Contains(pkg, `"vitest"`) || checkoutHas(checkout, "vitest.config.ts") || checkoutHas(checkout, "vitest.config.js") {
+		argv := []string{"npx", "--no-install", "vitest", "run", "--reporter=junit", "--outputFile=" + junitPath}
+		if testPath != "" {
+			argv = append(argv, testPath)
+		}
+		return argv, uidsandbox.ResultJUnit, junitPath
+	}
+	if checkoutHas(checkout, "bun.lock") || checkoutHas(checkout, "bun.lockb") {
+		argv := []string{"bun", "test"}
+		if testPath != "" {
+			argv = append(argv, testPath)
+		}
+		return argv, uidsandbox.ResultNone, ""
+	}
+	argv := []string{"node", "--test"}
+	if testPath != "" {
+		argv = append(argv, testPath)
+	}
+	return argv, uidsandbox.ResultNone, ""
+}
+
+func (b *sandboxBridge) execPythonTest(ctx context.Context, j ports.SandboxJob, testPath string) (ports.SandboxResult, error) {
+	const junitPath = ".heimdall-junit.xml"
+	argv := []string{"pytest", "-q", "--junitxml=" + junitPath}
+	if testPath != "" {
+		argv = append(argv, testPath)
+	}
+	res, err := b.sbx.Exec(ctx, uidsandbox.Job{
+		Argv: argv, Dir: ".", Timeout: j.Timeout, Result: uidsandbox.ResultJUnit, ResultPath: junitPath,
+	})
+	if err != nil {
+		return ports.SandboxResult{}, fmt.Errorf("sandbox: run pytest for %s: %w", testPath, err)
+	}
+	out := testevents.ReportToSandboxResult(res.Report, logRefOf(res))
+	out.Exit, out.Output = res.Exit, outputTail(res)
+	return out, nil
+}
+
+func (b *sandboxBridge) execRustTest(ctx context.Context, j ports.SandboxJob, testPath string) (ports.SandboxResult, error) {
+	argv := []string{"cargo", "test", "--offline"}
+	if strings.HasPrefix(testPath, "tests/") && strings.HasSuffix(testPath, ".rs") {
+		stem := strings.TrimSuffix(path.Base(testPath), ".rs")
+		argv = append(argv, "--test", stem)
+	}
+	res, err := b.sbx.Exec(ctx, uidsandbox.Job{
+		Argv: argv, Dir: ".", Timeout: j.Timeout, Result: uidsandbox.ResultNone,
+	})
+	if err != nil {
+		return ports.SandboxResult{}, fmt.Errorf("sandbox: run cargo test: %w", err)
+	}
+	out := ports.SandboxResult{LogRef: logRefOf(res), Exit: res.Exit, Output: outputTail(res)}
+	parsed, ok := parseLibtestResult(res.Stdout, res.Stderr)
+	if !ok || parsed.BuildFailed {
+		out.Errored = 1
+		return out, nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(parsed.Tests)) {
+		switch parsed.Tests[name] {
+		case bench.ResultPass:
+			out.Passed++
+			out.Tests = append(out.Tests, ports.TestResult{Name: name, Outcome: ports.OutcomePassed})
+		case bench.ResultFail:
+			out.Failed++
+			out.Tests = append(out.Tests, ports.TestResult{Name: name, Outcome: ports.OutcomeFailure})
+		case bench.ResultSkip:
+			out.Tests = append(out.Tests, ports.TestResult{Name: name, Outcome: ports.OutcomeSkipped})
+		}
+	}
+	return out, nil
+}
+
+func parseLibtestResult(stdout, stderr []byte) (bench.Run, bool) {
+	parsed, err := bench.ParseLibtest(stdout, stderr)
+	if err != nil {
+		return bench.Run{}, false
+	}
+	return parsed, true
+}
+
+func readCheckoutFile(checkout, name string) string {
+	root, err := os.OpenRoot(checkout)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = root.Close() }()
+	b, err := root.ReadFile(name)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// fetchOnce downloads dependencies once per run, in the fetch phase, where egress goes only through the proxy.
+func (b *sandboxBridge) fetchOnce(ctx context.Context, stack repoStack, dir string) error {
 	if b.fetched {
 		return nil
 	}
-	res, err := b.sbx.Fetch(ctx, uidsandbox.Job{Argv: []string{"go", "mod", "download"}, Dir: dir,
-		Env: []string{"GOTOOLCHAIN=local"}, Timeout: fetchTimeout})
+	job, ok := fetchJobFor(b.checkout, stack, dir)
+	if !ok {
+		b.fetched = true
+		return nil
+	}
+	res, err := b.sbx.Fetch(ctx, job)
 	if err != nil {
-		return fmt.Errorf("sandbox: fetch the modules: %w", err)
+		return fmt.Errorf("sandbox: fetch dependencies: %w", err)
 	}
 	if res.Exit != 0 {
-		return fmt.Errorf("sandbox: go mod download exited %d: %s", res.Exit, clipText(strings.TrimSpace(string(res.Stderr)), 400))
+		return fmt.Errorf("sandbox: %s exited %d: %s", strings.Join(job.Argv, " "), res.Exit, clipText(strings.TrimSpace(string(res.Stderr)), 400))
 	}
 	b.fetched = true
 	return nil
+}
+
+func fetchJobFor(checkout string, stack repoStack, dir string) (uidsandbox.Job, bool) {
+	switch stack {
+	case stackGo:
+		return uidsandbox.Job{Argv: []string{"go", "mod", "download"}, Dir: dir,
+			Env: []string{"GOTOOLCHAIN=local"}, Timeout: fetchTimeout}, true
+	case stackNode:
+		return nodeFetchJob(checkout)
+	case stackPython:
+		if checkoutHas(checkout, "requirements.txt") {
+			return uidsandbox.Job{Argv: []string{"pip", "install", "--user", "-r", "requirements.txt"}, Dir: ".", Timeout: fetchTimeout}, true
+		}
+	case stackRust:
+		return uidsandbox.Job{Argv: []string{"cargo", "fetch"}, Dir: ".", Timeout: fetchTimeout}, true
+	case stackUnknown:
+		return uidsandbox.Job{}, false
+	}
+	return uidsandbox.Job{}, false
+}
+
+func nodeFetchJob(checkout string) (uidsandbox.Job, bool) {
+	switch {
+	case checkoutHas(checkout, "pnpm-lock.yaml"):
+		return uidsandbox.Job{Argv: []string{"pnpm", "install", "--frozen-lockfile"}, Dir: ".", Timeout: fetchTimeout}, true
+	case checkoutHas(checkout, "bun.lock") || checkoutHas(checkout, "bun.lockb"):
+		return uidsandbox.Job{Argv: []string{"bun", "install", "--frozen-lockfile"}, Dir: ".", Timeout: fetchTimeout}, true
+	case checkoutHas(checkout, "yarn.lock"):
+		return uidsandbox.Job{Argv: []string{"yarn", "install", "--frozen-lockfile"}, Dir: ".", Timeout: fetchTimeout}, true
+	case checkoutHas(checkout, "package-lock.json"):
+		return uidsandbox.Job{Argv: []string{"npm", "ci"}, Dir: ".", Timeout: fetchTimeout}, true
+	case checkoutHas(checkout, "package.json"):
+		return uidsandbox.Job{Argv: []string{"npm", "install"}, Dir: ".", Timeout: fetchTimeout}, true
+	}
+	return uidsandbox.Job{}, false
 }
 
 // logRefOf names the job's output by its hash. The output itself stays in the job; the reference only lets the port's
