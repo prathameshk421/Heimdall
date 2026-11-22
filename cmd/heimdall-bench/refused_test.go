@@ -46,16 +46,14 @@ func refusedServer(t *testing.T, status int, answer string) *httptest.Server {
 
 // refusedBodyThrough sends body to srv through a recorder, the way the chat client does, and returns the recorder and
 // the body hash.
-func refusedBodyThrough(t *testing.T, srv *httptest.Server, body []byte, key string) (*bodyRecorder, string) {
+func refusedBodyThrough(t *testing.T, srv *httptest.Server, body []byte) (*bodyRecorder, string) {
 	t.Helper()
 	rec := newBodyRecorder(http.DefaultTransport)
 	client := &http.Client{Transport: rec}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL, bytes.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
-	if key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
+	req.Header.Set("Authorization", "Bearer "+testKey)
 	resp, err := client.Do(req)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
@@ -65,7 +63,7 @@ func refusedBodyThrough(t *testing.T, srv *httptest.Server, body []byte, key str
 func TestBodyRecorderKeepsTheRefusedBodyAndNeverAHeader(t *testing.T) {
 	body := []byte(`{"model":"m","messages":[{"role":"user","content":"review this change"}]}`)
 	srv := refusedServer(t, http.StatusInternalServerError, `{"error":"boom"}`)
-	rec, hash := refusedBodyThrough(t, srv, body, testKey)
+	rec, hash := refusedBodyThrough(t, srv, body)
 
 	saved, ok := rec.refusedBody(hash)
 	require.True(t, ok, "a 500 keeps the body")
@@ -78,7 +76,7 @@ func TestBodyRecorderKeepsTheRefusedBodyAndNeverAHeader(t *testing.T) {
 func TestBodyRecorderKeepsNothingForAnAnsweredCall(t *testing.T) {
 	body := []byte(`{"model":"m","messages":[]}`)
 	srv := refusedServer(t, http.StatusOK, `{"id":"x"}`)
-	rec, hash := refusedBodyThrough(t, srv, body, testKey)
+	rec, hash := refusedBodyThrough(t, srv, body)
 
 	_, ok := rec.refusedBody(hash)
 	require.False(t, ok, "an answered call is not a refusal")
@@ -88,7 +86,7 @@ func TestBodyRecorderRefusesABodyThatHoldsTheKey(t *testing.T) {
 	// A body that carries the key itself (a bug in a caller) must never reach a file.
 	body := []byte(`{"model":"m","messages":[{"role":"user","content":"` + testKey + `"}]}`)
 	srv := refusedServer(t, http.StatusBadRequest, `{"error":"bad"}`)
-	rec, hash := refusedBodyThrough(t, srv, body, testKey)
+	rec, hash := refusedBodyThrough(t, srv, body)
 
 	_, ok := rec.refusedBody(hash)
 	require.False(t, ok, "a body that holds the key is never kept")
@@ -208,6 +206,28 @@ func TestRefusedStoreSkipsABodyTheRecorderDoesNotHold(t *testing.T) {
 	paths, err := store.save("case", 2, []ports.AgentAttempt{{Status: 500, RequestHash: hashOf([]byte("gone"))}}, mapSource{})
 	require.NoError(t, err)
 	require.Equal(t, []string{""}, paths)
+}
+
+func TestRefusedBodyReachesDiskWithoutTheKeyThroughTheChatClient(t *testing.T) {
+	// The whole path: the chat client sends a body with a bearer key, the endpoint refuses it, and the file on disk
+	// holds the body and nothing of the request headers.
+	dir := t.TempDir()
+	body := []byte(`{"model":"m","messages":[{"role":"user","content":"review this change"}]}`)
+	srv := refusedServer(t, http.StatusInternalServerError, `{"error":"refused"}`)
+	rec, hash := refusedBodyThrough(t, srv, body)
+	chat := liveChat{bodies: rec}
+
+	rc := reviewCase{FailedCall: []attemptRecord{{Status: 500, RequestSHA256: hash}}}
+	rc.recordRefused(newRefusedStore(dir), "fixture-refunds", []ports.AgentAttempt{
+		{Kind: ports.ModelErrorServer, Status: 500, RequestHash: hash}}, chat)
+
+	path := rc.FailedCall[0].Saved
+	require.FileExists(t, path)
+	onDisk, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, body, onDisk, "the file is the request body, byte for byte")
+	require.NotContains(t, string(onDisk), testKey)
+	require.NotContains(t, string(onDisk), "Bearer")
 }
 
 func TestRefusedStoreKeepsTheIndexOfARunBeforeIt(t *testing.T) {
