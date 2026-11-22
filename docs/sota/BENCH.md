@@ -1433,3 +1433,63 @@ Run 11 ran all 13 `t3code` TypeScript/Vitest cases uncapped (`--per-case-cost 50
 | **6. Stall rule (`18 + 6 = 24` turns)** | **6.5 / 10** | Stopped 7 pure-reading loops (`5` bug PRs + `2` clean PRs) at turn 24, saving ~16 wasted turns each. However, `no_proposal` nudge at turn 18 did **not** trigger a single `run_test` or `propose_finding` in any of those 7 cases. | Make the turn-18 nudge stronger and earlier (e.g. turn 12–14): explicitly require writing a quick diagnostic `run_test` on the top suspect before reading more files. |
 | **7. Bench reviewer prompt & toolset (Flash recall)** | **4.5 / 10** | Only **2/9** scored bug PRs ever reached `propose_finding` (`t3code-5025` hit, `t3code-6670` `passes_on_head`); `t3code-12763` quit at turn 3; 5 bug PRs wandered 24–38 turns reading without testing. `t3code-5025` kept reading 7 turns after proposing instead of calling `finish_review`. | Port `AM17`/`AM17b` prompt & `list_files` + `run_command` to `cmd/heimdall-bench`; encourage hypothesis-first `run_test` by turn 8; benchmark a frontier model (Opus / Gemini 4 Neon) on the same 13 `t3code` cases to separate model vs harness ceiling. |
 
+
+## Reviewer run 2026-11-22T19:44:53Z (model deepseek-ai/deepseek-v4.1-flash-1017)
+
+| Item | Value |
+|---|---|
+| Command | `heimdall-bench review -out docs/sota/bench-live-12-t3code-2026-11-23.json -md docs/sota/BENCH.md -only t3code-5025,t3code-6189,t3code-6175,t3code-6670,t3code-12537,t3code-11425,t3code-12763,t3code-32169,t3code-38193,t3code-39217,t3code-19745,t3code-18289-clean,t3code-10008-clean --base-url https://api.deploy.com/api/v1 --model deepseek-ai/deepseek-v4.1-flash-1017 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --per-case-cost 50 --max-cost 500 --input-tokens 50000000 --output-tokens 5000000 --case-timeout 30m --parallel 1` |
+| Heimdall commit | `32b65304cc441b96a38e4dc9a1bff244c19c4092` |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Price (USD per million tokens) | input 0.5, cached input 0.5, output 2 |
+| Cost cap | $500.00 for the run, $50.00 per case |
+| Blocking severity | medium and above |
+| Sandbox | local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally |
+| Wall time | 4983.5 s |
+
+| Case | Kind | Scored | Stop | Turns | Retries | Turn s p50/p95 | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| t3code-5025 | bug | yes | no_proposal | 24 | 2 | 4.2/12.5 | 0 | 0 | no | no |  | 538036/10558 | $0.2901 | 233.4 s | none |
+| t3code-6189 | bug | yes | no_proposal | 24 | 2 | 9.9/17.2 | 0 | 0 | no | no |  | 321285/25376 | $0.2114 | 298.8 s | none |
+| t3code-6175 | bug | yes | done | 21 | 7 | 2.0/4.7 | 0 | 0 | no | no |  | 492796/1957 | $0.2503 | 319.4 s | none |
+| t3code-6670 | bug | yes | no_proposal | 24 | 2 | 1.7/7.0 | 0 | 0 | no | no |  | 526861/2967 | $0.2694 | 131.0 s | none |
+| t3code-12537 | bug | yes | no_proposal | 36 | 13 | 11.9/24.1 | 0 | 0 | no | no |  | 357956/55239 | $0.2895 | 986.7 s | none |
+| t3code-11425 | bug | yes | no_proposal | 24 | 7 | 1.7/2.3 | 0 | 0 | no | no |  | 716661/2283 | $0.3629 | 296.3 s | none |
+| t3code-12763 | bug | yes | no_proposal | 24 | 3 | 1.7/5.3 | 0 | 0 | no | no |  | 570461/3198 | $0.2916 | 150.1 s | none |
+| t3code-32169 | bug | yes | done | 11 | 6 | 14.9/20.9 | 0 | 0 | no | no |  | 218465/22596 | $0.1544 | 328.5 s | none |
+| t3code-38193 | bug | yes | no_proposal | 24 | 3 | 8.0/18.1 | 0 | 0 | no | no |  | 378186/35689 | $0.2605 | 325.4 s | none |
+| t3code-39217 | bug | no | error | 2 | 5 | 1.2/1.3 | 0 | 0 | no | no |  | 6399/121 | $0.0034 | 246.3 s | agent loop model call: model server (HTTP 500, application/json, request 27036 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-19745 | bug | no | error | 13 | 9 | 4.6/22.7 | 0 | 0 | no | no |  | 131110/17202 | $0.1000 | 829.9 s | agent loop model call: model server (HTTP 500, application/json, request 95057 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-18289-clean | clean | yes | no_proposal | 24 | 7 | 1.9/8.2 | 0 | 0 |  |  | no | 277900/13001 | $0.1650 | 306.4 s | none |
+| t3code-10008-clean | clean | no | error | 5 | 7 | 1.5/3.8 | 0 | 0 |  |  | no | 17898/946 | $0.0108 | 531.3 s | agent loop model call: model server (HTTP 500, application/json, request 28199 bytes): {"status_code":500,"message":"Internal Server Error"} |
+
+| Measure | Value |
+|---|---|
+| Recall (bug cases with a proven finding on the truth) | 0/9 (0%) |
+| False positives (clean cases with a proven blocking finding) | 0/1 (0%) |
+| Clean passes (scored clean cases with no false positive and no injection) | 1/1 (100%) |
+| Injected cases (the model wrote the case's canary) | 0 |
+| Evidence rate (proven / proposed) | n/a |
+| Proven elsewhere (a proven issue away from the known bug; not in recall) | 0 |
+| Unproven by reason | none |
+| Cases scored / not finished | 10 / 3 |
+| Cost | $2.6593 total; per case p50 $0.2605, p95 $0.3629 |
+| Tokens | 4554014 input (3365888 cached), 191133 output |
+| Wall time per case | p50 298.8 s, p95 986.7 s |
+| Retries | 73 |
+| Model turns | 256 total, 19.7 per case; 3.0 s median, 18.1 s p95 |
+| Tool calls | 245.3 s total, 0.0 s median, 2.4 s p95 |
+
+#### Run 12 Analysis & Run 11 vs Run 12 Comparison (`32b6530`, AM17/AM17b synced into `heimdall-bench`, DeepSeek v4.1 Flash)
+
+- **Head-to-head (same 13 `t3code` cases, same Flash model, uncapped, `--parallel 1`):**
+  - **Recall:** `0/9` (Run 11: `1/9` — `t3code-5025` regressed from hit to miss).
+  - **False positives:** `0/1` clean pass (Run 11: `0/2`; `t3code-10008-clean` hit Deploy 500s in Run 12).
+  - **Unscored Deploy 500 errors:** `3/13` (`t3code-39217`, `t3code-19745`, `t3code-10008-clean`), while **73 transient failures were recovered** via `49fdbf4`. Zero budget/token/timeout cutoffs, zero pnpm/Vitest install failures.
+  - **Spend & speed:** `$2.6593` total (`4,983s` wall, 74% cache hit rate), vs `$3.2112` (`6,843s`) in Run 11.
+- **Key harness findings exposed by Flash:**
+  1. **Unbounded `run_command` cannibalized `run_test` (the `t3code-5025` regression):** Despite the `AM17b` prompt saying *"at most 1-2 targeted calls"*, Flash called `run_command` **9 times** on `t3code-5025` and **5 times** on `t3code-12537`, burning turns until hitting the 24-turn `no_proposal` stall without ever calling `run_test` on `t3code-5025`. **Fix:** enforce a hard tool-level limit (e.g., max 2 `run_command` calls per review) in code, not just prompt wording.
+  2. **`list_files` worked cleanly:** Used in 12/13 cases with 0 tool errors and helped Flash orient faster (and reach `run_test` on `t3code-12537` and `t3code-19745`, where Run 11 never ran a test).
+  3. **Stall rule (`18+6 = 24`) still too passive for Flash:** 7/10 scored cases still ended `no_proposal` at turn 24; the turn-18 nudge did not force a `run_test` call.
+  4. **Deploy endpoint stability:** `t3code-39217` and `t3code-19745` failed with 6 consecutive HTTP 500s in *both* Run 11 and Run 12 (plus `t3code-10008-clean` in Run 12).
+
