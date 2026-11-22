@@ -57,15 +57,16 @@ type TokenSource struct {
 	client *client
 	clock  ports.Clock
 
-	mu    sync.Mutex
-	cache map[string]cachedToken
+	mu       sync.Mutex
+	cache    map[string]cachedToken
+	installs map[change.Repo]int64
 }
 
 // Reader returns a token that can read contents, pull requests, issues and checks across the installation. It cannot
 // write anything.
 func (t *TokenSource) Reader(ctx context.Context) (string, error) {
 	perms := map[string]string{"contents": "read", "pull_requests": "read", "issues": "read", "checks": "read"}
-	return t.mint(ctx, "reader", perms, nil)
+	return t.mint(ctx, "reader", "", perms, nil)
 }
 
 // Writer returns a token narrowed to one operation and to one repository. Writer(op, repo) can do nothing else.
@@ -78,7 +79,7 @@ func (t *TokenSource) Writer(ctx context.Context, op Op, repo change.Repo) (stri
 	if err != nil {
 		return "", err
 	}
-	return t.mint(ctx, "writer|"+string(op)+"|"+repo.String(), perms, []string{name})
+	return t.mint(ctx, "writer|"+string(op)+"|"+repo.String(), repo, perms, []string{name})
 }
 
 // writerPermissions is the one permission each write operation needs.
@@ -115,8 +116,9 @@ func (t *TokenSource) cached(key string, now time.Time) (string, bool) {
 }
 
 // mint returns a cached token or asks GitHub for a new one. The request carries the App JWT. A nil repos list means
-// the token is not narrowed to repositories.
-func (t *TokenSource) mint(ctx context.Context, key string, perms map[string]string, repos []string) (string, error) {
+// the token is not narrowed to repositories. For a repo on a different installation than t.app.InstallationID, a 422
+// triggers a cached lookup of GET /repos/{owner}/{repo}/installation so one App serves multiple owners/orgs.
+func (t *TokenSource) mint(ctx context.Context, key string, repo change.Repo, perms map[string]string, repos []string) (string, error) {
 	now := t.clock.Now()
 	if tok, ok := t.cached(key, now); ok {
 		return tok, nil
@@ -125,18 +127,13 @@ func (t *TokenSource) mint(ctx context.Context, key string, perms map[string]str
 	if err != nil {
 		return "", err
 	}
-	body := map[string]any{"permissions": perms}
-	if repos != nil {
-		body["repositories"] = repos
-	}
-	raw, err := json.Marshal(body)
+	raw, err := encodeTokenBody(perms, repos)
 	if err != nil {
-		return "", fmt.Errorf("github: encode token request: %w", err)
+		return "", err
 	}
-	path := fmt.Sprintf("/app/installations/%d/access_tokens", t.app.InstallationID)
-	resp, err := t.client.call(ctx, request{method: http.MethodPost, path: path, auth: jwt, body: raw})
+	resp, err := t.requestToken(ctx, repo, jwt, raw)
 	if err != nil {
-		return "", fmt.Errorf("github installation token: %w", err)
+		return "", err
 	}
 	var out struct {
 		Token     string    `json:"token"`
@@ -153,6 +150,72 @@ func (t *TokenSource) mint(ctx context.Context, key string, perms map[string]str
 	t.cache[key] = cachedToken{token: out.Token, until: until}
 	t.mu.Unlock()
 	return out.Token, nil
+}
+
+func encodeTokenBody(perms map[string]string, repos []string) ([]byte, error) {
+	body := map[string]any{"permissions": perms}
+	if repos != nil {
+		body["repositories"] = repos
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("github: encode token request: %w", err)
+	}
+	return raw, nil
+}
+
+func (t *TokenSource) requestToken(ctx context.Context, repo change.Repo, jwt string, raw []byte) (*response, error) {
+	installID := t.installationID(repo)
+	path := fmt.Sprintf("/app/installations/%d/access_tokens", installID)
+	resp, err := t.client.call(ctx, request{method: http.MethodPost, path: path, auth: jwt, body: raw})
+	if err == nil {
+		return resp, nil
+	}
+	var se *httpStatusError
+	if repo != "" && errors.As(err, &se) && se.code == http.StatusUnprocessableEntity {
+		resolved, rerr := t.resolveInstallation(ctx, repo, jwt)
+		if rerr == nil && resolved != installID {
+			path = fmt.Sprintf("/app/installations/%d/access_tokens", resolved)
+			resp, err = t.client.call(ctx, request{method: http.MethodPost, path: path, auth: jwt, body: raw})
+			if err == nil {
+				return resp, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("github installation token: %w", err)
+}
+
+func (t *TokenSource) installationID(repo change.Repo) int64 {
+	if repo == "" {
+		return t.app.InstallationID
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if id, ok := t.installs[repo]; ok && id > 0 {
+		return id
+	}
+	return t.app.InstallationID
+}
+
+func (t *TokenSource) resolveInstallation(ctx context.Context, repo change.Repo, jwt string) (int64, error) {
+	path := fmt.Sprintf("/repos/%s/installation", repo.String())
+	resp, err := t.client.call(ctx, request{method: http.MethodGet, path: path, auth: jwt})
+	if err != nil {
+		return 0, err
+	}
+	var out struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(resp.body, &out); err != nil || out.ID <= 0 {
+		return 0, errors.New("github repo installation: reply has no id")
+	}
+	t.mu.Lock()
+	if t.installs == nil {
+		t.installs = map[change.Repo]int64{}
+	}
+	t.installs[repo] = out.ID
+	t.mu.Unlock()
+	return out.ID, nil
 }
 
 // appJWT signs an RS256 JWT for the App: header, claims, then a PKCS#1 v1.5 signature over SHA-256.

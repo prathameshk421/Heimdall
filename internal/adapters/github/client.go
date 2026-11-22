@@ -397,6 +397,14 @@ func rateWait(h http.Header, now time.Time, attempt int) time.Duration {
 
 // statusError maps a reply status to a ports error. Nil means the status is accepted (2xx, or 304 for a cached list).
 // The message carries no body, because a body can echo a token.
+// httpStatusError records an unexpected non-2xx HTTP status so callers can branch on the status code with errors.As.
+type httpStatusError struct {
+	code int
+	msg  string
+}
+
+func (e *httpStatusError) Error() string { return e.msg }
+
 func statusError(r request, code int) error {
 	label := fmt.Sprintf("github %s %s: status %d", r.method, r.path, code)
 	switch {
@@ -411,7 +419,7 @@ func statusError(r request, code int) error {
 	case code >= 500:
 		return fmt.Errorf("%w: %s", ports.ErrUnavailable, label)
 	}
-	return errors.New(label)
+	return &httpStatusError{code: code, msg: label}
 }
 
 // closeBody discards the rest of a reply. A close error changes nothing the caller can act on.
