@@ -1,12 +1,23 @@
-// Command heimdall-bench checks the Proof Bench dataset (internal/bench). It makes no model calls and never writes to
-// GitHub: it only fetches commits read-only and runs git and go test locally.
+// Command heimdall-bench checks the Proof Bench dataset (internal/bench) and scores Heimdall's reviewer on it. It never
+// writes to GitHub: it only fetches commits read-only and runs git and go test locally. Only review calls a model.
 //
 //	heimdall-bench validate -out results.json [-manifest testdata/bench/cases.yaml] [-only id,id] [-cache dir]
 //	heimdall-bench truth -case id [-manifest ...] [-cache dir]
+//	heimdall-bench review -out review.json -model id -key-file path -price-input usd -price-output usd
+//	    [-max-cost 3] [-per-case-cost 0.5] [-parallel 1] [-md docs/sota/BENCH.md] [-only id,id] [-base-url url]
+//	    [-block-severity medium] [-refused-dir dir]
+//	heimdall-bench resend -base-url url -model id -key-file path -body file [-drop-tools] [-drop-system] [-keep-last N]
 //
 // validate proves each case real (internal/bench doc.go) and writes one JSON results file. Its exit status is 0 when
 // every case agrees with its manifest status, 1 when one does not, and 2 on a usage or manifest error.
 // truth prints the truth block of a bug case, computed from its fix diff, as YAML for the manifest.
+// review replays each valid case as a pull request, runs the reviewer through the agent loop with the model behind a
+// hard cost cap, proves each proposed finding with testintegrity.Prove and scores the run (review.go). It writes one
+// progress line to stderr per case, per model turn and per test run, so a slow run is not silent; -parallel reviews
+// several cases at once on the one shared cap. Its exit status is 0 when every case was scored, 1 when one was not,
+// and 2 on a usage error. It saves the body of each request the endpoint refuses under -refused-dir (refused.go).
+// resend sends one saved body again, with the parts a reader asks to drop, and prints the status, the content type and
+// the first 300 bytes of the answer (resend.go). It reads the key through internal/platform/config and never prints it.
 package main
 
 import (
@@ -43,7 +54,7 @@ func main() {
 
 func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, r runner) int {
 	if len(args) == 0 {
-		writeDiagnostic(stderr, "usage: heimdall-bench validate|truth [flags]\n")
+		writeDiagnostic(stderr, "usage: heimdall-bench validate|truth|review|resend [flags]\n")
 		return exitUsage
 	}
 	var code int
@@ -53,6 +64,10 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, r runn
 		code, err = runValidate(ctx, args[1:], stderr, r)
 	case "truth":
 		code, err = runTruth(ctx, args[1:], stdout, stderr, r)
+	case "review":
+		code, err = runReview(ctx, args[1:], stderr, r)
+	case "resend":
+		code, err = runResendCommand(ctx, args[1:], stdout, stderr)
 	default:
 		code, err = exitUsage, fmt.Errorf("unknown subcommand %q", args[0])
 	}
@@ -183,17 +198,28 @@ func checkCase(ctx context.Context, r runner, cache string, c bench.Case) caseRe
 }
 
 func runCheck(ctx context.Context, r runner, cache string, c bench.Case) caseResult {
-	if c.Language != "go" {
+	runner := c.Runner()
+	if runner == "" {
 		return caseResult{Outcome: bench.OutcomeSkipped, Reason: "no runner for " + c.Language + " yet"}
 	}
 	rp, err := openRepo(ctx, r, cache, c)
 	if err != nil {
 		return errorf("open cache: %v", err)
 	}
-	if c.Kind == bench.KindBug {
-		return checkBug(ctx, rp, c)
+	if c.Canary != "" {
+		if res := checkCanary(ctx, rp, c); res != nil {
+			return *res
+		}
 	}
-	return checkClean(ctx, rp, c)
+	switch {
+	case runner == bench.ToolchainGo && c.Kind == bench.KindBug:
+		return checkBug(ctx, rp, c)
+	case runner == bench.ToolchainGo:
+		return checkClean(ctx, rp, c)
+	case c.Kind == bench.KindBug:
+		return checkToolBug(ctx, rp, c)
+	}
+	return checkToolClean(ctx, rp, c)
 }
 
 // writeDiagnostic writes a progress or error line. A failed write to stderr has nowhere better to go.
@@ -219,24 +245,33 @@ func runTruth(ctx context.Context, args []string, stdout, stderr io.Writer, r ru
 		return exitUsage, err
 	}
 	c := cases[0]
-	if c.Kind != bench.KindBug || c.Language != "go" {
-		return exitUsage, fmt.Errorf("truth: %s is not a Go bug case", c.ID)
+	if c.Kind != bench.KindBug || c.Runner() == "" {
+		return exitUsage, fmt.Errorf("truth: %s is not a bug case with a runner", c.ID)
 	}
-	rp, err := openRepo(ctx, r, common.cache, c)
+	truth, err := fixTruth(ctx, r, common.cache, c)
 	if err != nil {
 		return exitDisagree, err
 	}
-	if err := rp.fetch(ctx, c.Fix.SHA, c.Fix.Parent); err != nil {
-		return exitDisagree, err
-	}
-	files, err := rp.diff(ctx, c.Fix.Parent, c.Fix.SHA)
-	if err != nil {
-		return exitDisagree, err
-	}
-	b, err := yaml.Marshal(map[string][]bench.FileTruth{"truth": bench.GoTruth(files)})
+	b, err := yaml.Marshal(map[string][]bench.FileTruth{"truth": truth})
 	if err != nil {
 		return exitDisagree, fmt.Errorf("encode truth: %w", err)
 	}
 	_, err = stdout.Write(b)
 	return exitAgrees, err
+}
+
+// fixTruth fetches a bug case's fix and computes the truth of its diff.
+func fixTruth(ctx context.Context, r runner, cache string, c bench.Case) ([]bench.FileTruth, error) {
+	rp, err := openRepo(ctx, r, cache, c)
+	if err != nil {
+		return nil, err
+	}
+	if err := rp.fetch(ctx, c.Fix.SHA, c.Fix.Parent); err != nil {
+		return nil, err
+	}
+	files, err := rp.diff(ctx, c.Fix.Parent, c.Fix.SHA)
+	if err != nil {
+		return nil, err
+	}
+	return toolTruth(ctx, rp, c, files)
 }

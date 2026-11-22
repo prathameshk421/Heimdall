@@ -37,6 +37,9 @@ func All() []EventType {
 		EventApprovalRecorded, EventApprovalInvalidated,
 		EventCIReported, EventChecksReported, EventGateEvaluated,
 		EventChangeRejected, EventChangeMerged,
+		// The Action area (events_action.go) follows the server's events, so no earlier position moves.
+		EventFastReported, EventProofStarted, EventProofReported, EventCostRecorded, EventExternalIngested,
+		EventSummaryPosted, EventBreakGlassRecorded, EventBreakGlassReviewed, EventStateReset,
 	}
 }
 

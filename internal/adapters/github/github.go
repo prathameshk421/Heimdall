@@ -37,8 +37,10 @@ type Config struct {
 
 // Adapter implements the VCS ports against GitHub. It is safe for concurrent use.
 type Adapter struct {
-	c            *client
-	tokens       *TokenSource
+	c      *client
+	tokens Tokens
+	// app is the App token source when the adapter acts as an App, and nil when it holds a static token.
+	app          *TokenSource
 	baseBranches map[change.Repo]string
 }
 
@@ -83,11 +85,12 @@ func New(cfg Config) (*Adapter, error) {
 		}
 		branches[repo] = branch
 	}
-	return &Adapter{c: c, tokens: tokens, baseBranches: branches}, nil
+	return &Adapter{c: c, tokens: tokens, app: tokens, baseBranches: branches}, nil
 }
 
-// Tokens returns the token source. doctor reads the installation's permissions through it.
-func (a *Adapter) Tokens() *TokenSource { return a.tokens }
+// Tokens returns the App token source. doctor reads the installation's permissions through it. It is nil for an
+// adapter built on a static token (ActionAPI.Adapter), which has no App.
+func (a *Adapter) Tokens() *TokenSource { return a.app }
 
 func parseOrigin(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)

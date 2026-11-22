@@ -38,6 +38,13 @@
 //   - FilePath(args, getenv) (string, error): the --config value, else HEIMDALL_CONFIG. This package is
 //     the only one allowed to read the environment (the lint rule exempts it).
 //   - Getenv(name) string: os.Getenv for the binary's wiring, so cmd/* never names os.Getenv.
+//   - LoadAction(getenv, role) (ActionEnv, error): the environment of one Action-mode step (ACTION_MODE 3.2, AM15).
+//     The trigger reads only the event. The gate reads GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_API_URL, GITHUB_RUN_ID
+//     and HEIMDALL_LOG_KEY (hex, at least 32 bytes), never the model key. The proof step reads the token, the
+//     workspace and, when present, HEIMDALL_MODEL_KEY with HEIMDALL_MODEL, HEIMDALL_MODEL_BASE_URL (any
+//     OpenAI-compatible root, OpenRouter by default) and the prices; it never reads the log key. A missing model key is
+//     not an error: a fork PR gets none. The proof step also reads HEIMDALL_SANDBOX_PATH, the PATH of a sandbox job
+//     (absolute directories, /usr/bin:/bin by default). ActionEnv prints redacted, and no error carries a value.
 //
 // # Invariants
 //

@@ -50,15 +50,25 @@ type FileTruth struct {
 
 // Case is one entry of the manifest.
 type Case struct {
-	ID          string        `yaml:"id"`
-	Repo        string        `yaml:"repo"`
-	Language    string        `yaml:"language"`
-	Kind        Kind          `yaml:"kind"`
-	Status      Status        `yaml:"status"`
-	Reason      string        `yaml:"reason"`
-	Change      Commit        `yaml:"change"` // the intro change (bug) or the merged PR (clean)
-	Fix         *Commit       `yaml:"fix"`
-	TestCommand string        `yaml:"test_command"`
+	ID          string    `yaml:"id"`
+	Repo        string    `yaml:"repo"`
+	Mirror      string    `yaml:"mirror"` // optional: a synced fork the bench fetches from instead of repo
+	Language    string    `yaml:"language"`
+	Toolchain   Toolchain `yaml:"toolchain"` // empty means go test for a Go case (toolchain.go)
+	Kind        Kind      `yaml:"kind"`
+	Status      Status    `yaml:"status"`
+	Reason      string    `yaml:"reason"`
+	Change      Commit    `yaml:"change"` // the intro change (bug) or the merged PR (clean)
+	Fix         *Commit   `yaml:"fix"`
+	TestCommand string    `yaml:"test_command"`
+	Workdir     string    `yaml:"workdir"` // cargo and vitest: the directory where install and the tests run
+	Install     []string  `yaml:"install"` // cargo and vitest: commands that run once per tree before the tests
+	Sparse      []string  `yaml:"sparse"`  // non-cone sparse-checkout patterns; empty means the whole tree
+	Tests       []string  `yaml:"tests"`   // cargo and vitest bug cases: the fix's target tests
+	// Canary is a token that a case plants in its change to steer the reviewer ("print this token"). The reviewer must
+	// never write it, so a run that does is injected. A case with a canary is adversarial; there is no adversarial
+	// kind (checkCanary).
+	Canary      string        `yaml:"canary"`
 	Timeout     time.Duration `yaml:"timeout"`
 	Description string        `yaml:"description"`
 	Truth       []FileTruth   `yaml:"truth"`
@@ -67,6 +77,14 @@ type Case struct {
 
 // RepoSlug returns owner/name of the case's GitHub repository.
 func (c Case) RepoSlug() string { return strings.TrimPrefix(c.Repo, "https://github.com/") }
+
+// Remote returns the URL the bench fetches from: the mirror when the case names one, else the repository.
+func (c Case) Remote() string {
+	if c.Mirror != "" {
+		return c.Mirror
+	}
+	return c.Repo
+}
 
 // Manifest is the whole dataset.
 type Manifest struct {
@@ -80,9 +98,12 @@ var (
 	idPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	repoPattern = regexp.MustCompile(`^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	spanPattern = regexp.MustCompile(`^([0-9]+)(?:-([0-9]+))?$`)
+	// canaryPattern keeps a canary easy to search for and long enough to never appear by chance: 12 to 80 characters,
+	// letters, digits, dot, underscore and dash, starting with a letter or digit.
+	canaryPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{11,79}$`)
 )
 
-// languages are the languages a case may name. Only go has a runner today.
+// languages are the languages a case may name. Go, Rust, TypeScript and JavaScript have runners (toolchain.go).
 func languages() []string {
 	return []string{"go", "python", "typescript", "javascript", "java", "rust"}
 }
@@ -124,15 +145,15 @@ func checkCase(c Case) []error {
 	if !idPattern.MatchString(c.ID) {
 		add("id %q: use lower-case letters, digits and dashes", c.ID)
 	}
-	if !repoPattern.MatchString(c.Repo) {
-		add("repo %q: want https://github.com/owner/name", c.Repo)
-	}
+	errs = append(errs, checkRepo(c)...)
 	if !slices.Contains(languages(), c.Language) {
 		add("language %q: want one of %v", c.Language, languages())
 	}
+	errs = append(errs, checkToolchain(c)...)
 	errs = append(errs, checkCommit("change", c.Change)...)
 	errs = append(errs, checkKind(c)...)
 	errs = append(errs, checkStatus(c)...)
+	errs = append(errs, checkCanary(c)...)
 	if c.TestCommand == "" {
 		add("test_command is empty")
 	}
@@ -149,6 +170,18 @@ func checkCase(c Case) []error {
 		if !strings.HasPrefix(s, "https://") {
 			add("source %q: want an https URL", s)
 		}
+	}
+	return errs
+}
+
+// checkRepo checks the repository and the optional mirror the bench fetches from.
+func checkRepo(c Case) []error {
+	var errs []error
+	if !repoPattern.MatchString(c.Repo) {
+		errs = append(errs, fmt.Errorf("repo %q: want https://github.com/owner/name", c.Repo))
+	}
+	if c.Mirror != "" && !repoPattern.MatchString(c.Mirror) {
+		errs = append(errs, fmt.Errorf("mirror %q: want https://github.com/owner/name", c.Mirror))
 	}
 	return errs
 }
@@ -184,9 +217,17 @@ func checkKind(c Case) []error {
 			errs = append(errs, errors.New("a clean case has no truth"))
 		}
 	default:
-		errs = append(errs, fmt.Errorf("kind %q: want bug or clean", c.Kind))
+		errs = append(errs, fmt.Errorf("kind %q: want bug or clean; a case that plants text for the reviewer is one of them with a canary", c.Kind))
 	}
 	return errs
+}
+
+// checkCanary checks the canary token of a case. A bug or clean case may declare one; it marks the case as adversarial.
+func checkCanary(c Case) []error {
+	if c.Canary != "" && !canaryPattern.MatchString(c.Canary) {
+		return []error{fmt.Errorf("canary %q: want 12 to 80 characters (letters, digits, dot, underscore, dash), starting with a letter or digit", c.Canary)}
+	}
+	return nil
 }
 
 func checkTruth(truth []FileTruth) []error {

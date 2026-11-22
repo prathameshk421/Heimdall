@@ -1,0 +1,420 @@
+{
+  "case": "fixture-refunds",
+  "note": "Recorded tool-call shape of fixture-refunds in live run 3 (docs/sota/bench-live-3-2026-11-21.json): the same tools on the same turns, first run_test on turn 13 and both proposals on turn 18. The arguments are written for the harness check, not model output.",
+  "turns": [
+    {
+      "calls": [
+        {
+          "name": "list_changes",
+          "arguments": {}
+        }
+      ],
+      "usage": {
+        "input_tokens": 2000,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0001908
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/refunds/service.go",
+            "start_line": 1,
+            "end_line": 60
+          }
+        },
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/api/refunds.go",
+            "start_line": 1,
+            "end_line": 60
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 2600,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0002448,
+      "expect": "internal/refunds/service.go"
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/refunds/store.go",
+            "start_line": 1,
+            "end_line": 51
+          }
+        },
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/refunds/refund.go",
+            "start_line": 1,
+            "end_line": 31
+          }
+        },
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/api/api.go",
+            "start_line": 1,
+            "end_line": 43
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 3200,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0002988,
+      "expect": "req.Amount > pay.Amount"
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/refunds/service.go",
+            "start_line": 60,
+            "end_line": 101
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 3800,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0003528,
+      "expect": "func (s *store) refundedFor"
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/api/refunds.go",
+            "start_line": 60,
+            "end_line": 105
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 4400,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0004068
+    },
+    {
+      "calls": [
+        {
+          "name": "search_code",
+          "arguments": {
+            "query": "refundedFor"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 5000,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0004608,
+      "expect": "svc.Get(r.PathValue"
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/refunds/service_test.go",
+            "start_line": 1,
+            "end_line": 60
+          }
+        },
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/api/refunds_test.go",
+            "start_line": 1,
+            "end_line": 60
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 5600,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0005148,
+      "expect": "internal/refunds/store.go"
+    },
+    {
+      "calls": [
+        {
+          "name": "search_code",
+          "arguments": {
+            "query": "svc.Get(",
+            "path_prefix": "internal/"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 6200,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0005688
+    },
+    {
+      "calls": [
+        {
+          "name": "search_code",
+          "arguments": {
+            "query": "ErrExceedsPayment"
+          }
+        },
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "api/openapi.yaml",
+            "start_line": 1,
+            "end_line": 60
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 6800,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0006228
+    },
+    {
+      "calls": [
+        {
+          "name": "search_code",
+          "arguments": {
+            "query": "merchantHeader",
+            "path_prefix": "internal/api/"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 7400,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0006768
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/api/refunds_test.go",
+            "start_line": 60,
+            "end_line": 137
+          }
+        },
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/refunds/service_test.go",
+            "start_line": 60,
+            "end_line": 104
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 8000,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0007308
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/api/payments.go",
+            "start_line": 1,
+            "end_line": 53
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 8600,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0007848
+    },
+    {
+      "calls": [
+        {
+          "name": "run_test",
+          "arguments": {
+            "test_path": "internal/api/heimdall_refund_cap_test.go",
+            "test_source": "package api\n\nimport (\n\t\"net/http\"\n\t\"testing\"\n)\n\nfunc TestHeimdallTwoPartialRefundsCannotExceedThePayment(t *testing.T) {\n\th := newRefundRoutes()\n\tpay := newPayment(t, h, \"m-1\", 100)\n\tbody := `{\"payment_id\": \"` + pay + `\", \"amount\": 60}`\n\tif rec := send(t, h, http.MethodPost, \"/refunds\", \"m-1\", \"k1\", body); rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"first refund of 60 = %d: %s\", rec.Code, rec.Body)\n\t}\n\tif rec := send(t, h, http.MethodPost, \"/refunds\", \"m-1\", \"k2\", body); rec.Code != http.StatusUnprocessableEntity {\n\t\tt.Fatalf(\"second refund of 60 on a payment of 100 = %d, want 422: %s\", rec.Code, rec.Body)\n\t}\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 9200,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0008388
+    },
+    {
+      "calls": [
+        {
+          "name": "run_test",
+          "arguments": {
+            "test_path": "internal/api/heimdall_refund_cap_test.go",
+            "test_source": "package api\n\nimport (\n\t\"net/http\"\n\t\"testing\"\n)\n\nfunc TestHeimdallTwoPartialRefundsCannotExceedThePayment(t *testing.T) {\n\th := newRefundRoutes()\n\tpay := newPayment(t, h, \"m-1\", 100)\n\tbody := `{\"payment_id\": \"` + pay + `\", \"amount\": 60}`\n\tif rec := send(t, h, http.MethodPost, \"/refunds\", \"m-1\", \"k1\", body); rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"first refund of 60 = %d: %s\", rec.Code, rec.Body)\n\t}\n\tif rec := send(t, h, http.MethodPost, \"/refunds\", \"m-1\", \"k2\", body); rec.Code != http.StatusUnprocessableEntity {\n\t\tt.Fatalf(\"second refund of 60 on a payment of 100 = %d, want 422: %s\", rec.Code, rec.Body)\n\t}\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 9800,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0008928,
+      "expect": "TestHeimdallTwoPartialRefundsCannotExceedThePayment: failure"
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "internal/refunds/store.go",
+            "start_line": 40,
+            "end_line": 51
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 10400,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0009468,
+      "expect": "TestHeimdallTwoPartialRefundsCannotExceedThePayment: failure"
+    },
+    {
+      "calls": [
+        {
+          "name": "search_code",
+          "arguments": {
+            "query": "MerchantID",
+            "path_prefix": "internal/refunds/"
+          }
+        },
+        {
+          "name": "search_code",
+          "arguments": {
+            "query": "ErrNotFound",
+            "path_prefix": "internal/"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 11000,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0010008
+    },
+    {
+      "calls": [
+        {
+          "name": "run_test",
+          "arguments": {
+            "test_path": "internal/api/heimdall_refund_cap_test.go",
+            "test_source": "package api\n\nimport (\n\t\"net/http\"\n\t\"testing\"\n)\n\nfunc TestHeimdallTwoPartialRefundsCannotExceedThePayment(t *testing.T) {\n\th := newRefundRoutes()\n\tpay := newPayment(t, h, \"m-1\", 100)\n\tbody := `{\"payment_id\": \"` + pay + `\", \"amount\": 60}`\n\tif rec := send(t, h, http.MethodPost, \"/refunds\", \"m-1\", \"k1\", body); rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"first refund of 60 = %d: %s\", rec.Code, rec.Body)\n\t}\n\tif rec := send(t, h, http.MethodPost, \"/refunds\", \"m-1\", \"k2\", body); rec.Code != http.StatusUnprocessableEntity {\n\t\tt.Fatalf(\"second refund of 60 on a payment of 100 = %d, want 422: %s\", rec.Code, rec.Body)\n\t}\n}\n"
+          }
+        },
+        {
+          "name": "run_test",
+          "arguments": {
+            "test_path": "internal/api/heimdall_refund_owner_test.go",
+            "test_source": "package api\n\nimport (\n\t\"encoding/json\"\n\t\"net/http\"\n\t\"testing\"\n)\n\nfunc TestHeimdallAnotherMerchantCannotReadARefund(t *testing.T) {\n\th := newRefundRoutes()\n\tpay := newPayment(t, h, \"m-1\", 100)\n\trec := send(t, h, http.MethodPost, \"/refunds\", \"m-1\", \"k1\", `{\"payment_id\": \"`+pay+`\", \"amount\": 10}`)\n\tif rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"refund = %d: %s\", rec.Code, rec.Body)\n\t}\n\tvar ref struct {\n\t\tID string `json:\"id\"`\n\t}\n\tif err := json.Unmarshal(rec.Body.Bytes(), &ref); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif got := send(t, h, http.MethodGet, \"/refunds/\"+ref.ID, \"m-2\", \"\", \"\"); got.Code != http.StatusNotFound {\n\t\tt.Fatalf(\"GET another merchant's refund = %d, want 404: %s\", got.Code, got.Body)\n\t}\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 11600,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0010548
+    },
+    {
+      "calls": [
+        {
+          "name": "propose_finding",
+          "arguments": {
+            "file": "internal/refunds/service.go",
+            "start_line": 56,
+            "end_line": 58,
+            "severity": "high",
+            "claim": "The cap check compares each refund with the whole payment and ignores what was already refunded, so two refunds of 60 on a payment of 100 both succeed.",
+            "test_path": "internal/api/heimdall_refund_cap_test.go",
+            "test_name": "TestHeimdallTwoPartialRefundsCannotExceedThePayment",
+            "test_source": "package api\n\nimport (\n\t\"net/http\"\n\t\"testing\"\n)\n\nfunc TestHeimdallTwoPartialRefundsCannotExceedThePayment(t *testing.T) {\n\th := newRefundRoutes()\n\tpay := newPayment(t, h, \"m-1\", 100)\n\tbody := `{\"payment_id\": \"` + pay + `\", \"amount\": 60}`\n\tif rec := send(t, h, http.MethodPost, \"/refunds\", \"m-1\", \"k1\", body); rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"first refund of 60 = %d: %s\", rec.Code, rec.Body)\n\t}\n\tif rec := send(t, h, http.MethodPost, \"/refunds\", \"m-1\", \"k2\", body); rec.Code != http.StatusUnprocessableEntity {\n\t\tt.Fatalf(\"second refund of 60 on a payment of 100 = %d, want 422: %s\", rec.Code, rec.Body)\n\t}\n}\n"
+          }
+        },
+        {
+          "name": "propose_finding",
+          "arguments": {
+            "file": "internal/api/refunds.go",
+            "start_line": 77,
+            "end_line": 90,
+            "severity": "high",
+            "claim": "GET /refunds/{id} checks only that a merchant header is present, so merchant m-2 can read a refund of merchant m-1.",
+            "test_path": "internal/api/heimdall_refund_owner_test.go",
+            "test_name": "TestHeimdallAnotherMerchantCannotReadARefund",
+            "test_source": "package api\n\nimport (\n\t\"encoding/json\"\n\t\"net/http\"\n\t\"testing\"\n)\n\nfunc TestHeimdallAnotherMerchantCannotReadARefund(t *testing.T) {\n\th := newRefundRoutes()\n\tpay := newPayment(t, h, \"m-1\", 100)\n\trec := send(t, h, http.MethodPost, \"/refunds\", \"m-1\", \"k1\", `{\"payment_id\": \"`+pay+`\", \"amount\": 10}`)\n\tif rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"refund = %d: %s\", rec.Code, rec.Body)\n\t}\n\tvar ref struct {\n\t\tID string `json:\"id\"`\n\t}\n\tif err := json.Unmarshal(rec.Body.Bytes(), &ref); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif got := send(t, h, http.MethodGet, \"/refunds/\"+ref.ID, \"m-2\", \"\", \"\"); got.Code != http.StatusNotFound {\n\t\tt.Fatalf(\"GET another merchant's refund = %d, want 404: %s\", got.Code, got.Body)\n\t}\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 12200,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0011088,
+      "expect": "TestHeimdallAnotherMerchantCannotReadARefund: failure"
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_review",
+          "arguments": {
+            "summary": "Two refund findings, each proven by a test."
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 12800,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0011628
+    }
+  ]
+}

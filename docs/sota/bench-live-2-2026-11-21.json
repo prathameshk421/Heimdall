@@ -1,0 +1,2537 @@
+{
+  "heimdall_commit": "a4fa189bf4347c5f52fb3279bac52b36fed35cfc",
+  "started": "2026-11-21T15:08:14Z",
+  "machine": "darwin/arm64, 8 CPUs",
+  "go_version": "go1.27.4",
+  "manifest": "testdata/bench/cases.yaml",
+  "command": "heimdall-bench review -out docs/sota/bench-live-2-2026-11-21.json -md docs/sota/BENCH.md -only fixture-injection,fixture-kan22-clean,testify-1207,chi-1185,gin-4702,t3code-5025,t3code-6189,t3code-6175,t3code-6670,t3code-12537,t3code-11425,t3code-12763,t3code-32169,t3code-38193,t3code-39217,t3code-19745,t3code-18289-clean,t3code-10008-clean --base-url https://api.deploy.com/api/v1 --model deepseek-ai/deepseek-v4.1-flash-1017 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --max-cost 3.00",
+  "model": "deepseek-ai/deepseek-v4.1-flash-1017",
+  "price": {
+    "input_per_m": 0.5,
+    "cached_input_per_m": 0.5,
+    "output_per_m": 2
+  },
+  "max_cost_usd": 3,
+  "per_case_usd": 0.5,
+  "block_severity": "medium",
+  "sandbox": "local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally",
+  "seconds": 1849.523134583,
+  "summary": {
+    "scored": 2,
+    "unfinished": 16,
+    "recall": {
+      "num": 0,
+      "den": 1
+    },
+    "false_positives": {
+      "num": 0,
+      "den": 1
+    },
+    "evidence": {
+      "num": 0,
+      "den": 2
+    },
+    "unproven": {
+      "build_error_fixed": 2
+    },
+    "cost_usd": 1.1802839999999999,
+    "input_tokens": 2046904,
+    "cached_input_tokens": 1768192,
+    "output_tokens": 78416,
+    "cost_p50_usd": 0.000742,
+    "cost_p95_usd": 0.09704549999999999,
+    "wall_p50_seconds": 33.8,
+    "wall_p95_seconds": 258.5
+  },
+  "cases": [
+    {
+      "id": "testify-1207",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0097065,
+      "input_tokens": 15973,
+      "cached_input_tokens": 7936,
+      "output_tokens": 860,
+      "seconds": 57.3,
+      "head": "3c33e07c4c233bf61e1414f5acb3cda06ffef1d1",
+      "base": "e2b56b3a384eb40136b2cff13e07e932dd95bf28",
+      "fixed": "48391ba5eb8c5f49132138e67ec112d180b88f63",
+      "stop": "error",
+      "turns": 4,
+      "model_seconds": 14.677560374,
+      "tool_seconds": 0.003711,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.000548
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 60
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.00195
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 55
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0024065
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 43
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.004802
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 29381 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "mock/mock.go",
+            "lines": [
+              "510-511"
+            ]
+          }
+        ],
+        "moved": 0,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "gin-4702",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0043455,
+      "input_tokens": 4563,
+      "cached_input_tokens": 2048,
+      "output_tokens": 1032,
+      "seconds": 60.9,
+      "head": "a4baac6e5e030ca707e519a3bf209d25699e3902",
+      "base": "1eb827240e520804ea83b1aafcbaf7ba728b81dd",
+      "fixed": "d9307dbcbbe796a64d9e0ef23452da888dd7f904",
+      "stop": "error",
+      "turns": 3,
+      "model_seconds": 12.362557333,
+      "tool_seconds": 0.001935251,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.000546
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 58
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0007655
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 56
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 58
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.003034
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 31029 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "context.go",
+            "lines": [
+              "679-680",
+              "691-692",
+              "695-696"
+            ]
+          }
+        ],
+        "moved": 3,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "chi-1185",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0345945,
+      "input_tokens": 30389,
+      "cached_input_tokens": 22016,
+      "output_tokens": 9700,
+      "seconds": 144.7,
+      "head": "67be7d9cafdaeb4e04e887ff78d09e030ee43b00",
+      "base": "7957c0d4ddaee560a01110145dbf2809ffdb6663",
+      "fixed": "3d1777a1ef8881f7d1da0b02c76ca8f0a29cd2bc",
+      "stop": "error",
+      "turns": 6,
+      "model_seconds": 87.400505374,
+      "tool_seconds": 27.748926666,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 37
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.000598
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 28
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 30
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0059055
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 72
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.007533
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 1469
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.008507
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 1508
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.003996
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 652
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.008055
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 32924 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "middleware/wrap_writer.go",
+            "lines": [
+              "66-67",
+              "118-119",
+              "145-147",
+              "170-172",
+              "192-194",
+              "233-235"
+            ]
+          }
+        ],
+        "moved": 2,
+        "edited": 4
+      },
+      "findings": null
+    },
+    {
+      "id": "fixture-injection",
+      "kind": "clean",
+      "scored": true,
+      "proposed": 2,
+      "proven": 0,
+      "unproven": {
+        "build_error_fixed": 2
+      },
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.09704549999999999,
+      "input_tokens": 132935,
+      "cached_input_tokens": 120064,
+      "output_tokens": 15289,
+      "seconds": 258.5,
+      "head": "edd437d41f4fde2e7d45c8f00f4f52152562f5a5",
+      "base": "74886fecf800273be4850b805517b60718e7353d",
+      "fixed": "74886fecf800273be4850b805517b60718e7353d",
+      "stop": "done",
+      "turns": 19,
+      "model_seconds": 241.71500295900003,
+      "tool_seconds": 6.25239321,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.000556
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 30
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 23
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.001188
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 30
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.001998
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 24
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 19
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.002956
+        },
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 36
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.001771
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 35
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.002876
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 51
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.003791
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 1397
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0040195
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 1497
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.004325
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 709
+            },
+            {
+              "name": "run_test",
+              "argument_bytes": 653
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.006873
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 43
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 22
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0053425
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 712
+            },
+            {
+              "name": "run_test",
+              "argument_bytes": 656
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.006174
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 22
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 22
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 26
+            }
+          ],
+          "tool_calls": 3,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0072355
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 20
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.007896
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 16
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.00727
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 895
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0110825
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 43
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0068045
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 26
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.007436
+        },
+        {
+          "calls": [
+            {
+              "name": "propose_finding",
+              "argument_bytes": 1233
+            },
+            {
+              "name": "propose_finding",
+              "argument_bytes": 1373
+            },
+            {
+              "name": "finish_review",
+              "argument_bytes": 368
+            }
+          ],
+          "tool_calls": 3,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.007451
+        }
+      ],
+      "findings": [
+        {
+          "file": "internal/api/requestid.go",
+          "lines": {
+            "start": 20,
+            "end": 27
+          },
+          "severity": "high",
+          "claim": "WithRequestID reflects the caller-supplied X-Request-ID value into the response header without any validation or length bound. A caller can send an unbounded value (here 64 KiB, up to the ~1 MB header limit) and the server echoes every byte back on each response, which also lets the client dictate the id used for log correlation (spoofed/duplicated ids, response amplification). Only generated ids are bounded; the echo path is not.",
+          "test_path": "internal/api/review_size_test.go",
+          "test_name": "TestReviewCallerRequestIDIsBounded",
+          "proof": {
+            "Class": "build_error",
+            "Why": "build_error_fixed",
+            "Reason": "the test did not build on the fixed tree, and a build error is not a pass"
+          },
+          "runs": [
+            {
+              "ID": "F1-head-1",
+              "Tree": "47405991bbfc76eb6cebc1110c3884a78894f5cd",
+              "Outcome": "fail"
+            },
+            {
+              "ID": "F1-head-2",
+              "Tree": "47405991bbfc76eb6cebc1110c3884a78894f5cd",
+              "Outcome": "fail"
+            },
+            {
+              "ID": "F1-fixed-1",
+              "Tree": "7e451d0ad6d15d8979d4dced5f4aff85465315fa",
+              "Outcome": "build_error"
+            }
+          ]
+        },
+        {
+          "file": "internal/api/requestid.go",
+          "lines": {
+            "start": 21,
+            "end": 26
+          },
+          "severity": "high",
+          "claim": "The caller's X-Request-ID is copied verbatim into the response header with no sanitisation. A value containing CR/LF is stored unmodified in the response header map, so the middleware emits a header value carrying injected header content (test shows the value coming out as abc CRLF Set-Cookie: ...). With the standard net/http server this corrupts the response header/breaks the response, and any downstream writer that emits the header raw (proxies, log shippers) can be made to inject extra headers.",
+          "test_path": "internal/api/review_inject_test.go",
+          "test_name": "TestReviewCallerRequestIDWithCRLFIsNotReflectedRaw",
+          "proof": {
+            "Class": "build_error",
+            "Why": "build_error_fixed",
+            "Reason": "the test did not build on the fixed tree, and a build error is not a pass"
+          },
+          "runs": [
+            {
+              "ID": "F2-head-1",
+              "Tree": "47405991bbfc76eb6cebc1110c3884a78894f5cd",
+              "Outcome": "fail"
+            },
+            {
+              "ID": "F2-head-2",
+              "Tree": "47405991bbfc76eb6cebc1110c3884a78894f5cd",
+              "Outcome": "fail"
+            },
+            {
+              "ID": "F2-fixed-1",
+              "Tree": "7e451d0ad6d15d8979d4dced5f4aff85465315fa",
+              "Outcome": "build_error"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fixture-kan22-clean",
+      "kind": "clean",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.17255050000000002,
+      "input_tokens": 278313,
+      "cached_input_tokens": 257792,
+      "output_tokens": 16697,
+      "seconds": 251.4,
+      "head": "f77ddee9794a3e2c22f78594707398cb4d803480",
+      "base": "4a0f6993769e3a3337dee3ea3e35fc3ad825bb88",
+      "fixed": "4a0f6993769e3a3337dee3ea3e35fc3ad825bb88",
+      "stop": "error",
+      "turns": 29,
+      "model_seconds": 212.53535262499997,
+      "tool_seconds": 2.5297299170000005,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0005605
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 67
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 65
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 62
+            }
+          ],
+          "tool_calls": 3,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.001376
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 46
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0037665
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 27
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 23
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 19
+            }
+          ],
+          "tool_calls": 3,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.00243
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 69
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.002404
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 695
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.003076
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 694
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0032905
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 46
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0034335
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 37
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.003339
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 42
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0041575
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 39
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0036575
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 41
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0035265
+        },
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.003311
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 36
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 27
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0046125
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 55
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 49
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 53
+            }
+          ],
+          "tool_calls": 3,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.004091
+        },
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.006493
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 36
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0071365
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 68
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.007119
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 49
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0062765
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 21
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.006878
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 64
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 69
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 66
+            }
+          ],
+          "tool_calls": 3,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0068815
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 18
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 19
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 18
+            }
+          ],
+          "tool_calls": 3,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.015144
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 16
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 19
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 67
+            }
+          ],
+          "tool_calls": 3,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.007821
+        },
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0089365
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 45
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.009642
+        },
+        {
+          "calls": [
+            {
+              "name": "run_test",
+              "argument_bytes": 155
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.011423
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 26
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.009667
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 19
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0099605
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 39
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.01214
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 62483 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "findings": null
+    },
+    {
+      "id": "t3code-5025",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.061915,
+      "input_tokens": 119198,
+      "cached_input_tokens": 76800,
+      "output_tokens": 1158,
+      "seconds": 64.2,
+      "head": "6b3050ee740f510ad06c12a91ecd7e338792dce0",
+      "base": "83f0cc9e31b8c38cc3ecd3c394f882ce9ee3714f",
+      "fixed": "32407df9c5ffd3c5dda2e745568997ac33c15ed1",
+      "stop": "error",
+      "turns": 5,
+      "model_seconds": 23.955237792,
+      "tool_seconds": 0.057239834,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.001122
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 44
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 49
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 39
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 40
+            }
+          ],
+          "tool_calls": 4,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0090955
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 46
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 43
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 44
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 57
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 37
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 35
+            }
+          ],
+          "tool_calls": 6,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.011982
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 85
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.019821
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 70
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0198945
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 158736 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "packages/shared/src/schemaJson.ts",
+            "lines": [
+              "65-66"
+            ]
+          }
+        ],
+        "moved": 1,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-6189",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.22280399999999997,
+      "input_tokens": 357160,
+      "cached_input_tokens": 324864,
+      "output_tokens": 22112,
+      "seconds": 282.6,
+      "head": "d114e2772d059c04460a7e0c25e19ac0c2468f14",
+      "base": "0418301de79bb7b6f82305236325cb9811615e9e",
+      "fixed": "6befe42eb09633f3adb500ae906a0e1da3f15f64",
+      "stop": "error",
+      "turns": 21,
+      "model_seconds": 234.295666836,
+      "tool_seconds": 4.382214041,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0006175
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 38
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0065515
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 115
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.005802
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 79
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 54
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.005999
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 42
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.00727
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 64
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.005159
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 39
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0069255
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 47
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.007776
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 58
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0070825
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 82
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.008975
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 72
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0125495
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 85
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 87
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.012456
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 52
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.012192
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 59
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.012225
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 109
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.013256
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 84
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.014384
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 53
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0143875
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 95
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0170725
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 64
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.014657
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 58
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0188985
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 52
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.018568
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 123371 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "packages/shared/src/path.ts",
+            "lines": [
+              "25"
+            ]
+          }
+        ],
+        "moved": 0,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-6175",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.001447,
+      "input_tokens": 2834,
+      "cached_input_tokens": 1024,
+      "output_tokens": 15,
+      "seconds": 60.5,
+      "head": "6d7fe2eeb7d2731da3f7f69988056ff7a5d3b921",
+      "base": "460d9c3eb977bc0341876527af7fde591133925f",
+      "fixed": "178da6bc3210b82c4a83f33c8b149f623a3375e1",
+      "stop": "error",
+      "turns": 1,
+      "model_seconds": 10.232380291,
+      "tool_seconds": 0.000279333,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.001447
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 71790 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "packages/shared/src/sourceControl.ts",
+            "lines": [
+              "163-164",
+              "165",
+              "169",
+              "177"
+            ]
+          }
+        ],
+        "moved": 4,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-6670",
+      "kind": "bug",
+      "scored": true,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": {},
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.000742,
+      "input_tokens": 1352,
+      "cached_input_tokens": 0,
+      "output_tokens": 33,
+      "seconds": 33.8,
+      "head": "8101cd044911c7dc2a2adf7c7a9ba7962abf57b6",
+      "base": "30164cb1ba8ea05fdd6be69215dba2cc2f0e2aa8",
+      "fixed": "684d703b0a8a0632a18c8453277f7e5e6312b200",
+      "stop": "done",
+      "turns": 1,
+      "model_seconds": 20.16457475,
+      "tool_seconds": 0.000362291,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            },
+            {
+              "name": "finish_review",
+              "argument_bytes": 19
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.000742
+        }
+      ],
+      "truth_on_head": {
+        "truth": null,
+        "moved": 0,
+        "edited": 0,
+        "dropped": [
+          "packages/shared/src/usageFormat.ts"
+        ]
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-12537",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.01996,
+      "input_tokens": 25772,
+      "cached_input_tokens": 17920,
+      "output_tokens": 3537,
+      "seconds": 87.1,
+      "head": "7ce4194707e2a883ccd6a44fd2e07eba08f5369a",
+      "base": "dc0ff8f13eaa9753fdf0de60203c9e819f1cee27",
+      "fixed": "29a32660d3cb2ade1f13283f889b519f73b24fbd",
+      "stop": "error",
+      "turns": 5,
+      "model_seconds": 35.945316666000004,
+      "tool_seconds": 4.16070229,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.000592
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 48
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0018465
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 68
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.00395
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 117
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0054185
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 27
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.008153
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 36810 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "packages/shared/src/sourceControl.ts",
+            "lines": [
+              "142-143",
+              "155"
+            ]
+          }
+        ],
+        "moved": 2,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-11425",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.2695905,
+      "input_tokens": 519081,
+      "cached_input_tokens": 441600,
+      "output_tokens": 5025,
+      "seconds": 125.9,
+      "head": "4fed6cfb3517ef9af9b2a361142152c079504530",
+      "base": "ca6416ec2d1d194738bc78a81df4b82a75cb72e2",
+      "fixed": "f1add18ae1560f509405a5eece07f3cfb1cc850f",
+      "stop": "budget",
+      "turns": 10,
+      "model_seconds": 104.388926251,
+      "tool_seconds": 0.6953982070000001,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.002291
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 58
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 55
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 59
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 59
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 60
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 50
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 39
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 39
+            }
+          ],
+          "tool_calls": 8,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.012692
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 45
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 49
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 39
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 87
+            }
+          ],
+          "tool_calls": 4,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0182555
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 66
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 96
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 68
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 91
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 80
+            }
+          ],
+          "tool_calls": 5,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0226175
+        },
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0241805
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 25
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0382015
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 73
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0370375
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 42
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0369225
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 94
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 61
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.03862
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 61
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 57
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0387725
+        }
+      ],
+      "error": "stopped by the per-case budget ($0.50)",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "packages/shared/src/delimitedPreview.ts",
+            "lines": [
+              "18-19",
+              "24",
+              "43-44",
+              "49"
+            ]
+          }
+        ],
+        "moved": 0,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-12763",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.2808345,
+      "input_tokens": 550689,
+      "cached_input_tokens": 491008,
+      "output_tokens": 2745,
+      "seconds": 119.6,
+      "head": "25d20ab7928c6aed5f613f4c3319394635869250",
+      "base": "7307079d4063a5c546a4c277dcc3b6594b41a846",
+      "fixed": "80d9c181da41ee3890791c9b65018ce093e7bc9e",
+      "stop": "error",
+      "turns": 14,
+      "model_seconds": 81.361396627,
+      "tool_seconds": 0.109434957,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.00137
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 40
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0091135
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 45
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 48
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0099325
+        },
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0110325
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 40
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 44
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 42
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 43
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 43
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 39
+            }
+          ],
+          "tool_calls": 6,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.018994
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 59
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0203925
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 87
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0218675
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 87
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0232165
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 46
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.024419
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 51
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 54
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 43
+            }
+          ],
+          "tool_calls": 3,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0260675
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 21
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.027824
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 75
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0282015
+        },
+        {
+          "calls": [
+            {
+              "name": "read_code",
+              "argument_bytes": 52
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.028338
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 58
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0300655
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 242236 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "packages/contracts/src/orchestration.ts",
+            "lines": [
+              "503"
+            ]
+          }
+        ],
+        "moved": 1,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-32169",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.000641,
+      "input_tokens": 1222,
+      "cached_input_tokens": 1024,
+      "output_tokens": 15,
+      "seconds": 48.2,
+      "head": "932df4ed17ff9465053e3a1bbfdd6d2ba23500f0",
+      "base": "63859aa072249c64153ef20faeb46018154724b8",
+      "fixed": "2e0353daaeb32a497b3fff012797e1ee949a4551",
+      "stop": "error",
+      "turns": 1,
+      "model_seconds": 4.391101334,
+      "tool_seconds": 0.000035667,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.000641
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 57346 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "packages/shared/src/semver.ts",
+            "lines": [
+              "68",
+              "76"
+            ]
+          }
+        ],
+        "moved": 2,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-38193",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0006775,
+      "input_tokens": 1263,
+      "cached_input_tokens": 1024,
+      "output_tokens": 23,
+      "seconds": 45.3,
+      "head": "40c0ab088308fb010a3db488c545f10aa7179ed2",
+      "base": "33f1cb422461bf0f072b9f181734e9b654d1ca69",
+      "fixed": "b91ea5443c2a597899432c99be3d9b4a48058e09",
+      "stop": "error",
+      "turns": 1,
+      "model_seconds": 1.573243041,
+      "tool_seconds": 0.000091,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0006775
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 38910 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "packages/shared/src/cliArgs.ts",
+            "lines": [
+              "44"
+            ]
+          }
+        ],
+        "moved": 1,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-39217",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0005735,
+      "input_tokens": 1083,
+      "cached_input_tokens": 1024,
+      "output_tokens": 16,
+      "seconds": 57.2,
+      "head": "31706f3d41edd605aaba676bd75d9f77b260f4c2",
+      "base": "ea6d3fc30fb066635f31326f49b85cdee8fbf8d7",
+      "fixed": "3b4041a97a5ca84c4b8a3dac71287cf82190c7a7",
+      "stop": "error",
+      "turns": 1,
+      "model_seconds": 5.224616667,
+      "tool_seconds": 0.000114958,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0005735
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 6668 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "packages/shared/src/themeCss.ts",
+            "lines": [
+              "6-9",
+              "11-15",
+              "29",
+              "34"
+            ]
+          }
+        ],
+        "moved": 0,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-19745",
+      "kind": "bug",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.000664,
+      "input_tokens": 1112,
+      "cached_input_tokens": 0,
+      "output_tokens": 54,
+      "seconds": 45.7,
+      "head": "163d86a78430d23414abde323ca70d8379280c0b",
+      "base": "8e056a0e5124775b9439751667bac483d7b5320a",
+      "fixed": "105ee2e2b1b295d30d703890e70c6ed4c89087b1",
+      "stop": "error",
+      "turns": 1,
+      "model_seconds": 1.755279,
+      "tool_seconds": 0.000277833,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            },
+            {
+              "name": "read_code",
+              "argument_bytes": 81
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.000664
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 15319 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "truth_on_head": {
+        "truth": [
+          {
+            "file": "native/resource-monitor/src/main.rs",
+            "lines": [
+              "23-24",
+              "400",
+              "507"
+            ]
+          }
+        ],
+        "moved": 2,
+        "edited": 0
+      },
+      "findings": null
+    },
+    {
+      "id": "t3code-18289-clean",
+      "kind": "clean",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0006285,
+      "input_tokens": 1097,
+      "cached_input_tokens": 0,
+      "output_tokens": 40,
+      "seconds": 58.3,
+      "head": "f23d0084b6e023ffb1af9e332d8666affc99d542",
+      "base": "8ac6846a0b855c3aad70adbf745ff113d4eb3f1f",
+      "fixed": "8ac6846a0b855c3aad70adbf745ff113d4eb3f1f",
+      "stop": "error",
+      "turns": 1,
+      "model_seconds": 3.325329417,
+      "tool_seconds": 4.3861437500000005,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            },
+            {
+              "name": "search_code",
+              "argument_bytes": 22
+            }
+          ],
+          "tool_calls": 2,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0006285
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 16807 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "findings": null
+    },
+    {
+      "id": "t3code-10008-clean",
+      "kind": "clean",
+      "scored": false,
+      "proposed": 0,
+      "proven": 0,
+      "unproven": null,
+      "hit": false,
+      "located": false,
+      "false_positive": false,
+      "cost_usd": 0.0015639999999999999,
+      "input_tokens": 2868,
+      "cached_input_tokens": 2048,
+      "output_tokens": 65,
+      "seconds": 48.2,
+      "head": "cb58dfd6453171a88183fc7bf1587bae6929c0e4",
+      "base": "6270a6f88bea4c2fe07a43e69693a918cf94a353",
+      "fixed": "6270a6f88bea4c2fe07a43e69693a918cf94a353",
+      "stop": "error",
+      "turns": 2,
+      "model_seconds": 3.206145749,
+      "tool_seconds": 2.188067084,
+      "transcript": [
+        {
+          "calls": [
+            {
+              "name": "list_changes",
+              "argument_bytes": 2
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0005895
+        },
+        {
+          "calls": [
+            {
+              "name": "search_code",
+              "argument_bytes": 45
+            }
+          ],
+          "tool_calls": 1,
+          "finish": "tool_calls",
+          "tool_choice": "required",
+          "cost_usd": 0.0009745
+        }
+      ],
+      "error": "agent loop model call: model server (HTTP 500, application/json, request 6292 bytes): {\"status_code\":500,\"message\":\"Internal Server Error\"}",
+      "findings": null
+    }
+  ]
+}

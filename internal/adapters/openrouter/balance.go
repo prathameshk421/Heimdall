@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -59,6 +60,7 @@ func (c Client) Balance(parent context.Context) (balance float64, err error) {
 		return 0, fmt.Errorf("OpenRouter balance request: %w", ports.ErrUnavailable)
 	}
 	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		if closeErr := resp.Body.Close(); closeErr != nil {
 			err = errors.Join(err, fmt.Errorf("close OpenRouter balance body: %w", closeErr))
 		}
@@ -67,7 +69,7 @@ func (c Client) Balance(parent context.Context) (balance float64, err error) {
 		return 0, err
 	}
 	var body creditsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&body); err != nil {
 		return 0, fmt.Errorf("decode OpenRouter balance: %w", err)
 	}
 	return body.Data.TotalCredits - body.Data.TotalUsage, nil

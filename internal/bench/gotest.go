@@ -29,6 +29,8 @@ type Run struct {
 	Tests       map[string]TestResult `json:"tests"` // top-level tests by name; subtests roll up into their parent
 	BuildFailed bool                  `json:"build_failed"`
 	BuildOutput string                `json:"build_output,omitempty"`
+	// Messages holds the first line of each failing test's message, when the runner reports one (cargo, vitest).
+	Messages map[string]string `json:"messages,omitempty"`
 }
 
 // testEvent is one line of go test -json (cmd/test2json), plus the build events of go 1.24 and later.

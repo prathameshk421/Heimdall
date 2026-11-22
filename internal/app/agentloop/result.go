@@ -11,19 +11,23 @@ const (
 	StopSubmitted StopReason = "submitted"
 	// StopRefused means the model's retry was refused too, so the run gave up on a valid submission.
 	StopRefused StopReason = "refused"
-	// StopBudget means the cost so far reached Config.BudgetUSD, or the tokens so far reached Config.InputTokenCap or
-	// Config.OutputTokenCap, before the next model call.
+	// StopBudget means the next model call could pass Config.BudgetUSD, Config.InputTokenCap or Config.OutputTokenCap,
+	// so it was not made. It also ends a run whose model reported a cost or a token count that cannot be true; Run
+	// then returns an error that wraps ports.ErrAgentUsage.
 	StopBudget StopReason = "budget"
 	// StopDeadline means the clock reached Config.Deadline.
 	StopDeadline StopReason = "deadline"
 	// StopTurnCap means the model used Config.MaxTurns answers without a final submission.
 	StopTurnCap StopReason = "turn_cap"
-	// StopNoSubmission means the model answered with text and no tool call, so it cannot make progress.
+	// StopNoSubmission means the model answered with text and no tool call after the loop had asked again twice.
 	StopNoSubmission StopReason = "no_submission"
 	// StopCancelled means the caller's context ended. Run also returns the context error.
 	StopCancelled StopReason = "cancelled"
 	// StopModelError means the model call failed for another reason. Run also returns that error.
 	StopModelError StopReason = "model_error"
+	// StopNoProgress means the run made no call to a progress tool for Config.StallTurns answers and then
+	// Config.StallGrace more after the stall nudge.
+	StopNoProgress StopReason = "no_progress"
 )
 
 // Submission is the accepted final answer: the tool the model called and the JSON arguments it wrote.
@@ -41,12 +45,20 @@ type Result struct {
 	Turns int
 	// Refusals is the number of refused submissions.
 	Refusals int
+	// Nudges is the number of times the loop asked again after an answer with no tool call.
+	Nudges int
 	// Usage is the token count of every model answer, added up.
 	Usage ports.ModelUsage
+	// Turn holds the usage, cost and latency of each model answer, in order.
+	Turn []ports.AgentTurn
 	// Submission is set only when Reason is StopSubmitted.
 	Submission *Submission
 	// LastText is the text of the last model answer, for a run that ended without a submission.
 	LastText string
 	// Transcript is the whole conversation, starting with the caller's messages.
 	Transcript []ports.ModelMessage
+	// Retries is the number of model calls sent again after a failure, over the whole run.
+	Retries int
+	// FailedCall holds the failed attempts of the model call that ended the run, nil when none did.
+	FailedCall []ports.AgentAttempt
 }

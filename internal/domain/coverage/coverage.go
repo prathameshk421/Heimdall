@@ -44,6 +44,10 @@ type Options struct {
 	// workspace into the repository-relative path a diff uses. It is normalized the same way as a
 	// file path. Empty means no rebase.
 	Prefix string
+	// AddPrefix is prepended to every path after Prefix is stripped. It turns a subdirectory report
+	// (such as Java's com/example/Foo.java under src/main/java, or a Go module or coverage.py run
+	// inside services/pay) into the repository-relative path a diff uses. Empty adds nothing.
+	AddPrefix string
 }
 
 // Counts is the outcome of one diff-coverage measurement.
@@ -195,14 +199,15 @@ func changedLines(changed map[string][]int) (map[string]map[int]struct{}, error)
 //
 // A Builder is not safe for concurrent use.
 type Builder struct {
-	opt    Options
-	prefix string
-	files  map[string]Lines
-	lines  int
+	opt       Options
+	prefix    string
+	addPrefix string
+	files     map[string]Lines
+	lines     int
 }
 
-// NewBuilder validates opt and returns an empty Builder. A non-positive MaxBytes and a Prefix that leaves
-// the root are caller mistakes and return a plain error, not ErrMalformed.
+// NewBuilder validates opt and returns an empty Builder. A non-positive MaxBytes and a Prefix or
+// AddPrefix that leaves the root are caller mistakes and return a plain error, not ErrMalformed.
 func NewBuilder(opt Options) (*Builder, error) {
 	if opt.MaxBytes <= 0 {
 		return nil, fmt.Errorf("max bytes must be positive, got %d", opt.MaxBytes)
@@ -215,7 +220,15 @@ func NewBuilder(opt Options) (*Builder, error) {
 		}
 		prefix = p
 	}
-	return &Builder{opt: opt, prefix: prefix, files: map[string]Lines{}}, nil
+	addPrefix := ""
+	if opt.AddPrefix != "" {
+		p, err := normalizePath(opt.AddPrefix)
+		if err != nil {
+			return nil, fmt.Errorf("add_prefix %q: %w", opt.AddPrefix, err)
+		}
+		addPrefix = p
+	}
+	return &Builder{opt: opt, prefix: prefix, addPrefix: addPrefix, files: map[string]Lines{}}, nil
 }
 
 // CheckSize returns ErrTooLarge when data is over Options.MaxBytes. A reader calls it before it decodes
@@ -257,6 +270,9 @@ func (b *Builder) file(raw string, srcLine int) (string, error) {
 	}
 	if b.prefix != "" && strings.HasPrefix(p, b.prefix+"/") {
 		p = p[len(b.prefix)+1:]
+	}
+	if b.addPrefix != "" {
+		p = b.addPrefix + "/" + p
 	}
 	return p, nil
 }

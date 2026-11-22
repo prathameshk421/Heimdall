@@ -1,0 +1,1 @@
+{"source":"coderabbit","comment_id":1234567,"head":"9f1c2ab","location":{"file":"pay/refund.go","lines":[40,44]},"side":"RIGHT","claim":"The refund amount is not checked against the charge.","severity":"high"}

@@ -1,0 +1,111 @@
+{
+  "case": "cobra-1643-clean",
+  "note": "Recorded tool-call sequence for the harness check. It is not model output. Both findings are wrong on purpose: one test passes on the head, one does not build.",
+  "turns": [
+    {
+      "calls": [
+        {
+          "name": "list_changes",
+          "arguments": {}
+        }
+      ],
+      "usage": {
+        "input_tokens": 1500,
+        "cached_input_tokens": 0,
+        "output_tokens": 40
+      },
+      "cost_usd": 0.0001422
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "args.go",
+            "start_line": 100,
+            "end_line": 117
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 9800,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0008928,
+      "expect": "args_test.go (modified"
+    },
+    {
+      "calls": [
+        {
+          "name": "run_test",
+          "arguments": {
+            "test_path": "heimdall_bench_exact_valid_args_test.go",
+            "test_source": "package cobra\n\nimport \"testing\"\n\nfunc TestHeimdallBenchExactValidArgsCountsArgs(t *testing.T) {\n\tc := &Command{Use: \"c\", ValidArgs: []string{\"one\", \"two\"}, Args: ExactValidArgs(1), Run: func(*Command, []string) {}}\n\tif err := c.ValidateArgs([]string{\"one\", \"two\"}); err == nil {\n\t\tt.Fatal(\"ExactValidArgs(1) accepted two args\")\n\t}\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 10600,
+        "cached_input_tokens": 0,
+        "output_tokens": 300
+      },
+      "cost_usd": 0.001008,
+      "expect": "return MatchAll(ExactArgs(n), OnlyValidArgs)"
+    },
+    {
+      "calls": [
+        {
+          "name": "propose_finding",
+          "arguments": {
+            "file": "args.go",
+            "start_line": 114,
+            "end_line": 116,
+            "severity": "medium",
+            "claim": "ExactValidArgs now wraps MatchAll and may stop counting args.",
+            "test_path": "heimdall_bench_exact_valid_args_test.go",
+            "test_name": "TestHeimdallBenchExactValidArgsCountsArgs",
+            "test_source": "package cobra\n\nimport \"testing\"\n\nfunc TestHeimdallBenchExactValidArgsCountsArgs(t *testing.T) {\n\tc := &Command{Use: \"c\", ValidArgs: []string{\"one\", \"two\"}, Args: ExactValidArgs(1), Run: func(*Command, []string) {}}\n\tif err := c.ValidateArgs([]string{\"one\", \"two\"}); err == nil {\n\t\tt.Fatal(\"ExactValidArgs(1) accepted two args\")\n\t}\n}\n"
+          }
+        },
+        {
+          "name": "propose_finding",
+          "arguments": {
+            "file": "args.go",
+            "start_line": 35,
+            "end_line": 36,
+            "severity": "high",
+            "claim": "OnlyValidArgs lost its strict variant.",
+            "test_path": "heimdall_bench_only_valid_args_test.go",
+            "test_name": "TestHeimdallBenchOnlyValidArgsStrict",
+            "test_source": "package cobra\n\nimport \"testing\"\n\nfunc TestHeimdallBenchOnlyValidArgsStrict(t *testing.T) {\n\tc := &Command{Use: \"c\", ValidArgs: []string{\"one\"}, Args: OnlyValidArgsStrict}\n\tif err := c.ValidateArgs([]string{\"two\"}); err == nil {\n\t\tt.Fatal(\"an arg outside ValidArgs was accepted\")\n\t}\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 11400,
+        "cached_input_tokens": 0,
+        "output_tokens": 520
+      },
+      "cost_usd": 0.0011196,
+      "expect": "TestHeimdallBenchExactValidArgsCountsArgs: passed"
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_review",
+          "arguments": {
+            "summary": "Two suspicions on the args refactor."
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 12100,
+        "cached_input_tokens": 0,
+        "output_tokens": 30
+      },
+      "cost_usd": 0.0010944,
+      "expect": "recorded as F2"
+    }
+  ]
+}

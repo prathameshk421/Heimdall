@@ -205,5 +205,8 @@ func (s *Store) Delete(person, name string) error {
 	if err := sub.Remove(name + confirmSuffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("delete confirmation of card %q: %w", name, err)
 	}
+	if err := sub.Remove(name + ".dsse.json"); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("delete envelope of card %q: %w", name, err)
+	}
 	return nil
 }

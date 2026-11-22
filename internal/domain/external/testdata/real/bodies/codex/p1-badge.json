@@ -1,0 +1,33 @@
+{
+  "comment": {
+    "id": 3698305803,
+    "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Do not serialize first-turn startup behind title generation**\n\nFor every newly launched thread, `ThreadLaunchService` dispatches the initial message with `defer_start`, so this becomes the only pending effect and is claimed before workspace preparation later enqueues `provider-turn.start`. The outbox permits only one running effect per thread, which means the agent cannot start until the title model call finishes or times out; a slow title provider therefore turns optional asynchronous metadata generation into first-turn latency for web, desktop, and mobile. Schedule title generation so it does not occupy the per-thread lane ahead of the released run.\n\nAGENTS.md reference: [AGENTS.md:L15-L17](https://github.com/pingdotgg/t3code/blob/fdaaea1a238e026f17222afaeb37446406692443/AGENTS.md#L15-L17)\n\nUseful? React with 👍 / 👎.",
+    "path": "apps/server/src/orchestration-v2/Orchestrator.ts",
+    "line": 2412,
+    "start_line": 2406,
+    "original_line": 2412,
+    "original_start_line": 2406,
+    "side": "RIGHT",
+    "commit_id": "head0001",
+    "original_commit_id": "head0001",
+    "outdated": false,
+    "user": {
+      "login": "chatgpt-codex-connector[bot]",
+      "type": "Bot"
+    }
+  },
+  "want": {
+    "tool": "codex",
+    "severity": "high",
+    "severity_stated": true,
+    "outdated": false,
+    "claim_contains": [
+      "Do not serialize first-turn startup"
+    ],
+    "claim_excludes": [
+      "P1 Badge",
+      "img.shields.io",
+      "Useful?"
+    ]
+  }
+}

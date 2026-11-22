@@ -1,0 +1,98 @@
+{
+  "case": "t3code-19745",
+  "note": "Recorded tool-call sequence for the harness check. It is not model output: it proves the cargo runner, the sandbox, the proof rule and the scoring on a real t3code case.",
+  "turns": [
+    {
+      "calls": [
+        {
+          "name": "list_changes",
+          "arguments": {}
+        }
+      ],
+      "usage": {
+        "input_tokens": 1500,
+        "cached_input_tokens": 0,
+        "output_tokens": 40
+      },
+      "cost_usd": 0.0001422
+    },
+    {
+      "calls": [
+        {
+          "name": "read_code",
+          "arguments": {
+            "path": "native/resource-monitor/src/main.rs",
+            "start_line": 395,
+            "end_line": 410
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 9000,
+        "cached_input_tokens": 0,
+        "output_tokens": 60
+      },
+      "cost_usd": 0.0008208,
+      "expect": "native/resource-monitor/src/main.rs"
+    },
+    {
+      "calls": [
+        {
+          "name": "run_test",
+          "arguments": {
+            "test_path": "native/resource-monitor/src/heimdall_bench_discovery.rs",
+            "test_source": "use super::*;\n\n#[test]\nfn discovery_keeps_no_command_line_of_an_unselected_process() {\n    let mut collector = Collector::new();\n    let config = CollectorConfig {\n        root_pid: u32::MAX,\n        sample_interval: None,\n        external_processes: HashMap::new(),\n    };\n    assert!(collector.sample(&config, None).processes.is_empty());\n    let pid = sysinfo::Pid::from_u32(std::process::id());\n    let unselected = collector.system.process(pid).expect(\"discovered process\");\n    assert!(unselected.cmd().is_empty(), \"an unselected process keeps its command line\");\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 10500,
+        "cached_input_tokens": 0,
+        "output_tokens": 320
+      },
+      "cost_usd": 0.0010026,
+      "expect": "cfg!(target_os = \"linux\") && !tracked.is_empty()"
+    },
+    {
+      "calls": [
+        {
+          "name": "propose_finding",
+          "arguments": {
+            "file": "native/resource-monitor/src/main.rs",
+            "start_line": 400,
+            "end_line": 400,
+            "severity": "medium",
+            "claim": "The two-stage process refresh now runs only on Linux. On macOS the discovery pass loads the command line and memory of every process, not only the selected ones.",
+            "test_path": "native/resource-monitor/src/heimdall_bench_discovery.rs",
+            "test_name": "discovery_keeps_no_command_line_of_an_unselected_process",
+            "test_source": "use super::*;\n\n#[test]\nfn discovery_keeps_no_command_line_of_an_unselected_process() {\n    let mut collector = Collector::new();\n    let config = CollectorConfig {\n        root_pid: u32::MAX,\n        sample_interval: None,\n        external_processes: HashMap::new(),\n    };\n    assert!(collector.sample(&config, None).processes.is_empty());\n    let pid = sysinfo::Pid::from_u32(std::process::id());\n    let unselected = collector.system.process(pid).expect(\"discovered process\");\n    assert!(unselected.cmd().is_empty(), \"an unselected process keeps its command line\");\n}\n"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 11200,
+        "cached_input_tokens": 0,
+        "output_tokens": 300
+      },
+      "cost_usd": 0.001062,
+      "expect": "heimdall_bench_discovery::discovery_keeps_no_command_line_of_an_unselected_process: failure"
+    },
+    {
+      "calls": [
+        {
+          "name": "finish_review",
+          "arguments": {
+            "summary": "Discovery keeps details of unselected processes on macOS."
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 11600,
+        "cached_input_tokens": 0,
+        "output_tokens": 30
+      },
+      "cost_usd": 0.0010494,
+      "expect": "recorded as F1"
+    }
+  ]
+}

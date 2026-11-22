@@ -38,6 +38,9 @@ type View struct {
 	ProfileRequest *ProfileRequestInfo `json:"profile_request,omitempty"`
 	// Provider is the last model-provider probe's health ("ok", "refusing"); empty before any probe.
 	Provider *ProviderInfo `json:"provider,omitempty"`
+	// Action holds what the Action-mode events recorded (view_action.go). It is nil, and absent from the JSON, until
+	// the first of them: no server log has one.
+	Action *ActionInfo `json:"action,omitempty"`
 	// RoomClosed is true once the change's Switch room was archived after merge (F2).
 	RoomClosed bool `json:"room_closed,omitempty"`
 	// TrackerUpdated records which tracker write-back stages (commit, merge) have finished (F1).
@@ -243,6 +246,8 @@ type FindingInfo struct {
 	ReproTest  *finding.ReproTest  `json:"repro_test,omitempty"`
 	ToolResult *finding.ToolResult `json:"tool_result,omitempty"`
 	MemoryRef  *string             `json:"memory_ref,omitempty"`
+	// Proof is what the last proof.reported said about this finding (Action mode). Nil when none did.
+	Proof *FindingProofInfo `json:"proof,omitempty"`
 	// Reporters are additional seats that reported the same defect after cross-seat merge (L2).
 	Reporters []ActorID `json:"reporters,omitempty"`
 }
@@ -322,7 +327,7 @@ func (v *View) apply(e Event, p Payload) {
 	}
 }
 
-// applyHuman folds what people decide: decisions, approvals and a rejection.
+// applyHuman folds what people decide: decisions, approvals and a rejection. Every other payload is an Action fact.
 func (v *View) applyHuman(e Event, p Payload) {
 	switch p := p.(type) {
 	case DecisionRecorded:
@@ -336,6 +341,8 @@ func (v *View) applyHuman(e Event, p Payload) {
 		v.Approvals = removeApproval(v.Approvals, ApprovalInfo(p))
 	case Rejected:
 		v.Rejected = &RejectedInfo{By: e.Actor.ID, Reason: p.Reason}
+	default:
+		v.applyAction(p)
 	}
 }
 

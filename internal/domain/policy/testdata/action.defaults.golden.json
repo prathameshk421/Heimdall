@@ -24,7 +24,11 @@
   "sources": [
     "coderabbitai[bot]",
     "copilot-pull-request-reviewer[bot]",
+    "Copilot",
     "cursor[bot]",
-    "greptile-apps[bot]"
+    "greptile-apps[bot]",
+    "macroscopeapp[bot]",
+    "chatgpt-codex-connector[bot]",
+    "devin-ai-integration[bot]"
   ]
 }

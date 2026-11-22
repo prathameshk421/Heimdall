@@ -98,6 +98,9 @@ func TestHeadlines(t *testing.T) {
 		{proof.Outcome{Kind: proof.KindUnknown, Reason: proof.ReasonPlanRefused}, "unknown: test plan refused"},
 		{proof.Outcome{Kind: proof.KindUnknown, Reason: proof.ReasonModelFailure}, "unknown: model failure"},
 		{proof.Outcome{Kind: proof.KindUnknown, Reason: proof.ReasonNoResult}, "unknown: no result"},
+		{proof.Outcome{Kind: proof.KindUnknown, Reason: proof.ReasonTurnCap}, "unknown: turn cap reached"},
+		{proof.Outcome{Kind: proof.KindNotReproduced, Note: proof.ReasonNoProposal},
+			"not reproduced: no test failed on base and passed on head (no proposal before the stall limit)"},
 	}
 	for _, tc := range cases {
 		require.Equal(t, tc.want, tc.o.Headline())
@@ -112,5 +115,9 @@ func TestEveryStopReasonIsAKnownReason(t *testing.T) {
 	}
 	require.False(t, proof.ReasonTrivial.CanStop())
 	require.False(t, proof.ReasonNotProvable.CanStop())
+	require.True(t, proof.ReasonTurnCap.CanStop())
+	require.False(t, proof.ReasonNoProposal.CanStop(), "no proposal makes a run not reproduced, never unknown")
+	require.True(t, proof.ReasonNoProposal.Valid())
+	require.Equal(t, []proof.Reason{proof.ReasonNoProposal}, proof.NoteReasons())
 	require.False(t, proof.Reason("").Valid())
 }

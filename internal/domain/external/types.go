@@ -69,6 +69,8 @@ type Comment struct {
 // Candidate is a third-party finding that may be proven or dropped later. Lines are on the head commit, except when
 // Side is LEFT: then they are on the base file and are not mapped. Severity is medium when the tool states none, and
 // SeverityStated says which. Style is true when the tool calls the claim style, which is "not checked" and counted apart.
+// Outdated is true when GitHub has lost the comment's line and the lines are the original pair on OriginalCommit: the
+// comment is still a finding, but a proof run at head cannot use its place.
 type Candidate struct {
 	Tool           Tool             `json:"tool"`
 	CommentID      int64            `json:"comment_id"`
@@ -80,6 +82,8 @@ type Candidate struct {
 	Severity       finding.Severity `json:"severity"`
 	SeverityStated bool             `json:"severity_stated"`
 	Style          bool             `json:"style"`
+	Outdated       bool             `json:"outdated"`
+	CommitID       string           `json:"commit_id,omitempty"` // the commit the lines are on when Outdated
 }
 
 // Cause is the stable word that says why a comment was dropped, under its drop reason.

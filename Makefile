@@ -17,10 +17,10 @@ help: ## list the targets
 # ---- the loop: fast on every change, verify before a commit that ends a task ----
 
 .PHONY: fast verify
-fast: fmt-check vet arch lint unit ## L0 and L1: format, vet, dependency rule, lint, unit tests. Under 60 s; runs in the pre-commit hook
+fast: fmt-check vet arch lint action-lint unit ## L0 and L1: format, vet, dependency rule, lint, unit tests. Under 60 s; runs in the pre-commit hook
 verify: fast race lint-selftest harness-test harness-check scripts-test vuln secrets ## adds L2 and L3: race and component tests, rule self-tests, vulnerabilities, secrets. Before a task's commit; CI runs this
 
-.PHONY: fmt-check vet arch lint unit race
+.PHONY: fmt-check vet arch lint action-lint unit race
 fmt-check:
 	@bad=$$($(GOFILES) | xargs gofmt -l); if [ -n "$$bad" ]; then echo "gofmt needed:" >&2; echo "$$bad" >&2; exit 1; fi
 
@@ -33,6 +33,15 @@ arch: ## the dependency rule and the test-code rule on the real import graph
 lint: ## golangci-lint with the pinned version and the repo's rules
 	$(TOOL) golangci-lint config verify
 	$(TOOL) golangci-lint run ./...
+
+# actionlint has its own modfile: it needs yaml v4 rc.3, and golangci-lint in tools.mod needs rc.6. zizmor is a Rust
+# tool, so it runs at a pinned version through uvx, or pipx where uv is missing (GitHub's Ubuntu images ship pipx).
+ACTION_FILES := deploy/action/action.yml deploy/action/workflows/*.yml
+ZIZMOR_VERSION := 1.32.0
+ZIZMOR = $(if $(shell command -v uvx),uvx zizmor@$(ZIZMOR_VERSION),pipx run zizmor==$(ZIZMOR_VERSION))
+action-lint: ## actionlint and zizmor (pedantic, offline) over the Action mode workflows and composite action
+	go tool -modfile=tools-action.mod actionlint deploy/action/workflows/*.yml
+	$(ZIZMOR) --offline --persona=pedantic --no-progress $(ACTION_FILES)
 
 unit: ## unit and contract tests; a skipped test fails the run
 	bash scripts/gotest.sh -count=1 -timeout 50s ./...

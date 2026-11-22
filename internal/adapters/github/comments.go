@@ -76,7 +76,8 @@ func (x *ActionAPI) IssueCommentsSince(ctx context.Context, repo change.Repo, n 
 	return out, nil
 }
 
-// prReviewCommentJSON is one inline review comment as GitHub returns it. A null line decodes to 0.
+// prReviewCommentJSON is one inline review comment as GitHub returns it. A null line decodes to 0. Position is a
+// pointer so that a null position (the comment's place is gone from the diff at the head) is told apart from 0.
 type prReviewCommentJSON struct {
 	ID           int64     `json:"id"`
 	Body         string    `json:"body"`
@@ -84,6 +85,7 @@ type prReviewCommentJSON struct {
 	Line         int       `json:"line"`
 	StartLine    int       `json:"start_line"`
 	OriginalLine int       `json:"original_line"`
+	Position     *int      `json:"position"`
 	Side         string    `json:"side"`
 	CommitID     string    `json:"commit_id"`
 	InReplyToID  int64     `json:"in_reply_to_id"`
@@ -114,7 +116,7 @@ func (x *ActionAPI) PRReviewComments(ctx context.Context, repo change.Repo, n in
 		out = append(out, ports.ReviewComment{
 			ID: c.ID, Login: c.User.Login, UserType: c.User.Type, Body: c.Body, Path: c.Path,
 			Line: c.Line, StartLine: c.StartLine, OriginalLine: c.OriginalLine, Side: c.Side, CommitID: c.CommitID,
-			InReplyTo: c.InReplyToID, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+			InReplyTo: c.InReplyToID, Outdated: c.Position == nil, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 		})
 	}
 	return out, nil
@@ -125,33 +127,60 @@ func (x *ActionAPI) PRReviewComments(ctx context.Context, repo change.Repo, n in
 // other author that holds the marker is never edited: a person can copy a marker, and the adapter ignores the copy.
 // A body longer than MaxSummaryBodyBytes with its marker is ErrBodyTooLarge, and nothing is sent.
 func (x *ActionAPI) Comment(ctx context.Context, repo change.Repo, n int, key change.EffectKey, body string) error {
+	_, err := x.upsert(ctx, repo, n, key, body)
+	return err
+}
+
+// UpsertComment is Comment that also returns the id of the comment it created or edited, so the caller can record
+// which comment holds the summary. A reply without a positive id is an error: a log entry must point at a comment.
+func (x *ActionAPI) UpsertComment(ctx context.Context, repo change.Repo, n int, key change.EffectKey, body string) (int64, error) {
+	got, err := x.upsert(ctx, repo, n, key, body)
+	if err != nil {
+		return 0, err
+	}
+	if got <= 0 {
+		return 0, errors.New("github: the comment reply names no comment id")
+	}
+	return got, nil
+}
+
+// upsert creates or edits the marked comment and returns the id the reply names, or 0 when it names none.
+func (x *ActionAPI) upsert(ctx context.Context, repo change.Repo, n int, key change.EffectKey, body string) (int64, error) {
 	if err := checkKey(key); err != nil {
-		return err
+		return 0, err
 	}
 	if x.author == "" {
-		return errors.New("github: comment needs the author login of the token")
+		return 0, errors.New("github: comment needs the author login of the token")
 	}
 	base, err := repoPath(repo)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	marker := fmt.Sprintf(effectMarker, key)
 	text := body + "\n\n" + marker
 	if len(text) > MaxSummaryBodyBytes {
-		return ErrBodyTooLarge
+		return 0, ErrBodyTooLarge
 	}
 	existing, err := x.IssueComments(ctx, repo, n)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	token, err := x.tokens.Writer(ctx, OpCommentWrite, repo)
 	if err != nil {
-		return err
+		return 0, err
 	}
+	method, path := http.MethodPost, fmt.Sprintf("%s/issues/%d/comments", base, n)
 	for _, c := range existing {
 		if strings.EqualFold(c.Login, x.author) && strings.Contains(c.Body, marker) {
-			return x.sendJSON(ctx, token, http.MethodPatch, fmt.Sprintf("%s/issues/comments/%d", base, c.ID), map[string]string{"body": text}, nil)
+			method, path = http.MethodPatch, fmt.Sprintf("%s/issues/comments/%d", base, c.ID)
+			break
 		}
 	}
-	return x.sendJSON(ctx, token, http.MethodPost, fmt.Sprintf("%s/issues/%d/comments", base, n), map[string]string{"body": text}, nil)
+	var out struct {
+		ID int64 `json:"id"`
+	}
+	if err := x.sendJSON(ctx, token, method, path, map[string]string{"body": text}, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
 }

@@ -13,7 +13,7 @@
 //
 //   - Trivial(files, action) Decision: skip the proof run or not, with a stable reason (TrivialWhy) and one sentence.
 //   - Evaluate(Facts) Outcome: the kind (skipped_trivial, proven, blocked, not_reproduced, unknown), the Reason of an
-//     unknown, the Counts of candidates, and the Cost.
+//     unknown, the Note of a run not reproduced (NoteReasons: no_proposal), the Counts of candidates, and the Cost.
 //   - Outcome.Verdict() gate.Verdict: pass, fail or unknown. Outcome.Conclusion(policy.Action) Conclusion: the
 //     conclusion for the mode. Outcome.Headline(): the first line of the summary.
 //   - MonthlyStop(action, monthSpent) Reason and Spend.Exceeds(budget): the money checks. Reason, StopReasons: the
@@ -25,6 +25,9 @@
 //     fail, and a kind nobody defined maps to fail. In enforce mode with the proof required, unknown is
 //     action_required and never success.
 //   - An unknown always names its reason. A malformed fact gives "unknown: no result", never a pass.
+//   - The agent loop's turn cap is unknown (turn_cap): the model never ended the review. The loop's stall stop is not
+//     reproduced with the note no_proposal: the review read for its stall and grace turns and proposed nothing. Neither
+//     is a model failure, and neither is a pass.
 //   - A known failure is not hidden by a missing fact: a proven blocking finding makes the run blocked even when the run
 //     later hit its budget or deadline. The exception is a run whose results cannot be trusted at all (superseded, state
 //     failed verification, workflow changed): that is unknown.

@@ -1,0 +1,7 @@
+{
+  "path": "tests/billing/test_refund.py",
+  "changed": ["shop/billing/refund.py", "tests/billing/test_refund.py"],
+  "mocks": [
+    {"kind": "python_patch", "target": "shop.billing.refund.compute_refund", "line": 6}
+  ]
+}

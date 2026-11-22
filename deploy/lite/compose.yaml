@@ -1,0 +1,133 @@
+# Heimdall Lite: minimal self-hosted VM stack (Server + Postgres only, <256 MiB RAM total).
+#
+# Designed for a small company VM ($4-$6/mo, 1 vCPU, 1 GiB RAM) with zero resident agent
+# containers, no FalkorDB, and no Graphiti until you opt in.
+#
+# Usage (from repository root):
+#   export HEIMDALL_CONFIG=/path/to/heimdall.toml
+#   export HEIMDALL_SECRETS_DIR=/path/to/secrets
+#   export HEIMDALL_RUNNER_GID=$(stat -c '%g' /run/heimdall-runner/runner.sock)
+#   docker compose -f deploy/lite/compose.yaml up -d --build --wait
+
+name: heimdall-lite
+
+services:
+  heimdall-server:
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile.server
+    image: heimdall-server:lite
+    command: ["--config", "/etc/heimdall/heimdall.toml"]
+    working_dir: /var/lib/heimdall
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: "0.50"
+    pids_limit: 128
+    environment:
+      # Soft Go GC memory limit keeps RSS well under the 128 MiB container cap.
+      GOMEMLIMIT: "96MiB"
+      GOGC: "50"
+    group_add:
+      - "${HEIMDALL_RUNNER_GID:?set HEIMDALL_RUNNER_GID to the runner socket group id}"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - heimdall_lite_data:/var/lib/heimdall
+      - type: bind
+        source: /run/heimdall-runner/runner.sock
+        target: /run/heimdall-runner/runner.sock
+      - type: bind
+        source: ${HEIMDALL_CONFIG:?set HEIMDALL_CONFIG to a heimdall.toml}
+        target: /etc/heimdall/heimdall.toml
+        read_only: true
+    secrets:
+      - database_url
+      - deploy_api_key
+      - github_app_id
+      - github_app_installation_id
+      - github_app_private_key
+    networks: [core]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "printf 'GET /healthz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' | nc -w 3 127.0.0.1 8080 | grep -q '\"status\":\"ok\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16.15-alpine
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+      - /var/run/postgresql:size=8m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: "0.50"
+    pids_limit: 64
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=16MB
+      - -c
+      - max_connections=25
+    environment:
+      POSTGRES_DB: heimdall
+      POSTGRES_USER: heimdall
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - heimdall_lite_pg:/var/lib/postgresql/data
+    networks: [core]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heimdall -d heimdall"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+networks:
+  core:
+    internal: false
+
+volumes:
+  heimdall_lite_data:
+  heimdall_lite_pg:
+
+secrets:
+  database_url:
+    file: ${HEIMDALL_SECRETS_DIR:?set HEIMDALL_SECRETS_DIR}/database_url
+  postgres_password:
+    file: ${HEIMDALL_SECRETS_DIR}/postgres_password
+  deploy_api_key:
+    file: ${HEIMDALL_SECRETS_DIR}/deploy_api_key
+  github_app_id:
+    file: ${HEIMDALL_SECRETS_DIR}/github_app_id
+  github_app_installation_id:
+    file: ${HEIMDALL_SECRETS_DIR}/github_app_installation_id
+  github_app_private_key:
+    file: ${HEIMDALL_SECRETS_DIR}/github_app_private_key

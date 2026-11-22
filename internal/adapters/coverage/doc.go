@@ -24,7 +24,8 @@
 //     not to its size. Element nesting is limited to maxDepth.
 //   - encoding/xml does not expand a document type entity and does not fetch an external subset or
 //     entity. A declaration is still not trusted: the reader accepts one plain external DOCTYPE before the
-//     root, which is what Java Cobertura and coverage.py write, and refuses a DOCTYPE with an internal
+//     root, which is what Java Cobertura writes (not checked on a real Java report; coverage.py 4.5.4, 5.5
+//     and 7.17.4 write none), and refuses a DOCTYPE with an internal
 //     subset, an ENTITY or any other declaration, a declaration inside or after the root, and a second
 //     DOCTYPE. The five XML entities and numeric references decode; any other entity is a syntax error.
 //   - The root element is coverage. Text outside the root, a second root element and a declared
@@ -43,10 +44,14 @@
 //
 // # Tests
 //
-//   - cobertura_test.go: a golden report from coverage.py with its DOCTYPE, the refusal table with its
+//   - cobertura_test.go: a golden report in the shape of coverage.py with a DOCTYPE, the refusal table with its
 //     expected line number, the declaration table, the nesting and size limits, entities, namespaces,
 //     merged lines, and FuzzParseCobertura, which must never panic and must return only the two error
 //     kinds with a Result that holds the domain invariants.
+//   - real_test.go: two real coverage.py reports (attrs, more-itertools) in testdata/real. Parser totals equal
+//     the lines-valid and lines-covered the tool wrote, diffs built from the projects' own git history, a
+//     wrong prefix that makes the report not measurable, and the same report with absolute, ./ and Windows
+//     paths. docs/product/research/12-coverage-real-reports.md has the commands and results.
 //
 // Layout and dependency rule: docs/TECH_SPEC.md section 2.2, enforced by internal/archcheck.
 package coverage

@@ -1,6 +1,7 @@
 // Command heimdall.
 //
-// The command line: admin setup, connect, doctor, cost and the MCP stdio bridge.
+// The command line: admin setup, connect, doctor, cost, the MCP stdio bridge, and the Action-mode steps (heimdall
+// action trigger, proof, gate and init; ACTION_MODE 3.2, AM15).
 package main
 
 import (
@@ -38,6 +39,8 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runController(rest, stdin, stdout, stderr, realControllerDeps())
 	case "cards":
 		return runCards(rest, stdin, stdout, stderr)
+	case "action":
+		return runAction(rest, stdin, stdout, stderr, realActionDeps())
 	default:
 		return runOutputOnly(subcommand, rest, stdout, stderr)
 	}
@@ -72,6 +75,7 @@ func command(name string) (func([]string) int, bool) {
 		"secrets-sync":    func(args []string) int { return runSecretsSync(args, os.Stdout, os.Stderr) },
 		"switch-register": func(args []string) int { return runSwitchRegister(args, os.Stdout, os.Stderr) },
 		"admin":           func(args []string) int { return runAdmin(args, os.Stdin, os.Stdout, os.Stderr) },
+		"action":          func(args []string) int { return runAction(args, os.Stdin, os.Stdout, os.Stderr, realActionDeps()) },
 		"controller": func(args []string) int {
 			return runController(args, os.Stdin, os.Stdout, os.Stderr, realControllerDeps())
 		},

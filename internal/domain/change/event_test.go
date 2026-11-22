@@ -30,10 +30,13 @@ var catalog = []string{
 	"approval.recorded", "approval.invalidated",
 	"ci.reported", "checks.reported", "gate.evaluated",
 	"change.rejected", "change.merged",
+	// The Action area (events_action.go), after the server's 52 events.
+	"fast.reported", "proof.started", "proof.reported", "cost.recorded", "external.ingested", "summary.posted",
+	"breakglass.recorded", "breakglass.reviewed", "state.reset",
 }
 
 func TestAllEventTypesMatchTheSpecCatalogInOrder(t *testing.T) {
-	require.Len(t, catalog, 55)
+	require.Len(t, catalog, 64)
 	var got []string
 	for _, et := range change.All() {
 		require.True(t, et.Valid(), et)

@@ -1,5 +1,15 @@
 # Heimdall progress
 
+## P-AM11 sandbox hardening (Nov 21, 2026, branch `am11-harden`)
+
+Status: done for GitHub-hosted ubuntu-latest. Evidence is in `ACTION_MODE_SPIKE.md` 9.6. Run 44910812111 blocked every
+escape class in both phases (34 fetch and 36 execution probe tests, 0 unknown; timeout, survivors, plants and journal
+checks pass). Run 44909950640 found a second escape, the host's shared `/dev/shm`; it is closed. `Setup` now checks
+inside each phase that the hardening took effect and refuses the runner when it did not. Unit tests and lint of
+`internal/adapters/uidsandbox` pass. Not verified: `make verify` (only the package tests and lint ran), limits under
+load, a runner that fails the self check, package managers other than Go's, self-hosted and ARM runners.
+`ACTION_MODE.md` 4.4 and the AM11 row still describe the scope design and the open escape; they need an update.
+
 ## SOTA Phase 1 (Nov 22, 2026, `docs/sota/README.md` items 1–6)
 
 All 6 local coding items of SOTA Phase 1 are implemented on `heimdall-build`:

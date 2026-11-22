@@ -3,7 +3,8 @@ package coverage
 import "strings"
 
 // ParseGoCover reads a profile written by `go test -coverprofile`. Each block adds its count to every
-// line it spans, so a multi-line statement counts as covered when the block ran. A record for the same
+// line it spans, so a multi-line statement counts as covered when the block ran. The end position is
+// exclusive: a block that ends at column 1 of a later line leaves that line out. A record for the same
 // line that appears twice adds up.
 func ParseGoCover(data []byte, opt Options) (Result, error) {
 	b, err := NewBuilder(opt)
@@ -100,6 +101,12 @@ func parseGoSpan(span string, srcLine int) (int, int, error) {
 	}
 	if endLine > MaxLine {
 		return 0, 0, malformed(srcLine, "line %d is above %d", endLine, MaxLine)
+	}
+	// The end position is exclusive. A block that ends at column 1 of a later line holds no character of
+	// that line, so the line is not part of the block: Go writes this for a block that stops at a closing
+	// brace on its own line, and `go tool cover -html` closes its span at the start of that line.
+	if endLine > startLine && endCol <= 1 {
+		endLine--
 	}
 	return startLine, endLine, nil
 }

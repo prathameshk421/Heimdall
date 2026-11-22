@@ -1,0 +1,4 @@
+   Compiling t3-resource-monitor v0.1.0 (/private/var/folders/xx/T/t3wt-rm/native/resource-monitor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running unittests src/main.rs (/var/folders/xx/T/heimdall-bench/cargo-target/rm/debug/deps/t3_resource_monitor-beeedae25a859662)
+error: test failed, to rerun pass `--bin t3-resource-monitor`

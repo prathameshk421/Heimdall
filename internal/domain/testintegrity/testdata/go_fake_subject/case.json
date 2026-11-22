@@ -1,0 +1,7 @@
+{
+  "path": "internal/pay/refund_test.go",
+  "changed": ["internal/pay/gateway.go", "internal/pay/refund_test.go"],
+  "mocks": [
+    {"kind": "go_fake", "target": "internal/pay/gateway.go", "line": 6}
+  ]
+}
