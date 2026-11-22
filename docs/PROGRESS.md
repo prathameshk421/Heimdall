@@ -1,5 +1,16 @@
 # Heimdall progress
 
+## SOTA Phase 1 (Nov 22, 2026, `docs/sota/README.md` items 1–6)
+
+All 6 local coding items of SOTA Phase 1 are implemented on `heimdall-build`:
+1. **O11** CI `make verify` with Docker: gitleaks false positives on 4 test keys ignored by fingerprint.
+2. **U1, F1, F2** (`6d9c54a`): row `Ask` posts idempotently to standing/change rooms; tracker write-back on tests commit and merge (`tracker.updated`); room close with summary after merge (`room.closed`).
+3. **O1, O2** (`6c68910`): chat stream dead-letters poison messages after `MaxAttempts` without stalling rooms; outbox split into quick lane (3 workers) and sandbox lane (3 workers).
+4. **L1, L2, P2** (`e029fd8`): cross-seat and cross-head finding deduplication reusing original `F<n>` refs and tracking `Reporters` for consensus.
+5. **O6, P4, R6** (`cfbcf19`): `GET /admin/ops` operator snapshot + per-role scorecard (`ScorecardFromEvents`), daily spend-cap pause in rows/`Missing`.
+6. **T1/U6, T2**: `@heimdall <question>` from mapped humans replies with factual change status (ignoring agents and unmapped senders); `ticket.changed` with updated acceptance criteria re-opens `write_tests` for uncovered criteria.
+- **Not verified**: Docker component tests (`make verify` blocked locally by Docker Desktop read-only `meta.db`; runs in CI on push) and live VM/Jira/Switch runs (Phase 2).
+
 ## Product track (Nov 21, 2026, session "Make Heimdall a Sellable Product")
 
 Work happens on branch `product-build` in its own worktree (`../heimdall-product`); the full record with evidence and

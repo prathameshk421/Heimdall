@@ -198,9 +198,11 @@ func (p BranchEnsured) Validate() error {
 	return v.join()
 }
 
-// TicketChanged is the payload of ticket.changed: fields of the ticket moved (TECH_SPEC 3.2, U3).
+// TicketChanged is the payload of ticket.changed: fields of the ticket moved (TECH_SPEC 3.2, U3, T2).
+// Criteria, when present, replaces the ticket's acceptance criteria and re-opens the tests row for uncovered ones.
 type TicketChanged struct {
-	ChangedFields []string `json:"changed_fields"`
+	ChangedFields []string          `json:"changed_fields"`
+	Criteria      []TicketCriterion `json:"acceptance_criteria,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -208,6 +210,18 @@ func (p TicketChanged) Validate() error {
 	var v problems
 	v.add("changed_fields", checkAtLeastOne(len(p.ChangedFields)))
 	v.each("changed_fields", p.ChangedFields, checkText)
+	if len(p.Criteria) > 0 {
+		seen := map[string]bool{}
+		for _, c := range p.Criteria {
+			if !ticketCriterionID.MatchString(c.ID) {
+				v.add("acceptance_criteria", errors.New("invalid criterion id"))
+			}
+			if seen[c.ID] {
+				v.add("acceptance_criteria", errors.New("duplicate criterion id"))
+			}
+			seen[c.ID] = true
+		}
+	}
 	return v.join()
 }
 

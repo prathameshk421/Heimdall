@@ -50,23 +50,30 @@ type Replies interface {
 	Reply(ctx context.Context, target Target, source commands.Source, sourceRef, body string) error
 }
 
+// Questioner answers a mapped person's plain-words @heimdall question from the change's recorded facts (T1, U6).
+type Questioner interface {
+	AnswerQuestion(ctx context.Context, target Target, person, question string) (string, error)
+}
+
 // Config contains the collaborators for command processing. Proposals and Clock serve propose_command and the yes
 // that confirms it (5.3); without them a yes is ordinary chat and Propose refuses.
 type Config struct {
-	Identity  Identity
-	Executor  Executor
-	Replies   Replies
-	Proposals Proposals
-	Clock     ports.Clock
+	Identity   Identity
+	Executor   Executor
+	Replies    Replies
+	Proposals  Proposals
+	Clock      ports.Clock
+	Questioner Questioner
 }
 
 // Processor parses, authorizes, dispatches and replies to one Switch message or GitHub issue comment.
 type Processor struct {
-	identity  Identity
-	executor  Executor
-	replies   Replies
-	proposals Proposals
-	clock     ports.Clock
+	identity   Identity
+	executor   Executor
+	replies    Replies
+	proposals  Proposals
+	clock      ports.Clock
+	questioner Questioner
 }
 
 // New validates collaborators and builds the command processor.
@@ -87,7 +94,7 @@ func New(cfg Config) (*Processor, error) {
 	if (cfg.Proposals == nil) != (cfg.Clock == nil) {
 		return nil, errors.New("collaboration commands: Proposals and Clock come together")
 	}
-	return &Processor{identity: cfg.Identity, executor: cfg.Executor, replies: cfg.Replies, proposals: cfg.Proposals, clock: cfg.Clock}, nil
+	return &Processor{identity: cfg.Identity, executor: cfg.Executor, replies: cfg.Replies, proposals: cfg.Proposals, clock: cfg.Clock, questioner: cfg.Questioner}, nil
 }
 
 // Handle processes one incoming message. Non-command text, edited GitHub comments, bots, and mapped agents never
@@ -103,10 +110,52 @@ func (p *Processor) Handle(ctx context.Context, in Input) error {
 	// Most room traffic is agent and human chatter. Decide that from the text alone, before any identity read,
 	// so plain chat never spends a GitHub policy lookup.
 	if !commands.IsCommand(in.Command) {
+		if in.Command.Source == commands.SourceChat && p.questioner != nil {
+			if q, ok := extractMentionQuestion(in.Command.Text); ok {
+				return p.handleQuestion(ctx, in, q)
+			}
+		}
 		return nil
 	}
 	src := in.Command.Source
 	return p.handleHuman(ctx, in, src)
+}
+
+func (p *Processor) handleQuestion(ctx context.Context, in Input, question string) error {
+	isAgent, err := p.identity.IsAgent(ctx, in.Target, in.Command.Source, in.Command.Sender)
+	if err != nil {
+		return fmt.Errorf("resolve question sender kind: %w", err)
+	}
+	if isAgent {
+		return nil
+	}
+	people, err := p.identity.People(ctx, in.Target)
+	if err != nil {
+		return fmt.Errorf("load question people: %w", err)
+	}
+	person, ok := people.Lookup(in.Command.Source, in.Command.Sender)
+	if !ok || person == "" {
+		return nil // unmapped senders never trigger @heimdall answers (T1)
+	}
+	answer, err := p.questioner.AnswerQuestion(ctx, in.Target, person, question)
+	if err != nil {
+		return fmt.Errorf("answer question: %w", err)
+	}
+	if strings.TrimSpace(answer) == "" {
+		return nil
+	}
+	return p.replies.Reply(ctx, in.Target, in.Command.Source, in.SourceRef, answer)
+}
+
+var reMentionHeimdall = regexp.MustCompile(`(?i)^\s*@heimdall[:,]?\s+(.+)$`)
+
+func extractMentionQuestion(text string) (string, bool) {
+	m := reMentionHeimdall.FindStringSubmatch(strings.TrimSpace(text))
+	if len(m) < 2 {
+		return "", false
+	}
+	q := strings.TrimSpace(m[1])
+	return q, q != ""
 }
 
 func (p *Processor) handleHuman(ctx context.Context, in Input, src commands.Source) error {

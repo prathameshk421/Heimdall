@@ -48,7 +48,7 @@ Discord `#heimdall-reviews`; PR #16 approval and merge on GitHub).
 | U3 | **Long steps are silent.** Trials, check runs and verification run for minutes with no message; people act too early (D186) or wait without knowing. | medium | owner promoted before the trial | Announce `profile_trial`, `run_checks` and verification start and end in the room (one post each, edited) | Narrator test per long job kind |
 | U4 | **Internal ids reach people.** The PR comment header shows the stream id. | low | PROGRESS Noticed H11 | Show the ticket key, or "PR #15" for a ticketless PR | Render golden for a ticketless PR |
 | U5 | **The status "Next" line can lead with setup work.** Row needs come before the gate's needs; the repository's profile can appear before the PR's own approval. | low | status goldens after D175 (`testdata/plan/view/*/status.txt`) | Order needs by who must act and whether they block the merge | Render golden: a PR needing approval lists it first |
-| U6 | **No one to ask in plain words.** `@heimdall why is this blocked?` gets no answer. | high | `agent-triggering.md` T1 | see T1 | see T1 |
+| U6 | **Fixed Nov 22 (with T1).** Mapped humans' `@heimdall ...` chat questions receive a factual status reply (`AnswerQuestion`); unmapped senders and agents are ignored. Live chat run not verified yet. | done | `agent-triggering.md` T1 | — | `TestMentionQuestionAnswersMappedPersonAndIgnoresUnmappedAndAgents` |
 | U7 | **The web board is unverified as a user surface.** It exists (`internal/transport/dashboard`), product-build adds sign-in; no person has used it for a real change. | medium | PROGRESS (Nov 7 dashboard merge); product-build merge `5c35ea3` | Phase 2: drive one change from the board alone | Phase 2 |
 
 ## 5. Order of work

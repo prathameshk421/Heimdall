@@ -83,6 +83,8 @@ type TriggerInfo struct {
 	Assignee ActorID       `json:"assignee"`
 	Source   TriggerSource `json:"source"`
 	Criteria []string      `json:"acceptance_criteria"`
+	// CriteriaEdited is true once a ticket.changed updated acceptance criteria (T2), so write_tests checks coverage.
+	CriteriaEdited bool `json:"criteria_edited,omitempty"`
 }
 
 // BranchInfo is the ticket's branch.
@@ -311,7 +313,7 @@ func (v *View) apply(e Event, p Payload) {
 		v.applyReview(p)
 	case CaseOpened, VerdictSubmitted, VerdictApplied, VerdictEscalated:
 		v.applyCase(e, p)
-	case StepResumed, ChecksReported, FindingRecheckRequested, ProfileRequested, RoomClosed, TrackerUpdated:
+	case StepResumed, ChecksReported, FindingRecheckRequested, ProfileRequested, RoomClosed, TrackerUpdated, TicketChanged:
 		v.applyRecords(e, p)
 	case FindingFiled, FindingVerified, FindingStateChanged:
 		v.applyFindingEvent(e, p)
@@ -482,6 +484,11 @@ func (v *View) applyRecords(e Event, p Payload) {
 			v.TrackerUpdated = map[string]bool{}
 		}
 		v.TrackerUpdated[p.Stage] = true
+	case TicketChanged:
+		if v.Trigger != nil && len(p.Criteria) > 0 {
+			v.Trigger.Criteria = criteriaIDs(p.Criteria)
+			v.Trigger.CriteriaEdited = true
+		}
 	case FindingRecheckRequested:
 		if f, ok := v.Findings[p.Ref.String()]; ok {
 			f.Rechecks++
