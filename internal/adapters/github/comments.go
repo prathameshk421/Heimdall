@@ -76,7 +76,8 @@ func (x *ActionAPI) IssueCommentsSince(ctx context.Context, repo change.Repo, n 
 	return out, nil
 }
 
-// prReviewCommentJSON is one inline review comment as GitHub returns it. A null line decodes to 0.
+// prReviewCommentJSON is one inline review comment as GitHub returns it. A null line decodes to 0. Position is a
+// pointer so that a null position (the comment's place is gone from the diff at the head) is told apart from 0.
 type prReviewCommentJSON struct {
 	ID           int64     `json:"id"`
 	Body         string    `json:"body"`
@@ -84,6 +85,7 @@ type prReviewCommentJSON struct {
 	Line         int       `json:"line"`
 	StartLine    int       `json:"start_line"`
 	OriginalLine int       `json:"original_line"`
+	Position     *int      `json:"position"`
 	Side         string    `json:"side"`
 	CommitID     string    `json:"commit_id"`
 	InReplyToID  int64     `json:"in_reply_to_id"`
@@ -114,7 +116,7 @@ func (x *ActionAPI) PRReviewComments(ctx context.Context, repo change.Repo, n in
 		out = append(out, ports.ReviewComment{
 			ID: c.ID, Login: c.User.Login, UserType: c.User.Type, Body: c.Body, Path: c.Path,
 			Line: c.Line, StartLine: c.StartLine, OriginalLine: c.OriginalLine, Side: c.Side, CommitID: c.CommitID,
-			InReplyTo: c.InReplyToID, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+			InReplyTo: c.InReplyToID, Outdated: c.Position == nil, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 		})
 	}
 	return out, nil

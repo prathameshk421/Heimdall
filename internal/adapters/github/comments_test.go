@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
@@ -94,6 +96,48 @@ func TestPRReviewCommentsPaginateAndMapNullLines(t *testing.T) {
 	if second := got[1]; second.Line != 0 || second.OriginalLine != 9 || second.InReplyTo != 11 {
 		t.Errorf("second = %+v, want line 0 (null), original 9, reply to 11", second)
 	}
+	env.wantAuth(t)
+}
+
+// TestPRReviewCommentsMarkANullPositionOutdated covers AM14's open item: the port carries the outdated flag, and the
+// adapter sets it from REST position == nil. Line and original_line keep their existing behavior.
+func TestPRReviewCommentsMarkANullPositionOutdated(t *testing.T) {
+	env := newActionEnv(t)
+	env.f.route("GET", reviewCommentsPath, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, []any{
+			map[string]any{
+				"id": 21, "body": "on the head", "path": "a.go", "line": 4, "start_line": 3, "original_line": 2,
+				"position": 7, "side": "RIGHT", "commit_id": shaHead,
+				"created_at": "2026-11-04T12:00:00Z", "updated_at": "2026-11-04T12:00:00Z",
+				"user": map[string]any{"login": "coderabbitai[bot]", "type": "Bot"},
+			},
+			map[string]any{
+				"id": 22, "body": "the line is gone", "path": "a.go", "line": nil, "original_line": 9,
+				"position": nil, "side": "RIGHT", "commit_id": shaHead,
+				"created_at": "2026-11-04T12:00:00Z", "updated_at": "2026-11-04T12:00:00Z",
+				"user": map[string]any{"login": "coderabbitai[bot]", "type": "Bot"},
+			},
+			map[string]any{
+				"id": 23, "body": "a file comment", "path": "a.go", "line": nil, "subject_type": "file",
+				"position": 1, "side": "RIGHT", "commit_id": shaHead,
+				"created_at": "2026-11-04T12:00:00Z", "updated_at": "2026-11-04T12:00:00Z",
+				"user": map[string]any{"login": "ana", "type": "User"},
+			},
+		})
+	})
+	got, err := env.x.PRReviewComments(context.Background(), testRepo, 7)
+	if err != nil {
+		t.Fatalf("PRReviewComments: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d comments, want 3", len(got))
+	}
+	require.False(t, got[0].Outdated, "a comment with a position is current")
+	require.Equal(t, 4, got[0].Line)
+	require.True(t, got[1].Outdated, "a null position means GitHub lost the place")
+	require.Zero(t, got[1].Line)
+	require.Equal(t, 9, got[1].OriginalLine, "original_line keeps its existing behavior")
+	require.False(t, got[2].Outdated, "a position on a file comment is not outdated")
 	env.wantAuth(t)
 }
 

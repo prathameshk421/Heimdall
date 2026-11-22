@@ -8,8 +8,15 @@
 //     swap attempts (clock.Wait in production). This package never reads the environment, never sleeps and never logs.
 //   - Store.Append(ctx, change, expected, events, effects): the same contract as the Postgres store.
 //   - Store.Load(ctx, change): every event of the change, after the log passed its checks.
+//   - Store.Reset(ctx, change, events): replaces a log that failed verification with a fresh one whose first event is
+//     state.reset, by compare-and-swap (ACTION_MODE 2.7). It implements action.Resetter.
+//   - Store.ReadMonthlySpend(ctx, "yyyy-mm") and Store.AddMonthlySpend(ctx, "yyyy-mm", micros, runKey): the month's cost
+//     in budget/<yyyy-mm>.json (ACTION_MODE 2.3, 7). A month that was never written is $0 and known, not unknown. One
+//     entry per run key, so a repeated gate run never counts one proof run twice. NewMonthReader reads the file with no
+//     MAC key, which is what the proof job has.
 //   - ErrIntegrity and *IntegrityError: a log that failed verification. ErrTooLarge and *LimitError: a size limit.
-//     ErrEffectKeyReused: an effect key stored with other content.
+//     ErrEffectKeyReused: an effect key stored with other content. ErrBudgetFile: a month file that cannot be believed.
+//     ErrBudgetRunRecorded: a run key stored with another amount.
 //
 // GitHub facts this package relies on (spike S1, ACTION_MODE_SPIKE.md 1.1 to 1.7, measured Nov 20 and 21 2026)
 //   - REST PATCH /git/refs with force false is NOT a compare-and-swap on refs/heimdall/*: a stale write, a sibling, a
@@ -28,6 +35,11 @@
 //	changes/<change>.jsonl   one event per line, the same envelope as the Postgres event row
 //	changes/<change>.head    {"version", "hash", "effects", "mac"}
 //	effects/<change>.jsonl   one outbox row per line: {"event_id", "effect"}
+//	budget/<yyyy-mm>.json    {"version", "month", "runs"}, the month's cost per workflow run, for the cap
+//
+// The budget file carries no MAC: a forged month total can only stop a run earlier or later, and the provider's own
+// spend limit is the hard stop (ACTION_MODE 7). Its writes are compare-and-swap on the same ref as the event appends,
+// so two gate runs of different pull requests do not lose one another's spend.
 //
 // The head holds the version and hash of the last event, the SHA-256 of the effects file, and a MAC. The MAC is
 // HMAC-SHA256 over a fixed context string, the change id, the version, the chain head and the effects digest. The
@@ -91,7 +103,11 @@
 // one that never clears; FORBIDDEN; a cancel during backoff; a create refused or lost; two and six writers on one change
 // (exactly one wins; run with -count=20, without -race because CGO_ENABLED=0); 20 kinds of tampering, each refused by
 // Load and Append with no new commit; a wrong key; size limits of events, files, effects and replies; credentials in
-// errors and prints; effect idempotency; parallel appends to other changes.
+// errors and prints; effect idempotency; parallel appends to other changes; the monthly budget (a fresh repo is $0 and
+// known, a run key is idempotent, a corrupt file is unknown, a second writer's entry is kept); a reset after a bad MAC
+// (the new log verifies, a later append extends it, another change's log and a corrupt month file are untouched).
+//
+// Not verified live: no GitHub call, no real workflow run. The budget file is measured only against the httptest fake.
 //
 // Layout and dependency rule: docs/TECH_SPEC.md section 2.2, enforced by internal/archcheck. This package imports the
 // ports and the domain packages change, id and workflow, and the standard library. Its tests also import

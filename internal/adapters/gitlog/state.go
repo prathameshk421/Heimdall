@@ -87,18 +87,7 @@ func (s *Store) read(ctx context.Context, c id.ChangeID, withEffects bool) (*sna
 
 // listTree reads the whole state tree in one recursive listing and indexes it by path.
 func (s *Store) listTree(ctx context.Context, root id.SHA) (tree, error) {
-	items, err := s.git.GetTree(ctx, s.repo, root, maxTreeEntries)
-	if errors.Is(err, ports.ErrObjectTooLarge) {
-		return nil, fmt.Errorf("state tree listing: %w: %w", ErrTooLarge, err)
-	}
-	if err != nil {
-		return nil, err
-	}
-	t := make(tree, len(items))
-	for _, it := range items {
-		t[it.Path] = it
-	}
-	return t, nil
+	return listTree(ctx, s.git, s.repo, root)
 }
 
 // fileIn returns the blob id of dir/name, or "" when it is absent. dir must be a directory if it exists, and the file

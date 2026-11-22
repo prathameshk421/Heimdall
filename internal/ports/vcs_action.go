@@ -19,6 +19,10 @@ var ErrArtifactRefused = errors.New("artifact refused")
 
 // ReviewComment is one inline review comment on a pull request. Line, StartLine and OriginalLine are 0 when GitHub
 // reports null (a comment on a file, or one whose line is outdated). InReplyTo is 0 for a thread root.
+//
+// Outdated is true when GitHub no longer holds the comment's position: REST reports a null position for a comment whose
+// line is gone from the diff at the head. The consumer (ACTION_MODE 6.2) drops such a comment as outdated, or maps it
+// through OriginalLine when the adapter kept one.
 type ReviewComment struct {
 	ID           int64
 	Login        string
@@ -31,6 +35,7 @@ type ReviewComment struct {
 	Side         string
 	CommitID     string
 	InReplyTo    int64
+	Outdated     bool
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
