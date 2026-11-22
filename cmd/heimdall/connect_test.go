@@ -58,9 +58,12 @@ func TestDefaultRegistryDescribesPlannedEntries(t *testing.T) {
 		{Name: "github", Kind: registry.KindVCS, RequiredConfig: []string{"github_app_id", "github_app_installation_id", "github_app_private_key"}},
 		{Name: "file", Kind: registry.KindTracker},
 		{Name: "jira", Kind: registry.KindTracker, RequiredConfig: []string{"jira_api_token", "jira_email"}},
+		{Name: "discord", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
 		{Name: "mattermost", Kind: registry.KindChat, RequiredConfig: []string{"mattermost_token"}},
+		{Name: "slack", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
 		{Name: "switch", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
 		{Name: "teams", Kind: registry.KindChat},
+		{Name: "telegram", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
 		{Name: "switchroom", Kind: registry.KindAgentRuntime, RequiredConfig: []string{"openrouter_api_key"}},
 		{Name: "graphiti", Kind: registry.KindMemory},
 	}, reg.Describe())
@@ -76,6 +79,9 @@ func TestDefaultRegistryChecksReportNeedsConfigAndNeverConnected(t *testing.T) {
 		{"github", registry.KindVCS, nil, "github_app_id"},
 		{"jira", registry.KindTracker, nil, "jira.base_url"},
 		{"switch", registry.KindChat, nil, "Switch coordinator configuration"},
+		{"telegram", registry.KindChat, nil, "Switch coordinator configuration"},
+		{"slack", registry.KindChat, nil, "Switch coordinator configuration"},
+		{"discord", registry.KindChat, nil, "Switch coordinator configuration"},
 		{"mattermost", registry.KindChat, nil, "mattermost_token"},
 		{"teams", registry.KindChat, nil, "adapter not built yet"},
 		{"file", registry.KindTracker, nil, "adapter not built yet"},
@@ -139,7 +145,7 @@ func TestConnectListPrintsEveryEntryWithSelection(t *testing.T) {
 	code := runConnect([]string{"--config", cfgPath, "list"}, strings.NewReader(""), &out, &errOut, testConnectDeps())
 	require.Equal(t, 0, code, errOut.String())
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	require.Len(t, lines, 9, out.String())
+	require.Len(t, lines, 12, out.String())
 	require.Equal(t, []string{"NAME", "KIND", "SELECTED", "STATUS"}, strings.Fields(lines[0])[:4])
 	rows := map[string][]string{}
 	for _, line := range lines[1:] {
@@ -221,7 +227,7 @@ func TestConnectListJSONCarriesStatusAndRequiredNames(t *testing.T) {
 	require.Equal(t, 0, code, errOut.String())
 	var rows []connectRow
 	require.NoError(t, json.Unmarshal(out.Bytes(), &rows))
-	require.Len(t, rows, 8)
+	require.Len(t, rows, 11)
 	byName := map[string]connectRow{}
 	for _, r := range rows {
 		byName[r.Name] = r
@@ -566,7 +572,7 @@ func TestRunConnectArgumentErrorsAreUsageAndWriteNothing(t *testing.T) {
 func TestRunConnectPickerChoosesByNumberThenAsksPublicAddress(t *testing.T) {
 	_, cfgPath := connectFixture(t, "", nil)
 	var out, errOut bytes.Buffer
-	stdin := strings.NewReader("9\n1\nchat.example.org\n")
+	stdin := strings.NewReader("9\n2\nchat.example.org\n")
 	code := runConnect([]string{"--config", cfgPath, "chat"}, stdin, &out, &errOut, testConnectDeps())
 	require.Equal(t, 0, code, errOut.String())
 	require.Contains(t, out.String(), "mattermost")
