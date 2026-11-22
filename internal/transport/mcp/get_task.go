@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reviewbrief"
@@ -78,6 +79,21 @@ func (s *Server) inputDeps(p Principal, a Assignment) taskinput.Deps {
 	case s.deps.Profiles != nil && p.Role == workflow.RoleProfiler:
 		d.Providers["previous_trial"] = func(ctx context.Context, _ taskinput.Source) (string, error) {
 			return s.deps.Profiles.PreviousTrial(ctx, a.Task.Change.Repo)
+		}
+		d.Providers["revision"] = func(ctx context.Context, _ taskinput.Source) (string, error) {
+			return s.revisionInput(ctx, a)
+		}
+		d.Providers["stack_hints"] = func(ctx context.Context, _ taskinput.Source) (string, error) {
+			images, err := s.deps.Profiles.AllowedImages(ctx)
+			if err != nil {
+				return "", fmt.Errorf("read the runner image allowlist: %w", err)
+			}
+			if len(images) == 0 {
+				return "", nil
+			}
+			return "Images the runner allows, written exactly as a profile must name them. The top-level image must be a " +
+				"digest-pinned reference (with @sha256:); a short name serves only checks, test kinds and services:\n- " +
+				strings.Join(images, "\n- "), nil
 		}
 	case s.deps.Cards != nil && p.Role == workflow.RoleReviewer:
 		d.Providers["obligations"] = func(ctx context.Context, _ taskinput.Source) (string, error) {

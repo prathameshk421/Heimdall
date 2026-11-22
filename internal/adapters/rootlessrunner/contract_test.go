@@ -129,3 +129,109 @@ func TestTheRunnerRefusesWhatTheClientWouldNeverSend(t *testing.T) {
 	_, err := c.Run(context.Background(), ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: "nope", Profile: "acme-pay", Repo: "acme/pay", SHA: sha("a"), Timeout: time.Minute})
 	require.ErrorContains(t, err, "runner rejected job", "a check id the profile does not hold is refused by the runner")
 }
+
+// A trial whose command ran but printed no go test -json events is still an answer: the client gets a result with no
+// tests and the output kept as its log, so the profile service records a failed trial the profiler can read (live,
+// Nov 21: `go test {dir}/...` without -json passed its tests and the job died eight times as "no test results").
+func TestATrialWithoutTestEventsComesBackWithItsLog(t *testing.T) {
+	plain := "ok  \tgithub.com/acme/pay/tests/heimdall/KAN-22\t0.005s\n"
+	c, blobs := serveRunner(t, &checkExecutor{output: []byte(plain)})
+	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n"
+	res, err := c.Trial(context.Background(), ports.ProfileTrialJob{Repo: "acme/pay", SHA: sha("a"), Name: "acme-pay",
+		Artifact: []byte(artifact), TestsDir: "tests/heimdall"})
+	require.NoError(t, err)
+	require.Zero(t, res.Passed+res.Failed+res.Errored, "no test was reported")
+	require.NotEmpty(t, res.LogRef)
+	require.Contains(t, string(blobs.puts[res.LogRef]), "tests/heimdall/KAN-22", "the plain output is the log")
+}
+
+// A runner built without a promoted-profiles folder still takes a promotion: the first one used to panic on a nil map
+// and kill the push (live, Nov 21, `assignment to entry in nil map` in Activate).
+func TestActivateWorksOnARunnerWithNoPromotedProfilesYet(t *testing.T) {
+	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), "", []string{goRef})
+	require.NoError(t, err)
+	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n"
+	spec, err := r.Activate("acme-pay", []byte(artifact))
+	require.NoError(t, err)
+	require.Equal(t, "tests/heimdall", spec.Paths.Tests)
+	_, ok := r.specNamed("acme-pay")
+	require.True(t, ok, "the promoted profile serves jobs")
+}
+
+// A promoted-profiles folder that does not exist yet means no promotion yet: the runner starts, and its first promotion
+// creates the folder (live, Nov 21: the runner refused to start on a fresh VM and took the stack down with it).
+func TestARunnerStartsBeforeItsFirstPromotionAndKeepsThePromotion(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "promoted")
+	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err)
+	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n"
+	_, err = r.Activate("acme-pay", []byte(artifact))
+	require.NoError(t, err)
+
+	again, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err)
+	_, ok := again.specNamed("acme-pay")
+	require.True(t, ok, "a restarted runner reloads the promotion")
+}
+
+// A promotion whose check names an image by its short name is accepted live, so a restarted runner must load it too
+// (live, Nov 21: the runner refused to start on "sandbox image is not allowlisted: \"go\"" and took the stack down).
+func TestARestartedRunnerLoadsAPromotionWhoseCheckUsesAnImageName(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "promoted")
+	pol := Policy{Images: map[string]string{"go": goRef}}
+	r, err := NewRunner(pol, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err)
+	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n" +
+		"checks:\n  - { id: vet, lens: static, when: [\"**/*.go\"], image: go, run: go vet ./... }\n"
+	_, err = r.Activate("acme-pay", []byte(artifact))
+	require.NoError(t, err)
+
+	again, err := NewRunner(pol, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err, "the restart loads what the live promotion accepted")
+	_, ok := again.specNamed("acme-pay")
+	require.True(t, ok)
+}
+
+// A revised profile promoted later replaces the stored one, and a restarted runner loads the newer one (live, Nov 21:
+// the revision with a golangci-lint check was refused as "differs from the stored copy", so it could never go live).
+func TestALaterPromotionReplacesTheStoredProfile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "promoted")
+	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err)
+	base := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n"
+	_, err = r.Activate("acme-pay", []byte(base))
+	require.NoError(t, err)
+	revised := strings.Replace(base, "tests/heimdall", "tests/accept", 1)
+	spec, err := r.Activate("acme-pay", []byte(revised))
+	require.NoError(t, err, "a later promotion replaces the earlier one")
+	require.Equal(t, "tests/accept", spec.Paths.Tests)
+
+	again, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
+	require.NoError(t, err)
+	got, ok := again.specNamed("acme-pay")
+	require.True(t, ok)
+	require.Equal(t, "tests/accept", got.Paths.Tests, "a restart loads the newer promotion")
+}
+
+// A check may name an image from the runner's allowlist by its pinned reference: the proposal was validated against
+// that list, so the job must accept it too (live, Nov 21: the golangci-lint check on PR #18 was refused, D191).
+func TestACheckRunsOnAnAllowlistedImageByReference(t *testing.T) {
+	lintRef := "registry.example/lint@sha256:" + strings.Repeat("c", 64)
+	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), filepath.Join(t.TempDir(), "promoted"), []string{goRef, lintRef})
+	require.NoError(t, err)
+	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
+		"ac_tag: \"// heimdall:{ac}\"\npaths: { tests: tests/heimdall }\n" +
+		"checks:\n  - { id: lint, lens: static, when: [\"**/*.go\"], image: " + lintRef + ", run: lint --sarif /out/result.sarif }\n"
+	_, err = r.Activate("acme-pay", []byte(artifact))
+	require.NoError(t, err)
+	p, err := r.effectivePolicy(JobInput{Profile: "acme-pay"})
+	require.NoError(t, err)
+	j, err := p.resolveJob("acme-pay", "lint", "", "")
+	require.NoError(t, err)
+	require.Equal(t, lintRef, j.Image)
+}

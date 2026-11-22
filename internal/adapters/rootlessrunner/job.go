@@ -12,7 +12,7 @@ import (
 )
 
 // The one job shape of checks and test kinds (REVIEW_ARCH 4.1, TEST_AGENT_ARCH 5.1): the head tree is extracted at
-// /work, an optional base tree at /base, the profile's command runs in /work with no network, and its result file is
+// /work, an optional base tree at /base, caches and temporary files go to /cache (XDG_CACHE_HOME, TMPDIR), the profile's command runs in /work with no network, and its result file is
 // read from /out. The command text comes only from a promoted profile and travels as an environment variable, never
 // as part of the wrapper script, so it can neither break the script nor be confused with it.
 const (
@@ -43,7 +43,8 @@ extract() {
   if [ "$(printf '%s\n' "$top" | wc -l | tr -d ' ')" = 1 ] && [ "$top" != . ] && tar -tzf "$1" | grep -qxF "$top/"; then strip=1; fi
   tar -xzf "$1" -C "$2" --strip-components="$strip" --no-same-owner --no-same-permissions
 }
-mkdir -p /work /base
+mkdir -p /work /base /cache/tmp
+export XDG_CACHE_HOME=/cache TMPDIR=/cache/tmp
 extract /input/head.tgz /work || exit 97
 if [ -f /input/base.tgz ]; then extract /input/base.tgz /base || exit 97; fi
 if [ -d /input/overlays ]; then cp -a /input/overlays/. /work/; fi
@@ -113,6 +114,8 @@ func (p Policy) profileJobArgs(j jobSpec) ([]string, error) {
 	args := append(hardenedArgs(j.Timeout),
 		"--tmpfs", "/work:rw,nosuid,nodev,size=512m,mode=1777",
 		"--tmpfs", "/base:rw,nosuid,nodev,size=256m,mode=1777",
+		// A tool's cache and temporary files live outside the tree a check reads, on their own tmpfs (D183).
+		"--tmpfs", "/cache:rw,nosuid,nodev,size=512m,mode=1777",
 		"--mount", "type=bind,src="+j.Archive+",dst=/input/head.tgz,ro=true",
 		"--mount", "type=bind,src="+j.ModuleCache+",dst=/go/pkg/mod,ro=true",
 	)

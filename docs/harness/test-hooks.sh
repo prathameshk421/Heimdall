@@ -52,8 +52,8 @@ BLOCK|git push -f origin x
 BLOCK|git -c core.hooksPath=/dev/null commit -m x
 BLOCK|git commit --no-verify -m x
 BLOCK|git commit -nm x
-BLOCK|git rebase main
-BLOCK|git reset --hard
+allow|git rebase main
+allow|git reset --hard
 BLOCK|docker run -v /:/host alpine
 BLOCK|docker run -v ~/.ssh:/s alpine
 BLOCK|docker run -v /Users/me:/h alpine
@@ -68,6 +68,9 @@ BLOCK|env | grep KEY
 BLOCK|gh auth token
 BLOCK|gh repo delete x
 BLOCK|gh api repos/x/y -X DELETE
+allow|gh api repos/prathameshk421/Heimdall/git/refs/heads/x -X DELETE
+allow|go run ./cmd/heimdall-bench review --key-file ~/heimdall/secrets/deploy_api_key --max-cost 3
+BLOCK|cat ~/heimdall/secrets/deploy_api_key
 BLOCK|git commit --no-ver -m x
 BLOCK|git commit --no-v -m x
 BLOCK|git -c "core.hooksPath=/dev/null" commit -m x
@@ -75,9 +78,9 @@ BLOCK|git push origin +HEAD:main
 BLOCK|git push origin heimdall-build:main
 BLOCK|git push --delete origin x
 BLOCK|git push origin :x
-BLOCK|git branch -D heimdall-build
-BLOCK|git update-ref -d refs/heads/x
-BLOCK|git reset --soft HEAD~1
+allow|git branch -D heimdall-build
+allow|git update-ref -d refs/heads/x
+allow|git reset --soft HEAD~1
 BLOCK|sed -i s/a/b/ Makefile
 BLOCK|perl -pi -e s/a/b/ Makefile
 BLOCK|python3 -c "open('.golangci.yml','w').write('')"

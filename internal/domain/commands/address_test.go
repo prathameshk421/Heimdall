@@ -42,8 +42,13 @@ func TestRouteMatchesTheAddressGoldens(t *testing.T) {
 
 func TestEveryVerbHasAClass(t *testing.T) {
 	for _, use := range []string{"uphold", "dismiss", "start", "review", "challenge", "remember", "forget",
-		"spec-change", "reject", "override", "waive-reviewer", "incident", "resume", "answer", "approve-tests"} {
+		"spec-change", "reject", "override", "waive-reviewer", "incident", "resume", "answer", "approve-tests", "reprofile"} {
 		_, ok := commands.Classes()[use]
 		require.True(t, ok, use)
 	}
+}
+
+// A profile revision changes a repository for everyone, so it is a deciding verb like the other profile commands.
+func TestReprofileNeedsAConfirmationWhenAnAgentProposesIt(t *testing.T) {
+	require.Equal(t, commands.ClassDeciding, commands.Classes()["reprofile"])
 }

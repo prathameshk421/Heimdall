@@ -12,7 +12,14 @@ import (
 // Render is the status message of a change (AGENT_INTERACTION_ARCH 4.1, H7): six lines from the view and its needs,
 // nothing a person or a model wrote. The layout is the spec in testdata/plan/status/README.md.
 func Render(v change.View, missing []change.Need) string {
-	lines := []string{string(v.Trigger.Ticket) + " · " + summary(v, missing)}
+	header := ""
+	switch {
+	case v.Trigger != nil && v.Trigger.Ticket != "":
+		header = string(v.Trigger.Ticket)
+	case v.PR != nil:
+		header = fmt.Sprintf("PR #%d", v.PR.Number)
+	}
+	lines := []string{header + " · " + summary(v, missing)}
 	row := func(label, text string) { lines = append(lines, fmt.Sprintf("%-10s%s", label, text)) }
 	row("Tests", testsText(v))
 	row("PR", prText(v))

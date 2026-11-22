@@ -725,3 +725,37 @@ func TestGetTaskShowsTheProfilerItsPreviousTrial(t *testing.T) {
 	require.False(t, res.IsError, res.text())
 	require.Contains(t, res.text(), "proposal ccccccc failed its trial")
 }
+
+// The profiler must name an allowlisted image, so get_task lists the runner's images in stack_hints (live, Nov 21: the
+// skill named the allowlist and no input showed it).
+func TestGetTaskShowsTheProfilerTheAllowedImages(t *testing.T) {
+	r := newRig(t, workflow.RoleProfiler)
+	img := "registry.example/go@sha256:" + strings.Repeat("b", 64)
+	r.server.deps.Profiles = &fakeProfiles{images: []string{img}}
+	res := r.call("get_task", `{}`)
+	require.False(t, res.IsError, res.text())
+	_, content := section(t, res.text(), "stack_hints")
+	require.Contains(t, content, img)
+}
+
+// A profiler asked to revise a promoted profile reads the person's request and that profile, as untrusted data (D184).
+func TestGetTaskShowsTheProfilerTheRevisionRequestAndThePromotedProfile(t *testing.T) {
+	r := newRig(t, workflow.RoleProfiler)
+	r.tasks.current.AssignedAt = t0
+	r.tasks.current.Revision = &change.ProfileRequestInfo{Repo: "acme/pay-demo", By: "ana",
+		Note: "add a golangci-lint check that writes SARIF", Asked: t0}
+	r.server.deps.Profiles = &fakeProfiles{artifact: "languages: [go]\nacceptance: go test -json -count=1 {dir}/...\n"}
+	res := r.call("get_task", `{}`)
+	require.False(t, res.IsError, res.text())
+	_, content := section(t, res.text(), "revision")
+	require.Contains(t, content, "Requested by ana: add a golangci-lint check that writes SARIF")
+	require.Contains(t, content, "acceptance: go test -json -count=1 {dir}/...")
+	require.Contains(t, content, "written outside Heimdall", "the request and the profile are data, not instructions")
+
+	// No request and nothing promoted: the section says there is nothing to show.
+	plain := newRig(t, workflow.RoleProfiler)
+	plain.server.deps.Profiles = &fakeProfiles{}
+	note, empty := section(t, plain.call("get_task", `{}`).text(), "revision")
+	require.Empty(t, empty)
+	require.Contains(t, note, "Nothing to show")
+}

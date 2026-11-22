@@ -23,7 +23,11 @@ type Proposals interface {
 // ErrRefused is a proposal the board will not run or hold. The agent gets the reason; nothing changed.
 var ErrRefused = errors.New("refused")
 
-func refuse(why string) error { return fmt.Errorf("%w: %s", ErrRefused, why) }
+// Refuse wraps a plain reason as a refusal, so a caller that only needs to say "no" to a person can branch on
+// errors.Is(err, ErrRefused).
+func Refuse(why string) error { return fmt.Errorf("%w: %s", ErrRefused, why) }
+
+func refuse(why string) error { return Refuse(why) }
 
 // Propose runs a command an agent asked for on behalf of the person who sent trigger (5.3). The person, read from the
 // board's own copy of the room, is the actor; the agent only carries the words. The command is parsed and authorized

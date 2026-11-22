@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -106,7 +107,14 @@ type Runner struct {
 // NewRunner loads the durable promoted profiles from profilesDir over the image allowlist and
 // returns a runner ready to serve jobs or promotions.
 func NewRunner(policy Policy, executor Executor, root, profilesDir string, allowlist []string) (Runner, error) {
-	loaded, err := loadPromotedProfiles(profilesDir, allowlist)
+	policy.Allowed = slices.Clone(allowlist)
+	// A promotion is validated against the same images Activate accepted: the digest refs and the policy's image
+	// names a check, a test kind or a service may use (D182).
+	accepted := slices.Clone(allowlist)
+	for name, image := range policy.Images {
+		accepted = append(accepted, name, image)
+	}
+	loaded, err := loadPromotedProfiles(profilesDir, accepted)
 	if err != nil {
 		return Runner{}, err
 	}
@@ -133,6 +141,10 @@ func NewRunner(policy Policy, executor Executor, root, profilesDir string, allow
 func loadPromotedProfiles(dir string, allowlist []string) (map[string]RepoProfile, error) {
 	if dir == "" {
 		return nil, nil
+	}
+	// A folder that does not exist yet holds no promotion; Activate creates it with the first one.
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		return map[string]RepoProfile{}, nil
 	}
 	profiles, err := LoadApprovedProfiles(dir, allowlist)
 	if err != nil {
@@ -166,6 +178,12 @@ func (r *Runner) Activate(name string, artifact []byte) (RepoProfile, error) {
 		return RepoProfile{}, err
 	}
 	r.mu.Lock()
+	if r.promoted == nil {
+		r.promoted = map[string]RepoProfile{} // a runner with no promoted profile yet (live panic, Nov 21)
+	}
+	if r.active == nil {
+		r.active = map[string]RepoProfile{}
+	}
 	r.promoted[name] = spec
 	r.active[name] = spec
 	r.mu.Unlock()
@@ -173,7 +191,7 @@ func (r *Runner) Activate(name string, artifact []byte) (RepoProfile, error) {
 }
 
 // persistProfile writes the artifact into the durable promoted directory atomically. Idempotent:
-// an equal existing file stays as it is.
+// an equal existing file stays as it is; a different one is replaced.
 func (r *Runner) persistProfile(name string, artifact []byte) error {
 	if r.profilesDir == "" {
 		return nil
@@ -183,12 +201,11 @@ func (r *Runner) persistProfile(name string, artifact []byte) error {
 	}
 	final := filepath.Join(r.profilesDir, name+".yaml")
 	existing, err := os.ReadFile(final) // #nosec G304 -- name is validated against ProfileName, dir is runner-owned
-	if err == nil {
-		if bytes.Equal(existing, artifact) {
-			return nil
-		}
-		return fmt.Errorf("promoted profile %q differs from the stored copy", name)
-	} else if !errors.Is(err, os.ErrNotExist) {
+	// An equal copy is a replay. A different one is a later promotion of a revised profile, which the server pushes
+	// only after a person promoted it (D184); it replaces the stored copy atomically below.
+	if err == nil && bytes.Equal(existing, artifact) {
+		return nil
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read stored promoted profile %q: %w", name, err)
 	}
 	tmp := filepath.Join(r.profilesDir, name+".yaml tmp")

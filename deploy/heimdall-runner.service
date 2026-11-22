@@ -10,7 +10,9 @@ User=heimdall-runner
 Group=heimdall-runner
 SupplementaryGroups=heimdall-runner-socket
 EnvironmentFile=/etc/heimdall/runner.conf
-ExecStart=/usr/local/bin/heimdall-runner --socket /run/heimdall-runner/runner.sock --go-image ${HEIMDALL_GO_IMAGE}
+# HEIMDALL_ALLOWED_IMAGES (comma-separated, each pinned by digest, may be empty) are the other images a profile may name,
+# such as a linter that writes SARIF for a check.
+ExecStart=/usr/local/bin/heimdall-runner --socket /run/heimdall-runner/runner.sock --go-image ${HEIMDALL_GO_IMAGE} --allowed-images ${HEIMDALL_ALLOWED_IMAGES}
 RuntimeDirectory=heimdall-runner heimdall-podman
 RuntimeDirectoryMode=0750
 StateDirectory=heimdall-runner

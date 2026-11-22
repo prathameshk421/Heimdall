@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,8 +16,14 @@ import (
 
 const (
 	cursorPrefix = "switch:room:"
-	// goneprefix marks a room Switch no longer serves (deleted or left), so the stream stops asking for it.
+	// gonePrefix marks a room Switch no longer serves (deleted or left), so the stream stops asking for it.
 	gonePrefix = "switch:room-gone:"
+	// attemptPrefix tracks per-message handler failures so one bad message cannot block every room forever (O1).
+	attemptPrefix = "switch:msg-attempts:"
+	// deadPrefix records a message that failed MaxAttempts times and was set aside so the stream could continue (O1).
+	deadPrefix = "switch:msg-dead:"
+	// defaultMaxAttempts is how many times a failing chat message is retried before it is dead-lettered (O1).
+	defaultMaxAttempts = 3
 )
 
 // Handler processes a message for the change whose room received it. It must be idempotent by Message.ID because a
@@ -47,6 +54,11 @@ type Config struct {
 	Probe func(ctx context.Context, room change.RoomID) error
 	// Watch sees every delivered message before it is handled (the board's post scan, H11). It never stops delivery.
 	Watch func(ctx context.Context, m ports.Message)
+	// MaxAttempts bounds how many times one failing message is retried before it is dead-lettered and skipped (O1).
+	// Zero uses defaultMaxAttempts (3).
+	MaxAttempts int
+	// OnDead is called once when a message hits MaxAttempts failures and is set aside (O1). Nil turns it off.
+	OnDead func(ctx context.Context, room ports.RoomBinding, m ports.Message, cause error)
 }
 
 // Service runs the coordinator stream. Call Run once; the Switch adapter reconnects dropped streams, while this
@@ -61,6 +73,8 @@ type Service struct {
 	wait         func(context.Context, time.Duration) error
 	probe        func(ctx context.Context, room change.RoomID) error
 	watch        func(ctx context.Context, m ports.Message)
+	maxAttempts  int
+	onDead       func(ctx context.Context, room ports.RoomBinding, m ports.Message, cause error)
 }
 
 // New validates dependencies and builds the stream service.
@@ -87,9 +101,14 @@ func New(cfg Config) (*Service, error) {
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("room stream: missing or invalid: %s", strings.Join(missing, ", "))
 	}
+	maxAttempts := cfg.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = defaultMaxAttempts
+	}
 	return &Service{
 		rooms: cfg.Rooms, cursors: cfg.Cursors, stream: cfg.Stream, handler: cfg.Handler, standing: cfg.Standing,
 		refreshEvery: cfg.RefreshEvery, wait: cfg.Wait, probe: cfg.Probe, watch: cfg.Watch,
+		maxAttempts: maxAttempts, onDead: cfg.OnDead,
 	}, nil
 }
 
@@ -212,13 +231,52 @@ func (s *Service) deliver(ctx context.Context, rooms map[change.RoomID][]ports.R
 		err = s.handler.HandleRoomMessage(ctx, room, d.Message)
 	}
 	if err != nil {
-		return fmt.Errorf("handle room %s message %s: %w", room.RoomID, d.Message.ID, err)
+		return s.handleFailure(ctx, room, d, err)
 	}
 	if d.Cursor == "" {
 		return errors.New("switch delivery has an empty cursor")
 	}
 	if err := s.cursors.SetCursor(ctx, cursorPrefix+string(room.RoomID), string(d.Cursor)); err != nil {
 		return fmt.Errorf("save cursor for room %s: %w", room.RoomID, err)
+	}
+	return nil
+}
+
+// handleFailure increments the durable attempt count for d.Message. Below maxAttempts it returns the error so the
+// message is replayed on the next cycle. At maxAttempts it dead-letters the message, notifies onDead, advances the
+// room cursor and returns nil so every other message and room keeps flowing (O1).
+func (s *Service) handleFailure(ctx context.Context, room ports.RoomBinding, d ports.ChatDelivery, cause error) error {
+	attemptKey := attemptPrefix + string(room.RoomID) + ":" + string(d.Message.ID)
+	attempts := 0
+	if raw, err := s.cursors.GetCursor(ctx, attemptKey); err == nil {
+		if n, perr := strconv.Atoi(raw); perr == nil {
+			attempts = n
+		}
+	} else if !errors.Is(err, ports.ErrNotFound) {
+		return fmt.Errorf("read attempts for room %s message %s: %w", room.RoomID, d.Message.ID, err)
+	}
+	attempts++
+	if err := s.cursors.SetCursor(ctx, attemptKey, strconv.Itoa(attempts)); err != nil {
+		return fmt.Errorf("save attempts for room %s message %s: %w", room.RoomID, d.Message.ID, err)
+	}
+	if attempts < s.maxAttempts {
+		return fmt.Errorf("handle room %s message %s: %w", room.RoomID, d.Message.ID, cause)
+	}
+	deadKey := deadPrefix + string(room.RoomID) + ":" + string(d.Message.ID)
+	record := fmt.Sprintf("sender=%s attempts=%d error=%s", d.Message.Sender, attempts, cause.Error())
+	if len(record) > 500 {
+		record = record[:500]
+	}
+	if err := s.cursors.SetCursor(ctx, deadKey, record); err != nil {
+		return fmt.Errorf("record dead message %s in room %s: %w", d.Message.ID, room.RoomID, err)
+	}
+	if s.onDead != nil {
+		s.onDead(ctx, room, d.Message, cause)
+	}
+	if d.Cursor != "" {
+		if err := s.cursors.SetCursor(ctx, cursorPrefix+string(room.RoomID), string(d.Cursor)); err != nil {
+			return fmt.Errorf("advance cursor past dead message %s in room %s: %w", d.Message.ID, room.RoomID, err)
+		}
 	}
 	return nil
 }

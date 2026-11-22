@@ -135,6 +135,13 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 			changeRef.BaseSHA = p.BaseSHA
 		case change.PROpened:
 			changeRef.HeadSHA = p.HeadSHA
+			// A ticketless pull request has no trigger or branch event; its repository and base come from here (D189).
+			if changeRef.Repo == "" {
+				changeRef.Repo = string(p.Repo)
+			}
+			if changeRef.BaseSHA == "" {
+				changeRef.BaseSHA = p.BaseSHA
+			}
 		case change.PRPushed:
 			changeRef.HeadSHA = p.HeadSHA
 		}
@@ -151,6 +158,7 @@ func buildAssignment(ref ports.ActiveTaskRef, latest *change.TaskAssigned, assig
 		Rejection:  latestRejection(events),
 		Leads:      leadsOn(changeRef.HeadSHA, events),
 		Attempt:    submissionCount(events) + 1,
+		Revision:   latestProfileRequest(events),
 		Task: workflow.TaskEnvelope{
 			TaskID:   latest.TaskID,
 			CaseID:   latest.CaseID,
@@ -649,6 +657,26 @@ func submissionCount(events []change.Event) int {
 		}
 	}
 	return n
+}
+
+// latestProfileRequest is the newest person's request to revise the repository's sandbox profile, nil before one. The
+// profiler's revision input reads it (D184).
+func latestProfileRequest(events []change.Event) *change.ProfileRequestInfo {
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type != change.EventProfileRequested {
+			continue
+		}
+		p, err := change.Decode(events[i])
+		if err != nil {
+			return nil
+		}
+		r, ok := p.(change.ProfileRequested)
+		if !ok {
+			return nil
+		}
+		return &change.ProfileRequestInfo{Repo: r.Repo, By: r.By, Note: r.Note, Asked: events[i].OccurredAt}
+	}
+	return nil
 }
 
 // maxLeadLines bounds the leads one task shows.

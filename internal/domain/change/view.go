@@ -34,11 +34,25 @@ type View struct {
 	Resumes map[string]int `json:"resumes"`
 	// Checks are the profile check results per head.
 	Checks map[id.SHA]CheckInfo `json:"checks"`
+	// ProfileRequest is the latest person's request to revise the repository's sandbox profile (D184), nil before one.
+	ProfileRequest *ProfileRequestInfo `json:"profile_request,omitempty"`
 	// Provider is the last model-provider probe's health ("ok", "refusing"); empty before any probe.
 	Provider *ProviderInfo `json:"provider,omitempty"`
 	// Action holds what the Action-mode events recorded (view_action.go). It is nil, and absent from the JSON, until
 	// the first of them: no server log has one.
 	Action *ActionInfo `json:"action,omitempty"`
+	// RoomClosed is true once the change's Switch room was archived after merge (F2).
+	RoomClosed bool `json:"room_closed,omitempty"`
+	// TrackerUpdated records which tracker write-back stages (commit, merge) have finished (F1).
+	TrackerUpdated map[string]bool `json:"tracker_updated,omitempty"`
+}
+
+// ProfileRequestInfo is the newest profile.requested: who asked, what they want changed, and when.
+type ProfileRequestInfo struct {
+	Repo  Repo      `json:"repo"`
+	By    ActorID   `json:"by"`
+	Note  string    `json:"note"`
+	Asked time.Time `json:"asked"`
 }
 
 // ProviderInfo is what the last provider.probed said.
@@ -72,6 +86,8 @@ type TriggerInfo struct {
 	Assignee ActorID       `json:"assignee"`
 	Source   TriggerSource `json:"source"`
 	Criteria []string      `json:"acceptance_criteria"`
+	// CriteriaEdited is true once a ticket.changed updated acceptance criteria (T2), so write_tests checks coverage.
+	CriteriaEdited bool `json:"criteria_edited,omitempty"`
 }
 
 // BranchInfo is the ticket's branch.
@@ -232,6 +248,8 @@ type FindingInfo struct {
 	MemoryRef  *string             `json:"memory_ref,omitempty"`
 	// Proof is what the last proof.reported said about this finding (Action mode). Nil when none did.
 	Proof *FindingProofInfo `json:"proof,omitempty"`
+	// Reporters are additional seats that reported the same defect after cross-seat merge (L2).
+	Reporters []ActorID `json:"reporters,omitempty"`
 }
 
 // DecisionInfo is one human decision.
@@ -300,8 +318,8 @@ func (v *View) apply(e Event, p Payload) {
 		v.applyReview(p)
 	case CaseOpened, VerdictSubmitted, VerdictApplied, VerdictEscalated:
 		v.applyCase(e, p)
-	case StepResumed, ChecksReported, FindingRecheckRequested:
-		v.applyRecords(p)
+	case StepResumed, ChecksReported, FindingRecheckRequested, ProfileRequested, RoomClosed, TrackerUpdated, TicketChanged:
+		v.applyRecords(e, p)
 	case FindingFiled, FindingVerified, FindingStateChanged:
 		v.applyFindingEvent(e, p)
 	default:
@@ -404,8 +422,7 @@ func (v *View) applyClose(p Payload) bool {
 
 func (v *View) applyPR(e Event, p Payload) {
 	if o, ok := p.(PROpened); ok {
-		v.PR = &PRInfo{Repo: o.Repo, Number: o.Number, Author: o.Author, Ticket: o.Ticket, HeadSHA: o.HeadSHA, Base: o.BaseSHA,
-			Suggested: nonNil(o.SuggestedReviewers), CI: map[id.SHA]map[string]CIConclusion{}}
+		v.applyPROpened(o)
 		return
 	}
 	if v.applyClose(p) {
@@ -437,6 +454,16 @@ func (v *View) applyPR(e Event, p Payload) {
 	}
 }
 
+func (v *View) applyPROpened(o PROpened) {
+	v.PR = &PRInfo{Repo: o.Repo, Number: o.Number, Author: o.Author, Ticket: o.Ticket, HeadSHA: o.HeadSHA, Base: o.BaseSHA,
+		Suggested: nonNil(o.SuggestedReviewers), CI: map[id.SHA]map[string]CIConclusion{}}
+	if v.Closed != nil && !v.Closed.Merged {
+		v.Closed = nil
+		v.Approvals = []ApprovalInfo{}
+		v.uncheckLiveFindings()
+	}
+}
+
 // applyGate records a gate result. A result recorded twice in a row (a crash after the append) counts once.
 func (pr *PRInfo) applyGate(p GateEvaluated) {
 	if g := pr.Gate; g == nil || g.SHA != p.SHA || g.OK != p.OK || !slices.Equal(g.Reasons, p.Reasons) {
@@ -457,13 +484,27 @@ func (v *View) applyFindingEvent(e Event, p Payload) {
 	}
 }
 
-// applyRecords folds the counters and reports the reconciler reads: resumes and check results.
-func (v *View) applyRecords(p Payload) {
+// applyRecords folds the counters and reports the reconciler reads: resumes, check results and profile requests.
+func (v *View) applyRecords(e Event, p Payload) {
 	switch p := p.(type) {
 	case StepResumed:
 		v.Resumes[p.Step]++
 	case ChecksReported:
 		v.Checks[p.Head] = CheckInfo{Ran: true, Results: nonNil(p.Results), Errors: nonNil(p.Errors), More: p.More}
+	case ProfileRequested:
+		v.ProfileRequest = &ProfileRequestInfo{Repo: p.Repo, By: p.By, Note: p.Note, Asked: e.OccurredAt}
+	case RoomClosed:
+		v.RoomClosed = true
+	case TrackerUpdated:
+		if v.TrackerUpdated == nil {
+			v.TrackerUpdated = map[string]bool{}
+		}
+		v.TrackerUpdated[p.Stage] = true
+	case TicketChanged:
+		if v.Trigger != nil && len(p.Criteria) > 0 {
+			v.Trigger.Criteria = criteriaIDs(p.Criteria)
+			v.Trigger.CriteriaEdited = true
+		}
 	case FindingRecheckRequested:
 		if f, ok := v.Findings[p.Ref.String()]; ok {
 			f.Rechecks++
@@ -509,11 +550,25 @@ func (v *View) applyReview(p Payload) {
 	case ReviewSubmitted:
 		v.Reviews[string(p.Reviewer)] = ReviewInfo{HeadSHA: v.head(), FindingRefs: nonNil(p.FindingRefs),
 			Clean: len(p.FindingRefs) == 0, PackDate: p.PackDate, Outcome: ReviewSubmittedOutcome}
+		v.addFindingReporters(ActorID(p.Reviewer), p.FindingRefs)
 		v.endTask(p.TaskID)
 	case ReviewUnavailable:
 		v.Reviews[string(p.Reviewer)] = ReviewInfo{HeadSHA: v.head(), FindingRefs: []id.FindingRef{}, Outcome: ReviewUnavailableOutcome}
 	case ReviewWaived:
 		v.Reviews[string(p.Reviewer)] = ReviewInfo{HeadSHA: v.head(), FindingRefs: []id.FindingRef{}, Outcome: ReviewWaivedOutcome}
+	}
+}
+
+// addFindingReporters records additional seats that cited an existing finding after cross-seat merge (L2).
+func (v *View) addFindingReporters(reviewer ActorID, refs []id.FindingRef) {
+	for _, ref := range refs {
+		k := ref.String()
+		f, ok := v.Findings[k]
+		if !ok || reviewer == "" || reviewer == f.By || slices.Contains(f.Reporters, reviewer) {
+			continue
+		}
+		f.Reporters = append(f.Reporters, reviewer)
+		v.Findings[k] = f
 	}
 }
 

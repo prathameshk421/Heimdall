@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/tracker/internal/criteria"
@@ -85,9 +86,16 @@ type Client struct {
 	hc      *http.Client
 	seen    poll.Seen
 	breaker breaker
+
+	writeMu sync.Mutex
+	written map[change.EffectKey]bool
 }
 
-var _ ports.TicketReader = (*Client)(nil)
+var (
+	_ ports.TicketReader       = (*Client)(nil)
+	_ ports.TicketWriter       = (*Client)(nil)
+	_ ports.TicketTransitioner = (*Client)(nil)
+)
 
 // New validates the config and reads the two secrets. The base URL must be https, or http to a loopback address
 // for a local test server, so the token never travels in clear to another host. wait is required: retries pause

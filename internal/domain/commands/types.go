@@ -113,6 +113,12 @@ type PromoteProfile struct{ ID string }
 // Verb returns the command word.
 func (PromoteProfile) Verb() string { return "promote-profile" }
 
+// Reprofile asks the profiler to revise the repository's promoted sandbox profile. Note is what to change, in one line.
+type Reprofile struct{ Note string }
+
+// Verb returns the command word.
+func (Reprofile) Verb() string { return "reprofile" }
+
 // Challenge asks for a finding to be re-checked against new evidence.
 type Challenge struct{ Finding, Evidence string }
 

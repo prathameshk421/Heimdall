@@ -330,3 +330,4 @@ cdcfcf22545fe357eea47ca6398ca6f2e22478d9:internal/app/record/record_test.go:gene
 20b283e14b86e15c3504cfe866537c24dbcd769a:internal/platform/config/action_test.go:generic-api-key:13
 2a501bd0cb7c78c301cb03d21a4babfe5c0d739c:cmd/heimdall/action_test.go:generic-api-key:24
 716709ab938b6cb0cce77aef50a7d4dc30a07e77:internal/platform/config/action_test.go:generic-api-key:13
+# Made-up values in the P-AM15 action tests (Nov 21, product-build branch): a counting hex log key and "sk-" + "...-model-key-value".

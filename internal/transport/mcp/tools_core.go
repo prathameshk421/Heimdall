@@ -60,6 +60,29 @@ func profileIDSchema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"id":{"type":"string","pattern":"^[0-9a-f]{64}$"}},"required":["id"],"additionalProperties":false}`)
 }
 
+// maxProfileReasonBytes bounds the parser reason a refusal shows, so a hostile or careless artifact cannot spend the
+// agent's context on a long error.
+const maxProfileReasonBytes = 500
+
+// invalidProfileRefusal words a profile artifact problem as a refusal the agent can fix. The parser's reason is cut
+// to one line of at most maxProfileReasonBytes bytes.
+func invalidProfileRefusal(reason string) error {
+	return refusalf("The profile artifact is not valid: %s. Fix it and call propose_profile again.", clipProfileReason(reason))
+}
+
+// clipProfileReason makes a reason one line and bounds it, cutting at a rune boundary.
+func clipProfileReason(reason string) string {
+	one := strings.Join(strings.Fields(reason), " ")
+	if len(one) <= maxProfileReasonBytes {
+		return one
+	}
+	cut := one[:maxProfileReasonBytes]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut + "..."
+}
+
 func (s *Server) proposeProfile(ctx context.Context, p Principal, args json.RawMessage) (string, error) {
 	var input struct {
 		Artifact string `json:"artifact"`
@@ -79,6 +102,10 @@ func (s *Server) proposeProfile(ctx context.Context, p Principal, args json.RawM
 	}
 	proposal, created, err := s.deps.Profiles.Propose(ctx, p, string(a.Task.Change.Repo), []byte(input.Artifact))
 	if err != nil {
+		var invalid *ports.InvalidProfileError
+		if errors.As(err, &invalid) {
+			return "", invalidProfileRefusal(invalid.Error())
+		}
 		return "", fmt.Errorf("propose sandbox profile: %w", err)
 	}
 	// The store accepted it; a replay of the same artifact returns the same id, so a retry after a failed record is safe.

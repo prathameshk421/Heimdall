@@ -196,7 +196,8 @@ result has the same fingerprint:
 func New(base, head []Result) []Result
 ```
 
-Line numbers are not part of the fingerprint, so code that merely moved is not "new". Base results are cached by
+Line numbers are not part of the fingerprint, so code that merely moved is not "new". When a tool writes no snippet
+(optional in SARIF; golangci-lint omits it), the result's message text is hashed instead (D192, Nov 21, 2026). Base results are cached by
 `(base sha, check id, image digest)`. This one pure function removes the largest source of tool noise: old
 problems shown on every PR.
 

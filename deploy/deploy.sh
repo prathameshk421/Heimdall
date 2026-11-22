@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'USAGE'
-Usage: HEIMDALL_GO_IMAGE=registry/name@sha256:<digest> deploy/deploy.sh [--host SSH_ALIAS] [--config FILE] [--secrets-dir DIR]
+Usage: HEIMDALL_GO_IMAGE=registry/name@sha256:<digest> [HEIMDALL_ALLOWED_IMAGES=ref@sha256:<digest>,...] deploy/deploy.sh [--host SSH_ALIAS] [--config FILE] [--secrets-dir DIR]
 
 Builds heimdall-server for Linux, transfers the binary and Compose artifacts,
 installs /etc/heimdall/secrets from a local directory, and enables the systemd
@@ -27,6 +27,12 @@ done
 
 go_image=${HEIMDALL_GO_IMAGE:-}
 [[ "$go_image" =~ ^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$ ]] || { echo 'deploy: HEIMDALL_GO_IMAGE must be an allowlisted Go image pinned by sha256 digest' >&2; exit 2; }
+# Other images a profile may name (a check's linter, a service), each pinned by digest; the runner pulls none itself.
+allowed_images=${HEIMDALL_ALLOWED_IMAGES:-}
+IFS=, read -r -a extra_images <<<"$allowed_images"
+for image in "${extra_images[@]}"; do
+	[[ "$image" =~ ^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$ ]] || { echo 'deploy: each HEIMDALL_ALLOWED_IMAGES entry must be pinned by sha256 digest' >&2; exit 2; }
+done
 
 [[ -n "$config" && -f "$config" ]] || { echo 'deploy: --config must name an existing heimdall.toml' >&2; exit 2; }
 [[ -n "$secrets_dir" && -d "$secrets_dir" ]] || { echo 'deploy: --secrets-dir must name an existing directory' >&2; exit 2; }
@@ -51,7 +57,7 @@ install -m 0644 "$root/deploy/compose.yaml" "$work/payload/deploy/compose.yaml"
 install -m 0644 "$root/deploy/Dockerfile.server" "$work/payload/deploy/Dockerfile.server"
 install -m 0644 "$root/deploy/Dockerfile.server.dockerignore" "$work/payload/deploy/Dockerfile.server.dockerignore"
 install -m 0644 "$root/deploy/heimdall-runner.service" "$work/payload/heimdall-runner.service"
-printf 'HEIMDALL_GO_IMAGE=%s\n' "$go_image" >"$work/payload/runner.conf"
+printf 'HEIMDALL_GO_IMAGE=%s\nHEIMDALL_ALLOWED_IMAGES=%s\n' "$go_image" "$allowed_images" >"$work/payload/runner.conf"
 chmod 0600 "$work/payload/runner.conf"
 install -m 0644 "$root/deploy/graphiti/config.yaml" "$work/payload/deploy/graphiti/config.yaml"
 install -m 0644 "$config" "$work/payload/heimdall.toml"
@@ -136,6 +142,9 @@ go_image=$(sed -n 's/^HEIMDALL_GO_IMAGE=//p' /etc/heimdall/runner.conf)
 test -n "$go_image" || { echo 'deploy: pinned Go image is missing from runner.conf' >&2; exit 1; }
 cd /
 runuser -u heimdall-runner -- env PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/var/lib/heimdall-runner XDG_RUNTIME_DIR=/run/heimdall-podman podman pull "$go_image"
+for image in $(sed -n 's/^HEIMDALL_ALLOWED_IMAGES=//p' /etc/heimdall/runner.conf | tr ',' ' '); do
+	runuser -u heimdall-runner -- env PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/var/lib/heimdall-runner XDG_RUNTIME_DIR=/run/heimdall-podman podman pull "$image"
+done
 test -S /run/heimdall-runner/runner.sock || { echo 'deploy: heimdall-runner did not create its Unix socket' >&2; exit 1; }
 cat >/tmp/heimdall-compose.service.new <<'UNIT'
 [Unit]

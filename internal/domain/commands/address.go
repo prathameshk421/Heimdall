@@ -47,6 +47,7 @@ func Classes() map[string]string {
 		"uphold": ClassDeciding, "dismiss": ClassDeciding, "approve-tests": ClassDeciding,
 		"waive-reviewer": ClassDeciding, "spec-change": ClassDeciding, "resume": ClassDeciding,
 		"forget": ClassDeciding, "override": ClassDeciding, "reject": ClassDeciding,
+		"reprofile": ClassDeciding,
 	}
 }
 

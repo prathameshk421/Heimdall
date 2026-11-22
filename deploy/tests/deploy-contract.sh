@@ -39,6 +39,10 @@ if [[ -z "$runner_line" || -z "$cd_line" || "$cd_line" -ge "$runner_line" ]]; th
 fi
 grep -q 'install -d -o root -g heimdall-runner-socket .*/etc/heimdall-runner/profiles' "$script" || { echo 'ASSERTION FAILED: deploy must create the approved profile directory the runner reads at start' >&2; exit 1; }
 grep -q 'runuser -u heimdall-runner -- env .*PATH=/usr/sbin' "$script" || { echo 'ASSERTION FAILED: runner podman pull must have /usr/sbin on PATH so podman finds runc' >&2; exit 1; }
+unpinned=$(HEIMDALL_GO_IMAGE=docker.io/library/golang@sha256:$(printf 'a%.0s' {1..64}) HEIMDALL_ALLOWED_IMAGES=docker.io/golangci/golangci-lint:latest "$script" --host test-host 2>&1 || true)
+grep -q 'HEIMDALL_ALLOWED_IMAGES entry must be pinned' <<<"$unpinned" || { echo 'ASSERTION FAILED: an allowed image that is not pinned by digest must be refused' >&2; exit 1; }
+grep -q -- '--allowed-images ${HEIMDALL_ALLOWED_IMAGES}' "$root/deploy/heimdall-runner.service" || { echo 'ASSERTION FAILED: the runner unit must pass the allowed images from runner.conf' >&2; exit 1; }
+grep -q 'HEIMDALL_ALLOWED_IMAGES=' "$script" && grep -q 'podman pull "$image"' "$script" || { echo 'ASSERTION FAILED: deploy must write and pull each allowed image' >&2; exit 1; }
 grep -q 'command -v crun' "$script" || { echo 'ASSERTION FAILED: deploy must require crun, the runtime that applies cgroup limits under cgroupfs' >&2; exit 1; }
 if grep -Eq '/opt/heimdall/(compose\.yaml|Dockerfile\.server)' "$script"; then
   echo 'ASSERTION FAILED: compose files must be installed under /opt/heimdall/deploy so the relative build context and dockerfile paths resolve' >&2

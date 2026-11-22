@@ -276,3 +276,30 @@ func TestSyncDefinitionsLeavesAnAgentThatIsNotInSwitchYet(t *testing.T) {
 	p := &fakeProvisioner{modelErr: ports.ErrNotFound}
 	require.NoError(t, newService(t, p).SyncDefinitions(context.Background()))
 }
+
+// A second prepare leaves an agent running when its recorded receipt still matches its role, endpoint and token: its
+// setup did not change, so stopping it would only take a working agent down (live, Nov 21: all five stopped, D177).
+// An agent with no receipt, or one whose token changed, is still stopped for configuration.
+func TestPrepareLeavesAnAgentWithAMatchingReceiptRunning(t *testing.T) {
+	p := &fakeProvisioner{}
+	svc := newService(t, p)
+	handoffs, err := svc.Prepare(context.Background())
+	require.NoError(t, err)
+	for _, h := range handoffs {
+		if h.Agent == "test-author" {
+			require.NoError(t, svc.Activate(context.Background(), Receipt{Agent: h.Agent, Role: h.Role, MCPEndpoint: h.MCP.URL,
+				TokenSHA256: h.TokenSHA256, CredentialsInstalled: true}))
+		}
+	}
+	p.states = nil
+
+	again, err := svc.Prepare(context.Background())
+	require.NoError(t, err)
+	require.Len(t, p.states, 1, "only the agent without a receipt is stopped")
+	require.Equal(t, "switch-reviewer-1", p.states[0].id)
+	for _, h := range again {
+		if h.Agent == "test-author" {
+			require.Equal(t, string(ports.ManagedAgentRunning), h.DesiredState)
+		}
+	}
+}

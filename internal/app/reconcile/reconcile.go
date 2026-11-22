@@ -50,6 +50,13 @@ type Config struct {
 	Settings change.Settings
 	Windows  liveness.Windows
 	Logger   *slog.Logger
+	// TestsRoom and ReviewRoom, when both are set, are the standing channels where people read asks instead of the
+	// internal working room of a change (U1).
+	TestsRoom  change.RoomID
+	ReviewRoom change.RoomID
+	// Spend, when set, returns today's spent USD and the configured daily cap USD (P4). A positive cap that has been
+	// reached pauses new agent task assignments and records the cap in Missing.
+	Spend func(ctx context.Context) (spentUSD, capUSD float64, err error)
 	// Wait pauses for d or until ctx is done (clock.Wait); the app layer may not import the platform package.
 	Wait func(ctx context.Context, d time.Duration) error
 }
@@ -182,7 +189,9 @@ func (r *Reconciler) runOnce(ctx context.Context, changeID id.ChangeID) error {
 	if err != nil {
 		return fmt.Errorf("reconcile %s: fold: %w", changeID, err)
 	}
-	if v.Over() || (v.Trigger == nil && v.PR == nil) {
+	// Merged changes still run their post-merge rows (tracker write-back and room close, F1/F2). Rejected and
+	// unmerged-closed changes have no open rows.
+	if (v.Over() && (v.Closed == nil || !v.Closed.Merged)) || (v.Trigger == nil && v.PR == nil) {
 		return nil
 	}
 	in, err := r.buildIn(ctx, changeID, v)
@@ -217,18 +226,38 @@ func (r *Reconciler) buildIn(ctx context.Context, changeID id.ChangeID, v change
 	case err != nil:
 		return in, fmt.Errorf("read policy at %q: %w", base, err)
 	}
-	if in.Profile, err = r.cache.profile(ctx, r.cfg.Inputs, repo); err != nil {
-		return in, fmt.Errorf("read profile: %w", err)
-	}
-	if v.PR != nil {
-		if in.Outside, err = r.cache.outside(ctx, r.cfg.Inputs, changeID, v); err != nil {
-			return in, fmt.Errorf("read outside facts: %w", err)
+	if !v.Over() {
+		if in.Profile, err = r.cache.profile(ctx, r.cfg.Inputs, repo); err != nil {
+			return in, fmt.Errorf("read profile: %w", err)
+		}
+		if v.PR != nil {
+			if in.Outside, err = r.cache.outside(ctx, r.cfg.Inputs, changeID, v); err != nil {
+				return in, fmt.Errorf("read outside facts: %w", err)
+			}
 		}
 	}
 	if in.Dead, err = r.cfg.Dead.DeadEffects(ctx, changeID); err != nil {
 		return in, fmt.Errorf("read dead jobs: %w", err)
 	}
+	if err := r.checkSpend(ctx, &in); err != nil {
+		return in, err
+	}
 	return in, nil
+}
+
+func (r *Reconciler) checkSpend(ctx context.Context, in *change.In) error {
+	if r.cfg.Spend == nil {
+		return nil
+	}
+	spent, capUSD, err := r.cfg.Spend(ctx)
+	if err != nil {
+		return fmt.Errorf("read daily spend: %w", err)
+	}
+	if capUSD > 0 && spent >= capUSD {
+		in.SpendCapExceeded = true
+		in.SpendSummary = fmt.Sprintf("daily spend cap reached ($%.2f / $%.2f); new agent tasks are paused", spent, capUSD)
+	}
+	return nil
 }
 
 // repoAndBase is the repository of the change and the commit its policy is read at: the pull request's base when there

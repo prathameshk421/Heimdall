@@ -80,11 +80,13 @@ type GitHub struct {
 	Interval Duration `yaml:"interval" json:"interval"`
 }
 
-// Tracker is where tickets come from (D50). Kind is jira, or file in local mode.
+// Tracker is where tickets come from (D50). Kind is jira, or file in local mode. MergeStatus, when set, is the
+// status a ticket moves to after its pull request merges (F1).
 type Tracker struct {
-	Kind     string   `yaml:"kind" json:"kind"`
-	Mode     string   `yaml:"mode" json:"mode"`
-	Interval Duration `yaml:"interval" json:"interval"`
+	Kind        string   `yaml:"kind" json:"kind"`
+	Mode        string   `yaml:"mode" json:"mode"`
+	Interval    Duration `yaml:"interval" json:"interval"`
+	MergeStatus string   `yaml:"merge_status,omitempty" json:"merge_status,omitempty"`
 }
 
 // Agents names the runtime the VM agents run on (D72, D145).

@@ -292,7 +292,8 @@ func baseExecutors(
 	return room, branch, check, nil
 }
 
-// coreExecutors builds the executors of the core area: the room, the branch, the check run and the task assignment.
+// coreExecutors builds the executors of the core area: the room, the branch, the check run, task assignment, room
+// posts/close and tracker writes.
 func coreExecutors(ad adapters, store ports.EventStore, in effects.Ingest, gen ports.IDs, clk ports.Clock) (map[change.EffectKind]outbox.Executor, error) {
 	room, branch, check, err := baseExecutors(ad, in, gen, clk)
 	if err != nil {
@@ -308,8 +309,34 @@ func coreExecutors(ad adapters, store ports.EventStore, in effects.Ingest, gen p
 	if err != nil {
 		return nil, fmt.Errorf("build task_assign executor: %w", err)
 	}
+	roomPost, err := effects.NewRoomPost(effects.RoomPostDeps{Chat: ad.chat})
+	if err != nil {
+		return nil, fmt.Errorf("build room_post executor: %w", err)
+	}
+	closer, ok := ad.chat.(ports.RoomCloser)
+	if !ok {
+		return nil, errors.New("build room_close executor: the selected chat cannot archive a room")
+	}
+	roomClose, err := effects.NewRoomClose(effects.RoomCloseDeps{Closer: closer, Ingest: in, IDs: gen, Clock: clk})
+	if err != nil {
+		return nil, fmt.Errorf("build room_close executor: %w", err)
+	}
+	writer, ok := ad.tickets.(ports.TicketWriter)
+	if !ok {
+		return nil, errors.New("build tracker_write executor: the selected tracker cannot write to tickets")
+	}
+	transitioner, _ := ad.tickets.(ports.TicketTransitioner)
+	trackerWrite, err := effects.NewTrackerWrite(effects.TrackerWriteDeps{
+		Writer: writer, Transitioner: transitioner, Ingest: in, IDs: gen, Clock: clk,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build tracker_write executor: %w", err)
+	}
 	return map[change.EffectKind]outbox.Executor{
 		change.EffectRoomOpen:     room,
+		change.EffectRoomPost:     roomPost,
+		change.EffectRoomClose:    roomClose,
+		change.EffectTrackerWrite: trackerWrite,
 		change.EffectGitHubBranch: branch,
 		change.EffectGitHubCheck:  check,
 		change.EffectTaskAssign:   taskAssign,

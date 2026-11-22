@@ -278,6 +278,11 @@ func (r *Runner) runRequest(ctx context.Context, in request, spec *RepoProfile) 
 	if validTestOutput(out) {
 		return response{Output: out}, http.StatusOK
 	}
+	if in.Job.Kind == ports.SandboxProfileTrial && runErr == nil {
+		// The trial's command ran but reported no test events: that is the proposal's outcome, not a runner fault. The
+		// output goes back so the server records a failed trial with it as the log, which the profiler reads next.
+		return response{Output: out}, http.StatusOK
+	}
 	if runErr != nil {
 		return response{Error: sandboxCause(out, runErr)}, http.StatusUnprocessableEntity
 	}
@@ -812,8 +817,16 @@ func (c Client) result(ctx context.Context, job ports.SandboxJob, resp *http.Res
 		return c.profileJobResult(ctx, job, out.Output)
 	}
 	report, _, err := testevents.ParseEvents(bytes.NewReader(out.Output))
-	if err != nil {
+	if job.Kind != ports.SandboxProfileTrial && err != nil {
 		return ports.SandboxResult{}, fmt.Errorf("parse runner test output: %w", err)
+	}
+	if job.Kind == ports.SandboxProfileTrial && (err != nil || len(report.Cases()) == 0) {
+		// A trial that reported no tests is a result with no tests and its output as the log; the service fails it.
+		logRef, putErr := c.Blobs.Put(ctx, ports.BlobLog, bytes.NewReader(out.Output))
+		if putErr != nil {
+			return ports.SandboxResult{}, fmt.Errorf("store runner log: %w", putErr)
+		}
+		return ports.SandboxResult{LogRef: workflow.BlobRef(logRef)}, nil
 	}
 	logRef, err := c.Blobs.Put(ctx, ports.BlobLog, bytes.NewReader(out.Output))
 	if err != nil {

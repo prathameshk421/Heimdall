@@ -18,7 +18,9 @@ import (
 const (
 	EventChangeTriggered     EventType = "change.triggered"
 	EventRoomOpened          EventType = "room.opened"
+	EventRoomClosed          EventType = "room.closed"
 	EventBranchEnsured       EventType = "branch.ensured"
+	EventTrackerUpdated      EventType = "tracker.updated"
 	EventTaskAssigned        EventType = "task.assigned"
 	EventTaskAcked           EventType = "task.acked"
 	EventTaskTimedOut        EventType = "task.timed_out"
@@ -31,6 +33,7 @@ const (
 	EventStepEscalated       EventType = "step.escalated"
 	EventStepResumed         EventType = "step.resumed"
 	EventProfileProposed     EventType = "profile.proposed"
+	EventProfileRequested    EventType = "profile.requested"
 	EventTicketChanged       EventType = "ticket.changed"
 	EventPROpened            EventType = "pr.opened"
 	EventPRPushed            EventType = "pr.pushed"
@@ -50,7 +53,9 @@ func corePayloads() map[EventType]payloadEntry {
 	return map[EventType]payloadEntry{
 		EventChangeTriggered:     entry[Triggered](),
 		EventRoomOpened:          entry[RoomOpened](),
+		EventRoomClosed:          entry[RoomClosed](),
 		EventBranchEnsured:       entry[BranchEnsured](),
+		EventTrackerUpdated:      entry[TrackerUpdated](),
 		EventTaskAssigned:        entry[TaskAssigned](),
 		EventTaskAcked:           entry[TaskAcked](),
 		EventTaskTimedOut:        entry[TaskTimedOut](),
@@ -63,6 +68,7 @@ func corePayloads() map[EventType]payloadEntry {
 		EventStepEscalated:       entry[StepEscalated](),
 		EventStepResumed:         entry[StepResumed](),
 		EventProfileProposed:     entry[ProfileProposed](),
+		EventProfileRequested:    entry[ProfileRequested](),
 		EventTicketChanged:       entry[TicketChanged](),
 		EventPROpened:            entry[PROpened](),
 		EventPRPushed:            entry[PRPushed](),
@@ -145,6 +151,37 @@ func (p RoomOpened) Validate() error {
 	return v.join()
 }
 
+// RoomClosed is the payload of room.closed: the change's Switch room was archived after merge (F2).
+type RoomClosed struct {
+	RoomID RoomID `json:"room_id"`
+}
+
+// Validate returns every problem with the payload.
+func (p RoomClosed) Validate() error {
+	var v problems
+	_, err := ParseRoomID(string(p.RoomID))
+	v.add("room_id", err)
+	return v.join()
+}
+
+// TrackerUpdated is the payload of tracker.updated: the ticket tracker was commented or moved (F1).
+type TrackerUpdated struct {
+	Ticket     id.ChangeID `json:"ticket"`
+	Stage      string      `json:"stage"`
+	Transition string      `json:"transition,omitempty"`
+}
+
+// Validate returns every problem with the payload.
+func (p TrackerUpdated) Validate() error {
+	var v problems
+	v.add("ticket", checkTicket(p.Ticket))
+	v.require("stage", p.Stage == TrackerStageCommit || p.Stage == TrackerStageMerge, "must be commit or merge")
+	if p.Transition != "" {
+		v.add("transition", checkText(p.Transition))
+	}
+	return v.join()
+}
+
 // BranchEnsured is the payload of branch.ensured: the test branch exists at a base commit (TECH_SPEC 2.3).
 type BranchEnsured struct {
 	Repo    Repo   `json:"repo"`
@@ -161,9 +198,11 @@ func (p BranchEnsured) Validate() error {
 	return v.join()
 }
 
-// TicketChanged is the payload of ticket.changed: fields of the ticket moved (TECH_SPEC 3.2, U3).
+// TicketChanged is the payload of ticket.changed: fields of the ticket moved (TECH_SPEC 3.2, U3, T2).
+// Criteria, when present, replaces the ticket's acceptance criteria and re-opens the tests row for uncovered ones.
 type TicketChanged struct {
-	ChangedFields []string `json:"changed_fields"`
+	ChangedFields []string          `json:"changed_fields"`
+	Criteria      []TicketCriterion `json:"acceptance_criteria,omitempty"`
 }
 
 // Validate returns every problem with the payload.
@@ -171,6 +210,18 @@ func (p TicketChanged) Validate() error {
 	var v problems
 	v.add("changed_fields", checkAtLeastOne(len(p.ChangedFields)))
 	v.each("changed_fields", p.ChangedFields, checkText)
+	if len(p.Criteria) > 0 {
+		seen := map[string]bool{}
+		for _, c := range p.Criteria {
+			if !ticketCriterionID.MatchString(c.ID) {
+				v.add("acceptance_criteria", errors.New("invalid criterion id"))
+			}
+			if seen[c.ID] {
+				v.add("acceptance_criteria", errors.New("duplicate criterion id"))
+			}
+			seen[c.ID] = true
+		}
+	}
 	return v.join()
 }
 
@@ -344,6 +395,32 @@ func (p ProfileProposed) Validate() error {
 	v.require("proposal_id", reHash.MatchString(p.ProposalID), "must be 64 lowercase hex characters")
 	v.add("repo", checkRepo(p.Repo))
 	return v.join()
+}
+
+// ProfileRequested is the payload of profile.requested: a policy owner asked the profiler to revise the repository's
+// promoted sandbox profile (D184). By is the person who asked and Note is what they want changed, in one bounded line.
+// The request stays pending until a proposal created at or after it exists.
+type ProfileRequested struct {
+	Repo Repo    `json:"repo"`
+	By   ActorID `json:"by"`
+	Note string  `json:"note"`
+}
+
+// maxProfileNote bounds the note of a profile.requested. It is one line of what to change, not a document.
+const maxProfileNote = 500
+
+// Validate returns every problem with the payload.
+func (p ProfileRequested) Validate() error {
+	var v problems
+	v.add("repo", checkRepo(p.Repo))
+	v.add("by", checkActor(p.By))
+	v.require("note", noteIsOneLine(p.Note), "must be one line of 1 to 500 bytes")
+	return v.join()
+}
+
+// noteIsOneLine reports whether a profile request note is bounded text without a line break.
+func noteIsOneLine(s string) bool {
+	return strings.TrimSpace(s) != "" && len(s) <= maxProfileNote && !strings.ContainsAny(s, "\r\n")
 }
 
 // StepResumed is the payload of step.resumed: a person released an escalated step (A10 item 5). Step is the workflow

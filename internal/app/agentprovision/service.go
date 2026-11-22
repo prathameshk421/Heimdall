@@ -115,33 +115,12 @@ type Receipt struct {
 	CredentialsInstalled bool          `json:"credentials_installed"`
 }
 
-// Prepare idempotently ensures every managed definition exists stopped, then returns
-// role-bound config handoffs. Replaying it yields the same contract and creates no duplicate.
+// Prepare idempotently ensures every managed definition exists, stops each one whose setup must be installed, then
+// returns role-bound config handoffs. Replaying it yields the same contract and creates no duplicate.
 func (s *Service) Prepare(ctx context.Context) ([]Handoff, error) {
-	agents := slices.Clone(s.cfg.Agents)
-	slices.SortFunc(agents, func(a, b Agent) int { return strings.Compare(string(a.Name), string(b.Name)) })
-	type preparedAgent struct {
-		agent      Agent
-		secretName string
-		tokenHash  [32]byte
-	}
-	seenTokens := map[[32]byte]id.AgentName{}
-	prepared := make([]preparedAgent, 0, len(agents))
-	for _, a := range agents {
-		secretName := "agent_token_" + string(a.Name)
-		token, err := s.cfg.Secrets.Secret(secretName)
-		if err != nil {
-			return nil, fmt.Errorf("agent provision %q: read token file %s: %w", a.Name, secretName, err)
-		}
-		if token == "" || strings.ContainsAny(token, "\r\n") {
-			return nil, fmt.Errorf("agent provision %q: token must be a non-empty single line", a.Name)
-		}
-		hash := sha256.Sum256([]byte(token))
-		if other, ok := seenTokens[hash]; ok {
-			return nil, fmt.Errorf("agent provision: %q and %q use the same token", other, a.Name)
-		}
-		seenTokens[hash] = a.Name
-		prepared = append(prepared, preparedAgent{agent: a, secretName: secretName, tokenHash: hash})
+	prepared, err := s.readTokens()
+	if err != nil {
+		return nil, err
 	}
 	out := make([]Handoff, 0, len(prepared))
 	for _, preparedAgent := range prepared {
@@ -153,15 +132,24 @@ func (s *Service) Prepare(ctx context.Context) ([]Handoff, error) {
 		if managed.ID == "" || managed.Name != string(a.Name) {
 			return nil, fmt.Errorf("agent provision %q: Switch returned a mismatched identity", a.Name)
 		}
-		if err := s.cfg.Provisioner.SetManagedAgentState(ctx, managed.ID, ports.ManagedAgentStopped); err != nil {
-			return nil, fmt.Errorf("agent provision %q: request Switch stop before configuration: %w", a.Name, err)
+		tokenSHA := hex.EncodeToString(preparedAgent.tokenHash[:])
+		installed, err := s.installedAsIs(ctx, a, tokenSHA)
+		if err != nil {
+			return nil, err
+		}
+		desired := ports.ManagedAgentRunning
+		if !installed {
+			desired = ports.ManagedAgentStopped
+			if err := s.cfg.Provisioner.SetManagedAgentState(ctx, managed.ID, ports.ManagedAgentStopped); err != nil {
+				return nil, fmt.Errorf("agent provision %q: request Switch stop before configuration: %w", a.Name, err)
+			}
 		}
 		out = append(out, Handoff{
 			Agent: a.Name, Role: a.Role, SwitchAgent: managed.ID, Machine: s.cfg.Machine,
 			MCP: MCPConfig{Type: "remote", URL: s.cfg.MCPEndpoint,
 				Auth: map[string]string{"Authorization": "Bearer {{file:secrets/" + preparedAgent.secretName + "}}"}},
-			TokenFile: filepath.Join(s.cfg.SecretsDir, preparedAgent.secretName), TokenSHA256: hex.EncodeToString(preparedAgent.tokenHash[:]),
-			DesiredState: string(ports.ManagedAgentStopped),
+			TokenFile: filepath.Join(s.cfg.SecretsDir, preparedAgent.secretName), TokenSHA256: tokenSHA,
+			DesiredState: string(desired),
 		})
 	}
 	return out, nil
@@ -241,6 +229,49 @@ func (s *Service) directoryOf(name id.AgentName) string {
 		return ""
 	}
 	return filepath.Join(s.cfg.AgentsDir, string(name))
+}
+
+// preparedAgent is one configured agent with the name and hash of its token file.
+type preparedAgent struct {
+	agent      Agent
+	secretName string
+	tokenHash  [32]byte
+}
+
+// readTokens reads each agent's token in name order and refuses an empty, multi-line or shared token.
+func (s *Service) readTokens() ([]preparedAgent, error) {
+	agents := slices.Clone(s.cfg.Agents)
+	slices.SortFunc(agents, func(a, b Agent) int { return strings.Compare(string(a.Name), string(b.Name)) })
+	seenTokens := map[[32]byte]id.AgentName{}
+	prepared := make([]preparedAgent, 0, len(agents))
+	for _, a := range agents {
+		secretName := "agent_token_" + string(a.Name)
+		token, err := s.cfg.Secrets.Secret(secretName)
+		if err != nil {
+			return nil, fmt.Errorf("agent provision %q: read token file %s: %w", a.Name, secretName, err)
+		}
+		if token == "" || strings.ContainsAny(token, "\r\n") {
+			return nil, fmt.Errorf("agent provision %q: token must be a non-empty single line", a.Name)
+		}
+		hash := sha256.Sum256([]byte(token))
+		if other, ok := seenTokens[hash]; ok {
+			return nil, fmt.Errorf("agent provision: %q and %q use the same token", other, a.Name)
+		}
+		seenTokens[hash] = a.Name
+		prepared = append(prepared, preparedAgent{agent: a, secretName: secretName, tokenHash: hash})
+	}
+	return prepared, nil
+}
+
+// installedAsIs says the agent's last setup receipt matches its role, endpoint and token now: its configuration is
+// installed and unchanged, so prepare leaves it running instead of stopping a working agent (D177).
+func (s *Service) installedAsIs(ctx context.Context, a Agent, tokenSHA string) (bool, error) {
+	stored, ok, err := s.cfg.Receipts.LoadAgentSetupReceipt(ctx, a.Name)
+	if err != nil {
+		return false, fmt.Errorf("agent provision %q: read setup receipt: %w", a.Name, err)
+	}
+	want := receiptFingerprint(Receipt{Agent: a.Name, Role: a.Role, MCPEndpoint: s.cfg.MCPEndpoint, TokenSHA256: tokenSHA, CredentialsInstalled: true})
+	return ok && stored.Fingerprint == want, nil
 }
 
 func receiptFingerprint(receipt Receipt) string {

@@ -56,13 +56,22 @@ func (a *app) loops(ctx context.Context) {
 		defer wg.Done()
 		a.tickLoop(ctx, ticks)
 	}()
-	// A sandbox run takes minutes. Each worker claims one effect, so a slow one never holds up a reviewer's task.
+	// Quick lane workers: wakes, posts, GitHub checks and tracker writes never wait behind sandbox jobs (O2).
 	wg.Add(drainWorkers - 1)
 	for range drainWorkers {
 		go func() {
 			defer wg.Done()
-			a.drainLoop(ctx, wake, ticks)
+			a.drainLoop(ctx, a.drainer, wake, ticks)
 		}()
+	}
+	if a.slowDrainer != nil {
+		wg.Add(slowDrainWorkers)
+		for range slowDrainWorkers {
+			go func() {
+				defer wg.Done()
+				a.drainLoop(ctx, a.slowDrainer, wake, ticks)
+			}()
+		}
 	}
 	wg.Wait()
 }
@@ -260,9 +269,9 @@ func (a *app) tickLoop(ctx context.Context, ticks chan<- time.Time) {
 	}
 }
 
-// drainLoop runs the outbox drainer until ctx is done. The drainer logs its own batch errors and keeps going.
-func (a *app) drainLoop(ctx context.Context, wake <-chan struct{}, ticks <-chan time.Time) {
-	if err := a.drainer.Run(ctx, wake, ticks); err != nil {
+// drainLoop runs an outbox drainer until ctx is done. The drainer logs its own batch errors and keeps going.
+func (a *app) drainLoop(ctx context.Context, d drainer, wake <-chan struct{}, ticks <-chan time.Time) {
+	if err := d.Run(ctx, wake, ticks); err != nil {
 		a.logger.ErrorContext(ctx, "outbox drainer stopped", "error", err)
 	}
 }

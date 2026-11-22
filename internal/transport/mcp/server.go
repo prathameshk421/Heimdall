@@ -362,11 +362,27 @@ func (s *Server) recordCall(ctx context.Context, p Principal, name string, args 
 		}
 	default:
 		c.Outcome = "failed"
+		if recent, rerr := s.deps.Calls.RecentCalls(ctx, p.Agent, 2); rerr == nil && repeatedFailures(recent, name, c.Args) >= 2 {
+			err = refusal(name + " has failed 3 times in a row with the same arguments; stop retrying it and move on (call get_task or submit what you have)")
+		}
 	}
 	if rerr := s.deps.Calls.RecordCall(ctx, c); rerr != nil {
 		s.deps.Logger.ErrorContext(ctx, "record tool call", "tool", name, "agent", p.Agent, "cause", rerr)
 	}
 	return err
+}
+
+// repeatedFailures counts how many consecutive recent calls match the same failing tool and arguments (R5).
+func repeatedFailures(recent []ports.ToolCall, tool, args string) int {
+	n := 0
+	for _, rc := range recent {
+		if rc.Tool == tool && rc.Outcome == "failed" && rc.Args == args {
+			n++
+		} else {
+			break
+		}
+	}
+	return n
 }
 
 // toolFor returns the named tool when the role may call it.

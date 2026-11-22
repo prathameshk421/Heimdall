@@ -82,8 +82,8 @@ func TestTheActionEventNamesAreTheDesignNames(t *testing.T) {
 
 func TestEveryActionEventIsInTheCatalogAfterTheServerEvents(t *testing.T) {
 	all := change.All()
-	require.Equal(t, change.EventChangeMerged, all[51], "the 52 server events keep their places")
-	require.Equal(t, actionTypes(), all[52:])
+	require.Equal(t, change.EventChangeMerged, all[54], "the 55 server events come first")
+	require.Equal(t, actionTypes(), all[55:])
 }
 
 func TestEveryActionPayloadRoundTripsByteForByte(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/profileyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -17,9 +18,13 @@ import (
 type memoryProfiles struct {
 	records map[string]ports.ProfileProposal
 	active  map[string]string
+	putErr  error
 }
 
 func (m *memoryProfiles) PutProfile(_ context.Context, p ports.ProfileProposal) (bool, error) {
+	if m.putErr != nil {
+		return false, m.putErr
+	}
 	if old, ok := m.records[p.ID]; ok {
 		if string(old.Artifact) != string(p.Artifact) {
 			return false, errors.New("conflict")
@@ -97,9 +102,12 @@ func (imagePolicy) AllowedImages(context.Context) ([]string, error) {
 	return []string{"registry.example/go@sha256:" + strings.Repeat("a", 64)}, nil
 }
 
-type profileParser struct{}
+type profileParser struct{ err error }
 
-func (profileParser) Parse([]byte, []string) (ports.ProfileSpec, error) {
+func (p profileParser) Parse([]byte, []string) (ports.ProfileSpec, error) {
+	if p.err != nil {
+		return ports.ProfileSpec{}, p.err
+	}
 	return ports.ProfileSpec{Languages: []string{"go"}, Image: "registry.example/go@sha256:" + strings.Repeat("a", 64), Acceptance: "go test {dir}", Seam: "api", ACTag: "// ac", TestsDir: "tests/heimdall"}, nil
 }
 
@@ -177,6 +185,39 @@ func TestLifecycleRequiresAuthorizedApprovalPassingTrialAndPromotion(t *testing.
 	require.Equal(t, ports.ProfilePromoted, active.State)
 }
 
+// A parser problem is the artifact's own: the error carries InvalidProfileError so the tool can show the reason. A store
+// failure is not, so that error must stay internal.
+func TestProposeMarksOnlyAnArtifactProblemAsTheAgentsInput(t *testing.T) {
+	svc, store, _, _, _ := newProfileService(t, ports.SandboxResult{})
+	_, _, err := svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
+	require.NoError(t, err)
+
+	svc.cfg.Parser = profileParser{err: errors.New("yaml: unmarshal errors:\n  line 10: field evidence not found")}
+	_, _, err = svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
+	var invalid *ports.InvalidProfileError
+	require.ErrorAs(t, err, &invalid)
+	require.Contains(t, err.Error(), "line 10: field evidence not found")
+
+	svc.cfg.Parser = profileParser{}
+	store.putErr = errors.New("put profile: postgres: connection refused")
+	_, _, err = svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
+	require.ErrorContains(t, err, "connection refused")
+	require.NotErrorAs(t, err, &invalid, "a store failure is not the agent's input")
+}
+
+// The live artifact (Nov 21) had the unknown key `evidence`. Through the real profileyaml parser the error still names
+// that key, so the tool's refusal does too.
+func TestAProfileWithAnUnknownKeyCarriesTheRealParserReason(t *testing.T) {
+	svc, _, _, _, _ := newProfileService(t, ports.SandboxResult{})
+	svc.cfg.Parser = profileyaml.Parser{}
+	artifact := "languages: [go]\nimage: registry.example/go@sha256:" + strings.Repeat("a", 64) +
+		"\nacceptance: go test {dir}\nseam: api\nac_tag: '// ac'\npaths: {tests: tests/heimdall}\nevidence: []\n"
+	_, _, err := svc.Propose(context.Background(), "acme/pay", "profiler", []byte(artifact))
+	var invalid *ports.InvalidProfileError
+	require.ErrorAs(t, err, &invalid)
+	require.Contains(t, invalid.Error(), "field evidence not found in type profileyaml.RepoProfile")
+}
+
 func TestLifecycleRefusesUnauthorizedAndFailedTrialPromotion(t *testing.T) {
 	svc, store, _, syncer, _ := newProfileService(t, ports.SandboxResult{Failed: 1, LogRef: workflow.BlobRef("blob:sha256:" + strings.Repeat("c", 64))})
 	proposal, _, err := svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
@@ -193,4 +234,29 @@ func TestLifecycleRefusesUnauthorizedAndFailedTrialPromotion(t *testing.T) {
 	require.Equal(t, ports.TrialFailed, trial.Outcome)
 	require.Error(t, svc.Promote(context.Background(), "owner", proposal.ID))
 	require.Empty(t, syncer.names)
+}
+
+// A trial whose acceptance command reports no tests proves nothing, so it fails and the profiler is asked again (live,
+// Nov 21: `go test {dir}/...` without -json printed plain text, the tests passed, and no result was ever recorded).
+func TestATrialWithNoTestResultsFails(t *testing.T) {
+	logRef := workflow.BlobRef("blob:sha256:" + strings.Repeat("c", 64))
+	svc, _, _, _, _ := newProfileService(t, ports.SandboxResult{LogRef: logRef})
+	proposal, _, err := svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
+	require.NoError(t, err)
+	require.NoError(t, svc.Approve(context.Background(), "owner", proposal.ID))
+	trial, err := svc.Trial(context.Background(), proposal.ID, id.SHA(strings.Repeat("d", 40)))
+	require.NoError(t, err)
+	require.Equal(t, ports.TrialFailed, trial.Outcome)
+	require.Equal(t, logRef, trial.LogRef, "the log is kept for the profiler's next task")
+	require.Error(t, svc.Promote(context.Background(), "owner", proposal.ID))
+}
+
+// Steps out of order are refusals with a reason a person can act on (D186), not failures to retry.
+func TestAProfileStepOutOfOrderIsARefusalWithItsReason(t *testing.T) {
+	svc, _, _, _, _ := newProfileService(t, ports.SandboxResult{Passed: 1, LogRef: workflow.BlobRef("blob:sha256:" + strings.Repeat("c", 64))})
+	proposal, _, err := svc.Propose(context.Background(), "acme/pay", "profiler", []byte("artifact"))
+	require.NoError(t, err)
+	var refused StepRefusedError
+	require.ErrorAs(t, svc.Promote(context.Background(), "owner", proposal.ID), &refused)
+	require.Contains(t, refused.Reason, "has not passed its trial yet")
 }

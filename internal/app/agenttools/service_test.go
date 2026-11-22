@@ -395,6 +395,36 @@ func TestCurrentHappyPath(t *testing.T) {
 	require.False(t, assign.Acked)
 	require.Equal(t, t0.Add(2*time.Second), assign.AssignedAt)
 	require.Equal(t, t0.Add(30*time.Minute), assign.Deadline)
+	require.Nil(t, assign.Revision, "no profile request was made")
+}
+
+// The profiler's task carries the newest request to revise the repository's profile, so get_task can show the note with
+// the promoted profile (D184).
+func TestCurrentCarriesTheNewestProfileRequest(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	makeBaseStream(t, h, workflow.RoleProfiler, testAgent)
+	h.index.set(testAgent, workflow.RoleProfiler, ports.ActiveTaskRef{ChangeID: testChangeID, TaskID: testTaskID})
+	for _, note := range []string{"add lint", "add a golangci-lint check that writes SARIF"} {
+		payload, err := json.Marshal(change.ProfileRequested{Repo: "acme/pay-demo", By: "ana", Note: note})
+		require.NoError(t, err)
+		_, err = h.events.Append(context.Background(), testChangeID, int64(len(eventStream(t, h))), []change.Event{{
+			ID: h.ids.NewEvent(), ChangeID: testChangeID, Type: change.EventProfileRequested, OccurredAt: t0.Add(time.Second),
+			Actor: change.Actor{Kind: change.ActorHuman, ID: "ana"}, Payload: payload}}, nil)
+		require.NoError(t, err)
+	}
+
+	assign, err := h.svc.Current(context.Background(), testAgent, workflow.RoleProfiler)
+	require.NoError(t, err)
+	require.Equal(t, &change.ProfileRequestInfo{Repo: "acme/pay-demo", By: "ana",
+		Note: "add a golangci-lint check that writes SARIF", Asked: t0.Add(time.Second)}, assign.Revision)
+}
+
+func eventStream(t *testing.T, h *testHarness) []change.Event {
+	t.Helper()
+	evs, err := h.events.Load(context.Background(), testChangeID)
+	require.NoError(t, err)
+	return evs
 }
 
 func TestCurrentNoActiveTask(t *testing.T) {

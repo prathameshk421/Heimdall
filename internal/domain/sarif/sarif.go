@@ -109,14 +109,25 @@ func toResult(rule, level, msg string, locs []struct {
 		res.Finger = rule + ":" + res.File + ":"
 		return res, nil
 	}
-	if reg.StartLine < 1 || reg.EndLine < reg.StartLine {
+	end := reg.EndLine
+	if end == 0 {
+		// SARIF 2.1.0: an absent endLine is the startLine. golangci-lint writes only startLine (D192).
+		end = reg.StartLine
+	}
+	if reg.StartLine < 1 || end < reg.StartLine {
 		return Result{}, fmt.Errorf("rule %s in %s: lines %d-%d are not a valid range", rule, res.File, reg.StartLine, reg.EndLine)
 	}
-	if reg.Snippet.Text == "" {
-		return Result{}, fmt.Errorf("rule %s in %s: region has no snippet text to fingerprint", rule, res.File)
+	res.Lines = [2]int{reg.StartLine, end}
+	text := reg.Snippet.Text
+	if text == "" {
+		// The snippet is optional in SARIF and many tools omit it. The message names what was found ("Error return
+		// value of s.refunds.record is not checked"), so it is the text that stays the same when the code moves.
+		if msg == "" {
+			return Result{}, fmt.Errorf("rule %s in %s: region has neither snippet nor message text to fingerprint", rule, res.File)
+		}
+		text = "message: " + msg
 	}
-	res.Lines = [2]int{reg.StartLine, reg.EndLine}
-	res.Finger = fingerprint(rule, res.File, reg.Snippet.Text)
+	res.Finger = fingerprint(rule, res.File, text)
 	return res, nil
 }
 

@@ -55,6 +55,8 @@ func TestParseCommands(t *testing.T) {
 		{"approve-profile", chat("heimdall approve-profile " + strings.Repeat("a", 64)), ApproveProfile{ID: strings.Repeat("a", 64)}},
 		{"approve-knowledge", chat("heimdall approve-knowledge " + strings.Repeat("a", 64)), ApproveKnowledge{Ref: "knowledge:" + strings.Repeat("a", 64)}},
 		{"promote-profile", gh("/heimdall promote-profile " + strings.Repeat("b", 64)), PromoteProfile{ID: strings.Repeat("b", 64)}},
+		{"reprofile", chat("heimdall reprofile add a golangci-lint check that writes SARIF"), Reprofile{Note: "add a golangci-lint check that writes SARIF"}},
+		{"reprofile folds whitespace", gh("/heimdall reprofile  add   a lint check\nthat writes SARIF"), Reprofile{Note: "add a lint check that writes SARIF"}},
 		{"incident", gh("/heimdall incident double charge in prod"), Incident{Text: "double charge in prod"}},
 		{"challenge", chat("heimdall challenge F3 internal/pay/pay_test.go:42"), Challenge{Finding: "F3", Evidence: "internal/pay/pay_test.go:42"}},
 		{"challenge multiword evidence", chat("heimdall challenge F3 run 01JABC passes at head"), Challenge{Finding: "F3", Evidence: "run 01JABC passes at head"}},
@@ -224,6 +226,9 @@ func TestParseBadArgs(t *testing.T) {
 		{"waive no at", chat("heimdall waive-reviewer x because reasons"), "waive-reviewer", "@"},
 		{"forget no reason", chat("heimdall forget mem_abc"), "forget", "heimdall forget <memory_ref>"},
 		{"forget bad ref", chat("heimdall forget a/b some reason here"), "forget", "memory_ref"},
+		{"reprofile empty", chat("heimdall reprofile"), "reprofile", "heimdall reprofile <what to change>"},
+		{"reprofile blanks", chat("heimdall reprofile \n  "), "reprofile", "heimdall reprofile <what to change>"},
+		{"reprofile over the limit", chat("heimdall reprofile " + strings.Repeat("x", 501)), "reprofile", "at most 500 bytes"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -252,4 +257,14 @@ func TestFindingNeverUlid(t *testing.T) {
 func TestReplyIsSingleShortMessage(t *testing.T) {
 	got := Parse(chat("heimdall nope"), testPeople)
 	require.Less(t, len(got.Reply), 1500)
+}
+
+// VerbOf reads the verb of a command message from its text alone, before any people are loaded.
+func TestVerbOfReadsTheVerbOfACommandMessage(t *testing.T) {
+	require.Equal(t, "approve-profile", VerbOf(Input{Source: SourceChat, Text: "heimdall Approve-Profile abc"}))
+	require.Equal(t, "reprofile", VerbOf(Input{Source: SourceChat, Text: "heimdall reprofile add lint"}))
+	require.Empty(t, VerbOf(Input{Source: SourceChat, Text: "hello there"}))
+	require.True(t, RepositoryScoped("approve-profile"))
+	require.True(t, RepositoryScoped("promote-profile"))
+	require.False(t, RepositoryScoped("reprofile"), "a revision request is written on a change")
 }

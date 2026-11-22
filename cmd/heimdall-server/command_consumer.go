@@ -13,6 +13,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/policyyaml"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/people"
+	appprofile "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/profile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/reconcile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/commands"
@@ -43,12 +44,14 @@ type commandRuntime struct {
 	profiles  mcp.Profiles
 	files     mcp.KnowledgeFiles
 	processor *collaboration.Processor
+	// dead reads a change's jobs that will not run again, so `resume` can release their row; nil reads none.
+	dead ports.DeadEffects
 }
 
 func newCommandRuntime(events ports.EventStore, ad adapters, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, in prIntakeHandler, profiles mcp.Profiles) (*commandRuntime, error) {
 	r := &commandRuntime{events: events, code: ad.vcs, prs: ad.vcs, repos: ad.vcs, tickets: ad.tickets, projects: ad.projects,
 		chat: ad.chat, comments: ad.vcs, engine: eng, ids: gen, clock: clk, intake: in, profiles: profiles}
-	p, err := collaboration.New(collaboration.Config{Identity: r, Executor: r, Replies: r, Proposals: r, Clock: clk})
+	p, err := collaboration.New(collaboration.Config{Identity: r, Executor: r, Replies: r, Proposals: r, Clock: clk, Questioner: r})
 	if err != nil {
 		return nil, fmt.Errorf("build command processor: %w", err)
 	}
@@ -164,12 +167,32 @@ func (r *commandRuntime) directory(ctx context.Context, target collaboration.Tar
 }
 
 func commandPRBinding(events []change.Event, target collaboration.Target) (change.Repo, int, error) {
-	var repo change.Repo
+	repo, eventNumber, err := repoOf(events, target.ChangeID)
+	if err != nil {
+		return "", 0, err
+	}
+	if target.Repo != "" {
+		repo = target.Repo
+	}
+	if repo == "" {
+		return "", 0, errors.New("command target has no repository binding")
+	}
 	number := target.PR
+	if number == 0 {
+		number = eventNumber
+	}
+	return repo, number, nil
+}
+
+// repoOf is the repository and the first pull request number a change's own events name: the trigger's repository, or
+// the pull request's when the change started there.
+func repoOf(events []change.Event, cid id.ChangeID) (change.Repo, int, error) {
+	var repo change.Repo
+	number := 0
 	for _, ev := range events {
 		payload, err := change.Decode(ev)
 		if err != nil {
-			return "", 0, fmt.Errorf("decode change %s event %s: %w", target.ChangeID, ev.ID, err)
+			return "", 0, fmt.Errorf("decode change %s event %s: %w", cid, ev.ID, err)
 		}
 		switch v := payload.(type) {
 		case change.Triggered:
@@ -185,12 +208,6 @@ func commandPRBinding(events []change.Event, target collaboration.Target) (chang
 				number = v.Number
 			}
 		}
-	}
-	if target.Repo != "" {
-		repo = target.Repo
-	}
-	if repo == "" {
-		return "", 0, errors.New("command target has no repository binding")
 	}
 	return repo, number, nil
 }
@@ -339,12 +356,7 @@ func (r *commandRuntime) Execute(ctx context.Context, target collaboration.Targe
 		}
 		return "Already recorded.", nil
 	}
-	var events []change.Event
-	if review, ok := cmd.(commands.Review); ok {
-		events, err = r.reviewerSelectionEvents(ctx, target, person, source, sourceRef, review)
-	} else {
-		events, err = r.commandEvents(target.ChangeID, state, person, source, sourceRef, cmd)
-	}
+	events, err := r.executeEvents(ctx, target, state, person, source, sourceRef, cmd)
 	if err != nil {
 		return "", err
 	}
@@ -380,12 +392,12 @@ func (r *commandRuntime) executeDirect(ctx context.Context, person string, cmd c
 	switch profile := cmd.(type) {
 	case commands.ApproveProfile:
 		if err := r.profiles.Approve(ctx, mcp.Principal{Person: person}, profile.ID); err != nil {
-			return "", true, err
+			return "", true, profileRefusal(err)
 		}
 		return "The sandbox profile is approved for an isolated trial.", true, nil
 	case commands.PromoteProfile:
 		if err := r.profiles.Promote(ctx, mcp.Principal{Person: person}, profile.ID); err != nil {
-			return "", true, err
+			return "", true, profileRefusal(err)
 		}
 		return "The passing sandbox profile is active for production jobs.", true, nil
 	}
@@ -414,7 +426,7 @@ func (r *commandRuntime) forgetKnowledge(ctx context.Context, person string, cmd
 
 func profileCommand(cmd commands.Command) bool {
 	switch cmd.(type) {
-	case commands.ApproveProfile, commands.PromoteProfile:
+	case commands.ApproveProfile, commands.PromoteProfile, commands.Reprofile:
 		return true
 	default:
 		return false
@@ -446,13 +458,33 @@ func (r *commandRuntime) reviewerSelectionEvents(ctx context.Context, target col
 	return []change.Event{ev}, nil
 }
 
+// executeEvents are the events a command writes on its change. A review and a resume read outside the change's own
+// events: the reviewer pool, and the dead jobs that are in the outbox (D188).
+func (r *commandRuntime) executeEvents(ctx context.Context, target collaboration.Target, state []change.Event, person string, source commands.Source, sourceRef string, cmd commands.Command) ([]change.Event, error) {
+	if review, ok := cmd.(commands.Review); ok {
+		return r.reviewerSelectionEvents(ctx, target, person, source, sourceRef, review)
+	}
+	if resume, ok := cmd.(commands.Resume); ok && r.dead != nil {
+		dead, err := r.dead.DeadEffects(ctx, target.ChangeID)
+		if err != nil {
+			return nil, fmt.Errorf("read the dead jobs of %s: %w", target.ChangeID, err)
+		}
+		return r.resumeEvents(target.ChangeID, state, person, source, sourceRef,
+			change.Actor{Kind: change.ActorHuman, ID: change.ActorID(person)}, resume, dead)
+	}
+	return r.commandEvents(target.ChangeID, state, person, source, sourceRef, cmd)
+}
+
 func (r *commandRuntime) commandEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, cmd commands.Command) ([]change.Event, error) {
 	actor := change.Actor{Kind: change.ActorHuman, ID: change.ActorID(person)}
 	if challenge, ok := cmd.(commands.Challenge); ok {
 		return r.challengeEvents(cid, state, person, source, sourceRef, actor, challenge)
 	}
 	if resume, ok := cmd.(commands.Resume); ok {
-		return r.resumeEvents(cid, state, person, source, sourceRef, actor, resume)
+		return r.resumeEvents(cid, state, person, source, sourceRef, actor, resume, nil)
+	}
+	if reprofile, ok := cmd.(commands.Reprofile); ok {
+		return r.reprofileEvents(cid, state, person, source, sourceRef, actor, reprofile)
 	}
 	if ans, ok := cmd.(commands.Answer); ok {
 		return r.answerEvents(cid, state, person, source, sourceRef, actor, ans)
@@ -820,6 +852,8 @@ func actionReply(cmd commands.Command) string {
 		return "On it. I'm starting this ticket."
 	case commands.Resume:
 		return "Done. I'm picking that step up again."
+	case commands.Reprofile:
+		return "Sent to the profiler. It will propose a revised sandbox profile for an owner to approve."
 	case commands.Answer:
 		return "Thanks. I passed your answer to the agent."
 	case commands.Review:
@@ -915,4 +949,17 @@ func hasTrigger(events []change.Event) bool {
 		}
 	}
 	return false
+}
+
+// profileRefusal turns a profile step the person took out of order, or an id that names no profile, into a refusal the
+// room answers (D186). Any other error is an outage and stays an error, so the stream retries the command.
+func profileRefusal(err error) error {
+	var refused appprofile.StepRefusedError
+	switch {
+	case errors.As(err, &refused):
+		return fmt.Errorf("%w: %s", collaboration.ErrRefused, refused.Reason)
+	case errors.Is(err, ports.ErrNotFound):
+		return fmt.Errorf("%w: no sandbox profile has that id", collaboration.ErrRefused)
+	}
+	return err
 }

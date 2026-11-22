@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/intake"
+	appprofile "github.com/prathameshk421/flip_the_switch_hackathon/internal/app/profile"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/commands"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -93,7 +96,10 @@ func setupCommandRuntime(t *testing.T, cid id.ChangeID, tickets ports.TicketRead
 	return runtime, store, chat, comments
 }
 
-type commandProfileFake struct{ approvals, promotions []string }
+type commandProfileFake struct {
+	approvals, promotions []string
+	promoteErr            error
+}
 
 func (f *commandProfileFake) Propose(context.Context, mcp.Principal, string, []byte) (ports.ProfileProposal, bool, error) {
 	return ports.ProfileProposal{}, false, nil
@@ -105,9 +111,13 @@ func (f *commandProfileFake) Approve(_ context.Context, p mcp.Principal, _ strin
 func (f *commandProfileFake) PreviousTrial(context.Context, string) (string, error) {
 	return "", nil
 }
+func (f *commandProfileFake) AllowedImages(context.Context) ([]string, error) { return nil, nil }
+func (f *commandProfileFake) PromotedArtifact(context.Context, string) (string, error) {
+	return "", nil
+}
 func (f *commandProfileFake) Promote(_ context.Context, p mcp.Principal, _ string) error {
 	f.promotions = append(f.promotions, p.Person)
-	return nil
+	return f.promoteErr
 }
 
 func TestProfileHumanCommandsRequireMappedPolicyOwnerAndUseMappedIdentity(t *testing.T) {
@@ -129,6 +139,45 @@ func TestProfileHumanCommandsRequireMappedPolicyOwnerAndUseMappedIdentity(t *tes
 	promoted := ports.Message{ID: "profile-promoted", Room: room.RoomID, Sender: "ana", Text: "heimdall promote-profile " + proposalID}
 	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, promoted))
 	require.Equal(t, []string{"ana"}, profiles.promotions)
+}
+
+// A policy owner can ask the profiler to revise a promoted profile; the request is one event on the change it was posted
+// in, and a person who may not approve a profile may not ask for one either (D184).
+func TestReprofileRecordsTheRequestForAPolicyOwnerOnly(t *testing.T) {
+	cid := id.ChangeID("KAN-44")
+	runtime, store, chat, _ := setupCommandRuntime(t, cid, nil, ports.PR{})
+	runtime.profiles = &commandProfileFake{}
+	room := ports.RoomBinding{ChangeID: cid, RoomID: "profile-room"}
+
+	denied := ports.Message{ID: "reprofile-denied", Room: room.RoomID, Sender: "bob", Text: "heimdall reprofile add a lint check"}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, denied))
+	require.Contains(t, chat.posts[len(chat.posts)-1], "not allowed")
+	events, err := store.Load(context.Background(), cid)
+	require.NoError(t, err)
+	require.NotContains(t, eventTypes(events), change.EventProfileRequested)
+
+	asked := ports.Message{ID: "reprofile-asked", Room: room.RoomID, Sender: "ana",
+		Text: "heimdall reprofile add a golangci-lint check that writes SARIF"}
+	require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, asked))
+	events, err = store.Load(context.Background(), cid)
+	require.NoError(t, err)
+	require.Equal(t, []change.EventType{change.EventProfileRequested}, eventTypes(events[len(events)-1:]))
+	request, ok := mustPayload[change.ProfileRequested](events[len(events)-1])
+	require.True(t, ok)
+	require.Equal(t, change.Repo("aarush323/PBL_TOS_RISK_ANALYZER"), request.Repo, "the change's own repository")
+	require.Equal(t, change.ActorID("ana"), request.By)
+	require.Equal(t, "add a golangci-lint check that writes SARIF", request.Note)
+	require.Equal(t, change.ActorHuman, events[len(events)-1].Actor.Kind)
+	require.Equal(t, "Sent to the profiler. It will propose a revised sandbox profile for an owner to approve.", chat.posts[len(chat.posts)-1])
+}
+
+// eventTypes is the types of events in order.
+func eventTypes(events []change.Event) []change.EventType {
+	out := make([]change.EventType, 0, len(events))
+	for _, ev := range events {
+		out = append(out, ev.Type)
+	}
+	return out
 }
 
 type commandKnowledgeFiles struct{ approvals, forgets []string }
@@ -231,11 +280,11 @@ func TestServerCommandRuntimeSelectsReviewersForFanout(t *testing.T) {
 			payload, ok := mustPayload[change.TaskAssigned](ev)
 			require.True(t, ok)
 			assigned[string(payload.Agent)] = true
-		case change.EventChangeTriggered, change.EventRoomOpened, change.EventBranchEnsured,
-			change.EventTaskSuperseded, change.EventTaskRewoken, change.EventProviderProbed, change.EventProfileProposed, change.EventChecksReported,
+		case change.EventChangeTriggered, change.EventRoomOpened, change.EventRoomClosed, change.EventBranchEnsured, change.EventTrackerUpdated,
 			change.EventFastReported, change.EventProofStarted, change.EventProofReported, change.EventCostRecorded,
 			change.EventExternalIngested, change.EventSummaryPosted, change.EventBreakGlassRecorded,
 			change.EventBreakGlassReviewed, change.EventStateReset,
+			change.EventTaskSuperseded, change.EventTaskRewoken, change.EventProviderProbed, change.EventProfileProposed, change.EventProfileRequested, change.EventChecksReported,
 			change.EventTaskAcked, change.EventTaskTimedOut, change.EventTaskFailed, change.EventTaskProgress,
 			change.EventStepRetried, change.EventStepEscalated, change.EventStepResumed, change.EventQuestionAsked, change.EventQuestionAnswered, change.EventCommandProposed, change.EventCommandConfirmed,
 			change.EventTestsSubmitted, change.EventTestsVerified, change.EventTestsRejected, change.EventTestsCommitted,
@@ -367,4 +416,56 @@ func findDecision(t *testing.T, events []change.Event, source string) change.Dec
 	}
 	t.Fatalf("decision source %q missing", source)
 	return change.DecisionRecorded{}
+}
+
+// A profile step out of order is answered in the room, not retried: before, a promote sent ahead of the trial stopped
+// the whole room stream and retried every minute, so no other command got through (live, Nov 21, D186).
+func TestAProfileStepOutOfOrderGetsAReplyAndDoesNotStopTheStream(t *testing.T) {
+	cid := id.ChangeID("KAN-42")
+	runtime, _, chat, _ := setupCommandRuntime(t, cid, nil, ports.PR{})
+	proposalID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	room := ports.RoomBinding{ChangeID: cid, RoomID: "profile-room"}
+	for n, tc := range []struct {
+		err  error
+		want string
+	}{
+		{appprofile.StepRefusedError{Reason: "it has not passed its trial yet; promote it after Heimdall says the trial passed"}, "has not passed its trial yet"},
+		{ports.ErrNotFound, "no sandbox profile has that id"},
+	} {
+		runtime.profiles = &commandProfileFake{promoteErr: tc.err}
+		msg := ports.Message{ID: change.MessageID("early-" + strconv.Itoa(n)), Room: room.RoomID, Sender: "ana", Text: "heimdall promote-profile " + proposalID}
+		require.NoError(t, runtime.processor.HandleRoomMessage(context.Background(), room, msg), "a refusal is a reply, not a stream error")
+		require.Contains(t, chat.posts[len(chat.posts)-1], tc.want)
+	}
+	runtime.profiles = &commandProfileFake{promoteErr: errors.New("call runner socket: EOF")}
+	msg := ports.Message{ID: "runner-down", Room: room.RoomID, Sender: "ana", Text: "heimdall promote-profile " + proposalID}
+	require.Error(t, runtime.processor.HandleRoomMessage(context.Background(), room, msg), "an outage is still retried")
+}
+
+// In a channel shared by several tickets, approving or promoting a profile needs no ticket key: a profile belongs to a
+// repository and the proposal id names it. A revision request is written on a change, so it still asks, unless the
+// channel has one open ticket.
+func TestAProfileCommandInASharedChannelNeedsNoTicketKey(t *testing.T) {
+	cid := id.ChangeID("KAN-42")
+	runtime, _, chat, _ := setupCommandRuntime(t, cid, nil, ports.PR{})
+	profiles := &commandProfileFake{}
+	runtime.profiles = profiles
+	shared := change.RoomID("reviews-room")
+	two := []ports.RoomBinding{{ChangeID: cid, RoomID: shared}, {ChangeID: "KAN-43", RoomID: shared}}
+	proposalID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	approve := ports.Message{ID: "shared-approve", Room: shared, Sender: "ana", Text: "heimdall approve-profile " + proposalID}
+	require.NoError(t, runtime.processor.HandleSharedRoomMessage(context.Background(), shared, two, approve))
+	require.Equal(t, []string{"ana"}, profiles.approvals, "approved without a ticket key")
+
+	revise := ports.Message{ID: "shared-revise", Room: shared, Sender: "ana", Text: "heimdall reprofile add a lint check"}
+	require.NoError(t, runtime.processor.HandleSharedRoomMessage(context.Background(), shared, two, revise))
+	require.Contains(t, chat.posts[len(chat.posts)-1], "Which ticket", "two tickets: the revision asks which one")
+
+	posts := len(chat.posts)
+	one := []ports.RoomBinding{{ChangeID: cid, RoomID: shared}}
+	revise.ID = "shared-revise-one"
+	require.NoError(t, runtime.processor.HandleSharedRoomMessage(context.Background(), shared, one, revise))
+	require.Greater(t, len(chat.posts), posts)
+	require.NotContains(t, chat.posts[len(chat.posts)-1], "Which ticket", "one open ticket: no question")
 }

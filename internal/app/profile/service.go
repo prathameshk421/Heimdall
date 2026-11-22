@@ -68,6 +68,15 @@ func New(cfg Config) (*Service, error) {
 	return &Service{cfg: cfg}, nil
 }
 
+// AllowedImages is the runner's image allowlist, the list Propose validates an artifact against.
+func (s *Service) AllowedImages(ctx context.Context) ([]string, error) {
+	images, err := s.cfg.Policy.AllowedImages(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read runner image allowlist: %w", err)
+	}
+	return images, nil
+}
+
 // Propose validates a profile against the runner's image allowlist and stores an immutable proposal.
 func (s *Service) Propose(ctx context.Context, repo change.Repo, author string, artifact []byte) (ports.ProfileProposal, bool, error) {
 	if author == "" {
@@ -82,7 +91,8 @@ func (s *Service) Propose(ctx context.Context, repo change.Repo, author string, 
 	}
 	spec, err := s.cfg.Parser.Parse(artifact, images)
 	if err != nil {
-		return ports.ProfileProposal{}, false, fmt.Errorf("parse proposed profile: %w", err)
+		// The parser's own words name the artifact's problem; the wrapper keeps the stage in the server log.
+		return ports.ProfileProposal{}, false, fmt.Errorf("parse proposed profile: %w", &ports.InvalidProfileError{Reason: err})
 	}
 	h := sha256.New()
 	_, _ = h.Write([]byte(strings.ToLower(string(repo))))
@@ -99,14 +109,11 @@ func (s *Service) Propose(ctx context.Context, repo change.Repo, author string, 
 	return p, created, nil
 }
 
-// Approve records a mapped human's policy authorization for a proposed profile.
+// Approve records a mapped human's policy authorization for a proposed profile (accepting a full id or unique 7+ hex prefix, U2).
 func (s *Service) Approve(ctx context.Context, actor, proposalID string) error {
-	p, found, err := s.cfg.Store.Profile(ctx, proposalID)
+	p, err := s.resolveProfile(ctx, proposalID)
 	if err != nil {
 		return err
-	}
-	if !found {
-		return ports.ErrNotFound
 	}
 	if err := s.cfg.Authorizer.AuthorizeProfile(ctx, actor, change.Repo(p.Repo), "approve"); err != nil {
 		return fmt.Errorf("authorize profile approval: %w", err)
@@ -114,15 +121,58 @@ func (s *Service) Approve(ctx context.Context, actor, proposalID string) error {
 	if (p.State == ports.ProfileApproved || p.State == ports.ProfilePromoted) && p.Approver == actor {
 		return nil
 	}
-	ok, err := s.cfg.Store.ApproveProfile(ctx, proposalID, actor, s.cfg.Clock.Now())
+	ok, err := s.cfg.Store.ApproveProfile(ctx, p.ID, actor, s.cfg.Clock.Now())
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return errors.New("profile is not awaiting approval")
+		return StepRefusedError{Reason: "that sandbox profile is not waiting for approval"}
 	}
 	return nil
 }
+
+// resolveProfile looks up an exact proposal id first, then a unique 7+ hex prefix when the store supports it (U2).
+func (s *Service) resolveProfile(ctx context.Context, idOrPrefix string) (ports.ProfileProposal, error) {
+	p, found, err := s.cfg.Store.Profile(ctx, idOrPrefix)
+	if err != nil {
+		return ports.ProfileProposal{}, err
+	}
+	if found {
+		return p, nil
+	}
+	resolver, ok := s.cfg.Store.(ports.ProfilePrefixResolver)
+	if !ok || len(idOrPrefix) < 7 || len(idOrPrefix) >= 64 {
+		return ports.ProfileProposal{}, ports.ErrNotFound
+	}
+	matches, err := resolver.ProfilesByPrefix(ctx, idOrPrefix)
+	if err != nil {
+		return ports.ProfileProposal{}, err
+	}
+	switch len(matches) {
+	case 0:
+		return ports.ProfileProposal{}, ports.ErrNotFound
+	case 1:
+		return matches[0], nil
+	default:
+		ids := make([]string, 0, len(matches))
+		for _, m := range matches {
+			shortID := m.ID
+			if len(shortID) > 12 {
+				shortID = shortID[:12]
+			}
+			ids = append(ids, shortID)
+		}
+		return ports.ProfileProposal{}, StepRefusedError{
+			Reason: fmt.Sprintf("proposal prefix %s is ambiguous (matches: %s); pass more characters", idOrPrefix, strings.Join(ids, ", ")),
+		}
+	}
+}
+
+// StepRefusedError is a lifecycle step taken out of order, such as a promotion before a passing trial (D186). It is a
+// decision the person can act on, not a failure to retry; Reason says what to do, in plain words.
+type StepRefusedError struct{ Reason string }
+
+func (e StepRefusedError) Error() string { return e.Reason }
 
 // Trial runs the approved artifact in an isolated one-off job and durably records its JUnit result.
 func (s *Service) Trial(ctx context.Context, proposalID string, sha id.SHA) (ports.ProfileTrial, error) {
@@ -147,8 +197,9 @@ func (s *Service) Trial(ctx context.Context, proposalID string, sha id.SHA) (por
 	if err := result.Validate(); err != nil {
 		return ports.ProfileTrial{}, fmt.Errorf("profile trial result: %w", err)
 	}
+	// A trial passes only when tests ran and none failed: an acceptance command that reports no tests proves nothing.
 	outcome := ports.TrialPassed
-	if result.Failed > 0 || result.Errored > 0 {
+	if result.Failed > 0 || result.Errored > 0 || result.Passed == 0 {
 		outcome = ports.TrialFailed
 	}
 	trial := ports.ProfileTrial{Outcome: outcome, Passed: result.Passed, Failed: result.Failed, Errored: result.Errored, SHA: sha, LogRef: result.LogRef}
@@ -162,20 +213,17 @@ func (s *Service) Trial(ctx context.Context, proposalID string, sha id.SHA) (por
 	return trial, nil
 }
 
-// Promote selects a passing, authorized profile and synchronizes it to the isolated runner.
+// Promote selects a passing, authorized profile and synchronizes it to the isolated runner (accepting full id or unique 7+ hex prefix, U2).
 func (s *Service) Promote(ctx context.Context, actor, proposalID string) error {
-	p, found, err := s.cfg.Store.Profile(ctx, proposalID)
+	p, err := s.resolveProfile(ctx, proposalID)
 	if err != nil {
 		return err
-	}
-	if !found {
-		return ports.ErrNotFound
 	}
 	if err := s.cfg.Authorizer.AuthorizeProfile(ctx, actor, change.Repo(p.Repo), "promote"); err != nil {
 		return fmt.Errorf("authorize profile promotion: %w", err)
 	}
 	if p.Trial.Outcome != ports.TrialPassed {
-		return errors.New("profile requires a passing isolated trial before promotion")
+		return StepRefusedError{Reason: "that sandbox profile has not passed its trial yet; promote it after Heimdall says the trial passed"}
 	}
 	if err := s.cfg.Syncer.SyncProfile(ctx, profileName(change.Repo(p.Repo)), p.Artifact); err != nil {
 		return fmt.Errorf("sync promoted profile to runner: %w", err)
@@ -183,12 +231,12 @@ func (s *Service) Promote(ctx context.Context, actor, proposalID string) error {
 	if p.State == ports.ProfilePromoted {
 		return nil
 	}
-	ok, err := s.cfg.Store.PromoteProfile(ctx, proposalID, s.cfg.Clock.Now())
+	ok, err := s.cfg.Store.PromoteProfile(ctx, p.ID, s.cfg.Clock.Now())
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return errors.New("profile is not eligible for promotion")
+		return StepRefusedError{Reason: "that sandbox profile cannot be promoted in its current state"}
 	}
 	return nil
 }

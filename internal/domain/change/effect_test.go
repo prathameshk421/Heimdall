@@ -83,7 +83,7 @@ func TestIdempotencyKeyRefusesBadInputs(t *testing.T) {
 
 func TestEffectKindsAreTheOutboxKindsOfTheSpec(t *testing.T) {
 	for _, k := range []change.EffectKind{change.EffectGitHubCheck, change.EffectGitHubComment, change.EffectGitHubBranch,
-		change.EffectRoomOpen, change.EffectRoomPost, change.EffectTrackerWrite, change.EffectMemoryEpisode} {
+		change.EffectRoomOpen, change.EffectRoomPost, change.EffectRoomClose, change.EffectTrackerWrite, change.EffectMemoryEpisode} {
 		require.True(t, k.Valid(), k)
 	}
 	require.False(t, change.EffectKind("email").Valid())

@@ -286,19 +286,25 @@ func (r *flowRig) syncPRs() {
 // settle sweeps and drains until a pass runs no effect and records no fact: what the loops would do if the clock stood
 // still.
 func (r *flowRig) settle() {
-	drainer, ok := r.app.drainer.(*outbox.Drainer)
+	quick, ok := r.app.drainer.(*outbox.Drainer)
 	require.True(r.t, ok)
+	drainers := []*outbox.Drainer{quick}
+	if slow, ok := r.app.slowDrainer.(*outbox.Drainer); ok && slow != nil {
+		drainers = append(drainers, slow)
+	}
 	for pass := 0; pass < 30; pass++ {
 		before := r.events()
 		require.NoError(r.t, r.app.reconciler.Sweep(r.ctx))
 		ran := 0
-		for {
-			res, err := drainer.RunOnce(r.ctx)
-			require.NoError(r.t, err)
-			if res.Claimed == 0 {
-				break
+		for _, d := range drainers {
+			for {
+				res, err := d.RunOnce(r.ctx)
+				require.NoError(r.t, err)
+				if res.Claimed == 0 {
+					break
+				}
+				ran += res.Claimed
 			}
-			ran += res.Claimed
 		}
 		if ran == 0 && r.events() == before {
 			return

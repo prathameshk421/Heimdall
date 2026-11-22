@@ -16,6 +16,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/announce"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/dashboard"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
@@ -45,17 +46,12 @@ const (
 	knowledgeRetentionInterval = 30 * time.Minute
 	// outboxBatch is how many effects one drain claims at once.
 	outboxBatch = 1
-	// drainWorkers is how many effects can run at once.
+	// drainWorkers is how many quick effects (wakes, posts, checks, tracker writes) can run at once (O2).
 	drainWorkers = 3
-	// effectTimeout bounds one executor call. The lease must exceed outboxBatch times this (outbox.New).
+	// slowDrainWorkers is how many sandbox effects can run at once in their own lane without blocking quick effects (O2).
+	slowDrainWorkers = 3
+	// effectTimeout bounds one executor call when no kind budget is configured. Per-kind budgets live in EffectKind.Budget (O3).
 	effectTimeout = 20 * time.Second
-	// testQualityTimeout bounds a test_quality effect: two sandbox jobs of up to 3 minutes each, plus the runner's
-	// margin. With the 20 s default the outbox cancelled the run and every retry started another container (KAN-9).
-	testQualityTimeout = 7 * time.Minute
-	// verifyEvidenceTimeout bounds a verify_evidence effect: a source fetch, one sandbox job of up to 3 minutes, and the
-	// event ingest after it. With the 20 s default the run was cut and the ingest after it timed out on every retry, so
-	// E1 findings dropped to E4 or never settled (KAN-23, Nov 8).
-	verifyEvidenceTimeout = 5 * time.Minute
 	// outboxLease is how long a claimed effect stays leased to one drainer. It must exceed outboxBatch times the longest
 	// effect timeout (outbox.New). An effect that was running when the server stopped is in doubt and is not re-run on
 	// lease expiry (T22), so a long lease does not delay recovery.
@@ -172,6 +168,7 @@ type app struct {
 	pool              *pgxpool.Pool
 	pollers           []poller
 	drainer           drainer
+	slowDrainer       drainer
 	syncer            syncer
 	roomStream        roomStreamRunner
 	comments          commentPoller
@@ -184,6 +181,7 @@ type app struct {
 	// operatorRecheck repeats one finding's evidence on the current head after a run that gave a wrong answer.
 	operatorRecheck http.Handler
 	operatorRoom    http.Handler
+	operatorOps     http.Handler
 	// degraded names each tool the boot self-check withheld, with the reason; /healthz reports it.
 	degraded []string
 	narrator *announce.Narrator
@@ -486,6 +484,27 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 	}
 	a.operatorReject = operatorReject{reject: a.commands.OperatorReject, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
 	a.operatorRecheck = operatorRecheck{recheck: a.commands.OperatorRecheck, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
+	opsStore := postgres.NewStore(pool)
+	a.operatorOps = operatorOps{
+		ops: opsStore,
+		scorecard: func(ctx context.Context) (dashboard.RoleScorecard, error) {
+			ids, err := opsStore.ChangeIDs(ctx)
+			if err != nil {
+				return dashboard.RoleScorecard{}, err
+			}
+			var all []change.Event
+			for _, cid := range ids {
+				evs, err := opsStore.Load(ctx, cid)
+				if err != nil {
+					return dashboard.RoleScorecard{}, err
+				}
+				all = append(all, evs...)
+			}
+			return dashboard.ScorecardFromEvents(all), nil
+		},
+		secrets: cfg,
+		keyName: cfg.Switch.APIKeySecret,
+	}
 	return a, nil
 }
 
@@ -552,7 +571,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	box, err := newDrainer(d, store, execs)
+	quickBox, slowBox, err := newDrainers(d, store, execs)
 	if err != nil {
 		return nil, err
 	}
@@ -587,7 +606,7 @@ func assembleWithBlobs(
 	}
 	return &app{
 		narrator: narrator,
-		pool:     pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpSrv.Handler(), agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
+		pool:     pool, pollers: pollers, drainer: quickBox, slowDrainer: slowBox, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpSrv.Handler(), agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
@@ -606,21 +625,68 @@ func assembleHumanEdges(d deps, ad adapters, store *postgres.Store) (http.Handle
 	return cardsUpload, narrator, nil
 }
 
-// newDrainer builds the outbox drainer over the executors, with the longer timeouts of the sandbox effects.
-func newDrainer(d deps, store *postgres.Store, execs map[change.EffectKind]outbox.Executor) (*outbox.Drainer, error) {
-	box, err := outbox.New(outbox.Config{
+// sandboxEffectKinds are the long-running sandbox effects that run in their own lane so they never block wakes,
+// status posts or GitHub checks (O2).
+func sandboxEffectKinds() []change.EffectKind {
+	var out []change.EffectKind
+	for _, k := range change.EffectKinds() {
+		if k.IsSandbox() {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// effectKindBudgets builds the per-kind timeout map from the domain's EffectKind.Budget declarations (O3).
+func effectKindBudgets(execs map[change.EffectKind]outbox.Executor) (map[change.EffectKind]time.Duration, error) {
+	out := make(map[change.EffectKind]time.Duration, len(execs))
+	for k := range execs {
+		b := k.Budget()
+		if b <= 0 {
+			return nil, fmt.Errorf("effect kind %q has no timeout budget declared", k)
+		}
+		out[k] = b
+	}
+	return out, nil
+}
+
+// quickEffectKinds are every registered effect kind that is not a long-running sandbox job (O2).
+func quickEffectKinds(execs map[change.EffectKind]outbox.Executor) []change.EffectKind {
+	var out []change.EffectKind
+	for k := range execs {
+		if !k.IsSandbox() {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// newDrainers builds two outbox drainers over the same store: a quick lane (wakes, posts, checks, tracker writes)
+// and a sandbox lane (long-running container jobs), so slow effects never starve fast ones (O2).
+func newDrainers(d deps, store *postgres.Store, execs map[change.EffectKind]outbox.Executor) (quick, slow *outbox.Drainer, err error) {
+	timeouts, err := effectKindBudgets(execs)
+	if err != nil {
+		return nil, nil, err
+	}
+	quick, err = outbox.New(outbox.Config{
 		Outbox: store, Executors: execs, Logger: d.logger,
 		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
-		KindTimeouts: map[change.EffectKind]time.Duration{
-			change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout,
-			change.EffectVerifyEvidence: verifyEvidenceTimeout,
-			change.EffectProfileTrial:   testQualityTimeout, // a trial runs the profile's tests in the sandbox, like acceptance
-		},
+		KindTimeouts: timeouts,
+		Kinds:        quickEffectKinds(execs),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build outbox drainer: %w", err)
+		return nil, nil, fmt.Errorf("build quick outbox drainer: %w", err)
 	}
-	return box, nil
+	slow, err = outbox.New(outbox.Config{
+		Outbox: store, Executors: execs, Logger: d.logger,
+		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
+		KindTimeouts: timeouts,
+		Kinds:        sandboxEffectKinds(),
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("build sandbox outbox drainer: %w", err)
+	}
+	return quick, slow, nil
 }
 
 // executors maps each effect kind to its executor. Each area builds its own (wire_<area>.go). Each executor checks the

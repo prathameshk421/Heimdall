@@ -129,3 +129,32 @@ func TestHandleRepliesWithSourceGrammarForUnknownVerb(t *testing.T) {
 	require.Equal(t, commands.SourceGitHub, replies.source)
 	require.Contains(t, replies.body, "/heimdall uphold <finding>")
 }
+
+// A refusal is a decision the person must hear: it gets one reply with the reason and no error, so the GitHub comment
+// poller advances its cursor instead of retrying the same comment forever (D173).
+func TestHandleRepliesWithTheReasonWhenTheExecutorRefuses(t *testing.T) {
+	executor := &executorFake{err: refuse("step profile is not escalated, so there is nothing to resume")}
+	replies := &replyFake{}
+	proc := processor(t, identityFake{people: mappedPeople{"chat:sender-1": "ana"}, person: "ana"}, executor, replies)
+	err := proc.Handle(context.Background(), Input{
+		Command:   commands.Input{Text: "heimdall resume profile", Source: commands.SourceChat, Sender: "sender-1"},
+		SourceRef: "message-11",
+	})
+	require.NoError(t, err, "a refusal is not a failure to retry")
+	require.Equal(t, 1, replies.calls)
+	require.Equal(t, "Not done: step profile is not escalated, so there is nothing to resume.", replies.body)
+}
+
+// Any other executor error is still a failure: the caller decides whether to retry, and no reply claims success.
+func TestHandleReturnsAPlainExecutorErrorWithoutReplying(t *testing.T) {
+	executor := &executorFake{err: errors.New("event store is down")}
+	replies := &replyFake{}
+	proc := processor(t, identityFake{people: mappedPeople{"chat:sender-1": "ana"}, person: "ana"}, executor, replies)
+	err := proc.Handle(context.Background(), Input{
+		Command:   commands.Input{Text: "heimdall resume profile", Source: commands.SourceChat, Sender: "sender-1"},
+		SourceRef: "message-12",
+	})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrRefused)
+	require.Zero(t, replies.calls)
+}

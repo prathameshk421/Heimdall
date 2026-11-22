@@ -61,17 +61,11 @@ func (c *inputCache) policy(ctx context.Context, src InputSource, repo change.Re
 	return p, nil
 }
 
+// profile is never cached. The profile store changes outside the change's events (a proposal, an approval, a trial, a
+// promotion), so no key could tell a stale answer, and a stale "no proposal" assigns a paid profile task again (live,
+// Nov 21: a second task buried the proposal an owner had just approved). It is two indexed reads per run.
 func (c *inputCache) profile(ctx context.Context, src InputSource, repo change.Repo) (change.Profile, error) {
-	key := "profile/" + string(repo)
-	if v, ok := c.get(key); ok {
-		return v.(change.Profile), nil
-	}
-	p, err := src.Profile(ctx, repo)
-	if err != nil {
-		return change.Profile{}, err
-	}
-	c.put(key, p)
-	return p, nil
+	return src.Profile(ctx, repo)
 }
 
 // outside is cached by change and head: the changed files and the like do not change while the head stays.

@@ -123,6 +123,9 @@ func TestEveryEffectKindEmittedByWorkflowHasAnExecutor(t *testing.T) {
 		change.EffectAcceptance:        true, // emitted by PR intake
 		change.EffectRunChecks:         true, // the checks row of the review flow
 		change.EffectProfileTrial:      true, // the profile row of the review flow (D175)
+		change.EffectRoomPost:          true, // U1 asks and F2 close summary
+		change.EffectRoomClose:         true, // F2 archive room after merge
+		change.EffectTrackerWrite:      true, // F1 tracker write-back after commit and merge
 	}
 
 	store := newMemStore()

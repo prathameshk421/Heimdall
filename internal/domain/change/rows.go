@@ -20,11 +20,12 @@ import (
 // Flow names which part of a change a row belongs to. A change carries up to two flows; each starts on its own fact.
 type Flow string
 
-// The flows. FlowBoth rows start when either flow has started.
+// The flows. FlowBoth rows start when either flow has started. FlowMerge rows run only after a pull request merges.
 const (
 	FlowTests  Flow = "tests"
 	FlowReview Flow = "review"
 	FlowBoth   Flow = "both"
+	FlowMerge  Flow = "merge"
 )
 
 // Row is one piece of work of a change.
@@ -53,6 +54,10 @@ type In struct {
 	Settings      Settings
 	Dead          []DeadJob // outbox rows of this change that are dead or in doubt
 	Now           time.Time
+	// SpendCapExceeded pauses new agent task assignments when the daily spend cap is reached (P4).
+	SpendCapExceeded bool
+	// SpendSummary is the plain-words description of the cap shown in Missing when SpendCapExceeded is true (P4).
+	SpendSummary string
 }
 
 // Outside is what the log cannot say and a row needs from the repository.
@@ -77,6 +82,8 @@ type Outside struct {
 type Profile struct {
 	// Promoted says the repository has a promoted profile; TestsDir and Checks are its fields, zero when it has none.
 	Promoted bool
+	// PromotedID is the content id of the promoted proposal, empty when the repository has none (D184).
+	PromotedID string
 	// TestsDir is the folder the Heimdall tests live in, such as tests/heimdall; the ticket's folder is inside it.
 	TestsDir string
 	Checks   []ProfileCheck
@@ -85,12 +92,28 @@ type Profile struct {
 }
 
 // ProfileProposal is a proposal as the profile row reads it: its id, its state (proposed, approved or promoted) and
-// the outcome of its latest trial ("" before any, "passed" or "failed") with the trial's log.
+// the outcome of its latest trial ("" before any, "passed" or "failed") with the trial's log. CreatedAt is when the
+// proposal was first stored, which a profile.requested is compared against (D184).
 type ProfileProposal struct {
-	ID       string
-	State    string
-	Trial    string
-	TrialLog workflow.BlobRef
+	ID        string
+	State     string
+	Trial     string
+	TrialLog  workflow.BlobRef
+	CreatedAt time.Time
+}
+
+// pendingRequest is the newest profile.requested that no proposal at or after it answers, or nil. A request is answered
+// by a proposal created at or after the moment it was asked, so the profiler's new proposal settles it (D184). A
+// proposal with no recorded creation time cannot be shown to answer a request, so it does not.
+func (p Profile) pendingRequest(v View) *ProfileRequestInfo {
+	r := v.ProfileRequest
+	if r == nil {
+		return nil
+	}
+	if p.Latest != nil && !p.Latest.CreatedAt.IsZero() && !p.Latest.CreatedAt.Before(r.Asked) {
+		return nil
+	}
+	return r
 }
 
 // ProfileCheck is one check of the profile: it applies when a changed file matches one of its When globs (or always
@@ -161,6 +184,8 @@ func (r Row) started(v View) bool {
 		return v.PR != nil
 	case FlowBoth:
 		return v.Trigger != nil || v.PR != nil
+	case FlowMerge:
+		return v.Closed != nil && v.Closed.Merged
 	}
 	return false
 }
@@ -169,7 +194,8 @@ func (r Row) started(v View) bool {
 func Rows() []Row {
 	out := []Row{rowOpenRoom()}
 	out = append(out, testsRows()...)
-	return append(out, reviewRows()...)
+	out = append(out, reviewRows()...)
+	return append(out, mergeRows()...)
 }
 
 // RowJobKinds are the effect kinds the rows may start, each once, in table order.
@@ -198,7 +224,7 @@ func Open(in In) []Row {
 	}
 	var open []Row
 	for _, r := range rows {
-		if in.View.Over() || done[r.ID] || !r.started(in.View) || !allDone(done, r.After) {
+		if (in.View.Over() && r.Flow != FlowMerge) || done[r.ID] || !r.started(in.View) || !allDone(done, r.After) {
 			continue
 		}
 		open = append(open, r)
@@ -212,6 +238,9 @@ func Next(in In) []RowAction {
 	for _, r := range Open(in) {
 		for _, a := range r.Next(in) {
 			if a.Task != nil {
+				if in.SpendCapExceeded {
+					continue // daily spend cap pauses new agent assignments (P4)
+				}
 				a = capTask(in, r.ID, a)
 			}
 			out = append(out, RowAction{Row: r.ID, Action: a})
@@ -233,21 +262,44 @@ func TaskRow(kind string) string {
 		return "review"
 	case "verdict":
 		return "deliberate"
+	case "profile":
+		return "profile"
 	}
 	return ""
+}
+
+// RowCapped reports whether a task the row assigned failed MaxTaskFailures times on its input in the row's current
+// round, so the row asks a person instead of assigning again. It reads the same facts capTask does, and the resume
+// command uses it to accept `heimdall resume <change> <row>` for a capped row that never escalated.
+func RowCapped(v View, row string) bool {
+	for _, info := range v.Tasks {
+		if TaskRow(info.Kind) != row || info.Round != v.Resumes[row] {
+			continue
+		}
+		if failures(v, row, Task{Kind: info.Kind, Subject: info.Subject, Input: info.Input}) >= MaxTaskFailures {
+			return true
+		}
+	}
+	return false
+}
+
+// failures counts the tasks of t's kind, subject and input that failed or timed out in the row's current round.
+func failures(v View, row string, t Task) int {
+	failed := 0
+	for _, info := range v.Tasks {
+		if info.Kind == t.Kind && info.Subject == t.Subject && info.Input == t.Input &&
+			info.Round == v.Resumes[row] && (info.Status == TaskFailedStatus || info.Status == TaskTimedOutStatus) {
+			failed++
+		}
+	}
+	return failed
 }
 
 // capTask turns a task that already failed MaxTaskFailures times on its input in this round into a question for the
 // operators, so the reconciler assigns nothing and Missing says what a person can do.
 func capTask(in In, row string, a Action) Action {
 	t := a.Task
-	failed := 0
-	for _, info := range in.View.Tasks {
-		if info.Kind == t.Kind && info.Subject == t.Subject && info.Input == t.Input &&
-			info.Round == in.View.Resumes[row] && (info.Status == TaskFailedStatus || info.Status == TaskTimedOutStatus) {
-			failed++
-		}
-	}
+	failed := failures(in.View, row, *t)
 	if failed < MaxTaskFailures {
 		return a
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/commands"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -36,15 +37,38 @@ func stepEscalatedNow(state []change.Event, step string) (bool, error) {
 	return latest == change.EventStepEscalated, nil
 }
 
-// resumeEvents releases an escalated step. It refuses a step that is not escalated now, so a resume cannot restart a
+// resumable reports whether a person may start a new round of step: it escalated, or its seats used up their failures
+// and the row is capped (D173). The cap asks people to resume and never writes step.escalated itself.
+func resumable(state []change.Event, step string, dead []change.DeadJob) (bool, error) {
+	// A job of the row that failed for good or is in doubt: Missing tells people to resume the row (D188).
+	for _, d := range dead {
+		if change.RowOfJob(d.Kind) == step {
+			return true, nil
+		}
+	}
+	escalated, err := stepEscalatedNow(state, step)
+	if err != nil {
+		return false, err
+	}
+	if escalated {
+		return true, nil
+	}
+	view, err := change.Fold(state)
+	if err != nil {
+		return false, fmt.Errorf("read the change for step %s: %w", step, err)
+	}
+	return change.RowCapped(view, step), nil
+}
+
+// resumeEvents releases an escalated or capped step, or a row with a dead job. It refuses any other step, so a resume cannot restart a
 // step that is running. The one event it writes, step.resumed, names the person who released it.
-func (r *commandRuntime) resumeEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, actor change.Actor, cmd commands.Resume) ([]change.Event, error) {
-	escalated, err := stepEscalatedNow(state, cmd.Step)
+func (r *commandRuntime) resumeEvents(cid id.ChangeID, state []change.Event, person string, source commands.Source, sourceRef string, actor change.Actor, cmd commands.Resume, dead []change.DeadJob) ([]change.Event, error) {
+	ok, err := resumable(state, cmd.Step, dead)
 	if err != nil {
 		return nil, fmt.Errorf("read step %s: %w", cmd.Step, err)
 	}
-	if !escalated {
-		return nil, fmt.Errorf("step %s is not escalated, so there is nothing to resume", cmd.Step)
+	if !ok {
+		return nil, collaboration.Refuse(fmt.Sprintf("step %s is not escalated and has not used up its tasks, so there is nothing to resume", cmd.Step))
 	}
 	ev, err := r.event(cid, actor, source, change.EventStepResumed, change.StepResumed{Step: cmd.Step, By: change.ActorID(person)}, sourceRef)
 	if err != nil {

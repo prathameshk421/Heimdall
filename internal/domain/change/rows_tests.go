@@ -45,7 +45,7 @@ func personByGitHub(in In, login string) (string, bool) {
 }
 
 func testsRows() []Row {
-	return []Row{rowBranch(), rowWriteTests(), rowTestQA(), rowSignoff(), rowCommit()}
+	return []Row{rowBranch(), rowWriteTests(), rowTestQA(), rowSignoff(), rowCommit(), rowTrackerCommit()}
 }
 
 func rowBranch() Row {
@@ -70,21 +70,42 @@ func writeTestsBudget(in In) int {
 
 func rowWriteTests() Row {
 	return Row{ID: "write_tests", Flow: FlowTests, After: []string{"branch"},
-		Done: func(in In) bool { return in.View.Tests != nil && len(in.View.Tests.Rejected) == 0 },
+		Done: func(in In) bool {
+			return in.View.Tests != nil && len(in.View.Tests.Rejected) == 0 && len(uncoveredCriteria(in.View)) == 0
+		},
 		Next: func(in In) []Action {
 			v := in.View
 			attempts := 0
 			if v.Tests != nil {
 				attempts = v.Tests.Attempts
 			}
-			if attempts >= writeTestsBudget(in) && v.Tests != nil {
+			if attempts >= writeTestsBudget(in) && v.Tests != nil && len(v.Tests.Rejected) > 0 {
 				text := fmt.Sprintf("tests were rejected %d times: %s; `heimdall resume %s write_tests` allows more",
 					attempts, strings.Join(v.Tests.Rejected, "; "), in.Change)
 				return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
 			}
-			return []Action{{Task: &Task{Kind: "tests", Subject: string(v.Trigger.Ticket), Input: fmt.Sprintf("attempt-%d", attempts+1)},
-				Text: "the test author submits tests"}}
+			input := fmt.Sprintf("attempt-%d", attempts+1)
+			text := "the test author submits tests"
+			if missing := uncoveredCriteria(v); len(missing) > 0 {
+				input = fmt.Sprintf("attempt-%d-%s", attempts+1, strings.Join(missing, ","))
+				text = "the test author submits tests covering " + strings.Join(missing, ", ")
+			}
+			return []Action{{Task: &Task{Kind: "tests", Subject: string(v.Trigger.Ticket), Input: input}, Text: text}}
 		}}
+}
+
+// uncoveredCriteria returns criteria added or changed by ticket.changed that are not covered by tests.ac_map (T2).
+func uncoveredCriteria(v View) []string {
+	if v.Trigger == nil || !v.Trigger.CriteriaEdited || v.Tests == nil {
+		return nil
+	}
+	var out []string
+	for _, ac := range v.Trigger.Criteria {
+		if len(v.Tests.ACMap[ac]) == 0 {
+			out = append(out, ac)
+		}
+	}
+	return out
 }
 
 // operators are the people to tell when work is stuck: the approvers of every domain, in name order.

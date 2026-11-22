@@ -31,8 +31,10 @@ for name in resolver reviewer-1 reviewer-2 reviewer-3 profiler; do
     mode=$(sudo stat -c '%a' "$cfg")
     sudo cp -p "$cfg" "$cfg.bak-$stamp"
   else
-    # A new agent's first config: owned like its directory, readable by that agent only.
-    owner=$(sudo stat -c '%U:%G' "$dir")
+    # A new agent's first config: owned by the slot's own user, readable by that agent only. The unit's ExecStartPre
+    # hands group files to sa1000-<slot> but skips files of the controller user (uid 1000), so the directory's owner
+    # (ubuntu) would leave the config unreadable to the agent (found live on the profiler, Nov 21).
+    owner="sa1000-$slot:$(sudo stat -c '%G' "$dir")"
     mode=600
   fi
   sudo env NAME="$name" TOK="$tok" KEY="$secrets/deploy_api_key" CFG="$cfg" python3 - <<'PY'

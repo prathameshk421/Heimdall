@@ -79,7 +79,7 @@ func (r reconcileInputs) Profile(ctx context.Context, repo change.Repo) (change.
 	}
 	if ok {
 		out.Latest = &change.ProfileProposal{ID: latest.ID, State: string(latest.State), Trial: string(latest.Trial.Outcome),
-			TrialLog: latest.Trial.LogRef}
+			TrialLog: latest.Trial.LogRef, CreatedAt: latest.CreatedAt}
 	}
 	p, ok, err := r.profiles.ActiveProfile(ctx, string(repo))
 	if err != nil {
@@ -88,7 +88,7 @@ func (r reconcileInputs) Profile(ctx context.Context, repo change.Repo) (change.
 	if !ok {
 		return out, nil
 	}
-	out.Promoted, out.TestsDir = true, p.Spec.TestsDir
+	out.Promoted, out.TestsDir, out.PromotedID = true, p.Spec.TestsDir, p.ID
 	for _, c := range p.Spec.Checks {
 		out.Checks = append(out.Checks, change.ProfileCheck{ID: c.ID, When: c.When})
 	}
@@ -135,6 +135,7 @@ func newReconciler(ad adapters, store *postgres.Store, openrouter ports.ModelHea
 		Store: store, Effects: store, Open: store, Dead: store, Calls: store, Health: openrouter,
 		Inputs: reconcileInputs{code: ad.vcs, gate: gate, profiles: store},
 		Agents: agentFor(ad.agents), IDs: gen, Clock: clk, Logger: logger, Wait: clock.Wait,
+		TestsRoom: ad.testsRoom, ReviewRoom: ad.reviewsRoom,
 		Settings: change.Settings{Reviewers: reviewers, TestAttempts: testAttempts, PickWait: pickWait, Profiler: ad.agents.Profiler,
 			Timeouts: map[string]time.Duration{"tests": testsTimeout, "review": reviewTimeout, "verdict": verdictTimeout, "profile": profileTimeout}},
 		Windows: liveness.Windows{Ack: ackWindow, Stall: stallWindow},

@@ -208,24 +208,12 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 	uphold := ports.Message{ID: "review-uphold-f1", Room: room.RoomID, Sender: "alice", Text: "heimdall uphold F1", At: time.Now().UTC()}
 	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, uphold))
 
-	// Dismiss the other report through a second fully assigned case. The remaining upheld report is no longer a
-	// two-reviewer consensus, so the consensus-created blocking hold is released.
-	dismissChallenge := ports.Message{ID: "review-challenge-f2", Room: room.RoomID, Sender: "bob", Text: "heimdall challenge F2 a separate test disputes this finding", At: time.Now().UTC()}
-	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, dismissChallenge))
-	require.NoError(t, rec.Run(ctx, cid))
-	events, err = store.Load(ctx, cid)
-	require.NoError(t, err)
-	dismissTask := resolverAssignmentForJourney(t, events)
-	dismissResolver := agenttools.Assignment{ChangeID: cid, TaskID: dismissTask.TaskID, Agent: dismissTask.Agent, Role: workflow.RoleResolver,
-		Task: workflow.TaskEnvelope{TaskID: dismissTask.TaskID, Role: workflow.RoleResolver, CaseID: dismissTask.CaseID}}
-	dismissVerdict := deliberation.Verdict{CaseID: dismissTask.CaseID, Decision: deliberation.DecisionDismiss,
-		Rationale: "The independent test contradicts this report.", Confidence: finding.ConfidenceHigh,
-		Citations: []deliberation.Citation{{Kind: deliberation.CitationFinding, Ref: "F2", Quote: "the independent test contradicts the claim"}}}
-	require.NoError(t, reviewService.SubmitVerdict(ctx, dismissResolver, dismissVerdict, false))
-	dismiss := ports.Message{ID: "review-dismiss-f2", Room: room.RoomID, Sender: "alice", Text: "heimdall dismiss F2 the independent test contradicts this claim", At: time.Now().UTC()}
+	// With L2 cross-seat merge, both reviewers merged into one finding F1 (two reporters on F1).
+	// Dismissing F1 releases the consensus-created blocking hold.
+	dismiss := ports.Message{ID: "review-dismiss-f1", Room: room.RoomID, Sender: "alice", Text: "heimdall dismiss F1 the independent test contradicts this claim", At: time.Now().UTC()}
 	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, dismiss))
 	oneSurvivor := journeyGate(ctx, t, store, cid)
-	require.False(t, hasReasonPrefix(oneSurvivor.Reasons, "blocking:"), "dismissal removes that reporter from consensus")
+	require.False(t, hasReasonPrefix(oneSurvivor.Reasons, "blocking:"), "dismissing the merged finding releases the hold")
 
 	// A new SHA invalidates old review coverage and starts a fresh selection/fan-out cycle.
 	newHead, err := runtime.event(cid, change.Actor{Kind: change.ActorGitHub, ID: "github"}, commands.SourceGitHub, change.EventPRPushed,
@@ -262,7 +250,6 @@ func TestReviewGateConnectedLifecycleAndCurrentHeadConsensus(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, challenge))
 	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, uphold))
-	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, dismissChallenge))
 	require.NoError(t, runtime.processor.HandleRoomMessage(ctx, room, dismiss))
 	afterReplay, err := store.Load(ctx, cid)
 	require.NoError(t, err)

@@ -40,6 +40,13 @@ func Missing(in In) []Need {
 	}
 	out = append(out, gateNeeds(in)...)
 	out = append(out, providerNeeds(in.View)...)
+	if in.SpendCapExceeded {
+		text := in.SpendSummary
+		if text == "" {
+			text = "daily spend cap reached; new agent tasks are paused"
+		}
+		out = append(out, Need{Step: "budget", Text: text})
+	}
 	return append(out, deadNeeds(in)...)
 }
 
@@ -83,37 +90,33 @@ func subjectOf(ra RowAction) string {
 	return ""
 }
 
-// rowOfJob is the row whose job each effect kind is; `heimdall resume <change> <row>` runs it again.
+// RowOfJob is the row whose job an effect kind is; `heimdall resume <change> <row>` runs it again.
+func RowOfJob(k EffectKind) string { return rowOfJob(k) }
+
 func rowOfJob(k EffectKind) string {
-	switch k {
-	case EffectRoomOpen:
-		return "open_room"
-	case EffectGitHubBranch:
-		return "branch"
-	case EffectTestQuality:
-		return "test_qa"
-	case EffectGitHubCommitTests:
-		return "commit"
-	case EffectRunChecks:
-		return "checks"
-	case EffectProfileTrial:
-		return "profile"
-	case EffectVerifyEvidence:
-		return "verify"
-	case EffectAcceptance:
-		return "acceptance"
-	case EffectGitHubCheck:
-		return "gate"
-	case EffectGitHubComment, EffectRoomPost, EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign:
-		return ""
-	}
-	return ""
+	return map[EffectKind]string{
+		EffectRoomOpen:          "open_room",
+		EffectGitHubBranch:      "branch",
+		EffectTestQuality:       "test_qa",
+		EffectGitHubCommitTests: "commit",
+		EffectRunChecks:         "checks",
+		EffectProfileTrial:      "profile",
+		EffectVerifyEvidence:    "verify",
+		EffectAcceptance:        "acceptance",
+		EffectGitHubCheck:       "gate",
+		EffectTrackerWrite:      "tracker_merge",
+		EffectRoomClose:         "close",
+	}[k]
 }
 
 // deadNeeds are the jobs that failed for good or are in doubt. Nothing retries them by itself: a person decides.
+// Head-scoped dead jobs for a superseded PR head are history, not live needs (O4).
 func deadNeeds(in In) []Need {
 	var out []Need
 	for _, d := range in.Dead {
+		if isStaleDeadEffect(in.View, d) {
+			continue
+		}
 		row := rowOfJob(d.Kind)
 		text := string(d.Kind) + " failed " + strconv.Itoa(d.Attempts) + " times: " + d.LastError
 		if d.InDoubt {
@@ -125,6 +128,22 @@ func deadNeeds(in In) []Need {
 		out = append(out, Need{Step: row, Text: text})
 	}
 	return out
+}
+
+func isStaleDeadEffect(v View, d DeadJob) bool {
+	if v.PR == nil || v.PR.HeadSHA == "" || d.Key == "" {
+		return false
+	}
+	switch d.Kind {
+	case EffectRunChecks, EffectVerifyEvidence, EffectAcceptance, EffectGitHubCheck:
+		return !strings.Contains(string(d.Key), string(v.PR.HeadSHA))
+	case EffectGitHubComment, EffectGitHubBranch, EffectRoomOpen, EffectRoomPost, EffectRoomClose,
+		EffectTrackerWrite, EffectMemoryEpisode, EffectTaskAssign, EffectGitHubCommitTests,
+		EffectTestQuality, EffectProfileTrial:
+		return false
+	default:
+		return false
+	}
 }
 
 // findingRefs are the finding refs in number order (F2 before F10).
@@ -183,4 +202,12 @@ func short(sha string) string {
 		return sha[:7]
 	}
 	return sha
+}
+
+// prefix returns at most the first n characters of s: a short id for a task input.
+func prefix(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }
