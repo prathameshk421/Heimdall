@@ -50,7 +50,7 @@ func TestTheStepSummaryShowsTheOutcomeAndWhatShadowWouldBlock(t *testing.T) {
 	advisory.Action.ProofRequired = false
 	got = action.ProofStepSummary(advisory)
 	require.NotContains(t, got, "Would block because")
-	require.Contains(t, got, "Would not block")
+	require.Contains(t, got, "`heimdall/proof` would not block")
 
 	proven := turnCap
 	proven.Outcome = proof.Outcome{Kind: proof.KindProven}

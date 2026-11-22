@@ -66,7 +66,7 @@ func checkLine(o proof.Outcome, act policy.Action) string {
 			return "- Would pass in enforce mode."
 		case proof.ConclusionNeutral:
 		}
-		return "- Would not block in enforce mode: `heimdall/proof` is advisory unless `action.proof_required` is set."
+		return "- In enforce mode `heimdall/proof` would not block: it is advisory unless `action.proof_required` is set."
 	}
 	return fmt.Sprintf("- Check: the gate posts `heimdall/proof` as `%s`.", o.Conclusion(act))
 }
