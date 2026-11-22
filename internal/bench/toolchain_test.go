@@ -177,3 +177,65 @@ func TestParseRefusesAnAdversarialKindAndSaysHowToMarkOne(t *testing.T) {
 	require.ErrorContains(t, err, `kind "adversarial"`)
 	require.ErrorContains(t, err, "canary", "the message says that a canary marks a case that plants text for the reviewer")
 }
+
+// changeEra is the vitest case with its own install and test command at the change and its parent, as a repository
+// that moved from bun to pnpm between the change and the fix.
+func changeEra() string {
+	return strings.Replace(vitestCase(), "    tests: [", "    change_install: [\"bun install --frozen-lockfile --filter @t3tools/shared\"]\n"+
+		"    change_test_command: bun x vitest run\n    tests: [", 1)
+}
+
+func TestAtUsesTheChangeCommandsOnlyAtTheChangeAndItsParent(t *testing.T) {
+	m, err := Parse(manifest(changeEra()))
+	require.NoError(t, err)
+	c := m.Cases[0]
+	for _, sha := range []string{shaA, shaB} {
+		at := c.At(sha)
+		require.Equal(t, []string{"bun install --frozen-lockfile --filter @t3tools/shared"}, at.Install, sha)
+		require.Equal(t, "bun x vitest run", at.TestCommand, sha)
+		require.Equal(t, c.Sparse, at.Sparse, "the tree is the same set of files")
+	}
+	for _, sha := range []string{shaC, shaD} {
+		at := c.At(sha)
+		require.Equal(t, []string{"pnpm install --frozen-lockfile --filter @t3tools/shared..."}, at.Install, sha)
+		require.Equal(t, "pnpm exec vp test run --dir .", at.TestCommand, sha)
+	}
+}
+
+func TestAtKeepsTheCaseCommandsWhenTheCaseNamesNoChangeCommands(t *testing.T) {
+	m, err := Parse(manifest(vitestCase()))
+	require.NoError(t, err)
+	c := m.Cases[0]
+	require.Equal(t, c, c.At(shaA))
+}
+
+func TestAtReplacesOnlyTheFieldTheCaseNames(t *testing.T) {
+	m, err := Parse(manifest(strings.Replace(vitestCase(), "    tests: [", "    change_test_command: bun x vitest run\n    tests: [", 1)))
+	require.NoError(t, err)
+	at := m.Cases[0].At(shaA)
+	require.Equal(t, "bun x vitest run", at.TestCommand)
+	require.Equal(t, m.Cases[0].Install, at.Install, "no change_install: the install steps stay")
+}
+
+func TestParseRejectsBrokenChangeCommands(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"empty change install step", strings.Replace(changeEra(), `["bun install --frozen-lockfile --filter @t3tools/shared"]`, `[""]`, 1), "change_install"},
+		{"change command sets the reporter", strings.Replace(changeEra(), "bun x vitest run", "bun x vitest run --reporter=json", 1), "reporter"},
+		{"cargo change command is not cargo test", strings.Replace(cargoCase(), "    tests: [", "    change_test_command: make test\n    tests: [", 1), "cargo test"},
+		{"go case with change install", strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    change_install: [go mod download]\n", 1), "a go case"},
+		{"clean case with change commands", strings.Replace(strings.Replace(strings.Replace(changeEra(), "kind: bug", "kind: clean", 1),
+			"    fix: {sha: "+shaC+", parent: "+shaD+"}\n", "", 1), "    tests: [\"packages/shared/src/x.test.ts:outer > keeps the value\"]\n", "", 1),
+			"a clean case runs at its change"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse(manifest(tt.body))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.want)
+		})
+	}
+}

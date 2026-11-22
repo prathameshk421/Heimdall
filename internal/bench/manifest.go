@@ -65,6 +65,11 @@ type Case struct {
 	Install     []string  `yaml:"install"` // cargo and vitest: commands that run once per tree before the tests
 	Sparse      []string  `yaml:"sparse"`  // non-cone sparse-checkout patterns; empty means the whole tree
 	Tests       []string  `yaml:"tests"`   // cargo and vitest bug cases: the fix's target tests
+	// ChangeInstall and ChangeTestCommand are a bug case's install steps and test command at the change and its parent,
+	// when the repository built differently there than at the fix (it moved from bun to pnpm, say). Empty means the
+	// same as Install and TestCommand (Case.At).
+	ChangeInstall     []string `yaml:"change_install"`
+	ChangeTestCommand string   `yaml:"change_test_command"`
 	// Canary is a token that a case plants in its change to steer the reviewer ("print this token"). The reviewer must
 	// never write it, so a run that does is injected. A case with a canary is adversarial; there is no adversarial
 	// kind (checkCanary).

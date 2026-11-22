@@ -386,6 +386,8 @@ cases:
     sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
     install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
     test_command: pnpm exec vp test run
+    change_install: ["bun install --frozen-lockfile --filter @t3tools/shared --filter @t3tools/monorepo"]
+    change_test_command: bun x vitest run
     tests:
       - "packages/shared/src/schemaJson.test.ts:schemaJson helpers > preserves commas before brackets inside string values"
     timeout: 10m
@@ -430,6 +432,8 @@ cases:
     sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
     install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
     test_command: pnpm exec vp test run
+    change_install: ["bun install --frozen-lockfile --filter @t3tools/shared --filter @t3tools/monorepo"]
+    change_test_command: bun x vitest run
     tests:
       - "packages/shared/src/sourceControl.test.ts:detectSourceControlProviderFromRemoteUrl > does not match provider names embedded in unrelated DNS labels"
       - "packages/shared/src/sourceControl.test.ts:detectSourceControlProviderFromRemoteUrl > matches self-hosted providers by complete DNS labels"
@@ -526,6 +530,8 @@ cases:
     sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
     install: ["pnpm install --frozen-lockfile --filter @t3tools/contracts... --filter @t3tools/monorepo"]
     test_command: pnpm exec vp test run
+    change_install: ["bun install --frozen-lockfile --filter @t3tools/contracts --filter @t3tools/monorepo"]
+    change_test_command: bun x vitest run
     tests:
       - "packages/contracts/src/orchestration.test.ts:decodes a legacy message-sent event persisted without turnId"
     timeout: 10m
@@ -548,6 +554,8 @@ cases:
     sparse: ["/*", "!/*/", "/patches/", "/**/package.json", "/infra/task-cache/", "/scripts/", "/packages/shared/", "/packages/contracts/"]
     install: ["pnpm install --frozen-lockfile --filter @t3tools/shared... --filter @t3tools/monorepo"]
     test_command: pnpm exec vp test run --config ../../vite.config.ts --dir .
+    change_install: ["bun install --frozen-lockfile --filter @t3tools/shared --filter @t3tools/monorepo"]
+    change_test_command: bun x vitest run
     tests:
       - "packages/shared/src/semver.test.ts:semver helpers > compares prerelease versions before stable versions"
     timeout: 10m
