@@ -109,14 +109,11 @@ func (s *Service) Propose(ctx context.Context, repo change.Repo, author string, 
 	return p, created, nil
 }
 
-// Approve records a mapped human's policy authorization for a proposed profile.
+// Approve records a mapped human's policy authorization for a proposed profile (accepting a full id or unique 7+ hex prefix, U2).
 func (s *Service) Approve(ctx context.Context, actor, proposalID string) error {
-	p, found, err := s.cfg.Store.Profile(ctx, proposalID)
+	p, err := s.resolveProfile(ctx, proposalID)
 	if err != nil {
 		return err
-	}
-	if !found {
-		return ports.ErrNotFound
 	}
 	if err := s.cfg.Authorizer.AuthorizeProfile(ctx, actor, change.Repo(p.Repo), "approve"); err != nil {
 		return fmt.Errorf("authorize profile approval: %w", err)
@@ -124,7 +121,7 @@ func (s *Service) Approve(ctx context.Context, actor, proposalID string) error {
 	if (p.State == ports.ProfileApproved || p.State == ports.ProfilePromoted) && p.Approver == actor {
 		return nil
 	}
-	ok, err := s.cfg.Store.ApproveProfile(ctx, proposalID, actor, s.cfg.Clock.Now())
+	ok, err := s.cfg.Store.ApproveProfile(ctx, p.ID, actor, s.cfg.Clock.Now())
 	if err != nil {
 		return err
 	}
@@ -132,6 +129,43 @@ func (s *Service) Approve(ctx context.Context, actor, proposalID string) error {
 		return StepRefusedError{Reason: "that sandbox profile is not waiting for approval"}
 	}
 	return nil
+}
+
+// resolveProfile looks up an exact proposal id first, then a unique 7+ hex prefix when the store supports it (U2).
+func (s *Service) resolveProfile(ctx context.Context, idOrPrefix string) (ports.ProfileProposal, error) {
+	p, found, err := s.cfg.Store.Profile(ctx, idOrPrefix)
+	if err != nil {
+		return ports.ProfileProposal{}, err
+	}
+	if found {
+		return p, nil
+	}
+	resolver, ok := s.cfg.Store.(ports.ProfilePrefixResolver)
+	if !ok || len(idOrPrefix) < 7 || len(idOrPrefix) >= 64 {
+		return ports.ProfileProposal{}, ports.ErrNotFound
+	}
+	matches, err := resolver.ProfilesByPrefix(ctx, idOrPrefix)
+	if err != nil {
+		return ports.ProfileProposal{}, err
+	}
+	switch len(matches) {
+	case 0:
+		return ports.ProfileProposal{}, ports.ErrNotFound
+	case 1:
+		return matches[0], nil
+	default:
+		ids := make([]string, 0, len(matches))
+		for _, m := range matches {
+			shortID := m.ID
+			if len(shortID) > 12 {
+				shortID = shortID[:12]
+			}
+			ids = append(ids, shortID)
+		}
+		return ports.ProfileProposal{}, StepRefusedError{
+			Reason: fmt.Sprintf("proposal prefix %s is ambiguous (matches: %s); pass more characters", idOrPrefix, strings.Join(ids, ", ")),
+		}
+	}
 }
 
 // StepRefusedError is a lifecycle step taken out of order, such as a promotion before a passing trial (D186). It is a
@@ -179,14 +213,11 @@ func (s *Service) Trial(ctx context.Context, proposalID string, sha id.SHA) (por
 	return trial, nil
 }
 
-// Promote selects a passing, authorized profile and synchronizes it to the isolated runner.
+// Promote selects a passing, authorized profile and synchronizes it to the isolated runner (accepting full id or unique 7+ hex prefix, U2).
 func (s *Service) Promote(ctx context.Context, actor, proposalID string) error {
-	p, found, err := s.cfg.Store.Profile(ctx, proposalID)
+	p, err := s.resolveProfile(ctx, proposalID)
 	if err != nil {
 		return err
-	}
-	if !found {
-		return ports.ErrNotFound
 	}
 	if err := s.cfg.Authorizer.AuthorizeProfile(ctx, actor, change.Repo(p.Repo), "promote"); err != nil {
 		return fmt.Errorf("authorize profile promotion: %w", err)
@@ -200,7 +231,7 @@ func (s *Service) Promote(ctx context.Context, actor, proposalID string) error {
 	if p.State == ports.ProfilePromoted {
 		return nil
 	}
-	ok, err := s.cfg.Store.PromoteProfile(ctx, proposalID, s.cfg.Clock.Now())
+	ok, err := s.cfg.Store.PromoteProfile(ctx, p.ID, s.cfg.Clock.Now())
 	if err != nil {
 		return err
 	}

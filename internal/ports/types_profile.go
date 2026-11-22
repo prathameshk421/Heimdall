@@ -411,6 +411,11 @@ type ProfileStore interface {
 	PromotedProfiles(ctx context.Context) ([]ProfileProposal, error)
 }
 
+// ProfilePrefixResolver resolves a short hex prefix (7+ chars) to matching proposals (U2).
+type ProfilePrefixResolver interface {
+	ProfilesByPrefix(ctx context.Context, prefix string) ([]ProfileProposal, error)
+}
+
 // ProfileTrialJob asks the runner for the one real isolated trial run of a proposed profile
 // (TECH_SPEC 12.2b: a trial that produces test results before the sandbox uses the profile).
 type ProfileTrialJob struct {

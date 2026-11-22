@@ -199,7 +199,11 @@ func RenderBoard(ticket string, events []change.Event) (string, bool) {
 		return "", false
 	}
 	var s strings.Builder
-	fmt.Fprintf(&s, "# 🛡️ Heimdall Review · %s\n\n", ticket)
+	title := ticket
+	if strings.HasPrefix(title, "pr-") && b.number > 0 {
+		title = fmt.Sprintf("PR #%d", b.number)
+	}
+	fmt.Fprintf(&s, "# 🛡️ Heimdall Review · %s\n\n", title)
 	s.WriteString(b.verdict() + "\n\n")
 	s.WriteString(b.pipeline() + "\n\n")
 	s.WriteString("## 📋 Merge checklist\n\n| Check | What it means | Status |\n|---|---|---|\n")

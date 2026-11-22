@@ -18,6 +18,7 @@ var (
 	stepRE            = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 	handleRE          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}$`)
 	profileProposalRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	profilePrefixRE   = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
 )
 
 const minDismissReason = 15
@@ -45,8 +46,8 @@ func cutWord(s string) (string, string) {
 
 func parseProfileProposalID(args string) (string, error) {
 	value, rest := cutWord(args)
-	if rest != "" || !profileProposalRE.MatchString(value) {
-		return "", errors.New("proposal id must be 64 lowercase hex characters")
+	if rest != "" || !profilePrefixRE.MatchString(value) {
+		return "", errors.New("proposal id must be 7 to 64 lowercase hex characters")
 	}
 	return value, nil
 }

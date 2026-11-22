@@ -116,14 +116,16 @@ func profileNext(in In) []Action {
 	case latest == nil || (latest.State == "approved" && latest.Trial == "failed"):
 		return proposeProfileActions(in, repo, latest)
 	case latest.State == "proposed":
-		text := "approve the sandbox profile " + short(latest.ID) + " for " + string(repo) + ": `heimdall approve-profile " + latest.ID + "`"
+		shortID := short(latest.ID)
+		text := "approve the sandbox profile " + shortID + " for " + string(repo) + ": `heimdall approve-profile " + shortID + "`"
 		return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
 	case latest.State == "approved" && latest.Trial == "":
 		p := ProfileTrialPayload{Repo: repo, ProposalID: latest.ID, SHA: in.View.PR.HeadSHA}
 		return []Action{{Text: "the sandbox profile " + short(latest.ID) + " runs its trial on " + short(string(in.View.PR.HeadSHA)),
 			Job: &Job{Kind: EffectProfileTrial, Key: in.jobKey("profile", latest.ID), Target: string(repo), Payload: p}}}
 	case latest.State == "approved" && latest.Trial == "passed":
-		text := "the sandbox profile " + short(latest.ID) + " passed its trial; promote it: `heimdall promote-profile " + latest.ID + "`"
+		shortID := short(latest.ID)
+		text := "the sandbox profile " + shortID + " passed its trial; promote it: `heimdall promote-profile " + shortID + "`"
 		return []Action{{Ask: &Ask{Who: operators(in), What: text}, Text: text}}
 	}
 	return []Action{say("the sandbox profile " + short(latest.ID) + " is " + latest.State + " but not active for " + string(repo))}

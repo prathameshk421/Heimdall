@@ -32,7 +32,7 @@ func TestTheProfileRowProposesThenAsksThenTrialsThenAsksToPromote(t *testing.T) 
 	require.Nil(t, proposed.Task)
 	require.NotNil(t, proposed.Ask)
 	require.Equal(t, []change.ActorID{"bob"}, proposed.Ask.Who)
-	require.Contains(t, proposed.Text, "`heimdall approve-profile "+id1+"`")
+	require.Contains(t, proposed.Text, "`heimdall approve-profile "+id1[:7]+"`")
 
 	approved := actionsOf(profileIn(t, change.Profile{Latest: &change.ProfileProposal{ID: id1, State: "approved"}}, "profiler"))["profile"][0]
 	require.NotNil(t, approved.Job)
@@ -42,7 +42,7 @@ func TestTheProfileRowProposesThenAsksThenTrialsThenAsksToPromote(t *testing.T) 
 
 	passed := actionsOf(profileIn(t, change.Profile{Latest: &change.ProfileProposal{ID: id1, State: "approved", Trial: "passed"}}, "profiler"))["profile"][0]
 	require.NotNil(t, passed.Ask)
-	require.Contains(t, passed.Text, "`heimdall promote-profile "+id1+"`")
+	require.Contains(t, passed.Text, "`heimdall promote-profile "+id1[:7]+"`")
 
 	failed := actionsOf(profileIn(t, change.Profile{Latest: &change.ProfileProposal{ID: id1, State: "approved", Trial: "failed"}}, "profiler"))["profile"][0]
 	require.Equal(t, &change.Task{Kind: "profile", Subject: "acme/pay", Input: "after-" + id1}, failed.Task, "a failed trial asks for a new proposal")
@@ -85,7 +85,7 @@ func TestAPromotedProfileTakesARevisionRequestAndWalksTheNewProposal(t *testing.
 	proposed := actionsOf(proposedIn)["profile"][0]
 	require.Nil(t, proposed.Task)
 	require.NotNil(t, proposed.Ask)
-	require.Contains(t, proposed.Text, "`heimdall approve-profile "+newer+"`")
+	require.Contains(t, proposed.Text, "`heimdall approve-profile "+newer[:7]+"`")
 
 	// Once the new proposal is promoted, the request is answered and the row is done again.
 	again := profileIn(t, change.Profile{Promoted: true, PromotedID: newer, TestsDir: "tests/heimdall",

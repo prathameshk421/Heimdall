@@ -84,6 +84,27 @@ func (s *Store) Profile(ctx context.Context, profileID string) (ports.ProfilePro
 	return p, true, nil
 }
 
+// ProfilesByPrefix returns up to 5 proposals whose id starts with prefix (U2).
+func (s *Store) ProfilesByPrefix(ctx context.Context, prefix string) ([]ports.ProfileProposal, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+profileColumns+` FROM sandbox_profile_proposal WHERE id LIKE $1 ORDER BY created_at DESC LIMIT 5`, prefix+"%")
+	if err != nil {
+		return nil, fmt.Errorf("find sandbox profiles by prefix %s: %w", prefix, err)
+	}
+	defer rows.Close()
+	var out []ports.ProfileProposal
+	for rows.Next() {
+		p, err := scanProfile(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan sandbox profile by prefix %s: %w", prefix, err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate sandbox profiles by prefix %s: %w", prefix, err)
+	}
+	return out, nil
+}
+
 // ApproveProfile advances exactly one proposed profile to approved.
 func (s *Store) ApproveProfile(ctx context.Context, profileID, actor string, at time.Time) (bool, error) {
 	if actor == "" || at.IsZero() {
