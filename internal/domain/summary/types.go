@@ -69,6 +69,9 @@ type Usage struct {
 	WallKnown  bool
 }
 
+// BreakGlass is a recorded bypass for the displayed head.
+type BreakGlass struct{ Login, Reason, ReviewedBy string }
+
 // Input is everything Render reads. All of it is a value: the renderer reads no clock and no source.
 type Input struct {
 	// Change and Head and Version fill the hidden marker. Change is the pull request, Version counts the writes.
@@ -77,9 +80,10 @@ type Input struct {
 	// Head is the full head commit id, in lower case hex.
 	Head string
 	// Action is the action area at the merge base. Its mode and proof_required decide how blocking is worded.
-	Action   policy.Action
-	Fast     fastcheck.Result
-	Proof    proof.Outcome
-	Findings []Finding
-	Usage    Usage
+	Action     policy.Action
+	Fast       fastcheck.Result
+	Proof      proof.Outcome
+	Findings   []Finding
+	Usage      Usage
+	BreakGlass *BreakGlass
 }

@@ -106,11 +106,26 @@ func (v view) render(l limits) string {
 		append([]string{"### Not checked"}, v.notCheckedLines(l.notChecked)...),
 		[]string{v.costLine()},
 	)
+	if v.in.BreakGlass != nil {
+		blocks = append(blocks[:7], append([][]string{v.breakGlassLines()}, blocks[7:]...)...)
+	}
 	parts := make([]string, 0, len(blocks))
 	for _, b := range blocks {
 		parts = append(parts, strings.Join(b, "\n"))
 	}
 	return strings.Join(parts, "\n\n") + "\n"
+}
+
+func (v view) breakGlassLines() []string {
+	if v.in.BreakGlass == nil {
+		return nil
+	}
+	b := v.in.BreakGlass
+	status := "open, awaiting review by another approver"
+	if b.ReviewedBy != "" {
+		status = "reviewed by @" + text(b.ReviewedBy, maxName)
+	}
+	return []string{"### Break-glass", "- Recorded by @" + text(b.Login, maxName) + ": " + text(b.Reason, 500) + " (" + status + ")"}
 }
 
 // more is the line that ends a list cut short. It says how many items are not listed.
