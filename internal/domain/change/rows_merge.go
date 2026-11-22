@@ -3,6 +3,8 @@ package change
 import (
 	"fmt"
 	"strings"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
 
 func mergeRows() []Row {
@@ -89,9 +91,14 @@ func mergeTrackerComment(v View) string {
 	return strings.Join(parts, " ")
 }
 
-func closeRoomSummary(cid any, v View) string {
+func closeRoomSummary(cid id.ChangeID, v View) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Change %v merged at %s.", cid, short(string(v.Closed.HeadSHA)))
+	if cid.IsPR() {
+		// A ticketless pull request has no ticket key, so people read it by its own address, never the pr- store id.
+		fmt.Fprintf(&b, "PR %s merged at %s.", cid.ChatLabel(), short(string(v.Closed.HeadSHA)))
+	} else {
+		fmt.Fprintf(&b, "Change %v merged at %s.", cid, short(string(v.Closed.HeadSHA)))
+	}
 	if v.PR != nil {
 		fmt.Fprintf(&b, " PR %s#%d.", v.PR.Repo, v.PR.Number)
 	}

@@ -24,7 +24,7 @@ var (
 const minDismissReason = 15
 
 var (
-	errFinding     = errors.New("finding must look like F3, the short id shown in the room, never a ULID")
+	errFinding     = errors.New("finding must look like F3; use the short finding id, for example F3")
 	errTicket      = errors.New("ticket must look like KAN-12, a project key, a dash and a number")
 	errNoAt        = errors.New("reviewer must start with @")
 	errBadHandle   = errors.New("reviewer is not a valid handle")

@@ -1,5 +1,44 @@
 # Heimdall progress
 
+## Chat polish (Nov 22, 2026, branch `heimdall-build`)
+
+The live Telegram room `Banking Application Engineers` showed chat text as typed rather than as Markdown: posts read
+`**Heimdall Coordinator**` and `` `8131fcd` ``, and headlines named changes `pr-owner-repo-1`. Mentions of the coordinator
+(`@heimdall-coord-main`, `@Heimdall`, Slack `<@U...>`) reached no handler, and `heimdall status` / `heimdall help` were
+silent because `Parse` does not know those verbs.
+
+**Fix**
+- `internal/app/announce/lines.go`: `Narrate` now passes `plainChat`, which strips `**`, backticks and a leading `> `,
+  because Switch posts text verbatim. Every line names the change with `id.ChangeID.ChatLabel()` (`owner/repo #N` for a
+  ticketless pull request, the ticket key otherwise), so a raw `pr-...` slug never appears. An agent progress line keeps
+  its first sentence and at most 160 characters. The CI pass and fail lines carry `prLink(history)` when the history has a
+  pull request. `board.go` and `internal/domain/summary/` keep their GitHub Markdown: that surface renders it.
+- `internal/domain/id/id.go`: new `ChatLabel()`, the chat form of a change id, built on the existing `PullRequest()`.
+- `internal/app/collaboration/commands.go`: a leading mention of the coordinator is stripped and its words reach the
+  `Questioner` (`@heimdall`, `@heimdall-coord-main`, `@Heimdall`, Slack `<@U...>`). `heimdall status` and `heimdall help`
+  answer before `Parse`, through the same `IsAgent` and `People.Lookup` checks, so `uphold`, `dismiss`, `waive` and every
+  other state-changing verb keep their `Parse` + `Authorize` path. `HandleSharedRoomMessage` answers a mention question,
+  status and help in a standing room: one open change is answered, several get a "which one" with readable names, none
+  gets a plain "nothing open". A status that names a ticket answers that ticket.
+- `internal/domain/commands/parse.go` exports `Grammar(Source)` for `heimdall help`; `args.go` now says "Use the short
+  finding id, for example F3" instead of "never a ULID".
+- `cmd/heimdall-server/command_question.go`: the answer is one fact per line, with gate reasons in words (no `blocking:`
+  or `ci:` clause dump), findings sorted by number (`F2` before `F10`), and a question that mentions CI, check or test
+  leads with the check status on the current head.
+- `internal/domain/change/rows_merge.go`: the room-close summary reads `PR owner/repo #N merged at ...` for a ticketless
+  pull request. `internal/app/reconcile/decide.go` and `rows_review.go`: an ask names the change with `ChatLabel()`, and
+  the pick-reviewers ask says `heimdall review` without backticks.
+
+**Evidence:** `make fast` exit 0 (5802 tests, lint 0 issues). New tests: `internal/app/announce/chat_format_test.go` (no
+raw Markdown, readable PR name, CI link, short progress line), `internal/app/collaboration/mention_status_test.go`
+(every mention form, `heimdall status`, `heimdall help`, standing-room status/help, ticket-named status, auth unchanged),
+`cmd/heimdall-server/command_question_test.go` (numeric finding order, line-per-fact answer, CI first, readable PR name),
+`internal/app/reconcile/ask_chat_test.go` and `internal/domain/change/rows_merge_chat_test.go`. The two CI wording
+assertions in `internal/app/announce/lines_test.go` were updated for the deliberate new wording.
+**Not verified:** a live Telegram, Slack, Discord or Mattermost run (no VM session here), so the rendered look of the new
+lines on each platform is unchecked. `make verify` was not run (its recorded environment blockers: Docker Desktop
+`meta.db` and BSD `stat -c`).
+
 ## Announce dedupe (Nov 22, 2026, branch `heimdall-build`)
 
 A live run spammed Telegram four times in 21 seconds with the same `Acceptance tests passed · pr-prathameshk421-t3code-1`

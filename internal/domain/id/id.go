@@ -105,6 +105,16 @@ func (c ChangeID) String() string { return string(c) }
 // IsPR reports whether the change is a pull request with no ticket.
 func (c ChangeID) IsPR() bool { return strings.HasPrefix(string(c), "pr-") }
 
+// ChatLabel is how people read a change in chat: a ticket key stays as it is, and a ticketless pull request reads
+// "owner/repo #N" instead of the pr-... stream id it is stored under (D146).
+func (c ChangeID) ChatLabel() string {
+	repo, number, err := c.PullRequest()
+	if err != nil {
+		return string(c)
+	}
+	return fmt.Sprintf("%s #%d", repo, number)
+}
+
 // Valid reports whether the id passes ParseChangeID.
 func (c ChangeID) Valid() bool {
 	_, err := ParseChangeID(string(c))
