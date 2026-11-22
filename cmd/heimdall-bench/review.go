@@ -113,6 +113,9 @@ type reviewOptions struct {
 	price              bench.Price
 	maxCost            float64
 	perCase            float64
+	inputTokens        int64
+	outputTokens       int64
+	caseTimeout        time.Duration
 	parallel           int
 	// contextBytes is the loop's target request size, and stallTurns the turns with no proposal or test run before the
 	// loop nudges once; stallGrace more such turns stop the case with "no_proposal" (live run 4).
@@ -129,6 +132,14 @@ type reviewOptions struct {
 // MaxParallel is the most cases a review runs at once.
 const maxParallel = 8
 
+func addReviewBudgetFlags(fs *flag.FlagSet, o *reviewOptions) {
+	fs.Float64Var(&o.maxCost, "max-cost", testingCapUSD, "hard cap in USD for the whole run; no call that could pass it is made")
+	fs.Float64Var(&o.perCase, "per-case-cost", 0.50, "the agent loop budget in USD for one case (ACTION_MODE 7)")
+	fs.Int64Var(&o.inputTokens, "input-tokens", inputTokensPerCase, "input token cap per case")
+	fs.Int64Var(&o.outputTokens, "output-tokens", outputTokensPerCas, "output token cap per case")
+	fs.DurationVar(&o.caseTimeout, "case-timeout", caseDeadline, "wall-clock deadline per case")
+}
+
 func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	fs := flag.NewFlagSet("review", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -144,8 +155,7 @@ func parseReviewFlags(args []string, stderr io.Writer) (reviewOptions, error) {
 	fs.Float64Var(&o.price.InputPerM, "price-input", 0, "USD per million input tokens; default the table's price for -model")
 	fs.Float64Var(&o.price.CachedInputPerM, "price-cached", -1, "USD per million cache-read tokens; unset means the input price")
 	fs.Float64Var(&o.price.OutputPerM, "price-output", 0, "USD per million output tokens; default the table's price for -model")
-	fs.Float64Var(&o.maxCost, "max-cost", testingCapUSD, "hard cap in USD for the whole run; no call that could pass it is made")
-	fs.Float64Var(&o.perCase, "per-case-cost", 0.50, "the agent loop budget in USD for one case (ACTION_MODE 7)")
+	addReviewBudgetFlags(fs, &o)
 	fs.IntVar(&o.parallel, "parallel", 1, "how many cases to review at once, at most 8; the cost cap stays shared")
 	fs.IntVar(&o.contextBytes, "context-bytes", defaultContextBytes, "trim old tool results so a request stays near this many bytes; the 3 newest stay whole; 0 trims nothing")
 	fs.IntVar(&o.stallTurns, "stall-turns", defaultStallTurns, "turns with no proposal or test run before one nudge; 6 more stop the case as no_proposal; 0 is off")
@@ -587,10 +597,20 @@ func (rc *reviewCase) proveAndScore(ctx context.Context, o reviewOptions, c benc
 func runReviewer(ctx context.Context, o reviewOptions, model ports.ModelChat, budget float64, cp *caseProgress,
 	c bench.Case, rep *replay) (ports.AgentResult, error) {
 	tb := newToolbox(append(rep.tools(cp.toolCall), finishReview()))
+	inCap, outCap, deadline := o.inputTokens, o.outputTokens, o.caseTimeout
+	if inCap <= 0 {
+		inCap = inputTokensPerCase
+	}
+	if outCap <= 0 {
+		outCap = outputTokensPerCas
+	}
+	if deadline <= 0 {
+		deadline = caseDeadline
+	}
 	return reviewLoop(ctx, model, systemRetry(), o.price, ports.AgentRun{Model: o.model, System: reviewerPrompt(c), User: reviewerUser(c, rep),
 		Tools: tb.specs(), FinalTools: []string{finalTool}, Dispatcher: tb,
-		Budget:          ports.AgentBudget{USD: budget, InputTokens: inputTokensPerCase, OutputTokens: outputTokensPerCas},
-		MaxOutputTokens: maxOutputPerAnswer, MaxTurns: maxTurnsPerCase, Deadline: time.Now().Add(caseDeadline),
+		Budget:          ports.AgentBudget{USD: budget, InputTokens: inCap, OutputTokens: outCap},
+		MaxOutputTokens: maxOutputPerAnswer, MaxTurns: maxTurnsPerCase, Deadline: time.Now().Add(deadline),
 		RequireToolCall: true, Nudge: reviewerNudge, ContextBytes: o.contextBytes, KeepResults: keptToolResults,
 		Stall: stallRule(o.stallTurns)})
 }
