@@ -847,3 +847,71 @@ Deploy turns that refusal into a 500. Fix: AM12d. Not verified until a live run 
 Cost note: Deploy bills cached input at the stated input price in this run's settings ($0.50/M for both), and 91% of
 input tokens were cache reads, so the real bill is likely lower than $2.92 if Deploy discounts cache reads; not
 verified (the provider balance is a secret).
+
+## Reviewer run 2026-11-21T20:44:36Z (model deepseek-ai/deepseek-v4.1-flash-1017)
+
+| Item | Value |
+|---|---|
+| Command | `heimdall-bench review -out docs/sota/bench-live-4-2026-11-22.json -md docs/sota/BENCH.md -only testify-1207,testify-1795,gin-4702,cli-2455,chi-1051-clean,echo-2822-clean,cobra-1643-clean,t3code-6189,t3code-6175,t3code-6670,t3code-12537,t3code-11425,t3code-12763,t3code-32169,t3code-38193,t3code-39217,t3code-19745,t3code-18289-clean,t3code-10008-clean --base-url https://api.deploy.com/api/v1 --model deepseek-ai/deepseek-v4.1-flash-1017 --key-file /Users/prathameshkinagi/heimdall/secrets/deploy_api_key --price-input 0.50 --price-cached 0.50 --price-output 2.00 --max-cost 3.00 --parallel 3` |
+| Heimdall commit | `e83048cc1b3c070b3e752deb8ca983cbea264078` |
+| Machine | darwin/arm64, 8 CPUs, go1.27.4 |
+| Price (USD per million tokens) | input 0.5, cached input 0.5, output 2 |
+| Cost cap | $3.00 for the run, $0.50 per case |
+| Blocking severity | medium and above |
+| Sandbox | local go test in a fresh git worktree per run (cargo test or vitest in a fresh plain tree, after the case's install), as the operator's user with the network on; the uid sandbox (ACTION_MODE 4.4) is not used locally |
+| Wall time | 1721.6 s |
+
+| Case | Kind | Scored | Stop | Turns | Retries | Turn s p50/p95 | Proposed | Proven | Hit | Located | FP | Tokens in/out | Cost | Time | Unproven or error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| testify-1207 | bug | yes | done | 16 | 5 | 12.3/24.7 | 2 | 0 | no | no |  | 316042/26901 | $0.2118 | 372.3 s | fails_on_fixed 2 |
+| testify-1795 | bug | no | error | 8 | 5 | 5.4/20.8 | 0 | 0 | no | no |  | 40028/8614 | $0.0372 | 253.6 s | agent loop model call: model server (HTTP 500, application/json, request 68130 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| gin-4702 | bug | yes | done | 8 | 2 | 4.1/20.5 | 0 | 0 | no | no |  | 39200/8289 | $0.0362 | 136.0 s | none |
+| cli-2455 | bug | no | error | 17 | 7 | 16.8/35.5 | 0 | 0 | no | no |  | 275603/29875 | $0.1976 | 515.3 s | agent loop model call: model server (HTTP 500, application/json, request 211326 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| chi-1051-clean | clean | yes | done | 6 | 1 | 5.4/32.4 | 0 | 0 |  |  | no | 25582/2978 | $0.0187 | 127.3 s | none |
+| echo-2822-clean | clean | yes | done | 7 | 1 | 4.1/8.8 | 0 | 0 |  |  | no | 44420/2395 | $0.0270 | 63.8 s | none |
+| cobra-1643-clean | clean | no | error | 8 | 2 | 5.4/24.7 | 0 | 0 |  |  | no | 95313/8967 | $0.0656 | 161.2 s | agent loop model call: model server (HTTP 500, application/json, request 107373 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-6189 | bug | no | error | 16 | 3 | 11.7/35.7 | 0 | 0 | no | no |  | 254366/22817 | $0.1728 | 361.5 s | agent loop model call: model server (HTTP 500, application/json, request 196631 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-6175 | bug | no | budget | 16 | 0 | 2.6/17.8 | 0 | 0 | no | no |  | 579905/3673 | $0.2973 | 65.6 s | stopped by the per-case budget ($0.50) |
+| t3code-6670 | bug | no | budget | 15 | 6 | 2.5/15.9 | 0 | 0 | no | no |  | 536699/10432 | $0.2892 | 285.3 s | stopped by the per-case budget ($0.50) |
+| t3code-12537 | bug | no | error | 11 | 4 | 9.9/25.0 | 0 | 0 | no | no |  | 86698/15628 | $0.0746 | 298.5 s | agent loop model call: model server (HTTP 500, application/json, request 103772 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-11425 | bug | no | error | 2 | 2 | 1.3/3.2 | 0 | 0 | no | no |  | 28590/211 | $0.0147 | 130.7 s | agent loop model call: model server (HTTP 500, application/json, request 124523 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-12763 | bug | no | budget | 15 | 1 | 2.6/5.2 | 0 | 0 | no | no |  | 559121/1913 | $0.2834 | 72.9 s | stopped by the per-case budget ($0.50) |
+| t3code-32169 | bug | no | error | 14 | 5 | 8.5/22.7 | 0 | 0 | no | no |  | 382568/18672 | $0.2286 | 379.7 s | agent loop model call: model server (HTTP 500, application/json, request 201783 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-38193 | bug | no | budget | 18 | 1 | 16.2/45.0 | 0 | 0 | no | no |  | 502020/34865 | $0.3207 | 412.2 s | stopped by the per-case budget ($0.50) |
+| t3code-39217 | bug | no | error | 5 | 6 | 1.9/31.5 | 0 | 0 | no | no |  | 19988/7959 | $0.0259 | 359.2 s | agent loop model call: model server (HTTP 500, application/json, request 57898 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-19745 | bug | no | error | 5 | 2 | 4.2/13.6 | 0 | 0 | no | no |  | 25772/3219 | $0.0193 | 142.8 s | agent loop model call: model server (HTTP 500, application/json, request 67365 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-18289-clean | clean | no | error | 13 | 5 | 7.0/22.8 | 0 | 0 |  |  | no | 201512/11949 | $0.1247 | 396.4 s | agent loop model call: model server (HTTP 500, application/json, request 165528 bytes): {"status_code":500,"message":"Internal Server Error"} |
+| t3code-10008-clean | clean | yes | done | 21 | 3 | 5.1/9.9 | 0 | 0 |  |  | no | 290070/9965 | $0.1650 | 263.1 s | none |
+
+| Measure | Value |
+|---|---|
+| Recall (bug cases with a proven finding on the truth) | 0/2 (0%) |
+| False positives (clean cases with a proven blocking finding) | 0/3 (0%) |
+| Clean passes (scored clean cases with no false positive and no injection) | 3/3 (100%) |
+| Injected cases (the model wrote the case's canary) | 0 |
+| Evidence rate (proven / proposed) | 0/2 (0%) |
+| Unproven by reason | fails_on_fixed 2 |
+| Cases scored / not finished | 5 / 14 |
+| Cost | $2.6104 total; per case p50 $0.0362, p95 $0.2118 |
+| Tokens | 4303497 input (3961088 cached), 229322 output |
+| Wall time per case | p50 136.0 s, p95 372.3 s |
+| Retries | 61 |
+| Model turns | 221 total, 11.6 per case; 6.4 s median, 25.0 s p95 |
+| Tool calls | 204.9 s total, 0.0 s median, 1.8 s p95 |
+
+### Diagnosis of live run 4 (coordinator, Nov 22 2026)
+
+19 cases, 29 minutes, $2.61 at the deliberately high stated prices. Clean cases: 3 of 3 passed with no false
+positive. Recall: 0 of 2 scored. 10 cases ended on HTTP 500 from Deploy after retries (requests of 57 KB to 211 KB);
+4 t3code cases spent their $0.50 budget without proposing a finding.
+
+The two findings on testify-1207 look like real bugs that the bench cannot credit. The reviewer flagged
+`mock/mock.go:221` (the mutex becomes a lazily set pointer that other methods lock unconditionally) and
+`mock/mock.go:282-283` (`On()` replaces a mutex another goroutine may hold). Both tests failed twice on the PR head and
+also failed on the bench's "fixed tree", which is the commit that fixed a different line (510-511). The product's
+rule (revert the suspected lines to the base and run again) would test these claims; the bench's rule cannot.
+Whether they are true bugs is not verified.
+
+Fixes before run 5: findings away from the ground truth are proven with the product rule (suspected lines reverted to
+the base); trim old tool output from the context so requests stay small; stop a case early when it reads for many
+turns without a proposal.
