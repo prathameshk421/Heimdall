@@ -37,6 +37,7 @@ const (
 
 // The context budget and the stall rule of one proof run: the defaults the bench proved (cmd/heimdall-bench review.go,
 // live run 4: requests of 57 KB to 211 KB ended on HTTP 500, and cases spent their budget without a proposal). The
+// stall numbers are the bench's AM12g defaults, chosen from the recorded runs 3 and 4 (docs/sota/BENCH.md). The
 // action area of the policy has no key for them, so they are constants here, not policy.
 const (
 	// proofContextBytes is the request size the loop trims old tool results toward.
@@ -44,9 +45,11 @@ const (
 	// proofKeptResults is how many of the newest tool results stay whole whatever the size.
 	proofKeptResults = 3
 	// proofStallTurns answers in a row with no test run and no proposal get one stall nudge, and proofStallGrace more
-	// such answers stop the run as no_proposal. 14 is well under maxProofTurns, so a run that only reads ends early.
-	proofStallTurns = 10
-	proofStallGrace = 4
+	// such answers stop the run as no_proposal. In the recorded runs no proposal came after more than 12 such answers
+	// and no first test after more than 21, so 18 and 24 cut neither. 24 is 16 under maxProofTurns, so a run that only
+	// reads ends early.
+	proofStallTurns = 18
+	proofStallGrace = 6
 )
 
 // OverlaySandbox is the sandbox port with the overlay extension: it writes files into the tree before it runs. A repro
