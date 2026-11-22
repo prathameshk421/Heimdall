@@ -1309,3 +1309,13 @@ Fix for all three: AM12h. 4 cases also spent the $0.50 per-case budget retrying 
 | Retries | 9 |
 | Model turns | 58 total, 19.3 per case; 7.4 s median, 26.7 s p95 |
 | Tool calls | 15.5 s total, 0.0 s median, 0.2 s p95 |
+
+### Live run 10, t3code, stopped by the owner (coordinator, Nov 22 2026)
+
+Started on `6d384cc` (AM12h and AM17 merged) over the 13 t3code cases, $3 cap, $0.50 per case. Stopped by the owner
+after 6 cases ($1.89): 3 misses that finished normally (`t3code-5025` no_proposal, `t3code-6189` and `t3code-11425`
+done with no proposal) and 3 stopped by the per-case budget (`t3code-6175`, `t3code-6670`, `t3code-12763`, each at
+about $0.36: the loop's worst-case guard for the next large t3code call passes $0.50 at the deliberately high stated
+prices). No case proposed a finding. The checkpoint file holds the 6 finished cases.
+Plan, owner decision: rerun all 13 t3code cases later with no per-case or total cap (for example `-per-case-cost 5
+-max-cost 50`), so every case runs to its own end.
