@@ -150,7 +150,10 @@ func TestActionGateRecordsABadProofArtifactAsUnknown(t *testing.T) {
 }
 
 // fakeModel is an OpenAI-compatible endpoint that ends the review at once. It counts its calls and checks the key.
-func fakeModel(t *testing.T) (*httptest.Server, *atomic.Int32) {
+func fakeModel(t *testing.T) (*httptest.Server, *atomic.Int32) { return fakeModelSaying(t, "") }
+
+// fakeModelSaying is fakeModel with a text next to the final call.
+func fakeModelSaying(t *testing.T, content string) (*httptest.Server, *atomic.Int32) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -160,7 +163,7 @@ func fakeModel(t *testing.T) (*httptest.Server, *atomic.Int32) {
 		}
 		writeFakeJSON(w, http.StatusOK, map[string]any{"id": "c1", "model": "test/flash",
 			"choices": []any{map[string]any{"index": 0, "finish_reason": "tool_calls", "message": map[string]any{
-				"role": "assistant", "content": "", "tool_calls": []any{map[string]any{"id": "call_1", "type": "function",
+				"role": "assistant", "content": content, "tool_calls": []any{map[string]any{"id": "call_1", "type": "function",
 					"function": map[string]any{"name": "finish_review", "arguments": `{"summary":"checked"}`}}}}}},
 			"usage": map[string]any{"prompt_tokens": 1000, "completion_tokens": 20}})
 	}))
@@ -207,6 +210,47 @@ func TestActionProofRunsTheLoopAndWritesTheArtifact(t *testing.T) {
 	require.Equal(t, proof.KindNotReproduced, a.Kind, stdout)
 	require.Positive(t, a.Cost.PromptTokens, "the run's cost is in the artifact")
 	require.NotContains(t, stdout+stderr, smokeModelKey)
+}
+
+// The proof step writes the bounded transcript next to the artifact and appends its job summary. The summary says
+// that a green job is not a pass. A model text that echoes the key never reaches the transcript (AM14e).
+func TestActionProofWritesTheTranscriptAndTheJobSummary(t *testing.T) {
+	gh := newFakeGitHub(t)
+	model, _ := fakeModelSaying(t, "I will echo "+smokeModelKey)
+	dir := t.TempDir()
+	out := filepath.Join(dir, proofFile)
+	summary := filepath.Join(t.TempDir(), "step_summary.md")
+	require.NoError(t, os.WriteFile(summary, []byte("earlier step\n"), 0o600))
+	env := proofEnv(t, gh, model.URL, false)
+	env["GITHUB_STEP_SUMMARY"] = summary
+	code, _, stderr := runStep(t, smokeDeps(env, &fakeJobs{}), "proof", "-out", out)
+	require.Equal(t, exitActionOK, code, stderr)
+
+	raw, err := os.ReadFile(filepath.Join(dir, proofTranscriptFile))
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(raw), action.MaxTranscriptBytes)
+	require.NotContains(t, string(raw), smokeModelKey, "the key never reaches the transcript")
+	var tr action.ProofTranscript
+	require.NoError(t, json.Unmarshal(raw, &tr))
+	require.Equal(t, proof.KindNotReproduced, tr.Kind)
+	require.Len(t, tr.Turns, 1)
+	require.Contains(t, tr.Turns[0].Text, "I will echo ")
+
+	md, err := os.ReadFile(summary)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(string(md), "earlier step\n"), "the summary is appended, never overwritten")
+	require.Contains(t, string(md), "Green means this job ran and wrote its result. It does not mean the change passed.")
+	require.Contains(t, string(md), "not reproduced")
+	require.NotContains(t, string(md), smokeModelKey)
+}
+
+// The proof artifact's two files fit the gate's download limits, so a full transcript never makes the gate refuse the
+// whole artifact.
+func TestTheProofFilesFitTheGateLimits(t *testing.T) {
+	l := proofLimits()
+	require.LessOrEqual(t, int64(action.MaxTranscriptBytes), l.MaxFileBytes)
+	require.LessOrEqual(t, int64(action.MaxArtifactBytes+action.MaxTranscriptBytes), l.MaxTotalBytes)
+	require.GreaterOrEqual(t, l.MaxEntries, 2)
 }
 
 // A fork gets no key by GitHub's rule: the artifact says so and no model is called. A same-repo PR without the key is
@@ -293,8 +337,11 @@ func TestActionProofArtifactIsAcceptedByTheGate(t *testing.T) {
 	artifact, err := os.ReadFile(out)
 	require.NoError(t, err)
 
+	transcript, err := os.ReadFile(filepath.Join(filepath.Dir(out), proofTranscriptFile))
+	require.NoError(t, err)
+
 	gh.addArtifact(proofRun, triggerArtifact, map[string][]byte{triggerFile: triggerRecordFor(t)})
-	gh.addArtifact(proofRun, proofArtifactName, map[string][]byte{proofFile: artifact})
+	gh.addArtifact(proofRun, proofArtifactName, map[string][]byte{proofFile: artifact, proofTranscriptFile: transcript})
 	env := gateEnv(gh, "workflow_run", writeEvent(t, smokeRunEvent(proofRun, proofWorkflowPath)))
 	code, stdout, stderr := runStep(t, smokeDeps(env, nil), "gate")
 	require.Equal(t, exitActionOK, code, stderr)

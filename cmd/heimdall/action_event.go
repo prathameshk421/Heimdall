@@ -18,6 +18,7 @@ const (
 	triggerFile         = "heimdall-event.json"
 	proofArtifactName   = "heimdall-proof"
 	proofFile           = "heimdall-proof.json"
+	proofTranscriptFile = "heimdall-proof-transcript.json"
 	proofWorkflowPath   = ".github/workflows/heimdall-proof.yml"
 	triggerWorkflowPath = ".github/workflows/heimdall-trigger.yml"
 	// triggerVersion is the one version of the trigger record this build writes and reads.

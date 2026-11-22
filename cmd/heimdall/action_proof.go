@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/github"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/openrouter"
@@ -60,6 +62,10 @@ type proofStep struct {
 	key    action.ArtifactKey
 	stdout io.Writer
 	stderr io.Writer
+	// summary is the job summary of a run that wrote an artifact, and transcript the bounded record of its turns
+	// (nil when no model ran).
+	summary    *action.StepSummaryIn
+	transcript []byte
 }
 
 // runActionProof is the unprivileged step. It runs PR code only through uidsandbox, holds the model key in this
@@ -92,6 +98,10 @@ func runActionProof(ctx context.Context, args []string, stdout, stderr io.Writer
 		if err := os.WriteFile(out, artifact, 0o600); err != nil {
 			return actionFail(stderr, "proof", errors.Join(runErr, fmt.Errorf("write %s: %w", out, err)))
 		}
+		if err := s.writeTranscript(filepath.Join(filepath.Dir(out), proofTranscriptFile)); err != nil {
+			return actionFail(stderr, "proof", errors.Join(runErr, err))
+		}
+		s.writeSummary()
 	}
 	if runErr != nil {
 		return actionFail(stderr, "proof", runErr)
@@ -165,6 +175,8 @@ func (s *proofStep) unknown(reason proof.Reason, cause error) ([]byte, error) {
 		return nil, errors.Join(cause, err)
 	}
 	writeDiagnostic(s.stdout, fmt.Sprintf("heimdall action proof: #%d: unknown (%s)\n", s.ev.Number, reason))
+	s.summary = &action.StepSummaryIn{Number: s.ev.Number, Outcome: proof.Outcome{Kind: proof.KindUnknown, Reason: reason},
+		Action: s.pol.Action}
 	return raw, cause
 }
 
@@ -210,12 +222,59 @@ func (s *proofStep) prove(ctx context.Context, deps actionDeps) ([]byte, error) 
 	if o.Reason != "" {
 		line += " (" + string(o.Reason) + ")"
 	}
-	writeDiagnostic(s.stdout, fmt.Sprintf("%s; %d candidates, %d proven, %d blocking; $%.4f, %d turns\n", line,
-		o.Counts.In, o.Counts.Proven, o.Counts.Blocking, res.Spend.USD, res.Turns))
+	if o.Note != "" {
+		line += " (" + string(o.Note) + ")"
+	}
+	stop := ""
+	if res.Stop != "" {
+		stop = ", loop stop " + string(res.Stop)
+	}
+	writeDiagnostic(s.stdout, fmt.Sprintf("%s; %d candidates, %d proven, %d blocking; $%.4f, %d turns%s\n", line,
+		o.Counts.In, o.Counts.Proven, o.Counts.Blocking, res.Spend.USD, res.Turns, stop))
+	s.summary = &action.StepSummaryIn{Number: s.ev.Number, Outcome: o, Stop: res.Stop, Turns: res.Turns,
+		CostUSD: res.Spend.USD, Action: s.pol.Action}
+	s.transcript = res.Transcript
 	if runErr != nil {
 		return res.Artifact, fmt.Errorf("proof: %w", runErr)
 	}
 	return res.Artifact, nil
+}
+
+// writeTranscript writes the bounded transcript next to the artifact, with the model key masked should any text echo
+// it. A run with no model call has no transcript and writes none.
+func (s *proofStep) writeTranscript(path string) error {
+	if s.transcript == nil {
+		return nil
+	}
+	if err := os.WriteFile(path, maskSecret(s.transcript, s.env.ModelKey), 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+// maskSecret replaces every copy of secret in raw with as many asterisks, so the size, and so the bound, stays the same.
+func maskSecret(raw []byte, secret string) []byte {
+	if secret == "" {
+		return raw
+	}
+	return bytes.ReplaceAll(raw, []byte(secret), bytes.Repeat([]byte("*"), len(secret)))
+}
+
+// writeSummary appends the job summary to GITHUB_STEP_SUMMARY. The summary is for people: a failed write is reported on
+// stderr and does not change the step's result, which is the artifact.
+func (s *proofStep) writeSummary() {
+	if s.summary == nil || s.env.StepSummary == "" {
+		return
+	}
+	body := maskSecret([]byte(action.ProofStepSummary(*s.summary)), s.env.ModelKey)
+	f, err := os.OpenFile(s.env.StepSummary, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err == nil {
+		_, err = f.Write(body)
+		err = errors.Join(err, f.Close())
+	}
+	if err != nil {
+		writeDiagnostic(s.stderr, fmt.Sprintf("heimdall action proof: job summary not written: %v\n", err))
+	}
 }
 
 // agentLoop is the one agent loop of the product on the configured endpoint, with the retry rule of AM12c: a rate

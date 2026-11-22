@@ -81,6 +81,7 @@ func TestLoadActionRefusals(t *testing.T) {
 		{"trigger needs the event name", ActionTrigger, "GITHUB_EVENT_NAME", "", "GITHUB_EVENT_NAME"},
 		{"proof needs the token", ActionProof, "GITHUB_TOKEN", "", "GITHUB_TOKEN"},
 		{"proof needs the workspace", ActionProof, "GITHUB_WORKSPACE", "", "GITHUB_WORKSPACE"},
+		{"a relative step summary", ActionProof, "GITHUB_STEP_SUMMARY", "summary.md", "GITHUB_STEP_SUMMARY"},
 		{"a model URL over plain http", ActionProof, "HEIMDALL_MODEL_BASE_URL", "http://llm.example.test/v1", "HEIMDALL_MODEL_BASE_URL"},
 		{"a model URL with credentials", ActionProof, "HEIMDALL_MODEL_BASE_URL", "https://u:p@llm.example.test/v1", "HEIMDALL_MODEL_BASE_URL"},
 		{"a key with no model", ActionProof, "HEIMDALL_MODEL", "", "HEIMDALL_MODEL"},
