@@ -1,10 +1,13 @@
 package cardsfs
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/dsse"
 	"github.com/stretchr/testify/require"
 )
 
@@ -153,4 +156,30 @@ func TestConfirmationHoldsOnlyForTheExactText(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"cap.md"}, names)
 	require.Error(t, s.Write("bob", "cap.md.confirmed", []byte("forged")), "the upload path cannot write a confirmation")
+}
+
+func TestSignedCardEnvelopePersistsBesideCardAndVerifiesAfterRead(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	payload := []byte(`{"body":"refunds stay bounded"}`)
+	envelope, err := dsse.Sign(dsse.PayloadTypeRuleCard, payload, "alice", priv)
+	require.NoError(t, err)
+
+	s, err := Open(t.TempDir())
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+	require.NoError(t, s.Write("alice", "refunds.md", payload))
+	require.NoError(t, s.WriteEnvelope("alice", "refunds.md", envelope))
+	stored, err := s.ReadEnvelope("alice", "refunds.md")
+	require.NoError(t, err)
+	got, keyID, err := dsse.Verify(stored, dsse.PayloadTypeRuleCard, map[string]ed25519.PublicKey{"alice": pub})
+	require.NoError(t, err)
+	require.Equal(t, payload, got)
+	require.Equal(t, "alice", keyID)
+	names, err := s.List("alice")
+	require.NoError(t, err)
+	require.Equal(t, []string{"refunds.md"}, names, "the signature sidecar is not listed as a card")
+	require.NoError(t, s.Delete("alice", "refunds.md"))
+	_, err = s.ReadEnvelope("alice", "refunds.md")
+	require.ErrorIs(t, err, ErrNotFound, "deleting a card also deletes its signature")
 }
