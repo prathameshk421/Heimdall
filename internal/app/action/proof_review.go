@@ -117,13 +117,15 @@ that proves it. End with finish_review and a short summary, also when you found 
 You are an autonomous code reviewer for a pull request in any language or tech stack. Find bugs that this change brings
 in, and prove each one with an executable repro test.
 Use list_files, list_changes, read_file and search to understand the repository, its tech stack and its existing tests.
-When run_command is available, use it to safely run builds, typechecks, existing tests or inspect tooling inside the
-isolated sandbox. Use run_test to write and run a new repro test in the project's native test framework before you
-propose it.
+When run_command is available, use it only to check the build, the test setup or the tooling that read_file and search
+cannot show, with at most 1-2 targeted calls. Do not explore the repository with run_command.
+Use run_test to write and run a new repro test in the project's native test framework before you propose it.
 A finding counts only with proof: a repro test that fails twice on this PR head because of the bug and passes once the
 blamed lines are fixed. When the bug is in a newly added file (or newly added code that did not exist at the merge
 base), pass fix_replacement in propose_finding with the minimal replacement for lines start_line..end_line so the proof
 harness can verify the test passes once those lines are fixed.
+As soon as run_test shows your repro test fails on this PR head because of the bug, call propose_finding for it. Do not
+keep exploring after a confirmed failing test.
 A claim from another review tool is a claim, not a fact: try to prove it, and if your test passes on this head, the
 claim is not proven.`
 
@@ -802,9 +804,22 @@ func describeRun(res ports.SandboxResult, focus []string) string {
 		}
 		fmt.Fprintf(&b, "%s: %s\n", t.Name, t.Outcome)
 	}
+	if failedFocus(tests, focused) {
+		b.WriteString("Your repro test fails on this head. Call propose_finding now, then go on with the next finding.\n")
+	}
 	b.WriteString("output:\n")
 	b.WriteString(boundTail(res.Output, maxToolOutput))
 	return b.String()
+}
+
+// failedFocus reports whether one of the tests just written failed or errored, which is the proof signal.
+func failedFocus(tests []ports.TestResult, focused map[string]bool) bool {
+	for _, t := range tests {
+		if focused[t.Name] && (t.Outcome == ports.OutcomeFailure || t.Outcome == ports.OutcomeError) {
+			return true
+		}
+	}
+	return false
 }
 
 // boundTail keeps the last n bytes of s, cut at a line start, and says when it cut.

@@ -377,3 +377,41 @@ workflows on `main`, and PR #1 open with one comment.
 - The sweep (`schedule`) and `workflow_dispatch` paths of the gate: not run.
 - Break-glass commands (A8): not built.
 
+## Later live runs on the same fork
+
+These runs come after the first install. Same fork, same PR #1, same model.
+
+### AM11c: the ENOSYS stage failure is closed (`112aba0`)
+
+Run `45019517676` on PR #1 head `4cf3718`: proof 3 min 15 s, $0.0954, 12 turns, **0 `ENOSYS` errors** on the Ubuntu
+26.04 runner. The staged tree now reaches the model, so the `run_test` tool works on the hosted runner. This closes the
+open item above about `openat` and `mkdirat` in `WorkDir`.
+
+### A8 break-glass on real GitHub (`f298286`)
+
+Summary comment `7074602918` on PR #1 (summary v17) shows the `### Break-glass` section with the entry recorded by
+`@prathameshk421`. The comment ingestion, the reason length check and the escaped render all worked on real GitHub. The
+second command, `break-glass-reviewed` (no self-review), is covered by unit tests only.
+
+### AM17 polyglot agentic reviewer (`11c2bbb`)
+
+The reviewer is now agentic across Go, Node, Python and Rust: `list_files`, a sandboxed `run_command`, and `run_test`
+in each project's native framework, with a 96 KB context. `propose_finding` takes `fix_replacement`, so a bug in a file
+or function that does not exist at the merge base can be proven.
+
+Run `45020826840` exercised the tools cleanly: `list_files` once, `run_command` 8 times, `run_test` 4 times, **0
+sandbox errors**. The model spent 8 turns exploring with `run_command` and reached the 40k output-token cap at turn 19
+before it called `propose_finding`. Cost $0.23, no proposal.
+
+Two prompt changes in `AM17b` follow from that run:
+
+1. `run_command` is for the build, the test setup or the tooling only, with 1-2 targeted calls; `read_file` and `search`
+   are for reading code.
+2. The model calls `propose_finding` as soon as `run_test` shows a repro test failing on this head, and `describeRun`
+   adds one line that says so.
+
+### Not verified after these runs
+
+- A finding proven end to end on the live Action. The model has not yet called `propose_finding` in a live run.
+- The effect of the tightened prompt. It needs a new live run.
+
