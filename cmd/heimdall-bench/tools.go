@@ -31,21 +31,26 @@ const (
 	maxSearchLine    = 200
 	maxPatchBytes    = 48 << 10
 	maxTestSource    = 64 << 10
+	maxFixBytes      = 32 << 10
 	maxClaimRunes    = 600
 	maxFindings      = 5
 	maxTestsListed   = 30
+	maxListFiles     = 200
+	maxCommandArgs   = 64
+	commandTimeout   = 2 * time.Minute
 	maxSandboxTimout = 10 * time.Minute
 )
 
 // proposal is one finding the reviewer proposed, with its candidate test.
 type proposal struct {
-	File       string
-	Lines      bench.Span
-	Severity   finding.Severity
-	Claim      string
-	TestPath   string
-	TestName   string
-	TestSource []byte
+	File           string
+	Lines          bench.Span
+	Severity       finding.Severity
+	Claim          string
+	TestPath       string
+	TestName       string
+	TestSource     []byte
+	FixReplacement string
 }
 
 // fnTool is one tool of the reviewer: a spec and a function.
@@ -125,11 +130,13 @@ func (rp *replay) tools(onCall func(name string, seconds float64)) []fnTool {
 	return out
 }
 
-// toolSpecs is the reviewer's tool list, before the timing wrapper.
+// toolSpecs is the reviewer's tool list, before the timing wrapper (synced with AM17's proof_review.go).
 func (rp *replay) toolSpecs() []fnTool {
-	return []fnTool{
+	list := []fnTool{
 		{spec: ports.ModelTool{Name: "list_changes", Description: "List the files the pull request changes, with the unified diff (3 lines of context) from its base to its head.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)}, run: rp.listChanges},
+		{spec: ports.ModelTool{Name: "list_files", Description: "List files in the pull request head checkout (skipping .git, node_modules, vendor, target). At most 200 files.",
+			Parameters: json.RawMessage(`{"type":"object","properties":{"path_prefix":{"type":"string"},"max_entries":{"type":"integer","minimum":1,"maximum":200}},"additionalProperties":false}`)}, run: rp.listFiles},
 		{spec: ports.ModelTool{Name: "read_code", Description: "Read a file at the pull request head, with line numbers. At most 300 lines per call.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}},"required":["path"],"additionalProperties":false}`)}, run: rp.readCode},
 		{spec: ports.ModelTool{Name: "search_code", Description: "Search the files at the pull request head for a literal string. At most 50 matches.",
@@ -137,8 +144,15 @@ func (rp *replay) toolSpecs() []fnTool {
 		{spec: ports.ModelTool{Name: "run_test", Description: "Write one new " + testKind(rp.c) + " into the pull request head and run it in the sandbox. Returns each test's outcome and the output.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"test_path":{"type":"string","description":` + strconv.Quote(testPathHint(rp.c)) + `},"test_source":{"type":"string"}},"required":["test_path","test_source"],"additionalProperties":false}`)}, run: rp.runTest},
 		{spec: ports.ModelTool{Name: "propose_finding", Description: "Propose one bug the change brings in, with a " + testKind(rp.c) + " that fails on this head because of the bug and passes once the bug is fixed. At most 5 findings.",
-			Parameters: json.RawMessage(`{"type":"object","properties":{"file":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"severity":{"type":"string","enum":["low","medium","high","critical"]},"claim":{"type":"string","maxLength":600},"test_path":{"type":"string"},"test_name":{"type":"string"},"test_source":{"type":"string"}},"required":["file","start_line","end_line","severity","claim","test_path","test_name","test_source"],"additionalProperties":false}`)}, run: rp.proposeFinding},
+			Parameters: json.RawMessage(`{"type":"object","properties":{"file":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"severity":{"type":"string","enum":["low","medium","high","critical"]},"claim":{"type":"string","maxLength":600},"test_path":{"type":"string"},"test_name":{"type":"string"},"test_source":{"type":"string"},"fix_replacement":{"type":"string","description":"Optional minimal replacement for lines start_line..end_line of file (use when the bug is in newly added code that did not exist at the merge base)."}},"required":["file","start_line","end_line","severity","claim","test_path","test_name","test_source"],"additionalProperties":false}`)}, run: rp.proposeFinding},
 	}
+	if _, ok := rp.sandbox.(commandSandbox); ok {
+		list = append(list, fnTool{spec: ports.ModelTool{Name: "run_command",
+			Description: "Run a command (build, typecheck, existing tests, tooling inspection) inside a fresh checkout of the pull request head. Optionally overlay temporary files.",
+			Parameters:  json.RawMessage(`{"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":64},"dir":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"],"additionalProperties":false}}},"required":["argv"],"additionalProperties":false}`)},
+			run: rp.runCommand})
+	}
+	return list
 }
 
 // timed wraps one tool so the case's progress learns the latency of each call. It changes nothing the model sees.
@@ -290,7 +304,7 @@ func (s *searcher) visit(p string, d fs.DirEntry, _ error) error {
 		return s.ctx.Err()
 	}
 	if d.IsDir() {
-		if p == ".git" || p == "vendor" {
+		if skipWalkDir(d.Name()) {
 			return fs.SkipDir
 		}
 		return nil
@@ -451,14 +465,15 @@ func describeRun(res ports.SandboxResult, focus []string) string {
 
 func (rp *replay) proposeFinding(_ context.Context, args json.RawMessage) (string, error) {
 	var in struct {
-		File       string `json:"file"`
-		StartLine  int    `json:"start_line"`
-		EndLine    int    `json:"end_line"`
-		Severity   string `json:"severity"`
-		Claim      string `json:"claim"`
-		TestPath   string `json:"test_path"`
-		TestName   string `json:"test_name"`
-		TestSource string `json:"test_source"`
+		File           string `json:"file"`
+		StartLine      int    `json:"start_line"`
+		EndLine        int    `json:"end_line"`
+		Severity       string `json:"severity"`
+		Claim          string `json:"claim"`
+		TestPath       string `json:"test_path"`
+		TestName       string `json:"test_name"`
+		TestSource     string `json:"test_source"`
+		FixReplacement string `json:"fix_replacement"`
 	}
 	if err := decodeArgs(args, &in); err != nil {
 		return "", err
@@ -473,13 +488,164 @@ func (rp *replay) proposeFinding(_ context.Context, args json.RawMessage) (strin
 	if err := rp.checkTestFile(in.TestPath, in.TestSource); err != nil {
 		return "", err
 	}
+	if len(in.FixReplacement) > maxFixBytes {
+		return "", fmt.Errorf("fix_replacement: exceeds %d bytes", maxFixBytes)
+	}
 	name, err := reviewTestName(rp.c, in.TestPath, in.TestSource, in.TestName)
 	if err != nil {
 		return "", err
 	}
-	p.TestPath, p.TestName, p.TestSource = in.TestPath, name, []byte(in.TestSource)
+	p.TestPath, p.TestName, p.TestSource, p.FixReplacement = in.TestPath, name, []byte(in.TestSource), in.FixReplacement
 	rp.proposals = append(rp.proposals, p)
 	return fmt.Sprintf("recorded as F%d; it is proven after the review ends", len(rp.proposals)), nil
+}
+
+// listFiles walks the head checkout and lists regular files under path_prefix, skipping generated/VCS dirs.
+func (rp *replay) listFiles(ctx context.Context, args json.RawMessage) (string, error) {
+	var in struct {
+		PathPrefix string `json:"path_prefix"`
+		MaxEntries int    `json:"max_entries"`
+	}
+	if err := decodeArgs(args, &in); err != nil {
+		return "", err
+	}
+	prefix := strings.TrimSuffix(in.PathPrefix, "/")
+	if prefix != "" && (path.Clean(prefix) != prefix || !filepath.IsLocal(filepath.FromSlash(prefix))) {
+		return "", fmt.Errorf("path_prefix %q: want a clean relative path", in.PathPrefix)
+	}
+	limit := in.MaxEntries
+	if limit <= 0 || limit > maxListFiles {
+		limit = maxListFiles
+	}
+	root, err := os.OpenRoot(rp.workdir)
+	if err != nil {
+		return "", fmt.Errorf("open head tree: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	lister := &fileLister{ctx: ctx, prefix: prefix, limit: limit}
+	walkErr := fs.WalkDir(root.FS(), ".", lister.visit)
+	if walkErr != nil && !errors.Is(walkErr, errSearchFull) {
+		return "", fmt.Errorf("list_files: %w", walkErr)
+	}
+	return lister.report(), nil
+}
+
+type fileLister struct {
+	ctx       context.Context
+	prefix    string
+	limit     int
+	files     []string
+	truncated bool
+}
+
+func (l *fileLister) visit(p string, d fs.DirEntry, _ error) error {
+	if d == nil {
+		return nil
+	}
+	if err := l.ctx.Err(); err != nil {
+		return err
+	}
+	if d.IsDir() {
+		if skipWalkDir(d.Name()) {
+			return fs.SkipDir
+		}
+		return nil
+	}
+	if !d.Type().IsRegular() || !matchesPrefix(p, l.prefix) {
+		return nil
+	}
+	if len(l.files) >= l.limit {
+		l.truncated = true
+		return errSearchFull
+	}
+	l.files = append(l.files, p)
+	return nil
+}
+
+func matchesPrefix(p, prefix string) bool {
+	return prefix == "" || p == prefix || strings.HasPrefix(p, prefix+"/")
+}
+
+func (l *fileLister) report() string {
+	if len(l.files) == 0 {
+		return "no files"
+	}
+	out := strings.Join(l.files, "\n")
+	if l.truncated {
+		out += fmt.Sprintf("\n[stopped at %d files; narrow path_prefix]", l.limit)
+	}
+	return out
+}
+
+func skipWalkDir(name string) bool {
+	switch name {
+	case ".git", "node_modules", "vendor", "target", ".venv", "__pycache__", "dist", "build":
+		return true
+	}
+	return false
+}
+
+type runCommandArgs struct {
+	argv     []string
+	dir      string
+	overlays []ports.File
+}
+
+func decodeCommandArgs(args json.RawMessage) (runCommandArgs, error) {
+	var in struct {
+		Argv  []string `json:"argv"`
+		Dir   string   `json:"dir"`
+		Files []struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		} `json:"files"`
+	}
+	if err := decodeArgs(args, &in); err != nil {
+		return runCommandArgs{}, err
+	}
+	if len(in.Argv) == 0 || len(in.Argv) > maxCommandArgs || strings.TrimSpace(in.Argv[0]) == "" {
+		return runCommandArgs{}, fmt.Errorf("argv: want 1 to %d arguments with a non-empty command", maxCommandArgs)
+	}
+	dir := in.Dir
+	if dir == "" {
+		dir = "."
+	} else if err := repoPath(dir); err != nil {
+		return runCommandArgs{}, fmt.Errorf("dir: %w", err)
+	}
+	overlays := make([]ports.File, 0, len(in.Files))
+	for _, f := range in.Files {
+		if err := repoPath(f.Path); err != nil {
+			return runCommandArgs{}, fmt.Errorf("files: %w", err)
+		}
+		if len(f.Content) > maxTestSource {
+			return runCommandArgs{}, fmt.Errorf("files %q: content exceeds %d bytes", f.Path, maxTestSource)
+		}
+		overlays = append(overlays, ports.File{Path: f.Path, Content: []byte(f.Content)})
+	}
+	return runCommandArgs{argv: in.Argv, dir: dir, overlays: overlays}, nil
+}
+
+func (rp *replay) runCommand(ctx context.Context, args json.RawMessage) (string, error) {
+	cs, ok := rp.sandbox.(commandSandbox)
+	if !ok {
+		return "", errors.New("run_command is not available in this sandbox")
+	}
+	in, err := decodeCommandArgs(args)
+	if err != nil {
+		return "", err
+	}
+	res, err := cs.RunCommand(ctx, rp.c.RepoSlug(), rp.head, in.dir, in.argv, in.overlays, commandTimeout)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "exit %d", res.Exit)
+	if res.TimedOut {
+		b.WriteString(" (timed out)")
+	}
+	b.WriteString("\noutput:\n")
+	b.WriteString(res.Output)
+	return b.String(), nil
 }
 
 func (rp *replay) checkProposal(file string, start, end int, severity, claim string) (proposal, error) {

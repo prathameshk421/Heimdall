@@ -46,7 +46,7 @@ const (
 )
 
 // stallNudge is the fixed message after stall turns with no proposal or test run. It names the tools, not a finding.
-const stallNudge = "Propose your strongest finding with a test now, or call finish_review"
+const stallNudge = "Propose your strongest finding with propose_finding now, or call finish_review."
 
 // testingCapUSD is the repo's testing cap (CLAUDE.md), the default of -max-cost.
 const testingCapUSD = 3.0
@@ -713,27 +713,45 @@ func (rc *reviewCase) recordRefused(store *refusedStore, caseID string, failed [
 	}
 }
 
-// reviewerPrompt is the reviewer's system prompt. It states the task and the proof rule, not how to reason. Its first
-// lines name the two tools (AM12b); the test rules follow the case's toolchain (testRules).
+// reviewerPrompt is the reviewer's system prompt, synced with AM17/AM17b (internal/app/action/proof_review.go). It
+// states the tools and the proof rule, not how to reason; the test rules follow the case's toolchain (testRules).
 func reviewerPrompt(c bench.Case) string {
 	if c.Runner() == bench.ToolchainGo {
 		return goReviewerPrompt
 	}
 	return `Answer only with tool calls. Propose each bug with propose_finding, which takes the test that proves it
-(at most 5). End with finish_review, also when you found no bug you can prove.
-You review a pull request in a ` + languageName(c) + ` repository. Find bugs that this change brings in.
-A finding counts only with proof: a test that fails on this head because of the bug, in two separate runs, and
-passes once the suspected lines are fixed. A test that does not build or load proves nothing. ` + testRules(c) + `
-Use run_test to try a test before you propose it.`
+(at most 5). End with finish_review and a short summary, also when you found no bug you can prove.
+You are an autonomous code reviewer for a pull request in a ` + languageName(c) + ` repository. Find bugs that this change brings
+in, and prove each one with an executable repro test.
+Use list_files, list_changes, read_code and search_code to understand the repository, its tech stack and its existing tests.
+When run_command is available, use it only to check the build, the test setup or the tooling that read_code and search_code
+cannot show, with at most 1-2 targeted calls. Do not explore the repository with run_command.
+Use run_test to write and run a new repro test before you propose it.
+A finding counts only with proof: a repro test that fails twice on this PR head because of the bug and passes once the
+blamed lines are fixed. A test that does not build or load proves nothing. ` + testRules(c) + `
+When the bug is in a newly added file (or newly added code that did not exist at the merge base), pass fix_replacement
+in propose_finding with the minimal replacement for lines start_line..end_line so the proof harness can verify the test
+passes once those lines are fixed.
+As soon as run_test shows your repro test fails on this PR head because of the bug, call propose_finding for it. Do not
+keep exploring after a confirmed failing test.`
 }
 
-// goReviewerPrompt is the Go reviewer's prompt.
+// goReviewerPrompt is the Go reviewer's prompt, synced with AM17/AM17b.
 const goReviewerPrompt = `Answer only with tool calls. Propose each bug with propose_finding, which takes the Go test
-that proves it (at most 5). End with finish_review, also when you found no bug you can prove.
-You review a pull request in a Go repository. Find bugs that this change brings in.
-A finding counts only with proof: a Go test that fails on this head because of the bug, in two separate runs, and
-passes once the suspected lines are fixed. A test that does not build proves nothing. Use run_test to try a test
-before you propose it.`
+that proves it (at most 5). End with finish_review and a short summary, also when you found no bug you can prove.
+You are an autonomous code reviewer for a pull request in a Go repository. Find bugs that this change brings in, and
+prove each one with an executable Go repro test.
+Use list_files, list_changes, read_code and search_code to understand the repository and its existing tests.
+When run_command is available, use it only to check the build, the test setup or the tooling that read_code and search_code
+cannot show, with at most 1-2 targeted calls. Do not explore the repository with run_command.
+Use run_test to write and run a new Go repro test before you propose it.
+A finding counts only with proof: a Go test that fails twice on this PR head because of the bug and passes once the
+blamed lines are fixed. A test that does not build proves nothing.
+When the bug is in a newly added file (or newly added code that did not exist at the merge base), pass fix_replacement
+in propose_finding with the minimal replacement for lines start_line..end_line so the proof harness can verify the test
+passes once those lines are fixed.
+As soon as run_test shows your repro test fails on this PR head because of the bug, call propose_finding for it. Do not
+keep exploring after a confirmed failing test.`
 
 func languageName(c bench.Case) string {
 	if c.Runner() == bench.ToolchainCargo {

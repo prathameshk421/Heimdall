@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/bench"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
@@ -265,4 +266,105 @@ func wireCrateRoot(tree string, c bench.Case, module string) error {
 		return nil
 	}
 	return fmt.Errorf("no src/lib.rs or src/main.rs in %s", c.Workdir)
+}
+
+// commandResult is the outcome of one exploratory run_command call in the bench sandbox.
+type commandResult struct {
+	Exit     int
+	Output   string
+	TimedOut bool
+}
+
+// commandSandbox is the optional sandbox extension for exploratory run_command calls (matching AM17's CommandSandbox).
+type commandSandbox interface {
+	RunCommand(ctx context.Context, repo, sha, dir string, argv []string, overlays []ports.File, timeout time.Duration) (commandResult, error)
+}
+
+var _ commandSandbox = (*localSandbox)(nil)
+
+// RunCommand runs one exploratory command at sha in a fresh tree (with install for cargo/vitest cases, or a plain
+// worktree for Go cases) with .git removed so the command cannot inspect git history or the fix commit.
+func (s *localSandbox) RunCommand(ctx context.Context, repoSlug, sha, dir string, argv []string,
+	overlays []ports.File, timeout time.Duration) (commandResult, error) {
+	rp, ok := s.repos[repoSlug]
+	if !ok {
+		return commandResult{}, fmt.Errorf("sandbox: no cache for %s", repoSlug)
+	}
+	if len(argv) == 0 || strings.TrimSpace(argv[0]) == "" {
+		return commandResult{}, errors.New("sandbox command: empty argv")
+	}
+	if dir == "" {
+		dir = "."
+	}
+	if dir != "." && (!filepath.IsLocal(filepath.FromSlash(dir)) || dir == ".git" || strings.HasPrefix(dir, ".git/")) {
+		return commandResult{}, fmt.Errorf("sandbox command dir %q: want a clean relative path", dir)
+	}
+	tree, useToolEnv, err := s.commandTree(ctx, rp, s.cases[repoSlug], sha, s.nextLabel(repoSlug), overlays)
+	if err != nil {
+		return commandResult{}, err
+	}
+	defer func() { _ = rp.remove(context.WithoutCancel(ctx), tree) }()
+	return runCommandInTree(ctx, rp, s.cases[repoSlug], tree, dir, argv, useToolEnv, timeout)
+}
+
+func (s *localSandbox) commandTree(ctx context.Context, rp *repo, c bench.Case, sha, label string,
+	overlays []ports.File) (tree string, useToolEnv bool, err error) {
+	if c.Runner() == bench.ToolchainCargo || c.Runner() == bench.ToolchainVitest {
+		bt, err := rp.toolTree(ctx, c, sha, label, func(dir string, _ bench.Case) error {
+			for _, f := range overlays {
+				if err := writeOverlay(dir, f); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		return bt.dir, true, err
+	}
+	dir, err := rp.worktree(ctx, sha, label)
+	if err != nil {
+		return "", false, err
+	}
+	if err := os.Remove(filepath.Join(dir, ".git")); err != nil {
+		_ = rp.remove(context.WithoutCancel(ctx), dir)
+		return "", false, fmt.Errorf("unlink the copy from the cache: %w", err)
+	}
+	for _, f := range overlays {
+		if err := writeOverlay(dir, f); err != nil {
+			_ = rp.remove(context.WithoutCancel(ctx), dir)
+			return "", false, err
+		}
+	}
+	return dir, false, nil
+}
+
+func runCommandInTree(ctx context.Context, rp *repo, c bench.Case, tree, dir string, argv []string,
+	useToolEnv bool, timeout time.Duration) (commandResult, error) {
+	if timeout <= 0 || timeout > maxSandboxTimout {
+		timeout = commandTimeout
+	}
+	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	work := filepath.Join(tree, filepath.FromSlash(dir))
+	var out, errOut []byte
+	var runErr error
+	if useToolEnv {
+		args := append(rp.toolEnv(c), argv...)
+		out, errOut, runErr = rp.r.run(cmdCtx, work, "env", args...)
+	} else {
+		out, errOut, runErr = rp.r.run(cmdCtx, work, argv[0], argv[1:]...)
+	}
+	res := commandResult{Output: boundTail(string(out)+string(errOut), maxTestOutput)}
+	if runErr == nil {
+		return res, nil
+	}
+	if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+		res.Exit, res.TimedOut = 124, true
+		return res, nil
+	}
+	var exitErr interface{ ExitCode() int }
+	if errors.As(runErr, &exitErr) {
+		res.Exit = exitErr.ExitCode()
+		return res, nil
+	}
+	return commandResult{}, fmt.Errorf("run_command: %w", runErr)
 }

@@ -148,12 +148,22 @@ func (r *replay) prove(ctx context.Context, n int, p proposal) bench.ScoredFindi
 	return f
 }
 
-// revertedOverlay is the proposal's file on the head with its lines reverted to the base. A file the base does not
-// have reverts to an empty base. When the lines are the same at the base, the overlay is empty.
+// revertedOverlay is the proposal's file on the head with its lines fixed: either by applying fix_replacement (for bugs
+// in newly added files or code) or by reverting its lines to the base. When the result equals head, the overlay is empty.
 func (r *replay) revertedOverlay(ctx context.Context, p proposal) ([]ports.File, error) {
 	head, err := r.headFile(p.File)
 	if err != nil {
 		return nil, err
+	}
+	if p.FixReplacement != "" {
+		merged, err := replaceLines(string(head), p.Lines.Start, p.Lines.End, p.FixReplacement)
+		if err != nil {
+			return nil, fmt.Errorf("apply fix_replacement: %w", err)
+		}
+		if merged == string(head) {
+			return nil, nil
+		}
+		return []ports.File{{Path: p.File, Content: []byte(merged)}}, nil
 	}
 	var base []byte
 	has, err := r.rp.hasFile(ctx, r.base, p.File)
@@ -173,6 +183,25 @@ func (r *replay) revertedOverlay(ctx context.Context, p proposal) ([]ports.File,
 		return nil, nil
 	}
 	return []ports.File{{Path: p.File, Content: []byte(merged)}}, nil
+}
+
+// replaceLines replaces 1-based inclusive lines [first, last] of text with replacement, preserving trailing newline.
+func replaceLines(text string, first, last int, replacement string) (string, error) {
+	trailingNL := strings.HasSuffix(text, "\n")
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if first < 1 || last < first || last > len(lines) {
+		return "", fmt.Errorf("lines %d-%d out of range 1..%d", first, last, len(lines))
+	}
+	repLines := strings.Split(strings.TrimSuffix(replacement, "\n"), "\n")
+	out := make([]string, 0, len(lines)-(last-first+1)+len(repLines))
+	out = append(out, lines[:first-1]...)
+	out = append(out, repLines...)
+	out = append(out, lines[last:]...)
+	res := strings.Join(out, "\n")
+	if trailingNL {
+		res += "\n"
+	}
+	return res, nil
 }
 
 // revertedTreeID names the head with the overlay written in. It is the head tree when the overlay is empty, so Prove
