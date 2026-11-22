@@ -101,7 +101,9 @@
 //
 // Before each call the loop sizes the request. Over Config.ContextBytes, it replaces the oldest tool results with a
 // stub that names the call and the size cut, but never one of the KeepResults newest, so a request may stay over the
-// target. The system prompt, the task, the answers and their reasoning are never cut: DeepSeek needs the reasoning
+// target. It never cuts a result under 2 KB: the stub would save little and hide what the result said. A run_test stub
+// keeps the outcome (PASS, FAIL, BUILD ERROR, an install ERROR) and the first error line, so a trimmed test run still
+// tells the model whether the test ran and how it ended. The system prompt, the task, the answers and their reasoning are never cut: DeepSeek needs the reasoning
 // sent back whole. A trim clones the message slice, so a request already sent keeps its messages. Each turn records
 // the bytes it sent and the stubs it held.
 //
