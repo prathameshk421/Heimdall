@@ -87,10 +87,12 @@ func commandBody(in Input) (string, bool) {
 	return rest, true
 }
 
-// withoutLeadingMention drops the leading mentions. Mattermost and Telegram deliver a message to an agent only when it
+// WithoutLeadingMention drops the leading mentions. Mattermost and Telegram deliver a message to an agent only when it
 // mentions the agent, so a command arrives as "@heimdall-coord-main heimdall uphold F1". Slack writes a mention as
 // "<@U0123ABC>" or "<@U0123ABC|name>". A mention of the Slack app reaches Switch as the agent plus the app's raw id, so
 // the same command arrives as "@heimdall-coord-main @U0CFX056ZRA heimdall uphold F1".
+func WithoutLeadingMention(text string) string { return withoutLeadingMention(text) }
+
 func withoutLeadingMention(text string) string {
 	for {
 		token, rest, found := strings.Cut(text, " ")
@@ -165,17 +167,21 @@ func approveTests(p, args string) (Command, error) {
 	return ApproveTests{}, nil
 }
 
-// grammar is the one short reply for an unknown command. It lists every verb
-// with the prefix for the source, so a GitHub user sees `/heimdall` and a chat
-// user sees `heimdall`.
-func grammar(src Source) string {
+// Grammar is the one short reply for a person who asks for help: the most-used verbs, with the prefix for the source,
+// so a GitHub user sees `/heimdall` and a chat user sees `heimdall`.
+func Grammar(src Source) string {
 	p, _ := prefixOf(src)
 	var b strings.Builder
-	b.WriteString("I don't know that command. These are the ones people use most:")
+	b.WriteString("These are the commands people use most:")
 	for _, u := range []string{useUphold, useDismiss, useChallenge, useApprove, useAnswer, useRemember, useStart, useResume, useReject} {
 		b.WriteString("\n• " + p + " " + u)
 	}
 	return b.String()
+}
+
+// grammar is the reply to an unknown command: the same list, said as a correction.
+func grammar(src Source) string {
+	return "I don't know that command. " + Grammar(src)
 }
 
 // IsCommand reports whether the text starts with the source's command prefix. It needs no people lookup, so a

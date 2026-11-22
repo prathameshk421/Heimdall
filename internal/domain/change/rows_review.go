@@ -162,7 +162,7 @@ func rowPick() Row {
 		Next: func(in In) []Action {
 			pr := in.View.PR
 			if in.Now.Before(pr.SlopAt.Add(in.Settings.PickWait)) {
-				return []Action{{Ask: &Ask{Who: []ActorID{pr.Author}, What: "pick reviewers with `heimdall review`"}, Text: "reviewers are picked"}}
+				return []Action{{Ask: &Ask{Who: []ActorID{pr.Author}, What: "pick reviewers with heimdall review"}, Text: "reviewers are picked"}}
 			}
 			people := pr.Suggested
 			if len(people) == 0 {

@@ -112,7 +112,7 @@ func (p *Processor) Handle(ctx context.Context, in Input) error {
 	if !commands.IsCommand(in.Command) {
 		if in.Command.Source == commands.SourceChat && p.questioner != nil {
 			if q, ok := extractMentionQuestion(in.Command.Text); ok {
-				return p.handleQuestion(ctx, in, q)
+				return p.handleMention(ctx, in, q)
 			}
 		}
 		return nil
@@ -121,22 +121,40 @@ func (p *Processor) Handle(ctx context.Context, in Input) error {
 	return p.handleHuman(ctx, in, src)
 }
 
-func (p *Processor) handleQuestion(ctx context.Context, in Input, question string) error {
+// handleMention answers a message that names the coordinator, whether it asks a question, asks for status or asks for
+// the command help. The sender must be a mapped person, never an agent (T1).
+func (p *Processor) handleMention(ctx context.Context, in Input, text string) error {
+	person, ok, err := p.questionPerson(ctx, in)
+	if err != nil || !ok {
+		return err
+	}
+	if word := readOnlyRequest(text); word != "" {
+		return p.replyReadOnly(ctx, in, person, word)
+	}
+	return p.answerQuestion(ctx, in, person, text)
+}
+
+// questionPerson resolves the sender of a question: an agent, or a sender with no person, gets no answer.
+func (p *Processor) questionPerson(ctx context.Context, in Input) (string, bool, error) {
 	isAgent, err := p.identity.IsAgent(ctx, in.Target, in.Command.Source, in.Command.Sender)
 	if err != nil {
-		return fmt.Errorf("resolve question sender kind: %w", err)
+		return "", false, fmt.Errorf("resolve question sender kind: %w", err)
 	}
 	if isAgent {
-		return nil
+		return "", false, nil
 	}
 	people, err := p.identity.People(ctx, in.Target)
 	if err != nil {
-		return fmt.Errorf("load question people: %w", err)
+		return "", false, fmt.Errorf("load question people: %w", err)
 	}
 	person, ok := people.Lookup(in.Command.Source, in.Command.Sender)
 	if !ok || person == "" {
-		return nil // unmapped senders never trigger @heimdall answers (T1)
+		return "", false, nil // unmapped senders never trigger @heimdall answers (T1)
 	}
+	return person, true, nil
+}
+
+func (p *Processor) answerQuestion(ctx context.Context, in Input, person, question string) error {
 	answer, err := p.questioner.AnswerQuestion(ctx, in.Target, person, question)
 	if err != nil {
 		return fmt.Errorf("answer question: %w", err)
@@ -147,15 +165,71 @@ func (p *Processor) handleQuestion(ctx context.Context, in Input, question strin
 	return p.replies.Reply(ctx, in.Target, in.Command.Source, in.SourceRef, answer)
 }
 
-var reMentionHeimdall = regexp.MustCompile(`(?i)^\s*@heimdall[:,]?\s+(.+)$`)
+// replyReadOnly answers a request that changes nothing: the command help, or the status of the change.
+func (p *Processor) replyReadOnly(ctx context.Context, in Input, person, word string) error {
+	if word == readOnlyHelp {
+		return p.replies.Reply(ctx, in.Target, in.Command.Source, in.SourceRef, commands.Grammar(in.Command.Source))
+	}
+	return p.answerQuestion(ctx, in, person, word)
+}
 
+const (
+	readOnlyHelp   = "help"
+	readOnlyStatus = "status"
+)
+
+// readOnlyRequest says which read-only request the text is ("status", "help"), or "" for anything else. It accepts
+// both the command form ("heimdall status") and the mention form ("@heimdall-coord-main status"), on any platform. A
+// status may name a ticket after it; help is the whole request.
+func readOnlyRequest(text string) string {
+	fields := strings.Fields(commands.WithoutLeadingMention(strings.TrimSpace(text)))
+	if len(fields) == 0 {
+		return ""
+	}
+	trim := func(s string) string { return strings.Trim(s, "?:,.") }
+	first := strings.ToLower(trim(fields[0]))
+	if first == "heimdall" {
+		if len(fields) < 2 {
+			return ""
+		}
+		first = strings.ToLower(trim(fields[1]))
+		fields = fields[1:]
+	}
+	if first == readOnlyHelp && len(fields) > 1 {
+		return ""
+	}
+	if first == readOnlyStatus || first == readOnlyHelp {
+		return first
+	}
+	return ""
+}
+
+// reCoordinatorMention matches a leading mention of the coordinator: @heimdall, @heimdall-coord-main, @Heimdall. Slack
+// sends its own form, "<@U0123ABC>", which isMentionToken reads.
+var reCoordinatorMention = regexp.MustCompile(`(?i)^@heimdall(?:[-_.][A-Za-z0-9_-]+)?\b[:,]?`)
+
+// extractMentionQuestion returns the words after a leading mention of the coordinator. A message that mentions nobody,
+// or mentions the coordinator and says nothing else, is not a question.
 func extractMentionQuestion(text string) (string, bool) {
-	m := reMentionHeimdall.FindStringSubmatch(strings.TrimSpace(text))
-	if len(m) < 2 {
+	trimmed := strings.TrimSpace(text)
+	mentioned := reCoordinatorMention.MatchString(trimmed) || isSlackMention(trimmed)
+	if !mentioned {
 		return "", false
 	}
-	q := strings.TrimSpace(m[1])
-	return q, q != ""
+	rest := strings.TrimSpace(commands.WithoutLeadingMention(trimmed))
+	if rest == "" || rest == trimmed {
+		return "", false
+	}
+	return rest, true
+}
+
+// isSlackMention reports whether the text starts with a Slack user mention, "<@U0123ABC>" or "<@U0123ABC|name>".
+func isSlackMention(text string) bool {
+	if !strings.HasPrefix(text, "<@") {
+		return false
+	}
+	end := strings.IndexByte(text, '>')
+	return end > 2
 }
 
 func (p *Processor) handleHuman(ctx context.Context, in Input, src commands.Source) error {
@@ -169,6 +243,15 @@ func (p *Processor) handleHuman(ctx context.Context, in Input, src commands.Sour
 	people, err := p.identity.People(ctx, in.Target)
 	if err != nil {
 		return fmt.Errorf("load command people: %w", err)
+	}
+	// Status and help change nothing, so they answer before the grammar runs. Uphold, dismiss, waive and every other
+	// state-changing verb still goes through Parse and Authorize unchanged.
+	if p.questioner != nil {
+		if person, ok := people.Lookup(src, in.Command.Sender); ok && person != "" {
+			if word := readOnlyRequest(in.Command.Text); word != "" {
+				return p.replyReadOnly(ctx, in, person, word)
+			}
+		}
 	}
 	parsed := commands.Parse(in.Command, people)
 	return p.dispatch(ctx, in, src, parsed)
@@ -219,13 +302,19 @@ func (p *Processor) HandleRoomMessage(ctx context.Context, room ports.RoomBindin
 }
 
 // HandleSharedRoomMessage takes a message from a standing channel that serves several tickets. A command must name
-// its ticket; without one, or with two, the sender is asked which one they mean. Text that is not a command is left
-// alone.
-func (p *Processor) HandleSharedRoomMessage(ctx context.Context, _ change.RoomID, candidates []ports.RoomBinding, message ports.Message) error {
+// its ticket; without one, or with two, the sender is asked which one they mean. A mention question, `heimdall status`
+// and `heimdall help` change nothing, so they are answered here too, the same way as in a ticket room.
+func (p *Processor) HandleSharedRoomMessage(ctx context.Context, room change.RoomID, candidates []ports.RoomBinding, message ports.Message) error {
 	in := commands.Input{Text: message.Text, Source: commands.SourceChat, Sender: string(message.Sender)}
-	if !commands.IsCommand(in) {
-		return nil
+	word := readOnlyRequest(message.Text)
+	if word == "" && commands.IsCommand(in) {
+		return p.handleSharedCommand(ctx, in, candidates, message)
 	}
+	return p.handleSharedQuestion(ctx, room, candidates, message)
+}
+
+// handleSharedCommand runs a command in a standing room: it needs its ticket key when several are open.
+func (p *Processor) handleSharedCommand(ctx context.Context, in commands.Input, candidates []ports.RoomBinding, message ports.Message) error {
 	var named []ports.RoomBinding
 	for _, c := range candidates {
 		if namesKey(message.Text, c.ChangeID) {
@@ -239,16 +328,88 @@ func (p *Processor) HandleSharedRoomMessage(ctx context.Context, _ change.RoomID
 		named = candidates[:1] // the proposal id names the repository; any binding carries the command
 	}
 	if len(named) != 1 {
-		keys := make([]string, 0, len(candidates))
-		for _, c := range candidates {
-			keys = append(keys, string(c.ChangeID))
-		}
-		ask := "Which ticket is that about? Put its key in the message, for example: heimdall uphold " + string(candidates[0].ChangeID) +
-			" F1. Open tickets here: " + strings.Join(keys, ", ") + "."
-		first := candidates[0]
-		return p.replies.Reply(ctx, Target{Room: first, ChangeID: first.ChangeID}, commands.SourceChat, string(message.ID), ask)
+		return p.askWhichTicket(ctx, candidates, message)
 	}
 	return p.HandleRoomMessage(ctx, named[0], message)
+}
+
+// askWhichTicket asks a sender which ticket a command means, naming each open change the way chat reads it.
+func (p *Processor) askWhichTicket(ctx context.Context, candidates []ports.RoomBinding, message ports.Message) error {
+	keys := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		keys = append(keys, c.ChangeID.ChatLabel())
+	}
+	ask := "Which ticket is that about? Put its key in the message, for example: heimdall uphold " + string(candidates[0].ChangeID) +
+		" F1. Open tickets here: " + strings.Join(keys, ", ") + "."
+	first := candidates[0]
+	return p.replies.Reply(ctx, Target{Room: first, ChangeID: first.ChangeID}, commands.SourceChat, string(message.ID), ask)
+}
+
+// handleSharedQuestion answers a mention question, `heimdall status` or `heimdall help` in a standing channel. One open
+// change is the one meant; several get a short question with readable names; none gets a plain "nothing open".
+func (p *Processor) handleSharedQuestion(ctx context.Context, room change.RoomID, candidates []ports.RoomBinding, message ports.Message) error {
+	if p.questioner == nil {
+		return nil
+	}
+	text := strings.TrimSpace(message.Text)
+	question, asked := extractMentionQuestion(text)
+	word := readOnlyRequest(text)
+	if !asked && word == "" {
+		return nil
+	}
+	first := ports.RoomBinding{RoomID: room}
+	if len(candidates) > 0 {
+		first = candidates[0]
+	}
+	in := Input{
+		Command:   commands.Input{Text: text, Source: commands.SourceChat, Sender: string(message.Sender)},
+		Target:    Target{Room: first, ChangeID: first.ChangeID},
+		SourceRef: string(message.ID),
+	}
+	person, ok, err := p.questionPerson(ctx, in)
+	if err != nil || !ok {
+		return err
+	}
+	if word == readOnlyHelp {
+		return p.replies.Reply(ctx, in.Target, commands.SourceChat, in.SourceRef, commands.Grammar(commands.SourceChat))
+	}
+	return p.answerShared(ctx, in, person, word, question, candidates)
+}
+
+// askedText is what a standing-room question asks about: the status, or the words after the mention.
+func askedText(word, question string) string {
+	if word == readOnlyStatus {
+		return readOnlyStatus
+	}
+	return question
+}
+
+// answerShared picks the change a standing-room question is about: one it names, the only one open, or a question back
+// with readable names. A channel with no open change gets a plain "nothing open".
+func (p *Processor) answerShared(ctx context.Context, in Input, person, word, question string, candidates []ports.RoomBinding) error {
+	for _, c := range candidates {
+		if namesKey(in.Command.Text, c.ChangeID) {
+			return p.answerQuestion(ctx, aboutChange(in, c), person, askedText(word, question))
+		}
+	}
+	switch len(candidates) {
+	case 0:
+		return p.replies.Reply(ctx, in.Target, commands.SourceChat, in.SourceRef,
+			"There are no open pull requests or tickets here right now.")
+	case 1:
+		return p.answerQuestion(ctx, aboutChange(in, candidates[0]), person, askedText(word, question))
+	}
+	labels := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		labels = append(labels, c.ChangeID.ChatLabel())
+	}
+	return p.replies.Reply(ctx, in.Target, commands.SourceChat, in.SourceRef,
+		"Which one do you mean? Open changes here: "+strings.Join(labels, ", ")+".")
+}
+
+// aboutChange points a question at one change of a standing room.
+func aboutChange(in Input, c ports.RoomBinding) Input {
+	return Input{Command: in.Command, Target: Target{Room: c, ChangeID: c.ChangeID}, SourceRef: in.SourceRef}
 }
 
 // keyPattern matches a ticket key as a word, in any letter case.

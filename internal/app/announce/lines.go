@@ -11,6 +11,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
 
@@ -76,8 +77,9 @@ type (
 
 const (
 	maxReasonChars = 160
-	// maxProgressChars bounds an agent's progress line.
-	maxProgressChars = 300
+	// maxProgressChars bounds an agent's progress line. Switch posts text verbatim, so a long agent message would
+	// flood a team room; one short line is enough to follow the work.
+	maxProgressChars = 160
 )
 
 // narrator turns one event into its line.
@@ -109,12 +111,37 @@ func narrators() map[change.EventType]narrator {
 }
 
 // Narrate returns the line for ev, or false when ev needs none. history holds the events of the change before ev.
+// The text is chat text, not Markdown: Switch posts it verbatim, and every platform shows raw markers as typed.
 func Narrate(history []change.Event, ev change.Event) (Line, bool) {
 	write, ok := narrators()[ev.Type]
 	if !ok {
 		return Line{}, false
 	}
-	return write(history, ev, string(ev.ChangeID))
+	line, ok := write(history, ev, changeLabel(string(ev.ChangeID)))
+	if !ok {
+		return Line{}, false
+	}
+	line.Text = plainChat(line.Text)
+	return line, true
+}
+
+// changeLabel names a change the way chat reads it: a ticket key stays as it is, and a pull request stream reads
+// "owner/repo #N" instead of the raw pr-... id it is stored under.
+func changeLabel(k string) string {
+	cid, err := id.ParseChangeID(k)
+	if err != nil {
+		return k
+	}
+	return cid.ChatLabel()
+}
+
+// plainChat drops the Markdown a chat post would show as literal characters, and the quote marker of a reply, which
+// Telegram and Mattermost do not render at the start of a line.
+func plainChat(text string) string {
+	text = strings.ReplaceAll(text, "**", "")
+	text = strings.ReplaceAll(text, "`", "")
+	text = strings.ReplaceAll(text, "\n> ", "\n")
+	return strings.TrimPrefix(text, "> ")
 }
 
 // narrateProgress shows what an agent says it is doing, so people can follow the work without opening its room.
@@ -127,10 +154,8 @@ func narrateProgress(_ []change.Event, ev change.Event, k string) (Line, bool) {
 		return Line{}, false
 	}
 	// The agent starts its own messages with the ticket key; the line already names it.
-	text := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(p.Text), k+":"))
-	if len(text) > maxProgressChars {
-		text = text[:maxProgressChars] + "..."
-	}
+	text := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(p.Text), string(ev.ChangeID)+":"))
+	text = firstSentence(text, maxProgressChars)
 	who := friendlyRole(p.Role)
 	if workflow.Role(p.Role) == workflow.RoleTestAuthor {
 		return tests("🛠 %s: %s says: %s", k, who, text), true
@@ -220,21 +245,25 @@ func narratePROpened(_ []change.Event, ev change.Event, k string) (Line, bool) {
 		return Line{}, false
 	}
 	if p.Repo != "" {
-		return review("📬 **Pull request opened · %s**\nPull request #%d is open.\n**Next:** Heimdall runs the acceptance tests on it, then 3 independent AI reviewers read the code.\n🔗 https://github.com/%s/pull/%d", k, p.Number, p.Repo, p.Number), true
+		return review("📬 Pull request opened · %s\nPull request #%d is open.\nNext: Heimdall runs the acceptance tests on it, then 3 independent AI reviewers read the code.\n🔗 https://github.com/%s/pull/%d", k, p.Number, p.Repo, p.Number), true
 	}
 	return review("📬 %s: pull request #%d is open. Heimdall runs the acceptance tests, then the code reviewers start.", k, p.Number), true
 }
 
-func narrateCI(_ []change.Event, ev change.Event, k string) (Line, bool) {
+func narrateCI(history []change.Event, ev change.Event, k string) (Line, bool) {
 	var p ciReported
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
+	link := ""
+	if l := prLink(history); l != "" {
+		link = "\n🔗 " + l
+	}
 	if p.Conclusion == "success" {
-		return review("✅ **Acceptance tests passed · %s**\nEvery Heimdall test passes on commit `%s`. Passing tests are not enough to merge: the reviewers come next.", k, short(p.SHA)), true
+		return review("✅ Acceptance tests passed · %s\nEvery Heimdall test passes on commit %s. Passing tests are not enough to merge: the reviewers come next.%s", k, short(p.SHA), link), true
 	}
 	if p.Conclusion == "failure" {
-		return review("❌ %s: CI failed on %s (check: %s).", k, short(p.SHA), p.Check), true
+		return review("❌ %s: the check %s failed on commit %s. Heimdall will show the failing output on the pull request.%s", k, p.Check, short(p.SHA), link), true
 	}
 	return Line{}, false
 }
@@ -248,7 +277,7 @@ func narratePicked(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	for _, person := range p.People {
 		names = append(names, friendly(person))
 	}
-	return review("🤖 **AI code review started · %s**\n%s will each read the change on their own, without seeing each other's work.", k, joinNames(names)), true
+	return review("🤖 AI code review started · %s\n%s will each read the change on their own, without seeing each other's work.", k, joinNames(names)), true
 }
 
 func narrateApproval(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -256,11 +285,11 @@ func narrateApproval(_ []change.Event, ev change.Event, k string) (Line, bool) {
 	if !decode(ev, &p) {
 		return Line{}, false
 	}
-	return review("✅ **Approved · %s**\n%s approved the pull request on GitHub.", k, p.Login), true
+	return review("✅ Approved · %s\n%s approved the pull request on GitHub.", k, p.Login), true
 }
 
 func narrateMerged(_ []change.Event, _ change.Event, k string) (Line, bool) {
-	return review("🎉 **Merged · %s**\nThe change is in. Tests, reviews and a human approval all passed first.", k), true
+	return review("🎉 Merged · %s\nHeimdall merged it. Tests, reviews and a human approval all passed first.", k), true
 }
 
 // narratePRMerged announces a merge done on GitHub, which arrives as a pr.closed that merged. A merge Heimdall made
@@ -280,7 +309,7 @@ func narratePRMerged(history []change.Event, ev change.Event, k string) (Line, b
 	// Say what is true (live KAN-24 day: a ticketless policy PR merged over a red gate was announced as a clean merge).
 	v, err := change.Fold(append(append([]change.Event{}, history...), ev))
 	if err != nil || v.PR == nil || v.PR.Gate == nil || !v.PR.Gate.OK || v.PR.Gate.SHA != v.PR.HeadSHA {
-		return review("⚠️ **Merged on GitHub without passing Heimdall's gate · %s**", k), true
+		return review("⚠️ Merged on GitHub without passing Heimdall's gate · %s", k), true
 	}
 	return narrateMerged(history, ev, k)
 }
@@ -294,9 +323,9 @@ func narrateReviewDone(history []change.Event, ev change.Event, k string) (Line,
 		return review("🔍 %s: %s finished and found no issues.", k, friendly(p.Reviewer)), true
 	}
 	if bullets := findingBullets(history, p.FindingRefs); len(bullets) > 0 {
-		text := fmt.Sprintf("🔍 **Code review result · %s**\n%s found **%s** in this pull request.\n%s", k, friendly(p.Reviewer), count(len(p.FindingRefs), "issue"), strings.Join(bullets, "\n"))
+		text := fmt.Sprintf("🔍 Code review result · %s\n%s found %s in this pull request.\n%s", k, friendly(p.Reviewer), count(len(p.FindingRefs), "issue"), strings.Join(bullets, "\n"))
 		if link := prLink(history); link != "" {
-			text += "\n\n🔗 **Full report on GitHub:** " + link
+			text += "\n\n🔗 Full report on GitHub: " + link
 		}
 		return Line{Audience: AudienceReview, Text: text}, true
 	}
@@ -327,9 +356,9 @@ func narrateFindingVerified(history []change.Event, ev change.Event, k string) (
 	}
 	title := ""
 	if f, ok := foldBoard(history).byRef[p.Ref]; ok && f.Claim != "" {
-		title = "\n> " + findingTitle(f)
+		title = "\n" + findingTitle(f)
 	}
-	return review("🔬 **Bug confirmed · %s · Finding %s**\nHeimdall ran the reviewer's test itself in the sandbox, and it fails on this commit. The bug is real.%s", k, p.Ref, title), true
+	return review("🔬 Bug confirmed · %s · Finding %s\nHeimdall ran the reviewer's test itself in the sandbox, and it fails on this commit. The bug is real.%s", k, p.Ref, title), true
 }
 
 func narrateFindingState(_ []change.Event, ev change.Event, k string) (Line, bool) {
@@ -360,7 +389,7 @@ func narrateGate(history []change.Event, ev change.Event, k string) (Line, bool)
 	waiting, blocked := gateItems(p.Reasons)
 	var b strings.Builder
 	if len(blocked) > 0 {
-		fmt.Fprintf(&b, "⛔ **Merge blocked · %s**\nThis pull request cannot merge until these are fixed:", k)
+		fmt.Fprintf(&b, "⛔ Merge blocked · %s\nThis pull request cannot merge until these are fixed:", k)
 		for _, item := range blocked {
 			fmt.Fprintf(&b, "\n• %s", item)
 		}
@@ -368,7 +397,7 @@ func narrateGate(history []change.Event, ev change.Event, k string) (Line, bool)
 			fmt.Fprintf(&b, "\n⏳ Also waiting for: %s.", strings.Join(waiting, ", "))
 		}
 	} else {
-		fmt.Fprintf(&b, "⏳ **Not ready to merge · %s**\nWaiting for: %s.", k, strings.Join(waiting, ", "))
+		fmt.Fprintf(&b, "⏳ Not ready to merge · %s\nWaiting for: %s.", k, strings.Join(waiting, ", "))
 	}
 	return Line{Audience: AudienceReview, Text: b.String()}, true
 }
@@ -376,7 +405,7 @@ func narrateGate(history []change.Event, ev change.Event, k string) (Line, bool)
 // mergeReport is the chat form of the merge report: a verdict line, then one short line per thing that passed.
 func mergeReport(history []change.Event, k string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "✅ **Ready to merge · %s**\nEvery merge rule passes.", k)
+	fmt.Fprintf(&b, "✅ Ready to merge · %s\nEvery merge rule passes.", k)
 	if criteria := criteriaPhrase(history); criteria != "" && has(history, change.EventTestsVerified) {
 		fmt.Fprintf(&b, "\n• Tests: written before the code, verified red first, cover its %s", criteria)
 	}
@@ -528,6 +557,22 @@ func sentence(s string) string {
 		return s
 	}
 	return s + "."
+}
+
+// firstSentence keeps an agent's progress readable in a team room: the first sentence, then the first limit bytes with
+// an ellipsis. A message that is already short is not touched.
+func firstSentence(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	if i := strings.Index(text, ". "); i > 0 && i+1 <= limit {
+		return text[:i+1]
+	}
+	cut := text[:limit]
+	if i := strings.LastIndexByte(cut, ' '); i > 0 {
+		cut = cut[:i]
+	}
+	return strings.TrimRight(cut, " ,;:") + "..."
 }
 
 func firstWord(s string) string {

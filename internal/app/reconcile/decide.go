@@ -99,14 +99,15 @@ func sortedUniqueActors(actors []change.ActorID) []string {
 }
 
 func formatAsk(cid id.ChangeID, who []string, what string) string {
+	label := cid.ChatLabel()
 	if len(who) == 0 {
-		return fmt.Sprintf("🔔 %s: %s", cid, what)
+		return fmt.Sprintf("🔔 %s: %s", label, what)
 	}
 	mentions := make([]string, len(who))
 	for i, w := range who {
 		mentions[i] = "@" + w
 	}
-	return fmt.Sprintf("🔔 %s · %s: %s", cid, strings.Join(mentions, " "), what)
+	return fmt.Sprintf("🔔 %s · %s: %s", label, strings.Join(mentions, " "), what)
 }
 
 // apply appends the facts with the jobs attached to the last one, or only attaches the jobs when there is no fact.
