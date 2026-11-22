@@ -64,6 +64,9 @@ type Config struct {
 	Proposals  Proposals
 	Clock      ports.Clock
 	Questioner Questioner
+	// Links, when set, answers a chat sender Heimdall does not know with a one-time code and redeems the code when
+	// a GitHub login comments it (D194). It needs Clock.
+	Links ports.ChatLinks
 }
 
 // Processor parses, authorizes, dispatches and replies to one Switch message or GitHub issue comment.
@@ -74,6 +77,7 @@ type Processor struct {
 	proposals  Proposals
 	clock      ports.Clock
 	questioner Questioner
+	links      ports.ChatLinks
 }
 
 // New validates collaborators and builds the command processor.
@@ -91,10 +95,11 @@ func New(cfg Config) (*Processor, error) {
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("collaboration commands: missing %v", missing)
 	}
-	if (cfg.Proposals == nil) != (cfg.Clock == nil) {
-		return nil, errors.New("collaboration commands: Proposals and Clock come together")
+	if (cfg.Proposals != nil || cfg.Links != nil) != (cfg.Clock != nil) {
+		return nil, errors.New("collaboration commands: Clock comes with Proposals or Links, and only with them")
 	}
-	return &Processor{identity: cfg.Identity, executor: cfg.Executor, replies: cfg.Replies, proposals: cfg.Proposals, clock: cfg.Clock, questioner: cfg.Questioner}, nil
+	return &Processor{identity: cfg.Identity, executor: cfg.Executor, replies: cfg.Replies, proposals: cfg.Proposals, clock: cfg.Clock,
+		questioner: cfg.Questioner, links: cfg.Links}, nil
 }
 
 // Handle processes one incoming message. Non-command text, edited GitHub comments, bots, and mapped agents never
@@ -110,23 +115,35 @@ func (p *Processor) Handle(ctx context.Context, in Input) error {
 	// Most room traffic is agent and human chatter. Decide that from the text alone, before any identity read,
 	// so plain chat never spends a GitHub policy lookup.
 	if !commands.IsCommand(in.Command) {
-		if in.Command.Source == commands.SourceChat && p.questioner != nil {
-			if q, ok := extractMentionQuestion(in.Command.Text); ok {
-				return p.handleMention(ctx, in, q)
-			}
-		}
-		return nil
+		return p.handleChatter(ctx, in)
+	}
+	if code, ok := commands.LinkCode(in.Command); ok && p.links != nil {
+		return p.handleLink(ctx, in, code)
 	}
 	src := in.Command.Source
 	return p.handleHuman(ctx, in, src)
 }
 
+// handleChatter takes text that is not a command: only a chat mention of the coordinator gets an answer.
+func (p *Processor) handleChatter(ctx context.Context, in Input) error {
+	if in.Command.Source != commands.SourceChat || p.questioner == nil {
+		return nil
+	}
+	if q, ok := extractMentionQuestion(in.Command.Text); ok {
+		return p.handleMention(ctx, in, q)
+	}
+	return nil
+}
+
 // handleMention answers a message that names the coordinator, whether it asks a question, asks for status or asks for
 // the command help. The sender must be a mapped person, never an agent (T1).
 func (p *Processor) handleMention(ctx context.Context, in Input, text string) error {
-	person, ok, err := p.questionPerson(ctx, in)
-	if err != nil || !ok {
+	person, known, err := p.questionPerson(ctx, in)
+	if err != nil {
 		return err
+	}
+	if person == "" {
+		return p.unknownSender(ctx, in, known)
 	}
 	if word := readOnlyRequest(text); word != "" {
 		return p.replyReadOnly(ctx, in, person, word)
@@ -134,14 +151,16 @@ func (p *Processor) handleMention(ctx context.Context, in Input, text string) er
 	return p.answerQuestion(ctx, in, person, text)
 }
 
-// questionPerson resolves the sender of a question: an agent, or a sender with no person, gets no answer.
+// questionPerson resolves the sender of a question. It returns the person's name, or "" for an agent or a sender with
+// no person; the second result is true for an agent, which is known and never answered. Unmapped senders never get an
+// answer (T1); with Links they get a way to link instead (D194).
 func (p *Processor) questionPerson(ctx context.Context, in Input) (string, bool, error) {
 	isAgent, err := p.identity.IsAgent(ctx, in.Target, in.Command.Source, in.Command.Sender)
 	if err != nil {
 		return "", false, fmt.Errorf("resolve question sender kind: %w", err)
 	}
 	if isAgent {
-		return "", false, nil
+		return "", true, nil
 	}
 	people, err := p.identity.People(ctx, in.Target)
 	if err != nil {
@@ -149,9 +168,18 @@ func (p *Processor) questionPerson(ctx context.Context, in Input) (string, bool,
 	}
 	person, ok := people.Lookup(in.Command.Source, in.Command.Sender)
 	if !ok || person == "" {
-		return "", false, nil // unmapped senders never trigger @heimdall answers (T1)
+		return "", false, nil
 	}
-	return person, true, nil
+	return person, false, nil
+}
+
+// unknownSender handles a sender with no person: an agent gets nothing; a chat sender is asked to link when Links is
+// set; anything else gets nothing, as before.
+func (p *Processor) unknownSender(ctx context.Context, in Input, agent bool) error {
+	if agent || p.links == nil || in.Command.Source != commands.SourceChat {
+		return nil
+	}
+	return p.askToLink(ctx, in)
 }
 
 func (p *Processor) answerQuestion(ctx context.Context, in Input, person, question string) error {
@@ -261,7 +289,12 @@ func (p *Processor) dispatch(ctx context.Context, in Input, src commands.Source,
 	switch parsed.Kind {
 	case commands.KindNotCommand:
 		return nil
-	case commands.KindUnmapped, commands.KindUnknown, commands.KindBadArgs:
+	case commands.KindUnmapped:
+		if src == commands.SourceChat && p.links != nil {
+			return p.askToLink(ctx, in)
+		}
+		return p.replies.Reply(ctx, in.Target, src, in.SourceRef, parsed.Reply)
+	case commands.KindUnknown, commands.KindBadArgs:
 		return p.replies.Reply(ctx, in.Target, src, in.SourceRef, parsed.Reply)
 	case commands.KindCommand:
 	default:
@@ -366,9 +399,12 @@ func (p *Processor) handleSharedQuestion(ctx context.Context, room change.RoomID
 		Target:    Target{Room: first, ChangeID: first.ChangeID},
 		SourceRef: string(message.ID),
 	}
-	person, ok, err := p.questionPerson(ctx, in)
-	if err != nil || !ok {
+	person, known, err := p.questionPerson(ctx, in)
+	if err != nil {
 		return err
+	}
+	if person == "" {
+		return p.unknownSender(ctx, in, known)
 	}
 	if word == readOnlyHelp {
 		return p.replies.Reply(ctx, in.Target, commands.SourceChat, in.SourceRef, commands.Grammar(commands.SourceChat))

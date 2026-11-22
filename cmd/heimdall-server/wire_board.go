@@ -37,7 +37,7 @@ func assembleNarrator(d deps, ad adapters, store *postgres.Store) (*announce.Nar
 }
 
 func assembleCollaboration(store *postgres.Store, ad adapters, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, refreshEvery time.Duration, intakeCase *intake.Intake, profiles mcp.Profiles) (roomStreamRunner, commentPoller, *commandRuntime, error) {
-	runtime, err := newCommandRuntime(store, ad, eng, gen, clk, prIntake{in: intakeCase}, profiles)
+	runtime, err := newCommandRuntime(store, ad, eng, gen, clk, prIntake{in: intakeCase}, profiles, store)
 	if err != nil {
 		return nil, nil, nil, err
 	}

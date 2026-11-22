@@ -46,12 +46,14 @@ type commandRuntime struct {
 	processor *collaboration.Processor
 	// dead reads a change's jobs that will not run again, so `resume` can release their row; nil reads none.
 	dead ports.DeadEffects
+	// links are the chat accounts proven to belong to a GitHub login (D194); nil links none.
+	links ports.ChatLinks
 }
 
-func newCommandRuntime(events ports.EventStore, ad adapters, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, in prIntakeHandler, profiles mcp.Profiles) (*commandRuntime, error) {
+func newCommandRuntime(events ports.EventStore, ad adapters, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, in prIntakeHandler, profiles mcp.Profiles, links ports.ChatLinks) (*commandRuntime, error) {
 	r := &commandRuntime{events: events, code: ad.vcs, prs: ad.vcs, repos: ad.vcs, tickets: ad.tickets, projects: ad.projects,
-		chat: ad.chat, comments: ad.vcs, engine: eng, ids: gen, clock: clk, intake: in, profiles: profiles}
-	p, err := collaboration.New(collaboration.Config{Identity: r, Executor: r, Replies: r, Proposals: r, Clock: clk, Questioner: r})
+		chat: ad.chat, comments: ad.vcs, engine: eng, ids: gen, clock: clk, intake: in, profiles: profiles, links: links}
+	p, err := collaboration.New(collaboration.Config{Identity: r, Executor: r, Replies: r, Proposals: r, Clock: clk, Questioner: r, Links: links})
 	if err != nil {
 		return nil, fmt.Errorf("build command processor: %w", err)
 	}
@@ -121,6 +123,24 @@ func mappedHuman(d *people.Directory, source commands.Source, sender string, all
 	return identity.Name, nil
 }
 
+// applyChatLinks adds the chat accounts proven to belong to a person's GitHub login (D194). The policy stays the
+// authority on who people are and what they may do; a link only adds an account.
+func (r *commandRuntime) applyChatLinks(ctx context.Context, d *people.Directory) error {
+	if r.links == nil {
+		return nil
+	}
+	links, err := r.links.ChatLinks(ctx)
+	if err != nil {
+		return fmt.Errorf("read chat links: %w", err)
+	}
+	proven := make([]people.ChatLink, 0, len(links))
+	for _, l := range links {
+		proven = append(proven, people.ChatLink{Sender: string(l.Sender), GitHub: l.GitHub})
+	}
+	d.Link(proven)
+	return nil
+}
+
 type commandPeople struct{ directory *people.Directory }
 
 func (p commandPeople) Lookup(source commands.Source, sender string) (string, bool) {
@@ -160,6 +180,9 @@ func (r *commandRuntime) directory(ctx context.Context, target collaboration.Tar
 	}
 	d, err := people.New(pol)
 	if err != nil {
+		return nil, commandState{}, err
+	}
+	if err := r.applyChatLinks(ctx, d); err != nil {
 		return nil, commandState{}, err
 	}
 	groups := domainGroups(pol, files)

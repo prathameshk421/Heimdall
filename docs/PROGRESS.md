@@ -1,5 +1,23 @@
 # Heimdall progress
 
+## Chat account linking through GitHub, D194 (Nov 22, 2026, branch `heimdall-build`)
+
+Live: `heimdall help` and `heimdall status KAN-24` from Telegram `prathamesh421` got silence, because that account is not
+in `people:` on `heimdall-test/demo-base` (only `adumbstudent` is). Owner's call: GitHub-verified self-linking (D194).
+
+**Built:** `internal/domain/commands/link.go` (`LinkCode` reads `heimdall link <code>`), `internal/app/people/links.go`
+(`Directory.Link`), `internal/ports/chatlinks.go`, `internal/adapters/postgres/chatlinks.go` and migration
+`0014_chat_link.sql`, `internal/app/collaboration/link.go` (code in chat, redeem on GitHub, confirmation in both places),
+wiring in `cmd/heimdall-server/command_consumer.go` (links applied on every directory load) and `wire_board.go`.
+**Evidence:** `make fast` exit 0 (5825 tests, lint 0 issues). New tests: `link_test.go` in `domain/commands`,
+`app/people` and `app/collaboration` (unknown sender in a change room and a standing room gets a code, same code twice,
+agents never asked, GitHub redeem links and confirms in both places, a login outside the policy is told what is missing,
+unknown or used code refused, a code in chat points to GitHub). `chatlinks_test.go` (component, real Postgres): built
+for linux and run on `heimdall-vm`'s Docker with `TestMigrate*`, PASS (local Docker `meta.db` is read-only).
+**Not verified:** a live round trip (Telegram code, GitHub comment, Telegram confirmation); not deployed to the VM yet.
+**Next (owner's request, not built):** `heimdall connect people` should list the Switch users by display name and let
+the owner pick, instead of pasting sender ids; `--list` still says "not built". An `unlink` for a policy owner.
+
 ## Switch truncated read pages back (Nov 22, 2026, branch `heimdall-build`)
 
 Live, after the 13:44 UTC restart: `Switch room stream stopped ... switch history truncated` every minute, so Heimdall read

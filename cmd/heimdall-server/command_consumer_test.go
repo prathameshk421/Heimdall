@@ -90,7 +90,7 @@ func setupCommandRuntime(t *testing.T, cid id.ChangeID, tickets ports.TicketRead
 		tickets = commandTestTickets{}
 	}
 	ad := adapters{tickets: tickets, vcs: vcs, chat: chat, projects: projectRepos{"KAN": "aarush323/PBL_TOS_RISK_ANALYZER"}}
-	runtime, err := newCommandRuntime(store, ad, eng, gen, clock.System{}, nil, nil)
+	runtime, err := newCommandRuntime(store, ad, eng, gen, clock.System{}, nil, nil, nil)
 	require.NoError(t, err)
 	runtime.comments = comments
 	return runtime, store, chat, comments
