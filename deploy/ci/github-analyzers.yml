@@ -1,0 +1,56 @@
+# Drop-in GitHub Actions workflow that runs OSS security analyzers (gosec, Semgrep, Trivy)
+# and uploads SARIF to GitHub Code Scanning so Heimdall's `analyzers` fast-check clause
+# evaluates real findings on every PR head.
+#
+# Copy to `.github/workflows/heimdall-analyzers.yml` and pin action SHAs to your org's policy.
+name: Security analyzers (SARIF for Heimdall)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: heimdall-analyzers-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gosec:
+    name: gosec (Go security)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run gosec
+        run: |
+          go run github.com/securego/gosec/v2/cmd/gosec@v2.22.2 \
+            -no-fail -fmt sarif -out gosec.sarif ./...
+      - name: Upload gosec SARIF
+        uses: github/code-scanning-actions/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+  trivy:
+    name: Trivy (dependencies and misconfig)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          scan-type: fs
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+      - name: Upload Trivy SARIF
+        uses: github/code-scanning-actions/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
