@@ -18,6 +18,7 @@ const selfCheckScript = `while IFS= read -r l; do
 done < /proc/self/status
 while IFS= read -r l; do printf 'netdev %s\n' "$l"; done < /proc/net/dev
 for p in "$@"; do if [ -e "$p" ] || [ -L "$p" ]; then printf 'visible %s\n' "$p"; fi; done
+if ( : > .heimdall-selfcheck ) 2>/dev/null; then printf 'workdir ok\n'; else printf 'workdir unwritable\n'; fi
 printf 'end\n'`
 
 // hiddenPaths are host paths that no sandbox service may see: the host's systemd and D-Bus sockets under /run, the
@@ -49,13 +50,14 @@ func statusField(k string) bool {
 
 // selfReport is the parsed output of selfCheckScript.
 type selfReport struct {
-	fields map[string]string
-	ifaces []string
+	fields    map[string]string
+	ifaces    []string
+	workDirOK bool
 }
 
 // checkSelfReport checks the output of selfCheckScript in a service of phase that runs as uid. Any doubt is a
 // *CannotIsolateError: a missing, repeated or unknown line, a cut output, a capability, no seccomp, a host path that
-// is visible, or (execution phase) any interface but loopback.
+// is visible, an unwritable work directory, or (execution phase) any interface but loopback.
 func checkSelfReport(phase Phase, uid int, out string) error {
 	if phase != PhaseExec && phase != PhaseFetch {
 		return refuse(phase, "unknown phase")
@@ -66,6 +68,9 @@ func checkSelfReport(phase Phase, uid int, out string) error {
 	}
 	if err := checkStatus(phase, uid, rep.fields); err != nil {
 		return err
+	}
+	if !rep.workDirOK {
+		return refuse(phase, "work directory is not writable inside the sandbox")
 	}
 	if phase != PhaseExec {
 		return nil
@@ -91,30 +96,41 @@ func parseSelfReport(phase Phase, out string) (selfReport, error) {
 		if ended {
 			return rep, refuse(phase, fmt.Sprintf("output after end: %q", line))
 		}
-		switch {
-		case line == "end":
-			ended = true
-		case strings.HasPrefix(line, "visible "):
-			return rep, refuse(phase, "host path visible inside: "+strings.TrimPrefix(line, "visible "))
-		case strings.HasPrefix(line, "netdev "):
-			if name, ok := ifaceName(strings.TrimPrefix(line, "netdev ")); ok {
-				rep.ifaces = append(rep.ifaces, name)
-			}
-		default:
-			k, v, ok := strings.Cut(line, ":")
-			if !ok || !statusField(k) {
-				return rep, refuse(phase, fmt.Sprintf("unexpected line %q", line))
-			}
-			if _, dup := rep.fields[k]; dup {
-				return rep, refuse(phase, "repeated field "+k)
-			}
-			rep.fields[k] = strings.TrimSpace(v)
+		if err := parseSelfLine(phase, line, &rep, &ended); err != nil {
+			return rep, err
 		}
 	}
 	if !ended {
 		return rep, refuse(phase, "the self check output has no end line")
 	}
 	return rep, nil
+}
+
+func parseSelfLine(phase Phase, line string, rep *selfReport, ended *bool) error {
+	switch {
+	case line == "end":
+		*ended = true
+	case line == "workdir ok":
+		rep.workDirOK = true
+	case line == "workdir unwritable":
+		return refuse(phase, "work directory is not writable inside the sandbox")
+	case strings.HasPrefix(line, "visible "):
+		return refuse(phase, "host path visible inside: "+strings.TrimPrefix(line, "visible "))
+	case strings.HasPrefix(line, "netdev "):
+		if name, ok := ifaceName(strings.TrimPrefix(line, "netdev ")); ok {
+			rep.ifaces = append(rep.ifaces, name)
+		}
+	default:
+		k, v, ok := strings.Cut(line, ":")
+		if !ok || !statusField(k) {
+			return refuse(phase, fmt.Sprintf("unexpected line %q", line))
+		}
+		if _, dup := rep.fields[k]; dup {
+			return refuse(phase, "repeated field "+k)
+		}
+		rep.fields[k] = strings.TrimSpace(v)
+	}
+	return nil
 }
 
 func checkStatus(phase Phase, uid int, fields map[string]string) error {

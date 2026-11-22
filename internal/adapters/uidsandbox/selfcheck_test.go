@@ -27,6 +27,7 @@ func goodReport(phase Phase) string {
 	if phase == PhaseFetch {
 		b.WriteString("netdev   eth0: 123456    789    0    0    0     0          0         0    98765     432\n")
 	}
+	b.WriteString("workdir ok\n")
 	b.WriteString("end\n")
 	return b.String()
 }
@@ -70,6 +71,8 @@ func TestSelfReportRefused(t *testing.T) {
 		"a field is repeated":  {PhaseExec, replace(PhaseExec, "end\n", "NoNewPrivs:\t0\nend\n"), "NoNewPrivs"},
 		"the script was cut":   {PhaseExec, strings.TrimSuffix(goodReport(PhaseExec), "end\n"), "end"},
 		"an unknown line":      {PhaseExec, replace(PhaseExec, "end\n", "hello\nend\n"), "hello"},
+		"workdir unwritable":   {PhaseExec, replace(PhaseExec, "workdir ok\n", "workdir unwritable\n"), "not writable"},
+		"workdir line missing": {PhaseExec, strings.Replace(goodReport(PhaseExec), "workdir ok\n", "", 1), "not writable"},
 		"empty output":         {PhaseFetch, "", "end"},
 		"wrong phase argument": {Phase(9), goodReport(PhaseExec), "phase"},
 	}
