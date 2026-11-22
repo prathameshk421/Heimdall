@@ -126,6 +126,22 @@ func (s *Store) Fail(ctx context.Context, key change.EffectKey, reason string) e
 // starts in the database's clock. The returned effects are in creation order. limit and lease must be positive; a
 // lease under one microsecond cannot be stored and is refused.
 func (s *Store) Claim(ctx context.Context, limit int, lease time.Duration) ([]change.Effect, error) {
+	return s.claim(ctx, nil, limit, lease)
+}
+
+// ClaimKinds implements ports.KindClaimer: it claims only effects whose kind is in kinds, preserving oldest-first order (O2).
+func (s *Store) ClaimKinds(ctx context.Context, kinds []change.EffectKind, limit int, lease time.Duration) ([]change.Effect, error) {
+	if len(kinds) == 0 {
+		return nil, nil
+	}
+	names := make([]string, len(kinds))
+	for i, k := range kinds {
+		names[i] = string(k)
+	}
+	return s.claim(ctx, names, limit, lease)
+}
+
+func (s *Store) claim(ctx context.Context, kinds []string, limit int, lease time.Duration) ([]change.Effect, error) {
 	if limit < 1 {
 		return nil, fmt.Errorf("claim effects: limit %d must be 1 or more", limit)
 	}
@@ -133,14 +149,7 @@ func (s *Store) Claim(ctx context.Context, limit int, lease time.Duration) ([]ch
 	if micros < 1 {
 		return nil, fmt.Errorf("claim effects: lease %s must be at least one microsecond", lease)
 	}
-	rows, err := s.pool.Query(ctx, `UPDATE outbox SET claimed_until = now() + $3::bigint * interval '1 microsecond'
-		WHERE id IN (
-		  SELECT id FROM outbox
-		  WHERE done_at IS NULL AND attempts < $1 AND started_at IS NULL AND (claimed_until IS NULL OR claimed_until <= now())
-		  ORDER BY created_at, id
-		  LIMIT $2
-		  FOR UPDATE SKIP LOCKED)
-		RETURNING id, created_at, effect_key, kind, target, payload`, maxAttempts, limit, micros)
+	rows, err := s.queryClaim(ctx, kinds, limit, micros)
 	if err != nil {
 		return nil, fmt.Errorf("claim effects: %w", err)
 	}
@@ -176,6 +185,28 @@ func (s *Store) Claim(ctx context.Context, limit int, lease time.Duration) ([]ch
 		out = append(out, c.effect)
 	}
 	return out, nil
+}
+
+func (s *Store) queryClaim(ctx context.Context, kinds []string, limit int, micros int64) (pgx.Rows, error) {
+	if len(kinds) == 0 {
+		return s.pool.Query(ctx, `UPDATE outbox SET claimed_until = now() + $3::bigint * interval '1 microsecond'
+		WHERE id IN (
+		  SELECT id FROM outbox
+		  WHERE done_at IS NULL AND attempts < $1 AND started_at IS NULL AND (claimed_until IS NULL OR claimed_until <= now())
+		  ORDER BY created_at, id
+		  LIMIT $2
+		  FOR UPDATE SKIP LOCKED)
+		RETURNING id, created_at, effect_key, kind, target, payload`, maxAttempts, limit, micros)
+	}
+	return s.pool.Query(ctx, `UPDATE outbox SET claimed_until = now() + $3::bigint * interval '1 microsecond'
+		WHERE id IN (
+		  SELECT id FROM outbox
+		  WHERE done_at IS NULL AND attempts < $1 AND started_at IS NULL AND (claimed_until IS NULL OR claimed_until <= now())
+		    AND kind = ANY($4)
+		  ORDER BY created_at, id
+		  LIMIT $2
+		  FOR UPDATE SKIP LOCKED)
+		RETURNING id, created_at, effect_key, kind, target, payload`, maxAttempts, limit, micros, kinds)
 }
 
 // ClaimEffect claims only key, preserving River's stable job identity across retries.

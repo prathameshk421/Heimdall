@@ -45,8 +45,10 @@ const (
 	knowledgeRetentionInterval = 30 * time.Minute
 	// outboxBatch is how many effects one drain claims at once.
 	outboxBatch = 1
-	// drainWorkers is how many effects can run at once.
+	// drainWorkers is how many quick effects (wakes, posts, checks, tracker writes) can run at once (O2).
 	drainWorkers = 3
+	// slowDrainWorkers is how many sandbox effects can run at once in their own lane without blocking quick effects (O2).
+	slowDrainWorkers = 3
 	// effectTimeout bounds one executor call. The lease must exceed outboxBatch times this (outbox.New).
 	effectTimeout = 20 * time.Second
 	// testQualityTimeout bounds a test_quality effect: two sandbox jobs of up to 3 minutes each, plus the runner's
@@ -176,6 +178,7 @@ type app struct {
 	pool              *pgxpool.Pool
 	pollers           []poller
 	drainer           drainer
+	slowDrainer       drainer
 	syncer            syncer
 	roomStream        roomStreamRunner
 	comments          commentPoller
@@ -556,7 +559,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	box, err := newDrainer(d, store, execs)
+	quickBox, slowBox, err := newDrainers(d, store, execs)
 	if err != nil {
 		return nil, err
 	}
@@ -591,7 +594,7 @@ func assembleWithBlobs(
 	}
 	return &app{
 		narrator: narrator,
-		pool:     pool, pollers: pollers, drainer: box, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpSrv.Handler(), agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
+		pool:     pool, pollers: pollers, drainer: quickBox, slowDrainer: slowBox, syncer: sync, roomStream: roomConsumer, comments: commentConsumer, mcpHandler: mcpSrv.Handler(), agentSetupHandler: setupHandler, cardsUpload: cardsUpload, commands: runtime, episodeWorker: episodeWorker, workflowMemory: workflowMemory, proposer: proposer, retention: files, blobs: closerOf(blobs),
 		logger: d.logger, clock: clk,
 		pollEvery: d.pollEvery, syncEvery: d.syncEvery, drainTick: d.drainTick,
 	}, nil
@@ -610,22 +613,61 @@ func assembleHumanEdges(d deps, ad adapters, store *postgres.Store) (http.Handle
 	return cardsUpload, narrator, nil
 }
 
-// newDrainer builds the outbox drainer over the executors, with the longer timeouts of the sandbox effects.
-func newDrainer(d deps, store *postgres.Store, execs map[change.EffectKind]outbox.Executor) (*outbox.Drainer, error) {
-	box, err := outbox.New(outbox.Config{
+// sandboxEffectKinds are the long-running sandbox effects that run in their own lane so they never block wakes,
+// status posts or GitHub checks (O2).
+func sandboxEffectKinds() []change.EffectKind {
+	return []change.EffectKind{
+		change.EffectTestQuality,
+		change.EffectAcceptance,
+		change.EffectVerifyEvidence,
+		change.EffectRunChecks,
+		change.EffectProfileTrial,
+	}
+}
+
+// quickEffectKinds are every registered effect kind that is not a long-running sandbox job (O2).
+func quickEffectKinds(execs map[change.EffectKind]outbox.Executor) []change.EffectKind {
+	slow := map[change.EffectKind]bool{}
+	for _, k := range sandboxEffectKinds() {
+		slow[k] = true
+	}
+	var out []change.EffectKind
+	for k := range execs {
+		if !slow[k] {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// newDrainers builds two outbox drainers over the same store: a quick lane (wakes, posts, checks, tracker writes)
+// and a sandbox lane (long-running container jobs), so slow effects never starve fast ones (O2).
+func newDrainers(d deps, store *postgres.Store, execs map[change.EffectKind]outbox.Executor) (quick, slow *outbox.Drainer, err error) {
+	timeouts := map[change.EffectKind]time.Duration{
+		change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout,
+		change.EffectVerifyEvidence: verifyEvidenceTimeout,
+		change.EffectRunChecks:      runChecksTimeout,
+		change.EffectProfileTrial:   testQualityTimeout, // a trial runs the profile's tests in the sandbox, like acceptance
+	}
+	quick, err = outbox.New(outbox.Config{
 		Outbox: store, Executors: execs, Logger: d.logger,
 		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
-		KindTimeouts: map[change.EffectKind]time.Duration{
-			change.EffectTestQuality: testQualityTimeout, change.EffectAcceptance: testQualityTimeout,
-			change.EffectVerifyEvidence: verifyEvidenceTimeout,
-			change.EffectRunChecks:      runChecksTimeout,
-			change.EffectProfileTrial:   testQualityTimeout, // a trial runs the profile's tests in the sandbox, like acceptance
-		},
+		KindTimeouts: timeouts,
+		Kinds:        quickEffectKinds(execs),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build outbox drainer: %w", err)
+		return nil, nil, fmt.Errorf("build quick outbox drainer: %w", err)
 	}
-	return box, nil
+	slow, err = outbox.New(outbox.Config{
+		Outbox: store, Executors: execs, Logger: d.logger,
+		Batch: outboxBatch, Lease: outboxLease, EffectTimeout: effectTimeout,
+		KindTimeouts: timeouts,
+		Kinds:        sandboxEffectKinds(),
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("build sandbox outbox drainer: %w", err)
+	}
+	return quick, slow, nil
 }
 
 // executors maps each effect kind to its executor. Each area builds its own (wire_<area>.go). Each executor checks the

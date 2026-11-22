@@ -31,11 +31,16 @@ type Config struct {
 	// KindTimeouts replaces EffectTimeout for the kinds it names, for effects that run longer than a remote call (a
 	// test_quality effect runs sandbox jobs of minutes). Each value must be positive.
 	KindTimeouts map[change.EffectKind]time.Duration
+	// Kinds, when non-empty, restricts this drainer to claiming only those effect kinds (O2 two-lane draining).
+	// Outbox must implement ports.KindClaimer when Kinds is set.
+	Kinds []change.EffectKind
 }
 
 // Drainer runs the outbox. Build it with New.
 type Drainer struct {
 	box     ports.Outbox
+	kindBox ports.KindClaimer
+	kinds   []change.EffectKind
 	execs   map[change.EffectKind]Executor
 	log     *slog.Logger
 	batch   int
@@ -63,11 +68,28 @@ func New(cfg Config) (*Drainer, error) {
 	execs, execProblems := checkExecutors(cfg.Executors)
 	problems = append(problems, execProblems...)
 	problems = append(problems, checkTiming(cfg)...)
+	var kindBox ports.KindClaimer
+	if len(cfg.Kinds) > 0 {
+		for _, k := range cfg.Kinds {
+			if !k.Valid() {
+				problems = append(problems, fmt.Errorf("lane kind %q: not an effect kind", k))
+			}
+		}
+		if cfg.Outbox != nil {
+			var ok bool
+			kindBox, ok = cfg.Outbox.(ports.KindClaimer)
+			if !ok {
+				problems = append(problems, errors.New("kinds lane requires an outbox that implements KindClaimer"))
+			}
+		}
+	}
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("outbox drainer: %w", errors.Join(problems...))
 	}
 	return &Drainer{
 		box:     cfg.Outbox,
+		kindBox: kindBox,
+		kinds:   slices.Clone(cfg.Kinds),
 		execs:   execs,
 		log:     cfg.Logger,
 		batch:   cfg.Batch,
@@ -142,8 +164,16 @@ func (d *Drainer) timeoutFor(kind change.EffectKind) time.Duration {
 // is failed with its reason. A failed Start, Done or Fail, or a cancelled context, ends the batch with an error; the
 // effects not yet reached keep their leases and are claimed again when those expire.
 func (d *Drainer) RunOnce(ctx context.Context) (DrainResult, error) {
-	var res DrainResult
-	effects, err := d.box.Claim(ctx, d.batch, d.lease)
+	var (
+		res     DrainResult
+		effects []change.Effect
+		err     error
+	)
+	if len(d.kinds) > 0 {
+		effects, err = d.kindBox.ClaimKinds(ctx, d.kinds, d.batch, d.lease)
+	} else {
+		effects, err = d.box.Claim(ctx, d.batch, d.lease)
+	}
 	if err != nil {
 		return res, fmt.Errorf("drain outbox: claim: %w", err)
 	}

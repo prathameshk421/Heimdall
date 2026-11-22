@@ -46,6 +46,12 @@ type Outbox interface {
 	Fail(ctx context.Context, key change.EffectKey, reason string) error
 }
 
+// KindClaimer is an optional extension of Outbox that claims only effects whose kind is in kinds (O2), so quick
+// effects (wakes, status posts, GitHub checks) never wait behind long-running sandbox jobs.
+type KindClaimer interface {
+	ClaimKinds(ctx context.Context, kinds []change.EffectKind, limit int, lease time.Duration) ([]change.Effect, error)
+}
+
 // ErrEffectLeased is returned when a keyed effect is held by another worker's live lease.
 var ErrEffectLeased = errors.New("effect has a live lease")
 

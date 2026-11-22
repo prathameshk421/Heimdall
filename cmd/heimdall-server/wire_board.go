@@ -54,6 +54,14 @@ func assembleCollaboration(store *postgres.Store, ad adapters, eng reconcile.Rec
 		Probe: func(ctx context.Context, room change.RoomID) error {
 			_, _, err := ad.chat.Read(ctx, room, "")
 			return err
+		},
+		OnDead: func(ctx context.Context, room ports.RoomBinding, msg ports.Message, cause error) {
+			slog.Default().ErrorContext(ctx, "chat message dead-lettered after repeated failures; advancing cursor so other rooms keep flowing",
+				"room", string(room.RoomID), "change", string(room.ChangeID), "message_id", string(msg.ID), "error", cause)
+			key, err := change.IdempotencyKey(room.ChangeID, 1, change.EffectRoomPost, "dead-msg:"+string(msg.ID))
+			if err == nil {
+				_ = ad.chat.Post(ctx, room.RoomID, key, "Not done: I could not process that message after repeated tries; an operator has been notified.")
+			}
 		}})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("build Switch room consumer: %w", err)
