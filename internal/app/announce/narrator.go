@@ -2,6 +2,8 @@ package announce
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -180,8 +182,9 @@ func (n *Narrator) announce(ctx context.Context, ev change.Event) (bool, error) 
 		return false, nil
 	}
 	line.Text = n.withTitle(ctx, ev, line.Text)
+	discriminator := postDiscriminator(ev, line.Text)
 	for _, room := range n.rooms(before, line.Audience) {
-		key, err := change.IdempotencyKey(ev.ChangeID, 1, change.EffectRoomPost, "announce:"+string(ev.ID)+":"+string(room))
+		key, err := change.IdempotencyKey(ev.ChangeID, 1, change.EffectRoomPost, discriminator+":"+string(room))
 		if err != nil {
 			return false, fmt.Errorf("announce: key for %s: %w", ev.ID, err)
 		}
@@ -190,6 +193,43 @@ func (n *Narrator) announce(ctx context.Context, ev change.Event) (bool, error) 
 		}
 	}
 	return true, nil
+}
+
+// postDiscriminator names a chat post for the room adapter's idempotency check, which drops a repeat of a key in a
+// room. A milestone that names a commit is keyed on that commit and on the line itself, so the same news repeated by
+// several checks on one head is one post, while a new head still speaks. Any other event is keyed on its own id,
+// because its line may legitimately repeat.
+func postDiscriminator(ev change.Event, text string) string {
+	if sha := eventSHA(ev); sha != "" {
+		return "announce:milestone:" + digest(sha+"\n"+text)
+	}
+	return "announce:" + string(ev.ID)
+}
+
+// eventSHA is the commit a milestone is about, or "" when the line is not tied to one.
+func eventSHA(ev change.Event) string {
+	// The events whose line names a commit. Others may repeat or carry a commit the line does not show.
+	commitMilestones := []change.EventType{
+		change.EventCIReported, change.EventGateEvaluated, change.EventTestsVerified,
+		change.EventTestsRejected, change.EventTestsCommitted, change.EventChangeMerged,
+	}
+	if !slices.Contains(commitMilestones, ev.Type) {
+		return ""
+	}
+	var p struct {
+		SHA string `json:"sha"`
+	}
+	if !decode(ev, &p) {
+		return ""
+	}
+	return p.SHA
+}
+
+// digest returns a short hash of s. The idempotency discriminator holds no space and at most 128 characters, and a
+// rendered line holds both.
+func digest(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:16])
 }
 
 // updateBoard rewrites the pull request comment when ev changes what it shows, and puts a new finding on its line.
