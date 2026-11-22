@@ -20,9 +20,6 @@ const (
 	retryAfterCap = time.Minute
 )
 
-// retrySteps are the waits before attempts 2 to 6: about 110 s in all.
-var retrySteps = [...]time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, 45 * time.Second}
-
 // Retry is how the loop waits before it sends a failed model call again. The zero value retries nothing. A rule that
 // retries needs both fields: Wait is the only way the loop pauses (never time.Sleep), and Random draws the jitter.
 type Retry struct {
@@ -61,9 +58,21 @@ func (rt Retry) delay(err error, attempt int) (time.Duration, bool) {
 	return step - spread + time.Duration(rt.Random.Int63n(int64(2*spread)+1)), true
 }
 
-// retryStep is the wait before the attempt after attempt; past the list it is the last step.
+// retryStep is the wait before the attempt after attempt: 5, 10, 20, 30 and 45 s before attempts 2 to 6, about 110 s
+// in all. Past the list it is the last step.
 func retryStep(attempt int) time.Duration {
-	return retrySteps[min(max(attempt, 1), len(retrySteps))-1]
+	switch {
+	case attempt <= 1:
+		return 5 * time.Second
+	case attempt == 2:
+		return 10 * time.Second
+	case attempt == 3:
+		return 20 * time.Second
+	case attempt == 4:
+		return 30 * time.Second
+	default:
+		return 45 * time.Second
+	}
 }
 
 // attemptOf is the record of one failed attempt: the kind, the status, the request size and the request hash of a
