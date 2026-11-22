@@ -68,10 +68,10 @@ func realSandbox(ctx context.Context, cfg uidsandbox.Config) (sandboxJobs, func(
 }
 
 // runAction is `heimdall action <step>`. The workflows of ACTION_MODE 3.2 run trigger, proof and gate; a maintainer
-// runs init on their own machine.
+// runs init on their own machine, and reads digest to see the week's shadow results and misses.
 func runAction(args []string, stdin io.Reader, stdout, stderr io.Writer, deps actionDeps) int {
 	if len(args) == 0 {
-		writeDiagnostic(stderr, "usage: heimdall action trigger|proof|gate|init [flags]\n")
+		writeDiagnostic(stderr, "usage: heimdall action trigger|proof|gate|init|digest [flags]\n")
 		return exitActionUsage
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -86,6 +86,8 @@ func runAction(args []string, stdin io.Reader, stdout, stderr io.Writer, deps ac
 		return runActionGate(ctx, rest, stdout, stderr, deps)
 	case "init":
 		return runActionInit(ctx, rest, stdin, stdout, stderr, deps)
+	case "digest":
+		return runActionDigest(ctx, rest, stdout, stderr, realDigestDeps())
 	}
 	writeDiagnostic(stderr, fmt.Sprintf("heimdall action: unknown step %q\n", clipText(step, 40)))
 	return exitActionUsage
