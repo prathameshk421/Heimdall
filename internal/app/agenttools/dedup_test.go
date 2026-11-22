@@ -1,6 +1,7 @@
 package agenttools
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -114,4 +115,44 @@ func TestParaphrasesOfOneDefectMergeAndDifferentDefectsOnTheSameLinesDoNot(t *te
 		Location: *at("internal/payments/refund.go", 67, 68)}
 	_, ok = matchFinding(race, overflow, "")
 	require.False(t, ok, "a race and an overflow on the same lines are two findings")
+}
+
+// A later head moves the code: the same defect one line down is still the same finding, and an E4 finding is a merge
+// candidate too (live, PR #20 Nov 22: F2 at line 19 re-filed as F5 at line 20 after a one-line comment; F4 re-filed as F8).
+func TestAMovedDefectOnALaterHeadAndAnE4DuplicateMerge(t *testing.T) {
+	at := func(file string, from, to int) *finding.Location {
+		return &finding.Location{File: file, Lines: [2]int{from, to}}
+	}
+	ref := func(s string) id.FindingRef {
+		r, err := id.ParseFindingRef(s)
+		require.NoError(t, err)
+		return r
+	}
+	writeErr := []knownFinding{{ref: ref("F2"), claim: "os.WriteFile's error is discarded, so ExportPayment returns nil even when the reconciliation file could not be written (disk full, permission denied, bad path). The nightly job then believes the export succeeded while the file is missing or truncated, silently losing reconciliation data.", category: finding.Category("correctness"),
+		location: at("internal/payments/export.go", 19, 19), state: finding.StateOpen}}
+	moved := finding.Input{Claim: "The error from os.WriteFile is discarded, so ExportPayment returns nil even when the reconciliation file could not be written (disk full, permission denied, nonexistent directory). The nightly job then treats a failed export as success and the morning finance job reads a missing or truncated file.", Category: finding.Category("correctness"), Location: *at("internal/payments/export.go", 20, 20)}
+	got, ok := matchFinding(writeErr, moved, "")
+	require.True(t, ok, "one line down is the same defect")
+	require.Equal(t, ref("F2"), got.ref)
+
+	far := moved
+	far.Location = *at("internal/payments/export.go", 40, 40)
+	_, ok = matchFinding(writeErr, far, "")
+	require.False(t, ok, "twenty lines away is somewhere else")
+}
+
+// An E4 finding is filed unverified; it can never block, but a second seat filing the same thing is still noise, so it is
+// a merge candidate. A withdrawn or dismissed finding is not.
+func TestUnverifiedFindingsAreMergeCandidatesAndTerminalOnesAreNot(t *testing.T) {
+	ref, err := id.ParseFindingRef("F4")
+	require.NoError(t, err)
+	filed := func(state finding.State) []change.Event {
+		raw, err := json.Marshal(change.FindingFiled{FindingID: "fnd_01HZX3K9QW7M2P5R8T0V4YB6CD", Ref: ref, Tier: finding.TierE4,
+			Severity: finding.SeverityLow, State: state, By: "reviewer-3", Claim: "the test never checks the exported contents",
+			Category: finding.Category("tests"), Location: &finding.Location{File: "tests/heimdall/E2E-1122/export_test.go", Lines: [2]int{20, 25}}})
+		require.NoError(t, err)
+		return []change.Event{{Type: change.EventFindingFiled, Payload: raw}}
+	}
+	require.Len(t, liveFindingsFrom(filed(finding.StateUnverified)), 1)
+	require.Empty(t, liveFindingsFrom(filed(finding.StateWithdrawn)))
 }

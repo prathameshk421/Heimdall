@@ -23,7 +23,7 @@ type knownFinding struct {
 	state       finding.State
 }
 
-// liveFindingsFrom extracts the currently live (block-capable) findings from existing events so a second seat or a
+// liveFindingsFrom extracts the findings that are not terminal from existing events so a second seat or a
 // later head reuses the existing ref instead of filing a duplicate (L1, L2, P2).
 func liveFindingsFrom(existing []change.Event) []knownFinding {
 	byRef := map[id.FindingRef]knownFinding{}
@@ -33,7 +33,9 @@ func liveFindingsFrom(existing []change.Event) []knownFinding {
 	}
 	var out []knownFinding
 	for _, ref := range order {
-		if k := byRef[ref]; k.state.CanBlock() {
+		// Every finding that is not terminal is a candidate, E4 (unverified) included: a duplicate is noise whether or
+		// not it can block.
+		if k := byRef[ref]; !k.state.Terminal() {
 			out = append(out, k)
 		}
 	}
@@ -83,10 +85,14 @@ func matchFinding(known []knownFinding, input finding.Input, fp string) (knownFi
 	return knownFinding{}, false
 }
 
+// lineSlack lets two ranges up to this many lines apart count as overlapping: a later head moves code (live, PR #20: a
+// one-line comment moved a defect from line 19 to 20). On PR #18 a slack of 3 merged no two different defects.
+const lineSlack = 3
+
 func locationsOverlap(a, b finding.Location) bool {
 	fa := strings.ToLower(strings.TrimSpace(a.File))
 	fb := strings.ToLower(strings.TrimSpace(b.File))
-	return fa == fb && a.Lines[0] <= b.Lines[1] && b.Lines[0] <= a.Lines[1]
+	return fa == fb && a.Lines[0] <= b.Lines[1]+lineSlack && b.Lines[0] <= a.Lines[1]+lineSlack
 }
 
 func claimJaccard(a, b string) float64 {
