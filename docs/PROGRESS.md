@@ -75,6 +75,9 @@ Notes for H9 (from H8):
 - **Flaky test (`c8715fa`):** the timeout fixture wrote its pid file in place, so the test could read it empty under load; it now writes a temporary name and renames. Six runs in a row pass.
 - `make fast` exit 0, 4,373 tests, 0 lint issues; `scripts/test-scripts.sh` 63 cases, 0 failed (with GNU coreutils first in `PATH`). Deployed `c8715fa`: server `122b5406`, runner `10b6f3c6`, `/healthz` ok. **Not verified:** `make verify` (Docker).
 
+### SOTA Phase 0 (Nov 22)
+- Seven area files under `docs/sota/` with desired state, evidence-backed gaps (57 in all) and the cross-area order in `docs/sota/README.md`. Built from the code at `cffca6e` and the live record (KAN-26, PR #16, PR #18, the profile runs). Next: Phase 1 (fix in the README's order, each fix test first), starting with O11 (CI for `make verify`).
+
 ### Noticed (H13, Nov 21)
 - **Deploy outage, 19:06 to 19:17 UTC (about 11 min).** An SSH drop cut the `scp` of the server short; `hot-deploy.sh` installed the truncated 5.7 MB file, the server container restart-looped and compose failed. Recovered by keeping the last good binary as `heimdall-server.good-1544`, copying again (hash checked), and running the script detached with `nohup`. `hot-deploy.sh` checks no hash or size of the `.new` files; it should refuse a file whose SHA-256 differs from one the caller passes (a `scripts/` change: guarded, owner's call). Deployed `daafd9d` (D184 `reprofile`): server `e8bb983f`, runner `9b7fa578`, `/healthz` ok, no new warnings.
 
