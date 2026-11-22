@@ -122,6 +122,9 @@ Notes for H9 (from H8):
   - **P4 (daily spend cap):** Added `In.SpendCapExceeded` / `In.SpendSummary` in `internal/domain/change/rows.go` & `missing.go` (pauses new agent task assignments when over cap and names the cap in `Missing`) and `reconcile.Config.Spend` hook.
   - **Not verified:** Postgres `OpsSnapshot` against live DB (Docker) and live token-spend feed from Switch. Next: Phase 1 item 6 (**T1/U6**, **T2**).
 
+### Phase 1 live check (Nov 22, stated before the run)
+- Expected cost: $0.30 to $0.60 with `deploy/deepseek-ai/deepseek-v4.1-flash-1017` (three reviews on each of two heads of one small ticketless PR). Under the daily token cap (4,000,000). Checks: U1 asks posted to people, L1/L2 one finding per defect across seats and heads, O2 quick lane not blocked by sandbox jobs, O1 no stream stop. Not covered: F1 tracker write-back and F2 room close (they need a Jira ticket and a merge; owner's step).
+
 ### Noticed (H13, Nov 21)
 - Nov 22: `cmd/heimdall/action_test.go` and `internal/platform/config/action_test.go` on `product-build` still hold the fake keys as one string. An edit to those lines makes a new gitleaks finding. Split them as `"ghs_" + "..."` before that branch merges.
 - **Deploy outage, 19:06 to 19:17 UTC (about 11 min).** An SSH drop cut the `scp` of the server short; `hot-deploy.sh` installed the truncated 5.7 MB file, the server container restart-looped and compose failed. Recovered by keeping the last good binary as `heimdall-server.good-1544`, copying again (hash checked), and running the script detached with `nohup`. `hot-deploy.sh` checks no hash or size of the `.new` files; it should refuse a file whose SHA-256 differs from one the caller passes (a `scripts/` change: guarded, owner's call). Deployed `daafd9d` (D184 `reprofile`): server `e8bb983f`, runner `9b7fa578`, `/healthz` ok, no new warnings.
