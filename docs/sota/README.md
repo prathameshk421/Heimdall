@@ -22,7 +22,7 @@ code are marked `not verified`.
 4. **L1, L2** one defect is one finding across heads and seats (50 filings for 8 issues on PR #18); this also cuts
    **P1, P2** most of the review cost: done Nov 22 (cross-seat and cross-head merge on submit with consensus reporter tracking; live VM run not verified yet).
 5. **O6** an operator page (queues, dead jobs, stream lag), **P4** spend per agent and a daily cap, **R6** a quality
-   scorecard per role.
+   scorecard per role: done Nov 22 (`/admin/ops` with outbox depth/age/dead/in-doubt/dead-messages + `RoleScorecard`, and daily spend-cap enforcement in rows/`Missing`; live Switch spend feed and Docker DB test not verified yet).
 6. **T1** the lead agent for plain-words questions (also **U6**); **T2** ticket edits re-open the tests.
 7. Phase 2 suite for what never ran live: the resolver (**R1**, **F3**), a clean PR (**L5**), a planted race (**L4**),
    sign-off, approval invalidation and force-push (**F6**), every platform (**T3**, **T7**, **U7**).

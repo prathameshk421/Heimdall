@@ -40,6 +40,13 @@ func Missing(in In) []Need {
 	}
 	out = append(out, gateNeeds(in)...)
 	out = append(out, providerNeeds(in.View)...)
+	if in.SpendCapExceeded {
+		text := in.SpendSummary
+		if text == "" {
+			text = "daily spend cap reached; new agent tasks are paused"
+		}
+		out = append(out, Need{Step: "budget", Text: text})
+	}
 	return append(out, deadNeeds(in)...)
 }
 

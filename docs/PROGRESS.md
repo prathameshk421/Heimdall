@@ -91,6 +91,11 @@ Notes for H9 (from H8):
   - `agenttools/dedup.go` + `buildReviewEvents` now merge incoming findings against existing live findings across seats (L2) and across heads (L1) by exact fingerprint or overlapping file+line range with claim Jaccard ≥ 0.6. Duplicates reuse the existing `F<n>` ref in `review.submitted` instead of filing a new `finding.filed` or triggering duplicate verification (P2).
   - `change.View` records additional reporters on `FindingInfo.Reporters` (`omitempty`, preserving all goldens), and `gate_facts.go` counts them toward consensus.
   - **Not verified:** live multi-head PR run and P1 session-context budget on VM. Next: Phase 1 item 5 (**O6**, **P4**, **R6**).
+- **Phase 1 item 5 done (O6, P4, R6, Nov 22):**
+  - **O6 (operator page):** Added `ports.OpsSnapshot` / `ports.OpsReader`, Postgres `Store.OpsSnapshot` (`internal/adapters/postgres/ops.go`: queued depth and oldest age per kind, dead and in-doubt counts, dead chat messages, open changes), and `GET /admin/ops` (`cmd/heimdall-server/operator_ops.go`, authenticated with operator bearer secret).
+  - **R6 (per-role quality scorecard):** Added `dashboard.ScorecardFromEvents` and `dashboard.Service.Scorecard` (`internal/app/dashboard/scorecard.go`: test-author red-first rate, reviewer per-seat filed/verified/upheld/dismissed, resolver cases/verdicts, profiler requests/proposals), served alongside outbox stats on `/admin/ops`.
+  - **P4 (daily spend cap):** Added `In.SpendCapExceeded` / `In.SpendSummary` in `internal/domain/change/rows.go` & `missing.go` (pauses new agent task assignments when over cap and names the cap in `Missing`) and `reconcile.Config.Spend` hook.
+  - **Not verified:** Postgres `OpsSnapshot` against live DB (Docker) and live token-spend feed from Switch. Next: Phase 1 item 6 (**T1/U6**, **T2**).
 
 ### Noticed (H13, Nov 21)
 - Nov 22: `cmd/heimdall/action_test.go` and `internal/platform/config/action_test.go` on `product-build` still hold the fake keys as one string. An edit to those lines makes a new gitleaks finding. Split them as `"ghs_" + "..."` before that branch merges.

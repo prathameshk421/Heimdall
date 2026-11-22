@@ -16,6 +16,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/announce"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/collaboration"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/dashboard"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/knowledge"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
@@ -191,6 +192,7 @@ type app struct {
 	// operatorRecheck repeats one finding's evidence on the current head after a run that gave a wrong answer.
 	operatorRecheck http.Handler
 	operatorRoom    http.Handler
+	operatorOps     http.Handler
 	// degraded names each tool the boot self-check withheld, with the reason; /healthz reports it.
 	degraded []string
 	narrator *announce.Narrator
@@ -493,6 +495,27 @@ func build(ctx context.Context, cfg config.Config, d deps) (*app, error) {
 	}
 	a.operatorReject = operatorReject{reject: a.commands.OperatorReject, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
 	a.operatorRecheck = operatorRecheck{recheck: a.commands.OperatorRecheck, secrets: cfg, keyName: cfg.Switch.APIKeySecret}
+	opsStore := postgres.NewStore(pool)
+	a.operatorOps = operatorOps{
+		ops: opsStore,
+		scorecard: func(ctx context.Context) (dashboard.RoleScorecard, error) {
+			ids, err := opsStore.ChangeIDs(ctx)
+			if err != nil {
+				return dashboard.RoleScorecard{}, err
+			}
+			var all []change.Event
+			for _, cid := range ids {
+				evs, err := opsStore.Load(ctx, cid)
+				if err != nil {
+					return dashboard.RoleScorecard{}, err
+				}
+				all = append(all, evs...)
+			}
+			return dashboard.ScorecardFromEvents(all), nil
+		},
+		secrets: cfg,
+		keyName: cfg.Switch.APIKeySecret,
+	}
 	return a, nil
 }
 

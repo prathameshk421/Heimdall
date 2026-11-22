@@ -54,6 +54,10 @@ type In struct {
 	Settings      Settings
 	Dead          []DeadJob // outbox rows of this change that are dead or in doubt
 	Now           time.Time
+	// SpendCapExceeded pauses new agent task assignments when the daily spend cap is reached (P4).
+	SpendCapExceeded bool
+	// SpendSummary is the plain-words description of the cap shown in Missing when SpendCapExceeded is true (P4).
+	SpendSummary string
 }
 
 // Outside is what the log cannot say and a row needs from the repository.
@@ -234,6 +238,9 @@ func Next(in In) []RowAction {
 	for _, r := range Open(in) {
 		for _, a := range r.Next(in) {
 			if a.Task != nil {
+				if in.SpendCapExceeded {
+					continue // daily spend cap pauses new agent assignments (P4)
+				}
 				a = capTask(in, r.ID, a)
 			}
 			out = append(out, RowAction{Row: r.ID, Action: a})

@@ -54,6 +54,9 @@ type Config struct {
 	// internal working room of a change (U1).
 	TestsRoom  change.RoomID
 	ReviewRoom change.RoomID
+	// Spend, when set, returns today's spent USD and the configured daily cap USD (P4). A positive cap that has been
+	// reached pauses new agent task assignments and records the cap in Missing.
+	Spend func(ctx context.Context) (spentUSD, capUSD float64, err error)
 	// Wait pauses for d or until ctx is done (clock.Wait); the app layer may not import the platform package.
 	Wait func(ctx context.Context, d time.Duration) error
 }
@@ -236,7 +239,25 @@ func (r *Reconciler) buildIn(ctx context.Context, changeID id.ChangeID, v change
 	if in.Dead, err = r.cfg.Dead.DeadEffects(ctx, changeID); err != nil {
 		return in, fmt.Errorf("read dead jobs: %w", err)
 	}
+	if err := r.checkSpend(ctx, &in); err != nil {
+		return in, err
+	}
 	return in, nil
+}
+
+func (r *Reconciler) checkSpend(ctx context.Context, in *change.In) error {
+	if r.cfg.Spend == nil {
+		return nil
+	}
+	spent, capUSD, err := r.cfg.Spend(ctx)
+	if err != nil {
+		return fmt.Errorf("read daily spend: %w", err)
+	}
+	if capUSD > 0 && spent >= capUSD {
+		in.SpendCapExceeded = true
+		in.SpendSummary = fmt.Sprintf("daily spend cap reached ($%.2f / $%.2f); new agent tasks are paused", spent, capUSD)
+	}
+	return nil
 }
 
 // repoAndBase is the repository of the change and the commit its policy is read at: the pull request's base when there
