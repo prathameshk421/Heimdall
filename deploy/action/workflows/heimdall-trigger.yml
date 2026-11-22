@@ -1,0 +1,36 @@
+# Heimdall trigger (ACTION_MODE.md 3.2). It records which pull request and head an event is about, as the small
+# artifact heimdall-event, because workflow_run names no pull request for a fork run. It runs no PR code, reads no
+# secret and holds a read-only token. The gate workflow starts when this run completes.
+name: Heimdall trigger
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+  pull_request_review:
+    types: [submitted, dismissed]
+  merge_group:
+
+permissions:
+  contents: read
+
+# The record names the event and the head, so a newer run for the same event and head replaces an older one.
+concurrency:
+  group: heimdall-trigger-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  trigger:
+    name: Heimdall trigger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Replace the SHA with the Heimdall commit you install (deploy/action/README.md). Pin a full SHA, never a tag.
+      - uses: prathameshk421/Heimdall/deploy/action@0000000000000000000000000000000000000000 # heimdall-pin
+        with:
+          step: trigger
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: heimdall-event
+          path: ${{ runner.temp }}/heimdall-out/heimdall-event.json
+          if-no-files-found: error
+          retention-days: 7

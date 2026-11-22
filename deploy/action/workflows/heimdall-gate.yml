@@ -1,0 +1,46 @@
+# Heimdall gate (ACTION_MODE.md 3.2, 2.7). The privileged half. It never checks out or runs PR code: it reads the pull
+# request through the API as data, and reads the trigger and proof artifacts as untrusted input. It writes the check
+# runs, the summary comment and the state ref refs/heimdall/state. The log key lives in environment heimdall, which
+# only the default branch may use. This file works only on the default branch: GitHub starts workflow_run and
+# schedule workflows from there.
+#
+# There is no issue_comment trigger yet. Its only use is the commands of A8 (break-glass), which are not built, and it
+# would let any commenter start a privileged run. A8 adds it back with its own review.
+name: Heimdall gate
+
+on:
+  # zizmor flags workflow_run as dangerous because a privileged run often handles PR data unsafely. This is GitHub's own
+  # split for untrusted PRs (ACTION_MODE 3.1): the gate never checks out or runs PR code, puts no event field in a
+  # script, writes nothing to GITHUB_ENV, and checks every artifact against the run that made it (2.7).
+  workflow_run: # zizmor: ignore[dangerous-triggers] the privileged half of the pull_request split; runs no PR code
+    workflows: [Heimdall trigger, Heimdall proof]
+    types: [completed]
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: heimdall-gate-${{ github.event.workflow_run.head_repository.full_name || github.repository }}-${{ github.event.workflow_run.head_branch || 'sweep' }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Heimdall gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: heimdall
+    permissions:
+      contents: write # the state ref refs/heimdall/state, through GraphQL updateRefs
+      checks: write # the heimdall/fast and heimdall/proof check runs
+      pull-requests: write # the summary comment on the pull request
+      actions: read # the trigger and proof runs' artifacts
+      security-events: read # code scanning alerts for the analyzers clause
+    steps:
+      - uses: prathameshk421/Heimdall/deploy/action@0000000000000000000000000000000000000000 # heimdall-pin
+        with:
+          step: gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEIMDALL_LOG_KEY: ${{ secrets.HEIMDALL_LOG_KEY }}
