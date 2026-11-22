@@ -245,7 +245,8 @@ func (r *proofRun) stoppedFor() (proof.Reason, bool) {
 		// The turn cap is part of the run's budget, and a candidate may be "not checked" only for the reasons of 6.3.
 		return proof.ReasonBudget, true
 	case "", proof.ReasonStateUnverified, proof.ReasonWorkflowChanged, proof.ReasonNoIntent, proof.ReasonPlanRefused,
-		proof.ReasonModelFailure, proof.ReasonNoResult, proof.ReasonTrivial, proof.ReasonNotProvable:
+		proof.ReasonModelFailure, proof.ReasonNoResult, proof.ReasonTrivial, proof.ReasonNotProvable,
+		proof.ReasonNoProposal:
 		// A completed run gave every claim its chance, and a failure is reported on the run itself. A claim it never
 		// reached had no proof, which is a drop and never a pass.
 		return "", false

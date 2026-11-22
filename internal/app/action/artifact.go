@@ -132,9 +132,19 @@ func (a ProofArtifact) check(want ArtifactKey) error {
 	case a.WorkflowRun != want.WorkflowRun:
 		return fmt.Errorf("%w: workflow run %d is not run %d", ErrProofArtifact, a.WorkflowRun, want.WorkflowRun)
 	}
-	if a.Note != "" && (a.Kind != proof.KindNotReproduced || !slices.Contains(proof.NoteReasons(), a.Note)) {
-		return fmt.Errorf("%w: note %q is only for a run that is not reproduced", ErrProofArtifact, a.Note)
+	for _, step := range []func() error{a.checkNote, a.checkCandidates, a.checkCounts} {
+		if err := step(); err != nil {
+			return err
+		}
 	}
+	if err := a.Payload().Validate(); err != nil {
+		return fmt.Errorf("%w: %w", ErrProofArtifact, err)
+	}
+	return nil
+}
+
+// checkCandidates bounds the candidate list, holds it to the count of candidates, and checks each one.
+func (a ProofArtifact) checkCandidates() error {
 	if len(a.Candidates) > change.MaxProofResults {
 		return fmt.Errorf("%w: %d candidates is over the %d limit", ErrProofArtifact, len(a.Candidates), change.MaxProofResults)
 	}
@@ -146,11 +156,17 @@ func (a ProofArtifact) check(want ArtifactKey) error {
 			return fmt.Errorf("%w: candidates[%d]: %w", ErrProofArtifact, i, err)
 		}
 	}
-	if err := a.checkCounts(); err != nil {
-		return err
+	return nil
+}
+
+// checkNote refuses a note on a run that is not "not reproduced", or a note that is not one of proof.NoteReasons. The
+// note never changes the verdict, but a note that cannot be true means the artifact is not what this build writes.
+func (a ProofArtifact) checkNote() error {
+	if a.Note == "" {
+		return nil
 	}
-	if err := a.Payload().Validate(); err != nil {
-		return fmt.Errorf("%w: %w", ErrProofArtifact, err)
+	if a.Kind != proof.KindNotReproduced || !slices.Contains(proof.NoteReasons(), a.Note) {
+		return fmt.Errorf("%w: note %q is only for a run that is not reproduced", ErrProofArtifact, a.Note)
 	}
 	return nil
 }

@@ -122,7 +122,7 @@ func Evaluate(f Facts) Outcome {
 	counts, ok := tally(f.Findings)
 	out := Outcome{Counts: counts, Cost: f.Spend}
 	switch {
-	case !ok || !validStop(f.Stop) || (f.Ended != "" && !f.Ended.notes()) || f.Tests.Accepted < 0 || f.Tests.Rejected < 0:
+	case !ok || malformed(f):
 		return out.unknown(ReasonNoResult)
 	case f.Stop.invalidatesResults():
 		return out.unknown(f.Stop)
@@ -164,6 +164,12 @@ func (o Outcome) unknown(r Reason) Outcome {
 }
 
 func validStop(r Reason) bool { return r == "" || r.CanStop() }
+
+// malformed reports a fact that cannot be true: a stop that is not a stop reason, an end that is not a note reason, or
+// a negative test count.
+func malformed(f Facts) bool {
+	return !validStop(f.Stop) || (f.Ended != "" && !f.Ended.notes()) || f.Tests.Accepted < 0 || f.Tests.Rejected < 0
+}
 
 // tally counts the findings. ok is false when a record is malformed: a class that does not exist, a dropped candidate
 // with no drop reason, a candidate not checked for a reason it may not carry, or a blocking flag on a finding that is
