@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -61,6 +63,21 @@ func TestParseReviewFlagsRefusesABadParallel(t *testing.T) {
 		_, err := parseReviewFlags(append(base, "-parallel", n), &bytes.Buffer{})
 		require.ErrorContains(t, err, "-parallel", n)
 	}
+}
+
+func TestParseReviewFlagsTakesTheRefusedDirAndItsDefault(t *testing.T) {
+	base := []string{"-out", "r.json", "-model", "deepseek/deepseek-v4-flash", "-key-file", "/tmp/k"}
+	o, err := parseReviewFlags(base, &bytes.Buffer{})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(os.TempDir(), savedRefusedDirName), o.refusedDir, "a run saves refusals by default")
+
+	o, err = parseReviewFlags(append(base, "-refused-dir", "/tmp/mine"), &bytes.Buffer{})
+	require.NoError(t, err)
+	require.Equal(t, "/tmp/mine", o.refusedDir)
+
+	o, err = parseReviewFlags(append(base, "-refused-dir", ""), &bytes.Buffer{})
+	require.NoError(t, err)
+	require.Empty(t, o.refusedDir, "an empty -refused-dir saves nothing")
 }
 
 func mustIDs(t *testing.T, s string) []string {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,7 +23,8 @@ type keyFile struct{ cfg config.Config }
 func (k keyFile) Get(name string) (string, error) { return k.cfg.Secret(name) }
 
 // liveModel builds the OpenAI-compatible chat client for the -model, -key-file and price flags. It reads the key once
-// to fail early on a missing or malformed file; the error names the file but never holds its content.
+// to fail early on a missing or malformed file; the error names the file but never holds its content. The client keeps
+// the bodies the endpoint refuses (refused.go). Each call is bounded by the client's own context timeout.
 func liveModel(o reviewOptions) (ports.ModelChat, error) {
 	if strings.TrimSpace(o.model) == "" || o.keyFile == "" {
 		return nil, errors.New("review: -model and -key-file are required")
@@ -40,10 +42,12 @@ func liveModel(o reviewOptions) (ports.ModelChat, error) {
 	if _, err := keys.Get(name); err != nil {
 		return nil, fmt.Errorf("model key file: %w", err)
 	}
-	return openrouter.ChatClient{
+	bodies := newBodyRecorder(http.DefaultTransport)
+	return liveChat{ChatClient: openrouter.ChatClient{
 		BaseURL: o.baseURL, Secrets: keys, KeyName: name, RequiredToolChoice: o.requiredToolChoice,
+		HTTP:   &http.Client{Transport: bodies},
 		Prices: map[string]openrouter.Price{o.model: {Input: o.price.InputPerM, CachedInput: o.price.CachedInputPerM, Output: o.price.OutputPerM}},
-	}, nil
+	}, bodies: bodies}, nil
 }
 
 // cappedModel holds the run's hard cost cap in front of any model. Before each call it reserves the call's bound

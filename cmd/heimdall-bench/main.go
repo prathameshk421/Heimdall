@@ -5,7 +5,8 @@
 //	heimdall-bench truth -case id [-manifest ...] [-cache dir]
 //	heimdall-bench review -out review.json -model id -key-file path -price-input usd -price-output usd
 //	    [-max-cost 3] [-per-case-cost 0.5] [-parallel 1] [-md docs/sota/BENCH.md] [-only id,id] [-base-url url]
-//	    [-block-severity medium]
+//	    [-block-severity medium] [-refused-dir dir]
+//	heimdall-bench resend -base-url url -model id -key-file path -body file [-drop-tools] [-drop-system] [-keep-last N]
 //
 // validate proves each case real (internal/bench doc.go) and writes one JSON results file. Its exit status is 0 when
 // every case agrees with its manifest status, 1 when one does not, and 2 on a usage or manifest error.
@@ -14,7 +15,9 @@
 // hard cost cap, proves each proposed finding with testintegrity.Prove and scores the run (review.go). It writes one
 // progress line to stderr per case, per model turn and per test run, so a slow run is not silent; -parallel reviews
 // several cases at once on the one shared cap. Its exit status is 0 when every case was scored, 1 when one was not,
-// and 2 on a usage error.
+// and 2 on a usage error. It saves the body of each request the endpoint refuses under -refused-dir (refused.go).
+// resend sends one saved body again, with the parts a reader asks to drop, and prints the status, the content type and
+// the first 300 bytes of the answer (resend.go). It reads the key through internal/platform/config and never prints it.
 package main
 
 import (
@@ -51,7 +54,7 @@ func main() {
 
 func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, r runner) int {
 	if len(args) == 0 {
-		writeDiagnostic(stderr, "usage: heimdall-bench validate|truth|review [flags]\n")
+		writeDiagnostic(stderr, "usage: heimdall-bench validate|truth|review|resend [flags]\n")
 		return exitUsage
 	}
 	var code int
@@ -63,6 +66,8 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, r runn
 		code, err = runTruth(ctx, args[1:], stdout, stderr, r)
 	case "review":
 		code, err = runReview(ctx, args[1:], stderr, r)
+	case "resend":
+		code, err = runResendCommand(ctx, args[1:], stdout, stderr)
 	default:
 		code, err = exitUsage, fmt.Errorf("unknown subcommand %q", args[0])
 	}
