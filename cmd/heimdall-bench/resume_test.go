@@ -50,6 +50,36 @@ func TestRunPoolWithHookCheckpointsEveryCase(t *testing.T) {
 	require.Equal(t, 3, snapshots)
 }
 
+// The hook writes the run's checkpoint file, so its calls must not overlap and must arrive in completion order:
+// each snapshot holds at least as many finished cases as the one before (an overlapping, unordered call could put an
+// older snapshot on disk after a newer one). CI's -race run also checks the calls do not overlap.
+func TestRunPoolWithHookSerializesSnapshotsInCompletionOrder(t *testing.T) {
+	var inHook, maxInHook, last int
+	var calls int
+	_, stopped := runPoolWithHook(4, 40, func(i int) (reviewCase, string) {
+		return reviewCase{CaseScore: bench.CaseScore{ID: string(rune('a' + i%26)), Scored: true}}, ""
+	}, func(snap []reviewCase) {
+		inHook++
+		if inHook > maxInHook {
+			maxInHook = inHook
+		}
+		done := 0
+		for _, c := range snap {
+			if c.Scored {
+				done++
+			}
+		}
+		require.GreaterOrEqual(t, done, last, "a snapshot never has fewer finished cases than the one before")
+		last = done
+		calls++
+		inHook--
+	})
+	require.Empty(t, stopped)
+	require.Equal(t, 40, calls)
+	require.Equal(t, 1, maxInHook, "hook calls never overlap")
+	require.Equal(t, 40, last)
+}
+
 func TestWriteReportAtomicLeavesNoTempFile(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out.json")

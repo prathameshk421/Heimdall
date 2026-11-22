@@ -419,14 +419,13 @@ func runPoolWithHook(n, count int, run func(i int) (reviewCase, string), onDone 
 				if stopped == "" {
 					stopped = reason
 				}
-				var snap []reviewCase
+				// The hook writes the checkpoint file, so it runs under the lock: calls never overlap and arrive in
+				// completion order, so an older snapshot never lands on disk after a newer one. A write takes
+				// milliseconds; a case takes minutes.
 				if onDone != nil {
-					snap = append([]reviewCase(nil), out...)
+					onDone(append([]reviewCase(nil), out...))
 				}
 				mu.Unlock()
-				if snap != nil {
-					onDone(snap)
-				}
 			}
 		}()
 	}
