@@ -177,5 +177,10 @@ func goldenCases() []goldenCase {
 			}}
 			return in
 		}()},
+		{"break_glass_open", func() summary.Input {
+			in := base()
+			in.BreakGlass = &summary.BreakGlass{Login: "alice", Reason: "production outage, rollback blocked"}
+			return in
+		}()},
 	}
 }

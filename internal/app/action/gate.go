@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/actionflow"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/breakglass"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/fastcheck"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/gate"
@@ -105,6 +106,8 @@ type Config struct {
 	Summary SummaryCommenter
 	// Ingester reads the third-party comments. Nil means no comment is ingested.
 	Ingester *Ingester
+	// BreakGlassComments reads PR conversation commands. Nil disables command ingestion.
+	BreakGlassComments ports.PRCommentReader
 	// Facts reads the fast-check groups. Nil makes every group unknown.
 	Facts FactsReader
 	// Code reads the policy at the merge base.
@@ -373,6 +376,9 @@ type run struct {
 // execute reads the facts, decides, and runs the effects of the rows until nothing is left to do.
 func (r *run) execute(ctx context.Context) (Result, error) {
 	r.readPolicy(ctx)
+	if err := r.readBreakGlass(ctx); err != nil {
+		return Result{}, err
+	}
 	r.readFiles(ctx)
 	r.readApprovals(ctx)
 	r.fast = r.evaluate(ctx)
@@ -381,6 +387,64 @@ func (r *run) execute(ctx context.Context) (Result, error) {
 	waits, version, err := r.rounds(ctx)
 	r.res.Waits, r.res.Version = waits, version
 	return r.res, err
+}
+
+func (r *run) readBreakGlass(ctx context.Context) error {
+	reader := r.g.cfg.BreakGlassComments
+	if reader == nil {
+		return nil
+	}
+	comments, err := reader.IssueCommentsSince(ctx, r.in.Repo, r.in.Number, headAt(r.events))
+	if err != nil {
+		return fmt.Errorf("action gate on %s: read break-glass comments: %w", r.in.ChangeID, err)
+	}
+	for _, c := range comments {
+		if err := r.recordBreakGlassComment(ctx, c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *run) recordBreakGlassComment(ctx context.Context, c ports.IssueComment) error {
+	var current *breakglass.Recorded
+	if r.view.Action != nil {
+		for _, b := range r.view.Action.BreakGlass {
+			if b.Head == r.head && b.Open() {
+				current = &breakglass.Recorded{Login: string(b.Login), Head: string(b.Head)}
+				break
+			}
+		}
+	}
+	cmd, _ := breakglass.Parse(breakglass.Comment{ID: c.ID, Login: c.Login, UserType: c.UserType, Body: c.Body, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt}, r.act.BreakGlass, string(r.head), current)
+	if cmd.Kind == "" || breakGlassSourceExists(r.view, cmd.SourceRef) {
+		return nil
+	}
+	typ, payload := breakGlassEvent(r.head, cmd)
+	ev, err := r.build(typ, payload, 0)
+	if err != nil {
+		return fmt.Errorf("action gate on %s: parse break-glass command: %w", r.in.ChangeID, err)
+	}
+	return r.appendEvents(ctx, ev)
+}
+
+func breakGlassEvent(head id.SHA, cmd breakglass.Command) (change.EventType, change.Payload) {
+	if cmd.Kind == breakglass.Record {
+		return change.EventBreakGlassRecorded, change.BreakGlassRecorded{Head: head, Login: change.ActorID(cmd.Login), Reason: cmd.Reason, SourceRef: cmd.SourceRef}
+	}
+	return change.EventBreakGlassReviewed, change.BreakGlassReviewed{Head: head, Login: change.ActorID(cmd.Login), SourceRef: cmd.SourceRef}
+}
+
+func breakGlassSourceExists(v change.View, source string) bool {
+	if v.Action == nil {
+		return false
+	}
+	for _, b := range v.Action.BreakGlass {
+		if b.SourceRef == source || b.ReviewRef == source {
+			return true
+		}
+	}
+	return false
 }
 
 // round is one decide-and-write round.

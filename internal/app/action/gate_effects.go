@@ -175,10 +175,19 @@ func markerOf(body string) (string, bool) {
 
 // renderSummary draws the page. The summary version counts the events the page reads, as package actionflow needs.
 func (r *run) renderSummary(fx actionflow.PostSummary) string {
+	var bypass *summary.BreakGlass
+	if r.view.Action != nil {
+		for _, b := range r.view.Action.BreakGlass {
+			if b.Head == r.head {
+				bypass = &summary.BreakGlass{Login: string(b.Login), Reason: b.Reason, ReviewedBy: string(b.ReviewedBy)}
+				break
+			}
+		}
+	}
 	return summary.Render(summary.Input{
 		Change: r.in.ChangeID.String(), Version: fx.Version, Head: string(r.head), Action: r.act,
 		Fast: r.fast, Proof: proofOutcome(r.view, r.head, r.base, r.hash),
-		Findings: summaryFindings(r.events, r.view, r.head),
+		Findings: summaryFindings(r.events, r.view, r.head), BreakGlass: bypass,
 	})
 }
 

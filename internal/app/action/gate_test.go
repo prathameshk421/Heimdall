@@ -153,16 +153,18 @@ func (r resetter) Reset(_ context.Context, c id.ChangeID, evs []change.Event) er
 
 // github is the in-memory stand-in for the GitHub ports: one pull request, its files and its reviews.
 type github struct {
-	pr      ports.PR
-	files   []ports.ChangedFile
-	reviews []ports.PRReview
+	pr       ports.PR
+	files    []ports.ChangedFile
+	reviews  []ports.PRReview
+	comments []ports.IssueComment
 	// failFiles makes the file read fail, which must leave every clause that needs the list unknown.
 	failFiles bool
 }
 
 var (
-	_ ports.PRReader     = (*github)(nil)
-	_ ports.ReviewReader = (*github)(nil)
+	_ ports.PRReader        = (*github)(nil)
+	_ ports.ReviewReader    = (*github)(nil)
+	_ ports.PRCommentReader = (*github)(nil)
 )
 
 func newGitHub() *github {
@@ -185,6 +187,16 @@ func (g *github) OpenPRs(_ context.Context, _ change.Repo) ([]ports.PR, error) {
 
 func (g *github) PRReviews(_ context.Context, _ change.Repo, _ int) ([]ports.PRReview, error) {
 	return g.reviews, nil
+}
+
+func (g *github) IssueCommentsSince(_ context.Context, _ change.Repo, _ int, since time.Time) ([]ports.IssueComment, error) {
+	var out []ports.IssueComment
+	for _, c := range g.comments {
+		if since.IsZero() || !c.CreatedAt.Before(since) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 
 // code is the file reader: it serves the policy file at the merge base and nothing else.
@@ -382,6 +394,7 @@ func testPolicy(t *testing.T, mode string) policy.Policy {
 	p, err := policyyaml.Decode(raw)
 	require.NoError(t, err)
 	p.Action.Mode = mode
+	p.Action.BreakGlass = []string{"alice", "rekdfr"}
 	require.NoError(t, p.Validate())
 	return p
 }
@@ -436,7 +449,7 @@ func newHarnessWith(t *testing.T, mode string, ing *action.Ingester) *harness {
 	h.code = &code{policy: map[id.SHA][]byte{testBase: raw}}
 	g, err := action.NewGate(action.Config{Store: h.store, PRs: h.github, Reviews: h.github, Checks: h.checks,
 		Summary: h.summary, Facts: h.facts, Code: h.code, Decode: policyyaml.Decode, Clock: h.clock, IDs: h.ids,
-		Ingester: ing, IsUnverified: func(err error) bool { return errors.As(err, &errBadMAC{}) }})
+		Ingester: ing, BreakGlassComments: h.github, IsUnverified: func(err error) bool { return errors.As(err, &errBadMAC{}) }})
 	require.NoError(t, err)
 	h.gate = g
 	return h
@@ -539,6 +552,32 @@ func TestNoProofResultPostsOneCheck(t *testing.T) {
 	require.Equal(t, 1, h.checks.count(), "only the fast check is posted")
 	_, ok := h.checks.fast()
 	require.True(t, ok)
+}
+
+func TestBreakGlassCommandsAreRecordedReviewedAndScopedToHead(t *testing.T) {
+	h := newHarness(t, policy.ActionModeEnforce)
+	h.facts.integrity = action.IntegrityFacts{Known: false}
+	now := h.clock.now
+	h.github.comments = []ports.IssueComment{{ID: 71, Login: "alice", UserType: "User", Body: "/heimdall break-glass production outage, rollback blocked", CreatedAt: now, UpdatedAt: now},
+		{ID: 72, Login: "alice", UserType: "User", Body: "/heimdall break-glass-reviewed", CreatedAt: now, UpdatedAt: now.Add(time.Second)}}
+	res := h.run(t)
+	require.Equal(t, gate.VerdictUnknown, res.Verdict)
+	require.Equal(t, 1, countOf(h.log(t), change.EventBreakGlassRecorded))
+	check, ok := h.checks.fast()
+	require.True(t, ok)
+	require.Equal(t, change.CISuccess, check.Conclusion)
+	require.Contains(t, h.summary.body(), "open, awaiting review by another approver")
+	require.NotContains(t, h.summary.body(), "reviewed by")
+
+	h.github.comments = append(h.github.comments, ports.IssueComment{ID: 73, Login: "rekdfr", UserType: "User", Body: "/heimdall break-glass-reviewed", CreatedAt: now, UpdatedAt: now})
+	h.run(t)
+	require.Contains(t, h.summary.body(), "reviewed by @rekdfr")
+
+	h.clock.now = h.clock.now.Add(time.Hour)
+	h.github.pr.HeadSHA = testHead2
+	h.run(t)
+	require.Equal(t, 1, countOf(h.log(t), change.EventBreakGlassRecorded))
+	require.NotContains(t, h.summary.body(), "### Break-glass")
 }
 
 // TestBadMACResetsState makes the store's Load fail as a bad MAC does, over a log that holds a forged fast result
