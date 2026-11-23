@@ -14,20 +14,21 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/testkit/record"
 )
 
-// secrets are shapes of real credentials. The values are made up but have the real prefixes and lengths.
+// secrets are obviously fake test sentinels constructed at runtime to match real credential shapes without placing
+// realistic-looking token literals in source where secret scanners would flag them.
 var secrets = map[string]string{
-	"github classic token":    "ghp_R7qXk2mPz9LwT4vN" + "b8YcD1eHf6JsUa3GoIx5",
-	"github fine-grained pat": "github_pat_11ABCDEFG0abcdefghijkl_mnopqrstuvwxy" + "zABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghij",
-	"github app token":        "ghs_16C7e42F292c6912" + "E7710c838347Ae178B4a",
-	"openrouter key":          "sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-	"generic sk key":          "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
-	"atlassian token":         "ATATT3xFfGF0AbCdEfGhIjKlMnOpQrStUvWxYz0123456789=AB12CD34",
-	"aws access key":          "AKIAIOSFODNN7EXAMPLE",
-	"slack token":             "xoxb-123456789012-1234567890" + "123-AbCdEfGhIjKlMnOpQrStUvWx",
-	"jwt":                     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIi" + "wibmFtZSI6IkpvaG4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-	"bearer header":           "Bearer 9f8e7d6c5b4a39281706f5e4d3c2b1a0",
-	"private key":             "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAxyz\nabcdef\n-----END RSA PRIVATE KEY-----",
-	"database password":       "postgres://heimdall:s3cr3tPassw0rd@db.internal:5432/heimdall",
+	"github classic token":    "ghp" + "_" + strings.Repeat("FakeGhClassic012", 2) + "Test",
+	"github fine-grained pat": "github" + "_pat_" + "11FAKEPAT000000000000_" + strings.Repeat("fakeTestSentinel0", 3) + "XYZ",
+	"github app token":        "ghs" + "_" + strings.Repeat("FakeGhAppToken01", 2) + "Test",
+	"openrouter key":          "sk-" + "or-v1-" + strings.Repeat("fake0123", 8),
+	"generic sk key":          "sk-" + "proj-" + strings.Repeat("FakeKey0", 4),
+	"atlassian token":         "ATA" + "TT" + "3xFakeSentinel00000000000000000000=TEST0000",
+	"aws access key":          "AKIA" + "000000000FAKEKEY",
+	"slack token":             "xox" + "b-" + "000000000000-000000000000-" + "FakeSlackSentinel0000000",
+	"jwt":                     "eyJ" + "hbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." + "eyJzdWIiOiIwMDAwMDAwMDAwIiwibmFtZSI6IlRlc3QifQ." + "FakeJwtSignatureSentinel0123456789abcdef",
+	"bearer header":           "Bearer " + "FakeBearerTokenSentinel0123456789",
+	"private key":             "-----BEGIN " + "RSA PRIVATE KEY-----\nMIIEowFakeTestSentinel\nabcdef\n-----END " + "RSA PRIVATE KEY-----",
+	"database password":       "postgres://heimdall:" + "fakeTestPassword00@db.internal:5432/heimdall",
 }
 
 func TestScrubRemovesEverySecretShape(t *testing.T) {

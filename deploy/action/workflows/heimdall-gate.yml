@@ -38,6 +38,10 @@ jobs:
       actions: read # the trigger and proof runs' artifacts
       security-events: read # code scanning alerts for the analyzers clause
     steps:
+      # Build heimdall before any privileged secret enters the step environment.
+      - uses: prathameshk421/Heimdall/deploy/action@0000000000000000000000000000000000000000 # heimdall-pin
+        with:
+          step: install
       - uses: prathameshk421/Heimdall/deploy/action@0000000000000000000000000000000000000000 # heimdall-pin
         with:
           step: gate

@@ -5,8 +5,9 @@
 # binary with a checksum in this file can replace the build later; the inputs stay the same.
 #
 # Secrets never come in as inputs. The calling workflow passes GITHUB_TOKEN, HEIMDALL_LOG_KEY and HEIMDALL_MODEL_KEY
-# with `env:` on the one step that needs them. The binary reads the event from GITHUB_EVENT_PATH, never from an
-# expression in a script (ACTION_MODE 3.1).
+# with `env:` on the one step that needs them (after a secret-free `step: install` build). As defense in depth, the
+# setup-go and go build steps also clear those secret variables if a caller invokes a run step directly. The binary reads
+# the event from GITHUB_EVENT_PATH, never from an expression in a script (ACTION_MODE 3.1).
 name: Heimdall
 description: Run one Heimdall Action mode step (install, trigger, proof or gate).
 author: Heimdall
@@ -58,6 +59,10 @@ runs:
     - name: Set up Go for the heimdall build
       if: steps.find.outputs.have != 'true'
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      env:
+        GITHUB_TOKEN: ""
+        HEIMDALL_LOG_KEY: ""
+        HEIMDALL_MODEL_KEY: ""
       with:
         go-version-file: ${{ github.action_path }}/../../go.mod
         cache: false
@@ -70,8 +75,12 @@ runs:
         CGO_ENABLED: "0"
         GOFLAGS: "-mod=readonly"
         GOTOOLCHAIN: "local"
+        GITHUB_TOKEN: ""
+        HEIMDALL_LOG_KEY: ""
+        HEIMDALL_MODEL_KEY: ""
       run: |
         set -euo pipefail
+        unset GITHUB_TOKEN HEIMDALL_LOG_KEY HEIMDALL_MODEL_KEY
         mkdir -p "$RUNNER_TEMP/heimdall-bin"
         go build -trimpath -buildvcs=false -ldflags="-s -w" -o "$RUNNER_TEMP/heimdall-bin/heimdall" ./cmd/heimdall
         sha256sum "$RUNNER_TEMP/heimdall-bin/heimdall"

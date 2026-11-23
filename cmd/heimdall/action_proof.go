@@ -2,14 +2,19 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/github"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/gitlog"
@@ -51,6 +56,9 @@ func sandboxLimits() uidsandbox.Limits {
 // actionPolicyFile is the policy at the merge base, which the gate also reads (TECH_SPEC invariant 5).
 const actionPolicyFile = "heimdall.yaml"
 
+// minMaskSecretLen is the minimum secret length eligible for masking so short strings cannot corrupt output.
+const minMaskSecretLen = 8
+
 // heldKey is the model key in this process's memory, for the chat client. It is never written to a file, a log or
 // the environment of a sandbox job: every job starts from env -i with a fixed set of variables.
 type heldKey struct{ key string }
@@ -65,6 +73,7 @@ func (h heldKey) Get(string) (string, error) {
 // proofStep is one proof run's inputs, read from GitHub with the read-only token.
 type proofStep struct {
 	env    config.ActionEnv
+	getenv func(string) string
 	repo   change.Repo
 	api    *github.ActionAPI
 	gh     *github.Adapter
@@ -108,10 +117,10 @@ func runActionProof(ctx context.Context, args []string, stdout, stderr io.Writer
 	if err != nil {
 		return actionFail(stderr, "proof", err)
 	}
-	s := &proofStep{env: env, repo: repo, api: api, gh: api.Adapter(), ev: ev, stdout: stdout, stderr: stderr}
+	s := &proofStep{env: env, getenv: deps.getenv, repo: repo, api: api, gh: api.Adapter(), ev: ev, stdout: stdout, stderr: stderr}
 	artifact, runErr := s.run(ctx, deps)
 	if artifact != nil {
-		if err := os.WriteFile(out, artifact, 0o600); err != nil {
+		if err := os.WriteFile(out, maskJSONSecrets(artifact, s.secrets()...), 0o600); err != nil {
 			return actionFail(stderr, "proof", errors.Join(runErr, fmt.Errorf("write %s: %w", out, err)))
 		}
 		if err := s.writeTranscript(filepath.Join(filepath.Dir(out), proofTranscriptFile)); err != nil {
@@ -279,24 +288,196 @@ func (s *proofStep) prove(ctx context.Context, deps actionDeps) ([]byte, error) 
 	return res.Artifact, nil
 }
 
-// writeTranscript writes the bounded transcript next to the artifact, with the model key masked should any text echo
-// it. A run with no model call has no transcript and writes none.
+// secrets returns the configured secrets that must never appear in artifacts, transcripts or step summaries.
+func (s *proofStep) secrets() []string {
+	candidates := []string{s.env.ModelKey, s.env.Token}
+	if s.getenv != nil {
+		candidates = append(candidates, s.getenv("GITHUB_TOKEN"))
+	}
+	out := make([]string, 0, len(candidates))
+	for _, v := range candidates {
+		if len(v) >= minMaskSecretLen && !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// writeTranscript writes the bounded transcript next to the artifact, with configured secrets masked should any text
+// echo them. A run with no model call has no transcript and writes none.
 func (s *proofStep) writeTranscript(path string) error {
 	if s.transcript == nil {
 		return nil
 	}
-	if err := os.WriteFile(path, maskSecret(s.transcript, s.env.ModelKey), 0o600); err != nil {
+	if err := os.WriteFile(path, maskJSONSecrets(s.transcript, s.secrets()...), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }
 
-// maskSecret replaces every copy of secret in raw with as many asterisks, so the size, and so the bound, stays the same.
-func maskSecret(raw []byte, secret string) []byte {
-	if secret == "" {
+// collectSecretVariants returns raw, URL-encoded, JSON-escaped and base64-encoded forms for every secret at least
+// minMaskSecretLen bytes long, deduplicated and ordered longest-first so escaped forms match before shorter substrings.
+func collectSecretVariants(secrets ...string) [][]byte {
+	seen := make(map[string]struct{}, len(secrets)*9)
+	var list []string
+	add := func(v string) {
+		if len(v) < minMaskSecretLen {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		list = append(list, v)
+	}
+	for _, secret := range secrets {
+		if len(secret) < minMaskSecretLen {
+			continue
+		}
+		add(secret)
+		add(url.QueryEscape(secret))
+		add(url.PathEscape(secret))
+		add(jsonEscapeString(secret, true))
+		add(jsonEscapeString(secret, false))
+		raw := []byte(secret)
+		add(base64.StdEncoding.EncodeToString(raw))
+		add(base64.RawStdEncoding.EncodeToString(raw))
+		add(base64.URLEncoding.EncodeToString(raw))
+		add(base64.RawURLEncoding.EncodeToString(raw))
+	}
+	slices.SortFunc(list, func(a, b string) int {
+		if len(a) != len(b) {
+			return cmp.Compare(len(b), len(a))
+		}
+		return cmp.Compare(a, b)
+	})
+	out := make([][]byte, len(list))
+	for i, v := range list {
+		out[i] = []byte(v)
+	}
+	return out
+}
+
+// jsonEscapeString returns the JSON-encoded interior of s without the surrounding quotes.
+func jsonEscapeString(s string, escapeHTML bool) string {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(escapeHTML)
+	if err := enc.Encode(s); err != nil {
+		return ""
+	}
+	raw := bytes.TrimSuffix(b.Bytes(), []byte("\n"))
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return ""
+	}
+	return string(raw[1 : len(raw)-1])
+}
+
+func applySecretVariants(raw []byte, variants [][]byte) []byte {
+	out := raw
+	for _, v := range variants {
+		if bytes.Contains(out, v) {
+			out = bytes.ReplaceAll(out, v, bytes.Repeat([]byte("*"), len(v)))
+		}
+	}
+	return out
+}
+
+// maskSecrets replaces every copy of each secret (raw, URL-encoded, JSON-escaped and base64-encoded, for secrets of at
+// least minMaskSecretLen bytes) in raw with as many asterisks, keeping the byte length unchanged.
+func maskSecrets(raw []byte, secrets ...string) []byte {
+	variants := collectSecretVariants(secrets...)
+	if len(variants) == 0 || len(raw) == 0 {
 		return raw
 	}
-	return bytes.ReplaceAll(raw, []byte(secret), bytes.Repeat([]byte("*"), len(secret)))
+	return applySecretVariants(raw, variants)
+}
+
+// maskJSONSecrets scrubs every secret variant from JSON string values in raw while preserving valid JSON structure and
+// keeping the output within len(raw). If raw is not valid JSON, it falls back to byte-level masking.
+func maskJSONSecrets(raw []byte, secrets ...string) []byte {
+	variants := collectSecretVariants(secrets...)
+	if len(variants) == 0 || len(raw) == 0 {
+		return raw
+	}
+	if !json.Valid(raw) {
+		return applySecretVariants(raw, variants)
+	}
+	var out bytes.Buffer
+	out.Grow(len(raw))
+	for i := 0; i < len(raw); {
+		if raw[i] != '"' {
+			out.WriteByte(raw[i])
+			i++
+			continue
+		}
+		end := scanJSONString(raw, i)
+		if end < 0 {
+			return applySecretVariants(raw, variants)
+		}
+		tok := raw[i:end]
+		if isJSONObjectKey(raw, end) {
+			out.Write(tok)
+		} else {
+			out.Write(maskJSONStringToken(tok, variants))
+		}
+		i = end
+	}
+	return out.Bytes()
+}
+
+func isJSONObjectKey(raw []byte, afterToken int) bool {
+	j := afterToken
+	for j < len(raw) && isJSONSpace(raw[j]) {
+		j++
+	}
+	return j < len(raw) && raw[j] == ':'
+}
+
+func maskJSONStringToken(tok []byte, variants [][]byte) []byte {
+	var val string
+	if err := json.Unmarshal(tok, &val); err != nil {
+		return applySecretVariants(tok, variants)
+	}
+	masked := string(applySecretVariants([]byte(val), variants))
+	if masked == val {
+		return tok
+	}
+	return marshalJSONStringNoEscapeHTML(masked)
+}
+
+func marshalJSONStringNoEscapeHTML(s string) []byte {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s)
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n"))
+}
+
+// scanJSONString returns the index immediately after the closing quote of the JSON string starting at raw[start],
+// or -1 if the string is unterminated.
+func scanJSONString(raw []byte, start int) int {
+	if start >= len(raw) || raw[start] != '"' {
+		return -1
+	}
+	escaped := false
+	for i := start + 1; i < len(raw); i++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		switch raw[i] {
+		case '\\':
+			escaped = true
+		case '"':
+			return i + 1
+		}
+	}
+	return -1
+}
+
+func isJSONSpace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }
 
 // writeSummary appends the job summary to GITHUB_STEP_SUMMARY. The summary is for people: a failed write is reported on
@@ -305,7 +486,7 @@ func (s *proofStep) writeSummary() {
 	if s.summary == nil || s.env.StepSummary == "" {
 		return
 	}
-	body := maskSecret([]byte(action.ProofStepSummary(*s.summary)), s.env.ModelKey)
+	body := maskSecrets([]byte(action.ProofStepSummary(*s.summary)), s.secrets()...)
 	f, err := os.OpenFile(s.env.StepSummary, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err == nil {
 		_, err = f.Write(body)
