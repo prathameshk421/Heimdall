@@ -78,6 +78,7 @@ func linkProcessor(t *testing.T, people mappedPeople, links *linksFake, replies 
 // Live, Nov 22: a person typed `heimdall help` in Telegram from an account the policy does not list and got silence.
 // Every way a person addresses Heimdall now answers an unknown sender with a code and where to use it (D194).
 func TestAnUnknownChatSenderIsToldHowToLinkInsteadOfSilence(t *testing.T) {
+	t.Parallel()
 	for _, text := range []string{"heimdall help", "heimdall status", "@heimdall-coord-main what is blocking?", "heimdall uphold F1"} {
 		t.Run(text, func(t *testing.T) {
 			links := newLinksFake()
@@ -100,6 +101,7 @@ func TestAnUnknownChatSenderIsToldHowToLinkInsteadOfSilence(t *testing.T) {
 }
 
 func TestAnUnknownSenderAskingTwiceGetsTheSameCode(t *testing.T) {
+	t.Parallel()
 	links := newLinksFake()
 	replies := &replyLog{}
 	p := linkProcessor(t, mappedPeople{}, links, replies)
@@ -115,6 +117,7 @@ func TestAnUnknownSenderAskingTwiceGetsTheSameCode(t *testing.T) {
 }
 
 func TestAStandingRoomAsksAnUnknownSenderToLink(t *testing.T) {
+	t.Parallel()
 	links := newLinksFake()
 	replies := &replyLog{}
 	p := linkProcessor(t, mappedPeople{}, links, replies)
@@ -128,6 +131,7 @@ func TestAStandingRoomAsksAnUnknownSenderToLink(t *testing.T) {
 }
 
 func TestAnAgentIsNeverAskedToLink(t *testing.T) {
+	t.Parallel()
 	links := newLinksFake()
 	replies := &replyLog{}
 	p, err := New(Config{
@@ -146,6 +150,7 @@ func TestAnAgentIsNeverAskedToLink(t *testing.T) {
 
 // The GitHub login that comments the code is who the chat account is: GitHub already proved the login.
 func TestLinkCommentOnGitHubLinksTheChatAccountAndSaysSoInBothPlaces(t *testing.T) {
+	t.Parallel()
 	links := newLinksFake()
 	replies := &replyLog{}
 	p := linkProcessor(t, mappedPeople{"github:prathameshk421": "approver"}, links, replies)
@@ -169,6 +174,7 @@ func TestLinkCommentOnGitHubLinksTheChatAccountAndSaysSoInBothPlaces(t *testing.
 }
 
 func TestLinkByALoginOutsideThePolicySaysWhatIsStillMissing(t *testing.T) {
+	t.Parallel()
 	links := newLinksFake()
 	replies := &replyLog{}
 	p := linkProcessor(t, mappedPeople{}, links, replies)
@@ -185,6 +191,7 @@ func TestLinkByALoginOutsideThePolicySaysWhatIsStillMissing(t *testing.T) {
 }
 
 func TestAnUnknownOrUsedLinkCodeIsRefusedOnGitHub(t *testing.T) {
+	t.Parallel()
 	links := newLinksFake()
 	replies := &replyLog{}
 	p := linkProcessor(t, mappedPeople{}, links, replies)
@@ -200,6 +207,7 @@ func TestAnUnknownOrUsedLinkCodeIsRefusedOnGitHub(t *testing.T) {
 
 // A link proven in chat would prove nothing: the chat account is the thing being proven.
 func TestLinkInChatPointsToGitHub(t *testing.T) {
+	t.Parallel()
 	links := newLinksFake()
 	replies := &replyLog{}
 	p := linkProcessor(t, mappedPeople{}, links, replies)

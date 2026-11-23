@@ -16,6 +16,7 @@ func load(t *testing.T, name string) []byte {
 }
 
 func TestParseLCOVGolden(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		file string
@@ -54,6 +55,7 @@ func TestParseLCOVGolden(t *testing.T) {
 }
 
 func TestParseLCOVRefusesBadReports(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		in   string
@@ -86,12 +88,14 @@ func TestParseLCOVRefusesBadReports(t *testing.T) {
 }
 
 func TestParseLCOVAcceptsAnEmptyReport(t *testing.T) {
+	t.Parallel()
 	got, err := ParseLCOV(nil, Options{MaxBytes: 1 << 20})
 	require.NoError(t, err)
 	require.Empty(t, got.Files)
 }
 
 func TestParseLCOVAcceptsCRLF(t *testing.T) {
+	t.Parallel()
 	in := "SF:a.go\r\nDA:1,1\r\nDA:2,0\r\nend_of_record\r\n"
 	got, err := ParseLCOV([]byte(in), Options{MaxBytes: 1 << 20})
 	require.NoError(t, err)
@@ -99,6 +103,7 @@ func TestParseLCOVAcceptsCRLF(t *testing.T) {
 }
 
 func TestParseLCOVAcceptsEveryInformationalRecord(t *testing.T) {
+	t.Parallel()
 	in := "TN:unit\nSF:a.go\nFN:1,f\nFNDA:2,f\nFNF:1\nFNH:1\nBRDA:1,0,0,2\nBRDA:1,0,1,-\nBRF:2\nBRH:1\nLF:1\nLH:1\nDA:1,2,checksum\nend_of_record\n"
 	got, err := ParseLCOV([]byte(in), Options{MaxBytes: 1 << 20})
 	require.NoError(t, err)

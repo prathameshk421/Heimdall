@@ -274,6 +274,7 @@ func assertIgnored(t *testing.T, r *rig, res trigger.PollResult, reason trigger.
 }
 
 func TestTriggersOnceForAValidChange(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
 	r.tickets.next = "c1"
@@ -300,6 +301,7 @@ func TestTriggersOnceForAValidChange(t *testing.T) {
 }
 
 func TestTriggersFileTicketAndMarksItsSource(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{{Key: "KAN-1", ChangelogID: "content-hash", Fields: []string{"file"}, At: now}}
 	r.tickets.next = "c1"
@@ -315,6 +317,7 @@ func TestTriggersFileTicketAndMarksItsSource(t *testing.T) {
 }
 
 func TestTriggeredCriteriaAreContentAddressedAndReplayable(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	text := "Refunds are idempotent"
 	sum := sha256.Sum256([]byte(text))
@@ -357,58 +360,77 @@ func mustTriggered(t *testing.T, ev change.Event) change.Triggered {
 	return triggered
 }
 
-func TestIgnoresAChangeThatIsNotInProgress(t *testing.T) {
-	r := newRig(t)
-	r.tickets.changes = []ports.TicketChange{statusMove("KAN-1", "10001", statusInRev)}
-	r.tickets.next = "c1"
-	r.tickets.tickets["KAN-1"] = ticket("KAN-1", statusInRev, ana)
-
-	assertIgnored(t, r, r.poll(t), trigger.ReasonNotInProgress, "KAN-1")
-}
-
-func TestIgnoresAnUnassignedTicket(t *testing.T) {
-	r := newRig(t)
-	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
-	r.tickets.next = "c1"
-	r.tickets.tickets["KAN-1"] = ticket("KAN-1", statusInPrg, "")
-
-	assertIgnored(t, r, r.poll(t), trigger.ReasonUnassigned, "KAN-1")
-}
-
-func TestIgnoresAnUnmappedProject(t *testing.T) {
-	r := newRig(t)
-	r.tickets.changes = []ports.TicketChange{statusChange("OPS-9", "10001")}
-	r.tickets.next = "c1"
-	r.tickets.tickets["OPS-9"] = ticket("OPS-9", statusInPrg, ana)
-
-	res := r.poll(t)
-
-	assertIgnored(t, r, res, trigger.ReasonUnmappedProject, "OPS-9")
-	require.Empty(t, r.tickets.ticketCalls, "an unmapped project must not read the ticket")
-}
-
-func TestIgnoresAChangeThatDidNotTouchStatus(t *testing.T) {
-	r := newRig(t)
-	summary := ports.TicketChange{Key: "KAN-1", ChangelogID: "10001", Fields: []string{"summary"}, At: now}
-	r.tickets.changes = []ports.TicketChange{summary}
-	r.tickets.next = "c1"
-	r.tickets.tickets["KAN-1"] = ticket("KAN-1", statusInPrg, ana)
-
-	res := r.poll(t)
-
-	assertIgnored(t, r, res, trigger.ReasonNoStatusChange, "KAN-1")
-	require.Empty(t, r.tickets.ticketCalls, "a change without a status move must not read the ticket")
-}
-
-func TestIgnoresATicketThatIsGone(t *testing.T) {
-	r := newRig(t)
-	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
-	r.tickets.next = "c1"
-
-	assertIgnored(t, r, r.poll(t), trigger.ReasonTicketNotFound, "KAN-1")
+func TestIgnoresNonProgressChanges(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		changes     []ports.TicketChange
+		ticket      *ports.Ticket
+		wantReason  trigger.Reason
+		wantKey     string
+		expectCalls bool
+	}{
+		{
+			name:        "not in progress",
+			changes:     []ports.TicketChange{statusMove("KAN-1", "10001", statusInRev)},
+			ticket:      &ports.Ticket{Key: "KAN-1", Status: statusInRev, Assignee: ana},
+			wantReason:  trigger.ReasonNotInProgress,
+			wantKey:     "KAN-1",
+			expectCalls: true,
+		},
+		{
+			name:        "unassigned ticket",
+			changes:     []ports.TicketChange{statusChange("KAN-1", "10001")},
+			ticket:      &ports.Ticket{Key: "KAN-1", Status: statusInPrg, Assignee: ""},
+			wantReason:  trigger.ReasonUnassigned,
+			wantKey:     "KAN-1",
+			expectCalls: true,
+		},
+		{
+			name:        "unmapped project",
+			changes:     []ports.TicketChange{statusChange("OPS-9", "10001")},
+			ticket:      &ports.Ticket{Key: "OPS-9", Status: statusInPrg, Assignee: ana},
+			wantReason:  trigger.ReasonUnmappedProject,
+			wantKey:     "OPS-9",
+			expectCalls: false,
+		},
+		{
+			name:        "no status change",
+			changes:     []ports.TicketChange{{Key: "KAN-1", ChangelogID: "10001", Fields: []string{"summary"}, At: now}},
+			ticket:      &ports.Ticket{Key: "KAN-1", Status: statusInPrg, Assignee: ana},
+			wantReason:  trigger.ReasonNoStatusChange,
+			wantKey:     "KAN-1",
+			expectCalls: false,
+		},
+		{
+			name:        "ticket not found",
+			changes:     []ports.TicketChange{statusChange("KAN-1", "10001")},
+			ticket:      nil,
+			wantReason:  trigger.ReasonTicketNotFound,
+			wantKey:     "KAN-1",
+			expectCalls: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRig(t)
+			r.tickets.changes = tc.changes
+			r.tickets.next = "c1"
+			if tc.ticket != nil {
+				r.tickets.tickets[id.ChangeID(tc.wantKey)] = *tc.ticket
+			}
+			res := r.poll(t)
+			assertIgnored(t, r, res, tc.wantReason, id.ChangeID(tc.wantKey))
+			if !tc.expectCalls {
+				require.Empty(t, r.tickets.ticketCalls)
+			}
+		})
+	}
 }
 
 func TestARepeatInTheNextPollAppendsNothing(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
 	r.tickets.next = "c1"
@@ -424,6 +446,7 @@ func TestARepeatInTheNextPollAppendsNothing(t *testing.T) {
 }
 
 func TestAChangeMovingToInProgressAgainAppendsNothing(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
 	r.tickets.next = "c1"
@@ -439,6 +462,7 @@ func TestAChangeMovingToInProgressAgainAppendsNothing(t *testing.T) {
 }
 
 func TestARestartAppendsNothing(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
 	r.tickets.next = "c1"
@@ -456,6 +480,7 @@ func TestARestartAppendsNothing(t *testing.T) {
 }
 
 func TestTwoPollersRacingEndWithOneEvent(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
 	r.tickets.next = "c1"
@@ -483,6 +508,7 @@ func TestTwoPollersRacingEndWithOneEvent(t *testing.T) {
 }
 
 func TestCursorIsNotSavedWhenTheReaderIsUnavailable(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.cursors.value = "c0"
 	r.tickets.changesErr = fmt.Errorf("jira changes: status 503: %w", ports.ErrUnavailable)
@@ -495,6 +521,7 @@ func TestCursorIsNotSavedWhenTheReaderIsUnavailable(t *testing.T) {
 }
 
 func TestCursorIsNotSavedWhenAnAppendIsUnavailable(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.cursors.value = "c0"
 	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
@@ -511,6 +538,7 @@ func TestCursorIsNotSavedWhenAnAppendIsUnavailable(t *testing.T) {
 }
 
 func TestAChangeThatFailedOnAnOutageIsTriggeredOnTheNextPoll(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.tickets.reportOnce = true
 	r.tickets.changes = []ports.TicketChange{statusChange("KAN-1", "10001")}
@@ -531,6 +559,7 @@ func TestAChangeThatFailedOnAnOutageIsTriggeredOnTheNextPoll(t *testing.T) {
 }
 
 func TestCursorIsNotSavedAfterAPermanentError(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		setup func(*rig)
@@ -566,6 +595,7 @@ func TestCursorIsNotSavedAfterAPermanentError(t *testing.T) {
 }
 
 func TestCursorIsSavedAfterACleanPoll(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.cursors.value = "c0"
 	r.tickets.next = "c5"
@@ -578,6 +608,7 @@ func TestCursorIsSavedAfterACleanPoll(t *testing.T) {
 }
 
 func TestReasonsAreCountedInThePollResult(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{
 		statusChange("KAN-1", "1"),
@@ -610,6 +641,7 @@ func TestReasonsAreCountedInThePollResult(t *testing.T) {
 }
 
 func TestNewRefusesANilPort(t *testing.T) {
+	t.Parallel()
 	full := func(r *rig) trigger.Config {
 		return trigger.Config{
 			Tickets:  r.tickets,

@@ -11,6 +11,7 @@ import (
 // RowCapped names the row whose seat used up its failures in the current round: the fact the resume command needs to
 // know that a cap, and not only an escalation, is why nothing is running.
 func TestRowCappedSeesTheRoundTheRowIsIn(t *testing.T) {
+	t.Parallel()
 	base := []change.Event{opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true})}
 	twice := append(append([]change.Event{}, base...), profileTask(t, 3, "tsk_01HZX3K9QW7M2P5R8T0V4YB6C1")...)
 	twice = append(twice, profileTask(t, 5, "tsk_01HZX3K9QW7M2P5R8T0V4YB6C2")...)

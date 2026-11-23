@@ -10,6 +10,7 @@ import (
 
 // Found live in H11: PR #16 was closed to stop a paid loop and reopened later, and the change stayed over for good.
 func TestAReopenedPullRequestResumesTheChange(t *testing.T) {
+	t.Parallel()
 	s := newStream(t).
 		add(change.EventPROpened, githubActor, change.PROpened{Repo: prRepo, Number: prNumber, HeadSHA: head, Author: author}).
 		add(change.EventPRClosed, githubActor, change.PRClosed{Repo: prRepo, Number: prNumber, HeadSHA: head}).
@@ -27,6 +28,7 @@ func TestAReopenedPullRequestResumesTheChange(t *testing.T) {
 }
 
 func TestAReopenDoesNotUndoAMergeOrAnotherPullRequest(t *testing.T) {
+	t.Parallel()
 	merged := newStream(t).
 		add(change.EventPROpened, githubActor, change.PROpened{Repo: prRepo, Number: prNumber, HeadSHA: head, Author: author}).
 		add(change.EventPRClosed, githubActor, change.PRClosed{Repo: prRepo, Number: prNumber, HeadSHA: head, Merged: true}).
@@ -45,6 +47,7 @@ func TestAReopenDoesNotUndoAMergeOrAnotherPullRequest(t *testing.T) {
 }
 
 func TestAReopenNeedsARepoANumberAndAHead(t *testing.T) {
+	t.Parallel()
 	require.Error(t, change.PRReopened{}.Validate())
 	require.NoError(t, change.PRReopened{Repo: prRepo, Number: prNumber, HeadSHA: head}.Validate())
 }

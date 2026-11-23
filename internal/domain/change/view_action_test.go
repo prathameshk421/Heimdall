@@ -18,6 +18,7 @@ import (
 // Invariant: the Action facts touch no existing fold. The recorded and authored logs hold no Action event, so their
 // view has no action part and its JSON has no action key. TestFoldAndMissingMatchTheGoldens already proves the bytes.
 func TestTheExistingLogsFoldWithNoActionFacts(t *testing.T) {
+	t.Parallel()
 	logs, err := filepath.Glob(filepath.Join("..", "..", "..", "testdata", "plan", "view", "*", "log.jsonl"))
 	require.NoError(t, err)
 	require.NotEmpty(t, logs)
@@ -34,6 +35,7 @@ func TestTheExistingLogsFoldWithNoActionFacts(t *testing.T) {
 }
 
 func TestAViewWithNoActionEventHasNoActionPart(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t))
 	require.Nil(t, v.Action)
 }
@@ -48,6 +50,7 @@ func clause(st fastcheck.Status) change.FastClause {
 }
 
 func TestFastReportedKeepsTheLastResultAndItsHead(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t),
 		actionEv(t, 2, change.EventFastReported, change.FastReported{Head: fHead, Verdict: gate.VerdictFail,
 			Clauses: []change.FastClause{clause(fastcheck.StatusUnmet)}}),
@@ -61,6 +64,7 @@ func TestFastReportedKeepsTheLastResultAndItsHead(t *testing.T) {
 }
 
 func TestAFastResultForAnOldHeadStaysStampedWithThatHead(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t),
 		actionEv(t, 2, change.EventFastReported, change.FastReported{Head: fHead, Verdict: gate.VerdictPass,
 			Clauses: []change.FastClause{clause(fastcheck.StatusMet)}}),
@@ -74,6 +78,7 @@ func proofKey() change.ProofStarted {
 }
 
 func TestProofStartedThenReportedFoldsToOneFinishedRun(t *testing.T) {
+	t.Parallel()
 	started := proofKey()
 	v := fold(t, opened(t), actionEv(t, 2, change.EventProofStarted, started))
 	require.Equal(t, change.ProofInfo{WorkflowRun: 10, Head: fHead, Base: fBase, PolicyHash: aHash, Model: "m"}, *v.Action.Proof)
@@ -92,6 +97,7 @@ func TestProofStartedThenReportedFoldsToOneFinishedRun(t *testing.T) {
 }
 
 func TestAProofReportWithNoStartIsStillAFinishedRun(t *testing.T) {
+	t.Parallel()
 	rep := change.ProofReported{WorkflowRun: 3, Head: fHead, Base: fBase, PolicyHash: aHash, Kind: proof.KindSkippedTrivial}
 	v := fold(t, opened(t), actionEv(t, 2, change.EventProofReported, rep))
 	require.True(t, v.Action.Proof.Done)
@@ -99,6 +105,7 @@ func TestAProofReportWithNoStartIsStillAFinishedRun(t *testing.T) {
 }
 
 func TestALateStartNeverReopensAFinishedRunOfTheSameKey(t *testing.T) {
+	t.Parallel()
 	rep := change.ProofReported{WorkflowRun: 10, Head: fHead, Base: fBase, PolicyHash: aHash, Model: "m", Kind: proof.KindProven}
 	v := fold(t, opened(t),
 		actionEv(t, 2, change.EventProofStarted, proofKey()),
@@ -108,6 +115,7 @@ func TestALateStartNeverReopensAFinishedRunOfTheSameKey(t *testing.T) {
 }
 
 func TestANewRunReplacesTheProofOfAnOldOne(t *testing.T) {
+	t.Parallel()
 	rep := change.ProofReported{WorkflowRun: 10, Head: fHead, Base: fBase, PolicyHash: aHash, Model: "m", Kind: proof.KindProven}
 	next := change.ProofStarted{WorkflowRun: 11, Head: fHead2, Base: fBase, PolicyHash: aHash, Model: "m"}
 	v := fold(t, opened(t),
@@ -132,6 +140,7 @@ func filedRec(n int) change.FindingRecord {
 }
 
 func TestProofReportedMarksTheFindingsItNames(t *testing.T) {
+	t.Parallel()
 	rep := change.ProofReported{WorkflowRun: 10, Head: fHead, Base: fBase, PolicyHash: aHash, Model: "m", Kind: proof.KindBlocked,
 		Counts: change.ProofCounts{In: 3, Proven: 1, Blocking: 1, Refuted: 1, NotChecked: 1},
 		Results: []change.CandidateResult{
@@ -156,6 +165,7 @@ func TestProofReportedMarksTheFindingsItNames(t *testing.T) {
 }
 
 func TestAFindingFiledAfterItsProofResultKeepsNoResultFromBefore(t *testing.T) {
+	t.Parallel()
 	// A repeated finding.filed replaces the record, as it always did; the proof result belongs to a run, so it goes too.
 	rep := change.ProofReported{WorkflowRun: 10, Head: fHead, Base: fBase, PolicyHash: aHash, Kind: proof.KindProven,
 		Counts:  change.ProofCounts{In: 1, Proven: 1, NeedsPerson: 1},
@@ -172,6 +182,7 @@ func TestAFindingFiledAfterItsProofResultKeepsNoResultFromBefore(t *testing.T) {
 }
 
 func TestCostRecordedAddsUpPerRunAndModelAndIgnoresARepeat(t *testing.T) {
+	t.Parallel()
 	a := change.CostRecorded{WorkflowRun: 10, Model: "flash", Cost: change.Cost{USDMicros: 200000, PromptTokens: 1000, CompletionTokens: 100}}
 	b := change.CostRecorded{WorkflowRun: 10, Model: "pro", Cost: change.Cost{USDMicros: 50000, PromptTokens: 500, CompletionTokens: 50}}
 	c := change.CostRecorded{WorkflowRun: 11, Model: "flash", Cost: change.Cost{USDMicros: 1, PromptTokens: 2, CompletionTokens: 3}}
@@ -184,6 +195,7 @@ func TestCostRecordedAddsUpPerRunAndModelAndIgnoresARepeat(t *testing.T) {
 }
 
 func TestCostTotalOfAChangeWithNoCostIsZero(t *testing.T) {
+	t.Parallel()
 	var none *change.ActionInfo
 	require.Equal(t, change.Cost{}, none.CostTotal(), "a change with no Action event has no action part, and no cost")
 	require.False(t, none.OpenBreakGlass(fHead))
@@ -196,6 +208,7 @@ func ingested(comment int64, claim string) change.ExternalIngested {
 }
 
 func TestExternalIngestedIsKeptPerCommentSoARepeatChangesNothing(t *testing.T) {
+	t.Parallel()
 	once := fold(t, actionEv(t, 1, change.EventExternalIngested, ingested(11, "the amount is not checked")))
 	twice := fold(t, actionEv(t, 1, change.EventExternalIngested, ingested(11, "the amount is not checked")),
 		actionEv(t, 2, change.EventExternalIngested, ingested(11, "the amount is not checked")))
@@ -209,6 +222,7 @@ func TestExternalIngestedIsKeptPerCommentSoARepeatChangesNothing(t *testing.T) {
 }
 
 func TestAnEditedCommentReplacesItsEarlierCandidate(t *testing.T) {
+	t.Parallel()
 	v := fold(t, actionEv(t, 1, change.EventExternalIngested, ingested(11, "the first claim is long enough")),
 		actionEv(t, 2, change.EventExternalIngested, ingested(12, "another comment, a second claim")),
 		actionEv(t, 3, change.EventExternalIngested, ingested(11, "the edited claim is long enough")))
@@ -217,6 +231,7 @@ func TestAnEditedCommentReplacesItsEarlierCandidate(t *testing.T) {
 }
 
 func TestSummaryPostedKeepsTheLatestComment(t *testing.T) {
+	t.Parallel()
 	v := fold(t,
 		actionEv(t, 1, change.EventSummaryPosted, change.SummaryPosted{Head: fHead, CommentID: 5, Marker: "<!-- m1 -->"}),
 		actionEv(t, 2, change.EventSummaryPosted, change.SummaryPosted{Head: fHead2, CommentID: 5, Marker: "<!-- m2 -->"}))
@@ -228,6 +243,7 @@ func bgRecorded(login string, source string) change.BreakGlassRecorded {
 }
 
 func TestABreakGlassIsOpenUntilAnotherPersonReviewsIt(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t), actionEv(t, 2, change.EventBreakGlassRecorded, bgRecorded("alice", "comment-1")))
 	require.Len(t, v.Action.BreakGlass, 1)
 	bg := v.Action.BreakGlass[0]
@@ -246,6 +262,7 @@ func TestABreakGlassIsOpenUntilAnotherPersonReviewsIt(t *testing.T) {
 }
 
 func TestThePersonWhoBypassedCannotReviewTheirOwnBypass(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t), actionEv(t, 2, change.EventBreakGlassRecorded, bgRecorded("alice", "comment-1")),
 		actionEv(t, 3, change.EventBreakGlassReviewed, change.BreakGlassReviewed{Head: fHead, Login: "alice", SourceRef: "comment-2"}))
 	require.True(t, v.Action.BreakGlass[0].Open(), "ACTION_MODE 5.4: another approver posts the review")
@@ -253,6 +270,7 @@ func TestThePersonWhoBypassedCannotReviewTheirOwnBypass(t *testing.T) {
 }
 
 func TestAReviewClosesOnlyBypassesOfItsOwnHeadAndOthersStayOpen(t *testing.T) {
+	t.Parallel()
 	other := bgRecorded("carol", "comment-7")
 	other.Head = fHead2
 	v := fold(t, opened(t),
@@ -264,6 +282,7 @@ func TestAReviewClosesOnlyBypassesOfItsOwnHeadAndOthersStayOpen(t *testing.T) {
 }
 
 func TestABreakGlassRecordedTwiceFromTheSameCommentFoldsOnce(t *testing.T) {
+	t.Parallel()
 	once := fold(t, actionEv(t, 1, change.EventBreakGlassRecorded, bgRecorded("alice", "comment-1")))
 	twice := fold(t, actionEv(t, 1, change.EventBreakGlassRecorded, bgRecorded("alice", "comment-1")),
 		actionEv(t, 2, change.EventBreakGlassRecorded, bgRecorded("alice", "comment-1")))
@@ -271,11 +290,13 @@ func TestABreakGlassRecordedTwiceFromTheSameCommentFoldsOnce(t *testing.T) {
 }
 
 func TestAReviewWithNothingToReviewChangesNothing(t *testing.T) {
+	t.Parallel()
 	v := fold(t, actionEv(t, 1, change.EventBreakGlassReviewed, change.BreakGlassReviewed{Head: fHead, Login: "bob", SourceRef: "comment-2"}))
 	require.Empty(t, v.Action.BreakGlass)
 }
 
 func TestStateResetRecordsWhyAndDropsEveryProducedFactBeforeIt(t *testing.T) {
+	t.Parallel()
 	rep := change.ProofReported{WorkflowRun: 10, Head: fHead, Base: fBase, PolicyHash: aHash, Kind: proof.KindProven,
 		Counts:  change.ProofCounts{In: 1, Proven: 1, NeedsPerson: 1},
 		Results: []change.CandidateResult{{Ref: fref(1), Class: proof.ClassProven}}}
@@ -303,6 +324,7 @@ func TestStateResetRecordsWhyAndDropsEveryProducedFactBeforeIt(t *testing.T) {
 }
 
 func TestFactsAfterAResetFoldNormallyAndResetsAreCounted(t *testing.T) {
+	t.Parallel()
 	v := fold(t,
 		actionEv(t, 1, change.EventStateReset, change.StateReset{Reason: "chain broken"}),
 		actionEv(t, 2, change.EventFastReported, change.FastReported{Head: fHead, Verdict: gate.VerdictPass, Clauses: []change.FastClause{clause(fastcheck.StatusMet)}}),
@@ -313,6 +335,7 @@ func TestFactsAfterAResetFoldNormallyAndResetsAreCounted(t *testing.T) {
 
 // H1: executors may record a fact twice. Each Action event, repeated, folds to the same view.
 func TestEveryActionFactFoldsTheSameWhenRepeated(t *testing.T) {
+	t.Parallel()
 	facts := []change.Event{
 		actionEv(t, 2, change.EventFastReported, change.FastReported{Head: fHead, Verdict: gate.VerdictPass, Clauses: []change.FastClause{clause(fastcheck.StatusMet)}}),
 		actionEv(t, 3, change.EventProofStarted, proofKey()),
@@ -331,6 +354,7 @@ func TestEveryActionFactFoldsTheSameWhenRepeated(t *testing.T) {
 }
 
 func TestFoldRefusesAnActionEventWhoseActorBreaksTheBreakGlassRule(t *testing.T) {
+	t.Parallel()
 	e := actionEv(t, 1, change.EventBreakGlassRecorded, bgRecorded("alice", "comment-1"))
 	e.Actor = change.Actor{Kind: change.ActorAgent, ID: "test-author"}
 	_, err := change.Fold([]change.Event{e})

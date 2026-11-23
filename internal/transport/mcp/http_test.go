@@ -16,11 +16,13 @@ import (
 )
 
 func TestHashTokenIsTheLowercaseSHA256Hex(t *testing.T) {
+	t.Parallel()
 	sum := sha256.Sum256([]byte(testToken))
 	require.Equal(t, hex.EncodeToString(sum[:]), HashToken(testToken))
 }
 
 func TestTheStoreIsAskedForTheHashNeverTheToken(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.post("Bearer "+testToken, initBody)
 	require.Equal(t, http.StatusOK, rep.status, rep.body)
@@ -28,6 +30,7 @@ func TestTheStoreIsAskedForTheHashNeverTheToken(t *testing.T) {
 }
 
 func TestRequestsWithoutAUsableBearerTokenGet401BeforeTheStoreIsAsked(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"no header":       "",
 		"another scheme":  "Basic dGVzdDp0ZXN0",
@@ -47,6 +50,7 @@ func TestRequestsWithoutAUsableBearerTokenGet401BeforeTheStoreIsAsked(t *testing
 }
 
 func TestAnUnknownTokenGets401(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.post("Bearer not-a-token", initBody)
 	require.Equal(t, http.StatusUnauthorized, rep.status)
@@ -54,6 +58,7 @@ func TestAnUnknownTokenGets401(t *testing.T) {
 }
 
 func TestARevokedTokenGets401(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	r.tokens.err = ports.ErrUnauthorized
 	rep := r.post("Bearer "+testToken, initBody)
@@ -61,6 +66,7 @@ func TestARevokedTokenGets401(t *testing.T) {
 }
 
 func TestAStoreThatCannotBeReachedGets503WithoutItsDetail(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	r.tokens.err = errors.New("pg: connection refused at db.internal:5432")
 	rep := r.post("Bearer "+testToken, initBody)
@@ -69,6 +75,7 @@ func TestAStoreThatCannotBeReachedGets503WithoutItsDetail(t *testing.T) {
 }
 
 func TestAMethodOtherThanPOSTIsNotAllowed(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rec := httptest.NewRecorder()
 	r.handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/mcp", nil))
@@ -76,6 +83,7 @@ func TestAMethodOtherThanPOSTIsNotAllowed(t *testing.T) {
 }
 
 func TestTheRealTokenIsKeptOutOfRefusalsAndLogsWhenItIsRevokedOrTheStoreFails(t *testing.T) {
+	t.Parallel()
 	cases := map[string]error{
 		"revoked":    ports.ErrUnauthorized,
 		"store down": errors.New("pg: connection refused"),
@@ -97,6 +105,7 @@ func TestTheRealTokenIsKeptOutOfRefusalsAndLogsWhenItIsRevokedOrTheStoreFails(t 
 }
 
 func TestABodyOverEightMiBIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	body := `{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":"` + strings.Repeat("a", 8<<20) + `"}}`
 	rep := r.post("Bearer "+testToken, body)
@@ -104,6 +113,7 @@ func TestABodyOverEightMiBIsRefused(t *testing.T) {
 }
 
 func TestTheTokenNeverAppearsInAnyAnswerOrLog(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleTestAuthor)
 	r.tasks.currentErr = errors.New("switch refused the call")
 	bodies := []reply{
@@ -127,6 +137,7 @@ func TestTheTokenNeverAppearsInAnyAnswerOrLog(t *testing.T) {
 }
 
 func TestLogsCarryToolAgentRoleAndOutcomeButNeverArguments(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	res := r.call("report_progress", `{"text":"secret-argument-marker"}`)
 	require.False(t, res.IsError, res.text())
@@ -157,6 +168,7 @@ func logLinesWith(logs string, parts ...string) []string {
 }
 
 func TestEachMCPRequestLogsItsMethodToolRoleAndStatusButNoSecrets(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	auth := "Bearer " + testToken
 	require.Equal(t, http.StatusOK, r.post(auth, initBody).status)
@@ -174,6 +186,7 @@ func TestEachMCPRequestLogsItsMethodToolRoleAndStatusButNoSecrets(t *testing.T) 
 }
 
 func TestAFailedAuthenticationWarnsAndLogsARequestLineWithoutTheToken(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	const bad = "Bearer canary-bad-token-7731"
 	require.Equal(t, http.StatusUnauthorized, r.post(bad, initBody).status)

@@ -10,6 +10,7 @@ import (
 )
 
 func TestTrackerCommitRowEmitsTrackerWriteAfterTestsCommitted(t *testing.T) {
+	t.Parallel()
 	base := []change.Event{
 		triggered(t),
 		ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
@@ -36,6 +37,7 @@ func TestTrackerCommitRowEmitsTrackerWriteAfterTestsCommitted(t *testing.T) {
 }
 
 func TestMergedPREmitsTrackerWriteWithPolicyTransitionAndRoomClose(t *testing.T) {
+	t.Parallel()
 	base := []change.Event{
 		triggered(t),
 		ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
@@ -93,6 +95,7 @@ func TestMergedPREmitsTrackerWriteWithPolicyTransitionAndRoomClose(t *testing.T)
 }
 
 func TestClosedUnmergedPRHasNoMergeRows(t *testing.T) {
+	t.Parallel()
 	v := fold(t, triggered(t),
 		ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
 		opened(t),

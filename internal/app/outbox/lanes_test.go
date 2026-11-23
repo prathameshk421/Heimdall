@@ -61,6 +61,7 @@ func (q *quickExec) Execute(_ context.Context, fx change.Effect) error {
 
 // O2: three long sandbox effects in flight must not block a task_assign claimed after them.
 func TestSlowSandboxEffectsDoNotBlockQuickTaskAssign(t *testing.T) {
+	t.Parallel()
 	box := newMemOutbox(
 		effectOf(change.EffectRunChecks, 1),
 		effectOf(change.EffectTestQuality, 2),

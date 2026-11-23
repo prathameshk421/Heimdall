@@ -8,6 +8,7 @@ import (
 )
 
 func TestParseGoCoverGolden(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		file string
@@ -43,6 +44,7 @@ func TestParseGoCoverGolden(t *testing.T) {
 }
 
 func TestParseGoCoverRefusesBadReports(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		in   string
@@ -74,12 +76,14 @@ func TestParseGoCoverRefusesBadReports(t *testing.T) {
 }
 
 func TestParseGoCoverAcceptsAModeOnlyProfile(t *testing.T) {
+	t.Parallel()
 	got, err := ParseGoCover([]byte("mode: atomic\n"), Options{MaxBytes: 1 << 20})
 	require.NoError(t, err)
 	require.Empty(t, got.Files)
 }
 
 func TestParseGoCoverAcceptsCRLF(t *testing.T) {
+	t.Parallel()
 	in := "mode: set\r\nexample.com/app/a.go:1.1,2.2 1 1\r\n"
 	got, err := ParseGoCover([]byte(in), Options{MaxBytes: 1 << 20, Prefix: "example.com/app"})
 	require.NoError(t, err)
@@ -87,6 +91,7 @@ func TestParseGoCoverAcceptsCRLF(t *testing.T) {
 }
 
 func TestParseGoCoverHandlesWindowsPaths(t *testing.T) {
+	t.Parallel()
 	in := "mode: set\nC:\\work\\app\\a.go:1.1,2.2 1 1\n"
 	got, err := ParseGoCover([]byte(in), Options{MaxBytes: 1 << 20, Prefix: "C:\\work\\app"})
 	require.NoError(t, err)
@@ -98,6 +103,7 @@ func TestParseGoCoverHandlesWindowsPaths(t *testing.T) {
 // it closes the span at the start of the brace line. Real profiles from google/uuid and spf13/cobra end
 // 100 of 148 and 596 of 813 multi-line blocks this way (docs/product/research/12-coverage-real-reports.md).
 func TestParseGoCoverEndColumnOneLeavesTheEndLineOut(t *testing.T) {
+	t.Parallel()
 	in := "mode: set\n" +
 		"example.com/app/a.go:35.3,38.1 3 1\n" + // the body of an if: lines 35 to 37, the brace on line 38 is outside
 		"example.com/app/a.go:39.2,39.18 1 0\n" + // the statement after the brace
@@ -111,6 +117,7 @@ func TestParseGoCoverEndColumnOneLeavesTheEndLineOut(t *testing.T) {
 
 // A span that starts and ends on one line keeps that line, whatever its end column.
 func TestParseGoCoverSingleLineSpanKeepsItsLine(t *testing.T) {
+	t.Parallel()
 	got, err := ParseGoCover([]byte("mode: set\nexample.com/app/a.go:5.1,5.1 1 1\n"), Options{MaxBytes: 1 << 20, Prefix: "example.com/app"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]Lines{"a.go": {5: 1}}, got.Files)

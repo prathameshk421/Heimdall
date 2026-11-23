@@ -16,7 +16,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 )
 
-// fakePoller fails its first failFirst polls, and cancels the loop's context on poll number cancelAt.
 type fakePoller struct {
 	calls     int
 	failFirst int
@@ -35,7 +34,6 @@ func (f *fakePoller) PollOnce(context.Context) (trigger.PollResult, error) {
 	return trigger.PollResult{Triggered: 1}, nil
 }
 
-// recordingDrainer records that it ran, then returns when the loops stop.
 type recordingDrainer struct {
 	ran atomic.Bool
 }
@@ -46,10 +44,16 @@ func (d *recordingDrainer) Run(ctx context.Context, _ <-chan struct{}, _ <-chan 
 	return nil
 }
 
-// blockingDrainer waits for the context to end, then for release, and records that it finished.
 type blockingDrainer struct {
 	release  chan struct{}
 	finished atomic.Bool
+}
+
+func (d *blockingDrainer) Run(ctx context.Context, _ <-chan struct{}, _ <-chan time.Time) error {
+	<-ctx.Done()
+	<-d.release
+	d.finished.Store(true)
+	return nil
 }
 
 type blockingRoomStream struct {
@@ -78,6 +82,7 @@ func (p *recordingCommentPoller) PollOnce(context.Context) (collaboration.Commen
 }
 
 func TestLoopsStartAndJoinRoomStreamAndGitHubCommentConsumers(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	room := &blockingRoomStream{started: make(chan struct{}, 1)}
@@ -104,16 +109,20 @@ func TestLoopsStartAndJoinRoomStreamAndGitHubCommentConsumers(t *testing.T) {
 	require.True(t, room.stopped.Load(), "server shutdown must wait for the room stream")
 }
 
-func (d *blockingDrainer) Run(ctx context.Context, _ <-chan struct{}, _ <-chan time.Time) error {
-	<-ctx.Done()
-	<-d.release
-	d.finished.Store(true)
-	return nil
-}
-
 type retentionSpy struct {
 	calls  int
 	cancel context.CancelFunc
+}
+
+func (r *retentionSpy) Expire(context.Context) (int, error) { r.calls++; r.cancel(); return 2, nil }
+
+func TestKnowledgeRetentionLoopSweepsImmediatelyAndStopsWithContext(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	retention := &retentionSpy{cancel: cancel}
+	(&app{retention: retention, logger: discardLogger()}).knowledgeRetentionLoop(ctx)
+	require.Equal(t, 1, retention.calls)
 }
 
 type episodeDrainSpy struct {
@@ -129,111 +138,16 @@ func (e *episodeDrainSpy) RunOnce(_ context.Context, limit int) (int, error) {
 	return 1, nil
 }
 
-func (r *retentionSpy) Expire(context.Context) (int, error) { r.calls++; r.cancel(); return 2, nil }
-
-func TestKnowledgeRetentionLoopSweepsImmediatelyAndStopsWithContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	retention := &retentionSpy{cancel: cancel}
-	a := &app{retention: retention, logger: discardLogger()}
-	a.knowledgeRetentionLoop(ctx)
-	require.Equal(t, 1, retention.calls)
-}
-
 func TestEpisodeDeliveryLoopRetriesOnTheSharedDrainCadence(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	drain := &episodeDrainSpy{cancel: cancel}
-	a := &app{episodeWorker: drain, logger: discardLogger()}
-	a.episodeDeliveryLoop(ctx)
+	(&app{episodeWorker: drain, logger: discardLogger()}).episodeDeliveryLoop(ctx)
 	require.Equal(t, 1, drain.calls)
 	require.Equal(t, 100, drain.limit)
 }
 
-// A poll error is logged and the next poll still runs. The loop ends only when its context is done.
-func TestPollLoopKeepsPollingAfterAPollError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	fp := &fakePoller{failFirst: 3, cancelAt: 5, cancel: cancel}
-	a := &app{pollers: []poller{fp}, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Millisecond}
-
-	a.pollLoop(ctx, fp, make(chan struct{}, 1))
-
-	require.Equal(t, 5, fp.calls, "three failed polls must not stop the loop")
-}
-
-// The poll wakes the drainer after each poll, so a committed effect does not wait for the next tick.
-func TestPollLoopWakesTheDrainerAfterEachPoll(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	fp := &fakePoller{cancelAt: 1, cancel: cancel}
-	a := &app{pollers: []poller{fp}, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Hour}
-	wake := make(chan struct{}, 1)
-
-	a.pollLoop(ctx, fp, wake)
-
-	require.Len(t, wake, 1, "the last poll left a wake for the drainer")
-}
-
-// The loops run the drainer. A drainer that never starts holds every effect until it dead-letters.
-func TestLoopsRunTheDrainer(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	d := &recordingDrainer{}
-	a := &app{
-		pollers: []poller{&fakePoller{}}, drainer: d, logger: discardLogger(), clock: clock.System{},
-		pollEvery: time.Hour, drainTick: time.Hour,
-	}
-	done := make(chan struct{})
-	go func() {
-		a.loops(ctx)
-		close(done)
-	}()
-
-	require.Eventually(t, d.ran.Load, 5*time.Second, time.Millisecond, "the outbox drainer must run")
-	cancel()
-	<-done
-}
-
-// Shutdown waits for the drainer. A loop that returned while the drainer was still at work would let the process exit
-// with an effect half done.
-func TestLoopsWaitForTheDrainerBeforeReturning(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	d := &blockingDrainer{release: make(chan struct{})}
-	a := &app{
-		pollers: []poller{&fakePoller{}}, drainer: d, logger: discardLogger(), clock: clock.System{},
-		pollEvery: time.Hour, drainTick: time.Hour,
-	}
-	returned := make(chan struct{})
-	go func() {
-		a.loops(ctx)
-		close(returned)
-	}()
-
-	cancel()
-	require.Never(t, func() bool {
-		select {
-		case <-returned:
-			return true
-		default:
-			return false
-		}
-	}, 50*time.Millisecond, time.Millisecond, "loops returned while the drainer was still running")
-
-	close(d.release)
-	require.Eventually(t, func() bool {
-		select {
-		case <-returned:
-			return true
-		default:
-			return false
-		}
-	}, 5*time.Second, time.Millisecond)
-	require.True(t, d.finished.Load())
-}
-
-// fakeSyncer fails its first failFirst syncs, and cancels the loop's context on sync number cancelAt.
 type fakeSyncer struct {
 	calls     int
 	failFirst int
@@ -258,7 +172,6 @@ func (f *fakeSyncer) SyncOnce(_ context.Context) (prsync.Result, error) {
 	return prsync.Result{Synced: 1}, nil
 }
 
-// blockingSyncer waits for the context to end, then for release, and records that it finished.
 type blockingSyncer struct {
 	started  chan struct{}
 	release  chan struct{}
@@ -282,33 +195,54 @@ func (s *blockingSyncer) SyncOnce(ctx context.Context) (prsync.Result, error) {
 	return prsync.Result{}, ctx.Err()
 }
 
-// A sync error is logged and the next sync still runs. The loop ends only when its context is done.
-func TestSyncLoopKeepsSyncingAfterASyncError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	fs := &fakeSyncer{failFirst: 3, cancelAt: 5, cancel: cancel}
-	a := &app{syncer: fs, logger: discardLogger(), clock: clock.System{}, syncEvery: time.Millisecond}
-
-	a.syncLoop(ctx, make(chan struct{}, 1))
-
-	require.Equal(t, 5, fs.calls, "three failed syncs must not stop the loop")
+func TestLoopsKeepRunningAfterErrors(t *testing.T) {
+	t.Parallel()
+	t.Run("poll loop", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		fp := &fakePoller{failFirst: 3, cancelAt: 5, cancel: cancel}
+		a := &app{pollers: []poller{fp}, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Millisecond}
+		a.pollLoop(ctx, fp, make(chan struct{}, 1))
+		require.Equal(t, 5, fp.calls, "three failed polls must not stop the loop")
+	})
+	t.Run("sync loop", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		fs := &fakeSyncer{failFirst: 3, cancelAt: 5, cancel: cancel}
+		a := &app{syncer: fs, logger: discardLogger(), clock: clock.System{}, syncEvery: time.Millisecond}
+		a.syncLoop(ctx, make(chan struct{}, 1))
+		require.Equal(t, 5, fs.calls, "three failed syncs must not stop the loop")
+	})
 }
 
-// The sync wakes the drainer after each sync, so a committed effect does not wait for the next tick.
-func TestSyncLoopWakesTheDrainerAfterEachSync(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	fs := &fakeSyncer{cancelAt: 1, cancel: cancel}
-	a := &app{syncer: fs, logger: discardLogger(), clock: clock.System{}, syncEvery: time.Hour}
-	wake := make(chan struct{}, 1)
-
-	a.syncLoop(ctx, wake)
-
-	require.Len(t, wake, 1, "the last sync left a wake for the drainer")
+func TestLoopsWakeTheDrainerAfterRun(t *testing.T) {
+	t.Parallel()
+	t.Run("poll loop wakes drainer", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		fp := &fakePoller{cancelAt: 1, cancel: cancel}
+		a := &app{pollers: []poller{fp}, logger: discardLogger(), clock: clock.System{}, pollEvery: time.Hour}
+		wake := make(chan struct{}, 1)
+		a.pollLoop(ctx, fp, wake)
+		require.Len(t, wake, 1, "the last poll left a wake for the drainer")
+	})
+	t.Run("sync loop wakes drainer", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		fs := &fakeSyncer{cancelAt: 1, cancel: cancel}
+		a := &app{syncer: fs, logger: discardLogger(), clock: clock.System{}, syncEvery: time.Hour}
+		wake := make(chan struct{}, 1)
+		a.syncLoop(ctx, wake)
+		require.Len(t, wake, 1, "the last sync left a wake for the drainer")
+	})
 }
 
-// The loops run the syncer.
-func TestLoopsRunTheSyncer(t *testing.T) {
+func TestLoopsRunDrainerAndSyncer(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	fs := &fakeSyncer{}
@@ -323,17 +257,18 @@ func TestLoopsRunTheSyncer(t *testing.T) {
 		close(done)
 	}()
 
+	require.Eventually(t, d.ran.Load, 5*time.Second, time.Millisecond, "the outbox drainer must run")
 	require.Eventually(t, fs.ran.Load, 5*time.Second, time.Millisecond, "the syncer must run")
 	cancel()
 	<-done
 }
 
-// Shutdown waits for the syncer.
-func TestLoopsWaitForTheSyncerBeforeReturning(t *testing.T) {
+func TestLoopsWaitForDrainerAndSyncerBeforeReturning(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	d := &blockingDrainer{release: make(chan struct{})}
 	s := &blockingSyncer{started: make(chan struct{}, 1), release: make(chan struct{})}
-	d := &recordingDrainer{}
 	a := &app{
 		pollers: []poller{&fakePoller{}}, syncer: s, drainer: d, logger: discardLogger(), clock: clock.System{},
 		pollEvery: time.Hour, syncEvery: time.Hour, drainTick: time.Hour,
@@ -345,8 +280,8 @@ func TestLoopsWaitForTheSyncerBeforeReturning(t *testing.T) {
 	}()
 
 	<-s.started
-
 	cancel()
+
 	require.Never(t, func() bool {
 		select {
 		case <-returned:
@@ -354,8 +289,9 @@ func TestLoopsWaitForTheSyncerBeforeReturning(t *testing.T) {
 		default:
 			return false
 		}
-	}, 50*time.Millisecond, time.Millisecond, "loops returned while the syncer was still running")
+	}, 50*time.Millisecond, time.Millisecond, "loops returned while workers were still running")
 
+	close(d.release)
 	close(s.release)
 	require.Eventually(t, func() bool {
 		select {
@@ -365,10 +301,10 @@ func TestLoopsWaitForTheSyncerBeforeReturning(t *testing.T) {
 			return false
 		}
 	}, 5*time.Second, time.Millisecond)
+	require.True(t, d.finished.Load())
 	require.True(t, s.finished.Load())
 }
 
-// steppedClock is a clock the test moves. Each sync moves it forward by step.
 type steppedClock struct {
 	mu sync.Mutex
 	at time.Time
@@ -386,8 +322,6 @@ func (c *steppedClock) advance(d time.Duration) {
 	c.at = c.at.Add(d)
 }
 
-// orderSyncer records the order of its reconcile and sync passes. Each sync moves the clock forward by step, and the
-// loop's context ends on sync number cancelAt.
 type orderSyncer struct {
 	order    []string
 	clk      *steppedClock
@@ -420,28 +354,26 @@ func syncs(order []string) int {
 	return n
 }
 
-// The boot pass runs before the first sync, so a stop during downtime is recovered before the next PR sync.
-func TestSyncLoopReconcilesAtBootBeforeTheFirstSync(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	clk := &steppedClock{at: time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)}
-	rec := &orderSyncer{clk: clk, step: time.Minute, cancelAt: 3, cancel: cancel}
-	a := &app{syncer: rec, logger: discardLogger(), clock: clk, syncEvery: time.Millisecond}
-
-	a.syncLoop(ctx, make(chan struct{}, 1))
-
-	require.Equal(t, []string{"reconcile", "sync", "sync", "sync"}, rec.order)
-}
-
-// The boot pass runs again once reconcileInterval has passed, and not before.
-func TestSyncLoopReconcilesAgainAfterTheInterval(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	clk := &steppedClock{at: time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)}
-	rec := &orderSyncer{clk: clk, step: reconcileInterval, cancelAt: 3, cancel: cancel}
-	a := &app{syncer: rec, logger: discardLogger(), clock: clk, syncEvery: time.Millisecond}
-
-	a.syncLoop(ctx, make(chan struct{}, 1))
-
-	require.Equal(t, []string{"reconcile", "sync", "reconcile", "sync", "reconcile", "sync"}, rec.order)
+func TestSyncLoopReconciles(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		step time.Duration
+		want []string
+	}{
+		{"at boot before first sync", time.Minute, []string{"reconcile", "sync", "sync", "sync"}},
+		{"again after interval", reconcileInterval, []string{"reconcile", "sync", "reconcile", "sync", "reconcile", "sync"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			clk := &steppedClock{at: time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)}
+			rec := &orderSyncer{clk: clk, step: tc.step, cancelAt: 3, cancel: cancel}
+			a := &app{syncer: rec, logger: discardLogger(), clock: clk, syncEvery: time.Millisecond}
+			a.syncLoop(ctx, make(chan struct{}, 1))
+			require.Equal(t, tc.want, rec.order)
+		})
+	}
 }

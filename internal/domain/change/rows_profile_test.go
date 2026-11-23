@@ -23,6 +23,7 @@ func profileIn(t *testing.T, p change.Profile, profiler string) change.In {
 
 // The profile row walks a repository from no profile to a promoted one (D175): propose, approve, trial, promote.
 func TestTheProfileRowProposesThenAsksThenTrialsThenAsksToPromote(t *testing.T) {
+	t.Parallel()
 	id1 := strings.Repeat("c", 64)
 
 	first := actionsOf(profileIn(t, change.Profile{}, "profiler"))["profile"][0]
@@ -52,6 +53,7 @@ func TestTheProfileRowProposesThenAsksThenTrialsThenAsksToPromote(t *testing.T) 
 }
 
 func TestTheProfileRowSaysSoWhenNoProfilerIsConfigured(t *testing.T) {
+	t.Parallel()
 	got := actionsOf(profileIn(t, change.Profile{}, ""))["profile"][0]
 	require.Nil(t, got.Task)
 	require.Equal(t, "acme/pay has no sandbox profile, and no profiler is configured in [agents] to propose one", got.Text)
@@ -60,6 +62,7 @@ func TestTheProfileRowSaysSoWhenNoProfilerIsConfigured(t *testing.T) {
 // A promoted profile can gain a check: an owner's reprofile request is pending until a proposal created at or after it
 // arrives, then that newer proposal drives approve, trial and promote, and the row is done again (D184).
 func TestAPromotedProfileTakesARevisionRequestAndWalksTheNewProposal(t *testing.T) {
+	t.Parallel()
 	promoted := strings.Repeat("a", 64)
 	newer := strings.Repeat("b", 64)
 	asked := t0.Add(time.Hour)
@@ -103,6 +106,7 @@ func TestAPromotedProfileTakesARevisionRequestAndWalksTheNewProposal(t *testing.
 
 // A request with no profiler configured is words, not a task.
 func TestARevisionRequestWithNoProfilerIsWords(t *testing.T) {
+	t.Parallel()
 	in := profileIn(t, change.Profile{Promoted: true, PromotedID: strings.Repeat("a", 64),
 		Latest: &change.ProfileProposal{ID: strings.Repeat("a", 64), State: "promoted", CreatedAt: t0}}, "")
 	in.View.ProfileRequest = &change.ProfileRequestInfo{Repo: "acme/pay", By: "ana", Note: "add lint", Asked: t0.Add(time.Hour)}
@@ -113,6 +117,7 @@ func TestARevisionRequestWithNoProfilerIsWords(t *testing.T) {
 
 // The D173 cap still applies to a revise task: two failures on the same input ask a person to resume.
 func TestAReviseTaskThatFailedTwiceWaitsForAPerson(t *testing.T) {
+	t.Parallel()
 	promoted := strings.Repeat("a", 64)
 	v := fold(t, opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
 		ev(t, 3, change.EventProfileRequested, change.ProfileRequested{Repo: "acme/pay", By: "ana", Note: "add lint"}))
@@ -140,6 +145,7 @@ func TestAReviseTaskThatFailedTwiceWaitsForAPerson(t *testing.T) {
 
 // Review never waits for a profile: the row has no dependents.
 func TestReviewDoesNotWaitForTheProfile(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
 		ev(t, 3, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1"}, By: "heimdall", Method: change.PickDefault}))
 	in := inOf("pr-acme-pay-7", v, t0.Add(time.Hour))
@@ -170,6 +176,7 @@ func profileActions(t *testing.T, evs ...change.Event) []change.Action {
 // A profiler seat that failed twice on the same input is not assigned again until a person resumes the profile row,
 // which starts a new round and allows two more failures (D173, D175).
 func TestAProfileTaskThatFailedTwiceIsNotAssignedAgainUntilResumed(t *testing.T) {
+	t.Parallel()
 	base := []change.Event{opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true})}
 	once := append(append([]change.Event{}, base...), profileTask(t, 3, "tsk_01HZX3K9QW7M2P5R8T0V4YB6C1")...)
 	got := profileActions(t, once...)[0]

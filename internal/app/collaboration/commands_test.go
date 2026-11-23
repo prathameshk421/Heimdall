@@ -68,6 +68,7 @@ func processor(t *testing.T, identity Identity, executor *executorFake, replies 
 }
 
 func TestHandleAuthorizesAndExecutesMappedRoomCommand(t *testing.T) {
+	t.Parallel()
 	identity := identityFake{people: mappedPeople{"chat:sender-1": "ana"}, person: "ana"}
 	executor, replies := &executorFake{}, &replyFake{}
 	proc := processor(t, identity, executor, replies)
@@ -85,6 +86,7 @@ func TestHandleAuthorizesAndExecutesMappedRoomCommand(t *testing.T) {
 }
 
 func TestHandleRefusesUnauthorizedCommandWithoutExecuting(t *testing.T) {
+	t.Parallel()
 	executor, replies := &executorFake{}, &replyFake{}
 	proc := processor(t, identityFake{
 		people: mappedPeople{"chat:sender-1": "ana"}, deny: errors.New("wrong role"),
@@ -99,6 +101,7 @@ func TestHandleRefusesUnauthorizedCommandWithoutExecuting(t *testing.T) {
 }
 
 func TestHandleIgnoresAgentsBotsEditedAndUnaddressedPosts(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		in    Input
@@ -120,6 +123,7 @@ func TestHandleIgnoresAgentsBotsEditedAndUnaddressedPosts(t *testing.T) {
 }
 
 func TestHandleRepliesWithSourceGrammarForUnknownVerb(t *testing.T) {
+	t.Parallel()
 	executor, replies := &executorFake{}, &replyFake{}
 	proc := processor(t, identityFake{people: mappedPeople{"github:ana": "ana"}}, executor, replies)
 	require.NoError(t, proc.Handle(context.Background(), Input{
@@ -133,6 +137,7 @@ func TestHandleRepliesWithSourceGrammarForUnknownVerb(t *testing.T) {
 // A refusal is a decision the person must hear: it gets one reply with the reason and no error, so the GitHub comment
 // poller advances its cursor instead of retrying the same comment forever (D173).
 func TestHandleRepliesWithTheReasonWhenTheExecutorRefuses(t *testing.T) {
+	t.Parallel()
 	executor := &executorFake{err: refuse("step profile is not escalated, so there is nothing to resume")}
 	replies := &replyFake{}
 	proc := processor(t, identityFake{people: mappedPeople{"chat:sender-1": "ana"}, person: "ana"}, executor, replies)
@@ -147,6 +152,7 @@ func TestHandleRepliesWithTheReasonWhenTheExecutorRefuses(t *testing.T) {
 
 // Any other executor error is still a failure: the caller decides whether to retry, and no reply claims success.
 func TestHandleReturnsAPlainExecutorErrorWithoutReplying(t *testing.T) {
+	t.Parallel()
 	executor := &executorFake{err: errors.New("event store is down")}
 	replies := &replyFake{}
 	proc := processor(t, identityFake{people: mappedPeople{"chat:sender-1": "ana"}, person: "ana"}, executor, replies)

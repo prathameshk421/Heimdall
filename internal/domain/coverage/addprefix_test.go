@@ -7,6 +7,7 @@ import (
 )
 
 func TestAddPrefixSupportsSubdirectoryAndJavaReports(t *testing.T) {
+	t.Parallel()
 	// Java Cobertura-style relative path under src/main/java
 	b, err := NewBuilder(Options{MaxBytes: 1 << 20, AddPrefix: "src/main/java"})
 	require.NoError(t, err)
@@ -31,6 +32,7 @@ func TestAddPrefixSupportsSubdirectoryAndJavaReports(t *testing.T) {
 }
 
 func TestAddPrefixRefusesTraversal(t *testing.T) {
+	t.Parallel()
 	_, err := NewBuilder(Options{MaxBytes: 1 << 20, AddPrefix: "../escape"})
 	require.Error(t, err)
 }

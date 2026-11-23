@@ -23,6 +23,7 @@ func newWriteClient(t *testing.T, baseURL string) *Client {
 }
 
 func TestCommentPostsADFAndDeduplicatesByKey(t *testing.T) {
+	t.Parallel()
 	var calls int
 	var gotMethod, gotPath string
 	var gotBody map[string]any
@@ -44,6 +45,7 @@ func TestCommentPostsADFAndDeduplicatesByKey(t *testing.T) {
 }
 
 func TestTransitionLooksUpMatchingStatusAndPostsID(t *testing.T) {
+	t.Parallel()
 	var postID, postPath string
 	var posts int
 	f := newFake(t, func(w http.ResponseWriter, r *http.Request) {

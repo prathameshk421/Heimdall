@@ -40,6 +40,7 @@ func blockedInput(a policy.Action) summary.Input {
 
 // TestShadowSaysWouldBlock: shadow mode never says "blocks", in the headline, on a finding or on a clause.
 func TestShadowSaysWouldBlock(t *testing.T) {
+	t.Parallel()
 	in := blockedInput(shadow())
 	in.Fast = withClause(greenFast(), clause(fastcheck.ClauseSecrets, fastcheck.StatusUnmet, "a token in run.sh"), gate.VerdictFail)
 	in.Fast = withClause(in.Fast, clause(fastcheck.ClauseApproval, fastcheck.StatusUnknown, "reviews unreadable"), gate.VerdictFail)
@@ -56,6 +57,7 @@ func TestShadowSaysWouldBlock(t *testing.T) {
 
 // TestEnforceSaysBlocks: in enforce mode with the proof required, the same facts say "blocks".
 func TestEnforceSaysBlocks(t *testing.T) {
+	t.Parallel()
 	in := blockedInput(enforce(true))
 	require.Equal(t, "Proven: 1 blocking finding · enforce · `a1b2c3d`", headlineOf(t, in))
 	require.Contains(t, summary.Render(in), "blocks the merge")
@@ -64,6 +66,7 @@ func TestEnforceSaysBlocks(t *testing.T) {
 
 // TestAdvisoryProofDoesNotSoundLikeABlock: enforce mode with an advisory proof check is neutral, so the page says so.
 func TestAdvisoryProofDoesNotSoundLikeABlock(t *testing.T) {
+	t.Parallel()
 	in := blockedInput(enforce(false))
 	require.Equal(t, "Proven: 1 blocking finding, advisory only · enforce · `a1b2c3d`", headlineOf(t, in))
 	out := summary.Render(in)
@@ -74,6 +77,7 @@ func TestAdvisoryProofDoesNotSoundLikeABlock(t *testing.T) {
 // TestModeIsReadStrictly: a mode that is not shadow reads as enforce, as package proof reads it, and a zero action is
 // shadow like policy.Action.Effective.
 func TestModeIsReadStrictly(t *testing.T) {
+	t.Parallel()
 	in := blockedInput(policy.Action{Mode: "SHADOW "})
 	require.Contains(t, headlineOf(t, in), "· enforce ·")
 	require.Contains(t, summary.Render(in), "blocks the merge")
@@ -83,6 +87,7 @@ func TestModeIsReadStrictly(t *testing.T) {
 
 // TestWordsForUnproven: the page says "unproven" and "not shown", and never says a finding is false or dropped.
 func TestWordsForUnproven(t *testing.T) {
+	t.Parallel()
 	for _, c := range goldenCases() {
 		out := strings.ToLower(summary.Render(c.in))
 		for _, banned := range []string{"false", "dropped", "disproved", "wrong claim", "invalid"} {
@@ -99,6 +104,7 @@ func TestWordsForUnproven(t *testing.T) {
 
 // TestHeadlines: the verdict in plain words for each way a run can end, in the order of precedence.
 func TestHeadlines(t *testing.T) {
+	t.Parallel()
 	unmetFast := withClause(greenFast(), clause(fastcheck.ClauseSecrets, fastcheck.StatusUnmet, "x"), gate.VerdictFail)
 	unknownFast := withClause(greenFast(), clause(fastcheck.ClauseApproval, fastcheck.StatusUnknown, "x"), gate.VerdictUnknown)
 	proven := provenE1("F1", false)
@@ -135,6 +141,7 @@ func TestHeadlines(t *testing.T) {
 
 // TestEveryStopReasonHasAHeadline: no reason falls to the generic wording by accident.
 func TestEveryStopReasonHasAHeadline(t *testing.T) {
+	t.Parallel()
 	for _, r := range proof.StopReasons() {
 		h := headlineOf(t, summary.Input{Head: head, Action: enforce(true), Fast: greenFast(),
 			Proof: proof.Outcome{Kind: proof.KindUnknown, Reason: r}})
@@ -148,6 +155,7 @@ func TestEveryStopReasonHasAHeadline(t *testing.T) {
 // TestSilenceIsNeverSafe: a missing fast check, an E4 finding marked proven, and an impossible spend are never shown as
 // good news.
 func TestSilenceIsNeverSafe(t *testing.T) {
+	t.Parallel()
 	out := summary.Render(summary.Input{Head: head, Action: enforce(true), Proof: proof.Outcome{Kind: proof.KindProven}})
 	require.Contains(t, out, "The fast check did not report")
 	require.NotContains(t, out, "Nothing proven against this change")
@@ -175,6 +183,7 @@ func TestSilenceIsNeverSafe(t *testing.T) {
 
 // TestNotCheckedIsListed: what Heimdall did not look at is on the page: clauses, an unfinished run, candidates.
 func TestNotCheckedIsListed(t *testing.T) {
+	t.Parallel()
 	in := summary.Input{Head: head, Action: enforce(true), Fast: greenFast(),
 		Proof: proof.Outcome{Kind: proof.KindUnknown, Reason: proof.ReasonDeadline},
 		Findings: []summary.Finding{
@@ -194,6 +203,7 @@ func TestNotCheckedIsListed(t *testing.T) {
 
 // TestCostLine: the cost of the run, the month when given, tokens and wall time; $0 for a skip; no number for a bad one.
 func TestCostLine(t *testing.T) {
+	t.Parallel()
 	costOf := func(in summary.Input) string {
 		out := summary.Render(in)
 		return from(t, out, "Cost: ")
@@ -220,6 +230,7 @@ func TestCostLine(t *testing.T) {
 
 // TestOrderDoesNotDependOnInputOrder: the same findings in any order give the same page.
 func TestOrderDoesNotDependOnInputOrder(t *testing.T) {
+	t.Parallel()
 	in := goldenCases()[1].in
 	in.Findings = append(in.Findings, provenE1("F5", false), provenE1("F10", true),
 		dropped("F11", summary.ReviewerCopilot, proof.DropOutdated), notChecked("F12", summary.ReviewerCodeRabbit, proof.ReasonBudget))
@@ -250,6 +261,7 @@ func TestOrderDoesNotDependOnInputOrder(t *testing.T) {
 
 // TestRaisedBy: each reporter is named, once, in a fixed order; a tool of package external maps to its reviewer.
 func TestRaisedBy(t *testing.T) {
+	t.Parallel()
 	f := provenE1("F1", true)
 	f.Reporters = []summary.Reviewer{summary.ReviewerOf(external.ToolGreptile), summary.ReviewerBugbot, summary.ReviewerHeimdall,
 		summary.ReviewerCopilot, summary.ReviewerCodeRabbit, summary.ReviewerHeimdall}
@@ -264,6 +276,7 @@ func TestRaisedBy(t *testing.T) {
 
 // TestPlaces: the place of a finding reads as path:line, path:first-last, or just the path.
 func TestPlaces(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		loc  finding.Location
 		want string
@@ -284,6 +297,7 @@ func TestPlaces(t *testing.T) {
 
 // TestMarker: the marker round trips, is strict, and takes only safe values.
 func TestMarker(t *testing.T) {
+	t.Parallel()
 	m := summary.Marker{Change: "412", Version: 3, Head: head}
 	line := m.String()
 	require.Equal(t, "<!-- heimdall:proof-summary change=412 version=3 head="+head+" -->", line)

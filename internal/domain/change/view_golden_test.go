@@ -20,6 +20,7 @@ import (
 // The goldens of testdata/plan/view (recorded KAN-22 and KAN-23 logs, and one authored log): Fold, then Missing with
 // the policy at the merge base, reproduce view.json and missing.json byte for byte at every point.
 func TestFoldAndMissingMatchTheGoldens(t *testing.T) {
+	t.Parallel()
 	logs, err := filepath.Glob(filepath.Join("..", "..", "..", "testdata", "plan", "view", "*", "log.jsonl"))
 	require.NoError(t, err)
 	require.NotEmpty(t, logs)

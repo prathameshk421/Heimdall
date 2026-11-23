@@ -12,6 +12,7 @@ import (
 
 // The room-close summary names a ticketless pull request by its own address, never the pr-... stream id.
 func TestRoomCloseSummaryNamesATicketlessPullRequestReadably(t *testing.T) {
+	t.Parallel()
 	const prc = id.ChangeID("pr-aarush323-heimdall-fixture-pay-15")
 	closed := change.PRClosed{
 		Repo:    "aarush323/heimdall-fixture-pay",

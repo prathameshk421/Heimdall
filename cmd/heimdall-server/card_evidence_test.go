@@ -24,7 +24,6 @@ const (
 	evidenceCard = "---\napplies_to: [\"internal/pay/**\"]\ncheck: \"Does the cap count past refunds?\"\nkind: invariant\n---\nSum the refunds.\n"
 )
 
-// evidencePolicyCode serves one policy per commit, so a test can tell which commit the code read.
 type evidencePolicyCode struct{ bySHA map[id.SHA][]byte }
 
 func (c evidencePolicyCode) ReadFile(_ context.Context, _ change.Repo, sha id.SHA, _ string) ([]byte, error) {
@@ -42,7 +41,6 @@ func (r *recordingRecheck) Recheck(_ context.Context, _ id.AgentName, _ change.R
 	return verify.MemoryState{Found: true, Confirmed: true}, nil
 }
 
-// evidencePolicy decodes through a small table, because the real policy file needs far more keys than this test does.
 func evidencePolicy(owners ...string) policy.Policy {
 	return policy.Policy{
 		People:    map[string]policy.Person{"bob": {Seat: "bob-reviewer"}},
@@ -74,41 +72,91 @@ func evidenceTier(t *testing.T, c cardEvidence, sha id.SHA, ref string) finding.
 	return verify.TierForE3(state)
 }
 
-func TestConfirmedCardIsE3ForAFileItsOwnerApproves(t *testing.T) {
-	c, store, _ := newEvidenceFixture(t, nil)
-	require.Equal(t, finding.TierE4, evidenceTier(t, c, evidenceBase, evidenceRef), "an unconfirmed card never blocks")
-	require.NoError(t, store.Confirm("bob", "cap.md"))
-	require.Equal(t, finding.TierE3, evidenceTier(t, c, evidenceBase, evidenceRef))
-}
-
-func TestAnEditEndsTheForceOfACard(t *testing.T) {
-	c, store, _ := newEvidenceFixture(t, nil)
-	require.NoError(t, store.Confirm("bob", "cap.md"))
-	require.NoError(t, store.Write("bob", "cap.md", []byte(evidenceCard+"Also block everything else.\n")))
-	require.Equal(t, finding.TierE4, evidenceTier(t, c, evidenceBase, evidenceRef))
-}
-
-func TestACardHasNoForceOutsideWhatItsOwnerApproves(t *testing.T) {
-	c, store, _ := newEvidenceFixture(t, nil)
-	require.NoError(t, store.Confirm("bob", "cap.md"))
-	require.Equal(t, finding.TierE4, evidenceTier(t, c, evidenceHead, evidenceRef), "the owner is not an approver in this policy")
-	require.Equal(t, finding.TierE4, evidenceTier(t, c, evidenceBase, "card:cap.md#web/app.ts"), "the file is outside the card")
-}
-
-func TestAMutedCardLosesItsForce(t *testing.T) {
-	c, store, _ := newEvidenceFixture(t, map[string]rulecard.Record{"cap.md": {Noise: 5}})
-	require.NoError(t, store.Confirm("bob", "cap.md"))
-	require.Equal(t, finding.TierE4, evidenceTier(t, c, evidenceBase, evidenceRef))
-}
-
-func TestAMissingOrBrokenCardIsNotEvidence(t *testing.T) {
-	c, store, _ := newEvidenceFixture(t, nil)
-	require.Equal(t, finding.TierE4, evidenceTier(t, c, evidenceBase, "card:none.md#internal/pay/refund.go"))
-	require.NoError(t, store.Write("bob", "cap.md", []byte("---\napplies_to: [oops\n---\nbody")))
-	require.Equal(t, finding.TierE4, evidenceTier(t, c, evidenceBase, evidenceRef))
+func TestCardEvidenceTiers(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		records map[string]rulecard.Record
+		mutate  func(*cardsfs.Store)
+		sha     id.SHA
+		ref     string
+		want    finding.Tier
+	}{
+		{
+			name: "unconfirmed card never blocks",
+			sha:  evidenceBase,
+			ref:  evidenceRef,
+			want: finding.TierE4,
+		},
+		{
+			name:   "confirmed card is E3 for approved file",
+			mutate: func(s *cardsfs.Store) { _ = s.Confirm("bob", "cap.md") },
+			sha:    evidenceBase,
+			ref:    evidenceRef,
+			want:   finding.TierE3,
+		},
+		{
+			name: "edit ends force of card",
+			mutate: func(s *cardsfs.Store) {
+				_ = s.Confirm("bob", "cap.md")
+				_ = s.Write("bob", "cap.md", []byte(evidenceCard+"Also block everything else.\n"))
+			},
+			sha:  evidenceBase,
+			ref:  evidenceRef,
+			want: finding.TierE4,
+		},
+		{
+			name:   "card has no force when owner is not approver",
+			mutate: func(s *cardsfs.Store) { _ = s.Confirm("bob", "cap.md") },
+			sha:    evidenceHead,
+			ref:    evidenceRef,
+			want:   finding.TierE4,
+		},
+		{
+			name:   "card has no force outside its pattern",
+			mutate: func(s *cardsfs.Store) { _ = s.Confirm("bob", "cap.md") },
+			sha:    evidenceBase,
+			ref:    "card:cap.md#web/app.ts",
+			want:   finding.TierE4,
+		},
+		{
+			name:    "muted card loses force",
+			records: map[string]rulecard.Record{"cap.md": {Noise: 5}},
+			mutate:  func(s *cardsfs.Store) { _ = s.Confirm("bob", "cap.md") },
+			sha:     evidenceBase,
+			ref:     evidenceRef,
+			want:    finding.TierE4,
+		},
+		{
+			name: "missing card is not evidence",
+			sha:  evidenceBase,
+			ref:  "card:none.md#internal/pay/refund.go",
+			want: finding.TierE4,
+		},
+		{
+			name: "broken card is not evidence",
+			mutate: func(s *cardsfs.Store) {
+				_ = s.Write("bob", "cap.md", []byte("---\napplies_to: [oops\n---\nbody"))
+			},
+			sha:  evidenceBase,
+			ref:  evidenceRef,
+			want: finding.TierE4,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c, store, _ := newEvidenceFixture(t, tc.records)
+			if tc.mutate != nil {
+				tc.mutate(store)
+			}
+			require.Equal(t, tc.want, evidenceTier(t, c, tc.sha, tc.ref))
+		})
+	}
 }
 
 func TestOtherRefsStillGoToTeamMemory(t *testing.T) {
+	t.Parallel()
 	c, _, next := newEvidenceFixture(t, nil)
 	require.Equal(t, finding.TierE3, evidenceTier(t, c, evidenceBase, "memory:abc"))
 	require.Equal(t, []string{"memory:abc"}, next.refs)

@@ -18,6 +18,7 @@ func statusMove(key id.ChangeID, changelog, toStatus string) ports.TicketChange 
 // The trigger decides on the status the move ended at (ToStatus), not the status the ticket has when the poll reads
 // it. A ticket that moved to In Progress and back before the poll still starts (TECH_SPEC 2.5).
 func TestTriggerUsesTheStatusTheMoveEndedAt(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{statusMove("KAN-1", "10001", statusInPrg)}
 	r.tickets.next = "c1"
@@ -31,6 +32,7 @@ func TestTriggerUsesTheStatusTheMoveEndedAt(t *testing.T) {
 
 // A move that ended away from In Progress does not trigger, even when the ticket is In Progress by the time of the poll.
 func TestTriggerIgnoresAMoveThatEndedAwayFromInProgress(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.tickets.changes = []ports.TicketChange{statusMove("KAN-1", "10002", "To Do")}
 	r.tickets.next = "c1"

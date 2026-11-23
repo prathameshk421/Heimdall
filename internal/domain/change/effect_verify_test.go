@@ -33,6 +33,7 @@ func validVerifyEvidencePayload() change.VerifyEvidencePayload {
 }
 
 func TestVerifyEvidencePayloadValidation(t *testing.T) {
+	t.Parallel()
 	good := validVerifyEvidencePayload()
 	require.NoError(t, good.Validate())
 
@@ -92,6 +93,7 @@ func TestVerifyEvidencePayloadValidation(t *testing.T) {
 }
 
 func TestDecodeVerifyEvidencePayloadStrict(t *testing.T) {
+	t.Parallel()
 	ref, err := id.ParseFindingRef("F1")
 	require.NoError(t, err)
 
@@ -144,6 +146,7 @@ func TestDecodeVerifyEvidencePayloadStrict(t *testing.T) {
 }
 
 func TestEffectKindVerifyEvidence(t *testing.T) {
+	t.Parallel()
 	require.True(t, change.EffectVerifyEvidence.Valid())
 	require.False(t, change.EffectKind("other").Valid())
 
@@ -166,6 +169,7 @@ func checkPayload() change.VerifyEvidencePayload {
 
 // A check verification (E2) names a profile check id and a location, and carries no repro test.
 func TestVerifyEvidencePayloadCheckMode(t *testing.T) {
+	t.Parallel()
 	require.NoError(t, checkPayload().Validate())
 
 	cases := map[string]func(*change.VerifyEvidencePayload){
@@ -186,6 +190,7 @@ func TestVerifyEvidencePayloadCheckMode(t *testing.T) {
 
 // A finding event carries the evidence the sandbox repeats; a malformed one is refused.
 func TestFindingRecordProofs(t *testing.T) {
+	t.Parallel()
 	rec := change.FindingRecord{
 		FindingID: id.FindingID("fnd_01HZX3K9QW7M2P5R8T0V4YB6CD"), Ref: id.FindingRef(1), Tier: finding.TierE2, Severity: finding.SeverityHigh,
 		State: finding.StateOpen, By: "bob-reviewer",
@@ -218,6 +223,7 @@ func TestFindingRecordProofs(t *testing.T) {
 // A memory verification (E3) names a reference and the agent whose scopes the re-query uses, and carries no repro
 // test or check.
 func TestVerifyEvidencePayloadMemoryMode(t *testing.T) {
+	t.Parallel()
 	p := validVerifyEvidencePayload()
 	p.TestPath, p.TestSource, p.TestName = "", "", ""
 	p.Memory = &change.VerifyMemory{Ref: "decision:refund-limit", Agent: "bob-reviewer"}

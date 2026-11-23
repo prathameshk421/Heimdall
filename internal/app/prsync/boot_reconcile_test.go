@@ -15,6 +15,7 @@ import (
 // A boot after the server was down reconciles the facts it missed: a push, then the CI result for it, appear once.
 // A second boot adds nothing (A5, D56).
 func TestBootAfterDowntimeAppendsMissedPushAndCIOnce(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	pr := samplePR(10, head1, ports.PRStateOpen)
 	r.prs.prs[testRepo] = []ports.PR{pr}

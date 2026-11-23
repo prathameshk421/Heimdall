@@ -7,6 +7,7 @@ import (
 )
 
 func TestDiff(t *testing.T) {
+	t.Parallel()
 	res := Result{Files: map[string]Lines{
 		"internal/domain/coverage/coverage.go": {41: 12, 42: 12, 43: 11, 44: 0},
 		"internal/domain/coverage/lcov.go":     {1: 1, 2: 0},
@@ -181,6 +182,7 @@ func TestDiff(t *testing.T) {
 }
 
 func TestDiffRefusesBadChangedLines(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		changed map[string][]int
@@ -199,6 +201,7 @@ func TestDiffRefusesBadChangedLines(t *testing.T) {
 }
 
 func TestCountsPercent(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		count Counts
@@ -216,6 +219,7 @@ func TestCountsPercent(t *testing.T) {
 }
 
 func TestBuilderRefusesBadValues(t *testing.T) {
+	t.Parallel()
 	b, err := NewBuilder(Options{MaxBytes: 1 << 20})
 	require.NoError(t, err)
 	cases := []struct {
@@ -236,6 +240,7 @@ func TestBuilderRefusesBadValues(t *testing.T) {
 }
 
 func TestBuilderAppliesPathRules(t *testing.T) {
+	t.Parallel()
 	b, err := NewBuilder(Options{MaxBytes: 1 << 20, Prefix: "/home/runner/work/app"})
 	require.NoError(t, err)
 	require.NoError(t, b.Add(1, `/home/runner/work/app/app\service.py`, 1, 2))
@@ -249,6 +254,7 @@ func TestBuilderAppliesPathRules(t *testing.T) {
 }
 
 func TestBuilderRefusesBadPaths(t *testing.T) {
+	t.Parallel()
 	b, err := NewBuilder(Options{MaxBytes: 1 << 20})
 	require.NoError(t, err)
 	for _, raw := range []string{"../a.go", "", "."} {
@@ -262,6 +268,7 @@ func TestBuilderRefusesBadPaths(t *testing.T) {
 }
 
 func TestBuilderRefusesBadOptions(t *testing.T) {
+	t.Parallel()
 	_, err := NewBuilder(Options{})
 	require.Error(t, err)
 	require.NotErrorIs(t, err, ErrMalformed)
@@ -270,6 +277,7 @@ func TestBuilderRefusesBadOptions(t *testing.T) {
 }
 
 func TestBuilderSizeLimit(t *testing.T) {
+	t.Parallel()
 	b, err := NewBuilder(Options{MaxBytes: 3})
 	require.NoError(t, err)
 	require.NoError(t, b.CheckSize([]byte("abc")))
@@ -277,6 +285,7 @@ func TestBuilderSizeLimit(t *testing.T) {
 }
 
 func TestBuilderStopsAtMaxLines(t *testing.T) {
+	t.Parallel()
 	b, err := NewBuilder(Options{MaxBytes: 1})
 	require.NoError(t, err)
 	b.lines = MaxLines

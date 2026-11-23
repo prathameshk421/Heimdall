@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -149,87 +150,27 @@ func TestEveryEffectKindEmittedByWorkflowHasAnExecutor(t *testing.T) {
 }
 
 func TestAgentListValidation(t *testing.T) {
-	// 1. Missing test_author
-	bad1 := `
-listen = "127.0.0.1:0"
-secrets_dir = "/tmp"
-
-[agents]
-reviewers = ["rev1"]
-resolver = "res1"
-
-[[projects]]
-tracker_project = "KAN"
-repo = "a/b"
-base_branch = "main"
-`
-	dir1 := t.TempDir()
-	path1 := filepath.Join(dir1, "heimdall.toml")
-	require.NoError(t, os.WriteFile(path1, []byte(bad1), 0o600))
-	_, err1 := config.Load(path1)
-	require.ErrorContains(t, err1, "agents.test_author")
-
-	// 2. Missing reviewers
-	bad2 := `
-listen = "127.0.0.1:0"
-secrets_dir = "/tmp"
-
-[agents]
-test_author = "ta1"
-resolver = "res1"
-
-[[projects]]
-tracker_project = "KAN"
-repo = "a/b"
-base_branch = "main"
-`
-	dir2 := t.TempDir()
-	path2 := filepath.Join(dir2, "heimdall.toml")
-	require.NoError(t, os.WriteFile(path2, []byte(bad2), 0o600))
-	_, err2 := config.Load(path2)
-	require.ErrorContains(t, err2, "agents.reviewers")
-
-	// 3. Duplicate reviewers
-	bad3 := `
-listen = "127.0.0.1:0"
-secrets_dir = "/tmp"
-
-[agents]
-test_author = "ta1"
-reviewers = ["rev1", "rev1"]
-resolver = "res1"
-
-[[projects]]
-tracker_project = "KAN"
-repo = "a/b"
-base_branch = "main"
-`
-	dir3 := t.TempDir()
-	path3 := filepath.Join(dir3, "heimdall.toml")
-	require.NoError(t, os.WriteFile(path3, []byte(bad3), 0o600))
-	_, err3 := config.Load(path3)
-	require.ErrorContains(t, err3, "agents.reviewers")
-	require.ErrorContains(t, err3, "listed twice")
-
-	// 4. Missing resolver
-	bad4 := `
-listen = "127.0.0.1:0"
-secrets_dir = "/tmp"
-
-[agents]
-test_author = "ta1"
-reviewers = ["rev1"]
-
-[[projects]]
-tracker_project = "KAN"
-repo = "a/b"
-base_branch = "main"
-`
-	dir4 := t.TempDir()
-	path4 := filepath.Join(dir4, "heimdall.toml")
-	require.NoError(t, os.WriteFile(path4, []byte(bad4), 0o600))
-	_, err4 := config.Load(path4)
-	require.ErrorContains(t, err4, "agents.resolver")
+	t.Parallel()
+	cases := []struct {
+		name    string
+		agents  string
+		wantErr string
+	}{
+		{"missing test_author", `reviewers = ["rev1"]` + "\n" + `resolver = "res1"`, "agents.test_author"},
+		{"missing reviewers", `test_author = "ta1"` + "\n" + `resolver = "res1"`, "agents.reviewers"},
+		{"duplicate reviewers", `test_author = "ta1"` + "\n" + `reviewers = ["rev1", "rev1"]` + "\n" + `resolver = "res1"`, "listed twice"},
+		{"missing resolver", `test_author = "ta1"` + "\n" + `reviewers = ["rev1"]`, "agents.resolver"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			toml := fmt.Sprintf("listen = \"127.0.0.1:0\"\nsecrets_dir = \"/tmp\"\n[agents]\n%s\n[[projects]]\ntracker_project = \"KAN\"\nrepo = \"a/b\"\nbase_branch = \"main\"\n", tc.agents)
+			path := filepath.Join(t.TempDir(), "heimdall.toml")
+			require.NoError(t, os.WriteFile(path, []byte(toml), 0o600))
+			_, err := config.Load(path)
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
 }
 
 type fakeMCPTasks struct {

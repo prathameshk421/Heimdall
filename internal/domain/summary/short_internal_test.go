@@ -17,6 +17,7 @@ import (
 // TestShortPage: when even the lists at zero do not fit, the page is the marker, the headline and one line. The size
 // is the one thing the test changes, because no real input reaches the fixed limit with every list at zero.
 func TestShortPage(t *testing.T) {
+	t.Parallel()
 	in := Input{Change: "9", Version: 1, Head: strings.Repeat("a", 40), Fast: fastcheck.Result{Verdict: gate.VerdictPass,
 		Clauses: []fastcheck.Clause{{ID: fastcheck.ClauseSecrets, Status: fastcheck.StatusMet, Reason: strings.Repeat("x", 190)}}},
 		Proof: proof.Outcome{Kind: proof.KindProven}}
@@ -33,6 +34,7 @@ func TestShortPage(t *testing.T) {
 
 // TestHalvingKeepsTheClauses: a page that is a little too big loses list items before it loses a clause line.
 func TestHalvingKeepsTheClauses(t *testing.T) {
+	t.Parallel()
 	in := Input{Head: strings.Repeat("b", 40), Action: policy.Action{Mode: policy.ActionModeEnforce}, Fast: greenResult(),
 		Proof: proof.Outcome{Kind: proof.KindBlocked}}
 	for i := range 40 {

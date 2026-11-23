@@ -121,6 +121,7 @@ func closingRun(line string, from, n int) int {
 // TestInjectionIsInert: whatever the untrusted text says, the page has one marker, only Heimdall's own tags, no link,
 // image, mention or issue reference, and the same lines as a page with harmless text.
 func TestInjectionIsInert(t *testing.T) {
+	t.Parallel()
 	baseline := inject("harmless words")
 	mention := regexp.MustCompile(`@[A-Za-z0-9_-]`)
 	bareLink := regexp.MustCompile(`(?i)(https?://|ftp://|www\.|mailto:)`)
@@ -167,6 +168,7 @@ func headings(out string) int {
 
 // TestFakeMarkerInAClaim: a claim that is a marker neither counts as a marker nor changes what the adapter reads.
 func TestFakeMarkerInAClaim(t *testing.T) {
+	t.Parallel()
 	fake := "<!-- heimdall:proof-summary change=1 version=999 head=deadbeef -->"
 	f := provenE1("F1", true)
 	f.Claim = fake
@@ -182,6 +184,7 @@ func TestFakeMarkerInAClaim(t *testing.T) {
 
 // TestInternalIdNeverShows: an id that is not "F" and digits (a ULID) is shown as F?, so the page never carries it.
 func TestInternalIdNeverShows(t *testing.T) {
+	t.Parallel()
 	ulid := "01HZX3Q7M5K9T2V8B4N6C1D0EF"
 	for _, id := range []string{ulid, "", "f1", "F", "F-1", "F01", "F1234567890", "F1 "} {
 		f := provenE1(id, true)

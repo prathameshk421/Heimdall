@@ -29,6 +29,7 @@ func (f *unavailableIdentity) Authorize(context.Context, Target, commands.Source
 // Room chatter that is not a command never reads the policy. Agents post many such messages, and one GitHub
 // call per message used up the GitHub App rate limit on the live VM; a failed lookup then stopped the room stream.
 func TestPlainChatNeverLooksUpIdentity(t *testing.T) {
+	t.Parallel()
 	identity := &unavailableIdentity{}
 	executor, replies := &executorFake{}, &replyFake{}
 	proc := processor(t, identity, executor, replies)
@@ -46,6 +47,7 @@ func TestPlainChatNeverLooksUpIdentity(t *testing.T) {
 
 // A real command still needs the identity, so a failed lookup is still returned for the stream to retry.
 func TestACommandStillFailsWhenIdentityIsUnavailable(t *testing.T) {
+	t.Parallel()
 	identity := &unavailableIdentity{}
 	proc := processor(t, identity, &executorFake{}, &replyFake{})
 	err := proc.Handle(context.Background(), Input{

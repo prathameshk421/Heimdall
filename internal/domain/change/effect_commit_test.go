@@ -11,6 +11,7 @@ import (
 )
 
 func TestCommitTestsPayloadValidation(t *testing.T) {
+	t.Parallel()
 	good := change.CommitTestsPayload{
 		Repo:   change.Repo("acme/pay-demo"),
 		Branch: "PAY-142-refunds",
@@ -60,6 +61,7 @@ func TestCommitTestsPayloadValidation(t *testing.T) {
 }
 
 func TestDecodeCommitTestsPayloadStrict(t *testing.T) {
+	t.Parallel()
 	raw := json.RawMessage(`{
 		"repo": "acme/pay-demo",
 		"branch": "PAY-142-refunds",

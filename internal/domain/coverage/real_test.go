@@ -93,6 +93,7 @@ func goStatements(t *testing.T, profile []byte) (covered, total int) {
 }
 
 func TestRealGoProfiles(t *testing.T) {
+	t.Parallel()
 	for _, c := range realGo {
 		t.Run(c.name, func(t *testing.T) {
 			data := load(t, c.file)
@@ -128,6 +129,7 @@ func lcovSummary(t *testing.T, data []byte) (hit, found int) {
 }
 
 func TestRealLCOVReports(t *testing.T) {
+	t.Parallel()
 	for _, c := range realLCOV {
 		t.Run(c.name, func(t *testing.T) {
 			data := load(t, c.file)
@@ -206,6 +208,7 @@ func realDiffCases() []diffCase {
 }
 
 func TestRealDiffs(t *testing.T) {
+	t.Parallel()
 	for _, c := range realDiffCases() {
 		t.Run(c.name, func(t *testing.T) {
 			changed := loadChanged(t, c.changed)
@@ -225,6 +228,7 @@ func TestRealDiffs(t *testing.T) {
 // A last commit that changes only comments and imports is not measurable: the report calls none of its
 // lines instrumented. The fast check must read that as unknown, not as the 100 that Percent returns.
 func TestRealDiffOfACommentIsNotMeasurable(t *testing.T) {
+	t.Parallel()
 	got, err := Diff(parseGo(t, realGo[0], realGo[0].prefix), loadChanged(t, "uuid-last"))
 	require.NoError(t, err)
 	require.InDelta(t, 100.0, got.Percent, 1e-9)
@@ -232,6 +236,7 @@ func TestRealDiffOfACommentIsNotMeasurable(t *testing.T) {
 }
 
 func TestRealDiffWithAWrongPrefixIsNotMeasurable(t *testing.T) {
+	t.Parallel()
 	for _, c := range realDiffCases() {
 		if c.wrongPrefix == "" {
 			continue
@@ -256,6 +261,7 @@ func TestRealDiffWithAWrongPrefixIsNotMeasurable(t *testing.T) {
 // coverage.py). A CI run can also write an absolute runner path or a ./ form. This rewrites the paths of a
 // real report into those forms and shows that Options.Prefix returns the same Result.
 func TestRealPathsInOtherFormsRebaseToTheSameResult(t *testing.T) {
+	t.Parallel()
 	const runner = "/home/runner/work/app/app"
 	forms := map[string]func(string) string{
 		"absolute runner path": func(p string) string { return runner + "/" + p },

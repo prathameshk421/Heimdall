@@ -22,6 +22,7 @@ func (f questionerFunc) AnswerQuestion(ctx context.Context, target Target, perso
 // A mention of the coordinator reaches the Questioner whatever the platform calls it. Live Telegram and Slack sent
 // "@heimdall-coord-main", "@Heimdall" and "<@U0CFX056ZRA>", and none of them matched the old "@heimdall" literal.
 func TestAnyCoordinatorMentionReachesTheQuestioner(t *testing.T) {
+	t.Parallel()
 	for _, text := range []string{
 		"@heimdall status",
 		"@heimdall-coord-main status",
@@ -54,6 +55,7 @@ func TestAnyCoordinatorMentionReachesTheQuestioner(t *testing.T) {
 
 // A bare mention says nothing, so it is not a question and gets no reply.
 func TestABareMentionIsNotAQuestion(t *testing.T) {
+	t.Parallel()
 	q := &stubQuestioner{}
 	replies := &replyFake{}
 	p, err := New(Config{
@@ -76,6 +78,7 @@ func TestABareMentionIsNotAQuestion(t *testing.T) {
 
 // `heimdall status` is read-only: it answers through the Questioner and never reaches the executor, so no action runs.
 func TestHeimdallStatusAnswersWithoutExecutingACommand(t *testing.T) {
+	t.Parallel()
 	for _, text := range []string{"heimdall status", "heimdall status KAN-5", "@heimdall-coord-main heimdall status?"} {
 		t.Run(text, func(t *testing.T) {
 			q := &stubQuestioner{answer: "KAN-5 has open PR #12."}
@@ -102,6 +105,7 @@ func TestHeimdallStatusAnswersWithoutExecutingACommand(t *testing.T) {
 
 // `heimdall help` returns the command grammar, and still shows nothing to an unmapped or agent sender.
 func TestHeimdallHelpReturnsTheGrammar(t *testing.T) {
+	t.Parallel()
 	q := &stubQuestioner{}
 	executor, replies := &executorFake{}, &replyFake{}
 	p, err := New(Config{
@@ -139,6 +143,7 @@ func TestHeimdallHelpReturnsTheGrammar(t *testing.T) {
 
 // State-changing verbs still go through Parse and Authorize, so status and help cannot widen who may act.
 func TestStatusDoesNotWidenCommandAuth(t *testing.T) {
+	t.Parallel()
 	executor, replies := &executorFake{}, &replyFake{}
 	p, err := New(Config{
 		Identity:   identityFake{people: mappedPeople{"chat:u-alice": "alice"}, deny: errors.New("wrong role")},
@@ -158,6 +163,7 @@ func TestStatusDoesNotWidenCommandAuth(t *testing.T) {
 
 // A standing room answers `heimdall status` for its one open change, and asks which one when several are open.
 func TestSharedRoomStatusAnswersOneChangeAndAsksAboutSeveral(t *testing.T) {
+	t.Parallel()
 	q := &stubQuestioner{answer: "KAN-5 has open PR #12."}
 	replies := &replyFake{}
 	p, err := New(Config{
@@ -191,6 +197,7 @@ func TestSharedRoomStatusAnswersOneChangeAndAsksAboutSeveral(t *testing.T) {
 
 // A standing room with no open change says so, in plain words.
 func TestSharedRoomStatusSaysWhenNothingIsOpen(t *testing.T) {
+	t.Parallel()
 	replies := &replyFake{}
 	p, err := New(Config{
 		Identity:   identityFake{people: mappedPeople{"chat:u-alice": "alice"}},
@@ -207,6 +214,7 @@ func TestSharedRoomStatusSaysWhenNothingIsOpen(t *testing.T) {
 
 // `heimdall help` in a standing room answers the grammar, and never asks which ticket the sender means.
 func TestSharedRoomHelpReturnsTheGrammar(t *testing.T) {
+	t.Parallel()
 	candidates := []ports.RoomBinding{
 		{ChangeID: id.ChangeID("KAN-5"), RoomID: "switch:dev-gc"},
 		{ChangeID: id.ChangeID("PAY-2"), RoomID: "switch:dev-gc"},
@@ -228,6 +236,7 @@ func TestSharedRoomHelpReturnsTheGrammar(t *testing.T) {
 
 // A real state-changing command in a standing room still needs its ticket key.
 func TestSharedRoomStillAsksForATicketOnAStateChange(t *testing.T) {
+	t.Parallel()
 	candidates := []ports.RoomBinding{
 		{ChangeID: id.ChangeID("KAN-5"), RoomID: "switch:dev-gc"},
 		{ChangeID: id.ChangeID("PAY-2"), RoomID: "switch:dev-gc"},
@@ -249,6 +258,7 @@ func TestSharedRoomStillAsksForATicketOnAStateChange(t *testing.T) {
 
 // A status that names its ticket is answered for that ticket, even when the standing room serves several.
 func TestSharedRoomStatusNamingATicketAnswersThatTicket(t *testing.T) {
+	t.Parallel()
 	var answered id.ChangeID
 	q := questionerFunc(func(_ context.Context, target Target, _, _ string) (string, error) {
 		answered = target.ChangeID

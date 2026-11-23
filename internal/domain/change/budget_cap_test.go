@@ -10,6 +10,7 @@ import (
 
 // P4: over the daily spend cap, no new agent task is assigned and Missing names the cap.
 func TestSpendCapPausesTaskAssignmentsAndNamesCapInMissing(t *testing.T) {
+	t.Parallel()
 	v := fold(t,
 		triggered(t),
 		ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),

@@ -9,6 +9,7 @@ import (
 )
 
 func TestBreakGlassSummary(t *testing.T) {
+	t.Parallel()
 	in := summary.Input{Change: "pr-1", Version: 1, Head: head, BreakGlass: &summary.BreakGlass{Login: "<@all>", Reason: "<script> @team | injected"}}
 	out := summary.Render(in)
 	require.Contains(t, out, "### Break-glass")

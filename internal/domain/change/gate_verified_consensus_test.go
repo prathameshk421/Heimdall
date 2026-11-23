@@ -15,6 +15,7 @@ import (
 // Verification events are written by the server. They must not erase who reported a finding or its consensus facts:
 // two high-confidence reviewers on one fingerprint hold the merge even after the server verified both (A2).
 func TestVerificationDoesNotEraseConsensusFacts(t *testing.T) {
+	t.Parallel()
 	const fp = "fp-same-claim"
 	fnd := []id.FindingID{"fnd_01HZX3K9QW7M2P5R8T0V4YB6CD", "fnd_01HZX3K9QW7M2P5R8T0V4YB6CE"}
 	refs := []id.FindingRef{ref(1), ref(2)}

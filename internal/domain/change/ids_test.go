@@ -11,6 +11,7 @@ import (
 )
 
 func TestParseEventIDAcceptsOnlyLowercaseUUIDs(t *testing.T) {
+	t.Parallel()
 	ok, err := change.ParseEventID("3f1c9a52-8d2b-4e7a-9c11-0b6f5d4e3a21")
 	require.NoError(t, err)
 	require.Equal(t, "3f1c9a52-8d2b-4e7a-9c11-0b6f5d4e3a21", ok.String())
@@ -28,12 +29,14 @@ func TestParseEventIDAcceptsOnlyLowercaseUUIDs(t *testing.T) {
 }
 
 func TestEventIDDecodesFromJSONAndRefusesBadValues(t *testing.T) {
+	t.Parallel()
 	var got change.EventID
 	require.NoError(t, json.Unmarshal([]byte(`"3f1c9a52-8d2b-4e7a-9c11-0b6f5d4e3a21"`), &got))
 	require.Error(t, json.Unmarshal([]byte(`"not-an-id"`), &got))
 }
 
 func TestOpaqueSwitchIdentifiersAreNonEmptyPrintableAndBounded(t *testing.T) {
+	t.Parallel()
 	for _, parse := range []func(string) error{
 		func(s string) error { _, err := change.ParseRoomID(s); return err },
 		func(s string) error { _, err := change.ParseSenderID(s); return err },
@@ -52,6 +55,7 @@ func TestOpaqueSwitchIdentifiersAreNonEmptyPrintableAndBounded(t *testing.T) {
 }
 
 func TestOpaqueIDUnmarshalValidates(t *testing.T) {
+	t.Parallel()
 	var r change.RoomID
 	require.NoError(t, json.Unmarshal([]byte(`"room-42"`), &r))
 	require.Equal(t, "room-42", r.String())
@@ -59,6 +63,7 @@ func TestOpaqueIDUnmarshalValidates(t *testing.T) {
 }
 
 func TestParseRepo(t *testing.T) {
+	t.Parallel()
 	r, err := change.ParseRepo("acme/pay-demo")
 	require.NoError(t, err)
 	require.Equal(t, "acme/pay-demo", r.String())

@@ -111,6 +111,7 @@ func appendEffects(ctx context.Context, t *testing.T, store *pgstore.Store, cid 
 func discardLog() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 func TestDrainerWithPostgres(t *testing.T) {
+	t.Parallel()
 	t.Run("two concurrent drainers execute each of 50 effects once when nothing crashes", func(t *testing.T) {
 		pool := newPool(t)
 		ctx := context.Background()

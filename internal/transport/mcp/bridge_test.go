@@ -44,6 +44,7 @@ func bridgeRun(t *testing.T, url, token, input string, logs *bytes.Buffer) (stri
 }
 
 func TestBridgeRelaysEachRequestAndWritesEachAnswer(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	srv := httptest.NewServer(r.handler)
 	t.Cleanup(srv.Close)
@@ -64,6 +65,7 @@ func TestBridgeRelaysEachRequestAndWritesEachAnswer(t *testing.T) {
 }
 
 func TestBridgeSendsTheTokenAsAHeaderOnly(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	var gotAuth string
 	var gotBody []string
@@ -84,6 +86,7 @@ func TestBridgeSendsTheTokenAsAHeaderOnly(t *testing.T) {
 }
 
 func TestANotificationIsPostedAndProducesNoOutput(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	hits := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -99,6 +102,7 @@ func TestANotificationIsPostedAndProducesNoOutput(t *testing.T) {
 }
 
 func TestANotificationThatFailsIsLoggedAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.NotFoundHandler())
 	url := srv.URL + "/mcp"
 	srv.Close()
@@ -110,6 +114,7 @@ func TestANotificationThatFailsIsLoggedAndWritesNothing(t *testing.T) {
 }
 
 func TestAnUnreachableServerAnswersEachRequestWithAnErrorForItsID(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.NotFoundHandler())
 	url := srv.URL + "/mcp"
 	srv.Close()
@@ -129,6 +134,7 @@ func TestAnUnreachableServerAnswersEachRequestWithAnErrorForItsID(t *testing.T) 
 }
 
 func TestAServerThatRefusesTheTokenGivesAnUnauthorizedErrorWithoutTheToken(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	srv := httptest.NewServer(r.handler)
 	t.Cleanup(srv.Close)
@@ -145,6 +151,7 @@ func TestAServerThatRefusesTheTokenGivesAnUnauthorizedErrorWithoutTheToken(t *te
 }
 
 func TestAServerErrorStatusGivesAnUnreachableErrorForTheRequest(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
@@ -159,6 +166,7 @@ func TestAServerErrorStatusGivesAnUnreachableErrorForTheRequest(t *testing.T) {
 }
 
 func TestAnAnswerThatIsNotJSONGivesAnUnreachableErrorForTheRequest(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "<html>proxy error</html>")
 	}))
@@ -174,6 +182,7 @@ func TestAnAnswerThatIsNotJSONGivesAnUnreachableErrorForTheRequest(t *testing.T)
 }
 
 func TestAMalformedLineIsAParseErrorAndTheBridgeGoesOn(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	srv := httptest.NewServer(r.handler)
 	t.Cleanup(srv.Close)
@@ -193,6 +202,7 @@ func TestAMalformedLineIsAParseErrorAndTheBridgeGoesOn(t *testing.T) {
 }
 
 func TestABatchLineIsRefusedLocallyWithoutCallingTheServer(t *testing.T) {
+	t.Parallel()
 	hits := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits++
@@ -210,6 +220,7 @@ func TestABatchLineIsRefusedLocallyWithoutCallingTheServer(t *testing.T) {
 }
 
 func TestALineOverTheBodyLimitIsRefusedAndTheNextLineStillRuns(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	srv := httptest.NewServer(r.handler)
 	t.Cleanup(srv.Close)
@@ -229,6 +240,7 @@ func TestALineOverTheBodyLimitIsRefusedAndTheNextLineStillRuns(t *testing.T) {
 }
 
 func TestCancellingTheContextEndsTheBridgeEvenWhileInputIsOpen(t *testing.T) {
+	t.Parallel()
 	pr, pw := io.Pipe()
 	t.Cleanup(func() { _ = pw.Close() })
 	ctx, cancel := context.WithCancel(t.Context())
@@ -248,6 +260,7 @@ func TestCancellingTheContextEndsTheBridgeEvenWhileInputIsOpen(t *testing.T) {
 }
 
 func TestTheBridgeLogsGoToItsLoggerAndNeverToStdout(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.NotFoundHandler())
 	url := srv.URL + "/mcp"
 	srv.Close()

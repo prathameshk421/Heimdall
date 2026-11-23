@@ -42,6 +42,7 @@ func envelopeOf(et change.EventType) change.Event {
 }
 
 func TestEveryCatalogTypeHasATypedPayloadAndAGoldenExample(t *testing.T) {
+	t.Parallel()
 	for _, et := range change.All() {
 		p, ok := change.PayloadFor(et)
 		require.True(t, ok, "no payload type for %s", et)
@@ -59,11 +60,13 @@ func TestEveryCatalogTypeHasATypedPayloadAndAGoldenExample(t *testing.T) {
 }
 
 func TestPayloadForRefusesUnknownTypes(t *testing.T) {
+	t.Parallel()
 	_, ok := change.PayloadFor("change.exploded")
 	require.False(t, ok)
 }
 
 func TestDecodeReturnsTheConcreteTypeAndItsFields(t *testing.T) {
+	t.Parallel()
 	e := envelopeOf(change.EventTaskAssigned)
 	e.Payload = goldenPayload(t, change.EventTaskAssigned)
 	got, err := change.Decode(e)
@@ -78,6 +81,7 @@ func TestDecodeReturnsTheConcreteTypeAndItsFields(t *testing.T) {
 // decoder reports the id without a field path. The Validate path names every field; TestPayloadValidateJoinsEvery
 // Problem covers that path, and the rest of the table names fields where Validate is reached.
 func TestDecodeRefusesInvalidPayloadsNamingTheField(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		et    change.EventType
@@ -134,6 +138,7 @@ func TestDecodeRefusesInvalidPayloadsNamingTheField(t *testing.T) {
 const zeros64 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 func TestPayloadValidateJoinsEveryProblem(t *testing.T) {
+	t.Parallel()
 	p := change.Triggered{Ticket: "pr-acme-pay-demo-7", Repo: "acme", Source: "slack"}
 	err := p.Validate()
 	require.Error(t, err)
@@ -143,6 +148,7 @@ func TestPayloadValidateJoinsEveryProblem(t *testing.T) {
 }
 
 func TestDecodeIsStrictAboutUnknownFieldsDuplicatesAndTrailingData(t *testing.T) {
+	t.Parallel()
 	for name, raw := range map[string]string{
 		"unknown field":    `{"reason":"x","extra":1}`,
 		"duplicate key":    `{"reason":"x","reason":"y"}`,
@@ -157,6 +163,7 @@ func TestDecodeIsStrictAboutUnknownFieldsDuplicatesAndTrailingData(t *testing.T)
 }
 
 func TestDecodeRefusesInvariantOneForAgentsOnDecisionsAndApprovals(t *testing.T) {
+	t.Parallel()
 	e := eventWith(change.EventApprovalRecorded, `{"login":"rekdfr","commit_sha":"9f1c2ab"}`)
 	e.Actor = change.Actor{Kind: change.ActorAgent, ID: "test-author"}
 	_, err := change.Decode(e)
@@ -168,6 +175,7 @@ func TestDecodeRefusesInvariantOneForAgentsOnDecisionsAndApprovals(t *testing.T)
 }
 
 func TestEveryTriggerSourceIsAccepted(t *testing.T) {
+	t.Parallel()
 	for _, src := range []string{"jira", "file", "pr", "manual"} {
 		raw := `{"ticket":"PAY-142","repo":"acme/pay-demo","assignee":"bob","source":"` + src + `"}`
 		_, err := change.Decode(eventWith(change.EventChangeTriggered, raw))
@@ -176,6 +184,7 @@ func TestEveryTriggerSourceIsAccepted(t *testing.T) {
 }
 
 func TestPayloadsAcceptTheSwitchAndGitHubIdentifiersAsOpaqueText(t *testing.T) {
+	t.Parallel()
 	_, err := change.Decode(eventWith(change.EventQuestionAnswered, `{"question_id":"q-1","sender":"sw-88:alice","message_id":"msg_0042","answer":"yes"}`))
 	require.NoError(t, err)
 }

@@ -60,6 +60,7 @@ func assigned(t *testing.T, n int, task string) change.Event {
 }
 
 func TestTestsInfoCountsAttemptsAndKeepsTheSubmissionRef(t *testing.T) {
+	t.Parallel()
 	sub := change.TestsSubmitted{ACMap: map[string][]string{"AC1": {"T"}}, Files: []change.TestFile{{Path: "tests/a_test.go", Blob: fBlob}}, TaskID: tk(fTask), BaseSHA: fBase}
 	v := fold(t,
 		ev(t, 1, change.EventTestsSubmitted, sub, fBlob),
@@ -73,6 +74,7 @@ func TestTestsInfoCountsAttemptsAndKeepsTheSubmissionRef(t *testing.T) {
 }
 
 func TestTaskInfoCarriesKindInputAndLiveness(t *testing.T) {
+	t.Parallel()
 	v := fold(t,
 		assigned(t, 1, fTask),
 		ev(t, 2, change.EventTaskRewoken, change.TaskRewoken{TaskID: tk(fTask), N: 1}),
@@ -88,6 +90,7 @@ func TestTaskInfoCarriesKindInputAndLiveness(t *testing.T) {
 
 // Events from before D172 say reset: true for the stall wake (the session reset never ran); they fold the same way.
 func TestAnOldResetWakeFoldsAsTheStallWake(t *testing.T) {
+	t.Parallel()
 	v := fold(t,
 		assigned(t, 1, fTask),
 		ev(t, 2, change.EventTaskRewoken, change.TaskRewoken{TaskID: tk(fTask), N: 1, Reset: true}))
@@ -95,6 +98,7 @@ func TestAnOldResetWakeFoldsAsTheStallWake(t *testing.T) {
 }
 
 func TestTaskStatusesDoneAndSuperseded(t *testing.T) {
+	t.Parallel()
 	v := fold(t,
 		opened(t),
 		assigned(t, 2, fTask), assigned(t, 3, fTask2),
@@ -106,6 +110,7 @@ func TestTaskStatusesDoneAndSuperseded(t *testing.T) {
 }
 
 func TestReviewOutcomes(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t),
 		ev(t, 2, change.EventReviewSubmitted, change.ReviewSubmitted{Reviewer: "rev-1", PackDate: "2026-11-04"}),
 		ev(t, 3, change.EventReviewUnavailable, change.ReviewUnavailable{Reviewer: "rev-2", Reason: "silent"}),
@@ -119,6 +124,7 @@ func TestReviewOutcomes(t *testing.T) {
 }
 
 func TestPRInfoBaseSlopAtAndSuggested(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t),
 		ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}),
 		ev(t, 3, change.EventPRPushed, change.PRPushed{Repo: "acme/pay", Number: 7, HeadSHA: fHead2, BaseSHA: "5555555"}))
@@ -128,11 +134,13 @@ func TestPRInfoBaseSlopAtAndSuggested(t *testing.T) {
 }
 
 func TestPRLinkedSetsTheTicket(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t), ev(t, 2, change.EventPRLinked, change.PRLinked{Repo: "acme/pay", Number: 7, Ticket: "KAN-5"}))
 	require.Equal(t, "KAN-5", string(v.PR.Ticket))
 }
 
 func TestCasesAreOpenUntilAVerdictIsAppliedOrEscalated(t *testing.T) {
+	t.Parallel()
 	v := fold(t,
 		ev(t, 1, change.EventCaseOpened, change.CaseOpened{CaseID: cs(fCase), Finding: 1}),
 		ev(t, 2, change.EventVerdictSubmitted, change.VerdictSubmitted{CaseID: cs(fCase), Verdict: change.VerdictUphold}))
@@ -148,6 +156,7 @@ func TestCasesAreOpenUntilAVerdictIsAppliedOrEscalated(t *testing.T) {
 }
 
 func TestResumesCountPerRow(t *testing.T) {
+	t.Parallel()
 	r := change.StepResumed{Step: "commit", By: "ann"}
 	v := fold(t, ev(t, 1, change.EventStepResumed, r), ev(t, 2, change.EventStepResumed, r),
 		ev(t, 3, change.EventStepResumed, change.StepResumed{Step: "write_tests", By: "ann"}))
@@ -155,6 +164,7 @@ func TestResumesCountPerRow(t *testing.T) {
 }
 
 func TestChecksReportedIsKeptPerHead(t *testing.T) {
+	t.Parallel()
 	v := fold(t, ev(t, 1, change.EventChecksReported, change.ChecksReported{Head: fHead, Errors: []change.CheckError{{Check: "lint", Reason: "no image"}}, More: 3}))
 	got := v.Checks[fHead]
 	require.True(t, got.Ran)
@@ -164,6 +174,7 @@ func TestChecksReportedIsKeptPerHead(t *testing.T) {
 }
 
 func TestFindingKeepsTheFilingFingerprint(t *testing.T) {
+	t.Parallel()
 	rec := change.FindingRecord{FindingID: "fnd_01HZX3K9QW7M2P5R8T0V4YB6CD", Ref: 1, Tier: "E1", Severity: "high", State: "open", By: "rev-1", Fingerprint: "abc"}
 	v := fold(t, ev(t, 1, change.EventFindingFiled, rec))
 	require.Equal(t, "abc", v.Findings["F1"].Fingerprint)
@@ -172,6 +183,7 @@ func TestFindingKeepsTheFilingFingerprint(t *testing.T) {
 // Executors may record a fact twice (a crash after the append, before they learn it): folding the repeat must not
 // change the view.
 func TestFoldIsIdempotentForExecutorFacts(t *testing.T) {
+	t.Parallel()
 	head := []change.Event{opened(t), ev(t, 12, change.EventTestsSubmitted, change.TestsSubmitted{ACMap: map[string][]string{"AC1": {"T"}}, Files: []change.TestFile{{Path: "t_test.go", Blob: fBlob}}})}
 	rec := change.FindingRecord{FindingID: "fnd_01HZX3K9QW7M2P5R8T0V4YB6CD", Ref: 1, Tier: "E1", Severity: "high", State: "open", By: "rev-1"}
 	facts := []change.Event{
@@ -194,6 +206,7 @@ func TestFoldIsIdempotentForExecutorFacts(t *testing.T) {
 
 // Every payload as an older writer stored it still decodes (the log is never rewritten).
 func TestOldPayloadsDecode(t *testing.T) {
+	t.Parallel()
 	old := map[change.EventType]string{
 		change.EventTaskAssigned:     `{"task_id":"` + fTask + `","agent":"rev-1","role":"reviewer","deadline":"2026-11-04T12:00:00Z","bundle_ref":"` + fBlob + `"}`,
 		change.EventTestsSubmitted:   `{"refs":["tests/a_test.go"],"ac_map":{"AC1":["T"]},"sha":"9f1c2ab","tree_hash":"7d3e9a1"}`,
@@ -210,6 +223,7 @@ func TestOldPayloadsDecode(t *testing.T) {
 
 // A profile proposal ends the profiler's task, as a submission does (D175).
 func TestAProfileProposalEndsTheProfilerTask(t *testing.T) {
+	t.Parallel()
 	proposal := strings.Repeat("ab", 32)
 	v := fold(t,
 		ev(t, 1, change.EventTaskAssigned, change.TaskAssigned{TaskID: tk(fTask), Agent: "profiler", Role: "profiler",
@@ -223,6 +237,7 @@ func TestAProfileProposalEndsTheProfilerTask(t *testing.T) {
 
 // A profile request is the newest one a person made: who asked, what they want changed, and when (D184).
 func TestAProfileRequestIsKeptAsTheNewestRequest(t *testing.T) {
+	t.Parallel()
 	v := fold(t,
 		ev(t, 1, change.EventProfileRequested, change.ProfileRequested{Repo: "acme/pay", By: "ana", Note: "add lint"}),
 		ev(t, 2, change.EventProfileRequested, change.ProfileRequested{Repo: "acme/pay", By: "bob", Note: "drop vet"}))

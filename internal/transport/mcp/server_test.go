@@ -37,6 +37,7 @@ func expectedTools(role workflow.Role) []string {
 }
 
 func TestKnowledgeLifecycleToolsAreListedOnlyForAuthenticatedHumanPrincipals(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	r.tokens.byHash[HashToken(testToken)] = Principal{Person: "alice", Human: true}
 	require.ElementsMatch(t, []string{"approve_knowledge", "forget_knowledge"}, toolNames(listTools(t, r)))
@@ -74,6 +75,7 @@ func toolNames(tools []wireTool) []string {
 const initBody = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}`
 
 func TestInitializeNegotiatesTheVersionAndAdvertisesTools(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.rpc("initialize", `{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"opencode","version":"1.0.0"}}`)
 	require.Nil(t, rep.Error)
@@ -91,6 +93,7 @@ func TestInitializeNegotiatesTheVersionAndAdvertisesTools(t *testing.T) {
 }
 
 func TestInitializeAnswersAnUnknownVersionWithTheLatestItSupports(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.rpc("initialize", `{"protocolVersion":"1999-01-01","capabilities":{}}`)
 	require.Nil(t, rep.Error)
@@ -102,6 +105,7 @@ func TestInitializeAnswersAnUnknownVersionWithTheLatestItSupports(t *testing.T) 
 }
 
 func TestPingReturnsAnEmptyResult(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.rpc("ping", "{}")
 	require.Nil(t, rep.Error)
@@ -109,6 +113,7 @@ func TestPingReturnsAnEmptyResult(t *testing.T) {
 }
 
 func TestAnUnknownMethodIsMethodNotFoundAndKeepsTheID(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.rpc("resources/list", "{}")
 	require.NotNil(t, rep.Error)
@@ -117,6 +122,7 @@ func TestAnUnknownMethodIsMethodNotFoundAndKeepsTheID(t *testing.T) {
 }
 
 func TestAStringIDIsEchoedBackUnchanged(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := decodeReply(t, r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":"req-7","method":"ping"}`))
 	require.JSONEq(t, `"req-7"`, string(rep.ID))
@@ -124,6 +130,7 @@ func TestAStringIDIsEchoedBackUnchanged(t *testing.T) {
 }
 
 func TestANotificationGetsNoBodyAndStatus202(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.post("Bearer "+testToken, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
 	require.Equal(t, http.StatusAccepted, rep.status)
@@ -131,6 +138,7 @@ func TestANotificationGetsNoBodyAndStatus202(t *testing.T) {
 }
 
 func TestMalformedJSONIsAParseErrorWithANullID(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.post("Bearer "+testToken, `{not json`)
 	require.Equal(t, http.StatusBadRequest, rep.status)
@@ -141,6 +149,7 @@ func TestMalformedJSONIsAParseErrorWithANullID(t *testing.T) {
 }
 
 func TestABatchArrayIsRefusedAsAnInvalidRequest(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.post("Bearer "+testToken, `[{"jsonrpc":"2.0","id":1,"method":"ping"}]`)
 	require.Equal(t, http.StatusBadRequest, rep.status)
@@ -150,6 +159,7 @@ func TestABatchArrayIsRefusedAsAnInvalidRequest(t *testing.T) {
 }
 
 func TestAWrongJSONRPCVersionIsAnInvalidRequest(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.post("Bearer "+testToken, `{"jsonrpc":"1.0","id":1,"method":"ping"}`)
 	out := decodeReply(t, rep)
@@ -158,6 +168,7 @@ func TestAWrongJSONRPCVersionIsAnInvalidRequest(t *testing.T) {
 }
 
 func TestToolsListShowsExactlyTheToolsOfEachRole(t *testing.T) {
+	t.Parallel()
 	for _, role := range allLLMRoles() {
 		t.Run(string(role), func(t *testing.T) {
 			r := newRig(t, role)
@@ -167,6 +178,7 @@ func TestToolsListShowsExactlyTheToolsOfEachRole(t *testing.T) {
 }
 
 func TestEveryListedToolHasADescriptionAndAClosedObjectSchema(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleTestAuthor)
 	for _, tool := range listTools(t, r) {
 		t.Run(tool.Name, func(t *testing.T) {
@@ -186,6 +198,7 @@ func TestEveryListedToolHasADescriptionAndAClosedObjectSchema(t *testing.T) {
 }
 
 func TestACallToAToolTheRoleLacksAnswersLikeAnUnknownTool(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	hidden := r.rpc("tools/call", `{"name":"submit_tests","arguments":{}}`)
 	unknown := r.rpc("tools/call", `{"name":"no_such_tool","arguments":{}}`)
@@ -197,6 +210,7 @@ func TestACallToAToolTheRoleLacksAnswersLikeAnUnknownTool(t *testing.T) {
 }
 
 func TestToolsCallWithoutANameIsInvalidParams(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.rpc("tools/call", `{"arguments":{}}`)
 	require.NotNil(t, rep.Error)
@@ -204,6 +218,7 @@ func TestToolsCallWithoutANameIsInvalidParams(t *testing.T) {
 }
 
 func TestToolsCallWithArrayParamsIsInvalidParams(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	rep := r.rpc("tools/call", `["get_task"]`)
 	require.NotNil(t, rep.Error)
@@ -211,6 +226,7 @@ func TestToolsCallWithArrayParamsIsInvalidParams(t *testing.T) {
 }
 
 func TestTheTaskEnvelopeMustBeForTheTokensRole(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	r.tasks.current.Task = testEnvelope(workflow.RoleTestAuthor)
 
@@ -224,6 +240,7 @@ func TestTheTaskEnvelopeMustBeForTheTokensRole(t *testing.T) {
 }
 
 func TestNoActiveTaskIsAPlainAnswerNotAProtocolError(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleTestAuthor)
 	r.tasks.currentErr = ErrNoTask
 	rep := r.rpc("tools/call", `{"name":"get_task","arguments":{}}`)
@@ -235,6 +252,7 @@ func TestNoActiveTaskIsAPlainAnswerNotAProtocolError(t *testing.T) {
 }
 
 func TestAnUnexpectedServerFailureIsGenericAndItsCauseIsLogged(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleTestAuthor)
 	r.tasks.currentErr = errors.New("postgres://heimdall:hunter2-cause@db refused")
 	res := r.call("get_task", `{}`)
@@ -245,6 +263,7 @@ func TestAnUnexpectedServerFailureIsGenericAndItsCauseIsLogged(t *testing.T) {
 }
 
 func TestReviewerCannotCallSubmitVerdictAndResolverCannotCallSubmitReview(t *testing.T) {
+	t.Parallel()
 	rev := newRig(t, workflow.RoleReviewer)
 	rep := rev.rpc("tools/call", `{"name":"submit_verdict","arguments":{}}`)
 	require.NotNil(t, rep.Error)
@@ -257,6 +276,7 @@ func TestReviewerCannotCallSubmitVerdictAndResolverCannotCallSubmitReview(t *tes
 }
 
 func TestWrongRoleSeesNoSuchToolForSubmitReviewAndSubmitVerdict(t *testing.T) {
+	t.Parallel()
 	author := newRig(t, workflow.RoleTestAuthor)
 	rep := author.rpc("tools/call", `{"name":"submit_review","arguments":{}}`)
 	require.NotNil(t, rep.Error)

@@ -24,6 +24,7 @@ func fullRig(t *testing.T) *rig {
 
 // The kind table, the tools, the input renderers, the schemas and the skill files agree (HARNESS_DESIGN B8).
 func TestTheKindTableAgreesWithTheServer(t *testing.T) {
+	t.Parallel()
 	r := fullRig(t)
 	problems := workflow.CheckKinds(workflow.Registry{Tools: r.server.ToolNames(), Renderers: taskinput.Names(),
 		Schemas: r.server.SchemaNames(), Skills: skills.All()})
@@ -31,6 +32,7 @@ func TestTheKindTableAgreesWithTheServer(t *testing.T) {
 }
 
 func TestTheKindTableCheckNamesEveryDisagreement(t *testing.T) {
+	t.Parallel()
 	problems := workflow.CheckKinds(workflow.Registry{Tools: []string{"read_code"}, Renderers: []string{"ticket"},
 		Schemas: nil, Skills: map[string]string{"tests.md": "uses `submit_review` and `read_code`"}})
 	text := ""
@@ -47,6 +49,7 @@ func TestTheKindTableCheckNamesEveryDisagreement(t *testing.T) {
 // A tool whose dependency is down is wired but not offered: tools/list leaves it out, a call gets the unknown-tool
 // answer, and the kind-table check still counts it as registered, so the server starts degraded (HARNESS_DESIGN B8).
 func TestAWithheldToolIsNotOfferedButStaysRegistered(t *testing.T) {
+	t.Parallel()
 	r := fullRig(t)
 	r.server.deps.Withheld = map[string]string{"run_check": "runner unreachable"}
 	r = rebuilt(t, r)
@@ -61,6 +64,7 @@ func TestAWithheldToolIsNotOfferedButStaysRegistered(t *testing.T) {
 }
 
 func TestWithholdingAToolThatIsNotRegisteredIsRefused(t *testing.T) {
+	t.Parallel()
 	_, _, err := withhold(nil, map[string]string{"run_chek": "runner unreachable"})
 	require.ErrorContains(t, err, `withheld tool "run_chek" is not registered`)
 }

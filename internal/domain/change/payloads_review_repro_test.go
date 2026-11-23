@@ -9,6 +9,7 @@ import (
 )
 
 func TestFindingRecordAcceptsAWholeReproTestFile(t *testing.T) {
+	t.Parallel()
 	check := func(content string) string {
 		rec := change.FindingRecord{ReproTest: &finding.ReproTest{Path: "tests/x_test.go", Name: "TestX", Content: content}}
 		err := rec.Validate()

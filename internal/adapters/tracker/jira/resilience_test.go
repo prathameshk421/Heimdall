@@ -61,23 +61,78 @@ var (
 	okTicket    = scripted{status: http.StatusOK, body: kan7}
 )
 
-func TestA429WaitsForRetryAfterThenSucceeds(t *testing.T) {
-	f := newFake(t, script(
-		scripted{status: http.StatusTooManyRequests, body: `{}`, headers: map[string]string{"Retry-After": "7"}},
-		okTicket,
-	))
-	w := &waits{}
-	cl := newClientWait(t, f, &clock{at: now}, w)
-
-	got, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-
-	require.NoError(t, err)
-	require.Equal(t, id.ChangeID("KAN-7"), got.Key)
-	require.Len(t, f.requests(), 2)
-	require.Equal(t, []time.Duration{7 * time.Second}, w.pauses(), "the pause is the Retry-After of the reply")
+func TestRetryAfterCases(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		header     string
+		wantPauses []time.Duration
+		wantErr    error
+		wantReqs   int
+	}{
+		{
+			name:       "numeric seconds",
+			header:     "7",
+			wantPauses: []time.Duration{7 * time.Second},
+			wantReqs:   2,
+		},
+		{
+			name:       "longer than 10 minutes returns unavailable at once",
+			header:     "601",
+			wantPauses: nil,
+			wantErr:    ports.ErrUnavailable,
+			wantReqs:   1,
+		},
+		{
+			name:       "future HTTP date uses clock",
+			header:     now.Add(7 * time.Second).Format(http.TimeFormat),
+			wantPauses: []time.Duration{7 * time.Second},
+			wantReqs:   2,
+		},
+		{
+			name:       "past HTTP date retries at once",
+			header:     now.Add(-time.Second).Format(http.TimeFormat),
+			wantPauses: []time.Duration{0},
+			wantReqs:   2,
+		},
+		{
+			name:       "bad retry after uses jittered backoff",
+			header:     "later",
+			wantPauses: []time.Duration{(time.Second + 1) / 2},
+			wantReqs:   2,
+		},
+		{
+			name:       "HTTP date above maximum returns at once",
+			header:     now.Add(maxRetryAfter + time.Second).Format(http.TimeFormat),
+			wantPauses: nil,
+			wantErr:    ports.ErrUnavailable,
+			wantReqs:   1,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFake(t, script(
+				scripted{status: http.StatusTooManyRequests, body: `{}`, headers: map[string]string{"Retry-After": tc.header}},
+				okTicket,
+			))
+			w := &waits{}
+			cl := newClientWait(t, f, &clock{at: now}, w)
+			got, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, id.ChangeID("KAN-7"), got.Key)
+			}
+			require.Len(t, f.requests(), tc.wantReqs)
+			require.Equal(t, tc.wantPauses, w.pauses())
+		})
+	}
 }
 
 func TestA5xxIsRetriedEightTimesWithCappedExponentialBackoff(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, script(unavailable))
 	w := &waits{}
 	cl := newClientWait(t, f, &clock{at: now}, w)
@@ -90,6 +145,7 @@ func TestA5xxIsRetriedEightTimesWithCappedExponentialBackoff(t *testing.T) {
 }
 
 func TestRetryDelayUsesCappedDoublingAndInjectedFullJitter(t *testing.T) {
+	t.Parallel()
 	for attempt, upper := range []time.Duration{
 		time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second,
 		16 * time.Second, 32 * time.Second, 64 * time.Second, 128 * time.Second,
@@ -101,6 +157,7 @@ func TestRetryDelayUsesCappedDoublingAndInjectedFullJitter(t *testing.T) {
 }
 
 func TestAuthAndNotFoundAreNotRetried(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		status int
 		want   error
@@ -109,90 +166,23 @@ func TestAuthAndNotFoundAreNotRetried(t *testing.T) {
 		{http.StatusNotFound, ports.ErrNotFound},
 	}
 	for _, tc := range cases {
-		f := newFake(t, script(scripted{status: tc.status, body: `{}`}))
-		w := &waits{}
-		cl := newClientWait(t, f, &clock{at: now}, w)
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			t.Parallel()
+			f := newFake(t, script(scripted{status: tc.status, body: `{}`}))
+			w := &waits{}
+			cl := newClientWait(t, f, &clock{at: now}, w)
 
-		_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
+			_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 
-		require.ErrorIs(t, err, tc.want, "status %d", tc.status)
-		require.Len(t, f.requests(), 1, "status %d is not retried", tc.status)
-		require.Empty(t, w.pauses())
+			require.ErrorIs(t, err, tc.want, "status %d", tc.status)
+			require.Len(t, f.requests(), 1, "status %d is not retried", tc.status)
+			require.Empty(t, w.pauses())
+		})
 	}
 }
 
-func TestARetryAfterLongerThanTenMinutesReturnsAtOnce(t *testing.T) {
-	f := newFake(t, script(scripted{status: http.StatusTooManyRequests, body: `{}`,
-		headers: map[string]string{"Retry-After": "601"}}))
-	w := &waits{}
-	cl := newClientWait(t, f, &clock{at: now}, w)
-
-	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-
-	require.ErrorIs(t, err, ports.ErrUnavailable, "the outbox retries it later")
-	require.Len(t, f.requests(), 1)
-	require.Empty(t, w.pauses())
-}
-
-func TestRetryAfterHTTPDateUsesTheInjectedClock(t *testing.T) {
-	c := &clock{at: now}
-	f := newFake(t, script(
-		scripted{status: http.StatusTooManyRequests, body: `{}`,
-			headers: map[string]string{"Retry-After": now.Add(7 * time.Second).Format(http.TimeFormat)}},
-		okTicket,
-	))
-	w := &waits{}
-	cl := newClientWait(t, f, c, w)
-
-	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-
-	require.NoError(t, err)
-	require.Equal(t, []time.Duration{7 * time.Second}, w.pauses())
-}
-
-func TestRetryAfterHTTPDateInThePastRetriesAtOnce(t *testing.T) {
-	f := newFake(t, script(
-		scripted{status: http.StatusTooManyRequests, body: `{}`,
-			headers: map[string]string{"Retry-After": now.Add(-time.Second).Format(http.TimeFormat)}},
-		okTicket,
-	))
-	w := &waits{}
-	cl := newClientWait(t, f, &clock{at: now}, w)
-
-	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-
-	require.NoError(t, err)
-	require.Equal(t, []time.Duration{0}, w.pauses())
-}
-
-func TestBadRetryAfterUsesTheJitteredBackoff(t *testing.T) {
-	f := newFake(t, script(
-		scripted{status: http.StatusTooManyRequests, body: `{}`, headers: map[string]string{"Retry-After": "later"}},
-		okTicket,
-	))
-	w := &waits{}
-	cl := newClientWait(t, f, &clock{at: now}, w)
-
-	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-
-	require.NoError(t, err)
-	require.Equal(t, []time.Duration{(time.Second + 1) / 2}, w.pauses())
-}
-
-func TestRetryAfterHTTPDateAboveTheMaximumReturnsAtOnce(t *testing.T) {
-	f := newFake(t, script(scripted{status: http.StatusTooManyRequests, body: `{}`,
-		headers: map[string]string{"Retry-After": now.Add(maxRetryAfter + time.Second).Format(http.TimeFormat)}}))
-	w := &waits{}
-	cl := newClientWait(t, f, &clock{at: now}, w)
-
-	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-
-	require.ErrorIs(t, err, ports.ErrUnavailable)
-	require.Len(t, f.requests(), 1)
-	require.Empty(t, w.pauses())
-}
-
 func TestReadSecretNeverWrapsOrEchoesAProviderError(t *testing.T) {
+	t.Parallel()
 	const canary = "credential-canary"
 	_, err := readSecret(errorSecrets{err: errors.New(canary)}, "jira_api_token")
 
@@ -208,6 +198,7 @@ type errorSecrets struct{ err error }
 func (s errorSecrets) Secret(string) (string, error) { return "", s.err }
 
 func TestAPauseCancelledByTheContextStopsTheRetries(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, script(unavailable))
 	w := &waits{stop: true}
 	cl := newClientWait(t, f, &clock{at: now}, w)
@@ -219,6 +210,7 @@ func TestAPauseCancelledByTheContextStopsTheRetries(t *testing.T) {
 }
 
 func TestTheBreakerOpensAfterFiveUnavailableCallsAndSendsNothingWhileOpen(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, script(unavailable))
 	cl := newClientWait(t, f, &clock{at: now}, &waits{})
 	for range 5 {
@@ -235,6 +227,7 @@ func TestTheBreakerOpensAfterFiveUnavailableCallsAndSendsNothingWhileOpen(t *tes
 }
 
 func TestAfterTheCooldownOneProbeIsSentAndASuccessCloses(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, script(cat(rep(unavailable, 40), []scripted{okTicket})...))
 	c := &clock{at: now}
 	cl := newClientWait(t, f, c, &waits{})
@@ -260,6 +253,7 @@ func TestAfterTheCooldownOneProbeIsSentAndASuccessCloses(t *testing.T) {
 }
 
 func TestAFailedProbeIsOneRequestAndOpensTheBreakerAgain(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, script(unavailable))
 	c := &clock{at: now}
 	cl := newClientWait(t, f, c, &waits{})
@@ -279,6 +273,7 @@ func TestAFailedProbeIsOneRequestAndOpensTheBreakerAgain(t *testing.T) {
 }
 
 func TestClientErrorsDoNotCountTowardsTheBreaker(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, script(cat(rep(scripted{status: http.StatusNotFound, body: `{}`}, 5), []scripted{okTicket})...))
 	cl := newClientWait(t, f, &clock{at: now}, &waits{})
 	for range 5 {
@@ -293,6 +288,7 @@ func TestClientErrorsDoNotCountTowardsTheBreaker(t *testing.T) {
 }
 
 func TestASuccessResetsTheUnavailableStreak(t *testing.T) {
+	t.Parallel()
 	// Call 1 fails (eight attempts), call 2 succeeds, calls 3 to 6 fail (four calls). Only four in a row, so call 7
 	// is still sent.
 	f := newFake(t, script(cat(

@@ -27,11 +27,13 @@ func validTaskAssignPayload() change.TaskAssignPayload {
 }
 
 func TestEffectTaskAssignKindValid(t *testing.T) {
+	t.Parallel()
 	require.True(t, change.EffectTaskAssign.Valid())
 	require.Equal(t, change.EffectTaskAssign, change.EffectKind("task_assign"))
 }
 
 func TestTaskAssignPayloadValidate(t *testing.T) {
+	t.Parallel()
 	t.Run("valid payload passes", func(t *testing.T) {
 		p := validTaskAssignPayload()
 		require.NoError(t, p.Validate())
@@ -69,6 +71,7 @@ func TestTaskAssignPayloadValidate(t *testing.T) {
 }
 
 func TestDecodeTaskAssignPayloadStrict(t *testing.T) {
+	t.Parallel()
 	p := validTaskAssignPayload()
 
 	validJSON := func() map[string]any {

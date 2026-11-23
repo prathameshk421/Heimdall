@@ -12,6 +12,7 @@ import (
 )
 
 func TestTestQualityPayloadValidation(t *testing.T) {
+	t.Parallel()
 	good := change.TestQualityPayload{
 		Repo:          change.Repo("acme/pay-demo"),
 		Branch:        "PAY-142-refunds",
@@ -38,6 +39,7 @@ func TestTestQualityPayloadValidation(t *testing.T) {
 }
 
 func TestDecodeTestQualityPayloadStrict(t *testing.T) {
+	t.Parallel()
 	raw := json.RawMessage(`{
 		"repo": "acme/pay-demo",
 		"branch": "PAY-142-refunds",

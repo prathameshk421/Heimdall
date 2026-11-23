@@ -8,6 +8,7 @@ import (
 )
 
 func TestCleanMakesOneLine(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "a b c", clean("  a\n\n b\t\rc  ", 100))
 	require.Equal(t, "ab", clean("a\u200bb", 100), "a zero width space is removed")
 	require.Equal(t, "evil", clean("\u202eevil\u2069", 100), "bidirectional overrides are removed")
@@ -19,6 +20,7 @@ func TestCleanMakesOneLine(t *testing.T) {
 }
 
 func TestEscapeTable(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"plain words 1.2":      "plain words 1.2",
 		"a < b && c > d":       "a &lt; b &amp;&amp; c &gt; d",
@@ -40,6 +42,7 @@ func TestEscapeTable(t *testing.T) {
 }
 
 func TestCodeSpanCannotBeClosed(t *testing.T) {
+	t.Parallel()
 	for _, in := range []string{"a`b", "a``b", "`a`", "a```b`c", "plain.go:12", "`", "x\n`y"} {
 		got := code(in, 100)
 		fence := got[:strings.IndexFunc(got, func(r rune) bool { return r != '`' })]
@@ -62,6 +65,7 @@ func TestCodeSpanCannotBeClosed(t *testing.T) {
 }
 
 func TestBreakWWWOnlyBeforeADot(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "www"+zwsp+".a www"+zwsp+".", breakWWW("www.a www."))
 	require.Equal(t, "awww b", breakWWW("awww b"))
 	require.Equal(t, "xWWW"+zwsp+".y", breakWWW("xWWW.y"))

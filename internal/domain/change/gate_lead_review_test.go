@@ -15,6 +15,7 @@ import (
 // must come from the repository (Outside), never from the event log: otherwise a PR that edits or deletes the pinned
 // tests would still pass (TECH_SPEC 3.4, D150).
 func TestLeadTheTestTreeAtHeadComesFromTheRepositoryNotTheEvents(t *testing.T) {
+	t.Parallel()
 	out := greenOutside()
 	out.HeadTestTreeHash = string(testTree1)
 	res := evaluate(t, greenStream(t), out)
@@ -34,11 +35,13 @@ func TestLeadTheTestTreeAtHeadComesFromTheRepositoryNotTheEvents(t *testing.T) {
 
 // The fold must not invent the head tree from events.
 func TestLeadFoldLeavesTheHeadTestTreeUnknown(t *testing.T) {
+	t.Parallel()
 	require.Empty(t, foldFacts(t, greenStream(t)).HeadTestTreeHash)
 }
 
 // The blocking set follows the thresholds of the policy at the merge base, not a constant in the fold.
 func TestLeadBlockingFollowsThePolicyThresholds(t *testing.T) {
+	t.Parallel()
 	filed := func(tier finding.Tier) *stream {
 		return greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
 			FindingID: findingID, Ref: ref(1), Tier: tier, Severity: "high", State: finding.StateOpen, By: "reviewer",
@@ -61,6 +64,7 @@ func TestLeadBlockingFollowsThePolicyThresholds(t *testing.T) {
 
 // A late CI report for an OLD commit must neither count nor wipe out the good result already held for the head.
 func TestLeadALateCIReportForAnOldCommitDoesNotReplaceTheHeadResult(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).add(change.EventCIReported, githubActor, change.CIReported{
 		Check: "build", SHA: oldHead, Conclusion: change.CIFailure,
 	})
@@ -70,6 +74,7 @@ func TestLeadALateCIReportForAnOldCommitDoesNotReplaceTheHeadResult(t *testing.T
 
 // Without a known policy the gate is red anyway; the fold's own default stays strict.
 func TestLeadFoldDefaultBlockingIsStrict(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
 		FindingID: findingID, Ref: ref(1), Tier: finding.TierE3, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
@@ -80,6 +85,7 @@ func TestLeadFoldDefaultBlockingIsStrict(t *testing.T) {
 // because the tests have not been verified yet. Found on the live run: the gate overwrote intake's failure with
 // in_progress.
 func TestLeadASlopFailureStaysRedAndNeverBecomesPending(t *testing.T) {
+	t.Parallel()
 	// No tests verified or committed yet, as on the live PR: that alone would make the check pending.
 	s := greenStream(t).
 		replace(change.EventSlopEvaluated, change.SlopEvaluated{Pass: false, FailingRules: []string{"size"}}).
@@ -96,6 +102,7 @@ func TestLeadASlopFailureStaysRedAndNeverBecomesPending(t *testing.T) {
 // order): a later push voids it and the reviewer must look again. Found on the live run: the fold never read
 // review.submitted, so no review could ever satisfy the gate.
 func TestLeadASubmittedReviewCoversTheReviewerUntilThePushThatFollowsIt(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).
 		drop(change.EventReviewWaived).
 		replace(change.EventReviewersPicked, change.ReviewersPicked{
@@ -116,6 +123,7 @@ func TestLeadASubmittedReviewCoversTheReviewerUntilThePushThatFollowsIt(t *testi
 
 // A reviewer who was never asked cannot cover anything, and a review of an unavailable reviewer is not a review.
 func TestLeadAReviewFromSomeoneNotPickedCoversNobody(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).
 		drop(change.EventReviewWaived).
 		replace(change.EventReviewersPicked, change.ReviewersPicked{

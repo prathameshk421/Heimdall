@@ -115,8 +115,7 @@ func (f *fakeEvents) setStream(changeID id.ChangeID, evs []change.Event) {
 	f.streams[changeID] = append([]change.Event(nil), evs...)
 }
 
-// fakePRs implements prsync.PRs. current is what GitHub reports for one pull request in any state; the open list is
-// built from prs and never holds a closed pull request, as the real OpenPRs call.
+// fakePRs implements prsync.PRs.
 type fakePRs struct {
 	mu      sync.Mutex
 	prs     map[change.Repo][]ports.PR
@@ -156,7 +155,7 @@ func (f *fakePRs) PR(_ context.Context, _ change.Repo, n int) (ports.PR, error) 
 	return pr, nil
 }
 
-// fakeIntake implements prsync.Intake. appended says which pull requests had a new head to append (see Handled).
+// fakeIntake implements prsync.Intake.
 type fakeIntake struct {
 	mu       sync.Mutex
 	changeID map[int]id.ChangeID
@@ -272,8 +271,18 @@ func newRig(t *testing.T) *rig {
 	return r
 }
 
-// restart builds a new Syncer on the same event log and GitHub fakes. It has no memory of earlier syncs, as after a
-// restart of the server.
+func rigWithOpenPR(t *testing.T, sha id.SHA) (*rig, id.ChangeID) {
+	t.Helper()
+	r := newRig(t)
+	pr := samplePR(10, sha, ports.PRStateOpen)
+	r.prs.prs[testRepo] = []ports.PR{pr}
+	changeID := id.ChangeID("PAY-10")
+	r.intake.changeID[10] = changeID
+	r.seedInitialPROpened(changeID, 10, sha)
+	return r, changeID
+}
+
+// restart builds a new Syncer on the same event log and GitHub fakes. It has no memory of earlier syncs.
 func (r *rig) restart(t *testing.T) *prsync.Syncer {
 	t.Helper()
 	s, err := prsync.New(prsync.Config{
@@ -321,13 +330,9 @@ func (r *rig) seedInitialPROpened(changeID id.ChangeID, n int, sha id.SHA) {
 	})
 }
 
-func TestFirstSyncAppendsApprovalAndCIOnce(t *testing.T) {
-	r := newRig(t)
-	pr := samplePR(10, head1, ports.PRStateOpen)
-	r.prs.prs[testRepo] = []ports.PR{pr}
-	changeID := id.ChangeID("PAY-10")
-	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
+func TestSyncAppendsApprovalAndCIAndIsIdempotent(t *testing.T) {
+	t.Parallel()
+	r, changeID := rigWithOpenPR(t, head1)
 
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
@@ -348,6 +353,7 @@ func TestFirstSyncAppendsApprovalAndCIOnce(t *testing.T) {
 		},
 	}
 
+	// First sync appends approval and CI
 	res, err := r.syncer.SyncOnce(context.Background())
 	require.NoError(t, err)
 	require.Empty(t, res.Failed)
@@ -371,57 +377,24 @@ func TestFirstSyncAppendsApprovalAndCIOnce(t *testing.T) {
 	require.Equal(t, change.CISuccess, ci.Conclusion)
 	require.Equal(t, head1, ci.SHA)
 
-}
-
-func TestSecondSyncAppendsNothing(t *testing.T) {
-	r := newRig(t)
-	pr := samplePR(10, head1, ports.PRStateOpen)
-	r.prs.prs[testRepo] = []ports.PR{pr}
-	changeID := id.ChangeID("PAY-10")
-	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
-
-	r.reviews.reviews[10] = []prsync.PRReview{
-		{
-			ID:          "rev-1",
-			Login:       reviewerBob,
-			State:       prsync.ReviewApproved,
-			CommitSHA:   head1,
-			SubmittedAt: testNow,
-		},
-	}
-	r.checks.checks[head1] = []prsync.CheckRun{
-		{
-			ID:         "check-1",
-			Name:       "build",
-			Status:     prsync.CheckCompleted,
-			Conclusion: change.CISuccess,
-			SHA:        head1,
-		},
-	}
-
-	// First sync
-	_, err := r.syncer.SyncOnce(context.Background())
-	require.NoError(t, err)
-
-	// Second sync: identical input
+	// Second sync: identical input appends nothing (idempotent)
 	res2, err := r.syncer.SyncOnce(context.Background())
 	require.NoError(t, err)
 	require.Empty(t, res2.Failed)
 	require.Equal(t, 0, res2.Appended)
 
-	evs, err := r.events.Load(context.Background(), changeID)
+	evs2, err := r.events.Load(context.Background(), changeID)
 	require.NoError(t, err)
-	require.Len(t, evs, 3) // No new events added
+	require.Len(t, evs2, 3)
 }
 
 func TestNewPushVoidsOldApproval(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	changeID := id.ChangeID("PAY-10")
 	r.intake.changeID[10] = changeID
 	r.seedInitialPROpened(changeID, 10, head1)
 
-	// Review 1 was for old head1
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
 			ID:          "rev-old",
@@ -432,29 +405,24 @@ func TestNewPushVoidsOldApproval(t *testing.T) {
 		},
 	}
 
-	// PR head is now pushed to head2
+	// PR head pushed to head2
 	pr := samplePR(10, head2, ports.PRStateOpen)
 	r.prs.prs[testRepo] = []ports.PR{pr}
 
 	res, err := r.syncer.SyncOnce(context.Background())
 	require.NoError(t, err)
 	require.Empty(t, res.Failed)
-	require.Equal(t, 0, res.Appended) // Old head review ignored!
+	require.Equal(t, 0, res.Appended)
 
 	evs, err := r.events.Load(context.Background(), changeID)
 	require.NoError(t, err)
-	require.Len(t, evs, 1) // Only initial PR opened
+	require.Len(t, evs, 1)
 }
 
 func TestDismissedApprovalIsInvalidated(t *testing.T) {
-	r := newRig(t)
-	pr := samplePR(10, head1, ports.PRStateOpen)
-	r.prs.prs[testRepo] = []ports.PR{pr}
-	changeID := id.ChangeID("PAY-10")
-	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
+	t.Parallel()
+	r, changeID := rigWithOpenPR(t, head1)
 
-	// Initial approval
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
 			ID:          "rev-1",
@@ -467,7 +435,7 @@ func TestDismissedApprovalIsInvalidated(t *testing.T) {
 	_, err := r.syncer.SyncOnce(context.Background())
 	require.NoError(t, err)
 
-	// Later dismissed review
+	// Dismissed review
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
 			ID:          "rev-1",
@@ -491,7 +459,7 @@ func TestDismissedApprovalIsInvalidated(t *testing.T) {
 
 	evs, err := r.events.Load(context.Background(), changeID)
 	require.NoError(t, err)
-	require.Len(t, evs, 3) // opened, approval.recorded, approval.invalidated
+	require.Len(t, evs, 3)
 	require.Equal(t, change.EventApprovalInvalidated, evs[2].Type)
 
 	var inv change.ApprovalInvalidated
@@ -501,14 +469,9 @@ func TestDismissedApprovalIsInvalidated(t *testing.T) {
 }
 
 func TestAuthorApprovalIsIgnored(t *testing.T) {
-	r := newRig(t)
-	pr := samplePR(10, head1, ports.PRStateOpen)
-	r.prs.prs[testRepo] = []ports.PR{pr}
-	changeID := id.ChangeID("PAY-10")
-	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
+	t.Parallel()
+	r, changeID := rigWithOpenPR(t, head1)
 
-	// Author approves their own PR
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
 			ID:          "rev-self",
@@ -525,18 +488,13 @@ func TestAuthorApprovalIsIgnored(t *testing.T) {
 
 	evs, err := r.events.Load(context.Background(), changeID)
 	require.NoError(t, err)
-	require.Len(t, evs, 1) // Only initial PR opened
+	require.Len(t, evs, 1)
 }
 
 func TestOldHeadCIResultIsIgnored(t *testing.T) {
-	r := newRig(t)
-	pr := samplePR(10, head2, ports.PRStateOpen) // Current head is head2
-	r.prs.prs[testRepo] = []ports.PR{pr}
-	changeID := id.ChangeID("PAY-10")
-	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head2)
+	t.Parallel()
+	r, changeID := rigWithOpenPR(t, head2)
 
-	// CI check for old commit head1
 	r.checks.checks[head1] = []prsync.CheckRun{
 		{
 			ID:         "check-old",
@@ -557,35 +515,13 @@ func TestOldHeadCIResultIsIgnored(t *testing.T) {
 }
 
 func TestInProgressCheckAppendsNothing(t *testing.T) {
-	r := newRig(t)
-	pr := samplePR(10, head1, ports.PRStateOpen)
-	r.prs.prs[testRepo] = []ports.PR{pr}
-	changeID := id.ChangeID("PAY-10")
-	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
+	t.Parallel()
+	r, changeID := rigWithOpenPR(t, head1)
 
 	r.checks.checks[head1] = []prsync.CheckRun{
-		{
-			ID:         "check-queued",
-			Name:       "build",
-			Status:     prsync.CheckQueued,
-			Conclusion: "",
-			SHA:        head1,
-		},
-		{
-			ID:         "check-running",
-			Name:       "lint",
-			Status:     prsync.CheckInProgress,
-			Conclusion: "",
-			SHA:        head1,
-		},
-		{
-			ID:         "check-running-with-conclusion",
-			Name:       "test",
-			Status:     prsync.CheckInProgress,
-			Conclusion: change.CISuccess,
-			SHA:        head1,
-		},
+		{ID: "check-queued", Name: "build", Status: prsync.CheckQueued, SHA: head1},
+		{ID: "check-running", Name: "lint", Status: prsync.CheckInProgress, SHA: head1},
+		{ID: "check-running-with-conclusion", Name: "test", Status: prsync.CheckInProgress, Conclusion: change.CISuccess, SHA: head1},
 	}
 
 	res, err := r.syncer.SyncOnce(context.Background())
@@ -598,6 +534,7 @@ func TestInProgressCheckAppendsNothing(t *testing.T) {
 }
 
 func TestOneFailingPRDoesNotStopOthers(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	pr1 := samplePR(1, head1, ports.PRStateOpen)
 	pr2 := samplePR(2, head1, ports.PRStateOpen)
@@ -607,10 +544,7 @@ func TestOneFailingPRDoesNotStopOthers(t *testing.T) {
 	r.intake.changeID[2] = changeID2
 	r.seedInitialPROpened(changeID2, 2, head1)
 
-	// PR 1 fails in intake
 	r.intake.err[1] = errors.New("simulated intake failure")
-
-	// PR 2 has an approval
 	r.reviews.reviews[2] = []prsync.PRReview{
 		{
 			ID:          "rev-2",
@@ -628,7 +562,6 @@ func TestOneFailingPRDoesNotStopOthers(t *testing.T) {
 	require.Equal(t, testRepo, res.Failed[0].Repo)
 	require.ErrorContains(t, res.Failed[0].Err, "simulated intake failure")
 
-	// PR 2 still synced
 	require.Equal(t, 1, res.Appended)
 	evs, err := r.events.Load(context.Background(), changeID2)
 	require.NoError(t, err)
@@ -636,12 +569,8 @@ func TestOneFailingPRDoesNotStopOthers(t *testing.T) {
 }
 
 func TestVersionConflictRetried(t *testing.T) {
-	r := newRig(t)
-	pr := samplePR(10, head1, ports.PRStateOpen)
-	r.prs.prs[testRepo] = []ports.PR{pr}
-	changeID := id.ChangeID("PAY-10")
-	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
+	t.Parallel()
+	r, changeID := rigWithOpenPR(t, head1)
 
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
@@ -653,7 +582,6 @@ func TestVersionConflictRetried(t *testing.T) {
 		},
 	}
 
-	// Fail the first two append attempts with version conflict, succeed on 3rd
 	r.events.failAppend = 2
 	r.events.failAppendErr = ports.ErrVersionConflict
 
@@ -669,6 +597,7 @@ func TestVersionConflictRetried(t *testing.T) {
 }
 
 func TestClosedPROnce(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	prClosed := samplePR(10, head1, ports.PRStateClosed)
 	prClosed.Merged = true
@@ -678,7 +607,6 @@ func TestClosedPROnce(t *testing.T) {
 	r.intake.changeID[10] = changeID
 	r.seedInitialPROpened(changeID, 10, head1)
 
-	// First sync on closed PR: appends pr.closed
 	res1, err := r.syncer.SyncOnce(context.Background())
 	require.NoError(t, err)
 	require.Empty(t, res1.Failed)
@@ -696,7 +624,6 @@ func TestClosedPROnce(t *testing.T) {
 	require.Equal(t, testRepo, cl.Repo)
 	require.Equal(t, head1, cl.HeadSHA)
 
-	// Second sync on closed PR: appends nothing
 	res2, err := r.syncer.SyncOnce(context.Background())
 	require.NoError(t, err)
 	require.Empty(t, res2.Failed)
@@ -708,6 +635,7 @@ func TestClosedPROnce(t *testing.T) {
 }
 
 func TestTransportErrorOnListingReturnsError(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.prs.err[testRepo] = ports.ErrUnavailable
 
@@ -716,6 +644,7 @@ func TestTransportErrorOnListingReturnsError(t *testing.T) {
 }
 
 func TestNewRequiresAllPorts(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	cfg := prsync.Config{
 		Repos:   r.repos,
@@ -732,27 +661,23 @@ func TestNewRequiresAllPorts(t *testing.T) {
 	_, err := prsync.New(cfg)
 	require.NoError(t, err)
 
-	bad := cfg
-	bad.Events = nil
-	_, err = prsync.New(bad)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "Events")
-
-	bad = cfg
-	bad.Repos = nil
-	_, err = prsync.New(bad)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "Repos")
-
-	bad = cfg
-	bad.Streams = nil
-	_, err = prsync.New(bad)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "Streams")
+	for _, name := range []string{"Events", "Repos", "Streams"} {
+		bad := cfg
+		switch name {
+		case "Events":
+			bad.Events = nil
+		case "Repos":
+			bad.Repos = nil
+		case "Streams":
+			bad.Streams = nil
+		}
+		_, err = prsync.New(bad)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), name)
+	}
 }
 
-// seedMergedWhileDown is the state a server leaves behind when it stops with PR n open: the log holds pr.opened and
-// GitHub later merges the PR while the server is off.
+// seedMergedWhileDown is the state a server leaves behind when it stops with PR n open.
 func (r *rig) seedMergedWhileDown(changeID id.ChangeID, n int) {
 	r.seedInitialPROpened(changeID, n, head1)
 	merged := samplePR(n, head1, ports.PRStateClosed)
@@ -760,9 +685,8 @@ func (r *rig) seedMergedWhileDown(changeID id.ChangeID, n int) {
 	r.prs.current[n] = merged
 }
 
-// The open list never holds a closed pull request. Without a reconcile, a PR merged while the server was down keeps
-// its open stream forever (D56).
 func TestReconcileRecordsPRMergedWhileDown(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	changeID := id.ChangeID("PAY-10")
 	r.seedMergedWhileDown(changeID, 10)
@@ -783,8 +707,8 @@ func TestReconcileRecordsPRMergedWhileDown(t *testing.T) {
 	require.Equal(t, testRepo, cl.Repo)
 }
 
-// A second reconcile, a restart, or a sync after the reconcile adds no second pr.closed.
 func TestReconcileIsIdempotentAcrossRestarts(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	changeID := id.ChangeID("PAY-10")
 	r.seedMergedWhileDown(changeID, 10)
@@ -807,8 +731,8 @@ func TestReconcileIsIdempotentAcrossRestarts(t *testing.T) {
 	require.Len(t, evs, 2, "exactly one pr.closed")
 }
 
-// A pull request that is still open is left to SyncOnce: the reconcile appends nothing for it.
 func TestReconcileLeavesOpenPRAlone(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	changeID := id.ChangeID("PAY-10")
 	r.seedInitialPROpened(changeID, 10, head1)
@@ -824,8 +748,8 @@ func TestReconcileLeavesOpenPRAlone(t *testing.T) {
 	require.Len(t, evs, 1)
 }
 
-// One pull request that cannot be read is named in Failed, and the others are still reconciled.
 func TestReconcileReadFailureDoesNotStopOthers(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	r.seedMergedWhileDown(id.ChangeID("PAY-10"), 10)
 	r.seedMergedWhileDown(id.ChangeID("PAY-11"), 11)

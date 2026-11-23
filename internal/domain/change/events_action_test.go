@@ -63,6 +63,7 @@ func actionTypes() []change.EventType {
 }
 
 func TestTheActionEventNamesAreTheDesignNames(t *testing.T) {
+	t.Parallel()
 	for typ, want := range map[change.EventType]string{
 		change.EventProofStarted:       "proof.started",
 		change.EventProofReported:      "proof.reported",
@@ -81,12 +82,14 @@ func TestTheActionEventNamesAreTheDesignNames(t *testing.T) {
 }
 
 func TestEveryActionEventIsInTheCatalogAfterTheServerEvents(t *testing.T) {
+	t.Parallel()
 	all := change.All()
 	require.Equal(t, change.EventChangeMerged, all[54], "the 55 server events come first")
 	require.Equal(t, actionTypes(), all[55:])
 }
 
 func TestEveryActionPayloadRoundTripsByteForByte(t *testing.T) {
+	t.Parallel()
 	for _, typ := range actionTypes() {
 		raw := actionGood()[typ]
 		got, err := change.Decode(eventWith(typ, raw))
@@ -102,6 +105,7 @@ func TestEveryActionPayloadRoundTripsByteForByte(t *testing.T) {
 }
 
 func TestAnActionPayloadWithAFieldRemovedIsRefused(t *testing.T) {
+	t.Parallel()
 	for typ, fields := range actionRequired() {
 		for _, field := range fields {
 			var obj map[string]json.RawMessage
@@ -117,6 +121,7 @@ func TestAnActionPayloadWithAFieldRemovedIsRefused(t *testing.T) {
 }
 
 func TestAnActionPayloadWithAnUnknownFieldIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, typ := range actionTypes() {
 		raw := actionGood()[typ]
 		raw = `{"extra":1,` + strings.TrimPrefix(raw, "{")
@@ -133,6 +138,7 @@ func sub(t *testing.T, raw, old, next string) string {
 }
 
 func TestActionPayloadsRefuseBadValuesNamingTheField(t *testing.T) {
+	t.Parallel()
 	g := actionGood()
 	longReason := strings.Repeat("x", 2049)
 	cases := []struct {
@@ -235,12 +241,14 @@ func TestActionPayloadsRefuseBadValuesNamingTheField(t *testing.T) {
 }
 
 func TestABreakGlassReasonOfFifteenCharactersIsAccepted(t *testing.T) {
+	t.Parallel()
 	raw := sub(t, actionGood()[change.EventBreakGlassRecorded], `"production incident, rollback blocked"`, `"fifteen chars!!"`)
 	_, err := change.Decode(eventWith(change.EventBreakGlassRecorded, raw))
 	require.NoError(t, err)
 }
 
 func TestNoAgentCanRecordOrReviewABreakGlass(t *testing.T) {
+	t.Parallel()
 	for _, typ := range []change.EventType{change.EventBreakGlassRecorded, change.EventBreakGlassReviewed} {
 		e := eventWith(typ, actionGood()[typ])
 		e.Actor = change.Actor{Kind: change.ActorAgent, ID: "test-author"}
@@ -257,6 +265,7 @@ func TestNoAgentCanRecordOrReviewABreakGlass(t *testing.T) {
 }
 
 func TestOtherActionEventsMayComeFromAnyActor(t *testing.T) {
+	t.Parallel()
 	for _, typ := range []change.EventType{change.EventFastReported, change.EventProofReported, change.EventStateReset} {
 		e := eventWith(typ, actionGood()[typ])
 		e.Actor = change.Actor{Kind: change.ActorAgent, ID: "runner"}
@@ -266,6 +275,7 @@ func TestOtherActionEventsMayComeFromAnyActor(t *testing.T) {
 }
 
 func TestEveryProofKindAndReasonIsAcceptedWhereItBelongs(t *testing.T) {
+	t.Parallel()
 	zero := `"counts":{},"cost":{}`
 	head := `{"workflow_run":1,"head":"9f1c2ab","base":"7d3e9a1","policy_hash":"` + aHash + `",`
 	for _, kind := range []proof.Kind{proof.KindProven, proof.KindNotReproduced} {
@@ -281,6 +291,7 @@ func TestEveryProofKindAndReasonIsAcceptedWhereItBelongs(t *testing.T) {
 }
 
 func TestNewFastReportedCopiesTheResultAndItsVerdict(t *testing.T) {
+	t.Parallel()
 	r := fastcheck.Result{
 		Clauses: []fastcheck.Clause{
 			{ID: fastcheck.ClauseSecrets, Status: fastcheck.StatusMet, Reason: "none"},
@@ -298,6 +309,7 @@ func TestNewFastReportedCopiesTheResultAndItsVerdict(t *testing.T) {
 }
 
 func TestNewFastReportedClipsAReasonThatIsTooLongAtARuneBoundary(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("é", change.MaxClauseReason) // two bytes each, so the clip falls inside a rune if it is careless
 	r := fastcheck.Result{
 		Clauses:  []fastcheck.Clause{{ID: fastcheck.ClauseSecrets, Status: fastcheck.StatusUnmet, Reason: long}},
@@ -311,6 +323,7 @@ func TestNewFastReportedClipsAReasonThatIsTooLongAtARuneBoundary(t *testing.T) {
 }
 
 func TestNewCostRoundsToMicroDollarsAndRefusesAValueThatCannotBeTrue(t *testing.T) {
+	t.Parallel()
 	c, err := change.NewCost(proof.Spend{USD: 0.2400004, InputTokens: 120000, OutputTokens: 9000})
 	require.NoError(t, err)
 	require.Equal(t, change.Cost{USDMicros: 240000, PromptTokens: 120000, CompletionTokens: 9000}, c)
@@ -326,6 +339,7 @@ func TestNewCostRoundsToMicroDollarsAndRefusesAValueThatCannotBeTrue(t *testing.
 }
 
 func TestProofCountsConvertBothWays(t *testing.T) {
+	t.Parallel()
 	in := proof.Counts{In: 40, Proven: 4, Blocking: 1, NeedsPerson: 3, Refuted: 12, NoProof: 15, Outdated: 3, NoLocation: 0, NotChecked: 6}
 	got := change.NewProofCounts(in)
 	require.Equal(t, in, got.Counts())
@@ -333,6 +347,7 @@ func TestProofCountsConvertBothWays(t *testing.T) {
 }
 
 func TestAProofOutcomeFromEvaluateIsAlwaysAValidPayload(t *testing.T) {
+	t.Parallel()
 	// The payload checks must never refuse what proof.Evaluate produces, or a finished run could not be recorded.
 	facts := []proof.Facts{
 		{Trivial: proof.Decision{Skip: true}},
@@ -353,6 +368,7 @@ func TestAProofOutcomeFromEvaluateIsAlwaysAValidPayload(t *testing.T) {
 }
 
 func TestProofResultsAreBoundedAtTheCandidateLimit(t *testing.T) {
+	t.Parallel()
 	var rs []change.CandidateResult
 	for i := 1; i <= change.MaxProofResults+1; i++ {
 		ref, err := id.NewFindingRef(i)

@@ -15,6 +15,7 @@ import (
 )
 
 func TestEvaluateGateAllClausesPass(t *testing.T) {
+	t.Parallel()
 	res := evaluate(t, greenStream(t), greenOutside())
 
 	require.True(t, res.OK)
@@ -31,6 +32,7 @@ func TestEvaluateGateAllClausesPass(t *testing.T) {
 // TestEachClauseCanFailInTheUseCase is the flip table: each clause is made to fail from the event stream or the
 // outside facts, and the reason names that clause.
 func TestEachClauseCanFailInTheUseCase(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		build func(*stream) change.Outside
 		want  gate.ClauseID
@@ -212,6 +214,7 @@ func TestEachClauseCanFailInTheUseCase(t *testing.T) {
 }
 
 func TestEvaluateLetsAPolicyOwnerApproveThePolicyChange(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t)
 	out := greenOutside()
 	out.PolicyAtHead = policy.Policy{Version: 1, Workflow: "other"}
@@ -221,6 +224,7 @@ func TestEvaluateLetsAPolicyOwnerApproveThePolicyChange(t *testing.T) {
 }
 
 func TestEvaluateAcceptsATicketLinkedAfterThePROpened(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).
 		replace(change.EventPROpened, change.PROpened{
 			Repo: prRepo, Number: prNumber, HeadSHA: head, Author: author,
@@ -233,6 +237,7 @@ func TestEvaluateAcceptsATicketLinkedAfterThePROpened(t *testing.T) {
 }
 
 func TestEvaluateGivesAStatusForEachSituation(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		build  func(*stream) change.Outside
 		status change.CheckStatus
@@ -270,6 +275,7 @@ func TestEvaluateGivesAStatusForEachSituation(t *testing.T) {
 }
 
 func TestEvaluateBoundsTheEventReasonsAndTheCheckSummary(t *testing.T) {
+	t.Parallel()
 	out := greenOutside()
 	for i := 0; i < 100; i++ {
 		out.CIRequired = append(out.CIRequired, "check-"+strconv.Itoa(i)+"-"+strings.Repeat("x", 20))
@@ -285,12 +291,14 @@ func TestEvaluateBoundsTheEventReasonsAndTheCheckSummary(t *testing.T) {
 }
 
 func TestEvaluateIsDeterministic(t *testing.T) {
+	t.Parallel()
 	first := evaluate(t, greenStream(t), greenOutside())
 	second := evaluate(t, greenStream(t), greenOutside())
 	require.Equal(t, first, second)
 }
 
 func TestEvaluateFindingResolvedPasses(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
 		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
@@ -309,6 +317,7 @@ func TestEvaluateFindingResolvedPasses(t *testing.T) {
 // The gate row publishes the decision once per result: a fact and the heimdall/gate check keyed by what they say; the
 // same result on the same head publishes nothing; a different result publishes under a different key.
 func TestTheGateRowPublishesTheDecisionOncePerResult(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t)
 	view := func() change.View {
 		v, err := change.Fold(s.events())

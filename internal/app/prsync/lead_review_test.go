@@ -16,6 +16,7 @@ import (
 // GitHub does not add a review when an approval is dismissed: the SAME review changes from APPROVED to DISMISSED.
 // The sync must notice a state change on a review it has already recorded, or a dismissed approval stays valid.
 func TestLeadDismissingTheSameReviewInvalidatesTheApproval(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	pr := samplePR(10, head1, ports.PRStateOpen)
 	r.prs.prs[testRepo] = []ports.PR{pr}
@@ -50,6 +51,7 @@ func TestLeadDismissingTheSameReviewInvalidatesTheApproval(t *testing.T) {
 
 // A fresh syncer (a restart) must reach the same decision from the event log alone.
 func TestLeadDismissalIsFoundAfterARestart(t *testing.T) {
+	t.Parallel()
 	r := newRig(t)
 	pr := samplePR(10, head1, ports.PRStateOpen)
 	r.prs.prs[testRepo] = []ports.PR{pr}

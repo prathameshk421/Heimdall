@@ -158,6 +158,7 @@ func foldFacts(t *testing.T, s *stream) gate.Facts {
 
 // TestFoldReadsEveryEventFact is the green case: every fact comes from the stream and none is assumed.
 func TestFoldReadsEveryEventFact(t *testing.T) {
+	t.Parallel()
 	f := foldFacts(t, greenStream(t))
 
 	require.Equal(t, string(author), f.AuthorLogin)
@@ -183,6 +184,7 @@ func TestFoldReadsEveryEventFact(t *testing.T) {
 
 // TestFoldTakesCIOnlyFromTheCurrentHead proves an old check cannot make the new head green.
 func TestFoldTakesCIOnlyFromTheCurrentHead(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).
 		drop(change.EventCIReported).
 		add(change.EventCIReported, githubActor, change.CIReported{
@@ -204,6 +206,7 @@ func TestFoldTakesCIOnlyFromTheCurrentHead(t *testing.T) {
 }
 
 func TestFoldCountsAnApprovalOnlyOnTheHeadFromSomeoneElse(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).add(change.EventPRPushed, githubActor, change.PRPushed{
 		Repo: prRepo, Number: prNumber, HeadSHA: nextHead,
 	})
@@ -228,6 +231,7 @@ func TestFoldCountsAnApprovalOnlyOnTheHeadFromSomeoneElse(t *testing.T) {
 }
 
 func TestFoldVoidsAnApprovalThatWasInvalidated(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).add(change.EventApprovalInvalidated,
 		change.Actor{Kind: change.ActorHuman, ID: approver},
 		change.ApprovalInvalidated{Login: approver, CommitSHA: head})
@@ -236,6 +240,7 @@ func TestFoldVoidsAnApprovalThatWasInvalidated(t *testing.T) {
 }
 
 func TestFoldTracksThePinAndTheSignoff(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).
 		replace(change.EventTestsVerified, change.TestsVerified{
 			RunIDs: []id.RunID{runID}, SHA: head, TreeHash: testTree1, NeedsSignoff: true,
@@ -258,6 +263,7 @@ func TestFoldTracksThePinAndTheSignoff(t *testing.T) {
 }
 
 func TestFoldDoesNotCallUncommittedTestsVerified(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).drop(change.EventTestsCommitted)
 	f := foldFacts(t, s)
 	require.False(t, f.Testset.Verified)
@@ -266,6 +272,7 @@ func TestFoldDoesNotCallUncommittedTestsVerified(t *testing.T) {
 }
 
 func TestFoldTracksSlopFailuresAndAcceptanceCoverage(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).
 		replace(change.EventSlopEvaluated, change.SlopEvaluated{
 			Pass: false, FailingRules: []string{string(slop.RuleSize)},
@@ -282,6 +289,7 @@ func TestFoldTracksSlopFailuresAndAcceptanceCoverage(t *testing.T) {
 }
 
 func TestFoldLeavesReviewsUnknownUntilTheyArePicked(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).drop(change.EventReviewersPicked)
 	f := foldFacts(t, s)
 	require.False(t, f.ReviewsKnown)
@@ -298,6 +306,7 @@ func TestFoldLeavesReviewsUnknownUntilTheyArePicked(t *testing.T) {
 }
 
 func TestFoldBuildsTheBlockingSetAndHumanCases(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
 		FindingID: findingID, Ref: ref(1), Tier: finding.TierE2, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
@@ -322,6 +331,7 @@ func TestFoldBuildsTheBlockingSetAndHumanCases(t *testing.T) {
 }
 
 func TestFoldNeverBlocksAnE4Finding(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
 		FindingID: findingID, Ref: ref(1), Tier: finding.TierE4, Severity: "high", State: finding.StateOpen, By: "reviewer",
 	})
@@ -330,6 +340,7 @@ func TestFoldNeverBlocksAnE4Finding(t *testing.T) {
 }
 
 func TestFoldMarksAChangedTicketAndAClosedPR(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).
 		replace(change.EventPROpened, change.PROpened{
 			Repo: prRepo, Number: prNumber, HeadSHA: head, Author: author,
@@ -350,6 +361,7 @@ func TestFoldMarksAChangedTicketAndAClosedPR(t *testing.T) {
 }
 
 func TestFoldRefusesCaseInsensitiveAuthorApproval(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).drop(change.EventApprovalRecorded).
 		add(change.EventApprovalRecorded, change.Actor{Kind: change.ActorHuman, ID: "AARUSH323"},
 			change.ApprovalRecorded{Login: "AARUSH323", CommitSHA: head})
@@ -358,6 +370,7 @@ func TestFoldRefusesCaseInsensitiveAuthorApproval(t *testing.T) {
 }
 
 func TestFoldApprovalDoesNotSurvivePushEvenWithSameHead(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).add(change.EventPRPushed, githubActor, change.PRPushed{
 		Repo: prRepo, Number: prNumber, HeadSHA: head,
 	})
@@ -367,6 +380,7 @@ func TestFoldApprovalDoesNotSurvivePushEvenWithSameHead(t *testing.T) {
 
 // TestFoldIsDeterministic guards the reason text and the id order: two folds of the same stream agree.
 func TestFoldIsDeterministic(t *testing.T) {
+	t.Parallel()
 	s := greenStream(t).add(change.EventFindingFiled, systemActor, change.FindingFiled{
 		FindingID: id.FindingID("fnd_01ARZ3NDEKTSV4RRFFQ69G5FAW"),
 		Ref:       ref(2), Tier: finding.TierE2, Severity: "high", State: finding.StateOpen, By: "reviewer",

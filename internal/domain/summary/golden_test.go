@@ -16,6 +16,7 @@ var update = flag.Bool("update", false, "rewrite the golden files from the curre
 // TestGoldens: each realistic page renders to exactly the committed file. The files are reviewed by eye when they
 // change: run go test ./internal/domain/summary -update, then read the diff.
 func TestGoldens(t *testing.T) {
+	t.Parallel()
 	cases := goldenCases()
 	require.GreaterOrEqual(t, len(cases), 6)
 	for _, c := range cases {

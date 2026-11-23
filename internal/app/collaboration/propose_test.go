@@ -104,6 +104,7 @@ const dismiss = "dismiss F2 duplicate of F1, same lines and cause"
 // BUILD_PLAN M5 done-when: "dismiss F2" proposed for a mapped sender is held until that sender's yes, and runs as
 // that person.
 func TestADecidingProposalIsHeldUntilTheSendersOwnYes(t *testing.T) {
+	t.Parallel()
 	r := newProposeRig(t)
 	out, err := r.proc.Propose(context.Background(), r.target, "lead", dismiss, r.trigger(), r.now)
 	require.NoError(t, err)
@@ -124,6 +125,7 @@ func TestADecidingProposalIsHeldUntilTheSendersOwnYes(t *testing.T) {
 }
 
 func TestAPushBeforeTheYesMakesTheProposalStale(t *testing.T) {
+	t.Parallel()
 	r := newProposeRig(t)
 	_, err := r.proc.Propose(context.Background(), r.target, "lead", dismiss, r.trigger(), r.now)
 	require.NoError(t, err)
@@ -133,6 +135,7 @@ func TestAPushBeforeTheYesMakesTheProposalStale(t *testing.T) {
 }
 
 func TestALightProposalRunsAtOnceAsTheSender(t *testing.T) {
+	t.Parallel()
 	r := newProposeRig(t)
 	out, err := r.proc.Propose(context.Background(), r.target, "lead", "remember refunds use the ledger clock", r.trigger(), r.now)
 	require.NoError(t, err)
@@ -144,6 +147,7 @@ func TestALightProposalRunsAtOnceAsTheSender(t *testing.T) {
 
 // The injection cases of section 10: text with no trigger from a mapped person never becomes a command.
 func TestAProposalWithoutAMappedPersonsTriggerChangesNothing(t *testing.T) {
+	t.Parallel()
 	for name, mutate := range map[string]func(*ports.Message){
 		"the trigger was written by an agent":           func(m *ports.Message) { m.Sender = lead },
 		"the trigger was written by an unmapped sender": func(m *ports.Message) { m.Sender = stranger },

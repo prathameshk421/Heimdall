@@ -26,6 +26,7 @@ func types(t *testing.T, r *rig, cid id.ChangeID) []change.EventType {
 // Found live in H11: PR #16 was closed, then reopened on GitHub, and the sync appended nothing, so the change stayed
 // over. A reopen is a fact: pr.reopened is appended once, and a later close is recorded again.
 func TestAReopenedPullRequestIsRecordedOnceAndCanCloseAgain(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r := newRig(t)
 	cid := id.ChangeID("PAY-16")
@@ -60,6 +61,7 @@ func TestAReopenedPullRequestIsRecordedOnceAndCanCloseAgain(t *testing.T) {
 }
 
 func TestAMergedPullRequestIsNeverReopened(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r := newRig(t)
 	cid := id.ChangeID("PAY-17")

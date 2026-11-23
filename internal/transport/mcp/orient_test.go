@@ -17,6 +17,7 @@ type fakePaths struct{ paths []string }
 func (f fakePaths) Paths(context.Context, change.Repo, id.SHA) ([]string, error) { return f.paths, nil }
 
 func TestFoldMapKeepsThisTicketsTestsAndFoldsOthers(t *testing.T) {
+	t.Parallel()
 	got := foldMap([]string{"go.mod", "internal/api/api.go", "tests/heimdall/KAN-22/a_test.go",
 		"tests/heimdall/KAN-22/b_test.go", "tests/heimdall/KAN-24/x_test.go"}, "KAN-24")
 	require.Equal(t, "go.mod\ninternal/api/api.go\ntests/heimdall/KAN-24/x_test.go\ntests/heimdall/KAN-22/ (2 files of another ticket)", got)
@@ -25,6 +26,7 @@ func TestFoldMapKeepsThisTicketsTestsAndFoldsOthers(t *testing.T) {
 // Live KAN-24: the ticket took 4 calls and the layout 11. Now get_task carries the criteria text and the repo map,
 // read_code "." is the map, and one call reads several files.
 func TestOrientationSavesTheExploringCalls(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	r.server.deps.Paths = fakePaths{paths: []string{"go.mod", refundsGo}}
 

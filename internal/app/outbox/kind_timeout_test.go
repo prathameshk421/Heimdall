@@ -13,6 +13,7 @@ import (
 // Found live on KAN-9: a test_quality effect runs two sandbox jobs of up to 3 minutes each, but every effect got the same
 // 20 s, so the outbox cancelled it mid-run and each retry started another container. A kind may carry its own timeout.
 func TestAKindTimeoutReplacesTheDefaultForThatKindOnly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	long := effectOf(change.EffectRoomPost, 1)
 	short := effectOf(change.EffectGitHubCheck, 2)
@@ -37,6 +38,7 @@ func TestAKindTimeoutReplacesTheDefaultForThatKindOnly(t *testing.T) {
 
 // The lease covers a whole batch run back to back, so it must exceed the batch size times the longest timeout.
 func TestTheLeaseMustCoverABatchOfTheLongestKind(t *testing.T) {
+	t.Parallel()
 	cfg := config(newMemOutbox(), allKinds(&fakeExec{}))
 	cfg.KindTimeouts = map[change.EffectKind]time.Duration{change.EffectRoomPost: 10 * time.Second}
 	_, err := New(cfg) // batch 10 x 10 s = 100 s, lease 1 min

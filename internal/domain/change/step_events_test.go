@@ -11,6 +11,7 @@ import (
 
 // TestStepRetriedValidationNamesEveryBadField refuses each bad payload and names the field that is wrong.
 func TestStepRetriedValidationNamesEveryBadField(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct{ raw, want string }{
 		"attempt zero":     {`{"step":"write_tests","attempt":0,"reasons":[]}`, "attempt:"},
 		"attempt one":      {`{"step":"write_tests","attempt":1,"reasons":[]}`, "attempt:"},
@@ -32,6 +33,7 @@ func TestStepRetriedValidationNamesEveryBadField(t *testing.T) {
 
 // TestStepRetriedAcceptsZeroToEightReasons is the other side of the bound: no reasons and eight reasons are both valid.
 func TestStepRetriedAcceptsZeroToEightReasons(t *testing.T) {
+	t.Parallel()
 	none := `{"step":"write_tests","attempt":2,"reasons":[]}`
 	eight := `{"step":"write_tests","attempt":2,"reasons":["a","b","c","d","e","f","g","h"]}`
 	for _, raw := range []string{none, eight} {
@@ -42,6 +44,7 @@ func TestStepRetriedAcceptsZeroToEightReasons(t *testing.T) {
 
 // TestStepEscalatedValidationNamesEveryBadField refuses each bad payload and names the field that is wrong.
 func TestStepEscalatedValidationNamesEveryBadField(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct{ raw, want string }{
 		"attempts zero": {`{"step":"write_tests","attempts":0,"reason":"budget used up"}`, "attempts:"},
 		"empty step":    {`{"step":"","attempts":3,"reason":"budget used up"}`, "step:"},
@@ -59,6 +62,7 @@ func TestStepEscalatedValidationNamesEveryBadField(t *testing.T) {
 
 // TestStepEventsEncodeAndDecodeToTheSameValue checks the JSON round trip of both payloads.
 func TestStepEventsEncodeAndDecodeToTheSameValue(t *testing.T) {
+	t.Parallel()
 	retried := change.StepRetried{Step: "write_tests", Attempt: 2, Reasons: []string{"does not compile"}}
 	raw, err := json.Marshal(retried)
 	require.NoError(t, err)
@@ -77,6 +81,7 @@ func TestStepEventsEncodeAndDecodeToTheSameValue(t *testing.T) {
 // A retry or an escalation is a fact about the work (TECH_SPEC 3.2): it folds without error and changes nothing a
 // person or Missing reads.
 func TestStepEventsFoldAndChangeNothingInTheView(t *testing.T) {
+	t.Parallel()
 	for _, et := range []change.EventType{change.EventStepRetried, change.EventStepEscalated} {
 		v, err := change.Fold([]change.Event{eventWith(et, string(goldenPayload(t, et)))})
 		require.NoError(t, err, et)

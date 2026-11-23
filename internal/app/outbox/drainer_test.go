@@ -270,6 +270,7 @@ func mustNew(t *testing.T, cfg Config) *Drainer {
 }
 
 func TestNewRefusesBadConfiguration(t *testing.T) {
+	t.Parallel()
 	ex := &fakeExec{}
 	box := newMemOutbox()
 
@@ -311,6 +312,7 @@ func TestNewRefusesBadConfiguration(t *testing.T) {
 }
 
 func TestRunOnceExecutesEveryEffectAndMarksItDone(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fx := []change.Effect{
 		effectOf(change.EffectRoomPost, 1),
@@ -336,6 +338,7 @@ func TestRunOnceExecutesEveryEffectAndMarksItDone(t *testing.T) {
 // A crash after Execute and before Done must not run the effect again. The first drainer performs the effect and then
 // dies before Done reaches the database. A restarted drainer, after the lease runs out, must leave the effect alone.
 func TestCrashAfterExecuteIsNeverRepeated(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fx := effectOf(change.EffectRoomPost, 1)
 	box := newMemOutbox(fx)
@@ -362,6 +365,7 @@ func TestCrashAfterExecuteIsNeverRepeated(t *testing.T) {
 // The start mark is written before the executor runs. A crash during the execution then leaves a trace in the
 // database, and the restart can tell that the effect may have run.
 func TestStartIsRecordedBeforeTheExecutorRuns(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fx := effectOf(change.EffectRoomPost, 1)
 	box := newMemOutbox(fx)
@@ -381,6 +385,7 @@ func TestStartIsRecordedBeforeTheExecutorRuns(t *testing.T) {
 // An effect whose start is refused is not executed. The database refuses a start when the lease is gone, so another
 // drainer may hold the effect now; running it here would make a duplicate.
 func TestRefusedStartMeansNoExecution(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fx := effectOf(change.EffectRoomPost, 1)
 	box := newMemOutbox(fx)
@@ -395,6 +400,7 @@ func TestRefusedStartMeansNoExecution(t *testing.T) {
 }
 
 func TestExecutorErrorIsRecordedWithItsTextAndRetried(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fx := effectOf(change.EffectRoomPost, 1)
 	box := newMemOutbox(fx)
@@ -419,6 +425,7 @@ func TestExecutorErrorIsRecordedWithItsTextAndRetried(t *testing.T) {
 }
 
 func TestEffectWithoutExecutorIsFailedWithAClearReason(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fx := effectOf(change.EffectRoomPost, 1)
 	box := newMemOutbox(fx)
@@ -434,6 +441,7 @@ func TestEffectWithoutExecutorIsFailedWithAClearReason(t *testing.T) {
 }
 
 func TestBatchSizeIsHonoured(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var fx []change.Effect
 	for i := range 7 {
@@ -457,6 +465,7 @@ func TestBatchSizeIsHonoured(t *testing.T) {
 }
 
 func TestCancellationStopsTheBatchButKeepsEarlierDone(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	fx := []change.Effect{effectOf(change.EffectRoomPost, 1), effectOf(change.EffectRoomPost, 2), effectOf(change.EffectRoomPost, 3)}
@@ -477,6 +486,7 @@ func TestCancellationStopsTheBatchButKeepsEarlierDone(t *testing.T) {
 }
 
 func TestFailedDoneIsReturnedAndTheEffectStaysLeased(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fx := effectOf(change.EffectRoomPost, 1)
 	box := newMemOutbox(fx)
@@ -493,6 +503,7 @@ func TestFailedDoneIsReturnedAndTheEffectStaysLeased(t *testing.T) {
 }
 
 func TestEffectDeadlineBoundsTheExecutor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fx := effectOf(change.EffectRoomPost, 1)
 	box := newMemOutbox(fx)
@@ -511,6 +522,7 @@ func TestEffectDeadlineBoundsTheExecutor(t *testing.T) {
 }
 
 func TestRunDoesWorkOnWakeAndTickAndStopsOnCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	first := effectOf(change.EffectRoomPost, 1)
@@ -574,6 +586,7 @@ func awaitRun(t *testing.T, done <-chan error) error {
 }
 
 func TestRunKeepsGoingAfterAFailedClaim(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	fx := effectOf(change.EffectRoomPost, 1)

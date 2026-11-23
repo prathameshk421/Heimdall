@@ -9,6 +9,7 @@ import (
 )
 
 func TestTheRequestPredicates(t *testing.T) {
+	t.Parallel()
 	submitted := View{Tests: &TestsInfo{Rejected: []string{}}}
 	rejected := View{Tests: &TestsInfo{Rejected: []string{"red first failed"}}}
 	committed := View{Tests: &TestsInfo{Rejected: []string{}, Committed: &TestsCommittedInfo{}}}
@@ -52,6 +53,7 @@ func TestTheRequestPredicates(t *testing.T) {
 }
 
 func TestCanAppendLetsFactsThroughAndRefusesAnyRequestOnAnEndedChange(t *testing.T) {
+	t.Parallel()
 	open := View{PR: &PRInfo{Number: 10}}
 	require.NoError(t, CanAppend(open, Event{Type: EventCIReported}), "a fact is never refused")
 	require.ErrorIs(t, CanAppend(View{Rejected: &RejectedInfo{}}, Event{Type: EventQuestionAsked}), ErrRefused)

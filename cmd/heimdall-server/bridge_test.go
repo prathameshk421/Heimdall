@@ -44,14 +44,17 @@ func (v *sourceVCS) Tarball(context.Context, change.Repo, id.SHA) (io.ReadCloser
 }
 
 func TestVCSSourceFetchProbesTarballAndPropagatesErrors(t *testing.T) {
+	t.Parallel()
 	repo := change.Repo("owner/repo")
 	sha := id.SHA("abc")
 	t.Run("opens tarball", func(t *testing.T) {
+		t.Parallel()
 		v := &sourceVCS{}
 		require.NoError(t, (vcsSource{vcs: v}).Fetch(context.Background(), repo, sha))
 		require.True(t, v.called, "Fetch must call Tarball")
 	})
 	t.Run("does not swallow tarball error", func(t *testing.T) {
+		t.Parallel()
 		want := errors.New("tarball unavailable")
 		v := &sourceVCS{err: want}
 		err := (vcsSource{vcs: v}).Fetch(context.Background(), repo, sha)
@@ -60,7 +63,7 @@ func TestVCSSourceFetchProbesTarballAndPropagatesErrors(t *testing.T) {
 	})
 }
 
-// fakeCursorTable is an in-memory cursor table. A source that was never set is ports.ErrNotFound, as in postgres.
+// fakeCursorTable is an in-memory cursor table.
 type fakeCursorTable struct {
 	values map[string]string
 	err    error
@@ -87,37 +90,42 @@ func (f *fakeCursorTable) SetCursor(_ context.Context, source, value string) err
 	return nil
 }
 
-func TestCursorStoreLoadMapsNotFoundToTheEmptyCursor(t *testing.T) {
-	c := cursorStore{table: &fakeCursorTable{}, source: "jira:KAN"}
-	cur, err := c.Load(context.Background())
-	require.NoError(t, err, "a source with no cursor yet is the first poll, not a failure")
-	require.Equal(t, ports.Cursor(""), cur)
-}
-
-func TestCursorStoreLoadReturnsTheSavedCursorForItsSource(t *testing.T) {
-	table := &fakeCursorTable{values: map[string]string{"jira:KAN": "2026-11-05T10:00:00Z", "jira:OTHER": "other"}}
-	c := cursorStore{table: table, source: "jira:KAN"}
-	cur, err := c.Load(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, ports.Cursor("2026-11-05T10:00:00Z"), cur)
-}
-
-func TestCursorStoreLoadKeepsOtherErrors(t *testing.T) {
-	boom := errors.New("connection reset")
-	c := cursorStore{table: &fakeCursorTable{err: boom}, source: "jira:KAN"}
-	_, err := c.Load(context.Background())
-	require.ErrorIs(t, err, boom)
-	require.NotErrorIs(t, err, ports.ErrNotFound, "a database failure must not look like a first poll")
-}
-
-func TestCursorStoreSaveWritesUnderItsSource(t *testing.T) {
-	table := &fakeCursorTable{}
-	c := cursorStore{table: table, source: "jira:KAN"}
-	require.NoError(t, c.Save(context.Background(), ports.Cursor("2026-11-05T10:05:00Z")))
-	require.Equal(t, []string{"jira:KAN=2026-11-05T10:05:00Z"}, table.saved)
+func TestCursorStore(t *testing.T) {
+	t.Parallel()
+	t.Run("maps not found to empty cursor", func(t *testing.T) {
+		t.Parallel()
+		c := cursorStore{table: &fakeCursorTable{}, source: "jira:KAN"}
+		cur, err := c.Load(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, ports.Cursor(""), cur)
+	})
+	t.Run("returns saved cursor for source", func(t *testing.T) {
+		t.Parallel()
+		table := &fakeCursorTable{values: map[string]string{"jira:KAN": "2026-11-05T10:00:00Z", "jira:OTHER": "other"}}
+		c := cursorStore{table: table, source: "jira:KAN"}
+		cur, err := c.Load(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, ports.Cursor("2026-11-05T10:00:00Z"), cur)
+	})
+	t.Run("keeps other errors", func(t *testing.T) {
+		t.Parallel()
+		boom := errors.New("connection reset")
+		c := cursorStore{table: &fakeCursorTable{err: boom}, source: "jira:KAN"}
+		_, err := c.Load(context.Background())
+		require.ErrorIs(t, err, boom)
+		require.NotErrorIs(t, err, ports.ErrNotFound)
+	})
+	t.Run("save writes under its source", func(t *testing.T) {
+		t.Parallel()
+		table := &fakeCursorTable{}
+		c := cursorStore{table: table, source: "jira:KAN"}
+		require.NoError(t, c.Save(context.Background(), ports.Cursor("2026-11-05T10:05:00Z")))
+		require.Equal(t, []string{"jira:KAN=2026-11-05T10:05:00Z"}, table.saved)
+	})
 }
 
 func TestHumanTokenStoreReturnsOnlyPolicyPersonIdentity(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "alice_token"), []byte("mapped-human-credential\n"), 0o600))
 	store, err := newTokenStore(config.Config{SecretsDir: dir, HumanTokens: map[string]string{"alice": "alice_token"}})
@@ -128,6 +136,7 @@ func TestHumanTokenStoreReturnsOnlyPolicyPersonIdentity(t *testing.T) {
 }
 
 func TestHumanTokenStoreRefusesCredentialCollisionAcrossIdentities(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "alice_token"), []byte("shared-credential\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bob_token"), []byte("shared-credential\n"), 0o600))
@@ -135,7 +144,7 @@ func TestHumanTokenStoreRefusesCredentialCollisionAcrossIdentities(t *testing.T)
 	require.ErrorContains(t, err, "already assigned to another principal")
 }
 
-// memStore is an in-memory ports.EventStore with the optimistic version check of the Postgres adapter.
+// memStore is an in-memory ports.EventStore with optimistic version check.
 type memStore struct {
 	mu     sync.Mutex
 	events map[id.ChangeID][]change.Event
@@ -163,12 +172,10 @@ func (m *memStore) Load(_ context.Context, cid id.ChangeID) ([]change.Event, err
 	return slices.Clone(m.events[cid]), nil
 }
 
-// newSliceEngine returns the recorder writers use on store, as assemble builds it (without a reconciler to kick).
 func newSliceEngine(_ *testing.T, store ports.EventStore) reconcile.Recorder {
 	return reconcile.Recorder{Store: store}
 }
 
-// triggeredEvent is the change.triggered event the poller builds for a ticket.
 func triggeredEvent(t *testing.T, key string) change.Event {
 	t.Helper()
 	gen := ids.New()
@@ -195,6 +202,7 @@ func triggeredEvent(t *testing.T, key string) change.Event {
 }
 
 func TestStarterStartsTheChangeAndCommitsItsRoomEffect(t *testing.T) {
+	t.Parallel()
 	store := newMemStore()
 	s := starter{eng: newSliceEngine(t, store)}
 	require.NoError(t, s.Start(context.Background(), triggeredEvent(t, "KAN-1")))
@@ -210,6 +218,7 @@ func TestStarterStartsTheChangeAndCommitsItsRoomEffect(t *testing.T) {
 }
 
 func TestStarterReturnsVersionConflictForAnExistingChange(t *testing.T) {
+	t.Parallel()
 	store := newMemStore()
 	s := starter{eng: newSliceEngine(t, store)}
 	require.NoError(t, s.Start(context.Background(), triggeredEvent(t, "KAN-1")))
@@ -227,29 +236,22 @@ func (f *fakeIntakeHandler) HandlePR(context.Context, change.Repo, int) (intake.
 	return f.res, f.err
 }
 
-func TestPRIntakeReturnsChangeIDFromIntakeResult(t *testing.T) {
-	h := &fakeIntakeHandler{res: intake.Result{Stream: id.ChangeID("PAY-1")}}
+func TestPRAndSyncIntake(t *testing.T) {
+	t.Parallel()
+	h := &fakeIntakeHandler{res: intake.Result{Stream: id.ChangeID("PAY-1"), Appended: true}}
 	pi := prIntake{in: h}
 	cid, err := pi.HandlePR(context.Background(), change.Repo("acme/pay"), 1)
 	require.NoError(t, err)
 	require.Equal(t, id.ChangeID("PAY-1"), cid)
-}
 
-// The sync adapter keeps whether intake appended events, so a restarted sync can re-run the gate (prsync.Handled).
-func TestSyncIntakeReturnsChangeIDAndAppendedFromIntakeResult(t *testing.T) {
-	h := &fakeIntakeHandler{res: intake.Result{Stream: id.ChangeID("PAY-1"), Appended: true}}
 	si := syncIntake{in: h}
 	got, err := si.HandlePR(context.Background(), change.Repo("acme/pay"), 1)
 	require.NoError(t, err)
 	require.Equal(t, prsync.Handled{Change: id.ChangeID("PAY-1"), Appended: true}, got)
-}
 
-func TestPRIntakePropagatesError(t *testing.T) {
-	boom := errors.New("intake failed")
-	h := &fakeIntakeHandler{err: boom}
-	pi := prIntake{in: h}
-	_, err := pi.HandlePR(context.Background(), change.Repo("acme/pay"), 1)
-	require.ErrorIs(t, err, boom)
+	failing := prIntake{in: &fakeIntakeHandler{err: errors.New("intake failed")}}
+	_, err = failing.HandlePR(context.Background(), change.Repo("acme/pay"), 1)
+	require.ErrorContains(t, err, "intake failed")
 }
 
 type fakeReviewReader struct {
@@ -261,25 +263,14 @@ func (f *fakeReviewReader) PRReviews(context.Context, change.Repo, int) ([]ports
 	return f.reviews, f.err
 }
 
-func TestReviewsAdapterMapsStateAndFields(t *testing.T) {
+func TestReviewsAdapter(t *testing.T) {
+	t.Parallel()
 	sha := id.SHA("0123456789abcdef0123456789abcdef01234567")
 	now := time.Now().UTC()
 	reader := &fakeReviewReader{
 		reviews: []ports.PRReview{
-			{
-				ID:          "rev-1",
-				Login:       change.ActorID("bob"),
-				State:       ports.ReviewStateApproved,
-				CommitSHA:   sha,
-				SubmittedAt: now,
-			},
-			{
-				ID:          "rev-2",
-				Login:       change.ActorID("alice"),
-				State:       ports.ReviewStateDismissed,
-				CommitSHA:   sha,
-				SubmittedAt: now,
-			},
+			{ID: "rev-1", Login: change.ActorID("bob"), State: ports.ReviewStateApproved, CommitSHA: sha, SubmittedAt: now},
+			{ID: "rev-2", Login: change.ActorID("alice"), State: ports.ReviewStateDismissed, CommitSHA: sha, SubmittedAt: now},
 		},
 	}
 	ra := reviewsAdapter{reader: reader}
@@ -292,14 +283,10 @@ func TestReviewsAdapterMapsStateAndFields(t *testing.T) {
 	require.Equal(t, sha, got[0].CommitSHA)
 	require.Equal(t, now, got[0].SubmittedAt)
 	require.Equal(t, prsync.ReviewDismissed, got[1].State)
-}
 
-func TestReviewsAdapterPropagatesError(t *testing.T) {
-	boom := errors.New("review read failed")
-	reader := &fakeReviewReader{err: boom}
-	ra := reviewsAdapter{reader: reader}
-	_, err := ra.PRReviews(context.Background(), change.Repo("acme/pay"), 1)
-	require.ErrorIs(t, err, boom)
+	failing := reviewsAdapter{reader: &fakeReviewReader{err: errors.New("reviews down")}}
+	_, err = failing.PRReviews(context.Background(), change.Repo("acme/pay"), 1)
+	require.ErrorContains(t, err, "reviews down")
 }
 
 type fakeCheckReader struct {
@@ -311,17 +298,12 @@ func (f *fakeCheckReader) CheckRuns(context.Context, change.Repo, id.SHA) ([]por
 	return f.runs, f.err
 }
 
-func TestChecksAdapterMapsSHAAndFields(t *testing.T) {
+func TestChecksAdapter(t *testing.T) {
+	t.Parallel()
 	sha := id.SHA("0123456789abcdef0123456789abcdef01234567")
 	reader := &fakeCheckReader{
 		runs: []ports.CheckRun{
-			{
-				ID:         "run-1",
-				Name:       "build",
-				Status:     ports.CheckCompleted,
-				Conclusion: change.CISuccess,
-				SHA:        sha,
-			},
+			{ID: "run-1", Name: "build", Status: ports.CheckCompleted, Conclusion: change.CISuccess, SHA: sha},
 		},
 	}
 	ca := checksAdapter{reader: reader}
@@ -333,50 +315,45 @@ func TestChecksAdapterMapsSHAAndFields(t *testing.T) {
 	require.Equal(t, prsync.CheckCompleted, got[0].Status)
 	require.Equal(t, change.CISuccess, got[0].Conclusion)
 	require.Equal(t, sha, got[0].SHA)
+
+	failing := checksAdapter{reader: &fakeCheckReader{err: errors.New("check runs read failed")}}
+	_, err = failing.CheckRuns(context.Background(), change.Repo("acme/pay"), sha)
+	require.ErrorContains(t, err, "check runs read failed")
 }
 
-func TestChecksAdapterPropagatesError(t *testing.T) {
-	boom := errors.New("check runs read failed")
-	reader := &fakeCheckReader{err: boom}
-	ca := checksAdapter{reader: reader}
-	_, err := ca.CheckRuns(context.Background(), change.Repo("acme/pay"), id.SHA("0123456789abcdef0123456789abcdef01234567"))
-	require.ErrorIs(t, err, boom)
-}
+func TestTokenStoreValidation(t *testing.T) {
+	t.Parallel()
+	t.Run("rejects agent configured for multiple roles", func(t *testing.T) {
+		t.Parallel()
+		secrets := t.TempDir()
+		require.NoError(t, os.WriteFile(secrets+"/agent_token_shared", []byte("role-token"), 0o400))
+		cfg := config.Config{SecretsDir: secrets, Agents: config.Agents{TestAuthor: "shared", Reviewers: []string{"shared"}}}
+		_, err := newTokenStore(cfg)
+		require.Error(t, err)
+	})
 
-func TestTokenStoreRejectsAgentConfiguredForMultipleRoles(t *testing.T) {
-	secrets := t.TempDir()
-	require.NoError(t, os.WriteFile(secrets+"/agent_token_shared", []byte("role-token"), 0o400))
-	cfg := config.Config{SecretsDir: secrets, Agents: config.Agents{
-		TestAuthor: "shared",
-		Reviewers:  []string{"shared"},
-	}}
-	_, err := newTokenStore(cfg)
-	require.Error(t, err, "one Switch identity cannot receive two role-scoped MCP principals")
-}
+	t.Run("maps profiler token to profiler role", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		for _, name := range []string{"test-author", "reviewer", "resolver", "profiler"} {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "agent_token_"+name), []byte("token-of-"+name), 0o400))
+		}
+		store, err := newTokenStore(config.Config{SecretsDir: dir, Agents: config.Agents{
+			TestAuthor: "test-author", Reviewers: []string{"reviewer"}, Resolver: "resolver", Profiler: "profiler",
+		}})
+		require.NoError(t, err)
+		principal, err := store.Resolve(context.Background(), mcp.HashToken("token-of-profiler"))
+		require.NoError(t, err)
+		require.Equal(t, mcp.Principal{Agent: "profiler", Role: workflow.RoleProfiler}, principal)
+	})
 
-// The profiler's MCP token resolves to the profiler role, which propose_profile requires (D175).
-func TestTokenStoreMapsTheProfilerTokenToTheProfilerRole(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"test-author", "reviewer", "resolver", "profiler"} {
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent_token_"+name), []byte("token-of-"+name), 0o400))
-	}
-	store, err := newTokenStore(config.Config{SecretsDir: dir, Agents: config.Agents{
-		TestAuthor: "test-author", Reviewers: []string{"reviewer"}, Resolver: "resolver", Profiler: "profiler",
-	}})
-	require.NoError(t, err)
-	principal, err := store.Resolve(context.Background(), mcp.HashToken("token-of-profiler"))
-	require.NoError(t, err)
-	require.Equal(t, mcp.Principal{Agent: "profiler", Role: workflow.RoleProfiler}, principal)
-}
-
-func TestTokenStoreRejectsTokenSharedByDifferentAgents(t *testing.T) {
-	secrets := t.TempDir()
-	require.NoError(t, os.WriteFile(secrets+"/agent_token_test-author", []byte("same-token"), 0o400))
-	require.NoError(t, os.WriteFile(secrets+"/agent_token_reviewer", []byte("same-token"), 0o400))
-	cfg := config.Config{SecretsDir: secrets, Agents: config.Agents{
-		TestAuthor: "test-author",
-		Reviewers:  []string{"reviewer"},
-	}}
-	_, err := newTokenStore(cfg)
-	require.Error(t, err, "two Switch identities cannot resolve to the same role-scoped MCP principal token")
+	t.Run("rejects token shared by different agents", func(t *testing.T) {
+		t.Parallel()
+		secrets := t.TempDir()
+		require.NoError(t, os.WriteFile(secrets+"/agent_token_test-author", []byte("same-token"), 0o400))
+		require.NoError(t, os.WriteFile(secrets+"/agent_token_reviewer", []byte("same-token"), 0o400))
+		cfg := config.Config{SecretsDir: secrets, Agents: config.Agents{TestAuthor: "test-author", Reviewers: []string{"reviewer"}}}
+		_, err := newTokenStore(cfg)
+		require.Error(t, err)
+	})
 }

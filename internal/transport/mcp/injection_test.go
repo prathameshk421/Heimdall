@@ -13,6 +13,7 @@ import (
 // payload can close the wrapper early or forge a second one (A6). The state checks belong to the commands and tools
 // that act on text, which only read chat and GitHub comments; this suite pins the wrapper they all go through.
 func TestUntrustedPayloadsCannotEscapeTheWrapper(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join("testdata", "injection", "payloads.txt"))
 	require.NoError(t, err)
 	payloads := strings.Split(strings.TrimSpace(string(raw)), "\n")

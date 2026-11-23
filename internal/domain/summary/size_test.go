@@ -39,6 +39,7 @@ func hugeInput(provenN, unprovenN int) summary.Input {
 
 // TestSizeLimit: the page never passes MaxBytes, however much comes in, and a cut list says how much is left out.
 func TestSizeLimit(t *testing.T) {
+	t.Parallel()
 	require.LessOrEqual(t, summary.MaxBytes, 65_536, "GitHub's limit for a comment is 65,536 characters")
 	for _, c := range [][2]int{{0, 0}, {1, 1}, {45, 0}, {45, 5000}, {3000, 3000}, {0, 20_000}} {
 		t.Run(fmt.Sprintf("proven=%d,unproven=%d", c[0], c[1]), func(t *testing.T) {
@@ -59,6 +60,7 @@ func TestSizeLimit(t *testing.T) {
 
 // TestCutListSaysHowManyAreLeftOut: a list over its cap ends with "and N more", and N makes the count whole.
 func TestCutListSaysHowManyAreLeftOut(t *testing.T) {
+	t.Parallel()
 	in := summary.Input{Head: head, Action: enforce(true), Fast: greenFast(), Proof: proof.Outcome{Kind: proof.KindBlocked}}
 	for i := 1; i <= 100; i++ {
 		in.Findings = append(in.Findings, provenE1(fmt.Sprintf("F%d", i), true))
@@ -81,6 +83,7 @@ func TestCutListSaysHowManyAreLeftOut(t *testing.T) {
 
 // TestSmallPageIsNotCut: a normal page shows every item and has no "and N more" line.
 func TestSmallPageIsNotCut(t *testing.T) {
+	t.Parallel()
 	for _, c := range goldenCases() {
 		require.NotContains(t, summary.Render(c.in), "more", c.name)
 	}

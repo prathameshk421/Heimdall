@@ -10,6 +10,7 @@ import (
 )
 
 func TestIdempotencyKeyGoldenVectors(t *testing.T) {
+	t.Parallel()
 	k, err := change.IdempotencyKey("PAY-142", 7, change.EffectGitHubCheck, "acme/pay-demo:9f1c2ab:gate-3")
 	require.NoError(t, err)
 	require.Equal(t, change.EffectKey("github_check:PAY-142:7:acme/pay-demo:9f1c2ab:gate-3"), k)
@@ -20,6 +21,7 @@ func TestIdempotencyKeyGoldenVectors(t *testing.T) {
 }
 
 func TestIdempotencyKeyIsStableAndDependsOnEveryInput(t *testing.T) {
+	t.Parallel()
 	base, err := change.IdempotencyKey("PAY-142", 7, change.EffectTrackerWrite, "comment")
 	require.NoError(t, err)
 	again, err := change.IdempotencyKey("PAY-142", 7, change.EffectTrackerWrite, "comment")
@@ -51,6 +53,7 @@ func TestIdempotencyKeyIsStableAndDependsOnEveryInput(t *testing.T) {
 }
 
 func TestIdempotencyKeyIsInjectiveWhenTheDiscriminatorHoldsColons(t *testing.T) {
+	t.Parallel()
 	// The first three fields hold no colon, so a colon inside the discriminator cannot move a boundary.
 	a, err := change.IdempotencyKey("PAY-1", 1, change.EffectRoomPost, "x:1:y")
 	require.NoError(t, err)
@@ -60,6 +63,7 @@ func TestIdempotencyKeyIsInjectiveWhenTheDiscriminatorHoldsColons(t *testing.T) 
 }
 
 func TestIdempotencyKeyRefusesBadInputs(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func() (change.EffectKey, error){
 		"colon in change id": func() (change.EffectKey, error) {
 			return change.IdempotencyKey("PAY:142", 1, change.EffectRoomPost, "d")
@@ -82,6 +86,7 @@ func TestIdempotencyKeyRefusesBadInputs(t *testing.T) {
 }
 
 func TestEffectKindsAreTheOutboxKindsOfTheSpec(t *testing.T) {
+	t.Parallel()
 	for _, k := range []change.EffectKind{change.EffectGitHubCheck, change.EffectGitHubComment, change.EffectGitHubBranch,
 		change.EffectRoomOpen, change.EffectRoomPost, change.EffectRoomClose, change.EffectTrackerWrite, change.EffectMemoryEpisode} {
 		require.True(t, k.Valid(), k)
@@ -90,6 +95,7 @@ func TestEffectKindsAreTheOutboxKindsOfTheSpec(t *testing.T) {
 }
 
 func TestEffectValidateNamesEveryField(t *testing.T) {
+	t.Parallel()
 	good := change.Effect{
 		Key:     "room_post:PAY-142:1:msg-1",
 		Kind:    change.EffectRoomPost,

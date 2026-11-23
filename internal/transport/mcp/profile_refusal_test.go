@@ -26,6 +26,7 @@ func profilerRig(t *testing.T, proposeErr error) (*rig, *fakeProfiles) {
 // Found live on Nov 21: the profiler sent an artifact with an unknown key and saw only "the server could not
 // complete this call", so it retried the same artifact. An artifact problem is the agent's own input: name it.
 func TestAProfileArtifactThatDoesNotParseIsRefusedWithTheParserReason(t *testing.T) {
+	t.Parallel()
 	parserErr := &ports.InvalidProfileError{Reason: errors.New("decode repo profile: " +
 		"yaml: unmarshal errors:\n  line 10: field evidence not found in type profileyaml.RepoProfile")}
 	r, profiles := profilerRig(t, parserErr)
@@ -42,6 +43,7 @@ func TestAProfileArtifactThatDoesNotParseIsRefusedWithTheParserReason(t *testing
 
 // A store or infrastructure failure is not the agent's input: it stays generic and its cause stays in the log.
 func TestAProfileStoreFailureStaysGeneric(t *testing.T) {
+	t.Parallel()
 	r, profiles := profilerRig(t, errors.New("put profile: postgres: connection refused"))
 	res := r.call("propose_profile", `{"artifact":"languages: [go]"}`)
 	require.True(t, res.IsError)
@@ -53,6 +55,7 @@ func TestAProfileStoreFailureStaysGeneric(t *testing.T) {
 
 // The parser can name a long YAML problem; the refusal stays small so the agent's context is not spent on it.
 func TestAProfileRefusalIsBoundedTo500Bytes(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("line 10: field evidence not found in type profileyaml.RepoProfile; ", 40)
 	r, _ := profilerRig(t, &ports.InvalidProfileError{Reason: errors.New(long)})
 	res := r.call("propose_profile", `{"artifact":"languages: [go]"}`)

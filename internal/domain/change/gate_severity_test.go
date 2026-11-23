@@ -14,6 +14,7 @@ import (
 // The policy's blocking.min_severity decides whether an open finding holds the merge. A finding's severity comes from
 // the event it was filed with, not from a constant in the fold (TECH_SPEC 11.1, TECH_SPEC 12.4).
 func TestSeverityBelowPolicyMinimumDoesNotBlock(t *testing.T) {
+	t.Parallel()
 	out := greenOutside()
 	out.PolicyAtBase.Blocking = policy.Blocking{MinSeverity: finding.SeverityMedium, MinTier: finding.TierE3}
 	out.PolicyAtHead = out.PolicyAtBase
@@ -28,6 +29,7 @@ func TestSeverityBelowPolicyMinimumDoesNotBlock(t *testing.T) {
 }
 
 func TestSeverityAtOrAbovePolicyMinimumBlocks(t *testing.T) {
+	t.Parallel()
 	out := greenOutside()
 	out.PolicyAtBase.Blocking = policy.Blocking{MinSeverity: finding.SeverityMedium, MinTier: finding.TierE3}
 	out.PolicyAtHead = out.PolicyAtBase
@@ -43,6 +45,7 @@ func TestSeverityAtOrAbovePolicyMinimumBlocks(t *testing.T) {
 
 // With no policy known, every open E1 to E3 finding blocks whatever its severity.
 func TestSeverityLowBlocksUnderTheStrictDefault(t *testing.T) {
+	t.Parallel()
 	out := greenOutside()
 	out.PolicyKnown = false
 

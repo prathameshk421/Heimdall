@@ -49,6 +49,7 @@ func actionsOf(in change.In) map[string][]change.Action {
 }
 
 func TestRowsStartOnlyWhenTheirFlowHas(t *testing.T) {
+	t.Parallel()
 	require.Empty(t, change.Next(inOf("KAN-5", fold(t), t0)), "no fact yet: nothing is open")
 
 	v := fold(t, triggered(t))
@@ -64,6 +65,7 @@ func TestRowsStartOnlyWhenTheirFlowHas(t *testing.T) {
 }
 
 func TestOpenRoomInvitesTheTestAuthorAssigneeAndPRAuthor(t *testing.T) {
+	t.Parallel()
 	v := fold(t, triggered(t), opened(t)) // opened(t) is event 1 too; version numbers do not matter to the fold
 	room := actionsOf(inOf("KAN-5", v, t0))["open_room"][0].Job
 	require.Equal(t, change.EffectRoomOpen, room.Kind)
@@ -72,6 +74,7 @@ func TestOpenRoomInvitesTheTestAuthorAssigneeAndPRAuthor(t *testing.T) {
 }
 
 func TestTestQAKeyNamesTheLatestSubmission(t *testing.T) {
+	t.Parallel()
 	v := fold(t, triggered(t), ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
 		ev(t, 3, change.EventBranchEnsured, change.BranchEnsured{Repo: "acme/pay", Branch: "KAN-5-x", BaseSHA: fBase}),
 		submission(t, 4, blobA),
@@ -85,6 +88,7 @@ func TestTestQAKeyNamesTheLatestSubmission(t *testing.T) {
 }
 
 func TestWriteTestsRetriesWithANewInputThenAsksPeopleAndResumeAllowsMore(t *testing.T) {
+	t.Parallel()
 	base := []change.Event{triggered(t), ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
 		ev(t, 3, change.EventBranchEnsured, change.BranchEnsured{Repo: "acme/pay", Branch: "KAN-5-x", BaseSHA: fBase})}
 	rej := func(n int) change.Event {
@@ -112,6 +116,7 @@ func TestWriteTestsRetriesWithANewInputThenAsksPeopleAndResumeAllowsMore(t *test
 }
 
 func TestResumeRearmsAJobWithANewKey(t *testing.T) {
+	t.Parallel()
 	evs := []change.Event{triggered(t), ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
 		ev(t, 3, change.EventBranchEnsured, change.BranchEnsured{Repo: "acme/pay", Branch: "KAN-5-x", BaseSHA: fBase}),
 		submission(t, 4, blobA),
@@ -125,6 +130,7 @@ func TestResumeRearmsAJobWithANewKey(t *testing.T) {
 }
 
 func TestCommitFilesComeFromTheSubmission(t *testing.T) {
+	t.Parallel()
 	v := fold(t, triggered(t), submission(t, 2, blobA),
 		ev(t, 3, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
 		ev(t, 4, change.EventBranchEnsured, change.BranchEnsured{Repo: "acme/pay", Branch: "KAN-5-x", BaseSHA: fBase}),
@@ -137,6 +143,7 @@ func TestCommitFilesComeFromTheSubmission(t *testing.T) {
 
 // The Review flow needs nothing from the Tests flow (HARNESS_DESIGN B1): a PR that names no ticket is reviewed.
 func TestATicketlessPullRequestRunsTheReviewFlow(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}))
 	in := inOf("pr-acme-pay-7", v, t0.Add(time.Second))
 	in.Profile = change.Profile{Checks: []change.ProfileCheck{{ID: "lint", When: []string{"**/*.go"}}}}
@@ -159,6 +166,7 @@ func TestATicketlessPullRequestRunsTheReviewFlow(t *testing.T) {
 }
 
 func TestChecksIsDoneWhenNoCheckAppliesOrTheyRan(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}))
 	in := inOf("pr-acme-pay-7", v, t0)
 	in.Profile = change.Profile{Checks: []change.ProfileCheck{{ID: "lint", When: []string{"**/*.go"}}}}
@@ -174,6 +182,7 @@ func TestChecksIsDoneWhenNoCheckAppliesOrTheyRan(t *testing.T) {
 }
 
 func TestPickAsksTheAuthorThenFallsBackToSuggestionsThenToSettings(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true})) // slop at 09:02
 	slopAt := time.Date(2026, 11, 4, 9, 2, 0, 0, time.UTC)
 
@@ -192,6 +201,7 @@ func TestPickAsksTheAuthorThenFallsBackToSuggestionsThenToSettings(t *testing.T)
 }
 
 func TestReviewWantsEverySeatAgainOnANewHead(t *testing.T) {
+	t.Parallel()
 	picked := ev(t, 3, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1", "rev-2", "rev-3"}, By: "heimdall", Method: change.PickDefault})
 	base := []change.Event{opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}), picked,
 		ev(t, 4, change.EventChecksReported, change.ChecksReported{Head: fHead})}
@@ -214,6 +224,7 @@ func TestReviewWantsEverySeatAgainOnANewHead(t *testing.T) {
 }
 
 func TestVerifyIsDueForEachUncheckedProvableFindingAndAgainAfterARecheck(t *testing.T) {
+	t.Parallel()
 	rec := change.FindingRecord{FindingID: "fnd_01HZX3K9QW7M2P5R8T0V4YB6CD", Ref: 1, Tier: "E1", Severity: "high", State: "open", By: "rev-1"}
 	picked := ev(t, 3, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1"}, By: "heimdall", Method: change.PickDefault})
 	evs := []change.Event{opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}), picked,
@@ -241,6 +252,7 @@ func withRepro(r change.FindingRecord) change.FindingRecord {
 }
 
 func TestDeadJobsAreNeedsWithTheResumeLine(t *testing.T) {
+	t.Parallel()
 	v := fold(t, triggered(t))
 	in := inOf("KAN-5", v, t0)
 	in.Dead = []change.DeadJob{{Key: "KAN-5/room/r0", Kind: change.EffectRoomOpen, Attempts: 8, LastError: "switch is down"}}
@@ -251,6 +263,7 @@ func TestDeadJobsAreNeedsWithTheResumeLine(t *testing.T) {
 }
 
 func TestNextIsDeterministic(t *testing.T) {
+	t.Parallel()
 	v := fold(t, opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}))
 	a := change.Next(inOf("pr-acme-pay-7", v, t0.Add(time.Hour)))
 	b := change.Next(inOf("pr-acme-pay-7", v, t0.Add(2*time.Hour)))
@@ -258,6 +271,7 @@ func TestNextIsDeterministic(t *testing.T) {
 }
 
 func TestAnOverChangeHasNoOpenRow(t *testing.T) {
+	t.Parallel()
 	v := fold(t, triggered(t), ev(t, 2, change.EventChangeRejected, change.Rejected{Reason: "no"}))
 	require.Empty(t, change.Next(inOf("KAN-5", v, t0)))
 }
@@ -265,6 +279,7 @@ func TestAnOverChangeHasNoOpenRow(t *testing.T) {
 // A job carries every value the executor needs, so the executor reads nothing from the log: the base the tests must
 // fail on, the head they must pass on, and whether a finding was verified on an earlier head.
 func TestJobsCarryWhatTheirExecutorsNeed(t *testing.T) {
+	t.Parallel()
 	v := fold(t, triggered(t), ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
 		ev(t, 3, change.EventBranchEnsured, change.BranchEnsured{Repo: "acme/pay", Branch: "KAN-5-x", BaseSHA: fBase}),
 		submission(t, 4, blobA), opened(t))
@@ -291,6 +306,7 @@ func TestJobsCarryWhatTheirExecutorsNeed(t *testing.T) {
 // Every job a row starts is of a kind the row declares, and every declared kind is started somewhere, so the start-up
 // check that each declared kind has an executor covers every job the rows can start (HARNESS_DESIGN B8).
 func TestEachRowDeclaresTheJobKindsItStarts(t *testing.T) {
+	t.Parallel()
 	rec := change.FindingRecord{FindingID: "fnd_01HZX3K9QW7M2P5R8T0V4YB6CD", Ref: 1, Tier: "E1", Severity: "high", State: "open", By: "rev-1"}
 	tests := []change.Event{triggered(t), ev(t, 2, change.EventRoomOpened, change.RoomOpened{RoomID: "switch:r1"}),
 		ev(t, 3, change.EventBranchEnsured, change.BranchEnsured{Repo: "acme/pay", Branch: "KAN-5-x", BaseSHA: fBase}),
@@ -334,6 +350,7 @@ func TestEachRowDeclaresTheJobKindsItStarts(t *testing.T) {
 
 // A policy that cannot be used stops every row, and Missing names it in plain words instead of the rows' needs.
 func TestAPolicyProblemOpensNoRowAndIsTheOneNeed(t *testing.T) {
+	t.Parallel()
 	v, err := change.Fold([]change.Event{triggered(t)})
 	require.NoError(t, err)
 	in := inOf("KAN-5", v, t0)
@@ -350,6 +367,7 @@ func TestAPolicyProblemOpensNoRowAndIsTheOneNeed(t *testing.T) {
 // A seat whose task failed twice on the same input is not assigned again: each round costs model tokens, and a seat
 // that always fails (H11, D6) would loop forever. A person decides with `heimdall resume`, which allows two more.
 func TestASeatThatFailedTwiceOnTheSameInputIsNotAssignedAgainUntilResumed(t *testing.T) {
+	t.Parallel()
 	picked := ev(t, 3, change.EventReviewersPicked, change.ReviewersPicked{People: []change.ActorID{"rev-1"}, By: "heimdall", Method: change.PickDefault})
 	base := []change.Event{opened(t), ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: true}), picked,
 		ev(t, 4, change.EventChecksReported, change.ChecksReported{Head: fHead})}
@@ -383,6 +401,7 @@ func TestASeatThatFailedTwiceOnTheSameInputIsNotAssignedAgainUntilResumed(t *tes
 // A pull request with no linked ticket is still reviewed: the review is worth having, and the gate stays red on the
 // ticket clause (H11, D7). Any other failing slop rule still stops the review before it costs tokens.
 func TestAPullRequestWhoseOnlySlopFailureIsTheTicketIsStillReviewed(t *testing.T) {
+	t.Parallel()
 	ticketless := fold(t, ev(t, 1, change.EventPROpened, change.PROpened{Repo: "acme/pay", Number: 7, HeadSHA: fHead, Author: "ann",
 		BaseSHA: fBase, SuggestedReviewers: []change.ActorID{"rev-1"}}),
 		ev(t, 2, change.EventSlopEvaluated, change.SlopEvaluated{Pass: false, FailingRules: []string{"ticket_linked"}}))

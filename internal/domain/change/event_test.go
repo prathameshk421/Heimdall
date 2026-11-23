@@ -36,6 +36,7 @@ var catalog = []string{
 }
 
 func TestAllEventTypesMatchTheSpecCatalogInOrder(t *testing.T) {
+	t.Parallel()
 	require.Len(t, catalog, 64)
 	var got []string
 	for _, et := range change.All() {
@@ -46,18 +47,21 @@ func TestAllEventTypesMatchTheSpecCatalogInOrder(t *testing.T) {
 }
 
 func TestEventTypeValidRefusesUnknownAndMisspelledTypes(t *testing.T) {
+	t.Parallel()
 	for _, bad := range []change.EventType{"", "change.Triggered", "pr.open", "tests.submit", "change.merge", "gate.evaluate"} {
 		require.False(t, bad.Valid(), bad)
 	}
 }
 
 func TestAllReturnsAFreshSliceSoCallersCannotMutateTheCatalog(t *testing.T) {
+	t.Parallel()
 	a := change.All()
 	a[0] = "tampered"
 	require.Equal(t, change.EventType("change.triggered"), change.All()[0])
 }
 
 func TestActorKindsAndValidation(t *testing.T) {
+	t.Parallel()
 	for _, k := range []change.ActorKind{change.ActorHuman, change.ActorAgent, change.ActorSystem, change.ActorGitHub, change.ActorJira, change.ActorSwitch} {
 		require.True(t, k.Valid(), k)
 		require.NoError(t, change.Actor{Kind: k, ID: "bob"}.Validate())
@@ -86,10 +90,12 @@ func envelope(t *testing.T) change.Event {
 }
 
 func TestEventValidateAcceptsAWellFormedEnvelope(t *testing.T) {
+	t.Parallel()
 	require.NoError(t, envelope(t).Validate())
 }
 
 func TestEventValidateNamesEveryBrokenField(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		mutate func(*change.Event)
 		field  string
@@ -120,6 +126,7 @@ func TestEventValidateNamesEveryBrokenField(t *testing.T) {
 }
 
 func TestEventValidateJoinsEveryProblemNotJustTheFirst(t *testing.T) {
+	t.Parallel()
 	e := envelope(t)
 	e.Version = 0
 	e.Actor.Kind = "robot"
@@ -133,6 +140,7 @@ func TestEventValidateJoinsEveryProblemNotJustTheFirst(t *testing.T) {
 }
 
 func TestInvariantOneAgentsCannotRecordDecisionsOrApprovals(t *testing.T) {
+	t.Parallel()
 	for _, typ := range []change.EventType{change.EventDecisionRecorded, change.EventApprovalRecorded} {
 		e := envelope(t)
 		e.Type = typ
@@ -156,6 +164,7 @@ func errString(err error) string {
 }
 
 func TestEventJSONRoundTripKeepsTheEnvelopeFieldsAndNames(t *testing.T) {
+	t.Parallel()
 	e := envelope(t)
 	cause := change.EventID("9d2e6f10-1b3c-4a5d-8e7f-2a4b6c8d0e1f")
 	e.CausationID = &cause
@@ -174,6 +183,7 @@ func TestEventJSONRoundTripKeepsTheEnvelopeFieldsAndNames(t *testing.T) {
 }
 
 func TestEventDecodingRefusesABadIDBeforeValidate(t *testing.T) {
+	t.Parallel()
 	var e change.Event
 	err := json.Unmarshal([]byte(`{"id":"nope","change_id":"PAY-142","version":1}`), &e)
 	require.Error(t, err)

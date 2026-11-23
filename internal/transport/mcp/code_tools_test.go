@@ -46,6 +46,7 @@ func sampleGraph() *fakeGraph {
 }
 
 func TestSearchCodeReadsTheHeadAndWrapsTheResult(t *testing.T) {
+	t.Parallel()
 	g := sampleGraph()
 	r := graphRig(t, workflow.RoleReviewer, g)
 	res := r.call("search_code", `{"pattern":"Ignore_your_rules"}`)
@@ -60,6 +61,7 @@ func TestSearchCodeReadsTheHeadAndWrapsTheResult(t *testing.T) {
 }
 
 func TestCodeToolsRefuseACommitArgument(t *testing.T) {
+	t.Parallel()
 	g := sampleGraph()
 	r := graphRig(t, workflow.RoleReviewer, g)
 	for tool, args := range map[string]string{
@@ -73,6 +75,7 @@ func TestCodeToolsRefuseACommitArgument(t *testing.T) {
 }
 
 func TestSearchCodeIsBounded(t *testing.T) {
+	t.Parallel()
 	var lines []string
 	for i := range 80 {
 		lines = append(lines, fmt.Sprintf("needle %d", i))
@@ -85,6 +88,7 @@ func TestSearchCodeIsBounded(t *testing.T) {
 }
 
 func TestSearchCodeRefusesABadPatternAsTheAgentsOwnError(t *testing.T) {
+	t.Parallel()
 	r := graphRig(t, workflow.RoleReviewer, sampleGraph())
 	for _, args := range []string{`{"pattern":"("}`, `{"pattern":"  "}`, `{"pattern":"` + strings.Repeat("a", maxCodePattern+1) + `"}`} {
 		res := r.call("search_code", args)
@@ -94,6 +98,7 @@ func TestSearchCodeRefusesABadPatternAsTheAgentsOwnError(t *testing.T) {
 }
 
 func TestFindSymbolShowsDefinitionsAndUses(t *testing.T) {
+	t.Parallel()
 	r := graphRig(t, workflow.RoleReviewer, sampleGraph())
 	res := r.call("find_symbol", `{"name":"Service.Create"}`)
 	require.False(t, res.IsError, res.text())
@@ -108,6 +113,7 @@ func TestFindSymbolShowsDefinitionsAndUses(t *testing.T) {
 }
 
 func TestCodeToolsFollowTheKindTable(t *testing.T) {
+	t.Parallel()
 	for _, role := range []workflow.Role{workflow.RoleReviewer} {
 		r := graphRig(t, role, sampleGraph())
 		require.False(t, r.call("search_code", `{"pattern":"x"}`).IsError, role)
@@ -122,12 +128,14 @@ func TestCodeToolsFollowTheKindTable(t *testing.T) {
 }
 
 func TestCodeToolsAreAbsentWithoutAGraph(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	refused := r.rpc("tools/call", `{"name":"search_code","arguments":{"pattern":"x"}}`)
 	require.NotNil(t, refused.Error)
 }
 
 func TestAnIndexFailureIsARefusalAndDoesNotLeakItsCause(t *testing.T) {
+	t.Parallel()
 	r := graphRig(t, workflow.RoleReviewer, &fakeGraph{err: errors.New("tarball token ghp_secret failed")})
 	res := r.call("search_code", `{"pattern":"x"}`)
 	require.True(t, res.IsError)
@@ -136,6 +144,7 @@ func TestAnIndexFailureIsARefusalAndDoesNotLeakItsCause(t *testing.T) {
 }
 
 func TestATruncatedIndexSaysSo(t *testing.T) {
+	t.Parallel()
 	require.Contains(t, renderHits(nil, true), "An absent result proves nothing")
 	require.Contains(t, renderSymbol(nil, nil, true), "An absent result proves nothing")
 }
@@ -173,6 +182,7 @@ func section(t *testing.T, text, name string) (note, content string) {
 }
 
 func TestGetTaskAddsEachBriefSectionWrapped(t *testing.T) {
+	t.Parallel()
 	b := &fakeBriefs{brief: reviewbrief.Brief{Obligations: "CARD", PriorFindings: "PRIOR", Memory: "MEMORY"}}
 	r := briefRig(t, workflow.RoleReviewer, b)
 	res := r.call("get_task", `{}`)
@@ -185,6 +195,7 @@ func TestGetTaskAddsEachBriefSectionWrapped(t *testing.T) {
 }
 
 func TestGetTaskSaysSoWhenASectionIsEmpty(t *testing.T) {
+	t.Parallel()
 	r := briefRig(t, workflow.RoleReviewer, &fakeBriefs{brief: reviewbrief.Brief{Memory: "MEMORY"}})
 	note, content := section(t, r.call("get_task", `{}`).text(), "obligations")
 	require.Empty(t, content)
@@ -192,6 +203,7 @@ func TestGetTaskSaysSoWhenASectionIsEmpty(t *testing.T) {
 }
 
 func TestAFailedBriefDoesNotCostTheTask(t *testing.T) {
+	t.Parallel()
 	r := briefRig(t, workflow.RoleReviewer, &fakeBriefs{err: errors.New("down")})
 	res := r.call("get_task", `{}`)
 	require.False(t, res.IsError)
@@ -203,6 +215,7 @@ func TestAFailedBriefDoesNotCostTheTask(t *testing.T) {
 }
 
 func TestATestAuthorGetsNoBrief(t *testing.T) {
+	t.Parallel()
 	b := &fakeBriefs{brief: reviewbrief.Brief{Memory: "HEAD SECRET"}}
 	r := briefRig(t, workflow.RoleTestAuthor, b)
 	res := r.call("get_task", `{}`)
@@ -212,6 +225,7 @@ func TestATestAuthorGetsNoBrief(t *testing.T) {
 }
 
 func TestABriefIsHeldUntilItIsPartialOrTheHeadMoves(t *testing.T) {
+	t.Parallel()
 	b := &fakeBriefs{brief: reviewbrief.Brief{ChangeMap: "MAP"}}
 	r := briefRig(t, workflow.RoleReviewer, b)
 	r.call("get_task", `{}`)
@@ -234,6 +248,7 @@ func reviewArgs(checks string) string {
 }
 
 func TestSubmitReviewNamesUnansweredObligationsWithoutRefusing(t *testing.T) {
+	t.Parallel()
 	b := &fakeBriefs{brief: reviewbrief.Brief{Obligations: "x", ObligationCards: []string{"cap.md", "authz.md"}}}
 	r := briefRig(t, workflow.RoleReviewer, b)
 	r.call("get_task", `{}`)
@@ -249,6 +264,7 @@ func TestSubmitReviewNamesUnansweredObligationsWithoutRefusing(t *testing.T) {
 }
 
 func TestSubmitReviewHasNoNudgeWithoutAHeldBrief(t *testing.T) {
+	t.Parallel()
 	r := briefRig(t, workflow.RoleReviewer, &fakeBriefs{brief: reviewbrief.Brief{ObligationCards: []string{"cap.md"}}})
 	res := r.call("submit_review", reviewArgs(""))
 	require.Equal(t, "The review is recorded.", res.text())

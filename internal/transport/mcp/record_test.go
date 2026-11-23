@@ -45,6 +45,7 @@ func (noProposals) ProposeCommand(context.Context, id.AgentName, id.ChangeID, st
 
 // Every call is recorded, and the third equal refusal in a row reads differently (6.2, H5).
 func TestEveryCallIsRecordedAndTheThirdEqualRefusalChanges(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
 	calls := &memCalls{}
 	srv, err := NewServer(Deps{Logger: slog.New(slog.DiscardHandler), Clock: r.clock, Tokens: r.tokens, Tasks: r.tasks,

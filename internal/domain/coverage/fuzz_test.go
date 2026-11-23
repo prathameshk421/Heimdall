@@ -10,6 +10,7 @@ import (
 )
 
 func TestParsersRefuseInputOverTheLimit(t *testing.T) {
+	t.Parallel()
 	parsers := []struct {
 		name  string
 		parse func([]byte, Options) (Result, error)
@@ -31,6 +32,7 @@ func TestParsersRefuseInputOverTheLimit(t *testing.T) {
 }
 
 func TestParsersRefuseANonPositiveLimit(t *testing.T) {
+	t.Parallel()
 	parsers := []struct {
 		name  string
 		parse func([]byte, Options) (Result, error)
@@ -48,6 +50,7 @@ func TestParsersRefuseANonPositiveLimit(t *testing.T) {
 }
 
 func TestParsersRefuseABadPrefix(t *testing.T) {
+	t.Parallel()
 	parsers := []struct {
 		name  string
 		parse func([]byte, Options) (Result, error)

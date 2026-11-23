@@ -33,6 +33,7 @@ func withPayload(e change.Event, raw string) change.Event {
 }
 
 func TestCanonicalFormIsTheHandWrittenGoldenBytes(t *testing.T) {
+	t.Parallel()
 	e := goldenEvent(t)
 	e.Payload = json.RawMessage(`{"reason":"ticket closed"}`)
 	got, err := change.Canonical(e)
@@ -42,6 +43,7 @@ func TestCanonicalFormIsTheHandWrittenGoldenBytes(t *testing.T) {
 }
 
 func TestChainKnownAnswerVectorIsRederivedWithCryptoSHA256(t *testing.T) {
+	t.Parallel()
 	e := goldenEvent(t)
 	e.Payload = json.RawMessage(`{"reason":"ticket closed"}`)
 	// Independent derivation: genesis prev_hash is 32 zero bytes, hash = sha256(prev || canonical).
@@ -62,6 +64,7 @@ func sumHex(b []byte) string {
 }
 
 func TestCanonicalFormIgnoresHashWhitespaceKeyOrderAndEscapes(t *testing.T) {
+	t.Parallel()
 	base := goldenEvent(t)
 	base.Payload = json.RawMessage(`{"reason":"ticket closed"}`)
 	want, err := change.Canonical(base)
@@ -86,6 +89,7 @@ func TestCanonicalFormIgnoresHashWhitespaceKeyOrderAndEscapes(t *testing.T) {
 }
 
 func TestBlobReferencesAreHashedInTheCanonicalForm(t *testing.T) {
+	t.Parallel()
 	base := goldenEvent(t)
 	base.Payload = json.RawMessage(`{"reason":"ticket closed"}`)
 	without, err := change.Canonical(base)
@@ -99,6 +103,7 @@ func TestBlobReferencesAreHashedInTheCanonicalForm(t *testing.T) {
 }
 
 func TestCanonicalFormKeepsHTMLCharactersUnescaped(t *testing.T) {
+	t.Parallel()
 	e := goldenEvent(t)
 	e.Payload = json.RawMessage(`{"reason":"a<b>&c"}`)
 	got, err := change.Canonical(e)
@@ -107,6 +112,7 @@ func TestCanonicalFormKeepsHTMLCharactersUnescaped(t *testing.T) {
 }
 
 func TestCanonicalRefusesPayloadsThatCannotBeHashedFaithfully(t *testing.T) {
+	t.Parallel()
 	for name, raw := range map[string]string{
 		"duplicate key":     `{"reason":"a","reason":"b"}`,
 		"fraction":          `{"reason":"a","n":1.5}`,
@@ -124,6 +130,7 @@ func TestCanonicalRefusesPayloadsThatCannotBeHashedFaithfully(t *testing.T) {
 }
 
 func TestCanonicalIsDeterministicAcrossCalls(t *testing.T) {
+	t.Parallel()
 	e := goldenEvent(t)
 	e.Payload = json.RawMessage(`{"z":1,"a":2,"m":[3,2,1]}`)
 	first, err := change.Canonical(e)
@@ -136,6 +143,7 @@ func TestCanonicalIsDeterministicAcrossCalls(t *testing.T) {
 }
 
 func TestPreviousHashAppearsInTheCanonicalFormAsHexOrNull(t *testing.T) {
+	t.Parallel()
 	e := goldenEvent(t)
 	e.Payload = json.RawMessage(`{"reason":"ticket closed"}`)
 	prev := change.Hash{0xab}
@@ -169,14 +177,17 @@ func chainOf(t *testing.T, n int) []change.Event {
 }
 
 func TestVerifyChainAcceptsAnHonestChain(t *testing.T) {
+	t.Parallel()
 	require.NoError(t, change.VerifyChain(chainOf(t, 4)))
 }
 
 func TestVerifyChainAcceptsNoEventsAsNothingToCheck(t *testing.T) {
+	t.Parallel()
 	require.NoError(t, change.VerifyChain(nil))
 }
 
 func TestGenesisMustHaveNoPreviousHash(t *testing.T) {
+	t.Parallel()
 	evs := chainOf(t, 2)
 	p := change.Hash{1}
 	evs[0].PrevHash = &p
@@ -187,6 +198,7 @@ func TestGenesisMustHaveNoPreviousHash(t *testing.T) {
 }
 
 func TestPreviousHashMustBeTheHashBeforeIt(t *testing.T) {
+	t.Parallel()
 	evs := chainOf(t, 3)
 	p := change.Hash{9}
 	evs[2].PrevHash = &p
@@ -196,6 +208,7 @@ func TestPreviousHashMustBeTheHashBeforeIt(t *testing.T) {
 }
 
 func TestVerifyChainRefusesAChainThatDoesNotStartAtVersionOne(t *testing.T) {
+	t.Parallel()
 	evs := chainOf(t, 3)
 	err := change.VerifyChain(evs[1:])
 	require.ErrorIs(t, err, change.ErrChainBroken)
@@ -204,6 +217,7 @@ func TestVerifyChainRefusesAChainThatDoesNotStartAtVersionOne(t *testing.T) {
 
 // Each tamper must be caught, and the error must name the first broken version.
 func TestEveryTamperIsDetectedAndNamesTheFirstBrokenVersion(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		mutate func([]change.Event) []change.Event
 		broken string
@@ -266,12 +280,14 @@ func TestEveryTamperIsDetectedAndNamesTheFirstBrokenVersion(t *testing.T) {
 // The chain cannot see a truncated tail: a shorter prefix is itself a valid chain. The published head hash (TECH_SPEC
 // 4.2) is what catches that, so the test pins the head that a verifier must compare against.
 func TestTruncatedTailIsAValidPrefixAndOnlyTheHeadHashExposesIt(t *testing.T) {
+	t.Parallel()
 	evs := chainOf(t, 3)
 	require.NoError(t, change.VerifyChain(evs[:2]))
 	require.NotEqual(t, evs[2].Hash, evs[1].Hash, "the head hash differs, so a comparison with the published head catches the truncation")
 }
 
 func TestVerifyChainRefusesAPayloadThatCannotBeCanonicalised(t *testing.T) {
+	t.Parallel()
 	evs := chainOf(t, 1)
 	evs[0].Payload = json.RawMessage(`{"reason":"a","reason":"b"}`)
 	err := change.VerifyChain(evs)
@@ -279,6 +295,7 @@ func TestVerifyChainRefusesAPayloadThatCannotBeCanonicalised(t *testing.T) {
 }
 
 func TestHashTextIsLowerHexAndRoundTrips(t *testing.T) {
+	t.Parallel()
 	h := change.Hash{0xde, 0xad}
 	b, err := json.Marshal(h)
 	require.NoError(t, err)

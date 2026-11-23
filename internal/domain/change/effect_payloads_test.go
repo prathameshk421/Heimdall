@@ -11,12 +11,14 @@ import (
 )
 
 func TestRoomOpenPayloadDecodesStrictly(t *testing.T) {
+	t.Parallel()
 	p, err := change.DecodeRoomOpenPayload(json.RawMessage(`{"ticket":"KAN-7","invite":["role:test-author","person:ana"]}`))
 	require.NoError(t, err)
 	require.Equal(t, change.RoomOpenPayload{Ticket: "KAN-7", Invite: []string{"role:test-author", "person:ana"}}, p)
 }
 
 func TestRoomOpenPayloadRefusesMissingUnknownAndTrailing(t *testing.T) {
+	t.Parallel()
 	for name, raw := range map[string]string{
 		"missing ticket":  `{"invite":[]}`,
 		"missing invite":  `{"ticket":"KAN-7"}`,
@@ -36,6 +38,7 @@ func TestRoomOpenPayloadRefusesMissingUnknownAndTrailing(t *testing.T) {
 }
 
 func TestBranchPayloadDecodesStrictly(t *testing.T) {
+	t.Parallel()
 	p, err := change.DecodeBranchPayload(json.RawMessage(`{"repo":"aarush323/heimdall-fixture-pay","ticket":"KAN-7","template":"{ticket}-{slug}"}`))
 	require.NoError(t, err)
 	require.Equal(t, change.BranchPayload{Repo: "aarush323/heimdall-fixture-pay", Ticket: "KAN-7", Template: "{ticket}-{slug}"}, p)
@@ -43,6 +46,7 @@ func TestBranchPayloadDecodesStrictly(t *testing.T) {
 }
 
 func TestBranchPayloadRefusesMissingAndBadFields(t *testing.T) {
+	t.Parallel()
 	for name, raw := range map[string]string{
 		"missing repo":     `{"ticket":"KAN-7","template":"{ticket}-{slug}"}`,
 		"missing template": `{"repo":"a/b","ticket":"KAN-7"}`,
@@ -59,6 +63,7 @@ func TestBranchPayloadRefusesMissingAndBadFields(t *testing.T) {
 }
 
 func TestCheckBranchTemplateAcceptsAndRefuses(t *testing.T) {
+	t.Parallel()
 	require.NoError(t, change.CheckBranchTemplate("{ticket}-{slug}"))
 	require.NoError(t, change.CheckBranchTemplate("{ticket}-wip-{slug}"))
 	for _, bad := range []string{"", "{ticket}", "{ticket}{slug}", "{ticket}-a b", "{ticket}-a..b", "{ticket}-{owner}", "{ticket}-" + strings.Repeat("a", 200)} {
@@ -67,6 +72,7 @@ func TestCheckBranchTemplateAcceptsAndRefuses(t *testing.T) {
 }
 
 func TestCheckInviteTemplateAllowsAssigneePlaceholder(t *testing.T) {
+	t.Parallel()
 	require.NoError(t, change.CheckInviteTemplate([]string{"role:test-author", "person:$assignee"}))
 	require.NoError(t, change.CheckInviteTemplate([]string{}))
 	require.Error(t, change.CheckInviteTemplate(nil), "a nil list is refused")
@@ -75,6 +81,7 @@ func TestCheckInviteTemplateAllowsAssigneePlaceholder(t *testing.T) {
 }
 
 func TestInviteWithAssigneeReplacesOnlyThePlaceholderAndCopies(t *testing.T) {
+	t.Parallel()
 	in := []string{"role:test-author", "person:$assignee", "person:bob"}
 	out := change.InviteWithAssignee(in, "ana")
 	require.Equal(t, []string{"role:test-author", "person:ana", "person:bob"}, out)
@@ -83,6 +90,7 @@ func TestInviteWithAssigneeReplacesOnlyThePlaceholderAndCopies(t *testing.T) {
 
 // A pull request that names no ticket has a room too (D146, HARNESS_DESIGN B1): the room payload names the change.
 func TestRoomOpenPayloadAcceptsAPullRequestChange(t *testing.T) {
+	t.Parallel()
 	p, err := change.DecodeRoomOpenPayload([]byte(`{"ticket":"pr-a-b-4","invite":[]}`))
 	require.NoError(t, err)
 	require.Equal(t, "pr-a-b-4", string(p.Ticket))

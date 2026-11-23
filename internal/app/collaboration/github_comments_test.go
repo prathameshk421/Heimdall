@@ -69,6 +69,7 @@ func (f *pollHandler) HandleGitHubComment(_ context.Context, _ change.Repo, _ po
 }
 
 func TestGitHubCommentPollerUsesOverlapOrdersAndPersistsOnlyAfterCompleteBatch(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)
 	created := now.Add(-time.Hour)
 	pr := ports.PR{Repo: "o/r", Number: 9}

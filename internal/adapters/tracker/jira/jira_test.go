@@ -152,6 +152,7 @@ func digest(s string) string {
 }
 
 func TestChangesQueriesFromTheCursorMinusTheOverlap(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, search(true, "", issue("KAN-1", ana, history("10042", "2026-11-04T09:55:00.000+0000", "status"))))
 	})
@@ -173,6 +174,7 @@ func TestChangesQueriesFromTheCursorMinusTheOverlap(t *testing.T) {
 }
 
 func TestAnEmptyCursorStartsOneOverlapBeforeNow(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, search(true, ""))
 	})
@@ -187,6 +189,7 @@ func TestAnEmptyCursorStartsOneOverlapBeforeNow(t *testing.T) {
 }
 
 func TestOnlyHistoriesInsideTheWindowAreEmitted(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, search(true, "", issue("KAN-1", ana,
 			history("10041", "2026-11-04T08:40:00.000+0000", "status"),
@@ -207,6 +210,7 @@ func TestOnlyHistoriesInsideTheWindowAreEmitted(t *testing.T) {
 }
 
 func TestAnOverlapRepeatIsNotReportedTwiceButALateIndexedChangeIs(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	calls := 0
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -239,6 +243,7 @@ func TestAnOverlapRepeatIsNotReportedTwiceButALateIndexedChangeIs(t *testing.T) 
 }
 
 func TestPaginationFollowsTheNextPageToken(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("nextPageToken") == "" {
 			reply(w, http.StatusOK, search(false, "p2", issue("KAN-1", ana, history("1", "2026-11-04T09:55:00.000+0000", "status"))))
@@ -260,6 +265,7 @@ func TestPaginationFollowsTheNextPageToken(t *testing.T) {
 }
 
 func TestChangedFieldNamesComeFromTheChangelogItems(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, search(true, "", issue("KAN-1", ana, history("10044", "2026-11-04T09:57:00.000+0000", "assignee"))))
 	})
@@ -273,6 +279,7 @@ func TestChangedFieldNamesComeFromTheChangelogItems(t *testing.T) {
 }
 
 func TestAppAndUnassignedIssuesAreSkipped(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, search(true, "",
 			issue("KAN-3", `{"accountId":"app:1","accountType":"app"}`, history("1", "2026-11-04T09:55:00.000+0000", "status")),
@@ -289,6 +296,7 @@ func TestAppAndUnassignedIssuesAreSkipped(t *testing.T) {
 }
 
 func TestATrackerKeyThatIsNotATicketKeyIsRefused(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, search(true, "", issue("kan-1", ana, history("1", "2026-11-04T09:55:00.000+0000", "status"))))
 	})
@@ -310,6 +318,7 @@ const kan7 = `{"key":"KAN-7","fields":{"summary":"Add refunds","status":{"name":
 	`]}]}}}`
 
 func TestTicketParsesTitleStatusAssigneeAndCriteriaFromADF(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, kan7)
 	})
@@ -335,6 +344,7 @@ func TestTicketParsesTitleStatusAssigneeAndCriteriaFromADF(t *testing.T) {
 }
 
 func TestATicketWithANullDescriptionHasNoCriteria(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, `{"key":"KAN-8","fields":{"summary":"Bare","status":{"name":"To Do"},`+
 			`"assignee":{"accountId":"557058:ana","accountType":"atlassian"},"description":null}}`)
@@ -348,6 +358,7 @@ func TestATicketWithANullDescriptionHasNoCriteria(t *testing.T) {
 }
 
 func TestTicketWithoutAnAssigneeIsRefused(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, `{"key":"KAN-9","fields":{"summary":"Orphan","status":{"name":"To Do"},"assignee":null,"description":null}}`)
 	})
@@ -359,6 +370,7 @@ func TestTicketWithoutAnAssigneeIsRefused(t *testing.T) {
 }
 
 func TestKeysThatAreNotTicketKeysNeverReachJira(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, kan7)
 	})
@@ -372,6 +384,7 @@ func TestKeysThatAreNotTicketKeysNeverReachJira(t *testing.T) {
 }
 
 func TestHTTPStatusesMapToPortErrors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		status int
 		want   error
@@ -396,6 +409,7 @@ func TestHTTPStatusesMapToPortErrors(t *testing.T) {
 }
 
 func TestErrorsNeverCarryTheToken(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusUnauthorized, `{"errorMessages":["bad token"]}`)
 	})
@@ -413,6 +427,7 @@ func TestErrorsNeverCarryTheToken(t *testing.T) {
 }
 
 func TestNewRefusesBadConfigAndMissingSecretsWithoutPrintingThem(t *testing.T) {
+	t.Parallel()
 	good := Config{BaseURL: "https://example.atlassian.net", Project: "KAN", EmailSecret: "jira_email", TokenSecret: "jira_api_token"}
 	secrets := fakeSecrets{"jira_email": emailValue, "jira_api_token": tokenValue}
 	cases := []struct {
@@ -440,6 +455,7 @@ func TestNewRefusesBadConfigAndMissingSecretsWithoutPrintingThem(t *testing.T) {
 }
 
 func TestATransportFailureIsUnavailable(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	base := srv.URL
 	srv.Close()
@@ -453,6 +469,7 @@ func TestATransportFailureIsUnavailable(t *testing.T) {
 }
 
 func TestAFailedPollDoesNotAdvanceTheCursor(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, script(cat(
 		rep(unavailable, 8),
 		[]scripted{{status: http.StatusOK, body: search(true, "",
@@ -479,6 +496,7 @@ func TestAFailedPollDoesNotAdvanceTheCursor(t *testing.T) {
 }
 
 func TestAFailedPollRecordsNothingSoTheNextPollReportsEveryChange(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, script(
 		scripted{status: http.StatusOK, body: search(true, "",
 			issue("KAN-1", ana, history("10042", "2026-11-04T09:55:00.000+0000", "status")),
@@ -500,6 +518,7 @@ func TestAFailedPollRecordsNothingSoTheNextPollReportsEveryChange(t *testing.T) 
 }
 
 func TestTicketAssignedToAnAppAccountIsMarkedAsOne(t *testing.T) {
+	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, `{"key":"KAN-10","fields":{"summary":"Bot","status":{"name":"In Progress"},`+
 			`"assignee":{"accountId":"app:automation","accountType":"app"},"description":null}}`)
