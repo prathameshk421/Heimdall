@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/openrouter"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/registry"
 	switchchat "github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/switch"
+	filetracker "github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/tracker/file"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/tracker/jira"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
@@ -92,12 +94,18 @@ func checkJira(ctx context.Context, cfg config.Config) registry.CheckResult {
 	return registry.CheckResult{Status: registry.StatusConnected, Detail: "authenticated Jira poll succeeded for the configured project"}
 }
 
-func checkSwitch(ctx context.Context, cfg config.Config) registry.CheckResult {
-	client, err := switchchat.New(switchchat.Config{
+// newSwitchClient builds the coordinator Switch client from the configured section. Both the integration check and
+// `connect people` use it, so a config that passes one can reach the Switch directory in the other.
+func newSwitchClient(cfg config.Config) (*switchchat.Client, error) {
+	return switchchat.New(switchchat.Config{
 		BaseURL: cfg.Switch.BaseURL, AgentID: cfg.Switch.AgentID, AgentName: cfg.Switch.AgentName, BridgeID: cfg.Switch.BridgeID,
 		Secrets: cfg, APIKeySecret: cfg.Switch.APIKeySecret, RegistrationSecret: cfg.Switch.RegistrationTokenSecret,
 		HTTPClient: &http.Client{}, Clock: clock.System{}, Wait: clock.Wait,
 	})
+}
+
+func checkSwitch(ctx context.Context, cfg config.Config) registry.CheckResult {
+	client, err := newSwitchClient(cfg)
 	if err != nil {
 		return registry.CheckResult{Status: registry.StatusNeedsConfig, Detail: "Switch coordinator configuration is incomplete; check the [switch] fields in heimdall.toml"}
 	}
@@ -105,6 +113,28 @@ func checkSwitch(ctx context.Context, cfg config.Config) registry.CheckResult {
 		return statusFromIntegrationError("switch", err)
 	}
 	return registry.CheckResult{Status: registry.StatusConnected, Detail: "authenticated Switch room listing succeeded"}
+}
+
+// checkFileTracker validates the configured file tracker's ticket directory without changing it. It is read-only:
+// no ticket file is read or written here, only the directory is opened and listed.
+func checkFileTracker(_ context.Context, cfg config.Config) registry.CheckResult {
+	if cfg.TrackerPath == "" {
+		return registry.CheckResult{Status: registry.StatusNeedsConfig, Detail: "set tracker.path in heimdall.toml to the ticket directory"}
+	}
+	info, err := os.Stat(cfg.TrackerPath)
+	if err != nil {
+		return registry.CheckResult{Status: registry.StatusNeedsConfig, Detail: fmt.Sprintf("tracker.path %q cannot be opened: %v", cfg.TrackerPath, err)}
+	}
+	if !info.IsDir() {
+		return registry.CheckResult{Status: registry.StatusNeedsConfig, Detail: fmt.Sprintf("tracker.path %q must be a directory", cfg.TrackerPath)}
+	}
+	if _, err := os.ReadDir(cfg.TrackerPath); err != nil {
+		return registry.CheckResult{Status: registry.StatusUnreachable, Detail: fmt.Sprintf("tracker.path %q cannot be read: %v", cfg.TrackerPath, err)}
+	}
+	if _, err := filetracker.New(cfg.TrackerPath, clock.System{}); err != nil {
+		return registry.CheckResult{Status: registry.StatusNeedsConfig, Detail: fmt.Sprintf("file tracker configuration is invalid: %v", err)}
+	}
+	return registry.CheckResult{Status: registry.StatusConnected, Detail: "file tracker ticket directory exists and is readable"}
 }
 
 func checkOpenRouter(ctx context.Context, cfg config.Config) registry.CheckResult {

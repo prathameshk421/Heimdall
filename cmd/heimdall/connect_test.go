@@ -59,7 +59,7 @@ func TestDefaultRegistryDescribesPlannedEntries(t *testing.T) {
 		{Name: "file", Kind: registry.KindTracker},
 		{Name: "jira", Kind: registry.KindTracker, RequiredConfig: []string{"jira_api_token", "jira_email"}},
 		{Name: "discord", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
-		{Name: "mattermost", Kind: registry.KindChat, RequiredConfig: []string{"mattermost_token"}},
+		{Name: "mattermost", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
 		{Name: "slack", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
 		{Name: "switch", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
 		{Name: "teams", Kind: registry.KindChat},
@@ -82,9 +82,9 @@ func TestDefaultRegistryChecksReportNeedsConfigAndNeverConnected(t *testing.T) {
 		{"telegram", registry.KindChat, nil, "Switch coordinator configuration"},
 		{"slack", registry.KindChat, nil, "Switch coordinator configuration"},
 		{"discord", registry.KindChat, nil, "Switch coordinator configuration"},
-		{"mattermost", registry.KindChat, nil, "mattermost_token"},
+		{"mattermost", registry.KindChat, nil, "Switch coordinator configuration"},
 		{"teams", registry.KindChat, nil, "adapter not built yet"},
-		{"file", registry.KindTracker, nil, "adapter not built yet"},
+		{"file", registry.KindTracker, nil, "tracker.path"},
 		{"github", registry.KindVCS, map[string]string{
 			"github_app_id": "1", "github_app_installation_id": "2", "github_app_private_key": plantedConnectSecret,
 		}, "PEM format"},
@@ -104,6 +104,62 @@ func TestDefaultRegistryChecksReportNeedsConfigAndNeverConnected(t *testing.T) {
 			require.NotContains(t, r.Detail, plantedConnectSecret)
 		})
 	}
+}
+
+func TestCheckFileTrackerHappyPath(t *testing.T) {
+	dir := t.TempDir()
+	r := checkFileTracker(context.Background(), config.Config{TrackerPath: dir})
+	require.Equal(t, registry.StatusConnected, r.Status)
+	require.Contains(t, r.Detail, "readable")
+}
+
+func TestCheckFileTrackerNeedsPath(t *testing.T) {
+	r := checkFileTracker(context.Background(), config.Config{})
+	require.Equal(t, registry.StatusNeedsConfig, r.Status)
+	require.Contains(t, r.Detail, "tracker.path")
+}
+
+func TestCheckFileTrackerRejectsBadPath(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	r := checkFileTracker(context.Background(), config.Config{TrackerPath: missing})
+	require.Equal(t, registry.StatusNeedsConfig, r.Status)
+	require.Contains(t, r.Detail, "cannot be opened")
+
+	notDir := filepath.Join(t.TempDir(), "ticket.md")
+	require.NoError(t, os.WriteFile(notDir, []byte("a ticket"), 0o600))
+	r = checkFileTracker(context.Background(), config.Config{TrackerPath: notDir})
+	require.Equal(t, registry.StatusNeedsConfig, r.Status)
+	require.Contains(t, r.Detail, "must be a directory")
+	require.NotContains(t, r.Detail, "adapter not built")
+}
+
+func TestRegistryFileTrackerEntryUsesRealCheck(t *testing.T) {
+	dir := t.TempDir()
+	_, cfgPath := connectFixture(t, "[tracker]\nprovider = \"file\"\npath = \""+dir+"\"\n", nil)
+	cfg := mustLoad(t, cfgPath)
+	reg, err := defaultRegistry()
+	require.NoError(t, err)
+	e, err := reg.Select(registry.KindTracker, "file")
+	require.NoError(t, err)
+	r := e.Check(context.Background(), cfg)
+	require.Equal(t, registry.StatusConnected, r.Status)
+	require.NotContains(t, r.Detail, "adapter not built")
+}
+
+func TestRegistryMattermostUsesSwitchCheck(t *testing.T) {
+	_, cfgPath := connectFixture(t, "", nil)
+	cfg := mustLoad(t, cfgPath)
+	reg, err := defaultRegistry()
+	require.NoError(t, err)
+	mattermost, err := reg.Select(registry.KindChat, "mattermost")
+	require.NoError(t, err)
+	sw, err := reg.Select(registry.KindChat, "switch")
+	require.NoError(t, err)
+
+	got := mattermost.Check(context.Background(), cfg)
+	require.Equal(t, sw.Check(context.Background(), cfg), got, "mattermost verifies the same Switch connection as the switch entry")
+	require.Equal(t, registry.StatusNeedsConfig, got.Status)
+	require.Contains(t, got.Detail, "Switch coordinator configuration")
 }
 
 func TestCheckWithDeadlineReportsUnreachableWhenCheckHangs(t *testing.T) {
