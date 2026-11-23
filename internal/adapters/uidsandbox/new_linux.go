@@ -30,7 +30,7 @@ func lookupTools() (tools, error) {
 		"sudo": &t.sudo, "useradd": &t.useradd, "id": &t.id, "nft": &t.nft,
 		"systemd-run": &t.systemdRun, "systemctl": &t.systemctl, "env": &t.env,
 		"tar": &t.tar, "pkill": &t.pkill, "pgrep": &t.pgrep, "chmod": &t.chmod, "chown": &t.chown,
-		"mkdir": &t.mkdir, "rm": &t.rm, "tee": &t.tee, "head": &t.head, "sh": &t.sh,
+		"mkdir": &t.mkdir, "rm": &t.rm, "tee": &t.tee, "grep": &t.grep, "head": &t.head, "sh": &t.sh,
 	}
 	var errs []error
 	for name, dst := range targets {

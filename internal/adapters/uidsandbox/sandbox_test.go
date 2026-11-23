@@ -43,7 +43,7 @@ func testTools() tools {
 		systemdRun: "/usr/bin/systemd-run", systemctl: "/usr/bin/systemctl",
 		env: "/usr/bin/env", tar: "/usr/bin/tar", pkill: "/usr/bin/pkill", pgrep: "/usr/bin/pgrep",
 		chmod: "/usr/bin/chmod", chown: "/usr/bin/chown", mkdir: "/usr/bin/mkdir", rm: "/usr/bin/rm",
-		tee: "/usr/bin/tee", head: "/usr/bin/head", sh: "/usr/bin/sh",
+		tee: "/usr/bin/tee", grep: "/usr/bin/grep", head: "/usr/bin/head", sh: "/usr/bin/sh",
 	}
 }
 
@@ -60,6 +60,8 @@ func readyAnswer(argv []string) (int, string) {
 		return 0, "heimdall-sbx\n"
 	case strings.HasPrefix(cmd, "/usr/bin/pgrep"):
 		return 1, ""
+	case strings.HasPrefix(cmd, "/usr/bin/grep -qxF"):
+		return 1, "" // the user is not in the deny files yet, so Setup appends it
 	case strings.HasPrefix(cmd, "/usr/sbin/nft list table"):
 		return 1, ""
 	}
@@ -106,7 +108,10 @@ func TestSetupCommands(t *testing.T) {
 		"/usr/sbin/useradd --system --user-group --home-dir /sbx/home --no-create-home --shell /usr/sbin/nologin heimdall-sbx",
 		"/usr/bin/chmod 0700 -- /home/runner",
 		"/usr/bin/chmod 0700 -- /home/runner/work/_temp",
-		"/usr/bin/tee -a /etc/cron.deny",
+		"/usr/bin/grep -qxF -- heimdall-sbx /etc/cron.deny",
+		"/usr/bin/grep -qxF -- heimdall-sbx /etc/at.deny",
+		"/usr/bin/tee -a -- /etc/cron.deny",
+		"/usr/bin/tee -a -- /etc/at.deny",
 		"/usr/bin/chown --no-dereference heimdall-sbx:heimdall-sbx -- /sbx/work",
 		"/usr/sbin/nft -f -",
 		"/usr/bin/tee -- /tmp/heimdall-sbx-host-marker",
@@ -185,7 +190,6 @@ var commonProps = []string{
 	"CapabilityBoundingSet=",
 	"AmbientCapabilities=",
 	"ProtectSystem=strict",
-	"ReadWritePaths=/sbx/work /sbx/home /sbx/tmp",
 	"ProtectHome=yes",
 	"TemporaryFileSystem=/run /dev/shm:mode=1777",
 	"PrivateTmp=yes",
@@ -209,9 +213,45 @@ var commonProps = []string{
 }
 
 func TestServiceProps(t *testing.T) {
-	assert.Equal(t, append(append([]string{}, commonProps...), "PrivateNetwork=yes"), serviceProps(PhaseExec))
-	assert.Equal(t, append(append([]string{}, commonProps...), "RestrictAddressFamilies=AF_INET AF_INET6"), serviceProps(PhaseFetch))
+	// SEC-06: the execution phase may write only the work tree, so no state survives between Prove runs; the fetch
+	// phase fills the module cache and the shared tmp.
+	exec := append(append([]string{}, commonProps...), "ReadWritePaths=/sbx/work", "PrivateNetwork=yes")
+	fetch := append(append([]string{}, commonProps...), "ReadWritePaths=/sbx/work /sbx/home /sbx/tmp",
+		"RestrictAddressFamilies=AF_INET AF_INET6")
+	assert.Equal(t, exec, serviceProps(PhaseExec))
+	assert.Equal(t, fetch, serviceProps(PhaseFetch))
 	assert.NotContains(t, serviceProps(PhaseFetch), "PrivateNetwork=yes", "the fetch phase needs the host network for the proxy")
+}
+
+// SEC-16: a Setup on a runner that already denies the user appends nothing to the deny files.
+func TestSetupDenyFilesAreIdempotent(t *testing.T) {
+	for _, listed := range []bool{false, true} {
+		name := "appends when not listed"
+		if listed {
+			name = "appends nothing when already listed"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := &fakeExec{answer: func(argv []string) (int, string) {
+				if listed && strings.HasPrefix(strings.Join(argv[3:], " "), "/usr/bin/grep -qxF") {
+					return 0, ""
+				}
+				return readyAnswer(argv)
+			}}
+			setupSandbox(t, f)
+			var appends []string
+			for _, c := range f.calls {
+				cmd := strings.Join(c[3:], " ")
+				if strings.HasPrefix(cmd, "/usr/bin/tee -a") {
+					appends = append(appends, cmd)
+				}
+			}
+			if listed {
+				assert.Empty(t, appends, "the deny files must not grow on a repeated Setup")
+				return
+			}
+			assert.Equal(t, []string{"/usr/bin/tee -a -- /etc/cron.deny", "/usr/bin/tee -a -- /etc/at.deny"}, appends)
+		})
+	}
 }
 
 // unitHead returns everything of a job command up to and including env's "--", and the rest.
@@ -287,10 +327,11 @@ func TestExecArgvChain(t *testing.T) {
 	for _, p := range commonProps {
 		want = append(want, "-p", p)
 	}
-	want = append(want, "-p", "PrivateNetwork=yes",
+	want = append(want, "-p", "ReadWritePaths=/sbx/work", "-p", "PrivateNetwork=yes",
 		"-p", "CPUQuota=200%", "-p", "MemoryMax=4294967296", "-p", "TasksMax=512", "-p", "RuntimeMaxSec=60", "--",
 		"/usr/bin/env", "-i", "-C", "/sbx/work/pkg", "--",
-		"PATH=/opt/go/bin:/usr/bin:/bin", "HOME=/sbx/home", "TMPDIR=/sbx/tmp", "USER=heimdall-sbx", "LOGNAME=heimdall-sbx",
+		"PATH=/opt/go/bin:/usr/bin:/bin", "HOME=/sbx/home", "TMPDIR=/tmp", "USER=heimdall-sbx", "LOGNAME=heimdall-sbx",
+		"GOCACHE=/tmp/gocache",
 		"GOFLAGS=-mod=mod",
 		"go", "test", "./...; curl evil",
 	)
@@ -309,6 +350,9 @@ func TestFetchUsesHostNetworkAndProxy(t *testing.T) {
 	got := strings.Join(f.calls[0], " ")
 	assert.NotContains(t, got, "PrivateNetwork")
 	assert.Contains(t, got, "-p RestrictAddressFamilies=AF_INET AF_INET6")
+	assert.Contains(t, got, "-p ReadWritePaths=/sbx/work /sbx/home /sbx/tmp", "the fetch phase fills the module cache")
+	assert.Contains(t, got, "TMPDIR=/sbx/tmp")
+	assert.NotContains(t, got, "GOCACHE=", "the fetch phase keeps the default build cache under the writable home")
 	assert.Contains(t, got, "HTTPS_PROXY=http://127.0.0.1:"+strconv.Itoa(s.ProxyPort()))
 	assert.Contains(t, got, "-C /sbx/work --")
 }
@@ -322,6 +366,7 @@ func TestValidateJob(t *testing.T) {
 		"argv0 option":      {Argv: []string{"-S", "sh"}, Timeout: time.Second},
 		"NUL in argv":       {Argv: []string{"go", "a\x00b"}, Timeout: time.Second},
 		"reserved PATH":     {Argv: []string{"go"}, Env: []string{"PATH=/tmp"}, Timeout: time.Second},
+		"reserved GOCACHE":  {Argv: []string{"go"}, Env: []string{"GOCACHE=/sbx/home/poison"}, Timeout: time.Second},
 		"reserved proxy":    {Argv: []string{"go"}, Env: []string{"https_proxy=http://evil"}, Timeout: time.Second},
 		"reserved no_proxy": {Argv: []string{"go"}, Env: []string{"No_Proxy=*"}, Timeout: time.Second},
 		"bad env key":       {Argv: []string{"go"}, Env: []string{"A B=c"}, Timeout: time.Second},

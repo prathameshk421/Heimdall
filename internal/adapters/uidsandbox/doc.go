@@ -26,7 +26,9 @@
 //     CONNECT to an allowlisted registry host on an allowed port, refuses IP literals, and refuses a name that
 //     resolves to a non-public address.
 //   - Sandbox.Exec runs a job in the execution phase: PrivateNetwork=yes, so a private namespace with only lo, which
-//     also cuts abstract Unix sockets.
+//     also cuts abstract Unix sockets. Only /sbx/work is writable (ReadWritePaths); /sbx/home and /sbx/tmp are
+//     read-only, and TMPDIR and GOCACHE point into the per-unit private /tmp of PrivateTmp=yes, so nothing a job
+//     writes survives into the next Prove run (SEC-06).
 //   - Every job is systemd-run --wait --pipe --collect --expand-environment=no --service-type=exec with the fixed
 //     properties of serviceProps(phase), then CPUQuota, MemoryMax, TasksMax and RuntimeMaxSec (the job's Timeout,
 //     rounded up), then env -i with the fixed keys. Nothing from a Job becomes a property. After every job KillAll
@@ -43,8 +45,8 @@
 //   - Commands go through the Exec port as explicit argv. argv[0] is an absolute path found in /usr/sbin, /usr/bin,
 //     /sbin or /bin. PR data is never joined into a shell string. A job argv[0] may not contain "=" or start with
 //     "-", because env(1) would read it as a variable or an option.
-//   - A job cannot set PATH, HOME, TMPDIR, USER, LOGNAME or any proxy variable. Dir and ResultPath stay inside
-//     /sbx/work.
+//   - A job cannot set PATH, HOME, TMPDIR, GOCACHE, USER, LOGNAME or any proxy variable. Dir and ResultPath stay
+//     inside /sbx/work.
 //   - Every root command runs through sudo -n, so a password prompt is an error, never a hang.
 //   - Files of the work tree are read as the sandbox user, so a symlink planted by the PR cannot make root read for it.
 //   - Output is capped at MaxOutputBytes per stream, and a JUnit file at verify.MaxReportBytes.

@@ -3,6 +3,7 @@ package external
 import (
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
@@ -50,13 +51,37 @@ type parsed struct {
 	style  bool
 }
 
-// prepBody makes the body safe to read: valid UTF-8, one newline form, and at most MaxBodyBytes.
+// prepBody makes the body safe to read: valid UTF-8, one newline form, no format or control characters, and at most
+// MaxBodyBytes. Format characters (BiDi overrides, zero-width characters) are removed and other control characters
+// become spaces, so a claim cannot reorder what a person reads or hide text from the reviewer (SEC-12). Newlines and
+// tabs stay: they are the line structure the parser reads.
 func prepBody(body string) string {
 	body = strings.ToValidUTF8(body, "")
 	if len(body) > MaxBodyBytes {
 		body = strings.ToValidUTF8(body[:MaxBodyBytes], "")
 	}
-	return strings.ReplaceAll(body, "\r\n", "\n")
+	return stripFormatAndControl(strings.ReplaceAll(body, "\r\n", "\n"))
+}
+
+// stripFormatAndControl removes every unicode.Cf rune and turns every other control or space rune into one space,
+// keeping the newlines and tabs the claim parser reads. It is the same neutralization summary.clean does, without
+// the collapsing: flatten joins the lines and fields the spaces afterwards.
+func stripFormatAndControl(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '\n' || r == '\t':
+			b.WriteRune(r)
+		case unicode.IsSpace(r) || unicode.IsControl(r):
+			b.WriteByte(' ')
+		case unicode.Is(unicode.Cf, r):
+			// Removed: a BiDi override or a zero-width character cannot reorder or hide the claim.
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // parseBody turns a body into a claim and the severity and category the tool states (ACTION_MODE 6.2, steps 1 and 2).

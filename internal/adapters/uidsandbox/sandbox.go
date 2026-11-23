@@ -122,7 +122,7 @@ type Config struct {
 
 // tools are the absolute paths of every binary the sandbox runs.
 type tools struct {
-	sudo, useradd, id, nft, systemdRun, systemctl, env, tar, pkill, pgrep, chmod, chown, mkdir, rm, crontab, tee, head, sh string
+	sudo, useradd, id, nft, systemdRun, systemctl, env, tar, pkill, pgrep, chmod, chown, mkdir, rm, crontab, tee, grep, head, sh string
 }
 
 // Sandbox runs PR code as the heimdall-sbx user (ACTION_MODE 4.4).
@@ -304,9 +304,23 @@ func (s *Sandbox) ensureUser(ctx context.Context) error {
 	s.mu.Lock()
 	s.uid = uid
 	s.mu.Unlock()
-	// cron and at would start processes after the kill. Deny the user both.
+	return s.denyScheduling(ctx)
+}
+
+// denyScheduling denies the sandbox user cron and at, which would start processes after the kill. The entry is
+// appended only when grep does not find it already, so repeated Setup calls do not grow the deny files (SEC-16).
+// grep exits 1 when the user is not listed and 2 when the file does not exist yet; both append, and tee -a creates
+// the file. Every path is an absolute argv element, never shell text.
+func (s *Sandbox) denyScheduling(ctx context.Context) error {
 	for _, f := range []string{"/etc/cron.deny", "/etc/at.deny"} {
-		if err := s.mustRoot(ctx, strings.NewReader(User+"\n"), s.tools.tee, "-a", f); err != nil {
+		code, _, err := s.root(ctx, nil, s.tools.grep, "-qxF", "--", User, f)
+		if err != nil {
+			return fmt.Errorf("grep: %w", err)
+		}
+		if code == 0 {
+			continue
+		}
+		if err := s.mustRoot(ctx, strings.NewReader(User+"\n"), s.tools.tee, "-a", "--", f); err != nil {
 			return err
 		}
 	}
@@ -414,9 +428,13 @@ func (s *Sandbox) Stage(ctx context.Context, tree io.Reader, stripComponents int
 // serviceProps is the fixed hardening of the transient service of a phase. Nothing from a Job enters it: the job's
 // argv, directory and variables go after the "--" of systemd-run, to env(1). Both phases hide /run (every host
 // socket of systemd, D-Bus, snapd, polkit and ssh lives there, and /var/run links to it), the home directories and
-// /tmp, and make the whole file system read-only except the three sandbox directories. The execution phase has a
-// private network namespace with loopback only, which also cuts abstract Unix sockets. The fetch phase keeps the
-// host network for the proxy and may open only IPv4 and IPv6 sockets, so no Unix socket of any kind.
+// /tmp, and make the whole file system read-only except the sandbox directories the phase may write. The execution
+// phase may write only the work tree: /sbx/home (the fetched module cache) and /sbx/tmp stay read-only, so no state
+// survives between the head-1, head-2 and fixed-1 runs of a Prove (SEC-06). Its writes go to the per-unit private
+// /tmp of PrivateTmp=yes, which jobEnv points TMPDIR and GOCACHE at. The execution phase has a private network
+// namespace with loopback only, which also cuts abstract Unix sockets. The fetch phase keeps the host network for
+// the proxy, may write all three sandbox directories, and may open only IPv4 and IPv6 sockets, so no Unix socket of
+// any kind.
 func serviceProps(phase Phase) []string {
 	props := []string{
 		"User=" + User,
@@ -425,7 +443,6 @@ func serviceProps(phase Phase) []string {
 		"CapabilityBoundingSet=",
 		"AmbientCapabilities=",
 		"ProtectSystem=strict",
-		"ReadWritePaths=" + WorkDir + " " + HomeDir + " " + TmpDir,
 		"ProtectHome=yes",
 		// A fresh tmpfs on /dev/shm: PrivateDevices= binds the host's /dev/shm into the new /dev (run 44909950640
 		// read a 0644 canary there from both phases).
@@ -451,9 +468,10 @@ func serviceProps(phase Phase) []string {
 	}
 	switch phase {
 	case PhaseExec:
-		props = append(props, "PrivateNetwork=yes")
+		props = append(props, "ReadWritePaths="+WorkDir, "PrivateNetwork=yes")
 	case PhaseFetch:
-		props = append(props, "RestrictAddressFamilies=AF_INET AF_INET6")
+		props = append(props, "ReadWritePaths="+WorkDir+" "+HomeDir+" "+TmpDir,
+			"RestrictAddressFamilies=AF_INET AF_INET6")
 	}
 	return props
 }
@@ -512,7 +530,7 @@ var envKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // reservedEnv reports the keys the sandbox sets itself. A job cannot replace them.
 func reservedEnv(k string) bool {
 	switch strings.ToUpper(k) {
-	case "PATH", "HOME", "TMPDIR", "USER", "LOGNAME", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY":
+	case "PATH", "HOME", "TMPDIR", "GOCACHE", "USER", "LOGNAME", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY":
 		return true
 	}
 	return false
@@ -577,14 +595,21 @@ func validateEnv(env []string) error {
 	return nil
 }
 
-// jobEnv is the whole environment of a job: the fixed set, the phase's proxy variables, then the job's own.
+// jobEnv is the whole environment of a job: the fixed set, the phase's variables, then the job's own. In the
+// execution phase TMPDIR and GOCACHE point inside the per-unit private /tmp of PrivateTmp=yes: /sbx/home and
+// /sbx/tmp are read-only there, so nothing a test writes survives into the next Prove run (SEC-06). The module
+// cache under HOME is read-only in that phase; the fetch phase fills it.
 func (s *Sandbox) jobEnv(phase Phase, j Job) []string {
-	env := []string{"PATH=" + s.cfg.ToolPath, "HOME=" + HomeDir, "TMPDIR=" + TmpDir, "USER=" + User, "LOGNAME=" + User}
-	if phase == PhaseFetch {
+	tmp, extra := TmpDir, []string(nil)
+	switch phase {
+	case PhaseExec:
+		tmp, extra = "/tmp", []string{"GOCACHE=/tmp/gocache"}
+	case PhaseFetch:
 		proxy := "http://127.0.0.1:" + strconv.Itoa(s.ProxyPort())
-		env = append(env, "HTTPS_PROXY="+proxy, "HTTP_PROXY="+proxy, "https_proxy="+proxy, "http_proxy="+proxy)
+		extra = []string{"HTTPS_PROXY=" + proxy, "HTTP_PROXY=" + proxy, "https_proxy=" + proxy, "http_proxy=" + proxy}
 	}
-	return append(env, j.Env...)
+	env := []string{"PATH=" + s.cfg.ToolPath, "HOME=" + HomeDir, "TMPDIR=" + tmp, "USER=" + User, "LOGNAME=" + User}
+	return append(append(env, extra...), j.Env...)
 }
 
 // jobArgv is the full root command of a job.

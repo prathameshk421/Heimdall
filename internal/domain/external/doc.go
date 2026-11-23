@@ -57,10 +57,13 @@
 //
 // # Claim
 //
-// The claim keeps the text a person reads. The parser removes HTML comments, <details> blocks (nested ones too),
-// fenced suggestion blocks, <sub> footers, images and badge links and a short list of inline HTML tags. A comment, a
-// block or a fence that never closes takes the rest of the text. The claim is one line, at most 600 runes (the FindingIn
-// limit), cut with a "…" mark. A claim under 10 runes is not a claim: the comment is ignored as no_claim.
+// The claim keeps the text a person reads. Before it is read, the body loses every format character (BiDi overrides,
+// zero-width characters) and every control character but the newline and the tab, which become spaces, so a claim
+// cannot reorder what a person reads or hide text (SEC-12). The parser removes HTML comments, <details> blocks
+// (nested ones too), fenced suggestion blocks, <sub> footers, images and badge links and a short list of inline HTML
+// tags. A comment, a block or a fence that never closes takes the rest of the text. The claim is one line, at most 600
+// runes (the FindingIn limit), cut with a "…" mark. A claim under 10 runes is not a claim: the comment is ignored as
+// no_claim.
 //
 // A tool's own noise never opens a claim: the CodeRabbit header, the Macroscope severity line, path:line and blob URL,
 // the Codex badge and the Devin emoji are all removed after they are read, and so are the footers that ask for feedback
