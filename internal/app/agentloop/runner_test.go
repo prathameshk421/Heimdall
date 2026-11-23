@@ -162,6 +162,7 @@ func TestContractTheCapsAreHeldBeforeEachCall(t *testing.T) {
 	res, err := c.do(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, ports.AgentStopBudget, res.Stop)
+	assert.Equal(t, ports.AgentBudgetUSD, res.BudgetCause, "the port carries the cause the loop recorded")
 	assert.Len(t, c.model.requests, 2)
 
 	// A price high enough that the first call could pass the cap: no call is made at all.
@@ -172,6 +173,7 @@ func TestContractTheCapsAreHeldBeforeEachCall(t *testing.T) {
 	res, err = r.Run(context.Background(), c.run)
 	require.NoError(t, err)
 	assert.Equal(t, ports.AgentStopBudget, res.Stop)
+	assert.Equal(t, ports.AgentBudgetUSD, res.BudgetCause)
 	assert.Empty(t, c.model.requests)
 }
 
@@ -208,6 +210,7 @@ func TestContractAModelFailureIsAnErrorStopThatWrapsTheCause(t *testing.T) {
 	res, err = c.do(context.Background(), t)
 	require.ErrorIs(t, err, ports.ErrAgentUsage)
 	assert.Equal(t, ports.AgentStopBudget, res.Stop)
+	assert.Equal(t, ports.AgentBudgetUsage, res.BudgetCause)
 }
 
 func TestContractTurnsCarryLatency(t *testing.T) {

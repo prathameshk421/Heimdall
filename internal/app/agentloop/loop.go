@@ -292,13 +292,23 @@ func (r *run) stopBeforeCall() bool {
 func (r *run) overBudget() bool {
 	body, err := json.Marshal(r.request())
 	if err != nil {
+		// An unsized call is an unbounded one. The request cannot be sent, and the caller must say why.
+		r.res.BudgetCause = ports.AgentBudgetRequestSize
 		return true
 	}
 	cfg := r.l.cfg
 	input := int64(len(body) + ports.AgentFramingTokens)
-	return r.res.CostUSD+cfg.Price.CallBound(len(body), cfg.MaxOutputTokens) > cfg.BudgetUSD ||
-		r.res.Usage.InputTokens+input > cfg.InputTokenCap ||
-		r.res.Usage.OutputTokens+int64(cfg.MaxOutputTokens) > cfg.OutputTokenCap
+	switch {
+	case r.res.CostUSD+cfg.Price.CallBound(len(body), cfg.MaxOutputTokens) > cfg.BudgetUSD:
+		r.res.BudgetCause = ports.AgentBudgetUSD
+	case r.res.Usage.InputTokens+input > cfg.InputTokenCap:
+		r.res.BudgetCause = ports.AgentBudgetInputTokens
+	case r.res.Usage.OutputTokens+int64(cfg.MaxOutputTokens) > cfg.OutputTokenCap:
+		r.res.BudgetCause = ports.AgentBudgetOutputTokens
+	default:
+		return false
+	}
+	return true
 }
 
 // complete makes one model call and sends it again after a failure that may pass (Config.Retry). modelTime is the time
@@ -372,6 +382,7 @@ func (r *run) charge(billed ports.ModelResponse) error {
 func (r *run) usageErr(resp ports.ModelResponse) error {
 	if !(resp.CostUSD >= 0) || math.IsInf(resp.CostUSD, 0) || resp.Usage.InputTokens < 0 || resp.Usage.CachedInputTokens < 0 || resp.Usage.OutputTokens < 0 {
 		r.res.Reason = StopBudget
+		r.res.BudgetCause = ports.AgentBudgetUsage
 		return fmt.Errorf("agent loop: %w: a cost of %v and %d/%d tokens", ports.ErrAgentUsage, resp.CostUSD,
 			resp.Usage.InputTokens, resp.Usage.OutputTokens)
 	}

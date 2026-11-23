@@ -37,6 +37,7 @@ const (
 	maxTestsListed   = 30
 	maxListFiles     = 200
 	maxCommandArgs   = 64
+	maxCommandCalls  = 2 // run_command calls one review may make (mirrors AM17's proof_review.go)
 	commandTimeout   = 2 * time.Minute
 	maxSandboxTimout = 10 * time.Minute
 )
@@ -148,7 +149,7 @@ func (rp *replay) toolSpecs() []fnTool {
 	}
 	if _, ok := rp.sandbox.(commandSandbox); ok {
 		list = append(list, fnTool{spec: ports.ModelTool{Name: "run_command",
-			Description: "Run a command (build, typecheck, existing tests, tooling inspection) inside a fresh checkout of the pull request head. Optionally overlay temporary files.",
+			Description: "Run a command (build, typecheck, existing tests, tooling inspection) inside a fresh checkout of the pull request head. Optionally overlay temporary files. (max 2 calls per review)",
 			Parameters:  json.RawMessage(`{"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":64},"dir":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"],"additionalProperties":false}}},"required":["argv"],"additionalProperties":false}`)},
 			run: rp.runCommand})
 	}
@@ -189,7 +190,9 @@ func (rp *replay) listChanges(_ context.Context, args json.RawMessage) (string, 
 	return b.String(), nil
 }
 
-// headFile reads one file of the head worktree through os.Root, so a symlink cannot leave the tree.
+// headFile reads one file of the head worktree through os.Root, so a symlink cannot leave the tree. A link that stays
+// inside it can still point at .git, so every link on the path is resolved and refused when it reaches git's directory
+// (SEC-08, mirrors AM17's proof_review.go).
 func (rp *replay) headFile(p string) ([]byte, error) {
 	if err := repoPath(p); err != nil {
 		return nil, err
@@ -199,6 +202,9 @@ func (rp *replay) headFile(p string) ([]byte, error) {
 		return nil, fmt.Errorf("open head tree: %w", err)
 	}
 	defer func() { _ = root.Close() }()
+	if err := noGitSymlink(root, rp.workdir, filepath.FromSlash(p)); err != nil {
+		return nil, err
+	}
 	info, err := root.Stat(filepath.FromSlash(p))
 	if err != nil {
 		return nil, fmt.Errorf("%s: no such file at the head", p)
@@ -219,6 +225,80 @@ func repoPath(p string) error {
 		return fmt.Errorf("path %q: want a clean relative path inside the repository", p)
 	}
 	return nil
+}
+
+// noGitSymlink refuses a path whose own name or any ancestor is a symlink that resolves into git's own directory.
+// os.Root keeps a link inside the checkout, but that is not enough: a link to .git/config stays inside the tree and
+// would hand the reviewer git's history. Each link is resolved against its parent and checked as a relative target
+// inside the root (or as an absolute target inside workdir), so neither a direct link nor a chain can reach .git.
+func noGitSymlink(root *os.Root, workdir, p string) error {
+	return walkLinks(root, workdir, p, map[string]bool{}, 0)
+}
+
+// walkLinks walks one path component at a time, following the links it finds. seen bounds a chain of links, and depth
+// bounds how many links a path may pass through; a link loop or a very long chain is refused rather than followed.
+func walkLinks(root *os.Root, workdir, p string, seen map[string]bool, depth int) error {
+	if depth > 20 || seen[p] {
+		return fmt.Errorf("path %q: too many symlinks or a symlink loop", p)
+	}
+	seen[p] = true
+	sep := string(filepath.Separator)
+	dir := ""
+	for _, part := range strings.Split(p, sep) {
+		cur := filepath.Join(dir, part)
+		info, err := root.Lstat(cur)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("path %q: stat: %w", p, err)
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			dir = cur
+			continue
+		}
+		target, err := root.Readlink(cur)
+		if err != nil {
+			return fmt.Errorf("path %q: resolve symlink: %w", p, err)
+		}
+		next, err := linkTarget(workdir, dir, target)
+		if err != nil {
+			return fmt.Errorf("path %q: %w", p, err)
+		}
+		// Each link gets its own copy of the chain: two sibling links to the same target are not a loop, but a link
+		// that resolves back to one of its own ancestors is.
+		chain := make(map[string]bool, len(seen)+1)
+		for k := range seen {
+			chain[k] = true
+		}
+		if err := walkLinks(root, workdir, next, chain, depth+1); err != nil {
+			return err
+		}
+		dir = next
+	}
+	return nil
+}
+
+// linkTarget resolves one symlink target against the link's directory and refuses a target in git's own directory.
+// An absolute target is checked against the checkout; anything else stays a root-relative path.
+func linkTarget(checkout, dir, target string) (string, error) {
+	sep := string(filepath.Separator)
+	if filepath.IsAbs(target) {
+		if rel, err := filepath.Rel(checkout, target); err == nil && targetsGit(rel, sep) {
+			return "", errors.New("symlink resolves into git's directory")
+		}
+		return target, nil
+	}
+	next := filepath.Clean(filepath.Join(dir, target))
+	if targetsGit(next, sep) {
+		return "", errors.New("symlink resolves into git's directory")
+	}
+	return next, nil
+}
+
+// targetsGit reports whether a root-relative path is git's own directory or a path inside it.
+func targetsGit(p, sep string) bool {
+	return p == ".git" || strings.HasPrefix(p, ".git"+sep)
 }
 
 func (rp *replay) readCode(_ context.Context, args json.RawMessage) (string, error) {
@@ -626,6 +706,12 @@ func decodeCommandArgs(args json.RawMessage) (runCommandArgs, error) {
 }
 
 func (rp *replay) runCommand(ctx context.Context, args json.RawMessage) (string, error) {
+	// The cap is checked before the sandbox is touched: exploration must not eat the review's budget.
+	if rp.commandCalls >= maxCommandCalls {
+		return "", fmt.Errorf("you have used all %d run_command calls for this review; do not run another command. "+
+			"Use run_test on your top suspect now, then propose_finding for a failing test or finish_review if you are done",
+			maxCommandCalls)
+	}
 	cs, ok := rp.sandbox.(commandSandbox)
 	if !ok {
 		return "", errors.New("run_command is not available in this sandbox")
@@ -634,6 +720,8 @@ func (rp *replay) runCommand(ctx context.Context, args json.RawMessage) (string,
 	if err != nil {
 		return "", err
 	}
+	// Only a valid call spends one of the two; malformed arguments never reach the sandbox and cost nothing.
+	rp.commandCalls++
 	res, err := cs.RunCommand(ctx, rp.c.RepoSlug(), rp.head, in.dir, in.argv, in.overlays, commandTimeout)
 	if err != nil {
 		return "", err

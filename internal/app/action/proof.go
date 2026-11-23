@@ -46,10 +46,10 @@ const (
 	// proofKeptResults is how many of the newest tool results stay whole whatever the size.
 	proofKeptResults = 3
 	// proofStallTurns answers in a row with no test run and no proposal get one stall nudge, and proofStallGrace more
-	// such answers stop the run as no_proposal. In the recorded runs no proposal came after more than 12 such answers
-	// and no first test after more than 21, so 18 and 24 cut neither. 24 is 16 under maxProofTurns, so a run that only
-	// reads ends early.
-	proofStallTurns = 18
+	// such answers stop the run as no_proposal. The nudge now demands an immediate diagnostic run_test on the strongest
+	// suspect, so 12 (down from 18) interrupts a run that keeps reading before it spends its whole budget. 12+6=18 is
+	// 22 under maxProofTurns, so a run that only reads ends well before the turn cap.
+	proofStallTurns = 12
 	proofStallGrace = 6
 )
 

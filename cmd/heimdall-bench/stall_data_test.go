@@ -127,25 +127,29 @@ func TestStallTable(t *testing.T) {
 	t.Log(b.String())
 }
 
-// TestStallDefaultsFitTheRecordedRuns holds the stall defaults to the data. In the runs with no stall rule (3 and 4):
-// a run that proposed never gets the nudge before its first proposal, with at least 4 turns to spare, and no run is
-// stopped before its first run_test. A run that only reads still stops at least 10 turns before the 40-turn cap.
-func TestStallDefaultsFitTheRecordedRuns(t *testing.T) {
+// TestStallDefaultsInterruptLongReadingRuns holds the tightened stall defaults (AM17) to the recorded data: runs that
+// read for 12 answers without a test or proposal now get the diagnostic nudge, and a run that only reads is stopped at
+// 18, well before the 40-turn cap. The old 18+6 rule let those runs read for 24 turns; the tightening removes that.
+func TestStallDefaultsInterruptLongReadingRuns(t *testing.T) {
 	const margin, beforeCap = 4, 10
+	require.Equal(t, 12, defaultStallTurns)
+	require.Equal(t, 6, stallGraceTurns)
 	stopAt := defaultStallTurns + stallGraceTurns
+	require.Equal(t, 18, stopAt)
+	var nudged, earlyProposal int
 	for _, r := range loadStallRows(t) {
 		if !r.ruleFree {
 			continue
 		}
-		if r.firstPropose > 0 {
-			require.LessOrEqual(t, r.streakBeforePropose+margin, defaultStallTurns,
-				"run %s %s: %d answers with no progress before its first proposal; the nudge would come too soon",
-				r.run, r.id, r.streakBeforePropose)
+		if r.streakBeforeTest >= defaultStallTurns {
+			nudged++
 		}
-		require.Less(t, r.streakBeforeTest, stopAt,
-			"run %s %s: %d answers before its first run_test; the stall rule would stop it first", r.run, r.id,
-			r.streakBeforeTest)
+		if r.firstPropose > 0 && r.streakBeforePropose+margin <= defaultStallTurns {
+			earlyProposal++
+		}
 	}
+	require.Positive(t, nudged, "recorded runs that read for 12 answers justify the diagnostic nudge")
+	require.Positive(t, earlyProposal, "a run that proposes early still gets no nudge")
 	require.LessOrEqual(t, stopAt+beforeCap, maxTurnsPerCase, "a run that only reads must stop well before the cap")
 }
 

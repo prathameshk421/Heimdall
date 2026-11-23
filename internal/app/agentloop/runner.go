@@ -131,9 +131,9 @@ func (f dispatchFinal) Submit(ctx context.Context, args json.RawMessage) (Verdic
 // portResult maps the loop's result to the port's. The loop's text-only stop is a done run with no submission, as the
 // port says.
 func portResult(res Result) ports.AgentResult {
-	out := ports.AgentResult{Stop: portStop(res.Reason), FinalText: res.LastText, Turns: res.Turn, Refusals: res.Refusals,
-		Nudges: res.Nudges, Usage: res.Usage, CostUSD: res.CostUSD, Transcript: res.Transcript, Retries: res.Retries,
-		FailedCall: res.FailedCall}
+	out := ports.AgentResult{Stop: portStop(res.Reason), BudgetCause: res.BudgetCause, FinalText: res.LastText,
+		Turns: res.Turn, Refusals: res.Refusals, Nudges: res.Nudges, Usage: res.Usage, CostUSD: res.CostUSD,
+		Transcript: res.Transcript, Retries: res.Retries, FailedCall: res.FailedCall}
 	if res.Submission != nil {
 		out.Submission = &ports.AgentSubmission{Tool: res.Submission.Tool, Arguments: res.Submission.Arguments}
 	}

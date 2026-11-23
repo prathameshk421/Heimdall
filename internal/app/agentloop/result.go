@@ -39,6 +39,9 @@ type Submission struct {
 // Result is the typed end of a run. It is always filled, also when Run returns an error.
 type Result struct {
 	Reason StopReason
+	// BudgetCause names the cap that ended a StopBudget run: USD, an input or output token cap, an impossible usage
+	// report, or a request that could not be sized. It is empty for every other stop.
+	BudgetCause ports.AgentBudgetCause
 	// CostUSD is the sum of the cost of every model answer, as the model port reports it.
 	CostUSD float64
 	// Turns is the number of model answers received.

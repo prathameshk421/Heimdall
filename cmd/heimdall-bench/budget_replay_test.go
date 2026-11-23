@@ -55,8 +55,9 @@ func TestReplayTestify1207UnderTheContextBudgetAndTheStallRule(t *testing.T) {
 
 func TestReplayTestify1207ReadingAloneIsTrimmedNudgedAndStopped(t *testing.T) {
 	// A reviewer that only reads, as four t3code cases did in live run 4. With a 16 KB budget the old reads become
-	// stubs and every request after the trim stays near the budget; after 18 answers with no test run or proposal the
-	// loop nudges once, and after 6 more it stops the case as no_proposal before a 25th call, well before the cap.
+	// stubs and every request after the trim stays near the budget; after 12 answers with no test run or proposal the
+	// loop nudges once (demanding a diagnostic test), and after 6 more it stops the case as no_proposal before a 19th
+	// call, well before the cap.
 	const budget = 16 << 10
 	o := replayOptions(t, "testify-1207", testingCapUSD)
 	o.contextBytes, o.stallTurns = budget, defaultStallTurns

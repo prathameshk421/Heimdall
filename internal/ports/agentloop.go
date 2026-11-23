@@ -149,6 +149,20 @@ const (
 	AgentStopNoProposal AgentStop = "no_proposal"
 )
 
+// AgentBudgetCause says which cap ended a run with AgentStopBudget. A budget stop is not one failure: running out of
+// USD, hitting a token cap and reporting an impossible usage are different problems, and the caller must be able to
+// tell them apart. Consumer: internal/app/agentloop (producer), internal/app/action and cmd/heimdall-bench.
+type AgentBudgetCause string
+
+// The causes of a budget stop.
+const (
+	AgentBudgetUSD          AgentBudgetCause = "usd"
+	AgentBudgetInputTokens  AgentBudgetCause = "input_tokens"
+	AgentBudgetOutputTokens AgentBudgetCause = "output_tokens"
+	AgentBudgetUsage        AgentBudgetCause = "usage_invalid"
+	AgentBudgetRequestSize  AgentBudgetCause = "request_size"
+)
+
 // AgentSubmission is the accepted final answer: the tool the model called and the JSON arguments it wrote.
 type AgentSubmission struct {
 	Tool      string
@@ -219,6 +233,9 @@ type AgentCallBrief struct {
 // AgentResult is the typed end of a run. It is always filled, also when Run returns an error.
 type AgentResult struct {
 	Stop AgentStop
+	// BudgetCause names the cap that ended a budget stop. It is empty for every other stop. A call that could not be
+	// sized against the caps is a budget stop too, with AgentBudgetRequestSize.
+	BudgetCause AgentBudgetCause
 	// FinalText is the text of the last model answer.
 	FinalText string
 	// Submission is set only when a final tool accepted an answer.

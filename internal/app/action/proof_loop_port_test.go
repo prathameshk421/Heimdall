@@ -81,9 +81,9 @@ func TestTheProofRunAsksTheLoopWithThePolicyCapsAndItsOwnTools(t *testing.T) {
 }
 
 // TestTheProofRunSetsTheContextBudgetAndTheStallRule holds the product run to the limits the bench proved (AM14e,
-// stall numbers from AM12g, 96 KiB context from AM12h): a 96 KB request target with the 3 newest results whole, and a
-// stall rule of 18 turns, one nudge and 6 grace turns.
-// The nudge names the product's own tools, and the progress tools are tools of the run.
+// tightened in AM17, 96 KiB context from AM12h): a 96 KB request target with the 3 newest results whole, and a stall
+// rule of 12 turns, one nudge and 6 grace turns. The nudge now demands a diagnostic run_test before more reading, and
+// the progress tools are tools of the run.
 func TestTheProofRunSetsTheContextBudgetAndTheStallRule(t *testing.T) {
 	h := newProofHarness(t, nil)
 	loop := &fakeLoop{result: ports.AgentResult{Stop: ports.AgentStopDone}}
@@ -93,9 +93,12 @@ func TestTheProofRunSetsTheContextBudgetAndTheStallRule(t *testing.T) {
 	req := loop.req
 	require.Equal(t, 96<<10, req.ContextBytes)
 	require.Equal(t, 3, req.KeepResults)
-	require.Equal(t, 18, req.Stall.Turns)
+	require.Equal(t, 12, req.Stall.Turns)
 	require.Equal(t, 6, req.Stall.Grace)
+	require.Less(t, req.Stall.Turns+req.Stall.Grace, 24, "the tightened rule stops a reading run at 18, not 24")
 	require.ElementsMatch(t, []string{"run_test", "propose_finding"}, req.Stall.Progress)
+	require.Contains(t, req.Stall.Nudge, "run_test")
+	require.Contains(t, req.Stall.Nudge, "diagnostic")
 	require.Contains(t, req.Stall.Nudge, "propose_finding")
 	require.Contains(t, req.Stall.Nudge, "finish_review")
 	var names []string
@@ -167,6 +170,29 @@ func TestEveryWayTheLoopEndsHasAnOutcome(t *testing.T) {
 			require.Contains(t, res.StopDetail, c.err.Error())
 		}
 	}
+}
+
+// TestABudgetStopNamesItsCauseWhenNoRunError: a budget stop with no loop error still says which cap ended the run.
+// The loop's own error is more specific, so it wins when there is one.
+func TestABudgetStopNamesItsCauseWhenNoRunError(t *testing.T) {
+	for cause, want := range map[ports.AgentBudgetCause]string{
+		ports.AgentBudgetUSD:          "budget_usd",
+		ports.AgentBudgetInputTokens:  "budget_input_tokens",
+		ports.AgentBudgetOutputTokens: "budget_output_tokens",
+		ports.AgentBudgetUsage:        "budget_usage_invalid",
+		ports.AgentBudgetRequestSize:  "budget_request_size",
+	} {
+		h := newProofHarness(t, nil)
+		res, err := h.runWith(t, &fakeLoop{result: ports.AgentResult{Stop: ports.AgentStopBudget, BudgetCause: cause}})
+		require.NoError(t, err, cause)
+		require.Equal(t, want, res.StopDetail, cause)
+	}
+	h := newProofHarness(t, nil)
+	res, err := h.runWith(t, &fakeLoop{result: ports.AgentResult{Stop: ports.AgentStopBudget, BudgetCause: ports.AgentBudgetUSD},
+		err: ports.ErrAgentUsage})
+	require.NoError(t, err)
+	require.Contains(t, res.StopDetail, ports.ErrAgentUsage.Error())
+	require.NotContains(t, res.StopDetail, "budget_", "a run error keeps its own words")
 }
 
 func TestTheSpendIsWhatTheLoopReported(t *testing.T) {

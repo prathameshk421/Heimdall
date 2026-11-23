@@ -221,6 +221,7 @@ func TestBudgetStopsBeforeTheNextCall(t *testing.T) {
 	res, err := h.run(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, StopBudget, res.Reason)
+	assert.Equal(t, ports.AgentBudgetUSD, res.BudgetCause)
 	assert.Equal(t, 2, res.Turns)
 	assert.InDelta(t, 0.55, res.CostUSD, 1e-9)
 	assert.Len(t, h.model.requests, 2, "no third call after the budget is reached")
@@ -238,6 +239,7 @@ func TestInputTokenCapStopsBeforeTheCallThatCouldPassIt(t *testing.T) {
 	res, err := h.run(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, StopBudget, res.Reason)
+	assert.Equal(t, ports.AgentBudgetInputTokens, res.BudgetCause)
 	assert.Equal(t, int64(100), res.Usage.InputTokens)
 	assert.Len(t, h.model.requests, 1, "the second call could send more than the cap, so it is not made")
 }
@@ -251,6 +253,7 @@ func TestOutputTokenCapStopsBeforeTheCallThatCouldPassIt(t *testing.T) {
 	res, err := h.run(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, StopBudget, res.Reason)
+	assert.Equal(t, ports.AgentBudgetOutputTokens, res.BudgetCause)
 	assert.Equal(t, int64(10), res.Usage.OutputTokens)
 	assert.Len(t, h.model.requests, 1, "a full answer after the first one could pass the cap, so the call is not made")
 }
@@ -258,19 +261,39 @@ func TestOutputTokenCapStopsBeforeTheCallThatCouldPassIt(t *testing.T) {
 // The worst case of a call is its own size and a full answer, whatever the model would have written. A cap below the
 // worst case of the first call stops the run before any call.
 func TestACapBelowTheWorstCaseOfTheFirstCallMakesNoCall(t *testing.T) {
-	for name, mutate := range map[string]func(*Config){
-		"input":  func(c *Config) { c.InputTokenCap = 900 },
-		"output": func(c *Config) { c.OutputTokenCap = int64(c.MaxOutputTokens) - 1 },
-		"cost":   func(c *Config) { c.Price = ports.ModelPrice{InputPerM: 5000, CachedInputPerM: 5000, OutputPerM: 5000} },
+	for name, tt := range map[string]struct {
+		mutate func(*Config)
+		cause  ports.AgentBudgetCause
+	}{
+		"input":  {func(c *Config) { c.InputTokenCap = 900 }, ports.AgentBudgetInputTokens},
+		"output": {func(c *Config) { c.OutputTokenCap = int64(c.MaxOutputTokens) - 1 }, ports.AgentBudgetOutputTokens},
+		"cost":   {func(c *Config) { c.Price = ports.ModelPrice{InputPerM: 5000, CachedInputPerM: 5000, OutputPerM: 5000} }, ports.AgentBudgetUSD},
 	} {
 		h := newHarness(t, answer(0.001, call("s1", "submit_plan", `{}`)))
-		mutate(&h.cfg)
+		tt.mutate(&h.cfg)
 		res, err := h.run(context.Background(), t)
 		require.NoError(t, err, name)
 		assert.Equal(t, StopBudget, res.Reason, name)
+		assert.Equal(t, tt.cause, res.BudgetCause, name)
 		assert.Empty(t, h.model.requests, name)
 		assert.Zero(t, res.Turns, name)
 	}
+}
+
+// A request that cannot be encoded has no size, so the run refuses to send it. The caller must see why: an unsized
+// call is a different problem from a cap that was actually reached.
+func TestAnUnsizableRequestStopsWithTheRequestSizeCause(t *testing.T) {
+	h := newHarness(t, modelStep{resp: ports.ModelResponse{
+		ToolCalls: []ports.ModelToolCall{call("c1", "read_code", `{}`)},
+		Finish:    ports.ModelFinishToolCalls,
+		Reasoning: ports.ModelReasoning{Text: "thought", Details: json.RawMessage("{")},
+		Usage:     ports.ModelUsage{InputTokens: 100, OutputTokens: 10}, CostUSD: 0.01,
+	}})
+	res, err := h.run(context.Background(), t)
+	require.NoError(t, err)
+	assert.Equal(t, StopBudget, res.Reason)
+	assert.Equal(t, ports.AgentBudgetRequestSize, res.BudgetCause)
+	assert.Len(t, h.model.requests, 1, "the next request cannot be sized, so it is not sent")
 }
 
 // A cost or a token count that cannot be true ends the run: a missing measure must never look like a cheap one.
@@ -285,6 +308,7 @@ func TestAUsageThatCannotBeTrueStopsTheRun(t *testing.T) {
 		res, err := h.run(context.Background(), t)
 		require.ErrorIs(t, err, ports.ErrAgentUsage)
 		assert.Equal(t, StopBudget, res.Reason)
+		assert.Equal(t, ports.AgentBudgetUsage, res.BudgetCause)
 		assert.Len(t, h.model.requests, 1)
 		assert.Zero(t, res.Turns, "an answer that cannot be measured is not counted")
 	}

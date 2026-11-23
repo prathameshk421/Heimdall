@@ -196,6 +196,7 @@ func TestTheBudgetGuardAppliesBeforeEveryRetry(t *testing.T) {
 	res, err := h.run(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, StopBudget, res.Reason)
+	assert.Equal(t, ports.AgentBudgetUSD, res.BudgetCause, "the retry guard names the cap it hit")
 	assert.Len(t, h.model.requests, 3, "the fourth attempt is not sent")
 	assert.Len(t, w.waits, 2, "no wait for a retry the budget refuses")
 	assert.InDelta(t, 0.45, res.CostUSD, 1e-12)
@@ -237,6 +238,7 @@ func TestTheBudgetGuardRefusesARetryThatCouldPassTheCap(t *testing.T) {
 	res, err := h.run(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, StopBudget, res.Reason)
+	assert.Equal(t, ports.AgentBudgetUSD, res.BudgetCause)
 	assert.Len(t, h.model.requests, 1, "the retry is not sent")
 	assert.Empty(t, w.waits, "no wait for a retry the budget refuses")
 	assert.InDelta(t, 0.45, res.CostUSD, 1e-12, "the billed failure is charged once")
@@ -253,6 +255,7 @@ func TestABilledFailureThatCannotBeTrueEndsTheRun(t *testing.T) {
 	res, err := h.run(context.Background(), t)
 	require.ErrorIs(t, err, ports.ErrAgentUsage)
 	assert.Equal(t, StopBudget, res.Reason)
+	assert.Equal(t, ports.AgentBudgetUsage, res.BudgetCause)
 }
 
 func TestAnOrdinaryClientErrorIsNotRetried(t *testing.T) {

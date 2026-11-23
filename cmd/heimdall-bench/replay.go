@@ -36,6 +36,8 @@ type replay struct {
 	truth     *bench.TruthMap  // bug cases: the truth mapped onto the head tree
 	proposals []proposal
 	cp        *caseProgress // the progress lines of the case; nil in a test that does not read them
+	// commandCalls counts the run_command calls already made, so exploration cannot consume the whole review.
+	commandCalls int
 }
 
 // prepareReplay fetches the commits, checks the parents, computes the diff, the trees and the mapped truth, and

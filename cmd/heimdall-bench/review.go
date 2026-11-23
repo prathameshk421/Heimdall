@@ -28,25 +28,25 @@ const (
 	caseDeadline       = 15 * time.Minute
 )
 
-// The context and stall defaults of a review. Live run 4: requests of 57 KB to 211 KB ended on HTTP 500, and four
-// cases spent their budget without a proposal. The stall numbers come from the recorded runs 3 and 4, which had no
-// stall rule (stall_data_test.go prints the table, AM12g). The longest streak with no test run or proposal before a
-// first proposal was 12 answers (fixture-refunds, run 3), so the nudge at 18 leaves 6 to spare and no run that
-// proposed gets it. The longest streak before a first run_test was 21 (fixture-kan26-clean, run 3), so the stop at
-// 18+6=24 lets every recorded run reach its first test. A run that only reads stops at 24, 16 turns before the
-// 40-turn cap. Run 5 used 10+4: 16 runs got the nudge, none proposed after it, and 13 stopped as no_proposal.
+// The context and stall defaults of a review. Live runs 4 and 12: requests of 57 KB to 211 KB ended on HTTP 500, and
+// cases spent their budget reading without a proposal. The stall rule is deliberately tight (AM17): 12 turns of pure
+// reading get one nudge that demands an immediate diagnostic run_test on the top suspect, and 6 more such turns stop
+// the case as no_proposal. 12+6=18 is 22 turns before the 40-turn cap, so a run that only reads ends early instead of
+// burning its budget. Run 5 used 10+4 with a weaker nudge: 16 runs got it, none proposed after it, and 13 stopped.
 const (
 	// defaultContextBytes keeps a request near 96 KB by trimming old read/search tool results while keeping the newest
 	// results, the latest list_changes diff, and the latest run_test output whole (run 6 showed 48 KB cut both the diff
 	// and test results, driving recall to 0/6).
 	defaultContextBytes = 96 << 10
-	defaultStallTurns   = 18
+	defaultStallTurns   = 12
 	stallGraceTurns     = 6
 	keptToolResults     = 3
 )
 
-// stallNudge is the fixed message after stall turns with no proposal or test run. It names the tools, not a finding.
-const stallNudge = "Propose your strongest finding with propose_finding now, or call finish_review."
+// stallNudge is the fixed message after stall turns with no proposal or test run. It stops the model reading and
+// requires a diagnostic test now; finish_review is the way out when there is nothing worth testing.
+const stallNudge = "Stop reading files now. Before reading any more files, write and run a quick diagnostic run_test on " +
+	"your top suspect, then call propose_finding if it fails. If nothing is worth testing, call finish_review."
 
 // testingCapUSD is the repo's testing cap (CLAUDE.md), the default of -max-cost.
 const testingCapUSD = 3.0
@@ -537,11 +537,44 @@ func (cr *caseRun) review(ctx context.Context, c bench.Case) (rc reviewCase, sto
 		if share.Budget < o.perCase {
 			return rc, capCut(&rc, share.Held, share.Budget, "the agent loop used its budget")
 		}
-		rc.Error = fmt.Sprintf("stopped by the per-case budget ($%.2f)", o.perCase)
+		inCap, outCap := caseTokenCaps(o)
+		rc.Error = budgetStopMessage(res.BudgetCause, o.perCase, inCap, outCap)
 		return rc, false
 	}
 	rc.proveAndScore(ctx, o, c, rep)
 	return rc, false
+}
+
+// budgetStopMessage says which cap ended a budget stop. A USD stop and a token-cap stop need different fixes, so the
+// report must not render them the same way. An invalid usage report or an unsizable request is named too.
+func budgetStopMessage(cause ports.AgentBudgetCause, perCase float64, inCap, outCap int64) string {
+	switch cause {
+	case ports.AgentBudgetInputTokens:
+		return fmt.Sprintf("stopped by the per-case input token cap (%d)", inCap)
+	case ports.AgentBudgetOutputTokens:
+		return fmt.Sprintf("stopped by the per-case output token cap (%d)", outCap)
+	case ports.AgentBudgetUsage:
+		return "stopped by an invalid usage report from the model"
+	case ports.AgentBudgetRequestSize:
+		return "stopped because the next request could not be sized against the caps"
+	case ports.AgentBudgetUSD:
+		return fmt.Sprintf("stopped by the per-case USD budget ($%.2f)", perCase)
+	default:
+		return fmt.Sprintf("stopped by the per-case USD budget ($%.2f)", perCase)
+	}
+}
+
+// caseTokenCaps returns the per-case input and output caps, applying the product's defaults. One rule serves the loop
+// and the budget-stop report, so the numbers the report names are the numbers the loop enforced.
+func caseTokenCaps(o reviewOptions) (int64, int64) {
+	inCap, outCap := o.inputTokens, o.outputTokens
+	if inCap <= 0 {
+		inCap = inputTokensPerCase
+	}
+	if outCap <= 0 {
+		outCap = outputTokensPerCas
+	}
+	return inCap, outCap
 }
 
 // capCut writes why the shared cost cap cut a case short and returns whether the whole run stops. held says the other
@@ -597,13 +630,8 @@ func (rc *reviewCase) proveAndScore(ctx context.Context, o reviewOptions, c benc
 func runReviewer(ctx context.Context, o reviewOptions, model ports.ModelChat, budget float64, cp *caseProgress,
 	c bench.Case, rep *replay) (ports.AgentResult, error) {
 	tb := newToolbox(append(rep.tools(cp.toolCall), finishReview()))
-	inCap, outCap, deadline := o.inputTokens, o.outputTokens, o.caseTimeout
-	if inCap <= 0 {
-		inCap = inputTokensPerCase
-	}
-	if outCap <= 0 {
-		outCap = outputTokensPerCas
-	}
+	inCap, outCap := caseTokenCaps(o)
+	deadline := o.caseTimeout
 	if deadline <= 0 {
 		deadline = caseDeadline
 	}
