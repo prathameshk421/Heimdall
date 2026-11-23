@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 const (
@@ -22,6 +25,8 @@ const (
 	maxCookieValue = 4096
 	// clockSkew is how far in the future an issue time may be before the cookie is refused.
 	clockSkew = time.Minute
+	// maxInMemoryRevocations caps the in-memory fallback revocation map so memory stays bounded.
+	maxInMemoryRevocations = 10_000
 )
 
 // session is the sealed content of the session cookie. Times are Unix seconds. Identity is the stable key the
@@ -137,7 +142,7 @@ func clearCookie(w http.ResponseWriter, name string) {
 	setCookie(w, name, "", -1)
 }
 
-// session returns the open, unexpired and unrevoked session of the request.
+// session returns the open, unexpired and unrevoked session of the request. A revocation lookup failure fails closed.
 func (g *Gate) session(r *http.Request) (session, bool) {
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
@@ -155,7 +160,13 @@ func (g *Gate) session(r *http.Request) (session, bool) {
 		return session{}, false
 	case s.Expires-s.Issued > int64(maxSessionTTL/time.Second):
 		return session{}, false
-	case g.revoked.has(s.ID):
+	}
+	revoked, err := g.revoked.IsRevoked(r.Context(), s.ID, now)
+	if err != nil {
+		g.logger.WarnContext(r.Context(), "board auth: revocation lookup failed", "error", err)
+		return session{}, false
+	}
+	if revoked {
 		return session{}, false
 	}
 	return s, true
@@ -182,31 +193,94 @@ func (g *Gate) issue(w http.ResponseWriter, p Person, id identity) error {
 	return nil
 }
 
-// revocations holds the ids of sessions signed out before they expired. It is a cache in this process: an entry
-// leaves once its session would have expired anyway.
+type revocationEntry struct {
+	expiresAt time.Time
+	seq       uint64
+}
+
+// revocations holds the ids of sessions signed out before they expired when no persistent store is configured.
+// Expired entries are pruned on every read and write, and the map is bounded by limit (evicting the oldest entry
+// if full).
 type revocations struct {
-	mu    sync.Mutex
-	until map[string]time.Time
+	mu      sync.Mutex
+	now     func() time.Time
+	limit   int
+	seq     uint64
+	entries map[string]revocationEntry
 }
 
-func newRevocations() *revocations {
-	return &revocations{until: map[string]time.Time{}}
+var _ ports.RevocationStore = (*revocations)(nil)
+
+func newRevocations(now func() time.Time, limit int) *revocations {
+	if limit <= 0 {
+		limit = maxInMemoryRevocations
+	}
+	return &revocations{now: now, limit: limit, entries: map[string]revocationEntry{}}
 }
 
-func (r *revocations) add(id string, until, now time.Time) {
+func (r *revocations) Revoke(_ context.Context, sid string, expiresAt time.Time) error {
+	if sid == "" {
+		return errors.New("revoke session: sid is empty")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for k, t := range r.until {
-		if !t.After(now) {
-			delete(r.until, k)
+	now := r.now()
+	r.pruneLocked(now)
+	if !expiresAt.After(now) {
+		delete(r.entries, sid)
+		return nil
+	}
+	if existing, ok := r.entries[sid]; ok {
+		if expiresAt.After(existing.expiresAt) {
+			existing.expiresAt = expiresAt
+			r.entries[sid] = existing
+		}
+		return nil
+	}
+	if len(r.entries) >= r.limit {
+		r.evictOldestLocked()
+	}
+	r.seq++
+	r.entries[sid] = revocationEntry{expiresAt: expiresAt, seq: r.seq}
+	return nil
+}
+
+func (r *revocations) IsRevoked(_ context.Context, sid string, now time.Time) (bool, error) {
+	if sid == "" {
+		return false, nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruneLocked(now)
+	_, ok := r.entries[sid]
+	return ok, nil
+}
+
+func (r *revocations) Prune(_ context.Context, now time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruneLocked(now)
+	return nil
+}
+
+func (r *revocations) pruneLocked(now time.Time) {
+	for k, e := range r.entries {
+		if !e.expiresAt.After(now) {
+			delete(r.entries, k)
 		}
 	}
-	r.until[id] = until
 }
 
-func (r *revocations) has(id string) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	_, ok := r.until[id]
-	return ok
+func (r *revocations) evictOldestLocked() {
+	var oldestKey string
+	var oldestSeq uint64
+	first := true
+	for k, e := range r.entries {
+		if first || e.seq < oldestSeq {
+			oldestKey, oldestSeq, first = k, e.seq, false
+		}
+	}
+	if !first {
+		delete(r.entries, oldestKey)
+	}
 }

@@ -34,7 +34,7 @@ var reRefName = regexp.MustCompile(`^refs/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$`)
 
 // Git is the part of GitHub the store uses. It holds no ref update that is a plain set: the ref moves only by
 // CreateRef (refused when the ref exists) or SwapRef (a compare-and-swap). REST PATCH /git/refs is not a compare on
-// refs/heimdall/* (S1 1.1), so ports.GitRefs.UpdateRef is left out on purpose. *github.ActionAPI satisfies it.
+// refs/heimdall/* (S1 1.1), so it is never used. *github.ActionAPI satisfies it.
 type Git interface {
 	// GetRef returns the commit the ref points at. A missing ref is ports.ErrNotFound.
 	GetRef(ctx context.Context, repo change.Repo, ref string) (id.SHA, error)
@@ -105,14 +105,14 @@ func New(cfg Config) (*Store, error) {
 	return &Store{git: cfg.Git, repo: cfg.Repo, ref: ref, key: append([]byte(nil), cfg.Key...), wait: cfg.Wait}, nil
 }
 
-// Load returns every event of the change in version order, after it checked the head MAC, the hash chain and that the
-// head matches the log. A log that fails is refused with an IntegrityError (errors.Is ErrIntegrity). A change that has
-// no log yields nothing.
+// Load returns every event of the change in version order, after it checked the head MAC, the hash chain, the
+// effects digest, and that the head matches the log. A log that fails is refused with an IntegrityError (errors.Is
+// ErrIntegrity). A change that has no log yields nothing.
 func (s *Store) Load(ctx context.Context, changeID id.ChangeID) ([]change.Event, error) {
 	if _, err := id.ParseChangeID(string(changeID)); err != nil {
 		return nil, fmt.Errorf("load: %w", err)
 	}
-	snap, err := s.read(ctx, changeID, false)
+	snap, err := s.read(ctx, changeID)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: %w", changeID, err)
 	}
@@ -134,7 +134,7 @@ func (s *Store) Append(ctx context.Context, changeID id.ChangeID, expected int64
 		if err := ctx.Err(); err != nil {
 			return 0, fmt.Errorf("append to %s: %w", changeID, err)
 		}
-		snap, err := s.read(ctx, changeID, len(fx) > 0)
+		snap, err := s.read(ctx, changeID)
 		if err != nil {
 			return 0, fmt.Errorf("append to %s: %w", changeID, err)
 		}

@@ -22,6 +22,14 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 )
 
+// sharedTestKey caches one 2048-bit RSA key per test binary so the suite does not spend ~10s on repeated keygen.
+var (
+	sharedTestKeyOnce sync.Once
+	sharedTestKey     *rsa.PrivateKey
+	sharedTestKeyPEM  []byte
+	sharedTestKeyErr  error
+)
+
 // fakeClock is a ports.Clock that only moves when a test moves it.
 type fakeClock struct{ now time.Time }
 
@@ -121,15 +129,23 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// testKey returns a fresh 2048-bit RSA key and its PKCS#1 PEM encoding.
+// testKey returns a 2048-bit RSA key and its PKCS#1 PEM encoding (cached across tests in this binary).
 func testKey(t *testing.T) (*rsa.PrivateKey, []byte) {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
+	sharedTestKeyOnce.Do(func() {
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			sharedTestKeyErr = err
+			return
+		}
+		der := x509.MarshalPKCS1PrivateKey(key)
+		sharedTestKey = key
+		sharedTestKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
+	})
+	if sharedTestKeyErr != nil {
+		t.Fatalf("generate key: %v", sharedTestKeyErr)
 	}
-	der := x509.MarshalPKCS1PrivateKey(key)
-	return key, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
+	return sharedTestKey, append([]byte(nil), sharedTestKeyPEM...)
 }
 
 // installTokenRoute scripts POST /app/installations/42/access_tokens. It verifies the App JWT with the public key,

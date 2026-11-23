@@ -2,6 +2,8 @@ package auth
 
 import (
 	"net/url"
+	"path"
+	"slices"
 	"strings"
 )
 
@@ -9,8 +11,9 @@ import (
 const maxNext = 2048
 
 // safeNext returns raw when it is a path on this server, and "/" otherwise. It refuses anything a browser could
-// read as another origin: a scheme, a host, a leading // or /\, any backslash, control character or fragment, and
-// the gate's own /auth paths. The value it returns is used as the Location header verbatim.
+// read as another origin: a scheme, a host, a leading // or /\, any backslash, control character or fragment, any
+// ".." path segment, and the gate's own /auth paths (after path normalization). The value it returns is used as
+// the Location header verbatim.
 func safeNext(raw string) string {
 	if !localShape(raw) {
 		return "/"
@@ -19,7 +22,11 @@ func safeNext(raw string) string {
 	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || u.Opaque != "" {
 		return "/"
 	}
-	if u.Path == "/auth" || strings.HasPrefix(u.Path, "/auth/") {
+	if slices.Contains(strings.Split(u.Path, "/"), "..") {
+		return "/"
+	}
+	cleaned := path.Clean(u.Path)
+	if cleaned == "/auth" || strings.HasPrefix(cleaned, "/auth/") {
 		return "/"
 	}
 	return raw

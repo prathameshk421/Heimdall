@@ -23,41 +23,58 @@ const (
 	clientSecret = "board-client-secret"
 )
 
+// sharedIDPKey is generated once per test binary so parallel/repeated fakeIDP rigs do not spend seconds on RSA keygen.
+var (
+	sharedIDPKeyOnce sync.Once
+	sharedIDPKey     *rsa.PrivateKey
+	sharedIDPKeyErr  error
+)
+
+func getSharedIDPKey(t *testing.T) *rsa.PrivateKey {
+	t.Helper()
+	sharedIDPKeyOnce.Do(func() {
+		sharedIDPKey, sharedIDPKeyErr = rsa.GenerateKey(rand.Reader, 2048)
+	})
+	require.NoError(t, sharedIDPKeyErr)
+	return sharedIDPKey
+}
+
 // grant is one authorization code the fake will exchange: the PKCE challenge it was issued for, and what it proves.
 type grant struct {
-	challenge string
-	claims    map[string]any // OIDC: the ID token claims
-	login     string         // GitHub: the user login
-	githubID  int64          // GitHub: the numeric user id
-	userBody  string         // GitHub: when set, GET /user answers with this raw JSON instead
+	challenge    string
+	claims       map[string]any // OIDC: the ID token claims
+	login        string         // GitHub: the user login
+	githubID     int64          // GitHub: the numeric user id
+	userBody     string         // GitHub: when set, GET /user answers with this raw JSON instead
+	userRedirect string         // GitHub: when set, GET /user answers 302 to this Location
 }
 
 // fakeIDP is an OpenID Connect provider and a GitHub OAuth server in one httptest server. It checks what a real one
 // checks: the client credentials, the redirect URL, the PKCE verifier, and single use of each code.
 type fakeIDP struct {
-	t           *testing.T
-	srv         *httptest.Server
-	key         *rsa.PrivateKey
-	redirectURL string
-	mu          sync.Mutex
-	codes       map[string]grant
-	tokens      map[string]grant
-	exchanged   int
+	t                 *testing.T
+	srv               *httptest.Server
+	key               *rsa.PrivateKey
+	redirectURL       string
+	mu                sync.Mutex
+	codes             map[string]grant
+	tokens            map[string]grant
+	exchanged         int
+	redirectedUserHit bool
 	// forgeKey, when set, signs the ID tokens instead of the key the JWKS publishes.
 	forgeKey *rsa.PrivateKey
 }
 
 func newFakeIDP(t *testing.T) *fakeIDP {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-	f := &fakeIDP{t: t, key: key, codes: map[string]grant{}, tokens: map[string]grant{}}
+	f := &fakeIDP{t: t, key: getSharedIDPKey(t), codes: map[string]grant{}, tokens: map[string]grant{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/openid-configuration", f.discovery)
 	mux.HandleFunc("GET /jwks", f.jwks)
 	mux.HandleFunc("POST /token", f.oidcToken)
 	mux.HandleFunc("POST /login/oauth/access_token", f.githubToken)
 	mux.HandleFunc("GET /user", f.githubUser)
+	mux.HandleFunc("GET /redirect-target", f.redirectTarget)
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
@@ -151,12 +168,24 @@ func (f *fakeIDP) githubUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
 		return
 	}
+	if g.userRedirect != "" {
+		w.Header().Set("Location", g.userRedirect)
+		w.WriteHeader(http.StatusFound)
+		return
+	}
 	if g.userBody != "" {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, g.userBody)
 		return
 	}
 	writeJSON(w, map[string]any{"login": g.login, "id": g.githubID})
+}
+
+func (f *fakeIDP) redirectTarget(w http.ResponseWriter, _ *http.Request) {
+	f.mu.Lock()
+	f.redirectedUserHit = true
+	f.mu.Unlock()
+	writeJSON(w, map[string]any{"login": "ana-gh", "id": 1002})
 }
 
 // sign makes a compact RS256 JWT of the claims with the fake's key.

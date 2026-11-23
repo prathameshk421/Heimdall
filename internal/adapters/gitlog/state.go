@@ -18,7 +18,7 @@ type snapshot struct {
 	events   []change.Event
 	log      []byte // the change file as read
 	head     headFile
-	effects  []effectLine // set only when the read asked for effects
+	effects  []effectLine
 	effData  []byte
 }
 
@@ -48,9 +48,10 @@ func (s *Store) tip(ctx context.Context) (id.SHA, error) {
 	return sha, nil
 }
 
-// read returns the verified snapshot of one change at the current tip. When withEffects is set it also reads and
-// verifies the effects file. Every verification failure is an IntegrityError.
-func (s *Store) read(ctx context.Context, c id.ChangeID, withEffects bool) (*snapshot, error) {
+// read returns the verified snapshot of one change at the current tip, including verification of the effects file
+// digest and contents whenever an effects file exists or is signed in the head. Every verification failure is an
+// IntegrityError.
+func (s *Store) read(ctx context.Context, c id.ChangeID) (*snapshot, error) {
 	tip, err := s.tip(ctx)
 	if err != nil {
 		return nil, err
@@ -72,15 +73,13 @@ func (s *Store) read(ctx context.Context, c id.ChangeID, withEffects bool) (*sna
 		return nil, err
 	}
 	if logSHA == "" && headSHA == "" {
-		return snap, requireNoEffects(c, t, withEffects)
+		return snap, requireNoEffects(c, t)
 	}
 	if err := s.loadLog(ctx, c, snap, logSHA, headSHA); err != nil {
 		return nil, err
 	}
-	if withEffects {
-		if err := s.loadEffects(ctx, c, snap, t); err != nil {
-			return nil, err
-		}
+	if err := s.loadEffects(ctx, c, snap, t); err != nil {
+		return nil, err
 	}
 	return snap, nil
 }
@@ -161,8 +160,8 @@ func (s *Store) loadLog(ctx context.Context, c id.ChangeID, snap *snapshot, logS
 	return nil
 }
 
-// loadEffects reads the effects file and checks its digest against the signed head. A change with no effects file
-// must have the digest of an empty file.
+// loadEffects reads the effects file (when present in the tree) and checks its digest against the signed head. A
+// change with no effects file must have the digest of an empty file.
 func (s *Store) loadEffects(ctx context.Context, c id.ChangeID, snap *snapshot, t tree) error {
 	sha, err := fileIn(c, t, "effects", fileName(c, ".jsonl"))
 	if err != nil {
@@ -186,11 +185,8 @@ func (s *Store) loadEffects(ctx context.Context, c id.ChangeID, snap *snapshot, 
 	return nil
 }
 
-// requireNoEffects refuses an effects file that has no signed log behind it, when the caller will extend the change.
-func requireNoEffects(c id.ChangeID, t tree, withEffects bool) error {
-	if !withEffects {
-		return nil
-	}
+// requireNoEffects refuses an effects file that has no signed log behind it.
+func requireNoEffects(c id.ChangeID, t tree) error {
 	sha, err := fileIn(c, t, "effects", fileName(c, ".jsonl"))
 	if err != nil {
 		return err

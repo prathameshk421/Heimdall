@@ -190,7 +190,7 @@ func (g *Gate) logoutPage(w http.ResponseWriter, r *http.Request) {
 	g.pages.logout(w, r, g.logger, s.CSRF)
 }
 
-// logout revokes the session in this process and clears its cookie. It needs the session's CSRF token.
+// logout revokes the session in the configured revocation store and clears its cookie. It needs the session's CSRF token.
 func (g *Gate) logout(w http.ResponseWriter, r *http.Request) {
 	s, ok := g.session(r)
 	if !ok {
@@ -202,7 +202,14 @@ func (g *Gate) logout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "request refused: it must come from this site with its token", http.StatusForbidden)
 		return
 	}
-	g.revoked.add(s.ID, time.Unix(s.Expires, 0), g.now())
+	now := g.now()
+	if err := g.revoked.Revoke(r.Context(), s.ID, time.Unix(s.Expires, 0).UTC()); err != nil {
+		g.fail(w, r, http.StatusInternalServerError, "sign-out could not finish; try again", err)
+		return
+	}
+	if err := g.revoked.Prune(r.Context(), now); err != nil {
+		g.logger.WarnContext(r.Context(), "board auth: prune session revocations failed", "error", err)
+	}
 	clearCookie(w, sessionCookie)
 	g.logger.InfoContext(r.Context(), "board sign-out", "person", s.Person)
 	redirect(w, loginPath)

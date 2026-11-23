@@ -101,6 +101,20 @@ Stay in shadow mode until the summaries match what your reviewers would say. The
 `heimdall action init -repo OWNER/REPO -apply -enforce` to create the Heimdall GitHub App, and add a ruleset on the
 default branch that requires `heimdall/fast` with that App as the expected source (ACTION_MODE 3.3).
 
+### Protecting `refs/heimdall/*` (recommended repository ruleset)
+
+Every event log and head file on `refs/heimdall/state` is authenticated with HMAC-SHA256 (`HEIMDALL_LOG_KEY`), so
+tampering with file contents is detected and refused. However, a MAC alone cannot stop someone with repository write
+access from force-pushing an older, validly signed commit or deleting the ref (whole-ref rollback).
+
+To prevent whole-ref rollback and deletion, add a GitHub **repository ruleset** targeting `refs/heimdall/*`:
+
+- **Target refs:** include pattern `refs/heimdall/*`
+- **Rules:** enable **Restrict creations**, **Restrict updates** (blocks pushes), **Restrict deletions**, and **Block force pushes**
+- **Bypass list:** allow **only** the Heimdall GitHub App (installed via `heimdall action init -apply -enforce`) so
+  only the privileged gate job can create or advance `refs/heimdall/*`, and no human or third-party token can
+  force-push, roll back, or delete state refs.
+
 ## What to expect
 
 - A fork or Dependabot pull request gets no model key. Its proof says `unknown` with that reason, never `pass`.

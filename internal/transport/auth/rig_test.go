@@ -17,6 +17,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/testkit/changelog"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/auth"
@@ -92,12 +93,13 @@ type rig struct {
 
 // rigOptions tunes a rig. The zero value is OIDC with the email claim and the default people.
 type rigOptions struct {
-	github bool
-	claim  string
-	people []auth.Person
-	key    []byte
-	idp    *fakeIDP
-	clock  *fakeClock
+	github      bool
+	claim       string
+	people      []auth.Person
+	key         []byte
+	idp         *fakeIDP
+	clock       *fakeClock
+	revocations ports.RevocationStore
 }
 
 func newRig(t *testing.T, o rigOptions) *rig {
@@ -126,6 +128,7 @@ func (r *rig) config(o rigOptions, redirect string) auth.Config {
 		ClientID: clientID, ClientSecret: clientSecret, RedirectURL: redirect,
 		SessionKey: o.key, SessionTTL: time.Hour, People: o.people, Now: r.clock.Now,
 		HTTPClient: r.idp.srv.Client(), Logger: slog.New(slog.DiscardHandler),
+		Revocations: o.revocations, AllowInsecureLoopback: true,
 	}
 	if cfg.SessionKey == nil {
 		cfg.SessionKey = sessionKey

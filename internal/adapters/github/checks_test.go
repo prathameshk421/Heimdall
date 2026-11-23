@@ -14,6 +14,7 @@ import (
 )
 
 func TestCheckRunsSuccessAndConclusionMapping(t *testing.T) {
+	t.Parallel()
 	env := newTestEnv(t)
 	path := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
 
@@ -117,6 +118,7 @@ func TestCheckRunsSuccessAndConclusionMapping(t *testing.T) {
 }
 
 func TestCheckRunsInProgressAndQueuedHaveNoConclusion(t *testing.T) {
+	t.Parallel()
 	env := newTestEnv(t)
 	path := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
 
@@ -158,6 +160,7 @@ func TestCheckRunsInProgressAndQueuedHaveNoConclusion(t *testing.T) {
 }
 
 func TestCheckRunsPaginatesAcrossMultiplePages(t *testing.T) {
+	t.Parallel()
 	env := newTestEnv(t)
 	base := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
 	next := env.f.srv.URL + base + "?page=2"
@@ -206,6 +209,7 @@ func TestCheckRunsPaginatesAcrossMultiplePages(t *testing.T) {
 }
 
 func TestCheckRunsRefusesAMalformedSHA(t *testing.T) {
+	t.Parallel()
 	for _, bad := range []string{"not-a-sha", "ABCDEF1234", "9f1c2ab\n"} {
 		env := newTestEnv(t)
 		path := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
@@ -231,6 +235,7 @@ func TestCheckRunsRefusesAMalformedSHA(t *testing.T) {
 }
 
 func TestCheckRunsRefusesAnUnknownConclusion(t *testing.T) {
+	t.Parallel()
 	env := newTestEnv(t)
 	path := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
 	env.f.route("GET", path, func(w http.ResponseWriter, _ *http.Request) {
@@ -254,6 +259,7 @@ func TestCheckRunsRefusesAnUnknownConclusion(t *testing.T) {
 }
 
 func TestCheckRunsUnauthorizedIsErrUnauthorized(t *testing.T) {
+	t.Parallel()
 	env := newTestEnv(t)
 	path := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
 	env.f.route("GET", path, func(w http.ResponseWriter, _ *http.Request) {
@@ -266,6 +272,7 @@ func TestCheckRunsUnauthorizedIsErrUnauthorized(t *testing.T) {
 }
 
 func TestCheckRunsNotFoundIsErrNotFound(t *testing.T) {
+	t.Parallel()
 	env := newTestEnv(t)
 	path := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
 	env.f.route("GET", path, func(w http.ResponseWriter, _ *http.Request) {
@@ -278,6 +285,7 @@ func TestCheckRunsNotFoundIsErrNotFound(t *testing.T) {
 }
 
 func TestCheckRunsUsesTheReaderTokenNotTheWriter(t *testing.T) {
+	t.Parallel()
 	env := newTestEnv(t)
 	path := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
 	env.f.route("GET", path, func(w http.ResponseWriter, _ *http.Request) {
@@ -304,6 +312,7 @@ func TestCheckRunsUsesTheReaderTokenNotTheWriter(t *testing.T) {
 }
 
 func TestCheckRunsErrorCarriesNoToken(t *testing.T) {
+	t.Parallel()
 	env := newTestEnv(t)
 	path := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
 	env.f.route("GET", path, func(w http.ResponseWriter, _ *http.Request) {
@@ -319,6 +328,7 @@ func TestCheckRunsErrorCarriesNoToken(t *testing.T) {
 }
 
 func TestCheckRunsRefusesBadInputSHA(t *testing.T) {
+	t.Parallel()
 	env := newTestEnv(t)
 	_, err := env.a.CheckRuns(context.Background(), testRepo, id.SHA("not-a-sha"))
 	if err == nil {

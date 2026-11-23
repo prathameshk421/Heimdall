@@ -14,6 +14,10 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
+// defaultBotLogin is the normalized bot login matched by Adapter.Comment and Adapter.InlineComment when Config.BotLogin
+// is not explicitly configured.
+const defaultBotLogin = "heimdall"
+
 // App identifies the GitHub App the adapter acts as. PrivateKeyPEM is the App's RSA key in PEM form, PKCS#1 or PKCS#8.
 // The key is used only to sign App JWTs. It is never printed and never put in an error.
 type App struct {
@@ -33,6 +37,9 @@ type Config struct {
 	// BaseBranches names the branch each repository's changes are cut from and its policy is read at. A repository
 	// not listed uses its default branch.
 	BaseBranches map[change.Repo]string
+	// BotLogin is this GitHub App's own bot login (for example "heimdall[bot]" or "heimdall"). When empty,
+	// Adapter.Comment and Adapter.InlineComment match "heimdall[bot]" (case-insensitively) rather than any Bot user.
+	BotLogin string
 }
 
 // Adapter implements the VCS ports against GitHub. It is safe for concurrent use.
@@ -42,6 +49,7 @@ type Adapter struct {
 	// app is the App token source when the adapter acts as an App, and nil when it holds a static token.
 	app          *TokenSource
 	baseBranches map[change.Repo]string
+	botLogin     string
 }
 
 // The compile-time proof that the adapter satisfies every VCS port.
@@ -69,6 +77,10 @@ func New(cfg Config) (*Adapter, error) {
 	if err != nil {
 		return nil, err
 	}
+	botLogin := normalizeBotLogin(cfg.BotLogin)
+	if strings.TrimSpace(cfg.BotLogin) != "" && botLogin == "" {
+		return nil, fmt.Errorf("github: invalid bot login %q", cfg.BotLogin)
+	}
 	c := &client{
 		http:    cfg.HTTPClient,
 		root:    strings.TrimRight(origin.String(), "/"),
@@ -85,7 +97,30 @@ func New(cfg Config) (*Adapter, error) {
 		}
 		branches[repo] = branch
 	}
-	return &Adapter{c: c, tokens: tokens, app: tokens, baseBranches: branches}, nil
+	return &Adapter{c: c, tokens: tokens, app: tokens, baseBranches: branches, botLogin: botLogin}, nil
+}
+
+// normalizeBotLogin lowercases login and strips an optional trailing "[bot]" suffix.
+func normalizeBotLogin(login string) string {
+	s := strings.ToLower(strings.TrimSpace(login))
+	return strings.TrimSuffix(s, "[bot]")
+}
+
+// isOwnBot reports whether a GitHub comment author is this adapter's own bot account (case-insensitive login match
+// with optional "[bot]" suffix, requiring UserType "Bot").
+func (a *Adapter) isOwnBot(userType, login string) bool {
+	if !strings.EqualFold(userType, "Bot") {
+		return false
+	}
+	got := normalizeBotLogin(login)
+	if got == "" {
+		return false
+	}
+	want := a.botLogin
+	if want == "" {
+		want = defaultBotLogin
+	}
+	return got == want
 }
 
 // Tokens returns the App token source. doctor reads the installation's permissions through it. It is nil for an

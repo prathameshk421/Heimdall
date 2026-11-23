@@ -28,9 +28,9 @@
 //     takes any Tokens source. StaticToken is the workflow's GITHUB_TOKEN, handed in by the caller from config, never read
 //     from the environment here (R7). ActionAPI implements ports.PRComments (the summary comment, found by hidden marker
 //     and author login), ports.PRCommentReader, ports.PRReviewCommentReader, ports.ArtifactReader, ports.CodeScanReader,
-//     ports.GitRefs, ports.GitObjects, ports.GitReader (GetCommit, recursive GetTree, GetBlob) and ports.GitRefSwapper
-//     (SwapRef, GraphQL updateRefs, for the git-ref event store AM8). It shares the client, pagination and error
-//     mapping with Adapter.
+//     ports.GitObjects, ports.GitReader (GetCommit, recursive GetTree, GetBlob) and ports.GitRefSwapper
+//     (SwapRef, GraphQL updateRefs, for the git-ref event store AM8), plus GetRef and CreateRef. It shares the client,
+//     pagination and error mapping with Adapter.
 //   - ActionAPI.Adapter() (AM15) returns an Adapter on the ActionAPI's client and tokens, so the Action gate reads the
 //     pull request, files, reviews and code, and posts check runs, with the workflow's static token. Its Tokens() is
 //     nil, because it has no App. ActionAPI.UpsertComment is Comment that also returns the comment id, which the gate
@@ -67,11 +67,10 @@
 //     entry by index and never by path. GitHub redirects the download to a signed URL on another host, and Go drops the
 //     Authorization header on a cross-host redirect. Not verified against a live run.
 //   - A 422 from GitHub is not typed (the client maps only 401, 403, 404, 409 on conflictMissing and 5xx). CreateRef on a ref
-//     that exists and UpdateRef on a branch that is not a fast-forward both return an ordinary error. The caller reads the
-//     ref with GetRef to learn why.
-//   - UpdateRef is NOT a compare-and-swap. Spike S1 (ACTION_MODE_SPIKE.md 1.1) measured that REST PATCH /git/refs with
-//     force false checks fast-forward only on refs/heads/*. On refs/heimdall/* a stale write, a sibling and a rewind all
-//     returned 200. A nil error does not prove nobody moved the ref. Use SwapRef instead.
+//     that exists returns an ordinary error. The caller reads the ref with GetRef to learn why.
+//   - ActionAPI intentionally does not expose REST PATCH /git/refs (non-CAS): Spike S1 (ACTION_MODE_SPIKE.md 1.1)
+//     measured that REST PATCH /git/refs with force false checks fast-forward only on refs/heads/*, not on
+//     refs/heimdall/*. Use SwapRef instead.
 //   - SwapRef is GraphQL updateRefs with beforeOid and force false, the call S1 1.2 verified as a compare-and-swap. It
 //     always sends beforeOid. GitHub refuses a stale beforeOid with an untyped "Something went wrong" error and HTTP 200,
 //     and a lost reply looks the same, so every outcome but success and FORBIDDEN wraps ports.ErrRefSwapUnconfirmed: the

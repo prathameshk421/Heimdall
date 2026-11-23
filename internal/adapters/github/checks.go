@@ -87,8 +87,8 @@ func checkKey(key change.EffectKey) error {
 }
 
 // Comment writes body to a pull request. It carries a hidden marker built from key, and a retry edits the comment
-// that already has the marker instead of adding another. Only a comment written by a Bot counts, so a person who
-// quotes a marker cannot make the adapter edit their text.
+// that already has the marker instead of adding another. Only a comment written by Heimdall's own bot login counts,
+// so neither a person nor another installed bot who quotes a marker can make the adapter edit their comment.
 func (a *Adapter) Comment(ctx context.Context, repo change.Repo, n int, key change.EffectKey, body string) error {
 	if err := checkKey(key); err != nil {
 		return err
@@ -111,7 +111,7 @@ func (a *Adapter) Comment(ctx context.Context, repo change.Repo, n int, key chan
 		return err
 	}
 	for _, c := range existing {
-		if c.UserType == "Bot" && strings.Contains(c.Body, marker) {
+		if a.isOwnBot(c.UserType, c.Login) && strings.Contains(c.Body, marker) {
 			return a.send(ctx, token, http.MethodPatch, fmt.Sprintf("%s/issues/comments/%d", base, c.ID), map[string]string{"body": text}, nil)
 		}
 	}

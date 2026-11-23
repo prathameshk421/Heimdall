@@ -13,12 +13,14 @@ import (
 type reviewCommentJSON struct {
 	Body string `json:"body"`
 	User struct {
-		Type string `json:"type"`
+		Login string `json:"login"`
+		Type  string `json:"type"`
 	} `json:"user"`
 }
 
 // InlineComment writes body on one line of a pull request's diff, once per key. GitHub refuses a line outside the diff
-// hunks, and a finding may rightly point at one, so such a comment goes on the file instead.
+// hunks, and a finding may rightly point at one, so such a comment goes on the file instead. Only a comment authored
+// by Heimdall's own bot login counts as already posted.
 func (a *Adapter) InlineComment(ctx context.Context, repo change.Repo, n int, sha id.SHA, path string, line int, key change.EffectKey, body string) error {
 	if err := checkKey(key); err != nil {
 		return err
@@ -38,7 +40,7 @@ func (a *Adapter) InlineComment(ctx context.Context, repo change.Repo, n int, sh
 		return err
 	}
 	for _, c := range pg.items {
-		if c.User.Type == "Bot" && strings.Contains(c.Body, marker) {
+		if a.isOwnBot(c.User.Type, c.User.Login) && strings.Contains(c.Body, marker) {
 			return nil
 		}
 	}

@@ -15,24 +15,25 @@ import (
 
 const stateRef = "refs/heimdall/state"
 
-func lastBody(t *testing.T, env *actionEnv, method, path string) map[string]any {
+func lastPostBody(t *testing.T, env *actionEnv, path string) map[string]any {
 	t.Helper()
 	var out map[string]any
 	for _, r := range env.f.requests() {
-		if r.Method == method && r.Path == path {
+		if r.Method == http.MethodPost && r.Path == path {
 			out = nil
 			if err := json.Unmarshal(r.Body, &out); err != nil {
-				t.Fatalf("body of %s %s: %v", method, path, err)
+				t.Fatalf("body of POST %s: %v", path, err)
 			}
 		}
 	}
 	if out == nil {
-		t.Fatalf("no %s %s request", method, path)
+		t.Fatalf("no POST %s request", path)
 	}
 	return out
 }
 
 func TestGetRefReadsACustomRef(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	env.f.route("GET", repoRoot+"/git/ref/heimdall/state", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ref": stateRef, "object": map[string]any{"sha": shaHead, "type": "commit"}})
@@ -45,6 +46,7 @@ func TestGetRefReadsACustomRef(t *testing.T) {
 }
 
 func TestGetRefMissingIsErrNotFound(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	env.f.route("GET", repoRoot+"/git/ref/heimdall/state", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
@@ -55,36 +57,21 @@ func TestGetRefMissingIsErrNotFound(t *testing.T) {
 }
 
 func TestCreateRefSendsTheFullRefAndSHA(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	env.f.route("POST", repoRoot+"/git/refs", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusCreated, map[string]any{}) })
 	if err := env.x.CreateRef(context.Background(), testRepo, stateRef, id.SHA(shaHead)); err != nil {
 		t.Fatalf("CreateRef: %v", err)
 	}
-	body := lastBody(t, env, "POST", repoRoot+"/git/refs")
+	body := lastPostBody(t, env, repoRoot+"/git/refs")
 	if body["ref"] != stateRef || body["sha"] != shaHead {
 		t.Errorf("body = %v", body)
 	}
 	env.wantAuth(t)
 }
 
-func TestUpdateRefSendsForceAsGivenAndDoesNotClaimCompareAndSwap(t *testing.T) {
-	for _, force := range []bool{false, true} {
-		env := newActionEnv(t)
-		env.f.route("PATCH", repoRoot+"/git/refs/heimdall/state", func(w http.ResponseWriter, _ *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]any{})
-		})
-		if err := env.x.UpdateRef(context.Background(), testRepo, stateRef, id.SHA(shaNew), force); err != nil {
-			t.Fatalf("UpdateRef: %v", err)
-		}
-		body := lastBody(t, env, "PATCH", repoRoot+"/git/refs/heimdall/state")
-		if body["sha"] != shaNew || body["force"] != force {
-			t.Errorf("force=%v: body = %v", force, body)
-		}
-		env.wantAuth(t)
-	}
-}
-
 func TestRefWritesMapErrors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		status    int
 		want      error
@@ -97,10 +84,10 @@ func TestRefWritesMapErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		env := newActionEnv(t)
-		env.f.route("PATCH", repoRoot+"/git/refs/heimdall/state", func(w http.ResponseWriter, _ *http.Request) {
-			writeJSON(w, tc.status, map[string]string{"message": "Update is not a fast forward"})
+		env.f.route("POST", repoRoot+"/git/refs", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, tc.status, map[string]string{"message": "Reference already exists"})
 		})
-		err := env.x.UpdateRef(context.Background(), testRepo, stateRef, id.SHA(shaNew), false)
+		err := env.x.CreateRef(context.Background(), testRepo, stateRef, id.SHA(shaNew))
 		if err == nil {
 			t.Fatalf("status %d: no error", tc.status)
 		}
@@ -110,7 +97,7 @@ func TestRefWritesMapErrors(t *testing.T) {
 					t.Errorf("status %d: error = %v, must not map to %v", tc.status, err, sentinel)
 				}
 			}
-			if strings.Contains(err.Error(), "fast forward") {
+			if strings.Contains(err.Error(), "already exists") {
 				t.Errorf("error carries the response body: %v", err)
 			}
 			continue
@@ -122,6 +109,7 @@ func TestRefWritesMapErrors(t *testing.T) {
 }
 
 func TestRefOperationsRefuseBadInputBeforeAnyRequest(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	ctx := context.Background()
 	if _, err := env.x.GetRef(ctx, testRepo, "refs/heads/../x"); err == nil {
@@ -133,15 +121,13 @@ func TestRefOperationsRefuseBadInputBeforeAnyRequest(t *testing.T) {
 	if err := env.x.CreateRef(ctx, testRepo, stateRef, id.SHA("zzz")); err == nil {
 		t.Error("CreateRef accepted a bad hash")
 	}
-	if err := env.x.UpdateRef(ctx, testRepo, stateRef, id.SHA(""), false); err == nil {
-		t.Error("UpdateRef accepted an empty hash")
-	}
 	if n := len(env.f.requests()); n != 0 {
 		t.Errorf("%d requests were sent", n)
 	}
 }
 
 func TestCreateBlobSendsBase64AndReturnsTheHash(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	env.f.route("POST", repoRoot+"/git/blobs", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaNew})
@@ -150,7 +136,7 @@ func TestCreateBlobSendsBase64AndReturnsTheHash(t *testing.T) {
 	if err != nil || string(got) != shaNew {
 		t.Fatalf("CreateBlob = %q, %v", got, err)
 	}
-	body := lastBody(t, env, "POST", repoRoot+"/git/blobs")
+	body := lastPostBody(t, env, repoRoot+"/git/blobs")
 	raw, _ := base64.StdEncoding.DecodeString(body["content"].(string))
 	if body["encoding"] != "base64" || string(raw) != "hello\x00world" {
 		t.Errorf("body = %v", body)
@@ -159,6 +145,7 @@ func TestCreateBlobSendsBase64AndReturnsTheHash(t *testing.T) {
 }
 
 func TestCreateBlobRefusesAnOversizedBlob(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	if _, err := env.x.CreateBlob(context.Background(), testRepo, make([]byte, maxBlobBytes+1)); err == nil {
 		t.Error("an oversized blob was accepted")
@@ -169,6 +156,7 @@ func TestCreateBlobRefusesAnOversizedBlob(t *testing.T) {
 }
 
 func TestCreateBlobRefusesAReplyWithoutAHash(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	env.f.route("POST", repoRoot+"/git/blobs", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusCreated, map[string]any{}) })
 	if _, err := env.x.CreateBlob(context.Background(), testRepo, []byte("x")); err == nil {
@@ -177,6 +165,7 @@ func TestCreateBlobRefusesAReplyWithoutAHash(t *testing.T) {
 }
 
 func TestCreateTreeSendsEntriesAndBase(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	env.f.route("POST", repoRoot+"/git/trees", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaTree})
@@ -189,7 +178,7 @@ func TestCreateTreeSendsEntriesAndBase(t *testing.T) {
 	if err != nil || string(got) != shaTree {
 		t.Fatalf("CreateTree = %q, %v", got, err)
 	}
-	body := lastBody(t, env, "POST", repoRoot+"/git/trees")
+	body := lastPostBody(t, env, repoRoot+"/git/trees")
 	tree := body["tree"].([]any)
 	if body["base_tree"] != shaHead || len(tree) != 2 {
 		t.Fatalf("body = %v", body)
@@ -202,6 +191,7 @@ func TestCreateTreeSendsEntriesAndBase(t *testing.T) {
 }
 
 func TestCreateTreeWithoutBaseOmitsBaseTree(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	env.f.route("POST", repoRoot+"/git/trees", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaTree})
@@ -209,12 +199,13 @@ func TestCreateTreeWithoutBaseOmitsBaseTree(t *testing.T) {
 	if _, err := env.x.CreateTree(context.Background(), testRepo, "", []ports.GitTreeEntry{{Path: "a", Mode: "100644", SHA: id.SHA(shaNew)}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, has := lastBody(t, env, "POST", repoRoot+"/git/trees")["base_tree"]; has {
+	if _, has := lastPostBody(t, env, repoRoot+"/git/trees")["base_tree"]; has {
 		t.Error("base_tree was sent for an empty base")
 	}
 }
 
 func TestCreateTreeRefusesBadEntries(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	ok := ports.GitTreeEntry{Path: "a", Mode: "100644", SHA: id.SHA(shaNew)}
 	bad := map[string][]ports.GitTreeEntry{
@@ -241,6 +232,7 @@ func TestCreateTreeRefusesBadEntries(t *testing.T) {
 }
 
 func TestCreateCommitSendsTreeAndParentsAndMovesNoRef(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	env.f.route("POST", repoRoot+"/git/commits", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaNew})
@@ -249,7 +241,7 @@ func TestCreateCommitSendsTreeAndParentsAndMovesNoRef(t *testing.T) {
 	if err != nil || string(got) != shaNew {
 		t.Fatalf("CreateCommit = %q, %v", got, err)
 	}
-	body := lastBody(t, env, "POST", repoRoot+"/git/commits")
+	body := lastPostBody(t, env, repoRoot+"/git/commits")
 	parents := body["parents"].([]any)
 	if body["message"] != "state: append" || body["tree"] != shaTree || len(parents) != 1 || parents[0] != shaHead {
 		t.Errorf("body = %v", body)
@@ -263,6 +255,7 @@ func TestCreateCommitSendsTreeAndParentsAndMovesNoRef(t *testing.T) {
 }
 
 func TestCreateCommitWithNoParentSendsAnEmptyList(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	env.f.route("POST", repoRoot+"/git/commits", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaNew})
@@ -270,12 +263,13 @@ func TestCreateCommitWithNoParentSendsAnEmptyList(t *testing.T) {
 	if _, err := env.x.CreateCommit(context.Background(), testRepo, "root", id.SHA(shaTree), nil); err != nil {
 		t.Fatal(err)
 	}
-	if p, ok := lastBody(t, env, "POST", repoRoot+"/git/commits")["parents"].([]any); !ok || len(p) != 0 {
+	if p, ok := lastPostBody(t, env, repoRoot+"/git/commits")["parents"].([]any); !ok || len(p) != 0 {
 		t.Errorf("parents = %v, want an empty list", p)
 	}
 }
 
 func TestCreateCommitRefusesBadInput(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	ctx := context.Background()
 	if _, err := env.x.CreateCommit(ctx, testRepo, "  ", id.SHA(shaTree), nil); err == nil {
@@ -293,6 +287,7 @@ func TestCreateCommitRefusesBadInput(t *testing.T) {
 }
 
 func TestGitDataWritesAreRefusedWithoutPermission(t *testing.T) {
+	t.Parallel()
 	env := newActionEnv(t)
 	env.f.route("POST", repoRoot+"/git/blobs", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"message": "Resource not accessible by integration"})

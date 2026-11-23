@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
 // Role is what a signed-in person may do on the board. A higher role includes every lower one.
@@ -101,7 +103,7 @@ const (
 type Config struct {
 	ClientID     string
 	ClientSecret string
-	// RedirectURL is this server's absolute callback URL, ending in /auth/callback. It must equal the URL
+	// RedirectURL is this server's absolute https callback URL, ending in /auth/callback. It must equal the URL
 	// registered at the provider.
 	RedirectURL string
 	OIDC        *OIDC
@@ -116,6 +118,11 @@ type Config struct {
 	// HTTPClient calls the provider. Nil means a client with a 10 second timeout.
 	HTTPClient *http.Client
 	Logger     *slog.Logger
+	// Revocations persists signed-out session identifiers across restarts. Nil falls back to a bounded in-memory store.
+	Revocations ports.RevocationStore
+	// AllowInsecureLoopback permits http:// RedirectURL and OIDC.Issuer URLs only for loopback hosts
+	// (localhost, 127.0.0.1, ::1) in test harnesses. Production callers must leave this false.
+	AllowInsecureLoopback bool
 }
 
 // Principal is the signed-in person of a request. Read it with FromContext.
@@ -150,7 +157,7 @@ type Gate struct {
 	ttl      time.Duration
 	now      func() time.Time
 	logger   *slog.Logger
-	revoked  *revocations
+	revoked  ports.RevocationStore
 	origin   *http.CrossOriginProtection
 	pages    *pages
 }
@@ -178,6 +185,10 @@ func New(cfg Config) (*Gate, error) {
 	if client == nil {
 		client = &http.Client{Timeout: providerTimeout}
 	}
+	revoked := cfg.Revocations
+	if revoked == nil {
+		revoked = newRevocations(cfg.Now, maxInMemoryRevocations)
+	}
 	p, label := newProvider(cfg, client)
 	pg, err := newPages(label)
 	if err != nil {
@@ -185,7 +196,7 @@ func New(cfg Config) (*Gate, error) {
 	}
 	return &Gate{
 		provider: p, sealer: s, people: people, ttl: cfg.SessionTTL, now: cfg.Now, logger: cfg.Logger,
-		revoked: newRevocations(), origin: http.NewCrossOriginProtection(), pages: pg,
+		revoked: revoked, origin: http.NewCrossOriginProtection(), pages: pg,
 	}, nil
 }
 
@@ -194,8 +205,8 @@ func checkConfig(cfg Config) error {
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		errs = append(errs, errors.New("the client id and the client secret are required"))
 	}
-	if u, err := url.Parse(cfg.RedirectURL); err != nil || !u.IsAbs() || u.Host == "" || u.Path != callbackPath {
-		errs = append(errs, fmt.Errorf("the redirect URL must be absolute and end in %s", callbackPath))
+	if u, err := checkEndpointURL(cfg.RedirectURL, cfg.AllowInsecureLoopback); err != nil || u.Path != callbackPath {
+		errs = append(errs, fmt.Errorf("the redirect URL must be an absolute https URL ending in %s", callbackPath))
 	}
 	if cfg.SessionTTL < minSessionTTL || cfg.SessionTTL > maxSessionTTL {
 		errs = append(errs, errors.New("the session TTL must be between 5m and 24h"))
@@ -217,11 +228,31 @@ func checkProviderChoice(cfg Config) []error {
 	var errs []error
 	if cfg.OIDC.Issuer == "" {
 		errs = append(errs, errors.New("the OIDC issuer is required"))
+	} else if _, err := checkEndpointURL(cfg.OIDC.Issuer, cfg.AllowInsecureLoopback); err != nil {
+		errs = append(errs, fmt.Errorf("the OIDC issuer %w", err))
 	}
 	if cfg.OIDC.Claim != claimEmail && cfg.OIDC.Claim != claimSub {
 		errs = append(errs, fmt.Errorf("the OIDC login claim %q must be email or sub", cfg.OIDC.Claim))
 	}
 	return errs
+}
+
+func checkEndpointURL(raw string, allowLoopback bool) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return nil, errors.New("must be an absolute https URL")
+	}
+	if u.Scheme == "https" {
+		return u, nil
+	}
+	if allowLoopback && u.Scheme == "http" && isLoopbackHost(u.Hostname()) {
+		return u, nil
+	}
+	return nil, errors.New("must use https")
+}
+
+func isLoopbackHost(host string) bool {
+	return strings.EqualFold(host, "localhost") || host == "127.0.0.1" || host == "::1"
 }
 
 // matchMode says what a proven identity is matched against.

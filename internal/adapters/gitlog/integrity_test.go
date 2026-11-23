@@ -141,6 +141,9 @@ func TestTamperedLogIsRefused(t *testing.T) {
 		{"the effects file is edited", func(g *fakeGit) map[string][]byte {
 			return map[string][]byte{effPath(cid): bytes.Replace(g.file(effPath(cid)), []byte("hi"), []byte("evil"), 1)}
 		}, "effects"},
+		{"the effects file is deleted", func(*fakeGit) map[string][]byte {
+			return map[string][]byte{effPath(cid): nil}
+		}, "effects"},
 		{"the change directory is a file", func(*fakeGit) map[string][]byte {
 			return map[string][]byte{"changes": []byte("x")}
 		}, "layout"},
@@ -152,15 +155,25 @@ func TestTamperedLogIsRefused(t *testing.T) {
 			tip := g.tip()
 			fx := []change.Effect{roomEffect(t, cid, 4, "b", `{"text":"next"}`)}
 
-			if !strings.Contains(c.name, "effects file") {
-				_, err := s.Load(ctx, cid)
-				requireIntegrity(t, err, cid, c.reason)
-			}
-			_, err := s.Append(ctx, cid, 3, roomEvents(cid, 3, "room-4"), fx)
+			_, err := s.Load(ctx, cid)
+			requireIntegrity(t, err, cid, c.reason)
+			_, err = s.Append(ctx, cid, 3, roomEvents(cid, 3, "room-4"), nil)
+			requireIntegrity(t, err, cid, c.reason)
+			_, err = s.Append(ctx, cid, 3, roomEvents(cid, 3, "room-4"), fx)
 			requireIntegrity(t, err, cid, c.reason)
 			require.Equal(t, tip, g.tip(), "a refused log gets no new commit")
 		})
 	}
+
+	t.Run("an orphan effects file without a log is refused on Load and effect-free Append", func(t *testing.T) {
+		g, s := setup(t)
+		orphan := prChange(t, 99)
+		g.writeFiles(map[string][]byte{effPath(orphan): []byte("{}\n")})
+		_, err := s.Load(ctx, orphan)
+		requireIntegrity(t, err, orphan, "no log")
+		_, err = s.Append(ctx, orphan, 0, roomEvents(orphan, 0, "room-1"), nil)
+		requireIntegrity(t, err, orphan, "no log")
+	})
 }
 
 func TestRefusalNamesTheCauseOfABrokenChain(t *testing.T) {

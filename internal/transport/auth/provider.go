@@ -26,6 +26,8 @@ var (
 const (
 	// maxUserBody bounds the GitHub user answer.
 	maxUserBody = 1 << 20
+	// maxDrainBody bounds leftover response bytes drained on close for HTTP/1.1 connection reuse.
+	maxDrainBody = 64 << 10
 	// The ID token claims that can name a person. The subject is the default.
 	claimSub   = "sub"
 	claimEmail = "email"
@@ -52,7 +54,7 @@ func newProvider(cfg Config, client *http.Client) (provider, string) {
 	if cfg.GitHub != nil {
 		base.Endpoint = github.Endpoint
 		base.Endpoint.AuthStyle = oauth2.AuthStyleInParams
-		return &githubProvider{oauth: base, client: client}, "Sign in with GitHub"
+		return &githubProvider{oauth: base, client: noRedirectClient(client)}, "Sign in with GitHub"
 	}
 	base.Scopes = []string{oidc.ScopeOpenID}
 	if cfg.OIDC.Claim == claimEmail {
@@ -60,6 +62,16 @@ func newProvider(cfg Config, client *http.Client) (provider, string) {
 	}
 	return &oidcProvider{issuer: cfg.OIDC.Issuer, claim: cfg.OIDC.Claim, base: base, client: client, now: cfg.Now},
 		"Sign in with your company account"
+}
+
+// noRedirectClient returns a shallow copy of base that refuses HTTP redirects so bearer tokens sent to the
+// GitHub user API are never forwarded to another host or endpoint.
+func noRedirectClient(base *http.Client) *http.Client {
+	cp := *base
+	cp.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &cp
 }
 
 // exchange redeems a code. A refusal by the token endpoint is errRefused; anything else is errUnavailable. Neither
@@ -200,7 +212,10 @@ func (p *githubProvider) identify(ctx context.Context, code, verifier, _ string)
 	if err != nil {
 		return identity{}, fmt.Errorf("%w: user API: %w", errUnavailable, err)
 	}
-	defer func() { _ = resp.Body.Close() }() // read-only body: a close error changes nothing
+	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainBody))
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return identity{}, fmt.Errorf("%w: user API answered %d", errRefused, resp.StatusCode)
 	}

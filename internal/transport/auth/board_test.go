@@ -1,11 +1,14 @@
 package auth_test
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +18,7 @@ import (
 )
 
 func TestNoBoardRouteIsReadableWithoutASession(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	junk := &http.Cookie{Name: sessionCookie, Value: "not-a-session"}
 	for _, path := range boardRoutes() {
@@ -27,6 +31,7 @@ func TestNoBoardRouteIsReadableWithoutASession(t *testing.T) {
 
 // A browser that asks for a page is sent to the login page, which remembers where it was going.
 func TestPageRequestWithoutASessionGoesToTheLoginPage(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	resp := r.do(http.MethodGet, "/changes/PAY-7/report?tab=gate", nil, http.Header{"Accept": {"text/html,application/xhtml+xml"}})
 	require.Equal(t, http.StatusSeeOther, resp.Status)
@@ -35,6 +40,7 @@ func TestPageRequestWithoutASessionGoesToTheLoginPage(t *testing.T) {
 }
 
 func TestOnlyTheLoginPageAndItsStyleAreOpen(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	page := r.get("/auth/login?next=/changes/PAY-7")
 	require.Equal(t, http.StatusOK, page.Status)
@@ -54,6 +60,7 @@ func TestOnlyTheLoginPageAndItsStyleAreOpen(t *testing.T) {
 }
 
 func TestASignedInViewerReadsEveryBoardRoute(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	session := r.loginAs("vera@example.com")
 	for path, want := range map[string]int{
@@ -70,6 +77,7 @@ func TestASignedInViewerReadsEveryBoardRoute(t *testing.T) {
 }
 
 func TestLoginStartSendsPKCEStateAndNonce(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	a, b := r.start("/"), r.start("/")
 	q := a.authURL.Query()
@@ -89,6 +97,7 @@ func TestLoginStartSendsPKCEStateAndNonce(t *testing.T) {
 }
 
 func TestSessionCookieIsHardened(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	s := r.start("/")
 	resp := r.finish(s, grant{claims: r.claimsFor(s, "vera@example.com")})
@@ -112,6 +121,7 @@ func requireHardened(t *testing.T, c *http.Cookie) {
 }
 
 func TestTamperedOrForeignSessionCookieIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	good := r.loginAs("vera@example.com")
 	require.Equal(t, http.StatusOK, r.get("/", good).Status)
@@ -160,6 +170,7 @@ func flip(s string, i int) string {
 }
 
 func TestExpiredSessionIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	session := r.loginAs("vera@example.com")
 	r.clock.advance(time.Hour - time.Second)
@@ -169,6 +180,7 @@ func TestExpiredSessionIsRefused(t *testing.T) {
 }
 
 func TestUnknownLoginGets403AndNoSession(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	s := r.start("/")
 	resp := r.finish(s, grant{claims: r.claimsFor(s, "mallory@example.com")})
@@ -178,9 +190,11 @@ func TestUnknownLoginGets403AndNoSession(t *testing.T) {
 }
 
 func TestOpenRedirectIsBlocked(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"/changes/PAY-7":                "/changes/PAY-7",
 		"/changes/PAY-7/report?tab=x":   "/changes/PAY-7/report?tab=x",
+		"/changes/a..b":                 "/changes/a..b",
 		"https://evil.example/":         "/",
 		"//evil.example/":               "/",
 		"/\\evil.example/":              "/",
@@ -192,10 +206,17 @@ func TestOpenRedirectIsBlocked(t *testing.T) {
 		"/changes/PAY-7#frag":           "/",
 		"":                              "/",
 		"https:/evil.example":           "/",
+		"/auth":                         "/",
 		"/auth/callback?code=x&state=y": "/",
+		"/x/../auth/start":              "/",
+		"/x/%2e%2e/auth/start":          "/",
+		"/./auth/start":                 "/",
+		"/./auth":                       "/",
+		"/%2Fauth/start":                "/",
+		"/changes/../other":             "/",
 	}
+	r := newRig(t, rigOptions{})
 	for next, want := range cases {
-		r := newRig(t, rigOptions{})
 		s := r.start(next)
 		resp := r.finish(s, grant{claims: r.claimsFor(s, "vera@example.com")})
 		require.Equal(t, http.StatusSeeOther, resp.Status, next)
@@ -204,6 +225,7 @@ func TestOpenRedirectIsBlocked(t *testing.T) {
 }
 
 func TestRolesAreOrdered(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	viewer, approver, admin := r.loginAs("vera@example.com"), r.loginAs("ana@example.com"), r.loginAs("alice@example.com")
 	for _, c := range []struct {
@@ -226,6 +248,7 @@ func TestRolesAreOrdered(t *testing.T) {
 // The role map is read on every request, not frozen into the cookie: a server restarted with a smaller map takes
 // effect at once for sessions it sealed before.
 func TestRoleMapIsReadOnEveryRequest(t *testing.T) {
+	t.Parallel()
 	idp := newFakeIDP(t)
 	r := newRig(t, rigOptions{idp: idp})
 	session := r.loginAs("ana@example.com")
@@ -249,6 +272,7 @@ func TestRoleMapIsReadOnEveryRequest(t *testing.T) {
 }
 
 func TestUnsafeMethodNeedsTheCSRFTokenAndSameOrigin(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	session := r.loginAs("vera@example.com")
 	token := strings.Fields(r.get("/test/whoami", session).Body)[2]
@@ -267,6 +291,7 @@ func TestUnsafeMethodNeedsTheCSRFTokenAndSameOrigin(t *testing.T) {
 }
 
 func TestLogoutNeedsTheTokenAndRevokesTheSession(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	session := r.loginAs("vera@example.com")
 	page := r.get("/auth/logout", session)
@@ -293,7 +318,76 @@ func TestLogoutNeedsTheTokenAndRevokesTheSession(t *testing.T) {
 	require.Equal(t, http.StatusSeeOther, r.get("/auth/logout").Status, "the logout page needs a session")
 }
 
+type fakeRevocations struct {
+	mu      sync.Mutex
+	entries map[string]time.Time
+	err     error
+}
+
+func (f *fakeRevocations) Revoke(_ context.Context, sid string, expiresAt time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
+	if f.entries == nil {
+		f.entries = map[string]time.Time{}
+	}
+	f.entries[sid] = expiresAt
+	return nil
+}
+
+func (f *fakeRevocations) IsRevoked(_ context.Context, sid string, now time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return false, f.err
+	}
+	exp, ok := f.entries[sid]
+	return ok && exp.After(now), nil
+}
+
+func (f *fakeRevocations) Prune(_ context.Context, now time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k, exp := range f.entries {
+		if !exp.After(now) {
+			delete(f.entries, k)
+		}
+	}
+	return nil
+}
+
+// Persistent revocations survive a server restart and fail closed when the revocation store is unavailable.
+func TestRevocationStorePersistsAcrossRestartAndFailsClosed(t *testing.T) {
+	t.Parallel()
+	idp := newFakeIDP(t)
+	store := &fakeRevocations{}
+	r1 := newRig(t, rigOptions{idp: idp, revocations: store})
+	session := r1.loginAs("vera@example.com")
+	token := strings.Fields(r1.get("/test/whoami", session).Body)[2]
+
+	// Outage during session verification fails closed.
+	store.mu.Lock()
+	store.err = errors.New("db down")
+	store.mu.Unlock()
+	requireRefused(t, r1.get("/", session), "store error fails closed")
+
+	// Clear error and log out cleanly.
+	store.mu.Lock()
+	store.err = nil
+	store.mu.Unlock()
+	form := strings.NewReader(url.Values{"csrf": {token}}.Encode())
+	resp := r1.do(http.MethodPost, "/auth/logout", form, http.Header{"Content-Type": {"application/x-www-form-urlencoded"}}, session)
+	require.Equal(t, http.StatusSeeOther, resp.Status)
+
+	// A new Gate sharing the persistent store (simulating restart) still refuses the logged-out session cookie.
+	r2 := newRig(t, rigOptions{idp: idp, clock: r1.clock, revocations: store})
+	requireRefused(t, r2.get("/", session), "revocation survives restart")
+}
+
 func TestCallbackRefusesABrokenLoginState(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	s := r.start("/")
 	claims := r.claimsFor(s, "vera@example.com")
@@ -317,6 +411,7 @@ func TestCallbackRefusesABrokenLoginState(t *testing.T) {
 }
 
 func TestCallbackRefusesAReplayedCode(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	s := r.start("/")
 	require.Equal(t, http.StatusSeeOther, r.finish(s, grant{claims: r.claimsFor(s, "vera@example.com")}).Status)
@@ -326,6 +421,7 @@ func TestCallbackRefusesAReplayedCode(t *testing.T) {
 }
 
 func TestIDTokenIsVerified(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(r *rig, c map[string]any){
 		"wrong nonce":        func(_ *rig, c map[string]any) { c["nonce"] = "other" },
 		"no nonce":           func(_ *rig, c map[string]any) { delete(c, "nonce") },
@@ -338,6 +434,7 @@ func TestIDTokenIsVerified(t *testing.T) {
 	}
 	for name, tweak := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			r := newRig(t, rigOptions{})
 			s := r.start("/")
 			c := r.claimsFor(s, "vera@example.com")
@@ -350,6 +447,7 @@ func TestIDTokenIsVerified(t *testing.T) {
 }
 
 func TestForgedIDTokenIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	forger, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
@@ -361,6 +459,7 @@ func TestForgedIDTokenIsRefused(t *testing.T) {
 }
 
 func TestEmailVerifiedAsTextIsAccepted(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{})
 	s := r.start("/")
 	c := r.claimsFor(s, "Vera@Example.com")
@@ -370,6 +469,7 @@ func TestEmailVerifiedAsTextIsAccepted(t *testing.T) {
 }
 
 func TestSubjectClaimIsMatchedExactly(t *testing.T) {
+	t.Parallel()
 	people := []auth.Person{{Name: "vera", Login: "00uVERA", Role: auth.RoleViewer}}
 	r := newRig(t, rigOptions{claim: "sub", people: people})
 	s := r.start("/")
@@ -384,6 +484,7 @@ func TestSubjectClaimIsMatchedExactly(t *testing.T) {
 }
 
 func TestGitHubSignInMapsTheNumericId(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{github: true})
 	s := r.start("/changes/PAY-7")
 	require.Equal(t, "https://github.com/login/oauth/authorize", s.authURL.Scheme+"://"+s.authURL.Host+s.authURL.Path)
@@ -401,8 +502,23 @@ func TestGitHubSignInMapsTheNumericId(t *testing.T) {
 	require.Nil(t, cookieNamed(resp.Cookies, sessionCookie))
 }
 
+// GitHub user API redirects must never be followed so the bearer token is never forwarded elsewhere.
+func TestGitHubUserAPIRedirectIsRefused(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, rigOptions{github: true})
+	s := r.start("/")
+	resp := r.finish(s, grant{login: "ana-gh", githubID: 1002, userRedirect: "https://api.github.com/redirect-target"})
+	require.Equal(t, http.StatusUnauthorized, resp.Status)
+	require.Nil(t, cookieNamed(resp.Cookies, sessionCookie))
+	r.idp.mu.Lock()
+	hit := r.idp.redirectedUserHit
+	r.idp.mu.Unlock()
+	require.False(t, hit, "githubProvider must not follow redirects from /user")
+}
+
 // A renamed GitHub account keeps its id, so it keeps its person, whatever its login is now.
 func TestGitHubRenamedLoginKeepsThePerson(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{github: true})
 	before := r.loginGitHub("ana-old-name", 1002)
 	after := r.loginGitHub("ana-new-name", 1002)
@@ -416,6 +532,7 @@ func TestGitHubRenamedLoginKeepsThePerson(t *testing.T) {
 // A freed login can be claimed by another account. That account has another id, so it gets no person, even when its
 // login is the one a listed person used to have.
 func TestGitHubReusedLoginWithAnotherIdIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, rigOptions{github: true})
 	require.NotNil(t, r.loginGitHub("ana-gh", 1002), "the real owner signs in under the old login")
 	for _, login := range []string{"ana-gh", "Ana-GH", "ana"} {
@@ -429,6 +546,7 @@ func TestGitHubReusedLoginWithAnotherIdIsRefused(t *testing.T) {
 
 // The user API must prove an id: a missing, zero, negative, text, fractional or oversized id gives no session.
 func TestGitHubWithoutAUsableIdIsRefused(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"no id":               `{"login":"ana-gh"}`,
 		"null id":             `{"login":"ana-gh","id":null}`,
@@ -453,6 +571,7 @@ func TestGitHubWithoutAUsableIdIsRefused(t *testing.T) {
 
 // The largest id the board accepts is a whole int64, read without a float rounding it onto another account.
 func TestGitHubIdIsReadAsAnExactInteger(t *testing.T) {
+	t.Parallel()
 	const big = int64(9007199254740993) // 2^53 + 1: a float64 would turn it into 2^53
 	people := []auth.Person{{Name: "ana", GitHubID: big - 1, Role: auth.RoleViewer}}
 	r := newRig(t, rigOptions{github: true, people: people})
@@ -466,6 +585,7 @@ func TestGitHubIdIsReadAsAnExactInteger(t *testing.T) {
 
 // The session names the proven id. A person whose id changes in the map loses a session sealed for the old id.
 func TestGitHubSessionIsCheckedAgainstTheIdInTheMap(t *testing.T) {
+	t.Parallel()
 	idp := newFakeIDP(t)
 	r := newRig(t, rigOptions{github: true, idp: idp})
 	session := r.loginGitHub("ana-gh", 1002)
@@ -478,11 +598,12 @@ func TestGitHubSessionIsCheckedAgainstTheIdInTheMap(t *testing.T) {
 }
 
 func TestOIDCDefaultClaimIsTheSubject(t *testing.T) {
+	t.Parallel()
 	people := []auth.Person{{Name: "vera", Login: "sub-vera", Role: auth.RoleViewer}}
 	r := newRig(t, rigOptions{claim: "default", people: people})
 	s := r.start("/")
 	c := r.claimsFor(s, "vera@example.com")
-	c["sub"] = "sub-vera"
+	c["sub"], c["email_verified"] = "sub-vera", false
 	require.Equal(t, http.StatusSeeOther, r.finish(s, grant{claims: c}).Status, "an empty claim means sub")
 
 	// The email of a listed person is not a way in: it is not the identity this gate matches.
@@ -493,6 +614,7 @@ func TestOIDCDefaultClaimIsTheSubject(t *testing.T) {
 }
 
 func TestUnreachableProviderFailsClosed(t *testing.T) {
+	t.Parallel()
 	idp := newFakeIDP(t)
 	r := newRig(t, rigOptions{idp: idp})
 	idp.srv.Close()

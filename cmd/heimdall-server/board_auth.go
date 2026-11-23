@@ -10,6 +10,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/auth"
 	dashboardedge "github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/dashboard"
 )
@@ -22,6 +23,10 @@ const boardProviderTimeout = 10 * time.Second
 func mountBoard(ctx context.Context, handler http.Handler, cfg config.Config, a *app, logger *slog.Logger) (http.Handler, error) {
 	var access func(http.Handler) http.Handler
 	var gate *auth.Gate
+	var store *postgres.Store
+	if a != nil && a.pool != nil {
+		store = postgres.NewStore(a.pool)
+	}
 	switch cfg.BoardAuth.Mode {
 	case "":
 		logger.InfoContext(ctx, "the web board is off: heimdall.toml has no [board_auth] section")
@@ -30,7 +35,11 @@ func mountBoard(ctx context.Context, handler http.Handler, cfg config.Config, a 
 		logger.WarnContext(ctx, "the web board has no sign-in (board_auth.mode = off); it serves on loopback only")
 		access = auth.Off()
 	case config.BoardAuthGitHub, config.BoardAuthOIDC:
-		g, err := newBoardGate(cfg, logger)
+		var revocations ports.RevocationStore
+		if store != nil {
+			revocations = store
+		}
+		g, err := newBoardGate(cfg, revocations, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -42,7 +51,7 @@ func mountBoard(ctx context.Context, handler http.Handler, cfg config.Config, a 
 	if gate != nil {
 		opts.SignOut = auth.SignOutPath
 	}
-	board, err := dashboardedge.Mount(handler, postgres.NewStore(a.pool), logger, opts)
+	board, err := dashboardedge.Mount(handler, store, logger, opts)
 	if err != nil {
 		return nil, fmt.Errorf("mount dashboard: %w", err)
 	}
@@ -53,7 +62,7 @@ func mountBoard(ctx context.Context, handler http.Handler, cfg config.Config, a 
 }
 
 // newBoardGate reads the board secrets and builds the sign-in gate.
-func newBoardGate(cfg config.Config, logger *slog.Logger) (*auth.Gate, error) {
+func newBoardGate(cfg config.Config, revocations ports.RevocationStore, logger *slog.Logger) (*auth.Gate, error) {
 	b := cfg.BoardAuth
 	secret, err := cfg.Secret(b.ClientSecretSecret)
 	if err != nil {
@@ -78,7 +87,7 @@ func newBoardGate(cfg config.Config, logger *slog.Logger) (*auth.Gate, error) {
 	ac := auth.Config{
 		ClientID: b.ClientID, ClientSecret: secret, RedirectURL: b.RedirectURL, SessionKey: key,
 		SessionTTL: b.SessionTTL, People: people, Now: time.Now, Logger: logger,
-		HTTPClient: &http.Client{Timeout: boardProviderTimeout},
+		HTTPClient: &http.Client{Timeout: boardProviderTimeout}, Revocations: revocations,
 	}
 	if b.Mode == config.BoardAuthGitHub {
 		ac.GitHub = &auth.GitHub{}

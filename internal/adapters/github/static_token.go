@@ -112,7 +112,6 @@ var (
 	_ ports.PRReviewCommentReader = (*ActionAPI)(nil)
 	_ ports.ArtifactReader        = (*ActionAPI)(nil)
 	_ ports.CodeScanReader        = (*ActionAPI)(nil)
-	_ ports.GitRefs               = (*ActionAPI)(nil)
 	_ ports.GitObjects            = (*ActionAPI)(nil)
 )
 
@@ -141,7 +140,12 @@ func NewAction(cfg ActionConfig) (*ActionAPI, error) {
 // with the workflow's static token. The two share one client: one rate-limit wait, one circuit breaker, one cache.
 // The base branch of every repository is its default branch.
 func (x *ActionAPI) Adapter() *Adapter {
-	return &Adapter{c: x.c, tokens: x.tokens, baseBranches: map[change.Repo]string{}}
+	return &Adapter{
+		c:            x.c,
+		tokens:       x.tokens,
+		baseBranches: map[change.Repo]string{},
+		botLogin:     normalizeBotLogin(x.author),
+	}
 }
 
 // Action returns the Action operations on this adapter's client and App tokens. author is the login of the App's

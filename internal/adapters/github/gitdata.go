@@ -69,30 +69,6 @@ func (x *ActionAPI) CreateRef(ctx context.Context, repo change.Repo, ref string,
 	return x.sendJSON(ctx, token, http.MethodPost, base+"/git/refs", map[string]string{"ref": ref, "sha": string(sha)}, nil)
 }
 
-// UpdateRef moves ref to sha and sends force as given.
-//
-// This is not a compare-and-swap. On a branch, GitHub refuses a non-fast-forward move when force is false. On a
-// non-branch ref such as refs/heimdall/*, a live spike (S1, to be confirmed) found that GitHub did NOT refuse a
-// non-fast-forward update with force false. A nil error therefore does not prove that nobody moved the ref meanwhile.
-// The conflict mechanism belongs to the caller (the git-ref event store, AM8), which must check the head it read.
-func (x *ActionAPI) UpdateRef(ctx context.Context, repo change.Repo, ref string, sha id.SHA, force bool) error {
-	base, err := repoPath(repo)
-	if err != nil {
-		return err
-	}
-	if err := checkRef(ref); err != nil {
-		return err
-	}
-	if err := checkSHA(sha); err != nil {
-		return err
-	}
-	token, err := x.tokens.Writer(ctx, OpBranchWrite, repo)
-	if err != nil {
-		return err
-	}
-	return x.sendJSON(ctx, token, http.MethodPatch, base+"/git/refs/"+escapePath(refTail(ref)), map[string]any{"sha": string(sha), "force": force}, nil)
-}
-
 // created reads the hash a Git Data create call answers with.
 func created(out shaJSON, what string) (id.SHA, error) {
 	sha, err := id.ParseSHA(out.SHA)

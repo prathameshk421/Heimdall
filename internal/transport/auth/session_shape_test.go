@@ -32,6 +32,7 @@ func sealForTest(t *testing.T, key []byte, name string, payload map[string]any) 
 // A session sealed before sign-in matched a stable id carried a login. It must never open as a person now, even with
 // the right key, an unexpired time and a person who exists.
 func TestSessionOfTheOldShapeDoesNotGrantAccess(t *testing.T) {
+	t.Parallel()
 	for _, github := range []bool{false, true} {
 		r := newRig(t, rigOptions{github: github})
 		person, login := "ana", "ana@example.com"

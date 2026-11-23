@@ -25,24 +25,35 @@ func validConfig() auth.Config {
 }
 
 func TestNewRefusesAnUnsafeConfig(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(c *auth.Config){
-		"no provider":        func(c *auth.Config) { c.OIDC = nil },
-		"two providers":      func(c *auth.Config) { c.GitHub = &auth.GitHub{} },
-		"short key":          func(c *auth.Config) { c.SessionKey = sessionKey[:16] },
-		"no client id":       func(c *auth.Config) { c.ClientID = "" },
-		"no client secret":   func(c *auth.Config) { c.ClientSecret = "" },
-		"redirect elsewhere": func(c *auth.Config) { c.RedirectURL = "https://heimdall.example.com/callback" },
-		"relative redirect":  func(c *auth.Config) { c.RedirectURL = "/auth/callback" },
-		"ttl too long":       func(c *auth.Config) { c.SessionTTL = 25 * time.Hour },
-		"ttl too short":      func(c *auth.Config) { c.SessionTTL = time.Minute },
-		"no people":          func(c *auth.Config) { c.People = nil },
-		"no clock":           func(c *auth.Config) { c.Now = nil },
-		"no logger":          func(c *auth.Config) { c.Logger = nil },
-		"unknown claim":      func(c *auth.Config) { c.OIDC.Claim = "preferred_username" },
-		"no issuer":          func(c *auth.Config) { c.OIDC.Issuer = "" },
-		"role zero":          func(c *auth.Config) { c.People = []auth.Person{{Name: "x", Login: "x@example.com"}} },
-		"empty login":        func(c *auth.Config) { c.People = []auth.Person{{Name: "x", Role: auth.RoleViewer}} },
-		"empty name":         func(c *auth.Config) { c.People = []auth.Person{{Login: "x@example.com", Role: auth.RoleViewer}} },
+		"no provider":                func(c *auth.Config) { c.OIDC = nil },
+		"two providers":              func(c *auth.Config) { c.GitHub = &auth.GitHub{} },
+		"short key":                  func(c *auth.Config) { c.SessionKey = sessionKey[:16] },
+		"no client id":               func(c *auth.Config) { c.ClientID = "" },
+		"no client secret":           func(c *auth.Config) { c.ClientSecret = "" },
+		"redirect elsewhere":         func(c *auth.Config) { c.RedirectURL = "https://heimdall.example.com/callback" },
+		"relative redirect":          func(c *auth.Config) { c.RedirectURL = "/auth/callback" },
+		"http redirect":              func(c *auth.Config) { c.RedirectURL = "http://heimdall.example.com/auth/callback" },
+		"http loopback redirect off": func(c *auth.Config) { c.RedirectURL = "http://127.0.0.1:8080/auth/callback" },
+		"http redirect even flagged": func(c *auth.Config) {
+			c.AllowInsecureLoopback = true
+			c.RedirectURL = "http://heimdall.example.com/auth/callback"
+		},
+		"ttl too long":             func(c *auth.Config) { c.SessionTTL = 25 * time.Hour },
+		"ttl too short":            func(c *auth.Config) { c.SessionTTL = time.Minute },
+		"no people":                func(c *auth.Config) { c.People = nil },
+		"no clock":                 func(c *auth.Config) { c.Now = nil },
+		"no logger":                func(c *auth.Config) { c.Logger = nil },
+		"unknown claim":            func(c *auth.Config) { c.OIDC.Claim = "preferred_username" },
+		"no issuer":                func(c *auth.Config) { c.OIDC.Issuer = "" },
+		"http issuer":              func(c *auth.Config) { c.OIDC.Issuer = "http://id.example.com" },
+		"http loopback issuer off": func(c *auth.Config) { c.OIDC.Issuer = "http://localhost:8080" },
+		"issuer without host":      func(c *auth.Config) { c.OIDC.Issuer = "https:///issuer" },
+		"http issuer even flagged": func(c *auth.Config) { c.AllowInsecureLoopback = true; c.OIDC.Issuer = "http://id.example.com" },
+		"role zero":                func(c *auth.Config) { c.People = []auth.Person{{Name: "x", Login: "x@example.com"}} },
+		"empty login":              func(c *auth.Config) { c.People = []auth.Person{{Name: "x", Role: auth.RoleViewer}} },
+		"empty name":               func(c *auth.Config) { c.People = []auth.Person{{Login: "x@example.com", Role: auth.RoleViewer}} },
 		"login shared by two": func(c *auth.Config) {
 			c.People = append(c.People, auth.Person{Name: "v2", Login: "VERA@example.com", Role: auth.RoleAdmin})
 		},
@@ -60,6 +71,15 @@ func TestNewRefusesAnUnsafeConfig(t *testing.T) {
 	}
 	_, err := auth.New(validConfig())
 	require.NoError(t, err)
+
+	for _, host := range []string{"localhost:8080", "127.0.0.1:8080", "[::1]:8080"} {
+		cfg := validConfig()
+		cfg.AllowInsecureLoopback = true
+		cfg.RedirectURL = "http://" + host + "/auth/callback"
+		cfg.OIDC = &auth.OIDC{Issuer: "http://" + host, Claim: "email"}
+		_, err := auth.New(cfg)
+		require.NoError(t, err, host)
+	}
 }
 
 func githubConfig() auth.Config {
@@ -71,6 +91,7 @@ func githubConfig() auth.Config {
 // GitHub people are matched by the numeric id. A person without one is refused at startup, by name, and the login is
 // never a fallback.
 func TestNewRefusesAGitHubPersonWithoutAStableId(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		people []auth.Person
 		want   string
@@ -94,6 +115,7 @@ func TestNewRefusesAGitHubPersonWithoutAStableId(t *testing.T) {
 }
 
 func TestNewRefusesAGitHubIdOutsideGitHubMode(t *testing.T) {
+	t.Parallel()
 	cfg := validConfig()
 	cfg.People = []auth.Person{{Name: "vera", Login: "vera@example.com", GitHubID: 7, Role: auth.RoleViewer}}
 	_, err := auth.New(cfg)
@@ -101,6 +123,7 @@ func TestNewRefusesAGitHubIdOutsideGitHubMode(t *testing.T) {
 }
 
 func TestParseRole(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]auth.Role{"viewer": auth.RoleViewer, "approver": auth.RoleApprover, "admin": auth.RoleAdmin} {
 		got, err := auth.ParseRole(in)
 		require.NoError(t, err)
@@ -114,6 +137,7 @@ func TestParseRole(t *testing.T) {
 }
 
 func TestParseSessionKey(t *testing.T) {
+	t.Parallel()
 	key, err := auth.ParseSessionKey(base64.StdEncoding.EncodeToString(sessionKey))
 	require.NoError(t, err)
 	require.Equal(t, sessionKey, key)
@@ -130,6 +154,7 @@ func TestParseSessionKey(t *testing.T) {
 }
 
 func TestDevModeRefusesANonLoopbackListener(t *testing.T) {
+	t.Parallel()
 	for _, addr := range []net.Addr{
 		&net.TCPAddr{IP: net.IPv4zero, Port: 8080}, &net.TCPAddr{IP: net.IPv6unspecified, Port: 8080},
 		&net.TCPAddr{IP: net.ParseIP("10.0.0.5"), Port: 8080}, &net.TCPAddr{IP: net.ParseIP("192.168.1.2"), Port: 8080},
@@ -145,6 +170,7 @@ func TestDevModeRefusesANonLoopbackListener(t *testing.T) {
 }
 
 func TestDevModeServesWithADeveloperPrincipalAndStillChecksOrigin(t *testing.T) {
+	t.Parallel()
 	h := auth.Off()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, ok := auth.FromContext(r.Context())
 		if !ok {
