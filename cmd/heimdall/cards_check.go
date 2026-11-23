@@ -77,7 +77,8 @@ func checkCardText(name, text string) cardReport {
 		r.problems = append(r.problems, "card is empty")
 		return r
 	}
-	if _, err := cardsfs.Parse(name, text); err != nil {
+	card, err := cardsfs.Parse(name, text)
+	if err != nil {
 		r.problems = append(r.problems, err.Error())
 		return r
 	}
@@ -92,11 +93,6 @@ func checkCardText(name, text string) cardReport {
 	if err != nil {
 		r.problems = append(r.problems, err.Error())
 		return r
-	}
-	card := rulecard.Card{AppliesTo: f.AppliesTo, Symbols: f.Symbols, Triggers: f.Triggers, Check: f.Check, Proof: f.Proof,
-		Kind: f.Kind, Source: f.Source, Status: rulecard.Status(firstNonEmpty(f.Status, string(rulecard.StatusActive)))}
-	if err := card.Validate(); err != nil {
-		r.problems = append(r.problems, err.Error())
 	}
 	r.warnings = cardWarnings(text, f, card)
 	return r

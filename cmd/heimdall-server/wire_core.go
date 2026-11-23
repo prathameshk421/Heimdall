@@ -68,8 +68,8 @@ func closerOf(blobs ports.BlobStore) io.Closer {
 	return nil
 }
 
-func newUploadHandlers(d deps, ad adapters) (http.Handler, error) {
-	cardsUpload, err := newCardsHandler(d.configuration, ad.tokens)
+func newUploadHandlers(d deps, ad adapters, outcomes cardOutcomesFunc) (http.Handler, error) {
+	cardsUpload, err := newCardsHandler(d.configuration, ad.tokens, outcomes)
 	if err != nil {
 		return nil, fmt.Errorf("build cards handler: %w", err)
 	}
@@ -122,23 +122,23 @@ func newAgentTools(ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.
 }
 
 // assembleMCP wires the agent tools service, adapters, the reviewer brief and the MCP server. It also returns the card
-// proposal worker, which is nil when no cards directory is configured.
+// proposal worker (nil when no cards directory is configured) and the owner-only card outcomes lookup.
 func assembleMCP(
 	d deps, ad adapters, store mcpStore, pool *pgxpool.Pool, blobs ports.BlobStore, eng reconcile.Recorder, gen ports.IDs, clk ports.Clock, files *knowledge.FileService, profiles mcp.Profiles,
 	commands mcp.Proposer, needs func(context.Context, id.ChangeID) ([]string, error), profileStore ports.ProfileStore,
 	withheld map[string]string,
-) (*mcp.Server, *cardProposer, error) {
+) (*mcp.Server, *cardProposer, cardOutcomesFunc, error) {
 	knowledgeSvc, err := newKnowledgeSearch(d, ad, clk, store)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	evidence, err := newCardEvidence(d, ad, store, clk, knowledgeSvc)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	toolsSvc, err := newAgentTools(ad, store, pool, blobs, eng, gen, clk, reviewRefs{code: ad.vcs, memory: evidence, profiles: profileStore})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	tokStore := ad.tokens
 	if tokStore == nil {
@@ -147,16 +147,16 @@ func assembleMCP(
 	tracker := &assignmentAgentTracker{agents: make(map[id.TaskID]id.AgentName)}
 	tasksAdp, err := newTasksAdapter(d, toolsSvc, tracker, store, eng)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	reviewsAdp := &mcpReviewsAdapter{svc: toolsSvc, tracker: tracker}
 	cards, err := newCardReader(d.configuration.CardsDir, knowledge.PolicyScopes{Code: ad.vcs, Decode: policyyaml.Decode})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	moat, err := newReviewMoat(d, ad, store, blobs, knowledgeSvc, clk)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	mcpSrv, err := mcp.NewServer(mcp.Deps{
 		Logger: d.logger, Clock: clk, Tokens: tokStore, Tasks: tasksAdp,
@@ -177,9 +177,9 @@ func assembleMCP(
 		Withheld: withheld,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("build mcp server: %w", err)
+		return nil, nil, nil, fmt.Errorf("build mcp server: %w", err)
 	}
-	return mcpSrv, moat.proposer, nil
+	return mcpSrv, moat.proposer, moat.outcomes, nil
 }
 
 // newKnowledgeSearch builds the team-memory search service. The same service answers agent questions, checks the

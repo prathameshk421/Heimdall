@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -8,26 +11,35 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
-
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/cardsfs"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/dsse"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/rulecard"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/secretscan"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
 )
 
+const (
+	confirmPath    = "/confirm"
+	outcomesPath   = "outcomes"
+	envelopeSuffix = ".dsse.json"
+)
+
+// cardOutcomesFunc returns the owner-only outcome calibration summaries for one person's cards.
+type cardOutcomesFunc func(ctx context.Context, person string, cards []rulecard.Card) ([]rulecard.CardOutcome, error)
+
 // cardsHandler lets a mapped human manage their own personal cards: GET /cards lists them, GET /cards/<file>
-// returns one, PUT /cards/<file>
-// stores one, DELETE /cards/<file> removes one. The folder is chosen by the bearer token, never by the path, so a
-// person can touch only their own cards; an agent token is refused, because agents read cards but never write them.
-// The server checks every card itself (size, front matter, secrets and personal data) whatever the client did.
+// returns one, PUT /cards/<file> stores one, DELETE /cards/<file> removes one, GET/PUT /cards/<file>.dsse.json
+// syncs DSSE signature sidecars, and GET /cards/outcomes returns owner-only card calibration outcomes.
+// The owner is always resolved from the authenticated human bearer token, never from path or query parameters.
 type cardsHandler struct {
-	tokens mcp.Tokens
-	store  *cardsfs.Store
+	tokens   mcp.Tokens
+	store    *cardsfs.Store
+	outcomes cardOutcomesFunc
 }
 
 // newCardsHandler returns nil when no cards directory is configured, which leaves the endpoint off.
-func newCardsHandler(cfg config.Config, tokens mcp.Tokens) (http.Handler, error) {
+func newCardsHandler(cfg config.Config, tokens mcp.Tokens, outcomes cardOutcomesFunc) (http.Handler, error) {
 	if cfg.CardsDir == "" || tokens == nil {
 		return nil, nil
 	}
@@ -35,7 +47,7 @@ func newCardsHandler(cfg config.Config, tokens mcp.Tokens) (http.Handler, error)
 	if err != nil {
 		return nil, err
 	}
-	return cardsHandler{tokens: tokens, store: store}, nil
+	return cardsHandler{tokens: tokens, store: store, outcomes: outcomes}, nil
 }
 
 func (h cardsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -45,10 +57,22 @@ func (h cardsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/cards"), "/")
+	if name == outcomesPath {
+		h.serveOutcomes(w, r, person)
+		return
+	}
 	if card, ok := strings.CutSuffix(name, confirmPath); ok && card != "" {
 		h.confirmation(w, r, person, card)
 		return
 	}
+	if card, ok := strings.CutSuffix(name, envelopeSuffix); ok && card != "" {
+		h.envelope(w, r, person, card)
+		return
+	}
+	h.serveCard(w, r, person, name)
+}
+
+func (h cardsHandler) serveCard(w http.ResponseWriter, r *http.Request, person, name string) {
 	switch {
 	case r.Method == http.MethodGet && name == "":
 		h.list(w, person)
@@ -63,8 +87,103 @@ func (h cardsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// confirmPath ends the address of a card's confirmation.
-const confirmPath = "/confirm"
+func (h cardsHandler) serveOutcomes(w http.ResponseWriter, r *http.Request, person string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "use GET /cards/outcomes", http.StatusMethodNotAllowed)
+		return
+	}
+	cards, err := h.store.All(person)
+	if err != nil {
+		http.Error(w, "cards could not be read", http.StatusServiceUnavailable)
+		return
+	}
+	var results []rulecard.CardOutcome
+	if h.outcomes != nil {
+		results, err = h.outcomes(r.Context(), person, cards)
+		if err != nil {
+			http.Error(w, "card outcomes unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	} else {
+		results = rulecard.SummarizeOutcomes(cards, nil)
+	}
+	if results == nil {
+		results = []rulecard.CardOutcome{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_ = json.NewEncoder(w).Encode(map[string]any{"outcomes": results})
+}
+
+func (h cardsHandler) envelope(w http.ResponseWriter, r *http.Request, person, cardName string) {
+	switch r.Method {
+	case http.MethodGet:
+		h.readEnvelope(w, person, cardName)
+	case http.MethodPut:
+		h.putEnvelope(w, r, person, cardName)
+	default:
+		http.Error(w, "use GET or PUT /cards/<file>.dsse.json", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h cardsHandler) readEnvelope(w http.ResponseWriter, person, cardName string) {
+	env, err := h.store.ReadEnvelope(person, cardName)
+	switch {
+	case errors.Is(err, cardsfs.ErrNotFound):
+		http.Error(w, "no envelope for card", http.StatusNotFound)
+	case err != nil:
+		http.Error(w, "envelope could not be read", http.StatusBadRequest)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_ = json.NewEncoder(w).Encode(env)
+	}
+}
+
+func (h cardsHandler) putEnvelope(w http.ResponseWriter, r *http.Request, person, cardName string) {
+	cardText, err := h.store.Read(person, cardName)
+	if errors.Is(err, cardsfs.ErrNotFound) {
+		http.Error(w, "upload the card before its DSSE envelope", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "card could not be read", http.StatusBadRequest)
+		return
+	}
+	env, status, msg := decodeCheckedEnvelope(w, r, []byte(cardText))
+	if status != 0 {
+		http.Error(w, msg, status)
+		return
+	}
+	if err := h.store.WriteEnvelope(person, cardName, env); err != nil {
+		http.Error(w, "envelope could not be stored", http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func decodeCheckedEnvelope(w http.ResponseWriter, r *http.Request, cardBytes []byte) (dsse.Envelope, int, string) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, cardsfs.MaxCardBytes+1))
+	if err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			return dsse.Envelope{}, http.StatusRequestEntityTooLarge, "envelope is too large"
+		}
+		return dsse.Envelope{}, http.StatusBadRequest, "envelope body could not be read"
+	}
+	var env dsse.Envelope
+	if err := json.Unmarshal(body, &env); err != nil {
+		return dsse.Envelope{}, http.StatusBadRequest, "envelope is not valid JSON"
+	}
+	if env.PayloadType != dsse.PayloadTypeRuleCard || len(env.Signatures) == 0 {
+		return dsse.Envelope{}, http.StatusUnprocessableEntity, "envelope must have rulecard payloadType and at least one signature"
+	}
+	decoded, err := base64.StdEncoding.DecodeString(env.Payload)
+	if err != nil || !bytes.Equal(decoded, cardBytes) {
+		return dsse.Envelope{}, http.StatusUnprocessableEntity, "envelope payload does not match stored card bytes"
+	}
+	return env, 0, ""
+}
 
 // confirmation lets a mapped human give their own card force, or take it back: POST /cards/<file>/confirm and DELETE
 // /cards/<file>/confirm. The token picks the person, as for every card route, so nobody can confirm another person's

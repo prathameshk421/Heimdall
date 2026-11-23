@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/contextpack"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/rulecard"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -47,29 +48,50 @@ func changeMapSection(src sources) string {
 	return src.impact.Render(changeMapBytes)
 }
 
-// obligations ranks the person's cards for this change and renders them. The bool is false when the cards failed.
-func (c *Compiler) obligations(ctx context.Context, req Request, src sources) (string, []string, bool) {
+// obligations ranks the person's cards for this change and renders both the obligations list and the
+// <untrusted_personal_context>-framed Personalized Context Pack. The bool is false when the cards failed.
+func (c *Compiler) obligations(ctx context.Context, req Request, src sources) (text string, names []string, packText string, ok bool) {
 	if c.cfg.Cards == nil {
-		return "", nil, true
+		return "", nil, "", true
 	}
 	if req.Person == "" {
-		return cardsUnavailable, nil, false
+		return cardsUnavailable, nil, "", false
 	}
 	cards, err := c.cfg.Cards.All(req.Person)
 	if err != nil {
 		c.warn(ctx, "personal cards unavailable for brief", req, err)
-		return cardsUnavailable, nil, false
+		return cardsUnavailable, nil, "", false
 	}
 	var records map[string]rulecard.Record
+	var cal contextpack.CalibrationSummary
 	if src.history != nil {
 		records = src.history.CardRecords(req.Agent)
+		c := src.history.Calibration(req.Agent)
+		cal = contextpack.CalibrationSummary{
+			Useful: c.Useful, Noise: c.Noise, Ignored: c.Ignored,
+			NoisyCategories: c.NoisyCategories, ResolutionRate: c.ResolutionRate,
+		}
 	}
-	ranked := rulecard.Rank(cards, changeFacts(req, src.impact), records, obligationBytes)
+	facts := changeFacts(req, src.impact)
+	ranked := rulecard.Rank(cards, facts, records, obligationBytes)
+	confirmed := make(map[string]bool, len(ranked))
 	for i := range ranked {
-		ranked[i].Confirmed = c.cfg.Cards.Confirmed(req.Person, ranked[i].Card.Name)
+		isConf := c.cfg.Cards.Confirmed(req.Person, ranked[i].Card.Name)
+		ranked[i].Confirmed = isConf
+		if isConf {
+			confirmed[ranked[i].Card.Name] = true
+		}
 	}
-	text, names := renderObligations(ranked, src.impact, obligationBytes)
-	return text, names, true
+	text, names = renderObligations(ranked, src.impact, obligationBytes)
+	pack := contextpack.Compile(contextpack.Input{
+		Reviewer:    req.Person,
+		Cards:       cards,
+		Confirmed:   confirmed,
+		Outcomes:    records,
+		Facts:       facts,
+		Calibration: cal,
+	})
+	return text, names, pack.Rendered, true
 }
 
 func changeFacts(req Request, impact Impact) rulecard.ChangeFacts {

@@ -592,7 +592,7 @@ func assembleWithBlobs(
 	if err != nil {
 		return nil, err
 	}
-	mcpSrv, proposer, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager, runtime, rec.Needs, store, check.withheld)
+	mcpSrv, proposer, cardOutcomes, err := assembleMCP(d, ad, store, pool, blobs, eng, gen, clk, files, profileManager, runtime, rec.Needs, store, check.withheld)
 	if err != nil {
 		return nil, err
 	}
@@ -600,7 +600,7 @@ func assembleWithBlobs(
 	if err := checkWiring(mcpSrv, execs, check.off); err != nil {
 		return nil, err
 	}
-	cardsUpload, narrator, err := assembleHumanEdges(d, ad, store)
+	cardsUpload, narrator, err := assembleHumanEdges(d, ad, store, cardOutcomes)
 	if err != nil {
 		return nil, err
 	}
@@ -613,8 +613,8 @@ func assembleWithBlobs(
 }
 
 // assembleHumanEdges builds what people meet: the card upload handler and the room narrator.
-func assembleHumanEdges(d deps, ad adapters, store *postgres.Store) (http.Handler, *announce.Narrator, error) {
-	cardsUpload, err := newUploadHandlers(d, ad)
+func assembleHumanEdges(d deps, ad adapters, store *postgres.Store, outcomes cardOutcomesFunc) (http.Handler, *announce.Narrator, error) {
+	cardsUpload, err := newUploadHandlers(d, ad, outcomes)
 	if err != nil {
 		return nil, nil, err
 	}

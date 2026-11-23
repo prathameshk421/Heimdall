@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/cardsfs"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/rulecard"
 )
 
 const cardsRemoteTimeout = 2 * time.Minute
@@ -23,7 +24,7 @@ const cardsRemoteTimeout = 2 * time.Minute
 // remoteOpts are the flags every server command shares.
 type remoteOpts struct {
 	server, tokenFile, dir string
-	yes, force             bool
+	yes, force, jsonOut    bool
 }
 
 func remoteFlagSet(name string, env cardsEnv, o *remoteOpts) *flag.FlagSet {
@@ -34,6 +35,7 @@ func remoteFlagSet(name string, env cardsEnv, o *remoteOpts) *flag.FlagSet {
 	fs.StringVar(&o.dir, "dir", filepath.Join(defaultCardsWork, "files"), "folder with the card files")
 	fs.BoolVar(&o.yes, "yes", false, "push: skip the typed confirmation")
 	fs.BoolVar(&o.force, "force", false, "pull: replace local cards that differ")
+	fs.BoolVar(&o.jsonOut, "json", false, "outcomes: print raw JSON")
 	return fs
 }
 
@@ -115,6 +117,20 @@ func (c *cardsClient) get(ctx context.Context, name string) (string, error) {
 	return c.do(ctx, http.MethodGet, name, "")
 }
 
+func (c *cardsClient) outcomes(ctx context.Context) ([]rulecard.CardOutcome, error) {
+	text, err := c.do(ctx, http.MethodGet, "outcomes", "")
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Outcomes []rulecard.CardOutcome `json:"outcomes"`
+	}
+	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+		return nil, fmt.Errorf("parse card outcomes: %w", err)
+	}
+	return parsed.Outcomes, nil
+}
+
 // confirmation gives a card force (POST) or takes it back (DELETE).
 func (c *cardsClient) confirmation(ctx context.Context, method, name string) error {
 	_, err := c.do(ctx, method, name+"/confirm", "")
@@ -142,7 +158,7 @@ func remoteSetup(name string, args []string, env cardsEnv) (*cardsClient, remote
 	return client, o, true
 }
 
-// runCardsPush checks the cards, lists them, asks for a yes and uploads them.
+// runCardsPush checks the cards, lists them, asks for a yes and uploads them (plus any DSSE sidecars).
 func runCardsPush(args []string, env cardsEnv) int {
 	client, o, ok := remoteSetup("push", args, env)
 	if !ok {
@@ -165,17 +181,36 @@ func runCardsPush(args []string, env cardsEnv) int {
 	ctx, cancel := context.WithTimeout(context.Background(), cardsRemoteTimeout)
 	defer cancel()
 	for _, name := range good {
-		data, err := readInDir(o.dir, name)
-		if err == nil {
-			err = client.put(ctx, name, string(data))
-		}
-		if err != nil {
+		if err := pushOneCard(ctx, client, o.dir, name, env.out); err != nil {
 			writeLine(env.out, "heimdall cards push: "+name+": "+err.Error())
 			return 1
 		}
-		writeLine(env.out, "uploaded "+name)
 	}
 	return 0
+}
+
+func pushOneCard(ctx context.Context, client *cardsClient, dir, name string, out io.Writer) error {
+	data, err := readInDir(dir, name)
+	if err != nil {
+		return err
+	}
+	if err := client.put(ctx, name, string(data)); err != nil {
+		return err
+	}
+	writeLine(out, "uploaded "+name)
+	envName := name + ".dsse.json"
+	envData, err := readInDir(dir, envName)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := client.put(ctx, envName, string(envData)); err != nil {
+		return fmt.Errorf("upload DSSE sidecar: %w", err)
+	}
+	writeLine(out, "uploaded "+envName)
+	return nil
 }
 
 func confirmPush(env cardsEnv, server string, names []string) bool {
@@ -217,6 +252,9 @@ func runCardsPull(args []string, env cardsEnv) int {
 			return 1
 		}
 		writeLine(env.out, pullOne(o, name, text))
+		if envText, err := client.get(ctx, name+".dsse.json"); err == nil {
+			writeLine(env.out, pullOne(o, name+".dsse.json", envText))
+		}
 	}
 	return 0
 }

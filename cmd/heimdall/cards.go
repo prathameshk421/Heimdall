@@ -28,7 +28,7 @@ type cardsEnv struct {
 
 func writeLine(w io.Writer, line string) { _, _ = io.WriteString(w, line+"\n") }
 
-// runCards runs `heimdall cards <scan|prompt|check|push|pull|inbox|accept|reject>`.
+// runCards runs `heimdall cards <subcommand>`.
 func runCards(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -48,11 +48,18 @@ func runCardsWith(args []string, env cardsEnv) int {
 	commands := map[string]func([]string, cardsEnv) int{
 		"scan":      runCardsScan,
 		"prompt":    runCardsPrompt,
+		"import":    runCardsImport,
+		"approve":   runCardsApprove,
 		"check":     runCardsCheck,
+		"sign":      runCardsSign,
+		"verify":    runCardsVerify,
+		"export":    runCardsExport,
+		"mcp":       runCardsMCP,
 		"preview":   runCardsPreview,
 		"push":      runCardsPush,
 		"pull":      runCardsPull,
 		"inbox":     runCardsInbox,
+		"outcomes":  runCardsOutcomes,
 		"accept":    func(rest []string, env cardsEnv) int { return runCardsSetStatus(rest, env, "active") },
 		"reject":    func(rest []string, env cardsEnv) int { return runCardsSetStatus(rest, env, "rejected") },
 		"confirm":   runCardsConfirm,
@@ -70,16 +77,23 @@ func writeCardsHelp(out io.Writer) {
 	for _, line := range []string{
 		"heimdall cards scan [--repo .] [--days 180] [--out dir]   read your sessions and git on this machine, write signals.md",
 		"heimdall cards prompt [--person P] [--interview]          write PROMPT.md and print the command for each agent on PATH",
+		"heimdall cards import --from FILE|- [--dir dir]           import & scrub rules into local candidate cards",
+		"heimdall cards approve NAME [--dir dir] [--reject]        approve (or reject) a local candidate card",
 		"heimdall cards check [--dir dir]                          check every card: format, secrets, vague cards",
+		"heimdall cards sign NAME --key-file F [--key-id ID]       sign a card into a DSSE sidecar (<name>.dsse.json)",
+		"heimdall cards verify NAME --pub-file F --key-id ID       verify a card's DSSE sidecar signature",
+		"heimdall cards export --target agents|claude|cursor       export approved cards to AGENTS.md, CLAUDE.md, or .cursor/rules/heimdall.mdc",
+		"heimdall cards mcp [--dir dir]                            serve approved local cards over stdio MCP (read-only)",
 		"heimdall cards preview --base d --head d --diff f [--cards d --person P]  print what a reviewer would receive",
-		"heimdall cards push --server URL --token-file F [--yes]   check, list and upload your cards",
-		"heimdall cards pull --server URL --token-file F           download your cards into the folder",
+		"heimdall cards push --server URL --token-file F [--yes]   check, list and upload your cards (and DSSE sidecars)",
+		"heimdall cards pull --server URL --token-file F           download your cards (and DSSE sidecars) into the folder",
 		"heimdall cards inbox --server URL --token-file F          list cards the learning loop proposed",
+		"heimdall cards outcomes --server URL --token-file F       view your owner-only card calibration outcomes",
 		"heimdall cards accept NAME --server URL --token-file F    make a proposed card active",
 		"heimdall cards reject NAME --server URL --token-file F    mark a proposed card rejected",
 		"heimdall cards confirm NAME --server URL --token-file F [--yes]  let this card block merges in code you approve",
 		"heimdall cards unconfirm NAME --server URL --token-file F  take that force back",
-		"Nothing leaves this machine until push, accept or reject. Run scan and prompt, then your own agent writes the cards.",
+		"Nothing leaves this machine until push, accept or reject. Run scan/import and approve locally first.",
 	} {
 		writeLine(out, line)
 	}

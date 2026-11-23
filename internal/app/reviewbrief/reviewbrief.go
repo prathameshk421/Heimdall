@@ -28,6 +28,8 @@ type Brief struct {
 	PriorFindings string
 	Memory        string
 	Record        string
+	// ContextPack is the compiled, <untrusted_personal_context>-framed Personalized Reviewer Context Pack.
+	ContextPack string
 	// ObligationCards lists the file names of the cards that Obligations shows, in the same order.
 	ObligationCards []string
 	// Partial says that a section failed, so a caller should compile again next time and not reuse this brief.
@@ -153,7 +155,7 @@ func (c *Compiler) Compile(ctx context.Context, req Request) Brief {
 		return b
 	}
 	var cardsOK, memoryOK bool
-	b.Obligations, b.ObligationCards, cardsOK = c.obligations(ctx, req, src)
+	b.Obligations, b.ObligationCards, b.ContextPack, cardsOK = c.obligations(ctx, req, src)
 	b.Memory, memoryOK = c.memory(ctx, req, src.impact)
 	b.Record = recordSection(src.history, req.Agent)
 	b.Partial = b.Partial || !cardsOK || !memoryOK

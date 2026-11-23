@@ -19,18 +19,21 @@ const (
 
 // row is one finding with everything the read model needs.
 type row struct {
-	change   id.ChangeID
-	repo     change.Repo
-	ref      string
-	agent    id.AgentName
-	category finding.Category
-	claim    string
-	file     string
-	cardRefs []string
-	state    finding.State
-	reason   string
-	at       time.Time
-	outcome  string
+	change     id.ChangeID
+	repo       change.Repo
+	base       id.SHA
+	ref        string
+	agent      id.AgentName
+	category   finding.Category
+	claim      string
+	file       string
+	cardRefs   []string
+	state      finding.State
+	reason     string
+	at         time.Time
+	outcome    string
+	overridden bool
+	proven     bool
 }
 
 // changeFold is the result of reading one change.
@@ -65,6 +68,7 @@ func foldChange(changeID id.ChangeID, events []change.Event) *changeFold {
 	}
 	for _, r := range f.findings {
 		r.repo = f.repo
+		r.base = f.base
 		r.outcome = outcomeOf(r.state, f.merged)
 	}
 	f.proposals = f.propose()
@@ -84,7 +88,7 @@ func (f *changeFold) apply(event change.Event, payload change.Payload) {
 	case change.FindingFiled:
 		f.fileFinding(event, change.FindingRecord(p))
 	case change.FindingVerified:
-		f.moveFinding(event, change.FindingRecord(p))
+		f.verifyFinding(event, change.FindingRecord(p))
 	case change.FindingStateChanged:
 		f.moveFinding(event, change.FindingRecord(p))
 	case change.DecisionRecorded:
@@ -107,6 +111,18 @@ func (f *changeFold) fileFinding(event change.Event, rec change.FindingRecord) {
 	f.findings[ref] = r
 }
 
+func (f *changeFold) verifyFinding(event change.Event, rec change.FindingRecord) {
+	r, ok := f.findings[rec.Ref.String()]
+	if !ok {
+		return
+	}
+	r.state = rec.State
+	r.at = event.OccurredAt
+	if rec.Tier == finding.TierE1 || rec.Tier == finding.TierE2 || rec.Tier == finding.TierE3 {
+		r.proven = true
+	}
+}
+
 func (f *changeFold) moveFinding(event change.Event, rec change.FindingRecord) {
 	r, ok := f.findings[rec.Ref.String()]
 	if !ok {
@@ -116,13 +132,21 @@ func (f *changeFold) moveFinding(event change.Event, rec change.FindingRecord) {
 	r.at = event.OccurredAt
 }
 
-// applyReason sets the human reason of an uphold or dismiss on the finding it targets.
+// applyReason sets the human reason of an uphold, dismiss, or override on the finding it targets.
 func (f *changeFold) applyReason(d change.DecisionRecorded) {
-	if d.Kind != change.DecisionUphold && d.Kind != change.DecisionDismiss {
+	r, ok := f.findings[d.Target]
+	if !ok {
 		return
 	}
-	if r, ok := f.findings[d.Target]; ok {
+	if d.Kind == change.DecisionUphold || d.Kind == change.DecisionDismiss {
 		r.reason = d.Reason
+		return
+	}
+	if d.Kind == change.DecisionOverride {
+		r.overridden = true
+		if r.reason == "" {
+			r.reason = d.Reason
+		}
 	}
 }
 

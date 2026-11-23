@@ -41,13 +41,16 @@ type PolicyEventTeams struct {
 	Decode PolicyDecoder
 }
 
-// TeamsForEvent resolves only the policy-mapped human/assignee teams. Missing repository/base/identity fails closed.
+// TeamsForEvent resolves only the policy-mapped human/assignee teams. Missing repository/base/policy/identity fails closed.
 func (p PolicyEventTeams) TeamsForEvent(ctx context.Context, event change.Event, repo change.Repo, base id.SHA, relatedActors []string) ([]string, error) {
 	if p.Code == nil || p.Decode == nil || repo == "" || base == "" {
 		return nil, nil
 	}
 	raw, err := p.Code.ReadFile(ctx, repo, base, "heimdall.yaml")
 	if err != nil {
+		if errors.Is(err, ports.ErrNotFound) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("read workflow memory policy at base: %w", err)
 	}
 	policyAtBase, err := p.Decode(raw)

@@ -35,11 +35,13 @@ const (
 	maxBriefDiffBytes = ports.MaxUntrustedText
 )
 
-// reviewMoat holds what the reviewer brief adds to the server: the brief, the code tools and the proposal worker.
+// reviewMoat holds what the reviewer brief adds to the server: the brief, the code tools, the proposal worker,
+// and the owner-only card outcome lookup.
 type reviewMoat struct {
 	briefs   mcp.Briefs
 	graph    mcp.CodeGraph
 	proposer *cardProposer
+	outcomes cardOutcomesFunc
 }
 
 // newReviewMoat builds the code graph, the review history and the brief compiler. Without a cards directory the brief
@@ -55,7 +57,7 @@ func newReviewMoat(d deps, ad adapters, history reviewlearn.History, blobs ports
 	}
 	scopes := knowledge.PolicyScopes{Code: ad.vcs, Decode: policyyaml.Decode}
 	cfg := reviewbrief.Config{Logger: d.logger, Graph: graphView{svc: graph}, Learning: learningView{svc: learning}, Memory: memory}
-	moat := reviewMoat{graph: graph}
+	moat := reviewMoat{graph: graph, outcomes: ownerCardOutcomes(learning, scopes)}
 	if d.configuration.CardsDir != "" {
 		store, err := cardsfs.Open(d.configuration.CardsDir)
 		if err != nil {
@@ -70,6 +72,33 @@ func newReviewMoat(d deps, ad adapters, history reviewlearn.History, blobs ports
 	}
 	moat.briefs = briefSource{compiler: compiler, scopes: scopes, blobs: blobs, logger: d.logger}
 	return moat, nil
+}
+
+// ownerCardOutcomes resolves each historical finding's reviewer agent back to its card owner via the
+// trusted base-SHA policy, returning only outcomes for the authenticated human owner (B6).
+func ownerCardOutcomes(learning *reviewlearn.Service, scopes knowledge.PolicyScopes) cardOutcomesFunc {
+	return func(ctx context.Context, person string, cards []rulecard.Card) ([]rulecard.CardOutcome, error) {
+		snap, err := learning.Snapshot(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read review history: %w", err)
+		}
+		type key struct {
+			agent id.AgentName
+			repo  change.Repo
+			base  id.SHA
+		}
+		cache := map[key]bool{}
+		return snap.CardOutcomesFor(cards, func(agent id.AgentName, repo change.Repo, base id.SHA) bool {
+			k := key{agent: agent, repo: repo, base: base}
+			if matched, ok := cache[k]; ok {
+				return matched
+			}
+			owner, _, err := scopes.PersonForAgent(ctx, agent, repo, base)
+			matched := err == nil && owner == person
+			cache[k] = matched
+			return matched
+		}), nil
+	}
 }
 
 // briefSource prepares one compile: it resolves the person and reads the diff. A failure in either costs that part of

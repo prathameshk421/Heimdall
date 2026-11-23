@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -15,14 +16,21 @@ import (
 type Card = rulecard.Card
 
 type frontMatter struct {
-	AppliesTo []string `yaml:"applies_to"`
-	Symbols   []string `yaml:"symbols"`
-	Triggers  []string `yaml:"triggers"`
-	Check     string   `yaml:"check"`
-	Proof     string   `yaml:"proof"`
-	Kind      string   `yaml:"kind"`
-	Source    string   `yaml:"source"`
-	Status    string   `yaml:"status"`
+	AppliesTo       []string `yaml:"applies_to"`
+	Symbols         []string `yaml:"symbols"`
+	Triggers        []string `yaml:"triggers"`
+	Check           string   `yaml:"check"`
+	Proof           string   `yaml:"proof"`
+	Kind            string   `yaml:"kind"`
+	Source          string   `yaml:"source"`
+	Status          string   `yaml:"status"`
+	Scope           string   `yaml:"scope"`
+	Lens            string   `yaml:"lens"`
+	ApprovedBy      string   `yaml:"approved_by"`
+	ApprovedAt      string   `yaml:"approved_at"`
+	RejectedBy      string   `yaml:"rejected_by"`
+	RejectedAt      string   `yaml:"rejected_at"`
+	RejectionReason string   `yaml:"rejection_reason"`
 }
 
 // Parse reads a card file. A markdown card may open with a "---" YAML block naming the paths it applies to
@@ -35,12 +43,7 @@ func Parse(name, text string) (Card, error) {
 		card.Body = strings.TrimSpace(text)
 		return card, card.Validate()
 	}
-	block, body, found := strings.Cut(rest, "\n---\n")
-	if !found {
-		if trimmed, ok := strings.CutSuffix(strings.TrimRight(rest, "\n"), "\n---"); ok {
-			block, body, found = trimmed, "", true
-		}
-	}
+	block, body, found := splitMatterBlock(rest)
 	if !found {
 		return Card{}, errors.New("card front matter is not closed with ---")
 	}
@@ -48,20 +51,54 @@ func Parse(name, text string) (Card, error) {
 	if err := yaml.Unmarshal([]byte(block), &fm); err != nil {
 		return Card{}, fmt.Errorf("card front matter: %w", err)
 	}
-	for _, glob := range fm.AppliesTo {
-		if err := policy.ValidateGlob(glob); err != nil {
-			return Card{}, fmt.Errorf("card applies_to: %w", err)
-		}
-	}
-	card.Body, card.AppliesTo, card.Kind, card.Source = strings.TrimSpace(body), fm.AppliesTo, fm.Kind, fm.Source
-	card.Symbols, card.Triggers, card.Check, card.Proof = fm.Symbols, fm.Triggers, fm.Check, fm.Proof
-	if fm.Status != "" {
-		card.Status = rulecard.Status(fm.Status)
+	if err := applyFrontMatter(&card, fm, body); err != nil {
+		return Card{}, err
 	}
 	if err := card.Validate(); err != nil {
 		return Card{}, fmt.Errorf("card %s: %w", name, err)
 	}
 	return card, nil
+}
+
+func splitMatterBlock(rest string) (block, body string, found bool) {
+	block, body, found = strings.Cut(rest, "\n---\n")
+	if found {
+		return block, body, true
+	}
+	if trimmed, ok := strings.CutSuffix(strings.TrimRight(rest, "\n"), "\n---"); ok {
+		return trimmed, "", true
+	}
+	return "", "", false
+}
+
+func applyFrontMatter(card *Card, fm frontMatter, body string) error {
+	for _, glob := range fm.AppliesTo {
+		if err := policy.ValidateGlob(glob); err != nil {
+			return fmt.Errorf("card applies_to: %w", err)
+		}
+	}
+	card.Body, card.AppliesTo, card.Kind, card.Source = strings.TrimSpace(body), fm.AppliesTo, fm.Kind, fm.Source
+	card.Symbols, card.Triggers, card.Check, card.Proof = fm.Symbols, fm.Triggers, fm.Check, fm.Proof
+	card.Scope, card.Lens = rulecard.Scope(fm.Scope), fm.Lens
+	card.ApprovedBy, card.RejectedBy, card.RejectionReason = fm.ApprovedBy, fm.RejectedBy, fm.RejectionReason
+	if fm.Status != "" {
+		card.Status = rulecard.Status(fm.Status)
+	}
+	if fm.ApprovedAt != "" {
+		at, err := time.Parse(time.RFC3339, fm.ApprovedAt)
+		if err != nil {
+			return fmt.Errorf("card approved_at: %w", err)
+		}
+		card.ApprovedAt = at
+	}
+	if fm.RejectedAt != "" {
+		at, err := time.Parse(time.RFC3339, fm.RejectedAt)
+		if err != nil {
+			return fmt.Errorf("card rejected_at: %w", err)
+		}
+		card.RejectedAt = at
+	}
+	return nil
 }
 
 // All returns every card of the person that reads and parses and has a body, in name order. A bad file is skipped,
