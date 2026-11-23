@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"go/types"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -83,9 +84,19 @@ func TestAnotherMerchantCannotReadARefund(t *testing.T) {
 }
 `
 
+// stdlibImporter is built once and shared: the gc importer reads export data from the build cache, so every call
+// after the first reuses the same standard-library packages. The source importer it replaces re-parsed the whole
+// standard library on every call, which cost seconds per typeCheck. It is not safe for concurrent use, so the tests
+// that call typeCheck stay serial.
+var (
+	stdlibOnce     sync.Once
+	stdlibImporter types.Importer
+)
+
 // typeCheck compiles the files as one package with the standard library, and returns the type errors.
 func typeCheck(t *testing.T, files map[string]string) []error {
 	t.Helper()
+	stdlibOnce.Do(func() { stdlibImporter = importer.Default() })
 	fset := token.NewFileSet()
 	var parsed []*ast.File
 	for name, src := range files {
@@ -94,7 +105,7 @@ func typeCheck(t *testing.T, files map[string]string) []error {
 		parsed = append(parsed, f)
 	}
 	var errs []error
-	conf := types.Config{Importer: importer.ForCompiler(fset, "source", nil), Error: func(err error) { errs = append(errs, err) }}
+	conf := types.Config{Importer: stdlibImporter, Error: func(err error) { errs = append(errs, err) }}
 	_, _ = conf.Check("refunds", fset, parsed, nil)
 	return errs
 }

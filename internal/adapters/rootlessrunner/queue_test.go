@@ -67,6 +67,7 @@ func enqueue(ctx context.Context, t *testing.T, q *jobQueue, k jobKey) *waiter {
 }
 
 func TestTheQueueAdmitsByPriorityThenArrivalNeverRefusing(t *testing.T) {
+	t.Parallel()
 	q := &jobQueue{}
 	_, holder, err := q.Acquire(context.Background(), key(ports.PriorityBackground, "KAN-1", sha("a")))
 	require.NoError(t, err)
@@ -96,6 +97,7 @@ func TestTheQueueAdmitsByPriorityThenArrivalNeverRefusing(t *testing.T) {
 }
 
 func TestAWaiterLeavesTheQueueWhenItsDeadlinePasses(t *testing.T) {
+	t.Parallel()
 	q := &jobQueue{}
 	_, holder, err := q.Acquire(context.Background(), key(ports.PriorityGate, "KAN-1", sha("a")))
 	require.NoError(t, err)
@@ -116,6 +118,7 @@ func TestAWaiterLeavesTheQueueWhenItsDeadlinePasses(t *testing.T) {
 }
 
 func TestANewHeadCancelsOnlyTheBackgroundJobsOfTheOldHead(t *testing.T) {
+	t.Parallel()
 	q := &jobQueue{}
 	oldHead, newHead := sha("1"), sha("2")
 	runCtx, running, err := q.Acquire(context.Background(), key(ports.PriorityBackground, "pr-7", oldHead))
@@ -144,6 +147,7 @@ func TestANewHeadCancelsOnlyTheBackgroundJobsOfTheOldHead(t *testing.T) {
 }
 
 func TestSupersedingWithoutAChangeOrForAnotherRepoTouchesNothing(t *testing.T) {
+	t.Parallel()
 	q := &jobQueue{}
 	_, release, err := q.Acquire(context.Background(), key(ports.PriorityBackground, "pr-7", sha("1")))
 	require.NoError(t, err)
@@ -154,6 +158,7 @@ func TestSupersedingWithoutAChangeOrForAnotherRepoTouchesNothing(t *testing.T) {
 }
 
 func TestAJobThatReleasesTwiceDoesNotAdmitTwo(t *testing.T) {
+	t.Parallel()
 	q := &jobQueue{}
 	_, first, err := q.Acquire(context.Background(), key(ports.PriorityGate, "KAN-1", sha("a")))
 	require.NoError(t, err)
@@ -188,6 +193,7 @@ func (e *gateExecutor) Execute(_ context.Context, args []string, _ string) ([]by
 }
 
 func TestTheHandlerWaitsForItsTurnInsteadOfAnsweringBusy(t *testing.T) {
+	t.Parallel()
 	exec := &gateExecutor{hold: make(chan struct{})}
 	r := jobRunner(t, exec)
 	srv := httptest.NewServer(r.Handler())
@@ -223,6 +229,7 @@ func TestTheHandlerWaitsForItsTurnInsteadOfAnsweringBusy(t *testing.T) {
 }
 
 func TestTheHandlerRefusesHeadersThatClaimABetterPlaceThanTheJob(t *testing.T) {
+	t.Parallel()
 	r := jobRunner(t, &checkExecutor{output: []byte(sarifOut)})
 	job := ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: "patterns"}
 	req := jobRequest(t, job, nil)
@@ -237,6 +244,7 @@ func TestTheHandlerRefusesHeadersThatClaimABetterPlaceThanTheJob(t *testing.T) {
 }
 
 func TestSupersedingTwiceCancelsOnceAndAnOversizedResultIsRefused(t *testing.T) {
+	t.Parallel()
 	q := &jobQueue{}
 	_, release, err := q.Acquire(context.Background(), key(ports.PriorityBackground, "pr-7", sha("1")))
 	require.NoError(t, err)

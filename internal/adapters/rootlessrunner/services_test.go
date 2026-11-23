@@ -33,6 +33,7 @@ func servicePolicy() Policy {
 }
 
 func TestAServiceStartsDetachedOnThePrivateNetworkWithTheLeastPrivilege(t *testing.T) {
+	t.Parallel()
 	svcs, err := servicePolicy().resolveServices("acme-pay", JobInput{TestKind: "api"})
 	require.NoError(t, err)
 	require.Len(t, svcs, 2)
@@ -57,6 +58,7 @@ func TestAServiceStartsDetachedOnThePrivateNetworkWithTheLeastPrivilege(t *testi
 }
 
 func TestServicesAreRefusedForEveryForbiddenInput(t *testing.T) {
+	t.Parallel()
 	for name, mutate := range map[string]func(*RepoProfile){
 		"an image the runner does not hold":   func(s *RepoProfile) { s.Services[0].Image = "evil" },
 		"an unlisted digest":                  func(s *RepoProfile) { s.Services[0].Image = "registry.example/x@sha256:" + strings.Repeat("9", 64) },
@@ -68,6 +70,7 @@ func TestServicesAreRefusedForEveryForbiddenInput(t *testing.T) {
 		"a data dir that adds a mount option": func(s *RepoProfile) { s.Services[0].Data = "/data,exec" },
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			p := servicePolicy()
 			spec := p.Profiles["acme-pay"]
 			spec.Services = append([]profileyaml.Service(nil), spec.Services...)
@@ -80,6 +83,7 @@ func TestServicesAreRefusedForEveryForbiddenInput(t *testing.T) {
 }
 
 func TestACheckJobGetsNoServicesAndTheBuiltInProfileNone(t *testing.T) {
+	t.Parallel()
 	svcs, err := servicePolicy().resolveServices("acme-pay", JobInput{CheckID: "patterns"})
 	require.NoError(t, err)
 	require.Empty(t, svcs)
@@ -89,6 +93,7 @@ func TestACheckJobGetsNoServicesAndTheBuiltInProfileNone(t *testing.T) {
 }
 
 func TestOnlyTheNetworkFlagOfAJobIsReplaced(t *testing.T) {
+	t.Parallel()
 	args, err := resolveArgs(t, jobPolicy(), "", "api", "tests/heimdall/PAY-1")
 	require.NoError(t, err)
 	joined, err := useServiceNetwork(args, "heimdall-job-1-net")
@@ -165,6 +170,7 @@ func serviceRunner(t *testing.T, exec Executor) Runner {
 }
 
 func TestAJobWithServicesRunsOnItsPrivateNetworkAndLeavesNothingBehind(t *testing.T) {
+	t.Parallel()
 	exec := &orderExecutor{output: []byte("\nheimdall-result-begin\n<testsuites/>\n\nheimdall-result-end\nheimdall-exit=0\n")}
 	r := serviceRunner(t, exec)
 	_, err := r.Run(context.Background(), JobInput{Profile: "acme-pay", TestKind: "api", Dir: "tests/heimdall/PAY-1", Archive: strings.NewReader("a"), Timeout: time.Minute})
@@ -196,6 +202,7 @@ func TestAJobWithServicesRunsOnItsPrivateNetworkAndLeavesNothingBehind(t *testin
 // The probe script, run for real with the host's bash: it fails on a closed port after its attempts, and succeeds on
 // a port that starts accepting between two attempts.
 func TestTheProbeScriptWaitsForAPortToAccept(t *testing.T) {
+	t.Parallel()
 	probe := func(port string, attempts string) error {
 		cmd := exec.CommandContext(context.Background(), "/bin/bash", "-c", tcpProbe, "127.0.0.1", port, attempts)
 		cmd.Env = []string{"PATH=/usr/bin:/bin"}
@@ -211,7 +218,7 @@ func TestTheProbeScriptWaitsForAPortToAccept(t *testing.T) {
 	require.Error(t, probe(port, "2"), "a closed port fails once the attempts are spent")
 
 	opened := make(chan net.Listener, 1)
-	later := time.AfterFunc(700*time.Millisecond, func() {
+	later := time.AfterFunc(250*time.Millisecond, func() {
 		reopened, lerr := lc.Listen(context.Background(), "tcp", "127.0.0.1:"+port)
 		if lerr != nil {
 			reopened = nil
@@ -227,6 +234,7 @@ func TestTheProbeScriptWaitsForAPortToAccept(t *testing.T) {
 }
 
 func TestAServiceThatNeverAcceptsFailsTheJobAndLeavesNothingBehind(t *testing.T) {
+	t.Parallel()
 	exec := &orderExecutor{closedProbes: -1}
 	r := serviceRunner(t, exec)
 	_, err := r.Run(context.Background(), JobInput{Profile: "acme-pay", TestKind: "api", Dir: "tests/heimdall/PAY-1", Archive: strings.NewReader("a"), Timeout: time.Minute})
@@ -238,6 +246,7 @@ func TestAServiceThatNeverAcceptsFailsTheJobAndLeavesNothingBehind(t *testing.T)
 }
 
 func TestAServiceAddressThatIsNotAnIPIsRefused(t *testing.T) {
+	t.Parallel()
 	_, err := serviceAddress([]byte("10.89.0.7; rm -rf /\n"))
 	require.Error(t, err)
 	_, err = serviceAddress([]byte("\n"))
@@ -248,6 +257,7 @@ func TestAServiceAddressThatIsNotAnIPIsRefused(t *testing.T) {
 }
 
 func TestServicesAreRemovedWhenAServiceFailsToStartOrTheJobFails(t *testing.T) {
+	t.Parallel()
 	exec := &orderExecutor{failOn: "cache"}
 	r := serviceRunner(t, exec)
 	_, err := r.Run(context.Background(), JobInput{Profile: "acme-pay", TestKind: "api", Dir: "tests/heimdall/PAY-1", Archive: strings.NewReader("a"), Timeout: time.Minute})
@@ -268,6 +278,7 @@ func TestServicesAreRemovedWhenAServiceFailsToStartOrTheJobFails(t *testing.T) {
 }
 
 func TestAJobWithoutServicesRunsOnNoNetworkAndTouchesNoNetworkCommands(t *testing.T) {
+	t.Parallel()
 	exec := &orderExecutor{output: []byte(sarifOut)}
 	p := jobPolicy()
 	active := p.Profiles
@@ -280,6 +291,7 @@ func TestAJobWithoutServicesRunsOnNoNetworkAndTouchesNoNetworkCommands(t *testin
 }
 
 func TestAServedAppReachesTheJobAsTwoEnvironmentVariables(t *testing.T) {
+	t.Parallel()
 	p := servicePolicy()
 	spec, err := p.resolveJob("acme-pay", "", "web", "tests/heimdall/PAY-1")
 	require.NoError(t, err)
@@ -299,6 +311,7 @@ func TestAServedAppReachesTheJobAsTwoEnvironmentVariables(t *testing.T) {
 }
 
 func TestAServedAppIsRefusedWithoutALoopbackReadyURL(t *testing.T) {
+	t.Parallel()
 	p := servicePolicy()
 	good := jobSpec{Image: goRef, Run: "x", ResultFile: resultJUnit, Archive: "/var/jobs/a.tgz", ModuleCache: "/var/cache/mod", Timeout: 60,
 		Serve: "app", Ready: "http://127.0.0.1:8000/"}
@@ -315,6 +328,7 @@ func TestAServedAppIsRefusedWithoutALoopbackReadyURL(t *testing.T) {
 		"a ready URL that is a file": func(j *jobSpec) { j.Ready = "file:///etc/passwd" },
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			j := good
 			mutate(&j)
 			_, err := p.profileJobArgs(j)
@@ -326,6 +340,7 @@ func TestAServedAppIsRefusedWithoutALoopbackReadyURL(t *testing.T) {
 // The wrapper's wait loop, run for real with the host's shell and a stand-in curl: the job's run command starts only
 // after the ready URL answers.
 func TestTheWrapperWaitsForTheServedAppBeforeItRunsTheCommand(t *testing.T) {
+	t.Parallel()
 	prelude, rest, found := strings.Cut(profileJobScript, "probe() {")
 	require.True(t, found)
 	_ = prelude
@@ -365,6 +380,7 @@ func (e *sweepExecutor) Execute(_ context.Context, args []string, _ string) ([]b
 }
 
 func TestTheBootSweepRemovesEveryLabelledContainerThenNetwork(t *testing.T) {
+	t.Parallel()
 	exec := &sweepExecutor{containers: "3f2a9c1b7d4e\n9e8d7c6b5a41\n", networks: "heimdall-job-1-net\nheimdall-job-2-net\n"}
 	r := Runner{Executor: exec}
 	require.NoError(t, r.Sweep(context.Background()))
@@ -377,6 +393,7 @@ func TestTheBootSweepRemovesEveryLabelledContainerThenNetwork(t *testing.T) {
 }
 
 func TestTheBootSweepTouchesNothingWhenNothingIsLeftAndRefusesStrangeNames(t *testing.T) {
+	t.Parallel()
 	exec := &sweepExecutor{}
 	r := Runner{Executor: exec}
 	require.NoError(t, r.Sweep(context.Background()))
@@ -391,5 +408,6 @@ func TestTheBootSweepTouchesNothingWhenNothingIsLeftAndRefusesStrangeNames(t *te
 }
 
 func TestEveryJobContainerCarriesTheSweepLabel(t *testing.T) {
+	t.Parallel()
 	require.Contains(t, hardenedArgs(60), "--label=heimdall.job=1")
 }

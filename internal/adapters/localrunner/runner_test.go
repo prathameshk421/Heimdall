@@ -110,94 +110,38 @@ func makeJob(sha id.SHA, timeout time.Duration) ports.SandboxJob {
 	}
 }
 
-func TestPassingModule(t *testing.T) {
-	srcTar := tarDir(t, "testdata/pass")
-	sha := id.SHA(strings.Repeat("1", 40))
-	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}
-	runner := localrunner.New(src)
-
-	ctx := context.Background()
-	res, err := runner.Run(ctx, makeJob(sha, 30*time.Second))
-	require.NoError(t, err)
-	require.NoError(t, res.Validate())
-	require.Equal(t, 1, res.Passed)
-	require.Equal(t, 0, res.Failed)
-	require.Equal(t, 0, res.Errored)
-	require.Len(t, res.Tests, 1)
-	require.Equal(t, "TestPass", res.Tests[0].Name)
-	require.Equal(t, ports.OutcomePassed, res.Tests[0].Outcome)
-}
-
-func TestAssertionFailureModule(t *testing.T) {
-	srcTar := tarDir(t, "testdata/fail")
-	sha := id.SHA(strings.Repeat("2", 40))
-	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}
-	runner := localrunner.New(src)
-
-	ctx := context.Background()
-	res, err := runner.Run(ctx, makeJob(sha, 30*time.Second))
-	require.NoError(t, err)
-	require.NoError(t, res.Validate())
-	require.Equal(t, 0, res.Passed)
-	require.Equal(t, 1, res.Failed)
-	require.Equal(t, 0, res.Errored)
-	require.Len(t, res.Tests, 1)
-	require.Equal(t, "TestAssertionFailure", res.Tests[0].Name)
-	require.Equal(t, ports.OutcomeFailure, res.Tests[0].Outcome)
-}
-
-func TestCompileErrorModule(t *testing.T) {
-	srcTar := tarDir(t, "testdata/compile_error")
-	sha := id.SHA(strings.Repeat("3", 40))
-	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}
-	runner := localrunner.New(src)
-
-	ctx := context.Background()
-	res, err := runner.Run(ctx, makeJob(sha, 30*time.Second))
-	require.NoError(t, err)
-	require.NoError(t, res.Validate())
-	require.Equal(t, 0, res.Passed)
-	require.Equal(t, 0, res.Failed)
-	require.Equal(t, 1, res.Errored)
-	require.Len(t, res.Tests, 1)
-	require.Equal(t, "[build failed]", res.Tests[0].Name)
-	require.Equal(t, ports.OutcomeError, res.Tests[0].Outcome)
-}
-
-func TestPanicModule(t *testing.T) {
-	srcTar := tarDir(t, "testdata/panic")
-	sha := id.SHA(strings.Repeat("4", 40))
-	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}
-	runner := localrunner.New(src)
-
-	ctx := context.Background()
-	res, err := runner.Run(ctx, makeJob(sha, 30*time.Second))
-	require.NoError(t, err)
-	require.NoError(t, res.Validate())
-	require.Equal(t, 0, res.Passed)
-	require.Equal(t, 0, res.Failed)
-	require.Equal(t, 1, res.Errored)
-	require.Len(t, res.Tests, 1)
-	require.Equal(t, "TestPanics", res.Tests[0].Name)
-	require.Equal(t, ports.OutcomeError, res.Tests[0].Outcome)
-}
-
-func TestSkippedModule(t *testing.T) {
-	srcTar := tarDir(t, "testdata/skip")
-	sha := id.SHA(strings.Repeat("5", 40))
-	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}
-	runner := localrunner.New(src)
-
-	ctx := context.Background()
-	res, err := runner.Run(ctx, makeJob(sha, 30*time.Second))
-	require.NoError(t, err)
-	require.NoError(t, res.Validate())
-	require.Equal(t, 0, res.Passed)
-	require.Equal(t, 0, res.Failed)
-	require.Equal(t, 0, res.Errored)
-	require.Len(t, res.Tests, 1)
-	require.Equal(t, "TestSkipped", res.Tests[0].Name)
-	require.Equal(t, ports.OutcomeSkipped, res.Tests[0].Outcome)
+// TestModuleOutcomes runs each fixture module through the real go tool: pass, assertion failure, compile error,
+// panic and skip each report their own outcome.
+func TestModuleOutcomes(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		dir                     string
+		shaChar                 string
+		passed, failed, errored int
+		name                    string
+		outcome                 ports.Outcome
+	}{
+		{"pass", "1", 1, 0, 0, "TestPass", ports.OutcomePassed},
+		{"fail", "2", 0, 1, 0, "TestAssertionFailure", ports.OutcomeFailure},
+		{"compile_error", "3", 0, 0, 1, "[build failed]", ports.OutcomeError},
+		{"panic", "4", 0, 0, 1, "TestPanics", ports.OutcomeError},
+		{"skip", "5", 0, 0, 0, "TestSkipped", ports.OutcomeSkipped},
+	} {
+		t.Run(tt.dir, func(t *testing.T) {
+			t.Parallel()
+			sha := id.SHA(strings.Repeat(tt.shaChar, 40))
+			src := &memorySource{tarballs: map[string][]byte{string(sha): tarDir(t, "testdata/"+tt.dir)}}
+			res, err := localrunner.New(src).Run(context.Background(), makeJob(sha, 30*time.Second))
+			require.NoError(t, err)
+			require.NoError(t, res.Validate())
+			require.Equal(t, tt.passed, res.Passed)
+			require.Equal(t, tt.failed, res.Failed)
+			require.Equal(t, tt.errored, res.Errored)
+			require.Len(t, res.Tests, 1)
+			require.Equal(t, tt.name, res.Tests[0].Name)
+			require.Equal(t, tt.outcome, res.Tests[0].Outcome)
+		})
+	}
 }
 
 func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
@@ -217,7 +161,7 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 	defer cancel()
 
 	job := localrunner.Job{
-		SandboxJob: makeJob(sha, 5*time.Second),
+		SandboxJob: makeJob(sha, 2*time.Second),
 	}
 
 	type runResult struct {
@@ -330,89 +274,45 @@ func TestParentEnvNotLeaked(t *testing.T) {
 	require.Equal(t, 0, res.Errored)
 }
 
-func TestTarballPathTraversalRefused(t *testing.T) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	hdr := &tar.Header{
-		Name: "../evil.txt",
-		Mode: 0o644,
-		Size: int64(len("evil")),
+// TestTarballRefused covers every hostile tarball shape: traversal, absolute path, symlink escape and oversize.
+// Each is refused before any test runs.
+func TestTarballRefused(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		hdr      *tar.Header
+		body     string
+		closeTar bool
+		want     error
+	}{
+		{"path traversal", &tar.Header{Name: "../evil.txt", Mode: 0o644, Size: 4}, "evil", true, localrunner.ErrPathTraversal},
+		{"absolute path", &tar.Header{Name: "/tmp/evil.txt", Mode: 0o644, Size: 4}, "evil", true, localrunner.ErrAbsolutePath},
+		{"symlink escape", &tar.Header{Typeflag: tar.TypeSymlink, Name: "escapelink", Linkname: "../../../../etc/passwd"}, "", true, localrunner.ErrSymlinkEscape},
+		// Header only: closing the writer would try to pad the declared 65 MiB, and the runner refuses on the header.
+		{"oversized", &tar.Header{Name: "huge.bin", Mode: 0o644, Size: 65 << 20}, "", false, localrunner.ErrTarTooLarge},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			tw := tar.NewWriter(&buf)
+			require.NoError(t, tw.WriteHeader(tt.hdr))
+			if tt.body != "" {
+				_, _ = tw.Write([]byte(tt.body))
+			}
+			if tt.closeTar {
+				require.NoError(t, tw.Close())
+			}
+
+			sha := id.SHA(strings.Repeat("8", 40))
+			src := &memorySource{tarballs: map[string][]byte{string(sha): buf.Bytes()}}
+			_, err := localrunner.New(src).Run(context.Background(), makeJob(sha, 30*time.Second))
+			require.ErrorIs(t, err, tt.want)
+		})
 	}
-	require.NoError(t, tw.WriteHeader(hdr))
-	_, _ = tw.Write([]byte("evil"))
-	require.NoError(t, tw.Close())
-
-	sha := id.SHA(strings.Repeat("8", 40))
-	src := &memorySource{tarballs: map[string][]byte{string(sha): buf.Bytes()}}
-	runner := localrunner.New(src)
-
-	_, err := runner.Run(context.Background(), makeJob(sha, 30*time.Second))
-	require.Error(t, err)
-	require.ErrorIs(t, err, localrunner.ErrPathTraversal)
-}
-
-func TestTarballAbsolutePathRefused(t *testing.T) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	hdr := &tar.Header{
-		Name: "/tmp/evil.txt",
-		Mode: 0o644,
-		Size: int64(len("evil")),
-	}
-	require.NoError(t, tw.WriteHeader(hdr))
-	_, _ = tw.Write([]byte("evil"))
-	require.NoError(t, tw.Close())
-
-	sha := id.SHA(strings.Repeat("8", 40))
-	src := &memorySource{tarballs: map[string][]byte{string(sha): buf.Bytes()}}
-	runner := localrunner.New(src)
-
-	_, err := runner.Run(context.Background(), makeJob(sha, 30*time.Second))
-	require.Error(t, err)
-	require.ErrorIs(t, err, localrunner.ErrAbsolutePath)
-}
-
-func TestTarballSymlinkEscapeRefused(t *testing.T) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	hdr := &tar.Header{
-		Typeflag: tar.TypeSymlink,
-		Name:     "escapelink",
-		Linkname: "../../../../etc/passwd",
-	}
-	require.NoError(t, tw.WriteHeader(hdr))
-	require.NoError(t, tw.Close())
-
-	sha := id.SHA(strings.Repeat("8", 40))
-	src := &memorySource{tarballs: map[string][]byte{string(sha): buf.Bytes()}}
-	runner := localrunner.New(src)
-
-	_, err := runner.Run(context.Background(), makeJob(sha, 30*time.Second))
-	require.Error(t, err)
-	require.ErrorIs(t, err, localrunner.ErrSymlinkEscape)
-}
-
-func TestTarballOversizedRefused(t *testing.T) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	hdr := &tar.Header{
-		Name: "huge.bin",
-		Mode: 0o644,
-		Size: 65 << 20, // 65 MiB
-	}
-	// Write header only
-	require.NoError(t, tw.WriteHeader(hdr))
-
-	sha := id.SHA(strings.Repeat("8", 40))
-	src := &memorySource{tarballs: map[string][]byte{string(sha): buf.Bytes()}}
-	runner := localrunner.New(src)
-
-	_, err := runner.Run(context.Background(), makeJob(sha, 30*time.Second))
-	require.Error(t, err)
-	require.ErrorIs(t, err, localrunner.ErrTarTooLarge)
 }
 
 func TestArbitraryCommandRefused(t *testing.T) {
+	t.Parallel()
 	srcTar := tarDir(t, "testdata/pass")
 	sha := id.SHA(strings.Repeat("1", 40))
 	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}
@@ -429,6 +329,7 @@ func TestArbitraryCommandRefused(t *testing.T) {
 }
 
 func TestTempDirAlwaysRemoved(t *testing.T) {
+	t.Parallel()
 	srcTar := tarDir(t, "testdata/fail")
 	sha := id.SHA(strings.Repeat("2", 40))
 	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}
@@ -449,6 +350,7 @@ func TestTempDirAlwaysRemoved(t *testing.T) {
 }
 
 func TestOverlayFilesApplied(t *testing.T) {
+	t.Parallel()
 	// Base module has a failing test
 	srcTar := tarDir(t, "testdata/fail")
 	sha := id.SHA(strings.Repeat("2", 40))
@@ -471,6 +373,7 @@ func TestOverlayFilesApplied(t *testing.T) {
 }
 
 func TestBlobStoreIntegration(t *testing.T) {
+	t.Parallel()
 	srcTar := tarDir(t, "testdata/pass")
 	sha := id.SHA(strings.Repeat("1", 40))
 	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}

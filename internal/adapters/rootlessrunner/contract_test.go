@@ -85,6 +85,7 @@ const junitOut = "\nheimdall-log-begin\npytest ran\n\nheimdall-result-begin\n" +
 	"\n\nheimdall-result-end\nheimdall-exit=1\n"
 
 func TestTheClientAndTheRunnerAgreeOnHealth(t *testing.T) {
+	t.Parallel()
 	c, _ := serveRunner(t, &checkExecutor{})
 	kinds, err := c.Health(context.Background())
 	require.NoError(t, err)
@@ -94,6 +95,7 @@ func TestTheClientAndTheRunnerAgreeOnHealth(t *testing.T) {
 }
 
 func TestTheClientAndTheRunnerAgreeOnACheckJob(t *testing.T) {
+	t.Parallel()
 	exec := &checkExecutor{output: []byte(sarifOut)}
 	c, blobs := serveRunner(t, exec)
 	for _, job := range []ports.SandboxJob{
@@ -112,6 +114,7 @@ func TestTheClientAndTheRunnerAgreeOnACheckJob(t *testing.T) {
 }
 
 func TestTheClientAndTheRunnerAgreeOnATestJob(t *testing.T) {
+	t.Parallel()
 	exec := &checkExecutor{output: []byte(junitOut)}
 	c, _ := serveRunner(t, exec)
 	job := ports.SandboxJob{Kind: ports.SandboxTest, TestKind: "api", Profile: "acme-pay", Dir: "tests/heimdall/PAY-1",
@@ -125,6 +128,7 @@ func TestTheClientAndTheRunnerAgreeOnATestJob(t *testing.T) {
 }
 
 func TestTheRunnerRefusesWhatTheClientWouldNeverSend(t *testing.T) {
+	t.Parallel()
 	c, _ := serveRunner(t, &checkExecutor{output: []byte(sarifOut)})
 	_, err := c.Run(context.Background(), ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: "nope", Profile: "acme-pay", Repo: "acme/pay", SHA: sha("a"), Timeout: time.Minute})
 	require.ErrorContains(t, err, "runner rejected job", "a check id the profile does not hold is refused by the runner")
@@ -134,6 +138,7 @@ func TestTheRunnerRefusesWhatTheClientWouldNeverSend(t *testing.T) {
 // tests and the output kept as its log, so the profile service records a failed trial the profiler can read (live,
 // Nov 21: `go test {dir}/...` without -json passed its tests and the job died eight times as "no test results").
 func TestATrialWithoutTestEventsComesBackWithItsLog(t *testing.T) {
+	t.Parallel()
 	plain := "ok  \tgithub.com/acme/pay/tests/heimdall/KAN-22\t0.005s\n"
 	c, blobs := serveRunner(t, &checkExecutor{output: []byte(plain)})
 	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test {dir}/...\nseam: example.com/pay/internal/app\n" +
@@ -149,6 +154,7 @@ func TestATrialWithoutTestEventsComesBackWithItsLog(t *testing.T) {
 // A runner built without a promoted-profiles folder still takes a promotion: the first one used to panic on a nil map
 // and kill the push (live, Nov 21, `assignment to entry in nil map` in Activate).
 func TestActivateWorksOnARunnerWithNoPromotedProfilesYet(t *testing.T) {
+	t.Parallel()
 	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), "", []string{goRef})
 	require.NoError(t, err)
 	artifact := "languages: [go]\nimage: " + goRef + "\nacceptance: go test -json -count=1 {dir}/...\nseam: example.com/pay/internal/app\n" +
@@ -163,6 +169,7 @@ func TestActivateWorksOnARunnerWithNoPromotedProfilesYet(t *testing.T) {
 // A promoted-profiles folder that does not exist yet means no promotion yet: the runner starts, and its first promotion
 // creates the folder (live, Nov 21: the runner refused to start on a fresh VM and took the stack down with it).
 func TestARunnerStartsBeforeItsFirstPromotionAndKeepsThePromotion(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "promoted")
 	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
 	require.NoError(t, err)
@@ -180,6 +187,7 @@ func TestARunnerStartsBeforeItsFirstPromotionAndKeepsThePromotion(t *testing.T) 
 // A promotion whose check names an image by its short name is accepted live, so a restarted runner must load it too
 // (live, Nov 21: the runner refused to start on "sandbox image is not allowlisted: \"go\"" and took the stack down).
 func TestARestartedRunnerLoadsAPromotionWhoseCheckUsesAnImageName(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "promoted")
 	pol := Policy{Images: map[string]string{"go": goRef}}
 	r, err := NewRunner(pol, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
@@ -199,6 +207,7 @@ func TestARestartedRunnerLoadsAPromotionWhoseCheckUsesAnImageName(t *testing.T) 
 // A revised profile promoted later replaces the stored one, and a restarted runner loads the newer one (live, Nov 21:
 // the revision with a golangci-lint check was refused as "differs from the stored copy", so it could never go live).
 func TestALaterPromotionReplacesTheStoredProfile(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "promoted")
 	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), dir, []string{goRef})
 	require.NoError(t, err)
@@ -221,6 +230,7 @@ func TestALaterPromotionReplacesTheStoredProfile(t *testing.T) {
 // A check may name an image from the runner's allowlist by its pinned reference: the proposal was validated against
 // that list, so the job must accept it too (live, Nov 21: the golangci-lint check on PR #18 was refused, D191).
 func TestACheckRunsOnAnAllowlistedImageByReference(t *testing.T) {
+	t.Parallel()
 	lintRef := "registry.example/lint@sha256:" + strings.Repeat("c", 64)
 	r, err := NewRunner(Policy{Images: map[string]string{"go": goRef}}, &checkExecutor{}, t.TempDir(), filepath.Join(t.TempDir(), "promoted"), []string{goRef, lintRef})
 	require.NoError(t, err)

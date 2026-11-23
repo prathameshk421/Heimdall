@@ -20,6 +20,7 @@ func runRootScript(t *testing.T, root string) string {
 }
 
 func TestSourceRootScriptEntersTheGitHubTarballDirectory(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "owner-repo-abc1234")
 	require.NoError(t, os.Mkdir(repo, 0o750))
@@ -29,6 +30,7 @@ func TestSourceRootScriptEntersTheGitHubTarballDirectory(t *testing.T) {
 }
 
 func TestSourceRootScriptKeepsAFlatArchiveRoot(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module fixture\n"), 0o600))
 
@@ -36,6 +38,7 @@ func TestSourceRootScriptKeepsAFlatArchiveRoot(t *testing.T) {
 }
 
 func TestSourceRootScriptStopsAtSeveralTopLevelDirectories(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "one"), 0o750))
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "two"), 0o750))
@@ -44,6 +47,7 @@ func TestSourceRootScriptStopsAtSeveralTopLevelDirectories(t *testing.T) {
 }
 
 func TestSourceRootScriptKeepsAnEmptyArchiveRoot(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.Equal(t, dir, runRootScript(t, dir))
 }

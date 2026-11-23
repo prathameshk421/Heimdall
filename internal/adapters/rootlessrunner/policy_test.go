@@ -9,6 +9,7 @@ import (
 )
 
 func TestContainerArgsEnforceIsolationAndRejectUnapprovedImages(t *testing.T) {
+	t.Parallel()
 	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
 	args, err := policy.ContainerArgs("go", "/tmp/source", 30)
 	require.NoError(t, err)
@@ -33,6 +34,7 @@ func TestContainerArgsEnforceIsolationAndRejectUnapprovedImages(t *testing.T) {
 // A GitHub tarball unpacks into one owner-repo-sha directory. The job must enter that directory
 // before it runs the acceptance command, and overlays are repository-relative so they land inside it.
 func TestContainerArgsEnterTheExtractedArchiveRoot(t *testing.T) {
+	t.Parallel()
 	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
 	args, err := policy.ContainerArgs("go", "/tmp/source", 30)
 	require.NoError(t, err)
@@ -43,6 +45,7 @@ func TestContainerArgsEnterTheExtractedArchiveRoot(t *testing.T) {
 }
 
 func TestContainerArgsCopyOverlaysIntoTheArchiveRoot(t *testing.T) {
+	t.Parallel()
 	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
 	args, err := policy.ContainerArgsWithOverlays("go", "/tmp/source", "/tmp/overlays", "/tmp/module-cache", "tests/heimdall/KAN-1", 30)
 	require.NoError(t, err)
@@ -54,6 +57,7 @@ func TestContainerArgsCopyOverlaysIntoTheArchiveRoot(t *testing.T) {
 // A cold Go build writes hundreds of megabytes of build cache and temporary files. /tmp is only
 // 64 MiB, so both must live on the larger work tmpfs.
 func TestContainerArgsKeepTheGoBuildCacheOffTheSmallTmp(t *testing.T) {
+	t.Parallel()
 	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
 	args, err := policy.ContainerArgs("go", "/tmp/source", 30)
 	require.NoError(t, err)
@@ -65,6 +69,7 @@ func TestContainerArgsKeepTheGoBuildCacheOffTheSmallTmp(t *testing.T) {
 }
 
 func TestContainerArgsRejectMountEscapeAndUnsafeTimeout(t *testing.T) {
+	t.Parallel()
 	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
 	_, err := policy.ContainerArgs("go", "/tmp/source,evil", 30)
 	require.Error(t, err)
@@ -76,6 +81,7 @@ func TestContainerArgsRejectMountEscapeAndUnsafeTimeout(t *testing.T) {
 // passing tests were judged as red-first tests "passed without the feature on base". A job that names its test
 // directory runs only that directory; a job without one still runs the whole module.
 func TestTheBuiltInGoProfileRunsOnlyTheJobTestDirectory(t *testing.T) {
+	t.Parallel()
 	policy := rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}
 	args, err := policy.ContainerArgsWithOverlays("go", "/tmp/source", "/tmp/overlays", "/tmp/module-cache", "tests/heimdall/KAN-9", 30)
 	require.NoError(t, err)

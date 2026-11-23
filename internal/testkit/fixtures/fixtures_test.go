@@ -37,6 +37,7 @@ func loadManifest(t *testing.T) fixtures.Manifest {
 
 // TestBaseVetAndTestsPass is criterion (a): the base is a real service whose own suite passes offline.
 func TestBaseVetAndTestsPass(t *testing.T) {
+	t.Parallel()
 	dir := fixtures.Materialize(t, "pay-demo")
 	out, err := fixtures.GoRun(t, dir, "vet", "./...")
 	require.NoError(t, err, out)
@@ -47,6 +48,7 @@ func TestBaseVetAndTestsPass(t *testing.T) {
 // TestRefundsBranchFailsOnlyItsReproTests is criterion (b): the buggy branch passes its own suite and
 // only the repro tests fail, each on an assertion in its own file.
 func TestRefundsBranchFailsOnlyItsReproTests(t *testing.T) {
+	t.Parallel()
 	dir := fixtures.Materialize(t, "pay-demo")
 	fixtures.Checkout(t, dir, branchRefs)
 	var repro []fixtures.Finding
@@ -79,11 +81,13 @@ func TestRefundsBranchFailsOnlyItsReproTests(t *testing.T) {
 
 // TestReproTestsFailOnRefundsAndPassOnFixed is criterion (b) per finding, on the two branches.
 func TestReproTestsFailOnRefundsAndPassOnFixed(t *testing.T) {
+	t.Parallel()
 	for _, f := range loadManifest(t).Findings {
 		if f.Repro == "" {
 			continue
 		}
 		t.Run(f.ID, func(t *testing.T) {
+			t.Parallel()
 			dir := fixtures.Materialize(t, "pay-demo")
 			fixtures.Checkout(t, dir, branchRefs)
 			fixtures.ApplyRepro(t, dir, f)
@@ -101,6 +105,7 @@ func TestReproTestsFailOnRefundsAndPassOnFixed(t *testing.T) {
 
 // TestRefundsFixedPassesEverything is the other half of (b): with every repro applied, the fixed branch is green.
 func TestRefundsFixedPassesEverything(t *testing.T) {
+	t.Parallel()
 	dir := fixtures.Materialize(t, "pay-demo")
 	fixtures.Checkout(t, dir, fixedRef)
 	for _, f := range loadManifest(t).Findings {
@@ -114,11 +119,13 @@ func TestRefundsFixedPassesEverything(t *testing.T) {
 
 // TestManifestLocatesEachDefect is criterion (c): each line range exists in its branch and holds the defect.
 func TestManifestLocatesEachDefect(t *testing.T) {
+	t.Parallel()
 	dir := fixtures.Materialize(t, "pay-demo")
 	m := loadManifest(t)
 	require.Len(t, m.Findings, 3, "D57 plants exactly three findings")
 	for _, f := range m.Findings {
 		t.Run(f.ID, func(t *testing.T) {
+			t.Parallel()
 			require.Len(t, f.Lines, 2, "lines must be [first, last]")
 			first, last := f.Lines[0], f.Lines[1]
 			lines := strings.Split(fixtures.Git(t, dir, "show", f.Branch+":"+f.File), "\n")
@@ -138,6 +145,7 @@ func TestManifestLocatesEachDefect(t *testing.T) {
 
 // TestManifestAgreesWithStory checks the manifest against the fixture the board reads (read-only).
 func TestManifestAgreesWithStory(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join(fixtures.ModuleRoot(), "e2e", "scenarios", "testdata", "fixture-pay.yaml"))
 	require.NoError(t, err)
 	var s struct {
@@ -169,6 +177,7 @@ func TestManifestAgreesWithStory(t *testing.T) {
 
 // TestBigNoTicketIsAboutFourteenHundredLines is criterion (d): size in the 1300 to 1500 band and no tracker key.
 func TestBigNoTicketIsAboutFourteenHundredLines(t *testing.T) {
+	t.Parallel()
 	dir := fixtures.Materialize(t, "pay-demo")
 	changed := 0
 	for _, line := range strings.Split(fixtures.Git(t, dir, "diff", "--numstat", "main", bigRef), "\n") {
@@ -196,6 +205,7 @@ func TestBigNoTicketIsAboutFourteenHundredLines(t *testing.T) {
 
 // TestInjectionCanaryAppearsOnceOnlyOnInjection is criterion (e).
 func TestInjectionCanaryAppearsOnceOnlyOnInjection(t *testing.T) {
+	t.Parallel()
 	dir := fixtures.Materialize(t, "pay-demo")
 	require.Equal(t, 1, fixtures.CountInBranch(t, dir, injectRef, canary))
 	require.Equal(t, 0, fixtures.CountInBranch(t, dir, "main", canary))
@@ -209,6 +219,7 @@ func TestInjectionCanaryAppearsOnceOnlyOnInjection(t *testing.T) {
 // TestMaterialisedTreesAreStable is criterion (f): two builds give identical trees and commits, and every commit
 // carries the fixed author and committer time. Git stores seconds, so equal hashes alone would miss a clock read.
 func TestMaterialisedTreesAreStable(t *testing.T) {
+	t.Parallel()
 	first := fixtures.Materialize(t, "pay-demo")
 	second := fixtures.Materialize(t, "pay-demo")
 	fixedUnix := strconv.FormatInt(time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC).Unix(), 10)
@@ -225,15 +236,19 @@ func TestMaterialisedTreesAreStable(t *testing.T) {
 
 // TestFixtureGoSourcesAreGofmted is criterion (g) on the sources under testdata, where ./... never looks.
 func TestFixtureGoSourcesAreGofmted(t *testing.T) {
+	t.Parallel()
 	require.Empty(t, fixtures.Gofmt(t, fixtures.Root()))
 }
 
 // TestEveryBranchIsGofmtVetAndTestClean is criterion (g) and the own-suite check on every materialised branch.
+// Each subtest materialises its own copy so the branches can be checked in parallel.
 func TestEveryBranchIsGofmtVetAndTestClean(t *testing.T) {
+	t.Parallel()
 	for _, repo := range []string{"pay-demo", "ledger-demo"} {
-		dir := fixtures.Materialize(t, repo)
 		for _, b := range fixtures.Branches(t, repo) {
 			t.Run(repo+"@"+b, func(t *testing.T) {
+				t.Parallel()
+				dir := fixtures.Materialize(t, repo)
 				fixtures.Checkout(t, dir, b)
 				require.Empty(t, fixtures.Gofmt(t, dir))
 				out, err := fixtures.GoRun(t, dir, "vet", "./...")
@@ -247,6 +262,7 @@ func TestEveryBranchIsGofmtVetAndTestClean(t *testing.T) {
 
 // TestLedgerDemoDoesNotVendorPayDemo keeps the consumer separate: only memory and packs link the two repos.
 func TestLedgerDemoDoesNotVendorPayDemo(t *testing.T) {
+	t.Parallel()
 	dir := fixtures.Materialize(t, "ledger-demo")
 	require.Equal(t, 0, fixtures.CountInBranch(t, dir, "main", modulePath))
 	require.Equal(t, []string{"main"}, fixtures.Branches(t, "ledger-demo"))

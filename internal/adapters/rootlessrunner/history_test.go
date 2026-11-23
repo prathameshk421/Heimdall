@@ -57,6 +57,7 @@ func historyRunner(t *testing.T, hosts []string, git GitRunner) (Runner, Policy)
 }
 
 func TestAMirrorLivesUnderTheHashOfItsRepositoryNeverItsName(t *testing.T) {
+	t.Parallel()
 	p := Policy{ModuleCache: "/var/lib/heimdall-runner/module-cache"}
 	dir := p.mirrorDir("Acme/Pay")
 	require.Equal(t, dir, p.mirrorDir("acme/pay"), "the case of a repository name does not make a second mirror")
@@ -69,6 +70,7 @@ func TestAMirrorLivesUnderTheHashOfItsRepositoryNeverItsName(t *testing.T) {
 }
 
 func TestOnlyAPlainRepositoryNameBecomesAFetchURL(t *testing.T) {
+	t.Parallel()
 	url, err := mirrorURL("acme/pay-demo.v2")
 	require.NoError(t, err)
 	require.Equal(t, "https://github.com/acme/pay-demo.v2.git", url)
@@ -79,6 +81,7 @@ func TestOnlyAPlainRepositoryNameBecomesAFetchURL(t *testing.T) {
 }
 
 func TestTheMirrorCommandsCarryEveryRestrictionAndOnlyFetchOnTheWarmPath(t *testing.T) {
+	t.Parallel()
 	fresh := historyCommands("http://127.0.0.1:9", "/h/x.git", "https://github.com/acme/pay.git", true)
 	update := historyCommands("http://127.0.0.1:9", "/h/x.git", "https://github.com/acme/pay.git", false)
 	require.Len(t, fresh, 5, "init, three configs, one fetch")
@@ -101,11 +104,13 @@ func TestTheMirrorCommandsCarryEveryRestrictionAndOnlyFetchOnTheWarmPath(t *test
 }
 
 func TestGitRunsWithNothingInheritedFromTheRunner(t *testing.T) {
+	t.Parallel()
 	env := gitEnv("/h")
 	require.ElementsMatch(t, []string{"PATH=/usr/bin:/bin", "HOME=/h", "LANG=C", "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null"}, env)
 }
 
 func TestTheMirrorIsFetchedOnlyUnderAProfileThatListsTheForgeHost(t *testing.T) {
+	t.Parallel()
 	git := &gitRecorder{}
 	r, _ := historyRunner(t, nil, git)
 	_, err := r.WarmHistory(context.Background(), "acme-pay", "acme/pay", "")
@@ -126,6 +131,7 @@ func TestTheMirrorIsFetchedOnlyUnderAProfileThatListsTheForgeHost(t *testing.T) 
 }
 
 func TestWarmingTheMirrorRunsGitWithTheConfinedConfigurationAndCleansAFailedCreation(t *testing.T) {
+	t.Parallel()
 	git := &gitRecorder{}
 	r, p := historyRunner(t, []string{"github.com"}, git)
 	res, err := r.WarmHistory(context.Background(), "acme-pay", "acme/pay", "")
@@ -146,6 +152,7 @@ func TestWarmingTheMirrorRunsGitWithTheConfinedConfigurationAndCleansAFailedCrea
 }
 
 func TestAnExistingMirrorIsFetchedNotRecreated(t *testing.T) {
+	t.Parallel()
 	git := &gitRecorder{}
 	r, p := historyRunner(t, []string{"github.com"}, git)
 	require.NoError(t, os.MkdirAll(p.mirrorDir("acme/pay"), 0o700))
@@ -156,6 +163,7 @@ func TestAnExistingMirrorIsFetchedNotRecreated(t *testing.T) {
 }
 
 func TestTheProxyRefusesEverythingButAnAllowlistedHostOnTheHTTPSPort(t *testing.T) {
+	t.Parallel()
 	h := connectHandler(context.Background(), []string{"github.com"})
 	for name, tt := range map[string]struct {
 		method, target string
@@ -170,6 +178,7 @@ func TestTheProxyRefusesEverythingButAnAllowlistedHostOnTheHTTPSPort(t *testing.
 		"a lookalike suffix":               {http.MethodConnect, "github.com.evil.example:443", http.StatusForbidden},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			req := httptest.NewRequestWithContext(context.Background(), tt.method, "http://proxy/", nil)
 			req.Host = tt.target
 			rec := httptest.NewRecorder()
@@ -180,6 +189,7 @@ func TestTheProxyRefusesEverythingButAnAllowlistedHostOnTheHTTPSPort(t *testing.
 }
 
 func TestACheckSeesTheMirrorOnlyReadOnlyAndOnlyWhenItsRowAsksForIt(t *testing.T) {
+	t.Parallel()
 	git := &gitRecorder{}
 	exec := &checkExecutor{output: []byte(sarifOut)}
 	r, p := historyRunner(t, []string{"github.com"}, git)
@@ -209,6 +219,7 @@ func TestACheckSeesTheMirrorOnlyReadOnlyAndOnlyWhenItsRowAsksForIt(t *testing.T)
 }
 
 func TestAJobSpecWithAMirrorMismatchIsRefused(t *testing.T) {
+	t.Parallel()
 	p := jobPolicy()
 	good := jobSpec{Image: goRef, Run: "x", ResultFile: resultSARIF, Archive: "/var/jobs/a.tgz", ModuleCache: "/var/cache/mod", Timeout: 60}
 	for name, mutate := range map[string]func(*jobSpec){
@@ -217,6 +228,7 @@ func TestAJobSpecWithAMirrorMismatchIsRefused(t *testing.T) {
 		"a mirror path that adds an option": func(j *jobSpec) { j.History, j.HistoryDir = true, "/var/lib/h/x.git,rw" },
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			j := good
 			mutate(&j)
 			_, err := p.profileJobArgs(j)
@@ -226,6 +238,7 @@ func TestAJobSpecWithAMirrorMismatchIsRefused(t *testing.T) {
 }
 
 func TestTheHistoryEndpointTakesOnlyAWarmJob(t *testing.T) {
+	t.Parallel()
 	r, _ := historyRunner(t, []string{"github.com"}, &gitRecorder{})
 	body := `{"profile":"acme-pay","job":{"kind":"red_first","repo":"acme/pay","sha":"` + strings.Repeat("a", 40) + `","dir":"t","timeout":60000000000}}`
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/history", strings.NewReader(body))
@@ -234,6 +247,7 @@ func TestTheHistoryEndpointTakesOnlyAWarmJob(t *testing.T) {
 }
 
 func TestAPrivateMirrorFetchUsesTheRequestTokenOnlyInTheEnvironment(t *testing.T) {
+	t.Parallel()
 	git := &gitRecorder{}
 	r, _ := historyRunner(t, []string{historyHost}, git)
 	token := "ghs_" + strings.Repeat("Q", 36)
@@ -257,6 +271,7 @@ func TestAPrivateMirrorFetchUsesTheRequestTokenOnlyInTheEnvironment(t *testing.T
 }
 
 func TestAFailedPrivateFetchNeverRepeatsTheToken(t *testing.T) {
+	t.Parallel()
 	token := "ghs_" + strings.Repeat("Z", 36)
 	git := &leakyGit{token: token}
 	r, _ := historyRunner(t, []string{historyHost}, git)

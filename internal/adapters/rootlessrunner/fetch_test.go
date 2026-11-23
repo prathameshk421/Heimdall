@@ -9,6 +9,7 @@ import (
 )
 
 func TestFetcherRejectsDisallowedHostsBeforeAnyNetworkRequest(t *testing.T) {
+	t.Parallel()
 	fetcher := rootlessrunner.Fetcher{}
 	profile := rootlessrunner.RepoProfile{FetchHosts: []string{"proxy.golang.org"}}
 	for _, raw := range []string{"https://evil.example/pkg.zip", "http://proxy.golang.org/pkg.zip", "https://proxy.golang.org:8443/pkg.zip", "https://user@proxy.golang.org/pkg.zip"} {

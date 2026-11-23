@@ -25,6 +25,7 @@ func (e *recordingExecutor) Execute(_ context.Context, args []string, _ string) 
 }
 
 func TestRunnerRejectsOverlayEscapeBeforeRuntime(t *testing.T) {
+	t.Parallel()
 	executor := &recordingExecutor{}
 	runner := rootlessrunner.Runner{
 		Policy:   rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}},
@@ -36,6 +37,7 @@ func TestRunnerRejectsOverlayEscapeBeforeRuntime(t *testing.T) {
 }
 
 func TestRunnerBoundsArchiveBeforeRuntime(t *testing.T) {
+	t.Parallel()
 	executor := &recordingExecutor{}
 	runner := rootlessrunner.Runner{Policy: rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}, Executor: executor, Root: t.TempDir()}
 	_, err := runner.Run(context.Background(), rootlessrunner.JobInput{Profile: "go", Archive: bytes.NewReader(bytes.Repeat([]byte("x"), (64<<20)+1)), Timeout: time.Minute})
@@ -44,6 +46,7 @@ func TestRunnerBoundsArchiveBeforeRuntime(t *testing.T) {
 }
 
 func TestRunnerPassesOnlyFixedBoundedInvocation(t *testing.T) {
+	t.Parallel()
 	executor := &recordingExecutor{output: []byte("{\"Action\":\"pass\",\"Package\":\"fixture\",\"Test\":\"TestSafe\"}\n")}
 	runner := rootlessrunner.Runner{Policy: rootlessrunner.Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}, Executor: executor, Root: t.TempDir()}
 	_, err := runner.Run(context.Background(), rootlessrunner.JobInput{Profile: "go", Archive: bytes.NewReader([]byte("archive")), Timeout: time.Minute})
@@ -57,6 +60,7 @@ func TestRunnerPassesOnlyFixedBoundedInvocation(t *testing.T) {
 }
 
 func TestRunnerReportsMissingExecutor(t *testing.T) {
+	t.Parallel()
 	runner := rootlessrunner.Runner{}
 	_, err := runner.Run(context.Background(), rootlessrunner.JobInput{Profile: "go", Archive: bytes.NewReader(nil), Timeout: time.Minute})
 	require.Error(t, err)

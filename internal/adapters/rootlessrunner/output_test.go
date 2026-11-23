@@ -8,6 +8,7 @@ import (
 )
 
 func TestBoundedBufferCapsRuntimeOutput(t *testing.T) {
+	t.Parallel()
 	var output boundedBuffer
 	written, err := output.Write(bytes.Repeat([]byte("x"), 6<<20))
 	require.NoError(t, err)

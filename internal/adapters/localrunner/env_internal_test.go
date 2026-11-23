@@ -19,6 +19,7 @@ func envValue(env []string, key string) (string, bool) {
 // The build cache must not live in the temporary HOME: it would be empty on every run and each run would compile the
 // standard library again (found in CI: the package timed out).
 func TestTheGoBuildCacheIsNotInsideTheTemporaryHome(t *testing.T) {
+	t.Parallel()
 	r := New(nil, WithGoCache("/var/cache/heimdall-go"))
 	env := r.buildEnv("/tmp/run-1", Job{})
 	home, _ := envValue(env, "HOME")
@@ -30,6 +31,7 @@ func TestTheGoBuildCacheIsNotInsideTheTemporaryHome(t *testing.T) {
 }
 
 func TestTheDefaultGoCacheIsUnderTheUserCacheDirectory(t *testing.T) {
+	t.Parallel()
 	r := New(nil)
 	env := r.buildEnv("/tmp/run-2", Job{})
 	cache, ok := envValue(env, "GOCACHE")

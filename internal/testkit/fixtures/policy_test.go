@@ -14,10 +14,13 @@ import (
 )
 
 // The fixture's heimdall.yaml is read by the real product, so it must pass the real policy validation on every branch.
+// Each subtest materialises its own copy so the branches can be checked in parallel.
 func TestEveryBranchPolicyDecodesStrictlyAndValidates(t *testing.T) {
-	repo := fixtures.Materialize(t, "pay-demo")
-	for _, branch := range fixtures.Branches(t, repo) {
+	t.Parallel()
+	for _, branch := range fixtures.Branches(t, "pay-demo") {
 		t.Run(branch, func(t *testing.T) {
+			t.Parallel()
+			repo := fixtures.Materialize(t, "pay-demo")
 			fixtures.Checkout(t, repo, branch)
 			b, err := os.ReadFile(filepath.Join(repo, "heimdall.yaml"))
 			require.NoError(t, err)

@@ -58,6 +58,7 @@ func resolveArgs(t *testing.T, p Policy, checkID, testKind, dir string) ([]strin
 }
 
 func TestACheckJobRunsTheProfileCommandInTheHardenedContainer(t *testing.T) {
+	t.Parallel()
 	args, err := resolveArgs(t, jobPolicy(), "patterns", "", "")
 	require.NoError(t, err)
 	for _, want := range []string{"--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
@@ -75,6 +76,7 @@ func TestACheckJobRunsTheProfileCommandInTheHardenedContainer(t *testing.T) {
 }
 
 func TestABaseTreeIsMountedReadOnlyAtItsOwnPath(t *testing.T) {
+	t.Parallel()
 	p := jobPolicy()
 	spec, err := p.resolveJob("acme-pay", "compare", "", "")
 	require.NoError(t, err)
@@ -86,6 +88,7 @@ func TestABaseTreeIsMountedReadOnlyAtItsOwnPath(t *testing.T) {
 }
 
 func TestATestKindSubstitutesTheDirectoryAndDefaultsToTheProfileImage(t *testing.T) {
+	t.Parallel()
 	args, err := resolveArgs(t, jobPolicy(), "", "api", "tests/heimdall/PAY-1")
 	require.NoError(t, err)
 	require.Contains(t, args, "HEIMDALL_RUN=pytest ./tests/heimdall/PAY-1 --junitxml=/out/junit.xml")
@@ -102,6 +105,7 @@ func TestATestKindSubstitutesTheDirectoryAndDefaultsToTheProfileImage(t *testing
 }
 
 func TestAJobIsRefusedForEveryForbiddenInput(t *testing.T) {
+	t.Parallel()
 	p := jobPolicy()
 	tests := []struct {
 		name string
@@ -134,6 +138,7 @@ func TestAJobIsRefusedForEveryForbiddenInput(t *testing.T) {
 }
 
 func TestProfileJobArgsRefuseAHostPathAndACommandOutsideThePolicy(t *testing.T) {
+	t.Parallel()
 	p := jobPolicy()
 	good := jobSpec{Image: goRef, Run: "x", ResultFile: resultSARIF, Archive: "/var/jobs/a.tgz", ModuleCache: "/var/cache/mod", Timeout: 60}
 	_, err := p.profileJobArgs(good)
@@ -158,6 +163,7 @@ func TestProfileJobArgsRefuseAHostPathAndACommandOutsideThePolicy(t *testing.T) 
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			j := good
 			tt.mutate(&j)
 			_, err := p.profileJobArgs(j)
@@ -167,6 +173,7 @@ func TestProfileJobArgsRefuseAHostPathAndACommandOutsideThePolicy(t *testing.T) 
 }
 
 func TestParseJobOutputReadsTheTrailerFromTheEnd(t *testing.T) {
+	t.Parallel()
 	out := []byte("\nheimdall-log-begin\nlog line\n\nheimdall-result-begin\n{\"runs\":[]}\n\nheimdall-result-end\nheimdall-exit=1\n")
 	got, ok := parseJobOutput(out)
 	require.True(t, ok)
@@ -183,6 +190,7 @@ func TestParseJobOutputReadsTheTrailerFromTheEnd(t *testing.T) {
 }
 
 func TestParseJobOutputRefusesAnythingWithoutATrailer(t *testing.T) {
+	t.Parallel()
 	for name, out := range map[string]string{
 		"empty":            "",
 		"a killed job":     "\nheimdall-log-begin\nsome log\n",
@@ -230,6 +238,7 @@ func extractInto(t *testing.T, archive string) string {
 }
 
 func TestTheWrapperStripsOneTopDirectoryAndKeepsAFlatArchive(t *testing.T) {
+	t.Parallel()
 	gh := tarGz(t, map[string]string{"owner-repo-abc/go.mod": "m", "owner-repo-abc/a/b.txt": "b"},
 		[]string{"owner-repo-abc/", "owner-repo-abc/go.mod", "owner-repo-abc/a/", "owner-repo-abc/a/b.txt"})
 	dst := extractInto(t, gh)
@@ -287,6 +296,7 @@ func jobRequest(t *testing.T, job ports.SandboxJob, mutate func(*request)) *http
 const sarifOut = "\nheimdall-log-begin\nscan done\n\nheimdall-result-begin\n{\"version\":\"2.1.0\",\"runs\":[]}\n\nheimdall-result-end\nheimdall-exit=1\n"
 
 func TestTheHandlerReturnsACheckResultAndRefusesAJobWithoutOne(t *testing.T) {
+	t.Parallel()
 	job := ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: "patterns"}
 	ok := &checkExecutor{output: []byte(sarifOut)}
 	out, status := func() (response, int) { r := jobRunner(t, ok); return r.handleRun(jobRequest(t, job, nil)) }()
@@ -299,6 +309,7 @@ func TestTheHandlerReturnsACheckResultAndRefusesAJobWithoutOne(t *testing.T) {
 		"a non-JSON result": "\nheimdall-result-begin\nnot json\n\nheimdall-result-end\nheimdall-exit=0\n",
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			r := jobRunner(t, &checkExecutor{output: []byte(output)})
 			_, status := r.handleRun(jobRequest(t, job, nil))
 			require.Equal(t, http.StatusUnprocessableEntity, status)
@@ -307,6 +318,7 @@ func TestTheHandlerReturnsACheckResultAndRefusesAJobWithoutOne(t *testing.T) {
 }
 
 func TestTheHandlerRefusesJobsOutsideTheContract(t *testing.T) {
+	t.Parallel()
 	check := ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: "patterns"}
 	tests := []struct {
 		name   string
@@ -321,6 +333,7 @@ func TestTheHandlerRefusesJobsOutsideTheContract(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			exec := &checkExecutor{output: []byte(sarifOut)}
 			r := jobRunner(t, exec)
 			_, status := r.handleRun(jobRequest(t, tt.job, tt.mutate))
@@ -331,6 +344,7 @@ func TestTheHandlerRefusesJobsOutsideTheContract(t *testing.T) {
 }
 
 func TestABaseTreeReachesTheContainerAndAnOversizedOneNeverStartsIt(t *testing.T) {
+	t.Parallel()
 	job := ports.SandboxJob{Kind: ports.SandboxCheck, CheckID: "compare"}
 	exec := &checkExecutor{output: []byte(sarifOut)}
 	r := jobRunner(t, exec)
@@ -348,6 +362,7 @@ func TestABaseTreeReachesTheContainerAndAnOversizedOneNeverStartsIt(t *testing.T
 // A profile job runs with a read-only root, so a tool's cache must have a writable home outside the repository tree
 // (live, Nov 21: the promoted vet check failed on "mkdir /go/.cache: read-only file system").
 func TestAProfileJobHasAWritableCacheOutsideTheTree(t *testing.T) {
+	t.Parallel()
 	j := jobSpec{Image: goRef, Run: "go vet ./...", ResultFile: resultSARIF, Archive: "/var/jobs/a.tgz", ModuleCache: "/var/cache/mod", Timeout: 60}
 	args, err := Policy{}.profileJobArgs(j)
 	require.NoError(t, err)

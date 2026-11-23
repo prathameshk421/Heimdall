@@ -30,6 +30,7 @@ func (failingExecutor) Execute(context.Context, []string, string) ([]byte, error
 // A job that never produced test output must report the runtime's own cause instead of hiding it
 // behind a generic message the operator cannot act on.
 func TestHandlerReportsTheSandboxCause(t *testing.T) {
+	t.Parallel()
 	runner := Runner{Policy: Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}, Executor: failingExecutor{}, Root: t.TempDir()}
 	in := request{Profile: "go", Job: ports.SandboxJob{Kind: ports.SandboxRedFirst, Repo: "acme/pay", SHA: id.SHA(strings.Repeat("a", 40)), Dir: "tests/heimdall/PAY-1", Timeout: time.Minute}, Archive: []byte("archive")}
 	body, err := json.Marshal(in)
@@ -42,6 +43,7 @@ func TestHandlerReportsTheSandboxCause(t *testing.T) {
 }
 
 func TestHandlerRejectsTooManyOverlaysBeforeExecution(t *testing.T) {
+	t.Parallel()
 	executor := &apiTestExecutor{}
 	runner := Runner{Policy: Policy{Images: map[string]string{"go": "registry.example/go@sha256:" + strings.Repeat("a", 64)}}, Executor: executor, Root: t.TempDir()}
 	in := request{Profile: "go", Job: ports.SandboxJob{Kind: ports.SandboxRedFirst, Repo: "acme/pay", SHA: id.SHA(strings.Repeat("a", 40)), Dir: "tests/heimdall/PAY-1", Timeout: time.Minute}, Archive: []byte("archive")}

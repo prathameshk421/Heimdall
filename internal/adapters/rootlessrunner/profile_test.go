@@ -9,6 +9,7 @@ import (
 )
 
 func TestProfileApprovalRejectsUnpinnedImageAndUnsafeFetchHost(t *testing.T) {
+	t.Parallel()
 	image := "registry.example/go@sha256:" + strings.Repeat("a", 64)
 	valid := "languages: [go]\nimage: " + image + "\nacceptance: 'go test {dir}'\nseam: api.Handler\nac_tag: '// heimdall:{ac}'\npaths:\n  tests: tests/heimdall\n"
 	_, err := rootlessrunner.ParseApprovedProfile([]byte(valid), []string{image})

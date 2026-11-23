@@ -13,6 +13,7 @@ import (
 )
 
 func TestParseEventsPassingTest(t *testing.T) {
+	t.Parallel()
 	stream := strings.Join([]string{
 		`{"Time":"2026-11-05T00:00:00Z","Action":"start","Package":"acme/pkg"}`,
 		`{"Time":"2026-11-05T00:00:00Z","Action":"run","Package":"acme/pkg","Test":"TestAdd"}`,
@@ -42,11 +43,13 @@ func TestParseEventsPassingTest(t *testing.T) {
 }
 
 func TestParseEventsRejectsAnOversizedIncompleteEvent(t *testing.T) {
+	t.Parallel()
 	_, _, err := localrunner.ParseEvents(strings.NewReader(strings.Repeat("x", 5<<20)))
 	require.Error(t, err)
 }
 
 func TestParseEventsAssertionFailure(t *testing.T) {
+	t.Parallel()
 	stream := strings.Join([]string{
 		`{"Time":"2026-11-05T00:00:00Z","Action":"start","Package":"acme/pkg"}`,
 		`{"Time":"2026-11-05T00:00:00Z","Action":"run","Package":"acme/pkg","Test":"TestMinus"}`,
@@ -75,6 +78,7 @@ func TestParseEventsAssertionFailure(t *testing.T) {
 }
 
 func TestParseEventsPackageBuildFailure(t *testing.T) {
+	t.Parallel()
 	stream := strings.Join([]string{
 		`{"ImportPath":"acme/pkg.test","Action":"build-output","Output":"# acme/pkg\n"}`,
 		`{"ImportPath":"acme/pkg.test","Action":"build-output","Output":"pkg_test.go:4:2: undefined: Missing\n"}`,
@@ -102,6 +106,7 @@ func TestParseEventsPackageBuildFailure(t *testing.T) {
 }
 
 func TestParseEventsPanicIsError(t *testing.T) {
+	t.Parallel()
 	stream := strings.Join([]string{
 		`{"Time":"2026-11-05T00:00:00Z","Action":"start","Package":"acme/pkg"}`,
 		`{"Time":"2026-11-05T00:00:00Z","Action":"run","Package":"acme/pkg","Test":"TestCrash"}`,
@@ -128,6 +133,7 @@ func TestParseEventsPanicIsError(t *testing.T) {
 }
 
 func TestParseEventsSkippedTest(t *testing.T) {
+	t.Parallel()
 	stream := strings.Join([]string{
 		`{"Time":"2026-11-05T00:00:00Z","Action":"start","Package":"acme/pkg"}`,
 		`{"Time":"2026-11-05T00:00:00Z","Action":"run","Package":"acme/pkg","Test":"TestSkipMe"}`,
@@ -154,6 +160,7 @@ func TestParseEventsSkippedTest(t *testing.T) {
 }
 
 func TestParseEventsUnfinishedTestIsError(t *testing.T) {
+	t.Parallel()
 	// A test that started (run) but the process terminated before pass/fail/skip
 	stream := strings.Join([]string{
 		`{"Time":"2026-11-05T00:00:00Z","Action":"start","Package":"acme/pkg"}`,
