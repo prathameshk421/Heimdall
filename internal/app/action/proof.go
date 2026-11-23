@@ -16,6 +16,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/proof"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/rulecard"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testintegrity"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
@@ -129,6 +130,10 @@ type ProofIn struct {
 	// Claims are the third-party candidates, and Existing the findings the log already holds.
 	Claims   []Claim
 	Existing []ExistingFinding
+	// Reviewer and PersonalCards optionally supply merge-base approved rule cards compiled into an
+	// <untrusted_personal_context> pack for this proof review.
+	Reviewer      string
+	PersonalCards []rulecard.Card
 	// MonthKnown and MonthSpentUSD are the monthly spend before this run. A month total that was not read is not
 	// believed, and then no monthly stop is made: the provider's own limit is the hard stop.
 	MonthKnown    bool

@@ -14,9 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/contextpack"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/proof"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/rulecard"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -162,6 +164,20 @@ func reviewerMessages(in ProofIn) (system, user string) {
 		for _, c := range in.Claims {
 			fmt.Fprintf(&b, "comment %d: %s at %s lines %d-%d (%s): <untrusted_claim>%s</untrusted_claim>\n", c.CommentID,
 				c.Source, c.Location.File, c.Location.Lines[0], c.Location.Lines[1], c.Severity, clip(c.Claim, maxPromptClaim))
+		}
+	}
+	if len(in.PersonalCards) > 0 {
+		changed := make([]string, 0, len(in.Files))
+		for _, f := range in.Files {
+			changed = append(changed, f.Path)
+		}
+		pack := contextpack.Compile(contextpack.Input{
+			Reviewer: in.Reviewer,
+			Cards:    in.PersonalCards,
+			Facts:    rulecard.ChangeFacts{Files: changed},
+		})
+		if pack.Rendered != "" {
+			b.WriteString("\n\n" + pack.Rendered)
 		}
 	}
 	return reviewerPrompt, b.String()
