@@ -9,43 +9,37 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 )
 
-func TestTicketKeyTakesTheBranchBeforeTheTitle(t *testing.T) {
-	require.Equal(t, id.ChangeID("PAY-142"), ticketKey("feature/PAY-142-refund", "PAY-7 other work"))
-}
-
-func TestTicketKeyFallsBackToTheTitle(t *testing.T) {
-	require.Equal(t, id.ChangeID("PAY-142"), ticketKey("main", "PAY-142 refund rounding"))
-}
-
-func TestTicketKeyIsEmptyWhenNeitherNamesOne(t *testing.T) {
-	require.Empty(t, ticketKey("feature/refund", "refund rounding"))
-}
-
-func TestTicketKeyNeedsAWholeTokenOnBothSides(t *testing.T) {
-	cases := map[string]id.ChangeID{
-		"aPAY-142 refund":          "",         // lowercase letter before the key
-		"XPAY-142 refund":          "XPAY-142", // a whole token: XPAY is a valid project key
-		"PAY-142a refund":          "",         // letter after the key
-		"PAY-1420000000000 refund": "",         // more digits than a ticket number allows
-		"refund PAY-142.":          "PAY-142",
-		"feature/PAY-142-refund":   "PAY-142",
-		"closes PAY-142, PAY-143":  "PAY-142",
+// ticketKey takes the branch before the title, needs a whole token, and refuses lowercase keys and leading zeros.
+func TestTicketKey(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name          string
+		branch, title string
+		want          id.ChangeID
+	}{
+		{"branch before title", "feature/PAY-142-refund", "PAY-7 other work", "PAY-142"},
+		{"title fallback", "main", "PAY-142 refund rounding", "PAY-142"},
+		{"neither names one", "feature/refund", "refund rounding", ""},
+		{"lowercase letter before the key", "", "aPAY-142 refund", ""},
+		{"a whole token is a valid key", "", "XPAY-142 refund", "XPAY-142"},
+		{"letter after the key", "", "PAY-142a refund", ""},
+		{"too many digits", "", "PAY-1420000000000 refund", ""},
+		{"punctuation ends the token", "", "refund PAY-142.", "PAY-142"},
+		{"first of several", "", "closes PAY-142, PAY-143", "PAY-142"},
+		{"lowercase branch key", "pay-142-refund", "refund", ""},
+		{"leading zero", "", "PAY-0 refund", ""},
+		{"invalid candidate skipped for a valid one", "", "PAY-0 and PAY-5", "PAY-5"},
 	}
-	for title, want := range cases {
-		require.Equal(t, want, ticketKey("", title), "title %q", title)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, ticketKey(tc.branch, tc.title))
+		})
 	}
-}
-
-func TestTicketKeyRefusesLowercaseAndLeadingZero(t *testing.T) {
-	require.Empty(t, ticketKey("pay-142-refund", "refund"), "branch keys are case-sensitive here")
-	require.Empty(t, ticketKey("", "PAY-0 refund"), "a ticket number cannot start with zero")
-}
-
-func TestTicketKeySkipsAnInvalidCandidateForAValidOne(t *testing.T) {
-	require.Equal(t, id.ChangeID("PAY-5"), ticketKey("", "PAY-0 and PAY-5"))
 }
 
 func TestInDirMatchesTheDirectoryAndItsChildrenOnly(t *testing.T) {
+	t.Parallel()
 	require.True(t, inDir("tests/heimdall", "tests/heimdall"))
 	require.True(t, inDir("tests/heimdall/PAY-142/x_test.go", "tests/heimdall"))
 	require.False(t, inDir("tests/heimdallx/y.go", "tests/heimdall"))
@@ -53,6 +47,7 @@ func TestInDirMatchesTheDirectoryAndItsChildrenOnly(t *testing.T) {
 }
 
 func TestClipKeepsShortTextAndBoundsLongTextOnARuneBoundary(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "short", clip("short"))
 
 	long := strings.Repeat("é", 300) // two bytes per rune, so a naive cut would split one

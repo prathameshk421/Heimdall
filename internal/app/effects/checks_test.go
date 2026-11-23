@@ -77,6 +77,7 @@ func reported(t *testing.T, ingest *fakeIngest) change.ChecksReported {
 
 // A check with a baseline reports only what the head added: the result the base already had is dropped.
 func TestChecksReportOnlyWhatTheHeadAddedForABaselineCheck(t *testing.T) {
+	t.Parallel()
 	old, added := checkSarif("old", "a.go", 3), checkSarif("new", "b.go", 9)
 	both := map[string]any{"runs": []any{
 		json.RawMessage(`{"results":` + resultsOf(t, old) + `}`),
@@ -111,6 +112,7 @@ func resultsOf(t *testing.T, doc []byte) string {
 
 // A check that cannot run is an entry of errors and the job is done: the others still report.
 func TestACheckThatCannotRunIsAnErrorEntryNotAFailedJob(t *testing.T) {
+	t.Parallel()
 	sb := &sequenceSandbox{errs: []error{errors.New("runner down"), nil}, answers: []ports.SandboxResult{{}, {Sarif: checkSarif("r", "a.go", 1)}}}
 	exec, ingest := newChecks(t, sb, profileFake{checks: []ports.ProfileCheck{{ID: "slow"}, {ID: "lint"}}})
 
@@ -125,6 +127,7 @@ func TestACheckThatCannotRunIsAnErrorEntryNotAFailedJob(t *testing.T) {
 }
 
 func TestARepositoryWithNoPromotedProfileFailsTheJob(t *testing.T) {
+	t.Parallel()
 	exec, ingest := newChecks(t, &sequenceSandbox{}, profileFake{none: true})
 	require.Error(t, exec.Execute(context.Background(), runChecksFx(t, "lint")))
 	require.Empty(t, ingest.written)

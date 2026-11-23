@@ -38,6 +38,7 @@ func actionEnv() map[string]string {
 func getenvOf(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 
 func TestTheGateReadsItsEnvironment(t *testing.T) {
+	t.Parallel()
 	got, err := LoadAction(getenvOf(actionEnv()), ActionGate)
 	require.NoError(t, err)
 	require.Equal(t, "aarush323/heimdall-fixture-pay", got.Repo)
@@ -45,19 +46,18 @@ func TestTheGateReadsItsEnvironment(t *testing.T) {
 	require.Equal(t, testGitHubToken, got.Token)
 	require.Len(t, got.LogKey, 32)
 	require.Equal(t, "github-actions[bot]", got.CommentAuthor, "the default author is the GITHUB_TOKEN's bot login")
-}
 
-func TestTheAPIURLDefaultsToGitHub(t *testing.T) {
 	env := actionEnv()
 	delete(env, "GITHUB_API_URL")
-	got, err := LoadAction(getenvOf(env), ActionGate)
+	got, err = LoadAction(getenvOf(env), ActionGate)
 	require.NoError(t, err)
-	require.Equal(t, "https://api.github.com", got.APIURL)
+	require.Equal(t, "https://api.github.com", got.APIURL, "the API URL defaults to GitHub")
 }
 
 // Each role refuses the values it needs when they are missing or malformed. The error names the variable, never its
 // value.
 func TestLoadActionRefusals(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		role ActionRole
@@ -111,6 +111,7 @@ func TestLoadActionRefusals(t *testing.T) {
 // A model key is optional: a fork PR gets none by GitHub's rule, and the proof run then reports fork_no_key. Without a
 // key the model, URL and price are not required.
 func TestProofWithoutAModelKeyNeedsNoModelSettings(t *testing.T) {
+	t.Parallel()
 	env := actionEnv()
 	for _, k := range []string{"HEIMDALL_MODEL_KEY", "HEIMDALL_MODEL", "HEIMDALL_MODEL_PRICE_INPUT", "HEIMDALL_MODEL_PRICE_OUTPUT"} {
 		delete(env, k)
@@ -121,6 +122,7 @@ func TestProofWithoutAModelKeyNeedsNoModelSettings(t *testing.T) {
 }
 
 func TestProofReadsTheModelEndpoint(t *testing.T) {
+	t.Parallel()
 	env := actionEnv()
 	env["HEIMDALL_MODEL_PRICE_CACHED_INPUT"] = "0.03"
 	got, err := LoadAction(getenvOf(env), ActionProof)
@@ -130,21 +132,21 @@ func TestProofReadsTheModelEndpoint(t *testing.T) {
 	require.Equal(t, ActionPrice{InputPerM: 0.30, CachedInputPerM: 0.03, OutputPerM: 1.20}, got.Price)
 }
 
-// The proof step holds no write key: the log key is never read there, even when it is set by mistake.
-func TestProofNeverReadsTheLogKey(t *testing.T) {
-	got, err := LoadAction(getenvOf(actionEnv()), ActionProof)
+// Each role holds only its own key: the proof step never reads the log key, and the gate never reads the model key,
+// even when the other key is set by mistake.
+func TestEachRoleReadsOnlyItsOwnKey(t *testing.T) {
+	t.Parallel()
+	proof, err := LoadAction(getenvOf(actionEnv()), ActionProof)
 	require.NoError(t, err)
-	require.Empty(t, got.LogKey)
-}
+	require.Empty(t, proof.LogKey, "the proof step holds no write key")
 
-// The gate never reads the model key: the privileged job holds no key the PR could want.
-func TestGateNeverReadsTheModelKey(t *testing.T) {
-	got, err := LoadAction(getenvOf(actionEnv()), ActionGate)
+	gate, err := LoadAction(getenvOf(actionEnv()), ActionGate)
 	require.NoError(t, err)
-	require.False(t, got.HasModelKey())
+	require.False(t, gate.HasModelKey(), "the privileged job holds no key the PR could want")
 }
 
 func TestActionEnvPrintsRedacted(t *testing.T) {
+	t.Parallel()
 	got, err := LoadAction(getenvOf(actionEnv()), ActionGate)
 	require.NoError(t, err)
 	for _, verb := range []string{"%v", "%+v", "%#v", "%s"} {
@@ -155,6 +157,7 @@ func TestActionEnvPrintsRedacted(t *testing.T) {
 }
 
 func TestAnUnknownRoleIsRefused(t *testing.T) {
+	t.Parallel()
 	_, err := LoadAction(getenvOf(actionEnv()), ActionRole("deploy"))
 	require.Error(t, err)
 }
@@ -162,6 +165,7 @@ func TestAnUnknownRoleIsRefused(t *testing.T) {
 // The sandbox PATH defaults to the system directories and refuses a relative directory, which a job would resolve
 // against its own work tree.
 func TestTheSandboxPathIsAbsoluteDirectories(t *testing.T) {
+	t.Parallel()
 	got, err := LoadAction(getenvOf(actionEnv()), ActionProof)
 	require.NoError(t, err)
 	require.Equal(t, "/usr/bin:/bin", got.SandboxPath)

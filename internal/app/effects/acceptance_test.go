@@ -8,6 +8,7 @@ import (
 )
 
 func TestAcceptancePassesOnlyWhenTestsRanAndAllPassed(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		res  ports.SandboxResult

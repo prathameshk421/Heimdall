@@ -38,6 +38,7 @@ func trialEffect(t *testing.T, p change.ProfileTrialPayload) change.Effect {
 
 // The profile_trial job runs the approved proposal once on the head; the store records the trial (D175).
 func TestProfileTrialRunsTheProposalOnTheHead(t *testing.T) {
+	t.Parallel()
 	trials := &fakeTrials{}
 	ex, err := effects.NewProfileTrial(effects.ProfileTrialDeps{Trials: trials})
 	require.NoError(t, err)

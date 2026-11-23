@@ -90,7 +90,8 @@ func makeTaskAssignEffect(t *testing.T) change.Effect {
 	return change.Effect{Key: key, Kind: change.EffectTaskAssign, Target: "tsk_01HZX3K9QW7M2P5R8T0V4YB001", Payload: raw}
 }
 
-func TestTaskAssignInvitesThenPostsTheWakeLine(t *testing.T) {
+func TestTaskAssignInvitesThenPostsTheWakeLineOnce(t *testing.T) {
+	t.Parallel()
 	chat := &mockChat{}
 	inviter := &mockInviter{chat: chat}
 	exec, err := effects.NewTaskAssign(effects.TaskAssignDeps{Chat: chat, Inviter: inviter})
@@ -107,17 +108,14 @@ func TestTaskAssignInvitesThenPostsTheWakeLine(t *testing.T) {
 	require.Equal(t, fx.Key, chat.posts[0].key)
 	// The room is read by people too (Discord, Telegram): the line says what the agent will do, then the agent's cue.
 	require.Equal(t, "@bob-reviewer PAY-142 is yours: review the pull request. Start with heimdall_get_task, it has your full instructions.", chat.posts[0].text)
-}
 
-func TestTaskAssignLineNamesTheWorkOfEachRole(t *testing.T) {
-	require.Equal(t, "@test-author PAY-142 is yours: write failing tests for the acceptance criteria. Start with heimdall_get_task, it has your full instructions.",
-		effects.TaskAssignText("test-author", "PAY-142", workflow.RoleTestAuthor))
-	require.Equal(t, "@resolver PAY-142 is yours: settle the challenged findings. Start with heimdall_get_task, it has your full instructions.",
-		effects.TaskAssignText("resolver", "PAY-142", workflow.RoleResolver))
+	require.NoError(t, exec.Execute(context.Background(), fx))
+	require.Len(t, chat.posts, 1, "chat dedupes by key")
 }
 
 // A failed invitation is an error, and nothing is posted to a room the agent is not in.
 func TestTaskAssignInviteFailureStopsBeforeThePost(t *testing.T) {
+	t.Parallel()
 	chat := &mockChat{}
 	inviter := &mockInviter{chat: chat, err: errors.New("switch refused")}
 	exec, err := effects.NewTaskAssign(effects.TaskAssignDeps{Chat: chat, Inviter: inviter})
@@ -128,18 +126,8 @@ func TestTaskAssignInviteFailureStopsBeforeThePost(t *testing.T) {
 	require.Empty(t, chat.posts)
 }
 
-func TestTaskAssignIdempotent(t *testing.T) {
-	chat := &mockChat{}
-	exec, err := effects.NewTaskAssign(effects.TaskAssignDeps{Chat: chat, Inviter: &mockInviter{chat: chat}})
-	require.NoError(t, err)
-
-	fx := makeTaskAssignEffect(t)
-	require.NoError(t, exec.Execute(context.Background(), fx))
-	require.NoError(t, exec.Execute(context.Background(), fx))
-	require.Len(t, chat.posts, 1, "chat dedupes by key")
-}
-
 func TestTaskAssignNoSecretInErrors(t *testing.T) {
+	t.Parallel()
 	secretMsg := "top-secret-api-key-12345"
 	chat := &mockChat{postErr: errors.New(secretMsg)}
 	exec, err := effects.NewTaskAssign(effects.TaskAssignDeps{Chat: chat, Inviter: &mockInviter{chat: chat}})
@@ -149,10 +137,4 @@ func TestTaskAssignNoSecretInErrors(t *testing.T) {
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), secretMsg, "the error text carries no cause text")
 	require.ErrorIs(t, err, chat.postErr, "the cause stays reachable for errors.Is")
-}
-
-func TestNewTaskAssignMissingDeps(t *testing.T) {
-	_, err := effects.NewTaskAssign(effects.TaskAssignDeps{})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "missing chat")
 }

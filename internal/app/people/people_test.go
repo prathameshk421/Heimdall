@@ -32,6 +32,7 @@ func newDir(t *testing.T) *Directory {
 }
 
 func TestResolveMapsChatSenderIDWholeAndExactly(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	ident, err := d.Resolve(ChannelChat, "dana")
 	require.NoError(t, err)
@@ -48,6 +49,7 @@ func TestResolveMapsChatSenderIDWholeAndExactly(t *testing.T) {
 }
 
 func TestResolveGitHubLoginIgnoresCase(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	ident, err := d.Resolve(ChannelGitHub, "ALICE")
 	require.NoError(t, err)
@@ -56,6 +58,7 @@ func TestResolveGitHubLoginIgnoresCase(t *testing.T) {
 }
 
 func TestResolveReportsApproverGroupsAndPolicyOwner(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 
 	alice, err := d.Resolve(ChannelChat, "alice")
@@ -71,6 +74,7 @@ func TestResolveReportsApproverGroupsAndPolicyOwner(t *testing.T) {
 }
 
 func TestResolveSaysAgentWhenSenderIsAnAgentName(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	ident, err := d.Resolve(ChannelChat, "bob-reviewer")
 	require.NoError(t, err)
@@ -80,6 +84,7 @@ func TestResolveSaysAgentWhenSenderIsAnAgentName(t *testing.T) {
 }
 
 func TestHumanForAgentMapsReviewerAgentToItsPerson(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	owner, ok := any(d).(interface{ HumanForAgent(string) (string, bool) })
 	require.True(t, ok, "the directory must resolve the human responsible for a reviewer agent")
@@ -91,6 +96,7 @@ func TestHumanForAgentMapsReviewerAgentToItsPerson(t *testing.T) {
 }
 
 func TestResolveRefusesUnknownChannelAndGitHubLogin(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	_, err := d.Resolve(Channel("sms"), "dana")
 	require.ErrorIs(t, err, ErrUnknownSender)
@@ -99,6 +105,7 @@ func TestResolveRefusesUnknownChannelAndGitHubLogin(t *testing.T) {
 }
 
 func TestHumanNameIsTrueOnlyForHumans(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	name, ok := d.HumanName(ChannelChat, "dana")
 	require.True(t, ok)
@@ -115,6 +122,7 @@ func TestHumanNameIsTrueOnlyForHumans(t *testing.T) {
 }
 
 func TestPersonWithoutGitHubIsMappedAndHasNoLogin(t *testing.T) {
+	t.Parallel()
 	p := specPolicy(t)
 	p.People["rev-backend"] = policy.Person{Chat: "rev-backend-id"}
 	d, err := New(p)
@@ -126,30 +134,29 @@ func TestPersonWithoutGitHubIsMappedAndHasNoLogin(t *testing.T) {
 	require.Empty(t, ident.GitHub, "github is optional for a reviewer (D158)")
 }
 
-func TestNewRefusesSenderIDThatTwoPeopleShare(t *testing.T) {
-	p := specPolicy(t)
-	p.People["dana"] = policy.Person{GitHub: "dana", Chat: "alice"}
-	_, err := New(p)
-	require.ErrorIs(t, err, ErrDuplicate)
-}
-
-func TestNewRefusesSenderIDThatIsAnAgentName(t *testing.T) {
-	p := specPolicy(t)
-	p.People["dana"] = policy.Person{GitHub: "dana", Chat: "bob-reviewer"}
-	_, err := New(p)
-	require.ErrorIs(t, err, ErrAmbiguous, "an agent name must never also be a person's sender id")
-}
-
-func TestNewRefusesSenderIDOutsidePrintableASCII(t *testing.T) {
-	p := specPolicy(t)
-	p.People["dana"] = policy.Person{GitHub: "dana", Chat: "da na"}
-	_, err := New(p)
-	require.Error(t, err)
-}
-
-func TestNewRefusesPolicyThatDoesNotValidate(t *testing.T) {
-	p := specPolicy(t)
-	p.Version = 1 // the domain policy is version 2; version 1 exists only in files, which the adapter converts
-	_, err := New(p)
-	require.Error(t, err)
+// New refuses a policy whose sender ids collide, name an agent, are not printable ASCII, or that does not validate.
+func TestNewRefusesABadPolicy(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		mutate func(*policy.Policy)
+		want   error
+	}{
+		{"sender id two people share", func(p *policy.Policy) { p.People["dana"] = policy.Person{GitHub: "dana", Chat: "alice"} }, ErrDuplicate},
+		{"sender id that is an agent name", func(p *policy.Policy) { p.People["dana"] = policy.Person{GitHub: "dana", Chat: "bob-reviewer"} }, ErrAmbiguous},
+		{"sender id outside printable ascii", func(p *policy.Policy) { p.People["dana"] = policy.Person{GitHub: "dana", Chat: "da na"} }, nil},
+		{"policy that does not validate", func(p *policy.Policy) { p.Version = 1 }, nil}, // version 1 exists only in files; the adapter converts
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p := specPolicy(t)
+			tc.mutate(&p)
+			_, err := New(p)
+			require.Error(t, err)
+			if tc.want != nil {
+				require.ErrorIs(t, err, tc.want)
+			}
+		})
+	}
 }

@@ -37,6 +37,7 @@ resolver = "resolver"
 `
 
 func TestLoadReadsLiveSections(t *testing.T) {
+	t.Parallel()
 	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+liveSections))
 	require.NoError(t, err)
 	require.Equal(t, Database{URLSecret: "database_url"}, cfg.Database)
@@ -68,6 +69,7 @@ func TestLoadReadsLiveSections(t *testing.T) {
 
 // The profiler seat is optional (D175): without it the profile row names the gap instead of a task nobody holds.
 func TestLoadReadsAnOptionalProfiler(t *testing.T) {
+	t.Parallel()
 	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+liveSections+"profiler = \"profiler\"\n"))
 	require.NoError(t, err)
 	require.Equal(t, "profiler", cfg.Agents.Profiler)
@@ -78,6 +80,7 @@ func TestLoadReadsAnOptionalProfiler(t *testing.T) {
 }
 
 func TestLoadReadsSwitchAgentRuntimeContract(t *testing.T) {
+	t.Parallel()
 	body := "secrets_dir = \"" + t.TempDir() + "\"\n" + liveSections + `
 [agent_runtime]
 provider = "switchroom"
@@ -98,6 +101,7 @@ model = "openrouter/deepseek/deepseek-v4-flash"
 // agents_dir names the controller's per-agent directory root. Each role agent's directory is under it, so the
 // definition Heimdall asks Switch for matches the directory the host installer fills.
 func TestLoadReadsTheAgentsDirectoryAndRefusesARelativeOne(t *testing.T) {
+	t.Parallel()
 	head := "secrets_dir = \"" + t.TempDir() + "\"\n" + liveSections + "\n[agent_runtime]\nprovider = \"switchroom\"\nmachine = \"heimdall-vm\"\nmcp_endpoint = \"http://127.0.0.1:8080/mcp\"\n"
 	cfg, err := Load(writeTOML(t, head+"agents_dir = \"/var/lib/switch-agents/1000/agent\"\n"))
 	require.NoError(t, err)
@@ -108,6 +112,7 @@ func TestLoadReadsTheAgentsDirectoryAndRefusesARelativeOne(t *testing.T) {
 }
 
 func TestAgentRuntimeRequiresSafeHostReachableMCPEndpoint(t *testing.T) {
+	t.Parallel()
 	head := "secrets_dir = \"" + t.TempDir() + "\"\n"
 	cases := []struct{ endpoint, want string }{
 		{"http://heimdall.example.test/mcp", "loopback"},
@@ -124,6 +129,7 @@ func TestAgentRuntimeRequiresSafeHostReachableMCPEndpoint(t *testing.T) {
 }
 
 func TestLoadAcceptsLoopbackHTTPURLs(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"ipv4":       "http://127.0.0.1:8081",
 		"localhost":  "http://localhost:8081",
@@ -143,6 +149,7 @@ func TestLoadAcceptsLoopbackHTTPURLs(t *testing.T) {
 // TestLoadDoesNotEchoAMistakenURLSecret proves a URL written where a secret file name belongs is refused without
 // printing its password, which may be real.
 func TestLoadDoesNotEchoAMistakenURLSecret(t *testing.T) {
+	t.Parallel()
 	head := "secrets_dir = \"" + t.TempDir() + "\"\n"
 	_, err := Load(writeTOML(t, head+"[database]\nurl_secret = \"postgres://user:hunter2@db/heimdall\"\n"))
 	require.ErrorContains(t, err, "database.url_secret")
@@ -150,6 +157,7 @@ func TestLoadDoesNotEchoAMistakenURLSecret(t *testing.T) {
 }
 
 func TestLoadRefusesBadLiveSections(t *testing.T) {
+	t.Parallel()
 	head := "secrets_dir = \"" + t.TempDir() + "\"\n"
 	cases := []struct {
 		name    string
@@ -206,6 +214,7 @@ func TestLoadRefusesBadLiveSections(t *testing.T) {
 }
 
 func TestLoadReportsEveryBadLiveKeyAtOnce(t *testing.T) {
+	t.Parallel()
 	body := "[database]\nurl_secret = \"\"\n" +
 		"[jira]\nbase_url = \"http://jira.example.test\"\nproject_keys = [\"kan\"]\nemail_secret = \"\"\napi_token_secret = \"\"\n" +
 		"[switch]\nbase_url = \"http://switch.example.test\"\nagent_id = \"\"\nagent_name = \"\"\nbridge_id = \"\"\napi_key_secret = \"\"\nregistration_token_secret = \"\"\n" +
@@ -222,6 +231,7 @@ func TestLoadReportsEveryBadLiveKeyAtOnce(t *testing.T) {
 
 // [usage] is optional (P4): a daily token cap for all agents, and the file a host job writes today's tokens to.
 func TestLoadReadsAnOptionalUsageCap(t *testing.T) {
+	t.Parallel()
 	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n[usage]\ndaily_token_cap = 1500000\n"+liveSections))
 	require.NoError(t, err)
 	require.Equal(t, Usage{DailyTokenCap: 1_500_000, File: "/var/lib/heimdall/usage.json"}, cfg.Usage)

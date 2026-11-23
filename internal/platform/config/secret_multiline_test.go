@@ -30,27 +30,20 @@ func writeSecretFile(t *testing.T, dir, name, content string, mode os.FileMode) 
 }
 
 func TestSecretMultilineReadsThreeLinePEMShape(t *testing.T) {
-	dir := t.TempDir()
-	writeSecretFile(t, dir, "app_key", fakePEM, 0o600)
-	cfg := Config{SecretsDir: dir}
-	got, err := cfg.SecretMultiline("app_key")
-	require.NoError(t, err)
-	require.Equal(t, fakePEMHeader+"\n"+fakePEMBody+"\n"+fakePEMFooter, string(got),
-		"the newlines between lines are kept and only the trailing newline is removed")
-}
-
-func TestSecretMultilineAcceptsOwnerOnlyModes(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfg := Config{SecretsDir: dir}
 	for _, mode := range []os.FileMode{0o600, 0o400} {
-		writeSecretFile(t, dir, "key", fakePEM, mode)
-		got, err := cfg.SecretMultiline("key")
+		writeSecretFile(t, dir, "app_key", fakePEM, mode)
+		got, err := cfg.SecretMultiline("app_key")
 		require.NoError(t, err, "mode %o", mode)
-		require.NotEmpty(t, got)
+		require.Equal(t, fakePEMHeader+"\n"+fakePEMBody+"\n"+fakePEMFooter, string(got),
+			"the newlines between lines are kept and only the trailing newline is removed")
 	}
 }
 
 func TestSecretMultilineRefusesGroupOrWorldAccess(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfg := Config{SecretsDir: dir}
 	for _, mode := range []os.FileMode{0o644, 0o640, 0o604, 0o620, 0o660, 0o666} {
@@ -64,6 +57,7 @@ func TestSecretMultilineRefusesGroupOrWorldAccess(t *testing.T) {
 }
 
 func TestSecretMultilineRefusesSymlinkOutOfDirectory(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	outside := t.TempDir()
 	writeSecretFile(t, outside, "outside", canary+"\n"+fakePEM, 0o600)
@@ -77,6 +71,7 @@ func TestSecretMultilineRefusesSymlinkOutOfDirectory(t *testing.T) {
 }
 
 func TestSecretMultilineRefusesNamedPipeWithoutBlocking(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0o600))
 	cfg := Config{SecretsDir: dir}
@@ -100,6 +95,7 @@ func TestSecretMultilineRefusesNamedPipeWithoutBlocking(t *testing.T) {
 }
 
 func TestSecretMultilineSizeLimit(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfg := Config{SecretsDir: dir}
 
@@ -119,6 +115,7 @@ func TestSecretMultilineSizeLimit(t *testing.T) {
 }
 
 func TestSecretMultilineRefusals(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeSecretFile(t, dir, "empty", "", 0o600)
 	writeSecretFile(t, dir, "newlines", "\n\r\n", 0o600)
@@ -149,6 +146,7 @@ func TestSecretMultilineRefusals(t *testing.T) {
 }
 
 func TestSecretStaysSingleLineAndIgnoresTheModeRule(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeSecretFile(t, dir, "token", "tok-live-123\n", 0o644)
 	writeSecretFile(t, dir, "multi", "one\ntwo\n", 0o600)

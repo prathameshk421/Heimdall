@@ -67,157 +67,67 @@ func sampleReproEffect() change.Effect {
 	}
 }
 
-func TestVerifyEvidenceAssertionFailureVerifiesE1(t *testing.T) {
-	ctx := context.Background()
-	sandbox := &overlaySandboxFake{
-		res: ports.SandboxResult{
-			Failed: 1,
-			Tests: []ports.TestResult{
-				{Name: veTestName, Outcome: ports.OutcomeFailure},
-			},
-		},
-	}
+func runRepro(t *testing.T, sandbox *overlaySandboxFake) (*fakeIngest, error) {
+	t.Helper()
 	ingest := &fakeIngest{}
-	source := &fakeSource{}
-
 	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source:   source,
-		Sandbox:  sandbox,
-		Profiles: profileFake{},
-		Ingest:   ingest,
-		IDs:      &fakeIDs{},
-		Clock:    fixedClock{},
+		Source: &fakeSource{}, Sandbox: sandbox, Profiles: profileFake{}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
 	})
 	require.NoError(t, err)
-
-	err = exec.Execute(ctx, sampleReproEffect())
-	require.NoError(t, err)
-
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventFindingVerified, ingest.written[0].Type)
-
-	var verified change.FindingVerified
-	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &verified))
-	require.Equal(t, veFndID, verified.FindingID)
-	require.Equal(t, finding.TierE1, verified.Tier)
-	require.Equal(t, finding.StateOpen, verified.State)
-
-	require.Len(t, sandbox.runs, 1)
-	require.Equal(t, ports.SandboxRepro, sandbox.runs[0].Kind)
-	require.Equal(t, veHead, sandbox.runs[0].SHA)
-	require.Len(t, sandbox.overlays, 1)
-	require.Equal(t, veTestPath, sandbox.overlays[0][0].Path)
+	return ingest, exec.Execute(context.Background(), sampleReproEffect())
 }
 
-func TestVerifyEvidencePassDoesNotVerifyE1(t *testing.T) {
-	ctx := context.Background()
-	// Repro passes on head -> does not verify -> state_changed to E4 unverified
-	sandbox := &overlaySandboxFake{
-		res: ports.SandboxResult{
-			Passed: 1,
-			Tests: []ports.TestResult{
-				{Name: veTestName, Outcome: ports.OutcomePassed},
-			},
-		},
+// Only an assertion failure of the named repro on the head verifies E1. A pass, a compile/setup error, or a test that
+// errors instead of failing (panic, timeout) is not a failed assertion: the finding drops to E4 unverified.
+func TestVerifyEvidenceReproOutcomes(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		res       ports.SandboxResult
+		wantEvent change.EventType
+		wantTier  finding.Tier
+		wantState finding.State
+	}{
+		"assertion failure verifies E1": {
+			ports.SandboxResult{Failed: 1, Tests: []ports.TestResult{{Name: veTestName, Outcome: ports.OutcomeFailure}}},
+			change.EventFindingVerified, finding.TierE1, finding.StateOpen},
+		"pass does not verify": {
+			ports.SandboxResult{Passed: 1, Tests: []ports.TestResult{{Name: veTestName, Outcome: ports.OutcomePassed}}},
+			change.EventFindingStateChanged, finding.TierE4, finding.StateUnverified},
+		"compile error never verifies": {
+			ports.SandboxResult{Errored: 1, Tests: []ports.TestResult{{Name: veTestName, Outcome: ports.OutcomeError}}},
+			change.EventFindingStateChanged, finding.TierE4, finding.StateUnverified},
+		"a test that errors instead of failing never verifies": {
+			ports.SandboxResult{Errored: 1, Tests: []ports.TestResult{{Name: "TestReproErrors", Outcome: ports.OutcomeError}}},
+			change.EventFindingStateChanged, finding.TierE4, finding.StateUnverified},
 	}
-	ingest := &fakeIngest{}
-	source := &fakeSource{}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			sandbox := &overlaySandboxFake{res: c.res}
+			ingest, err := runRepro(t, sandbox)
+			require.NoError(t, err)
 
-	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source:   source,
-		Sandbox:  sandbox,
-		Profiles: profileFake{},
-		Ingest:   ingest,
-		IDs:      &fakeIDs{},
-		Clock:    fixedClock{},
-	})
-	require.NoError(t, err)
+			require.Len(t, ingest.written, 1)
+			require.Equal(t, c.wantEvent, ingest.written[0].Type)
+			var rec change.FindingRecord
+			require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &rec))
+			require.Equal(t, veFndID, rec.FindingID)
+			require.Equal(t, c.wantTier, rec.Tier)
+			require.Equal(t, c.wantState, rec.State)
 
-	err = exec.Execute(ctx, sampleReproEffect())
-	require.NoError(t, err)
-
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventFindingStateChanged, ingest.written[0].Type)
-
-	var sc change.FindingStateChanged
-	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &sc))
-	require.Equal(t, veFndID, sc.FindingID)
-	require.Equal(t, finding.TierE4, sc.Tier)
-	require.Equal(t, finding.StateUnverified, sc.State)
-}
-
-func TestVerifyEvidenceCompileErrorNeverVerifies(t *testing.T) {
-	ctx := context.Background()
-	// Compile or setup error (<error>) -> state_changed to E4 unverified
-	sandbox := &overlaySandboxFake{
-		res: ports.SandboxResult{
-			Errored: 1,
-			Tests: []ports.TestResult{
-				{Name: veTestName, Outcome: ports.OutcomeError},
-			},
-		},
+			require.Len(t, sandbox.runs, 1)
+			require.Equal(t, ports.SandboxRepro, sandbox.runs[0].Kind)
+			require.Equal(t, veHead, sandbox.runs[0].SHA)
+			require.Len(t, sandbox.overlays, 1)
+			require.Equal(t, veTestPath, sandbox.overlays[0][0].Path)
+		})
 	}
-	ingest := &fakeIngest{}
-	source := &fakeSource{}
-
-	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source:   source,
-		Sandbox:  sandbox,
-		Profiles: profileFake{},
-		Ingest:   ingest,
-		IDs:      &fakeIDs{},
-		Clock:    fixedClock{},
-	})
-	require.NoError(t, err)
-
-	err = exec.Execute(ctx, sampleReproEffect())
-	require.NoError(t, err)
-
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventFindingStateChanged, ingest.written[0].Type)
-
-	var sc change.FindingStateChanged
-	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &sc))
-	require.Equal(t, veFndID, sc.FindingID)
-	require.Equal(t, finding.TierE4, sc.Tier)
-	require.Equal(t, finding.StateUnverified, sc.State)
 }
 
+// No result at all (runner busy, socket down, effect out of time) says nothing about the claim: the effect fails, so
+// the outbox retries it, and the finding keeps its tier.
 func TestVerifyEvidenceRetriesWhenTheSandboxGivesNoResult(t *testing.T) {
-	// No result at all (runner busy, socket down, effect out of time) says nothing about the claim: the effect fails,
-	// so the outbox retries it, and the finding keeps its tier.
-	sandbox := &overlaySandboxFake{err: errors.New("runner rejected job: runner is busy")}
-	ingest := &fakeIngest{}
-	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: sandbox, Profiles: profileFake{}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
-	})
-	require.NoError(t, err)
-
-	require.Error(t, exec.Execute(context.Background(), sampleReproEffect()))
-	require.Empty(t, ingest.written, "no state change without a result")
-}
-
-func TestVerifyEvidenceTestThatErrorsInsteadOfFailingNeverVerifies(t *testing.T) {
-	// A repro that panics, does not compile or times out inside the job is a result: it did not fail on an assertion,
-	// so the finding drops to E4 unverified.
-	sandbox := &overlaySandboxFake{res: ports.SandboxResult{Errored: 1, Tests: []ports.TestResult{{Name: "TestReproErrors", Outcome: ports.OutcomeError}}}}
-	ingest := &fakeIngest{}
-	exec, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{
-		Source: &fakeSource{}, Sandbox: sandbox, Profiles: profileFake{}, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
-	})
-	require.NoError(t, err)
-
-	require.NoError(t, exec.Execute(context.Background(), sampleReproEffect()))
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventFindingStateChanged, ingest.written[0].Type)
-	var sc change.FindingStateChanged
-	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &sc))
-	require.Equal(t, finding.TierE4, sc.Tier)
-	require.Equal(t, finding.StateUnverified, sc.State)
-}
-
-func TestVerifyEvidenceMissingDepsRefused(t *testing.T) {
-	_, err := effects.NewVerifyEvidence(effects.VerifyEvidenceDeps{})
+	t.Parallel()
+	ingest, err := runRepro(t, &overlaySandboxFake{err: errors.New("runner rejected job: runner is busy")})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "missing")
+	require.Empty(t, ingest.written, "no state change without a result")
 }

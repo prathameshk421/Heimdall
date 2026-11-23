@@ -21,76 +21,76 @@ func c(name string, status verify.Status) verify.Case {
 	return verify.Case{Name: name, Status: status}
 }
 
-func TestStabilityAllPass(t *testing.T) {
-	runs := []verify.Report{
-		run(c("TestBalance", verify.StatusPass)),
-		run(c("TestBalance", verify.StatusPass)),
-		run(c("TestBalance", verify.StatusPass)),
+// TestStability judges three runs of the same tests: stable pass, stable fail, or flaky (any difference across runs,
+// including a test that disappears). A flaky test is rejected from the gate. Suites are judged apart and the output
+// is sorted.
+func TestStability(t *testing.T) {
+	t.Parallel()
+	balance := func(ss ...verify.Status) []verify.Report {
+		runs := make([]verify.Report, 0, len(ss))
+		for _, s := range ss {
+			runs = append(runs, run(c("TestBalance", s)))
+		}
+		return runs
 	}
-	got, err := verify.Stability(runs)
-	require.NoError(t, err)
-	require.Equal(t, verify.FlakeReport{
-		Runs:  verify.RequiredRuns,
-		Tests: []verify.TestStability{{Suite: "pkg", Test: "TestBalance", Stability: verify.StablePass}},
-	}, got)
-	require.Empty(t, got.Rejected())
-}
+	pass, fail, err := verify.StatusPass, verify.StatusFail, verify.StatusError
+	stable := func(s verify.Outcome) []verify.TestStability {
+		return []verify.TestStability{{Suite: "pkg", Test: "TestBalance", Stability: s}}
+	}
+	flaky := []verify.TestStability{{Suite: "pkg", Test: "TestBalance", Stability: verify.Flaky}}
 
-func TestStabilityAllFail(t *testing.T) {
-	runs := []verify.Report{
-		run(c("TestBalance", verify.StatusFail)),
-		run(c("TestBalance", verify.StatusFail)),
-		run(c("TestBalance", verify.StatusFail)),
+	multi := func(a, b verify.Status) verify.Report {
+		return verify.Report{Suites: []verify.Suite{
+			{Name: "refunds", Cases: []verify.Case{{Name: "TestRefund", Status: a}}},
+			{Name: "ledger", Cases: []verify.Case{{Name: "TestRefund", Status: b}}},
+		}}
 	}
-	got, err := verify.Stability(runs)
-	require.NoError(t, err)
-	require.Len(t, got.Tests, 1)
-	require.Equal(t, verify.StableFail, got.Tests[0].Stability)
-	require.Empty(t, got.Rejected())
-}
 
-// A test that passes twice and fails once is flaky, and a flaky test is rejected from the gate.
-func TestStabilityFlakyIsRejected(t *testing.T) {
-	runs := []verify.Report{
-		run(c("TestBalance", verify.StatusPass)),
-		run(c("TestBalance", verify.StatusPass)),
-		run(c("TestBalance", verify.StatusFail)),
+	cases := []struct {
+		name     string
+		runs     []verify.Report
+		want     []verify.TestStability
+		rejected []verify.TestStability
+	}{
+		{"all pass", balance(pass, pass, pass), stable(verify.StablePass), nil},
+		{"all fail", balance(fail, fail, fail), stable(verify.StableFail), nil},
+		{"passes twice and fails once", balance(pass, pass, fail), flaky, flaky},
+		{"mixed failure modes", balance(fail, err, fail), flaky, flaky},
+		{"missing from one run", []verify.Report{
+			run(c("TestBalance", pass), c("TestDeposit", pass)),
+			run(c("TestBalance", pass)),
+			run(c("TestBalance", pass), c("TestDeposit", pass)),
+		}, []verify.TestStability{
+			{Suite: "pkg", Test: "TestBalance", Stability: verify.StablePass},
+			{Suite: "pkg", Test: "TestDeposit", Stability: verify.Flaky},
+		}, []verify.TestStability{{Suite: "pkg", Test: "TestDeposit", Stability: verify.Flaky}}},
+		{"same name in two suites is judged apart", []verify.Report{multi(pass, pass), multi(pass, fail), multi(pass, pass)},
+			[]verify.TestStability{
+				{Suite: "ledger", Test: "TestRefund", Stability: verify.Flaky},
+				{Suite: "refunds", Test: "TestRefund", Stability: verify.StablePass},
+			}, []verify.TestStability{{Suite: "ledger", Test: "TestRefund", Stability: verify.Flaky}}},
+		{"output is sorted whatever the report order", []verify.Report{
+			run(c("TestC", pass), c("TestA", pass)),
+			run(c("TestA", pass), c("TestC", pass)),
+			run(c("TestC", pass), c("TestA", pass)),
+		}, []verify.TestStability{
+			{Suite: "pkg", Test: "TestA", Stability: verify.StablePass},
+			{Suite: "pkg", Test: "TestC", Stability: verify.StablePass},
+		}, nil},
 	}
-	got, err := verify.Stability(runs)
-	require.NoError(t, err)
-	require.Equal(t, []verify.TestStability{{Suite: "pkg", Test: "TestBalance", Stability: verify.Flaky}}, got.Tests)
-	require.Equal(t, []verify.TestStability{{Suite: "pkg", Test: "TestBalance", Stability: verify.Flaky}}, got.Rejected())
-}
-
-// Two different non-pass statuses also differ across runs, so the test is flaky rather than a stable failure.
-func TestStabilityMixedFailureModesAreFlaky(t *testing.T) {
-	runs := []verify.Report{
-		run(c("TestBalance", verify.StatusFail)),
-		run(c("TestBalance", verify.StatusError)),
-		run(c("TestBalance", verify.StatusFail)),
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := verify.Stability(tc.runs)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got.Tests)
+			require.Equal(t, tc.rejected, got.Rejected())
+		})
 	}
-	got, err := verify.Stability(runs)
-	require.NoError(t, err)
-	require.Equal(t, verify.Flaky, got.Tests[0].Stability)
-}
-
-// A test that disappears from one run (a build broke that run) is unstable.
-func TestStabilityMissingFromOneRunIsFlaky(t *testing.T) {
-	runs := []verify.Report{
-		run(c("TestBalance", verify.StatusPass), c("TestDeposit", verify.StatusPass)),
-		run(c("TestBalance", verify.StatusPass)),
-		run(c("TestBalance", verify.StatusPass), c("TestDeposit", verify.StatusPass)),
-	}
-	got, err := verify.Stability(runs)
-	require.NoError(t, err)
-	require.Equal(t, []verify.TestStability{
-		{Suite: "pkg", Test: "TestBalance", Stability: verify.StablePass},
-		{Suite: "pkg", Test: "TestDeposit", Stability: verify.Flaky},
-	}, got.Tests)
-	require.Equal(t, []verify.TestStability{{Suite: "pkg", Test: "TestDeposit", Stability: verify.Flaky}}, got.Rejected())
 }
 
 func TestStabilityNeedsExactlyThreeRuns(t *testing.T) {
+	t.Parallel()
 	one := run(c("TestBalance", verify.StatusPass))
 	for _, n := range []int{0, 1, 2, 4} {
 		runs := make([]verify.Report, n)
@@ -101,40 +101,4 @@ func TestStabilityNeedsExactlyThreeRuns(t *testing.T) {
 		require.ErrorIs(t, err, verify.ErrRunCount, "runs=%d", n)
 		require.Contains(t, err.Error(), "exactly 3 runs")
 	}
-}
-
-// Two packages can hold a test with the same name; they are judged apart.
-func TestStabilityKeepsSuitesApart(t *testing.T) {
-	multi := func(a, b verify.Status) verify.Report {
-		return verify.Report{Suites: []verify.Suite{
-			{Name: "refunds", Cases: []verify.Case{{Name: "TestRefund", Status: a}}},
-			{Name: "ledger", Cases: []verify.Case{{Name: "TestRefund", Status: b}}},
-		}}
-	}
-	runs := []verify.Report{
-		multi(verify.StatusPass, verify.StatusPass),
-		multi(verify.StatusPass, verify.StatusFail),
-		multi(verify.StatusPass, verify.StatusPass),
-	}
-	got, err := verify.Stability(runs)
-	require.NoError(t, err)
-	require.Equal(t, []verify.TestStability{
-		{Suite: "ledger", Test: "TestRefund", Stability: verify.Flaky},
-		{Suite: "refunds", Test: "TestRefund", Stability: verify.StablePass},
-	}, got.Tests)
-}
-
-// The output is sorted, so the order tests happen to appear in a report does not change the result.
-func TestStabilityOutputIsSorted(t *testing.T) {
-	runs := []verify.Report{
-		run(c("TestC", verify.StatusPass), c("TestA", verify.StatusPass)),
-		run(c("TestA", verify.StatusPass), c("TestC", verify.StatusPass)),
-		run(c("TestC", verify.StatusPass), c("TestA", verify.StatusPass)),
-	}
-	got, err := verify.Stability(runs)
-	require.NoError(t, err)
-	require.Equal(t, []verify.TestStability{
-		{Suite: "pkg", Test: "TestA", Stability: verify.StablePass},
-		{Suite: "pkg", Test: "TestC", Stability: verify.StablePass},
-	}, got.Tests)
 }

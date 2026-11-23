@@ -71,6 +71,7 @@ func authorizeRows() []row {
 }
 
 func TestTableCoversEveryActionAndOnlyDecisionKinds(t *testing.T) {
+	t.Parallel()
 	table := rules()
 	require.ElementsMatch(t, allActions(), keysOf(table), "the rule table decides exactly the actions")
 	for _, a := range allActions() {
@@ -101,6 +102,7 @@ func rowActions(rows []row) []Action {
 // TestAuthorizeRowsMatchTheSpecTable has one subtest per action. The allowed sender passes, and the refused
 // sender fails with the reason the spec gives for that row.
 func TestAuthorizeRowsMatchTheSpecTable(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	for _, r := range authorizeRows() {
 		t.Run(string(r.action), func(t *testing.T) {
@@ -115,6 +117,7 @@ func TestAuthorizeRowsMatchTheSpecTable(t *testing.T) {
 }
 
 func TestAuthorizeGrantNamesThePerson(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	grant, err := d.Authorize(attempt(ChannelChat, "ana", change.DecisionUphold), openChange())
 	require.NoError(t, err)
@@ -122,6 +125,7 @@ func TestAuthorizeGrantNamesThePerson(t *testing.T) {
 }
 
 func TestAuthorizeRefusesUnknownSenderForEveryAction(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	for _, action := range allActions() {
 		ch := ChannelChat
@@ -138,6 +142,7 @@ func TestAuthorizeRefusesUnknownSenderForEveryAction(t *testing.T) {
 // TestAuthorizeRefusesAgentSenderForEveryAction is invariant 1: an agent never decides, even for an action any
 // human may take.
 func TestAuthorizeRefusesAgentSenderForEveryAction(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	for _, action := range allActions() {
 		if action == ActionApprove {
@@ -149,12 +154,14 @@ func TestAuthorizeRefusesAgentSenderForEveryAction(t *testing.T) {
 }
 
 func TestAuthorizeRefusesUnknownAction(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	_, err := d.Authorize(attempt(ChannelChat, "alice", Action("make-coffee")), openChange())
 	require.ErrorIs(t, err, ErrUnknownAction)
 }
 
 func TestAuthorizeRefusesAuthorWhoApprovesOwnChange(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	open := openChange()
 	open.AuthorLogin = "ANA"
@@ -163,6 +170,7 @@ func TestAuthorizeRefusesAuthorWhoApprovesOwnChange(t *testing.T) {
 }
 
 func TestAuthorizeRefusesAuthorWhoApprovesOwnTests(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	open := openChange()
 	open.AuthorLogin = "ana"
@@ -170,39 +178,40 @@ func TestAuthorizeRefusesAuthorWhoApprovesOwnTests(t *testing.T) {
 	require.ErrorIs(t, err, ErrSelfApproval)
 }
 
-func TestAuthorizeRefusesApprovalWithoutSHA(t *testing.T) {
+// SHA binding (invariant 2): a GitHub approval counts only at the current head and must name it. The chat grammar
+// names no SHA, so a chat decision is not SHA-bound, but a stale SHA it does name is still refused.
+func TestAuthorizeSHABinding(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
-	a := attempt(ChannelGitHub, "alice", ActionApprove)
-	a.SeenSHA = ""
-	_, err := d.Authorize(a, openChange())
-	require.ErrorIs(t, err, ErrUnboundDecision)
-}
-
-func TestAuthorizeRefusesApprovalOfStaleSHA(t *testing.T) {
-	d := newDir(t)
-	a := attempt(ChannelGitHub, "alice", ActionApprove)
-	a.SeenSHA = staleSHA
-	_, err := d.Authorize(a, openChange())
-	require.ErrorIs(t, err, ErrStaleSHA, "an approval counts only at the current head (invariant 2)")
-}
-
-func TestAuthorizeRefusesChatDecisionThatNamesAStaleSHA(t *testing.T) {
-	d := newDir(t)
-	a := attempt(ChannelChat, "alice", change.DecisionUphold)
-	a.SeenSHA = staleSHA
-	_, err := d.Authorize(a, openChange())
-	require.ErrorIs(t, err, ErrStaleSHA)
-}
-
-func TestAuthorizeAcceptsChatDecisionWithoutSHA(t *testing.T) {
-	d := newDir(t)
-	a := attempt(ChannelChat, "alice", change.DecisionUphold)
-	a.SeenSHA = ""
-	_, err := d.Authorize(a, openChange())
-	require.NoError(t, err, "the chat grammar names no SHA, so a chat decision is not SHA-bound")
+	cases := []struct {
+		name    string
+		channel Channel
+		action  Action
+		seen    id.SHA
+		want    error
+	}{
+		{"approval without a SHA", ChannelGitHub, ActionApprove, "", ErrUnboundDecision},
+		{"approval of a stale SHA", ChannelGitHub, ActionApprove, staleSHA, ErrStaleSHA},
+		{"chat decision naming a stale SHA", ChannelChat, change.DecisionUphold, staleSHA, ErrStaleSHA},
+		{"chat decision without a SHA", ChannelChat, change.DecisionUphold, "", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			a := attempt(tc.channel, "alice", tc.action)
+			a.SeenSHA = tc.seen
+			_, err := d.Authorize(a, openChange())
+			if tc.want == nil {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, tc.want)
+		})
+	}
 }
 
 func TestAuthorizeRefusesHeadThatIsNotAGitHash(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	ch := openChange()
 	ch.HeadSHA = "not-a-sha"
@@ -213,6 +222,7 @@ func TestAuthorizeRefusesHeadThatIsNotAGitHash(t *testing.T) {
 
 // TestDismissAllowsTheFilingReviewerOnly: a dismiss is the filing reviewer's, or an approver's (TECH_SPEC 11.5).
 func TestDismissAllowsTheFilingReviewerOnly(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	ch := openChange()
 	ch.FilingPerson = "eli"
@@ -225,6 +235,7 @@ func TestDismissAllowsTheFilingReviewerOnly(t *testing.T) {
 
 // TestApproveTestsNeedsAnApproverOfTheChangedDomain: a domain approver of another domain is refused.
 func TestApproveTestsNeedsAnApproverOfTheChangedDomain(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	ch := openChange()
 	ch.DomainGroups = []string{"money_movement"}
@@ -237,6 +248,7 @@ func TestApproveTestsNeedsAnApproverOfTheChangedDomain(t *testing.T) {
 }
 
 func TestApproveTestsWithNoDomainGroupLetsNobodyApprove(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	ch := openChange()
 	ch.DomainGroups = nil
@@ -247,6 +259,7 @@ func TestApproveTestsWithNoDomainGroupLetsNobodyApprove(t *testing.T) {
 // TestReviewNeedsTheAuthorsGitHubLogin: the author is matched by GitHub login, so a person with no login cannot
 // be the author.
 func TestReviewNeedsTheAuthorsGitHubLogin(t *testing.T) {
+	t.Parallel()
 	p := specPolicy(t)
 	p.People["rev-backend"] = policy.Person{Chat: "rev-backend-id"}
 	d, err := New(p)
@@ -261,6 +274,7 @@ func TestReviewNeedsTheAuthorsGitHubLogin(t *testing.T) {
 // TestPersonWithoutGitHubStillDecidesAsMember: github is optional for a reviewer (D158), so a member with no login
 // can still record a start or a remark.
 func TestPersonWithoutGitHubStillDecidesAsMember(t *testing.T) {
+	t.Parallel()
 	p := specPolicy(t)
 	p.People["rev-backend"] = policy.Person{Chat: "rev-backend-id"}
 	d, err := New(p)

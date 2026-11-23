@@ -24,6 +24,7 @@ base_branch = "heimdall-demo"
 `
 
 func TestLoadAcceptsValidFileAndDefaultsListen(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfg, err := Load(writeTOML(t, "secrets_dir = \""+dir+"\"\n"+goodProject))
 	require.NoError(t, err)
@@ -37,17 +38,17 @@ func TestLoadAcceptsValidFileAndDefaultsListen(t *testing.T) {
 	require.False(t, ok, "an unmapped tracker project is not found")
 }
 
-func TestLoadAcceptsFileTrackerPath(t *testing.T) {
-	dir := t.TempDir()
+// The file tracker takes an absolute path; a missing or relative one is refused at load.
+func TestLoadFileTrackerPath(t *testing.T) {
+	t.Parallel()
 	trackerDir := t.TempDir()
-	cfg, err := Load(writeTOML(t, "secrets_dir = \""+dir+"\"\n[tracker]\nprovider = \"file\"\npath = \""+trackerDir+"\"\n"+goodProject))
+	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n[tracker]\nprovider = \"file\"\npath = \""+trackerDir+"\"\n"+goodProject))
 	require.NoError(t, err)
 	require.Equal(t, trackerDir, cfg.TrackerPath)
-}
 
-func TestLoadRequiresAbsoluteFileTrackerPath(t *testing.T) {
 	for _, tc := range []struct{ path, want string }{{"", "tracker.path"}, {"tickets", "absolute path"}} {
 		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
 			body := "[tracker]\nprovider = \"file\"\n"
 			if tc.path != "" {
 				body += "path = \"" + tc.path + "\"\n"
@@ -59,6 +60,7 @@ func TestLoadRequiresAbsoluteFileTrackerPath(t *testing.T) {
 }
 
 func TestLoadDefaultsSecretsDirWhenAbsent(t *testing.T) {
+	t.Parallel()
 	cfg, err := Load(writeTOML(t, "listen = \":9000\"\n"+goodProject))
 	require.NoError(t, err)
 	require.Equal(t, "/etc/heimdall/secrets", cfg.SecretsDir, "secrets_dir defaults to /etc/heimdall/secrets (D89)")
@@ -66,6 +68,7 @@ func TestLoadDefaultsSecretsDirWhenAbsent(t *testing.T) {
 }
 
 func TestLoadMapsHumanKnowledgeTokensToNamedSecretFiles(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfg, err := Load(writeTOML(t, "secrets_dir = \""+dir+"\"\n"+goodProject+"\n[human_tokens]\nalice = \"alice_mcp_token\"\n"))
 	require.NoError(t, err)
@@ -73,6 +76,7 @@ func TestLoadMapsHumanKnowledgeTokensToNamedSecretFiles(t *testing.T) {
 }
 
 func TestLoadRefusals(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	head := "secrets_dir = \"" + dir + "\"\n"
 	cases := []struct {
@@ -104,6 +108,7 @@ func TestLoadRefusals(t *testing.T) {
 }
 
 func TestLoadReportsEveryProblemAtOnce(t *testing.T) {
+	t.Parallel()
 	head := "secrets_dir = \"" + t.TempDir() + "\"\n"
 	toml := head +
 		"[[projects]]\ntracker_project = \"KAN\"\nbase_branch = \"main\"\n" + // missing repo
@@ -114,11 +119,13 @@ func TestLoadReportsEveryProblemAtOnce(t *testing.T) {
 }
 
 func TestLoadMissingFileIsAnError(t *testing.T) {
+	t.Parallel()
 	_, err := Load(filepath.Join(t.TempDir(), "absent.toml"))
 	require.ErrorContains(t, err, "absent.toml")
 }
 
 func TestSecretReadsValueAndTrimsNewline(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "jira_token"), []byte("tok-live-123\n"), 0o400))
 	cfg := Config{SecretsDir: dir}
@@ -128,6 +135,7 @@ func TestSecretReadsValueAndTrimsNewline(t *testing.T) {
 }
 
 func TestSecretRefusals(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "outside"), []byte("OUTSIDEVALUE-7\n"), 0o400))
@@ -165,6 +173,7 @@ func TestSecretRefusals(t *testing.T) {
 }
 
 func TestSecretValuesNeverAppearInErrors(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "outside"), []byte("OUTSIDEVALUE-7\n"), 0o400))
@@ -181,6 +190,7 @@ func TestSecretValuesNeverAppearInErrors(t *testing.T) {
 }
 
 func TestOnceSetReportsFirstTimeOnlyPerKey(t *testing.T) {
+	t.Parallel()
 	var s OnceSet
 	require.True(t, s.First("PAY"), "the first time a key is offered")
 	require.False(t, s.First("PAY"), "the second time it is not")
@@ -188,6 +198,7 @@ func TestOnceSetReportsFirstTimeOnlyPerKey(t *testing.T) {
 }
 
 func TestOnceSetIsSafeForConcurrentUse(t *testing.T) {
+	t.Parallel()
 	var s OnceSet
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -208,6 +219,7 @@ func TestOnceSetIsSafeForConcurrentUse(t *testing.T) {
 }
 
 func TestFilePath(t *testing.T) {
+	t.Parallel()
 	env := func(v string) func(string) string {
 		return func(k string) string {
 			if k == "HEIMDALL_CONFIG" {
@@ -245,6 +257,7 @@ func TestFilePath(t *testing.T) {
 }
 
 func TestLoadReadsProviderSelections(t *testing.T) {
+	t.Parallel()
 	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+
 		"[vcs]\nprovider = \"github\"\n"+
 		"[tracker]\nprovider = \"jira\"\n"+
@@ -261,6 +274,7 @@ func TestLoadReadsProviderSelections(t *testing.T) {
 }
 
 func TestSelectionAbsentIsUnset(t *testing.T) {
+	t.Parallel()
 	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n[vcs]\n"))
 	require.NoError(t, err)
 	for _, kind := range []string{"vcs", "tracker", "chat", "agent_runtime", "memory", "unknown"} {
@@ -271,6 +285,7 @@ func TestSelectionAbsentIsUnset(t *testing.T) {
 }
 
 func TestLoadRefusesEmptySelections(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		section string
@@ -290,6 +305,7 @@ func TestLoadRefusesEmptySelections(t *testing.T) {
 }
 
 func TestLoadRefusesUnknownSelectionKeys(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		section string
@@ -309,6 +325,7 @@ func TestLoadRefusesUnknownSelectionKeys(t *testing.T) {
 // A feed is a room that hears the stories of every change, for example the Telegram group. Each needs a room and a
 // known audience; a typo is refused at load.
 func TestLoadReadsAndChecksFeeds(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	head := "secrets_dir = \"" + dir + "\"\n" + goodProject
 	cfg, err := Load(writeTOML(t, head+"[[feeds]]\nroom_id = \"59c21be9\"\naudience = \"both\"\n[[feeds]]\nroom_id = \"d13db0c0\"\naudience = \"tests\"\n"))

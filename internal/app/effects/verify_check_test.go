@@ -66,6 +66,7 @@ func decodeVerifyWritten(t *testing.T, ingest *fakeIngest) (change.EventType, ch
 // The first run confirms an E2 finding when the cited profile check reports a result inside the finding's file and
 // lines. It runs that check on the head through the runner.
 func TestVerifyCheckConfirmsALocatedResult(t *testing.T) {
+	t.Parallel()
 	sb := headOnly(checkSarif("printf", checkFile, 11))
 	ingest, err := runVerifyCheck(t, sb, patternsProfile(false), false)
 	require.NoError(t, err)
@@ -83,6 +84,7 @@ func TestVerifyCheckConfirmsALocatedResult(t *testing.T) {
 
 // A result somewhere else, or none, does not confirm the claim: the finding drops to E4 and never blocks.
 func TestVerifyCheckWithoutALocatedResultStaysE4(t *testing.T) {
+	t.Parallel()
 	for name, doc := range map[string][]byte{
 		"a result elsewhere": checkSarif("printf", "other.go", 3),
 		"a result outside":   checkSarif("printf", checkFile, 40),
@@ -101,6 +103,7 @@ func TestVerifyCheckWithoutALocatedResultStaysE4(t *testing.T) {
 
 // With a baseline, a result the base already had is not new, so it does not confirm the finding.
 func TestVerifyCheckWithABaselineCountsOnlyWhatTheHeadAdded(t *testing.T) {
+	t.Parallel()
 	same := checkSarif("printf", checkFile, 11)
 	sb := &sequenceSandbox{answers: []ports.SandboxResult{{Sarif: same}, {Sarif: same}}}
 	ingest, err := runVerifyCheck(t, sb, patternsProfile(true), false)
@@ -122,6 +125,7 @@ func TestVerifyCheckWithABaselineCountsOnlyWhatTheHeadAdded(t *testing.T) {
 // After a push, no located result resolves the finding with no claim from the author, and a result still there keeps it
 // verified so the step does not wait.
 func TestVerifyCheckAfterAPushKeepsOrResolvesByLocation(t *testing.T) {
+	t.Parallel()
 	ingest, err := runVerifyCheck(t, headOnly(checkSarif("printf", "other.go", 3)), patternsProfile(false), true)
 	require.NoError(t, err)
 	typ, rec := decodeVerifyWritten(t, ingest)
@@ -138,6 +142,7 @@ func TestVerifyCheckAfterAPushKeepsOrResolvesByLocation(t *testing.T) {
 
 // A check that could not run proves nothing either way: the effect fails so the outbox retries, and nothing is written.
 func TestVerifyCheckThatCouldNotRunWritesNothing(t *testing.T) {
+	t.Parallel()
 	ingest, err := runVerifyCheck(t, &sequenceSandbox{errs: []error{context.DeadlineExceeded}}, patternsProfile(false), false)
 	require.Error(t, err)
 	require.Empty(t, ingest.written)
@@ -159,6 +164,7 @@ func TestVerifyCheckThatCouldNotRunWritesNothing(t *testing.T) {
 // A profile promoted after the finding may have dropped the cited check. The claim can no longer be repeated, so it is
 // not evidence: the finding drops to E4 and nothing runs.
 func TestVerifyCheckWhoseCheckLeftTheProfileStaysE4(t *testing.T) {
+	t.Parallel()
 	sb := &sequenceSandbox{}
 	ingest, err := runVerifyCheck(t, sb, profileFake{checks: []ports.ProfileCheck{{ID: "lint"}}}, false)
 	require.NoError(t, err)
@@ -170,6 +176,7 @@ func TestVerifyCheckWhoseCheckLeftTheProfileStaysE4(t *testing.T) {
 // A finding filed before profile checks names a tool (go vet) and no check id. No check repeats it, so it drops to E4
 // without a run, even where the repository has no promoted profile.
 func TestVerifyCheckOfAnOldToolFindingStaysE4(t *testing.T) {
+	t.Parallel()
 	fx := verifyCheckEffect(t, false)
 	var p change.VerifyEvidencePayload
 	require.NoError(t, json.Unmarshal(fx.Payload, &p))

@@ -7,6 +7,7 @@ import (
 )
 
 func TestTheTwoShippedProvidersWorkWithoutAnyConfiguration(t *testing.T) {
+	t.Parallel()
 	cfg, err := Load(writeTOML(t, goodProject))
 	require.NoError(t, err)
 
@@ -24,6 +25,7 @@ func TestTheTwoShippedProvidersWorkWithoutAnyConfiguration(t *testing.T) {
 }
 
 func TestModelProvidersAreReadFromConfig(t *testing.T) {
+	t.Parallel()
 	cfg, err := Load(writeTOML(t, goodProject+`
 [[model_providers]]
 name = "ollama"
@@ -61,6 +63,7 @@ allow_private_http = true
 }
 
 func TestAConfiguredProviderReplacesTheShippedOneOfTheSameName(t *testing.T) {
+	t.Parallel()
 	cfg, err := Load(writeTOML(t, goodProject+`
 [[model_providers]]
 name = "openrouter"
@@ -75,6 +78,7 @@ key_file = "gateway_key"
 }
 
 func TestBadModelProvidersAreRefusedAndNamed(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct{ toml, want string }{
 		"missing name":      {`base_url = "https://x.test/v1"`, "model_providers[0]: name is required"},
 		"bad name":          {"name = \"Has/Slash\"\nbase_url = \"https://x.test/v1\"", "model_providers[0]: name"},
@@ -100,6 +104,7 @@ func TestBadModelProvidersAreRefusedAndNamed(t *testing.T) {
 }
 
 func TestADuplicateProviderNameIsRefused(t *testing.T) {
+	t.Parallel()
 	_, err := Load(writeTOML(t, goodProject+`
 [[model_providers]]
 name = "p"
@@ -113,6 +118,7 @@ base_url = "https://b.test/v1"
 }
 
 func TestAPrivateAddressOverHTTPIsAllowedOnlyWhenTheOperatorSaysSo(t *testing.T) {
+	t.Parallel()
 	for _, base := range []string{"http://10.1.2.3:8000/v1", "http://172.16.0.9/v1", "http://192.168.0.4/v1", "http://[fd00::5]:8000/v1"} {
 		_, err := Load(writeTOML(t, goodProject+"\n[[model_providers]]\nname = \"p\"\nbase_url = \""+base+"\"\nallow_private_http = true\n"))
 		require.NoError(t, err, base)

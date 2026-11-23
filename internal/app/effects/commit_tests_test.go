@@ -71,99 +71,86 @@ func (f *fakeBranchWriter) CommitFiles(_ context.Context, _ change.Repo, _, _ st
 	return f.commitSHA, nil
 }
 
-func TestCommitTestsExecutor(t *testing.T) {
-	ctx := context.Background()
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	blobContent := []byte("package test\n")
-	// The blob a commit file names is the stored submission, as the engine writes it. The executor commits the file's
-	// own content, not the bundle (live KAN-13 committed the whole JSON as refund_test.go).
-	bundle, err := json.Marshal(testset.Submission{Files: []testset.File{
-		{Path: "tests/heimdall/PAY-142/refund_test.go", Content: string(blobContent)},
-		{Path: "tests/heimdall/PAY-142/other_test.go", Content: "package other\n"},
-	}})
+const ctBlob = workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+
+// commitKit wires the executor over a stored submission bundle; commitPath is the file the effect asks to commit.
+type commitKit struct {
+	exec     effects.CommitTests
+	branches *fakeBranchWriter
+	ingest   *fakeIngest
+}
+
+func newCommitKit(t *testing.T, bundle testset.Submission, tree id.SHA) *commitKit {
+	t.Helper()
+	raw, err := json.Marshal(bundle)
 	require.NoError(t, err)
-	commitSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
-
-	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: bundle}}
-	branches := &fakeBranchWriter{commitSHA: commitSHA}
-	ingest := &fakeIngest{}
-	ids := &fakeIDs{}
-	clock := fixedClock{}
-	treeHash := id.SHA("abcdef0123456789abcdef0123456789abcdef01")
-
-	exec, err := effects.NewCommitTests(effects.CommitTestsDeps{
-		Blobs:    blobs,
-		Branches: branches,
-		Ingest:   ingest,
-		IDs:      ids,
-		Clock:    clock,
-		Code:     fakeCommitCode{tree: treeHash},
+	k := &commitKit{
+		branches: &fakeBranchWriter{commitSHA: id.SHA("0123456789abcdef0123456789abcdef01234567")},
+		ingest:   &fakeIngest{},
+	}
+	k.exec, err = effects.NewCommitTests(effects.CommitTestsDeps{
+		Blobs:    &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{ctBlob: raw}},
+		Branches: k.branches, Ingest: k.ingest, IDs: &fakeIDs{}, Clock: fixedClock{}, Code: fakeCommitCode{tree: tree},
 	})
 	require.NoError(t, err)
-
-	payload := change.CommitTestsPayload{
-		Repo:    change.Repo("acme/pay-demo"),
-		Branch:  "PAY-142-refunds",
-		Dir:     "tests/heimdall/PAY-142",
-		Files:   []change.CommitFile{{Path: "tests/heimdall/PAY-142/refund_test.go", BlobRef: blobRef}},
-		Message: "tests: add tests",
-	}
-	raw, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	fx := change.Effect{
-		Key:     "github_commit_tests:PAY-142:1:commit:treehash",
-		Kind:    change.EffectGitHubCommitTests,
-		Target:  "acme/pay-demo",
-		Payload: raw,
-	}
-
-	err = exec.Execute(ctx, fx)
-	require.NoError(t, err)
-
-	// Check that branch writer committed the files
-	require.Len(t, branches.committedFiles, 1)
-	require.Equal(t, "tests/heimdall/PAY-142/refund_test.go", branches.committedFiles[0].Path)
-	require.Equal(t, blobContent, branches.committedFiles[0].Content)
-
-	// Check that tests.committed was ingested
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventTestsCommitted, ingest.written[0].Type)
-
-	var committedPayload change.TestsCommitted
-	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &committedPayload))
-	require.Equal(t, commitSHA, committedPayload.SHA)
-	require.Equal(t, treeHash, committedPayload.TreeHash)
+	return k
 }
 
-func TestCommitTestsRefusesUnpinnedTreeHash(t *testing.T) {
-	ctx := context.Background()
-	ref := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	branches := &fakeBranchWriter{commitSHA: id.SHA("0123456789abcdef0123456789abcdef01234567")}
-	ingest := &fakeIngest{}
-	bundle, err := json.Marshal(testset.Submission{Files: []testset.File{{Path: "tests/heimdall/PAY-142/test.go", Content: "content"}}})
+func (k *commitKit) run(t *testing.T, path string) error {
+	t.Helper()
+	raw, err := json.Marshal(change.CommitTestsPayload{
+		Repo: "acme/pay-demo", Branch: "PAY-142-refunds", Dir: "tests/heimdall/PAY-142",
+		Files: []change.CommitFile{{Path: path, BlobRef: ctBlob}}, Message: "tests: add tests",
+	})
 	require.NoError(t, err)
-	exec, err := effects.NewCommitTests(effects.CommitTestsDeps{Blobs: &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{ref: bundle}}, Branches: branches, Ingest: ingest, IDs: &fakeIDs{}, Clock: fixedClock{}, Code: fakeCommitCode{}})
-	require.NoError(t, err)
-	raw, err := json.Marshal(change.CommitTestsPayload{Repo: "acme/pay-demo", Branch: "PAY-142-refunds", Dir: "tests/heimdall/PAY-142", Files: []change.CommitFile{{Path: "tests/heimdall/PAY-142/test.go", BlobRef: ref}}, Message: "tests"})
-	require.NoError(t, err)
-	err = exec.Execute(ctx, change.Effect{Key: "github_commit_tests:PAY-142:1:commit:treehash", Kind: change.EffectGitHubCommitTests, Target: "acme/pay-demo", Payload: raw})
-	require.ErrorContains(t, err, "pin tests tree")
-	require.Empty(t, ingest.written)
+	return k.exec.Execute(context.Background(), change.Effect{
+		Key: "github_commit_tests:PAY-142:1:commit:treehash", Kind: change.EffectGitHubCommitTests, Target: "acme/pay-demo", Payload: raw,
+	})
 }
 
-// A commit file the submission does not hold is refused, so nothing but the submitted test source is ever committed.
-func TestCommitTestsRefusesAFileTheSubmissionDoesNotHold(t *testing.T) {
-	ctx := context.Background()
-	ref := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	branches := &fakeBranchWriter{commitSHA: id.SHA("0123456789abcdef0123456789abcdef01234567")}
-	bundle, err := json.Marshal(testset.Submission{Files: []testset.File{{Path: "tests/heimdall/PAY-142/a_test.go", Content: "package a\n"}}})
-	require.NoError(t, err)
-	exec, err := effects.NewCommitTests(effects.CommitTestsDeps{Blobs: &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{ref: bundle}}, Branches: branches, Ingest: &fakeIngest{}, IDs: &fakeIDs{}, Clock: fixedClock{}, Code: fakeCommitCode{}})
-	require.NoError(t, err)
-	raw, err := json.Marshal(change.CommitTestsPayload{Repo: "acme/pay-demo", Branch: "PAY-142-refunds", Dir: "tests/heimdall/PAY-142", Files: []change.CommitFile{{Path: "tests/heimdall/PAY-142/missing_test.go", BlobRef: ref}}, Message: "tests"})
-	require.NoError(t, err)
-	err = exec.Execute(ctx, change.Effect{Key: "github_commit_tests:PAY-142:1:commit:treehash", Kind: change.EffectGitHubCommitTests, Target: "acme/pay-demo", Payload: raw})
-	require.ErrorContains(t, err, "has no file")
-	require.Empty(t, branches.committedFiles)
+// The blob a commit file names is the stored submission, as the engine writes it. The executor commits the file's own
+// content, not the bundle (live KAN-13 committed the whole JSON as refund_test.go).
+func TestCommitTestsCommitsTheSubmittedFileAndIngestsTestsCommitted(t *testing.T) {
+	t.Parallel()
+	treeHash := id.SHA("abcdef0123456789abcdef0123456789abcdef01")
+	k := newCommitKit(t, testset.Submission{Files: []testset.File{
+		{Path: "tests/heimdall/PAY-142/refund_test.go", Content: "package test\n"},
+		{Path: "tests/heimdall/PAY-142/other_test.go", Content: "package other\n"},
+	}}, treeHash)
+
+	require.NoError(t, k.run(t, "tests/heimdall/PAY-142/refund_test.go"))
+	require.Len(t, k.branches.committedFiles, 1)
+	require.Equal(t, "tests/heimdall/PAY-142/refund_test.go", k.branches.committedFiles[0].Path)
+	require.Equal(t, []byte("package test\n"), k.branches.committedFiles[0].Content)
+
+	require.Len(t, k.ingest.written, 1)
+	require.Equal(t, change.EventTestsCommitted, k.ingest.written[0].Type)
+	var committed change.TestsCommitted
+	require.NoError(t, json.Unmarshal(k.ingest.written[0].Payload, &committed))
+	require.Equal(t, k.branches.commitSHA, committed.SHA)
+	require.Equal(t, treeHash, committed.TreeHash)
+}
+
+func TestCommitTestsRefusesWhatItCannotPinOrDoesNotHold(t *testing.T) {
+	t.Parallel()
+	bundle := testset.Submission{Files: []testset.File{{Path: "tests/heimdall/PAY-142/a_test.go", Content: "package a\n"}}}
+	cases := map[string]struct {
+		tree     id.SHA
+		path     string
+		want     string
+		noCommit bool
+	}{
+		"unpinned tree hash":                {"", "tests/heimdall/PAY-142/a_test.go", "pin tests tree", false},
+		"file the submission does not hold": {"abcdef0123456789abcdef0123456789abcdef01", "tests/heimdall/PAY-142/missing_test.go", "has no file", true},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			k := newCommitKit(t, bundle, c.tree)
+			require.ErrorContains(t, k.run(t, c.path), c.want)
+			require.Empty(t, k.ingest.written)
+			if c.noCommit {
+				require.Empty(t, k.branches.committedFiles, "nothing but the submitted test source is ever committed")
+			}
+		})
+	}
 }

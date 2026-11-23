@@ -74,361 +74,143 @@ func (f *fakeSandbox) Run(_ context.Context, j ports.SandboxJob) (ports.SandboxR
 	}, nil
 }
 
-func TestTestQualityExecutorSuccess(t *testing.T) {
-	ctx := context.Background()
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
+const (
+	tqBase = id.SHA("0123456789abcdef0123456789abcdef01234567")
+	tqHead = id.SHA("fedcba9876543210fedcba9876543210fedcba98")
+	tqBlob = workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	tqDir  = "tests/heimdall/PAY-142"
+)
 
-	sub := testset.Submission{
-		Files: []testset.File{
-			{Path: "tests/heimdall/PAY-142/refund_test.go", Content: "package refund_test\n"},
-		},
-		AcceptanceCriteria: map[string][]string{
-			"AC1": {"TestA"},
-		},
-	}
-	subBytes, err := json.Marshal(sub)
-	require.NoError(t, err)
-
-	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: subBytes}}
-	source := &fakeSource{}
-	code := &fakeTestQualityCode{tree: id.SHA("abcdef0123456789abcdef0123456789abcdef01")}
-	sandbox := &fakeSandbox{
-		results: []ports.SandboxResult{
-			// 3 flake runs on base: all fail on TestA (stable failure on base)
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-		},
-	}
-	ingest := &fakeIngest{}
-	ids := &fakeIDs{}
-	clock := fixedClock{}
-
-	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
-		Blobs:   blobs,
-		Source:  source,
-		Sandbox: sandbox,
-		Ingest:  ingest,
-		IDs:     ids,
-		Clock:   clock,
-		Code:    code,
-	})
-	require.NoError(t, err)
-
-	payload := change.TestQualityPayload{
-		Repo:          change.Repo("acme/pay-demo"),
-		Branch:        "PAY-142-refunds",
-		Ticket:        id.ChangeID("PAY-142"),
-		SubmissionRef: blobRef,
-		BaseSHA:       baseSHA,
-	}
-	raw, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	fx := change.Effect{
-		Key:     "test_quality:PAY-142:1:test_qa",
-		Kind:    change.EffectTestQuality,
-		Target:  "PAY-142",
-		Payload: raw,
-	}
-
-	err = exec.Execute(ctx, fx)
-	require.NoError(t, err)
-	require.Len(t, sandbox.overlays, 3, "each flake run evaluates the submitted test overlay")
-	for _, overlay := range sandbox.overlays {
-		require.Equal(t, "tests/heimdall/PAY-142/refund_test.go", overlay[0].Path)
-		require.Equal(t, "package refund_test\n", string(overlay[0].Content))
-	}
-
-	// Source was fetched
-	require.Equal(t, change.Repo("acme/pay-demo"), source.fetchedRepo)
-	require.Equal(t, baseSHA, source.fetchedSHA)
-
-	// Ingested tests.verified
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventTestsVerified, ingest.written[0].Type)
-
-	var verified change.TestsVerified
-	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &verified))
-	require.Equal(t, baseSHA, verified.SHA)
-	// The tests exist only in the overlay at this point, so the pinned tree is computed from the submitted files, the
-	// same hash git gives the committed directory. Reading the base commit found no such directory (live KAN-13).
-	wantTree, err := sub.TreeHash("tests/heimdall/PAY-142")
-	require.NoError(t, err)
-	require.Equal(t, id.SHA(wantTree), verified.TreeHash)
-	require.Empty(t, code.dir, "verification must not read the tests directory from the base commit")
-	require.Len(t, verified.RunIDs, 3)
+func failRun() ports.SandboxResult {
+	return ports.SandboxResult{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}}
 }
 
-func TestTestQualityExecutorWithHeadPassesRedFirst(t *testing.T) {
-	ctx := context.Background()
-	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
-	headSHA := id.SHA("fedcba9876543210fedcba9876543210fedcba98")
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-
-	sub := testset.Submission{
-		Files: []testset.File{
-			{Path: "tests/heimdall/PAY-142/refund_test.go", Content: "package refund_test\n"},
-		},
+func qualitySubmission(content string) testset.Submission {
+	return testset.Submission{
+		Files:              []testset.File{{Path: tqDir + "/refund_test.go", Content: content}},
 		AcceptanceCriteria: map[string][]string{"AC1": {"TestA"}},
 	}
-	subBytes, err := json.Marshal(sub)
-	require.NoError(t, err)
-
-	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: subBytes}}
-	source := &fakeSource{}
-	code := &fakeTestQualityCode{tree: id.SHA("abcdef0123456789abcdef0123456789abcdef01")}
-	sandbox := &fakeSandbox{
-		results: []ports.SandboxResult{
-			// 3 runs on base: fail
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			// 1 run on head: pass
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomePassed}}},
-		},
-	}
-	ingest := &fakeIngest{}
-
-	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
-		Blobs:   blobs,
-		Source:  source,
-		Sandbox: sandbox,
-		Ingest:  ingest,
-		IDs:     &fakeIDs{},
-		Clock:   fixedClock{},
-		Code:    code,
-	})
-	require.NoError(t, err)
-
-	fx := change.Effect{
-		Key:     "test_quality:PAY-142:1:test_qa",
-		Kind:    change.EffectTestQuality,
-		Target:  "PAY-142",
-		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `","base_sha":"` + string(baseSHA) + `","head_sha":"` + string(headSHA) + `"}`),
-	}
-
-	err = exec.Execute(ctx, fx)
-	require.NoError(t, err)
-	require.Len(t, sandbox.overlays, 4, "base and head checks both evaluate the submitted tests")
-	require.Empty(t, code.dir, "verification must not read the tests directory from the base commit")
-
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventTestsVerified, ingest.written[0].Type)
-	require.Len(t, sandbox.runs, 4) // 3 base + 1 head
 }
 
-func TestTestQualityRefusesVerificationWhenAFileIsOutsideTheTestsDirectory(t *testing.T) {
-	ctx := context.Background()
-	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	sub := testset.Submission{
-		Files:              []testset.File{{Path: "tests/heimdall/PAY-999/refund_test.go", Content: "package refund_test\\n"}},
-		AcceptanceCriteria: map[string][]string{"AC1": {"TestA"}},
-	}
-	subBytes, err := json.Marshal(sub)
-	require.NoError(t, err)
-	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: subBytes}}
-	sandbox := &fakeSandbox{results: []ports.SandboxResult{
-		{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-		{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-		{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-	}}
-	ingest := &fakeIngest{}
-	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
-		Blobs: blobs, Source: &fakeSource{}, Sandbox: sandbox, Ingest: ingest,
-		IDs: &fakeIDs{}, Clock: fixedClock{}, Code: &fakeTestQualityCode{},
-	})
-	require.NoError(t, err)
-	err = exec.Execute(ctx, change.Effect{
-		Key: "test_quality:PAY-142:1:test_qa", Kind: change.EffectTestQuality, Target: "PAY-142",
-		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `","base_sha":"` + string(baseSHA) + `"}`),
-	})
-	require.ErrorContains(t, err, "pin the submitted tests tree")
-	require.Empty(t, ingest.written, "verification must not be recorded for a tree that cannot be pinned")
+type qualityKit struct {
+	exec    effects.TestQuality
+	source  *fakeSource
+	code    *fakeTestQualityCode
+	sandbox *fakeSandbox
+	ingest  *fakeIngest
+	sub     testset.Submission
 }
 
-func TestTestQualityExecutorWithHeadRejectsFailingRedFirst(t *testing.T) {
-	ctx := context.Background()
-	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
-	headSHA := id.SHA("fedcba9876543210fedcba9876543210fedcba98")
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-
-	sub := testset.Submission{
-		Files: []testset.File{
-			{Path: "tests/heimdall/PAY-142/refund_test.go", Content: "package refund_test\n"},
-		},
-		AcceptanceCriteria: map[string][]string{"AC1": {"TestA"}},
-	}
+func newQualityKit(t *testing.T, sub testset.Submission, results []ports.SandboxResult, forbidden []string) *qualityKit {
+	t.Helper()
 	subBytes, err := json.Marshal(sub)
 	require.NoError(t, err)
-
-	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: subBytes}}
-	source := &fakeSource{}
-	sandbox := &fakeSandbox{
-		results: []ports.SandboxResult{
-			// 3 runs on base: fail
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			// 1 run on head: STILL FAILS! (Does not pass with feature)
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-		},
+	k := &qualityKit{
+		source:  &fakeSource{},
+		code:    &fakeTestQualityCode{tree: id.SHA("abcdef0123456789abcdef0123456789abcdef01")},
+		sandbox: &fakeSandbox{results: results},
+		ingest:  &fakeIngest{},
+		sub:     sub,
 	}
-	ingest := &fakeIngest{}
-
-	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
-		Blobs:   blobs,
-		Source:  source,
-		Sandbox: sandbox,
-		Ingest:  ingest,
-		IDs:     &fakeIDs{},
-		Clock:   fixedClock{},
+	k.exec, err = effects.NewTestQuality(effects.TestQualityDeps{
+		Blobs:  &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{tqBlob: subBytes}},
+		Source: k.source, Sandbox: k.sandbox, Ingest: k.ingest, IDs: &fakeIDs{}, Clock: fixedClock{},
+		Code: k.code, ForbiddenImports: forbidden,
 	})
 	require.NoError(t, err)
-
-	fx := change.Effect{
-		Key:     "test_quality:PAY-142:1:test_qa",
-		Kind:    change.EffectTestQuality,
-		Target:  "PAY-142",
-		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `","base_sha":"` + string(baseSHA) + `","head_sha":"` + string(headSHA) + `"}`),
-	}
-
-	err = exec.Execute(ctx, fx)
-	require.NoError(t, err)
-
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventTestsRejected, ingest.written[0].Type)
-
-	var rejected change.TestsRejected
-	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &rejected))
-	require.NotEmpty(t, rejected.Reasons)
-	require.Contains(t, rejected.Reasons[0], "does not pass with the feature")
+	return k
 }
 
-func TestTestQualityExecutorRejectionOnFlake(t *testing.T) {
-	ctx := context.Background()
-	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-
-	sub := testset.Submission{
-		Files: []testset.File{
-			{Path: "tests/heimdall/PAY-142/refund_test.go", Content: "package refund_test\n"},
-		},
-		AcceptanceCriteria: map[string][]string{"AC1": {"TestA"}},
-	}
-	subBytes, err := json.Marshal(sub)
+func (k *qualityKit) run(t *testing.T, head id.SHA) error {
+	t.Helper()
+	p := change.TestQualityPayload{Repo: "acme/pay-demo", Branch: "PAY-142-refunds", Ticket: "PAY-142", SubmissionRef: tqBlob, BaseSHA: tqBase, HeadSHA: head}
+	raw, err := json.Marshal(p)
 	require.NoError(t, err)
-
-	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: subBytes}}
-	source := &fakeSource{}
-	sandbox := &fakeSandbox{
-		results: []ports.SandboxResult{
-			// Flaky: fail, pass, fail
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomePassed}}},
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-		},
-	}
-	ingest := &fakeIngest{}
-	ids := &fakeIDs{}
-	clock := fixedClock{}
-
-	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
-		Blobs:   blobs,
-		Source:  source,
-		Sandbox: sandbox,
-		Ingest:  ingest,
-		IDs:     ids,
-		Clock:   clock,
-	})
-	require.NoError(t, err)
-
-	payload := change.TestQualityPayload{
-		Repo:          change.Repo("acme/pay-demo"),
-		Branch:        "PAY-142-refunds",
-		Ticket:        id.ChangeID("PAY-142"),
-		SubmissionRef: blobRef,
-		BaseSHA:       baseSHA,
-	}
-	raw, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	fx := change.Effect{
-		Key:     "test_quality:PAY-142:1:test_qa",
-		Kind:    change.EffectTestQuality,
-		Target:  "PAY-142",
-		Payload: raw,
-	}
-
-	err = exec.Execute(ctx, fx)
-	require.NoError(t, err)
-
-	// Ingested tests.rejected
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventTestsRejected, ingest.written[0].Type)
-
-	var rejected change.TestsRejected
-	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &rejected))
-	require.NotEmpty(t, rejected.Reasons)
-	require.Contains(t, rejected.Reasons[0], "flaky")
+	return k.exec.Execute(context.Background(), change.Effect{Key: "test_quality:PAY-142:1:test_qa", Kind: change.EffectTestQuality, Target: "PAY-142", Payload: raw})
 }
 
-func TestTestQualityExecutorRejectionOnSeamImports(t *testing.T) {
-	ctx := context.Background()
-	baseSHA := id.SHA("0123456789abcdef0123456789abcdef01234567")
-	blobRef := workflow.BlobRef("blob:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-
-	sub := testset.Submission{
-		Files: []testset.File{
-			{
-				Path:    "tests/heimdall/PAY-142/refund_test.go",
-				Content: "package refund_test\nimport \"acme/internal/secret\"\n",
-			},
-		},
-		AcceptanceCriteria: map[string][]string{"AC1": {"TestA"}},
+// Red-first: the submitted tests must fail stably on the base (3 runs), and pass on the head when there is one. The
+// pinned tree is computed from the submitted files, never read from the base commit (live KAN-13).
+func TestTestQualityVerifiesRedFirst(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		head    id.SHA
+		results []ports.SandboxResult
+	}{
+		"base only": {"", []ports.SandboxResult{failRun(), failRun(), failRun()}},
+		"with head": {tqHead, []ports.SandboxResult{failRun(), failRun(), failRun(),
+			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomePassed}}}}},
 	}
-	subBytes, err := json.Marshal(sub)
-	require.NoError(t, err)
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			k := newQualityKit(t, qualitySubmission("package refund_test\n"), c.results, nil)
+			require.NoError(t, k.run(t, c.head))
 
-	blobs := &fakeBlobStore{blobs: map[workflow.BlobRef][]byte{blobRef: subBytes}}
-	source := &fakeSource{}
-	sandbox := &fakeSandbox{
-		results: []ports.SandboxResult{
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-			{Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomeFailure}}},
-		},
+			require.Len(t, k.sandbox.overlays, len(c.results), "every run evaluates the submitted test overlay")
+			for _, overlay := range k.sandbox.overlays {
+				require.Equal(t, tqDir+"/refund_test.go", overlay[0].Path)
+				require.Equal(t, "package refund_test\n", string(overlay[0].Content))
+			}
+			require.Len(t, k.sandbox.runs, len(c.results))
+			require.Equal(t, change.Repo("acme/pay-demo"), k.source.fetchedRepo)
+			require.Equal(t, tqBase, k.source.fetchedSHA)
+			require.Empty(t, k.code.dir, "verification must not read the tests directory from the base commit")
+
+			require.Len(t, k.ingest.written, 1)
+			require.Equal(t, change.EventTestsVerified, k.ingest.written[0].Type)
+			var verified change.TestsVerified
+			require.NoError(t, json.Unmarshal(k.ingest.written[0].Payload, &verified))
+			wantTree, err := k.sub.TreeHash(tqDir)
+			require.NoError(t, err)
+			require.Equal(t, id.SHA(wantTree), verified.TreeHash)
+			require.Len(t, verified.RunIDs, len(c.results))
+			if c.head == "" {
+				require.Equal(t, tqBase, verified.SHA)
+			}
+		})
 	}
-	ingest := &fakeIngest{}
+}
 
-	exec, err := effects.NewTestQuality(effects.TestQualityDeps{
-		Blobs:            blobs,
-		Source:           source,
-		Sandbox:          sandbox,
-		Ingest:           ingest,
-		IDs:              &fakeIDs{},
-		Clock:            fixedClock{},
-		ForbiddenImports: []string{"acme/internal"},
-	})
-	require.NoError(t, err)
-
-	fx := change.Effect{
-		Key:     "test_quality:PAY-142:1:test_qa",
-		Kind:    change.EffectTestQuality,
-		Target:  "PAY-142",
-		Payload: json.RawMessage(`{"repo":"acme/pay-demo","branch":"PAY-142-refunds","ticket":"PAY-142","submission_ref":"` + string(blobRef) + `","base_sha":"` + string(baseSHA) + `"}`),
+func TestTestQualityRejections(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		sub       testset.Submission
+		results   []ports.SandboxResult
+		head      id.SHA
+		forbidden []string
+		wantErr   string // Execute fails and nothing is ingested
+		wantWhy   string // tests.rejected with this reason
+	}{
+		"flaky on base": {qualitySubmission("package refund_test\n"),
+			[]ports.SandboxResult{failRun(), {Tests: []ports.TestResult{{Name: "TestA", Outcome: ports.OutcomePassed}}}, failRun()},
+			"", nil, "", "flaky"},
+		"still fails on head": {qualitySubmission("package refund_test\n"),
+			[]ports.SandboxResult{failRun(), failRun(), failRun(), failRun()},
+			tqHead, nil, "", "does not pass with the feature"},
+		"imports the product seam": {qualitySubmission("package refund_test\nimport \"acme/internal/secret\"\n"),
+			[]ports.SandboxResult{failRun(), failRun(), failRun()},
+			"", []string{"acme/internal"}, "", "imports forbidden"},
+		"file outside the ticket's tests directory": {testset.Submission{
+			Files:              []testset.File{{Path: "tests/heimdall/PAY-999/refund_test.go", Content: "package refund_test\n"}},
+			AcceptanceCriteria: map[string][]string{"AC1": {"TestA"}},
+		}, []ports.SandboxResult{failRun(), failRun(), failRun()}, "", nil, "pin the submitted tests tree", ""},
 	}
-
-	err = exec.Execute(ctx, fx)
-	require.NoError(t, err)
-
-	require.Len(t, ingest.written, 1)
-	require.Equal(t, change.EventTestsRejected, ingest.written[0].Type)
-
-	var rejected change.TestsRejected
-	require.NoError(t, json.Unmarshal(ingest.written[0].Payload, &rejected))
-	require.NotEmpty(t, rejected.Reasons)
-	require.Contains(t, rejected.Reasons[0], "imports forbidden")
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			k := newQualityKit(t, c.sub, c.results, c.forbidden)
+			err := k.run(t, c.head)
+			if c.wantErr != "" {
+				require.ErrorContains(t, err, c.wantErr)
+				require.Empty(t, k.ingest.written, "nothing is recorded for a tree that cannot be pinned")
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, k.ingest.written, 1)
+			require.Equal(t, change.EventTestsRejected, k.ingest.written[0].Type)
+			var rejected change.TestsRejected
+			require.NoError(t, json.Unmarshal(k.ingest.written[0].Payload, &rejected))
+			require.NotEmpty(t, rejected.Reasons)
+			require.Contains(t, rejected.Reasons[0], c.wantWhy)
+		})
+	}
 }

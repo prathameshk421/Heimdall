@@ -80,6 +80,7 @@ func (f *fakeTicketWriter) Transition(_ context.Context, ticket id.ChangeID, _ c
 }
 
 func TestRoomPostExecutorPostsMessage(t *testing.T) {
+	t.Parallel()
 	chat := &recordingChat{}
 	ex, err := effects.NewRoomPost(effects.RoomPostDeps{Chat: chat})
 	require.NoError(t, err)
@@ -92,6 +93,7 @@ func TestRoomPostExecutorPostsMessage(t *testing.T) {
 }
 
 func TestRoomCloseExecutorArchivesAndIngestsRoomClosed(t *testing.T) {
+	t.Parallel()
 	closer := &fakeRoomCloser{}
 	in := &recordingIngest{}
 	ex, err := effects.NewRoomClose(effects.RoomCloseDeps{Closer: closer, Ingest: in, IDs: &fakeIDs{}, Clock: fixedClock{}})
@@ -107,6 +109,7 @@ func TestRoomCloseExecutorArchivesAndIngestsRoomClosed(t *testing.T) {
 }
 
 func TestTrackerWriteExecutorCommentsTransitionsAndIngests(t *testing.T) {
+	t.Parallel()
 	tw := &fakeTicketWriter{}
 	in := &recordingIngest{}
 	ex, err := effects.NewTrackerWrite(effects.TrackerWriteDeps{

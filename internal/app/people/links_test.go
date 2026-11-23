@@ -8,6 +8,7 @@ import (
 
 // A chat account that proved its GitHub login (D194) speaks for the person with that login, with that person's roles.
 func TestLinkedSenderResolvesToThePersonWithThatLogin(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	d.Link([]ChatLink{{Sender: "@switch-telegram-x-alice:localhost", GitHub: "ALICE"}})
 
@@ -25,6 +26,7 @@ func TestLinkedSenderResolvesToThePersonWithThatLogin(t *testing.T) {
 }
 
 func TestLinkNeverMovesASenderThePolicyMaps(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	d.Link([]ChatLink{{Sender: "dana", GitHub: "alice"}})
 	ident, err := d.Resolve(ChannelChat, "dana")
@@ -33,6 +35,7 @@ func TestLinkNeverMovesASenderThePolicyMaps(t *testing.T) {
 }
 
 func TestLinkToALoginNoPersonHoldsMapsNobody(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	d.Link([]ChatLink{{Sender: "@switch-telegram-x-mallory:localhost", GitHub: "mallory"}})
 	_, err := d.Resolve(ChannelChat, "@switch-telegram-x-mallory:localhost")
@@ -40,6 +43,7 @@ func TestLinkToALoginNoPersonHoldsMapsNobody(t *testing.T) {
 }
 
 func TestLinkNeverTurnsAnAgentIntoAPerson(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	d.Link([]ChatLink{{Sender: "bob-reviewer", GitHub: "alice"}})
 	ident, err := d.Resolve(ChannelChat, "bob-reviewer")
@@ -48,6 +52,7 @@ func TestLinkNeverTurnsAnAgentIntoAPerson(t *testing.T) {
 }
 
 func TestLinkSkipsAMalformedSender(t *testing.T) {
+	t.Parallel()
 	d := newDir(t)
 	d.Link([]ChatLink{{Sender: "", GitHub: "alice"}, {Sender: "bad\nid", GitHub: "alice"}})
 	_, err := d.Resolve(ChannelChat, "bad\nid")

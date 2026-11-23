@@ -11,6 +11,7 @@ import (
 // Live KAN-25: list_payments_scope_test.go used the helpers of list_payments_test.go, which imports the product. Go
 // judges imports per package, so the package reaches the product and must not be refused.
 func TestPlaceholderReasonsJudgesEachTestPackage(t *testing.T) {
+	t.Parallel()
 	product := `package kan25_test
 
 import (
