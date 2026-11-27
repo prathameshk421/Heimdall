@@ -329,3 +329,59 @@ C5 is the glow on lit lamps in the proof lab. We removed the gradient bar fill a
 1440 x 900 light and dark, 390 x 844 light: art renders, no sideways scroll, no failed requests, no console errors. The
 cheat widget switches moves. The proof lab is unchanged from v9. **Not verified:** Safari and Firefox, reduced motion,
 LCP on a slow network.
+
+## 8. v11 "Cobalt" (27 November 2026)
+
+The owner said v10 still looked purple and AI-made, the drawn check was tacky, and the page should feel grand, sell the
+product, and put the name first. v10 is replaced in place; the archive keeps v9 and older.
+
+### Art
+
+- **Hero painting:** `art/temple-hero-{1000,1600,2000}.webp`, made by the owner with an image model from the prompt
+  below (owner's image, used with permission). A Doric temple on the right in cobalt mist, light raking along its
+  colonnade, a walker and a stag on the left, open sky on the left for type. Served as a responsive `<img>` with
+  `fetchpriority="high"` and a preload, not a CSS background. `art/og-temple.jpg` is the share image.
+- Prompt (Midjourney / Nano Banana / Flux, 16:9): "Wide cinematic matte painting of an ancient Greek Doric temple ...
+  seen from its front corner so the long side recedes to the right ... the LEFT 42% is calm, open, empty sky ...
+  strictly monochrome ultramarine and cobalt blue palette (sky #7C93F0, shadows #1B2A8F, highlights #F3F5FF), NOT
+  purple ... heavy film grain, stippled risograph noise texture". A tall 9:16 and a close-up variant use the same seed.
+- The same painting, zoomed on the lit colonnade, is the closing band and the demo video cover. No other art, no
+  Three.js, no drawn check.
+
+### Color
+
+Sampled from the painting: sky `#3965fa` to `#b3c6fc`, shadow `#00023d`, field `#000560`, lit stone `#f6e6ee`.
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--paper` | `#f4f6ff` | `#02062e` | Page |
+| `--card` / `--fill` | `#fbfcff` / `#e8edff` | `#050b38` / `#08103f` | Panels |
+| `--rule` | `#d4dcfb` | `#17236a` | 1 px rules |
+| `--muted` | `#3a4ca3` | `#9fb2f6` | Second lines, captions |
+| `--ink` | `#040c4a` | `#f4f6ff` | Headings, primary button |
+| `--cobalt` | `#2f5cf6` | `#7f9dff` | Bars, meters |
+| `--accent` | `#c0400f` | `#ff9a76` | Vermilion. Only proven things |
+| `--night` | `#01052c` | `#010424` | Proof strip, proof lab, close |
+
+Lapis and cinnabar is the classical fresco pair; one warm accent against all-blue keeps "proven" unmistakable.
+
+### Type
+
+One variable family, **Mona Sans** (OFL, self-hosted, 98 KB, `fonts/`), used at three widths: expanded 125% for the
+wordmark and inscriptions (uppercase, tracked .13 to .22 em, like letters cut in an architrave), condensed 75% for
+headings (weight 640, the thin second line at 280), normal width for reading. **JetBrains Mono** (OFL, 31 KB) for
+code, with ligatures off so `!=` is never drawn as `≠`. No third-party font requests.
+
+### Story order
+
+Hero (name, claim, two CTAs) → proof strip (0 false blocks, 100% of 70 escapes stopped, 42 MiB idle, $0.20 a run) →
+I problem → II how it works → try it (proof lab) → III set up (coding agent first, CLI second) → IV sandbox ("Agents
+can't go rogue") → V honest tests → VI footprint and integrations (GitHub, Jira, Slack, Discord, Telegram,
+Mattermost, Teams; models; the bots it referees) → demo → VII questions → close. Roman numerals mark the sections.
+
+### Checks (27 November 2026, T3 preview, Chromium)
+
+1440 x 900 and 1440 x 3000 in dark and light, 390 px mobile: no sideways scroll (`scrollWidth` 375 at 390), no failed
+requests, fonts load locally. Proof lab ran to "Merged e4f5a6b"; cheat widget, setup tabs, copy buttons and the video
+cover work. **Not verified:** Safari and Firefox, reduced-motion rendering, LCP on a throttled network, the deployed
+Vercel copy.

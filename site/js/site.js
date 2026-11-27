@@ -1,29 +1,33 @@
-// Hero depth and the "try to cheat the tests" widget. No library.
+// Star count, the "try to cheat the tests" widget. No library.
 (function () {
   'use strict';
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-  // Hero: the far hills, the gate and the near mist move at different depths with the pointer.
-  var art = document.getElementById('heroArt');
-  var hero = document.querySelector('.hero');
-  if (art && hero && window.matchMedia('(hover: hover)').matches) {
-    var layers = Array.prototype.slice.call(art.querySelectorAll('.layer'));
-    var raf = 0, px = 0, py = 0;
-    var apply = function () {
-      raf = 0;
-      layers.forEach(function (l) {
-        var d = parseFloat(l.getAttribute('data-depth')) || 0;
-        l.style.transform = 'translate(' + (px * d * 10).toFixed(2) + 'px,' + (py * d * 5).toFixed(2) + 'px)';
-      });
-    };
-    hero.addEventListener('pointermove', function (e) {
-      if (reduce.matches) return;
-      var r = hero.getBoundingClientRect();
-      px = (e.clientX - r.left) / r.width * 2 - 1;
-      py = (e.clientY - r.top) / r.height * 2 - 1;
-      if (!raf) raf = requestAnimationFrame(apply);
+  // Demo video: a still cover until the visitor asks to play.
+  var demo = document.getElementById('demoVideo');
+  if (demo) {
+    var cover = demo.querySelector('.cover');
+    var vid = demo.querySelector('video');
+    cover.addEventListener('click', function () {
+      cover.hidden = true;
+      vid.play().catch(function () {});
+      vid.focus();
     });
-    hero.addEventListener('pointerleave', function () { px = 0; py = 0; if (!raf) raf = requestAnimationFrame(apply); });
+  }
+
+  // GitHub star count on the nav button. Hidden unless the API answers.
+  var stars = document.querySelector('[data-stars]');
+  if (stars && window.fetch) {
+    fetch('https://api.github.com/repos/prathameshk421/Heimdall', { headers: { Accept: 'application/vnd.github+json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || typeof d.stargazers_count !== 'number') return;
+        var n = d.stargazers_count;
+        stars.textContent = n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+        stars.hidden = false;
+        stars.parentElement.setAttribute('aria-label', 'GitHub, ' + n + ' stars');
+      })
+      .catch(function () {});
   }
 
   // Try to cheat the tests. Rules and levels from internal/domain/testintegrity (doc.go); diffs are examples.
