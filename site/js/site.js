@@ -50,6 +50,27 @@
     });
   });
 
+  // Real captures: tabs that also step on their own until someone picks one.
+  var sc = document.getElementById('showcase');
+  if (sc) {
+    var st = Array.prototype.slice.call(sc.querySelectorAll('[role="tab"]'));
+    var pickTab = function (t) {
+      st.forEach(function (x) { var on = x === t; x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1; document.getElementById(x.getAttribute('aria-controls')).hidden = !on; });
+    };
+    var auto = !reduceMotionSc(), idx = 0, scHover = false;
+    function reduceMotionSc() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    st.forEach(function (t, i) {
+      t.addEventListener('click', function () { auto = false; idx = i; pickTab(t); });
+      t.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        auto = false; idx = (i + (e.key === 'ArrowRight' ? 1 : st.length - 1)) % st.length; pickTab(st[idx]); st[idx].focus();
+      });
+    });
+    sc.addEventListener('pointerenter', function () { scHover = true; });
+    sc.addEventListener('pointerleave', function () { scHover = false; });
+    setInterval(function () { if (auto && !scHover && !document.hidden) { idx = (idx + 1) % st.length; pickTab(st[idx]); } }, 5000);
+  }
+
   // Copy: the visible panel's commands, without comments or "$" prompts.
   document.querySelectorAll('.copy-btn').forEach(function (btn) {
     var label = btn.querySelector('span');
@@ -83,83 +104,93 @@
     new IntersectionObserver(function (es) { cb(es[es.length - 1].isIntersecting); }).observe(el);
   };
 
-  // Proof run: Heimdall checks each comment in turn. Only the one with two failed runs and a passed fix blocks.
-  var run = document.getElementById('proofrun');
-  if (run) {
-    var findings = [
-      { who: 'brands/copilot_dark.svg', alt: 'brands/copilot.svg', text: 'Rename the variable r', kind: 'style' },
-      { bot: 'G', text: 'Nil client on the error path', kind: 'pass' },
-      { who: 'brands/cursor_dark.svg', alt: 'brands/cursor_light.svg', text: 'Race on the retry counter', kind: 'flaky' },
-      { bot: 'CR', text: 'Refund runs two times on retry', kind: 'proven' },
-      { who: 'brands/copilot_dark.svg', alt: 'brands/copilot.svg', text: 'Add a doc comment', kind: 'style' },
-      { bot: 'CR', text: 'Log line shows the amount', kind: 'pass' }
-    ];
-    var plans = {
-      style: { now: 'No behavior to test.', runs: null, verdict: 'Hidden. No test can prove a style comment.' },
-      pass: { now: 'Writing a test for this claim.', runs: ['p', null, null], verdict: 'Hidden. The test passes on the pull request.' },
-      flaky: { now: 'Writing a test for this claim.', runs: ['f', 'p', null], verdict: 'Hidden. One failed run is not proof.' },
-      proven: { now: 'Writing a test for this claim.', runs: ['f', 'f', 'p'], verdict: 'Proven. Merge blocked.' }
+  // Story: one ticket from Jira to merge. Each step plays its panel, then the next step starts.
+  var story = document.getElementById('story');
+  if (story) {
+    var beats = Array.prototype.slice.call(story.querySelectorAll('[role="tab"]'));
+    var panels = beats.map(function (b) { return document.getElementById(b.getAttribute('aria-controls')); });
+    var stState = document.getElementById('stState'), stBar = document.getElementById('stBar');
+    var stIc = document.getElementById('stIc'), stLabel = document.getElementById('stLabel'), stCtx = document.getElementById('stCtx');
+    var stPanels = story.querySelector('.st-panels');
+    // Each step shows the tool it happens in, so the frame above the panel is never just Jira.
+    var toolIcon = {
+      jira: '<img src="brands/jira.svg" alt="" width="16" height="16">',
+      heimdall: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 3h20v3H2zM4 7.5h6V9H4zM14 7.5h6V9h-6zM5.25 9h3.5v9.5h-3.5zM15.25 9h3.5v9.5h-3.5zM2 19.5h20v2H2z"/></svg>',
+      claude: '<img src="brands/claude-ai-icon.svg" alt="" width="16" height="16">',
+      lock: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+      github: '<img class="lt" src="brands/github_light.svg" alt="" width="16" height="16"><img class="dk" src="brands/github_dark.svg" alt="" width="16" height="16">'
     };
-    var list = document.getElementById('prList');
-    findings.forEach(function (f) {
-      var li = document.createElement('li');
-      li.innerHTML = (f.who ? '<span><img class="dk" src="' + f.who + '" alt=""><img class="lt" src="' + f.alt + '" alt=""></span>' : '<span class="bot">' + f.bot + '</span>') + '<span></span>';
-      li.lastChild.textContent = f.text;
-      list.appendChild(li);
-    });
-    var rows = Array.prototype.slice.call(list.children);
-    var pipe = document.getElementById('prPipe').children;
-    var nowEl = document.getElementById('prNow'), verdict = document.getElementById('prVerdict'), state = document.getElementById('prState');
-    var label = { f: 'Fail', p: 'Pass' };
-    var timers = [], playing = false;
-    var at = function (ms, fn) { timers.push(setTimeout(fn, ms)); };
-    var clear = function () { timers.forEach(clearTimeout); timers = []; };
-    var resetPipe = function () {
-      Array.prototype.forEach.call(pipe, function (li) { li.className = ''; li.querySelector('i').className = ''; li.querySelector('i').textContent = ''; });
-      verdict.className = 'pr-verdict'; verdict.innerHTML = '&nbsp;';
+    var setTool = function (i) {
+      var key = panels[i].getAttribute('data-tool') || 'heimdall';
+      stIc.innerHTML = toolIcon[key] || toolIcon.heimdall;
+      stLabel.textContent = panels[i].getAttribute('data-label');
+      stCtx.innerHTML = panels[i].getAttribute('data-ctx');
     };
-    var cycle = function () {
-      clear();
-      rows.forEach(function (r) { r.className = ''; });
-      state.textContent = 'Checking'; state.className = 'pr-state';
-      var t = 0, proven = 0, hidden = 0;
-      findings.forEach(function (f, i) {
-        var plan = plans[f.kind];
-        at(t, function () {
-          resetPipe();
-          rows.forEach(function (r) { r.classList.remove('active'); });
-          rows[i].classList.add('active');
-          nowEl.textContent = plan.now;
-          if (!plan.runs) Array.prototype.forEach.call(pipe, function (li) { li.className = 'skip'; });
-          else pipe[0].className = 'on';
-        });
-        var step = 700;
-        if (plan.runs) plan.runs.forEach(function (r, k) {
-          at(t + step * (k + 1), function () {
-            var li = pipe[k + 1], i2 = li.querySelector('i');
-            if (!r) { li.className = 'skip'; return; }
-            li.className = 'on'; i2.className = r; i2.textContent = label[r];
-          });
-        });
-        var end = t + step * (plan.runs ? 4 : 1);
-        at(end, function () {
-          rows[i].classList.remove('active');
-          rows[i].classList.add(f.kind === 'proven' ? 'proven' : 'hidden-f');
-          verdict.textContent = plan.verdict;
-          if (f.kind === 'proven') { proven++; verdict.className = 'pr-verdict blocked'; state.textContent = 'Merge blocked'; state.className = 'pr-state blocked'; } else hidden++;
-        });
-        t = end + 900;
+    var cur = 0, timer = null, thenTimer = null, auto = !reduceMotion, visible = false, hover = false, startedAt = 0, left = 0;
+    var stateClass = { 'Merge blocked': 'blocked', 'Merged': 'merged' };
+    var show = function (i, focus) {
+      cur = i;
+      setTool(i);
+      beats.forEach(function (b, k) {
+        var on = k === i;
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+        b.tabIndex = on ? 0 : -1;
+        panels[k].classList.toggle('on', on);
+        panels[k].classList.remove('play');
+        if (on) panels[k].removeAttribute('inert'); else panels[k].setAttribute('inert', '');
       });
-      at(t, function () { resetPipe(); nowEl.textContent = proven + ' proven, ' + hidden + ' hidden.'; verdict.className = 'pr-verdict blocked'; verdict.textContent = 'Merge blocked until the fix and a human approval.'; });
-      at(t + 4200, function () { if (playing) cycle(); });
+      if (!reduceMotion) { void panels[i].offsetWidth; panels[i].classList.add('play'); }
+      // The panel is out of flow: give the frame the height of this step.
+      var setH = function () {
+        var pad = parseFloat(getComputedStyle(stPanels).paddingTop) || 0;
+        stPanels.style.height = (panels[i].offsetHeight + pad * 2) + 'px';
+      };
+      setH();
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(setH);
+      var setState = function (s) { stState.textContent = s; stState.className = 'st-state' + (stateClass[s] ? ' ' + stateClass[s] : ''); };
+      clearTimeout(thenTimer);
+      var then = panels[i].getAttribute('data-then');
+      setState(then && reduceMotion ? then : panels[i].getAttribute('data-state'));
+      if (then && !reduceMotion) thenTimer = setTimeout(function () { setState(then); }, +panels[i].getAttribute('data-then-at'));
+      if (focus) { beats[i].focus(); beats[i].scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+      left = +panels[i].getAttribute('data-dur');
+      schedule();
     };
-    if (reduceMotion) {
-      rows.forEach(function (r, i) { r.className = findings[i].kind === 'proven' ? 'proven' : 'hidden-f'; });
-      nowEl.textContent = '1 proven, 5 hidden.'; verdict.className = 'pr-verdict blocked'; verdict.textContent = 'Merge blocked until the fix and a human approval.';
-      state.textContent = 'Merge blocked'; state.className = 'pr-state blocked';
-    } else {
-      onScreen(run, function (v) { if (v && !playing) { playing = true; cycle(); } else if (!v && playing) { playing = false; clear(); } });
-    }
+    var stop = function () {
+      clearTimeout(timer); timer = null;
+      if (startedAt) { left -= Date.now() - startedAt; startedAt = 0; }
+      var w = getComputedStyle(stBar).width; stBar.style.transition = 'none'; stBar.style.width = w;
+    };
+    var schedule = function () {
+      clearTimeout(timer); timer = null; startedAt = 0;
+      stBar.style.transition = 'none';
+      var dur = +panels[cur].getAttribute('data-dur');
+      if (!auto) { stBar.style.width = '0'; return; }
+      stBar.style.width = (100 * (1 - left / dur)) + '%';
+      if (!visible || hover) return;
+      void stBar.offsetWidth;
+      stBar.style.transition = 'width ' + left + 'ms linear';
+      stBar.style.width = '100%';
+      startedAt = Date.now();
+      timer = setTimeout(function () { show((cur + 1) % beats.length); }, left);
+    };
+    beats.forEach(function (b, i) {
+      b.addEventListener('click', function () { auto = false; show(i); });
+      b.addEventListener('keydown', function (e) {
+        var k = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+        if (e.key === 'Home') k = -i; if (e.key === 'End') k = beats.length - 1 - i;
+        if (k === undefined) return;
+        e.preventDefault(); auto = false; show((i + k + beats.length) % beats.length, true);
+      });
+    });
+    story.addEventListener('mouseenter', function () { hover = true; if (auto) stop(); });
+    story.addEventListener('mouseleave', function () { hover = false; if (auto) schedule(); });
+    show(0);
+    onScreen(story, function (v) {
+      var was = visible; visible = v;
+      if (!auto) return;
+      if (v && !was) show(cur); else if (!v && was) stop();
+    });
   }
 
   // Tool wheel: the tools ride a large ring; the one at the bottom grows and a signal runs to it from the hub.
