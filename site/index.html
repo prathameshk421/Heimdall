@@ -66,37 +66,142 @@
   </section>
 
   <section id="how" aria-labelledby="h-how">
-    <div class="wrap how">
-      <div class="how-text">
+    <div class="wrap">
+      <div class="how-head">
         <p class="eyebrow">How it works</p>
-        <h2 id="h-how">A finding blocks the merge only when a test proves it</h2>
-        <ol class="steps">
-          <li><b>Review</b><span>AI reviewers read the pull request. Heimdall also reads the comments from your review bots.</span></li>
-          <li><b>Reproduce</b><span>Heimdall writes a test for each finding. The test runs in a sealed sandbox.</span></li>
-          <li><b>Prove</b><span>The test must fail two times on the pull request and pass on the fix.</span></li>
-          <li><b>Gate</b><span>A proven bug blocks the merge. Other comments stay out of your way.</span></li>
-        </ol>
+        <h2 id="h-how">One ticket, from Jira to merge</h2>
+        <p class="sub">Follow one change through Heimdall. Agents write the tests, the code and the reviews. Only a proven bug can stop the merge.</p>
       </div>
-      <figure class="proofrun card shine" id="proofrun" aria-label="Animation: Heimdall checks six review comments and proves one bug">
-        <div class="pr-head"><span class="dot-live" aria-hidden="true"></span><b>heimdall/proof</b><span>PR #412 &middot; a1b2c3d</span><span class="pr-state" id="prState">Checking</span></div>
-        <div class="pr-body">
-          <ul class="pr-list" id="prList"></ul>
-          <div class="pr-pipe" aria-hidden="true">
-            <p class="pr-now" id="prNow">&nbsp;</p>
-            <ol class="pipe" id="prPipe">
-              <li data-k="test"><span>Write the test</span><i></i></li>
-              <li data-k="r1"><span>Run 1 on the pull request</span><i></i></li>
-              <li data-k="r2"><span>Run 2 on the pull request</span><i></i></li>
-              <li data-k="fix"><span>Run on the fix</span><i></i></li>
-            </ol>
-            <p class="pr-verdict" id="prVerdict">&nbsp;</p>
-          </div>
+      <div class="story" id="story">
+        <div class="beats" role="tablist" aria-label="Steps from ticket to merge">
+          <button type="button" role="tab" id="bt-1" aria-controls="sp-1" aria-selected="true"><i>01</i><b>Ticket</b><span>A Jira ticket moves to In Progress.</span></button>
+          <button type="button" role="tab" id="bt-2" aria-controls="sp-2" aria-selected="false" tabindex="-1"><i>02</i><b>Tests first</b><span>Tests from the acceptance criteria. They must fail on the current code.</span></button>
+          <button type="button" role="tab" id="bt-3" aria-controls="sp-3" aria-selected="false" tabindex="-1"><i>03</i><b>Your agent codes</b><span>Claude Code, Codex, Cursor or OpenCode. It reads your team rules.</span></button>
+          <button type="button" role="tab" id="bt-4" aria-controls="sp-4" aria-selected="false" tabindex="-1"><i>04</i><b>Review</b><span>Reviewers check through lenses. Your review bots join in.</span></button>
+          <button type="button" role="tab" id="bt-5" aria-controls="sp-5" aria-selected="false" tabindex="-1"><i>05</i><b>Proof</b><span>Each claim gets a test in a sealed sandbox.</span></button>
+          <button type="button" role="tab" id="bt-6" aria-controls="sp-6" aria-selected="false" tabindex="-1"><i>06</i><b>Gate</b><span>A proven bug blocks the merge. A person decides in chat.</span></button>
+          <button type="button" role="tab" id="bt-7" aria-controls="sp-7" aria-selected="false" tabindex="-1"><i>07</i><b>Learn</b><span>A decision becomes a team rule for the next change.</span></button>
         </div>
-        <figcaption>Example pull request. The rule is real: two failed runs on the pull request and one passed run on the fix.</figcaption>
-      </figure>
+
+        <div class="stage card shine">
+          <div class="st-head"><img src="brands/jira.svg" alt="" width="16" height="16"><b>KAN-21</b><span class="st-title">Add refunds to the pay API</span><span class="st-state" id="stState">In progress</span></div>
+          <div class="st-panels">
+
+            <div class="sp" role="tabpanel" id="sp-1" aria-labelledby="bt-1" data-state="In progress" data-dur="5200">
+              <div class="tk in" style="--d:0">
+                <p class="tk-top"><img src="brands/jira.svg" alt="" width="14" height="14">KAN-21<span class="pill">In Progress</span></p>
+                <h4>Add refunds to the pay API</h4>
+                <p class="lbl">Acceptance criteria</p>
+                <ul class="ac">
+                  <li class="in" style="--d:250"><code>AC1</code>A refund up to the amount charged returns 201.</li>
+                  <li class="in" style="--d:450"><code>AC2</code>A refund for an unknown payment returns 404.</li>
+                  <li class="in" style="--d:650"><code>AC3</code>A refund above the amount charged returns 422.</li>
+                </ul>
+                <p class="lbl">Money rules</p>
+                <ul class="ac rules">
+                  <li class="in" style="--d:850">A merchant can refund only its own payments.</li>
+                  <li class="in" style="--d:1000">Refunds never add up to more than the amount charged.</li>
+                </ul>
+              </div>
+              <p class="note in" style="--d:1600">Heimdall opens a branch and a team room for the ticket.</p>
+            </div>
+
+            <div class="sp" role="tabpanel" id="sp-2" aria-labelledby="bt-2" data-state="Tests committed" data-dur="5600" inert>
+              <p class="path in" style="--d:0">tests/heimdall/KAN-21/refund_test.go</p>
+              <ul class="rows">
+                <li class="in" style="--d:300"><code>AC1</code><span>TestRefundUpToCharge</span><em class="f">Fails on current code</em></li>
+                <li class="in" style="--d:600"><code>AC2</code><span>TestRefundUnknownPayment</span><em class="f">Fails on current code</em></li>
+                <li class="in" style="--d:900"><code>AC3</code><span>TestRefundAboveCharge</span><em class="f">Fails on current code</em></li>
+              </ul>
+              <p class="note in" style="--d:1400">Red first. A test that passes now proves nothing, so Heimdall refuses it. A build error is refused too.</p>
+              <p class="done in" style="--d:2300"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>Committed and pinned. The coding agent cannot change these tests.</p>
+            </div>
+
+            <div class="sp" role="tabpanel" id="sp-3" aria-labelledby="bt-3" data-state="Coding" data-dur="5600" inert>
+              <div class="agents in" style="--d:0">
+                <span><img src="brands/claude-ai-icon.svg" alt="" width="16" height="16">Claude Code</span>
+                <span><img class="lt" src="brands/openai.svg" alt="" width="16" height="16"><img class="dk" src="brands/openai_dark.svg" alt="" width="16" height="16">Codex</span>
+                <span><img class="dk" src="brands/cursor_dark.svg" alt="" width="16" height="16"><img class="lt" src="brands/cursor_light.svg" alt="" width="16" height="16">Cursor</span>
+                <span><img class="lt" src="brands/opencode.svg" alt="" width="16" height="16"><img class="dk" src="brands/opencode-dark.svg" alt="" width="16" height="16">OpenCode</span>
+              </div>
+              <p class="lbl in" style="--d:300">Team rules the agent reads over MCP</p>
+              <ul class="cards">
+                <li class="in" style="--d:500"><em>money</em><span>Refunds never add up to more than the amount charged.</span><small>Approved by the owner</small></li>
+                <li class="in" style="--d:800"><em>security</em><span>Check that the merchant owns the payment before a refund.</span><small>Approved by the owner</small></li>
+              </ul>
+              <p class="note in" style="--d:1300">The agent can read the rules. It cannot write or change them.</p>
+              <p class="done in" style="--d:2200"><img class="dk" src="brands/github_dark.svg" alt="" width="14" height="14"><img class="lt" src="brands/github_light.svg" alt="" width="14" height="14">Pull request #9 opened. 4 files changed.</p>
+            </div>
+
+            <div class="sp" role="tabpanel" id="sp-4" aria-labelledby="bt-4" data-state="In review" data-dur="5600" inert>
+              <p class="lbl in" style="--d:0">Heimdall reviewers, each with lenses for this change</p>
+              <ul class="seats">
+                <li class="in" style="--d:200"><b>Reviewer 1</b><span class="lens">correctness</span><span class="lens">money</span></li>
+                <li class="in" style="--d:400"><b>Reviewer 2</b><span class="lens">security</span></li>
+                <li class="in" style="--d:600"><b>Reviewer 3</b><span class="lens">contract</span><span class="lens">tests</span></li>
+              </ul>
+              <p class="note in" style="--d:900">Each reviewer reads its own context: the team rules for the changed paths, a map of the code and past findings.</p>
+              <p class="lbl in" style="--d:1500">Your review bots</p>
+              <div class="agents bots in" style="--d:1700">
+                <span><img src="brands/coderabbit.svg" alt="" width="16" height="16">CodeRabbit</span>
+                <span><img class="dk" src="brands/copilot_dark.svg" alt="" width="16" height="16"><img class="lt" src="brands/copilot.svg" alt="" width="16" height="16">Copilot</span>
+                <span><img class="dk" src="brands/cursor_dark.svg" alt="" width="16" height="16"><img class="lt" src="brands/cursor_light.svg" alt="" width="16" height="16">Bugbot</span>
+                <span><img src="brands/greptile.webp" alt="" width="16" height="16">Greptile</span>
+                <span class="more">+3 more</span>
+              </div>
+              <p class="done in" style="--d:2400">5 claims to check. The same rule applies to every one.</p>
+            </div>
+
+            <div class="sp" role="tabpanel" id="sp-5" aria-labelledby="bt-5" data-state="Proving" data-dur="7600" inert>
+              <div class="sandbox in" style="--d:0"><span>Sealed sandbox</span><span>No network</span><span>Read-only root</span><span>No privileges</span></div>
+              <div class="proof">
+                <div class="ph"><span>Claim</span><span>PR run 1</span><span>PR run 2</span><span>Reverted</span><span>Result</span></div>
+                <div class="pr-row"><span class="cl in" style="--d:200"><b>F1</b> Refunds can add up to more than the charge<small>Heimdall · money</small></span><em class="f in" style="--d:700">Bug</em><em class="f in" style="--d:1100">Bug</em><em class="p in" style="--d:1500">Passes</em><strong class="r-proven in" style="--d:1900">Proven</strong></div>
+                <div class="pr-row"><span class="cl in" style="--d:2400"><b>F2</b> Any merchant can refund any payment<small>Heimdall · security</small></span><em class="n in" style="--d:2800">No test</em><em class="n in" style="--d:2800">&ndash;</em><em class="n in" style="--d:2800">&ndash;</em><strong class="r-note in" style="--d:3100">Shown, no block</strong></div>
+                <div class="pr-row"><span class="cl in" style="--d:3500"><b>F3</b> Nil check on the refund lookup<small>CodeRabbit</small></span><em class="p in" style="--d:3900">No bug</em><em class="n in" style="--d:3900">&ndash;</em><em class="n in" style="--d:3900">&ndash;</em><strong class="r-hide in" style="--d:4200">Hidden</strong></div>
+                <div class="pr-row"><span class="cl in" style="--d:4600"><b>F4</b> Race on the retry counter<small>Bugbot</small></span><em class="f in" style="--d:5000">Bug</em><em class="p in" style="--d:5300">No bug</em><em class="n in" style="--d:5300">&ndash;</em><strong class="r-hide in" style="--d:5600">Hidden. Flaky</strong></div>
+                <div class="pr-row"><span class="cl in" style="--d:6000"><b>F5</b> Rename the variable r<small>Copilot</small></span><em class="n in" style="--d:6300">Style</em><em class="n in" style="--d:6300">&ndash;</em><em class="n in" style="--d:6300">&ndash;</em><strong class="r-hide in" style="--d:6500">Hidden</strong></div>
+              </div>
+              <p class="note in" style="--d:6900">Proof is a test that finds the bug two times on the pull request and passes when the suspect lines are reverted.</p>
+            </div>
+
+            <div class="sp" role="tabpanel" id="sp-6" aria-labelledby="bt-6" data-state="Merge blocked" data-then="Merged" data-then-at="5300" data-dur="7000" inert>
+              <ul class="checks">
+                <li class="in" style="--d:0"><span class="ok">&#10003;</span><code>heimdall/fast</code><span>Tests and integrity checks passed</span></li>
+                <li class="in" style="--d:300"><span class="no">&#10005;</span><code>heimdall/proof</code><span>1 proven bug: F1. Merge blocked</span></li>
+              </ul>
+              <div class="chat">
+                <p class="msg me in" style="--d:1000"><span class="av">P</span><span class="bub"><b>Priya</b><code>heimdall uphold F1</code></span></p>
+                <p class="msg in" style="--d:1700"><span class="av hd"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 3h20v3H2zM4 7.5h6V9H4zM14 7.5h6V9h-6zM5.25 9h3.5v9.5h-3.5zM15.25 9h3.5v9.5h-3.5zM2 19.5h20v2H2z"/></svg></span><span class="bub"><b>Heimdall</b>F1 upheld by Priya. The block stays until the fix.</span></p>
+              </div>
+              <ul class="checks">
+                <li class="in" style="--d:3000"><span class="dot"></span><code>e4c19a2</code><span>The agent pushes a fix for F1</span></li>
+                <li class="in" style="--d:3800"><span class="ok">&#10003;</span><code>heimdall/proof</code><span>F1 test passes. No proven bugs</span></li>
+                <li class="in" style="--d:4500"><span class="ok">&#10003;</span><code>approval</code><span>A teammate approves commit e4c19a2</span></li>
+              </ul>
+              <p class="merged in" style="--d:5300">Merged</p>
+            </div>
+
+            <div class="sp" role="tabpanel" id="sp-7" aria-labelledby="bt-7" data-state="Merged" data-dur="6400" inert>
+              <div class="chat">
+                <p class="msg me in" style="--d:0"><span class="av">S</span><span class="bub"><b>Sam</b><code>heimdall dismiss F3 lookups return an error, never nil</code></span></p>
+              </div>
+              <ul class="cards">
+                <li class="in" style="--d:900"><em>proposed</em><span>Refund lookups return an error, never nil.</span><small>From a decision by Sam. Waits for the owner</small></li>
+              </ul>
+              <ul class="checks">
+                <li class="in" style="--d:1900"><span class="ok">&#10003;</span><code>approved</code><span>The owner approves the rule</span></li>
+                <li class="in" style="--d:2600"><span class="ok">&#10003;</span><code>next change</code><span>Reviewers and coding agents read it</span></li>
+              </ul>
+              <p class="note in" style="--d:3400">Only a person can create a rule. A model never writes its own rules.</p>
+            </div>
+
+          </div>
+          <div class="st-foot"><span>An example change. The rules are real.</span><span class="st-progress" aria-hidden="true"><i id="stBar"></i></span></div>
+        </div>
+      </div>
     </div>
   </section>
-
   <section id="stack" aria-labelledby="h-stack">
     <div class="wrap">
       <div class="wheel card" id="wheel">

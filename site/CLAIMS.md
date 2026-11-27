@@ -220,3 +220,17 @@ Figure 3 and the Action:
 - A recall rate from a real model. Run 3 scored 3 bug cases, too few for a rate.
 - The 9 cases the brief and the run 3 diagnosis name. The case table supports 7 (see section 6).
 - Customer logos, quotes or install counts. None exist.
+
+## v16: "One ticket, from Jira to merge" story
+
+The story is an example change (KAN-21, refunds). Each step maps to code; the legs ran live separately, not as one run.
+
+| Step | Claim | Evidence |
+|---|---|---|
+| Ticket | Jira ticket in progress starts the flow | `internal/adapters/tracker/jira`; live ticket journey KAN-26 in docs/PROGRESS.md |
+| Tests first | Tests must fail on current code; pinned | `skills/tests.md`; TECH_SPEC §7 |
+| Your agent | Claude Code, Codex, Cursor, OpenCode read approved cards over MCP, read-only | `internal/app/cardsmcp/doc.go` (laptop use of Claude Code, Codex, Cursor not verified live) |
+| Review | Seats with lenses; 7 bot parsers (CodeRabbit, Copilot, Bugbot, Greptile, Macroscope, Codex connector, Devin) | `internal/app/review/route.go`; `internal/domain/external` |
+| Proof | Fails twice on head, passes on reverted/fixed tree; flaky and unreproduced hidden | `internal/domain/testintegrity/proof.go` |
+| Gate | Approval on the exact head commit; only mapped people command | `internal/domain/gate`; `internal/app/collaboration/commands.go` |
+| Learn | Proposals only from human decisions; owner approves | `internal/app/reviewlearn` doc; `internal/domain/rulecard` |
