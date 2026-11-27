@@ -1,18 +1,83 @@
-// Star count, the "try to cheat the tests" widget. No library.
+// Header state, setup tabs, copy buttons, GitHub star count and the demo dialog. No library.
 (function () {
   'use strict';
-  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-  // Demo video: a still cover until the visitor asks to play.
-  var demo = document.getElementById('demoVideo');
-  if (demo) {
-    var cover = demo.querySelector('.cover');
-    var vid = demo.querySelector('video');
-    cover.addEventListener('click', function () {
-      cover.hidden = true;
-      vid.play().catch(function () {});
-      vid.focus();
+  // Header: clear over the painting, solid once the page scrolls.
+  var top = document.getElementById('siteTop');
+  if (top) {
+    var onScroll = function () { top.classList.toggle('scrolled', window.scrollY > 24); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  }
+
+  // Theme: follows the system until the visitor picks one; the choice is remembered.
+  var root = document.documentElement;
+  var media = window.matchMedia('(prefers-color-scheme: dark)');
+  var themeBtn = document.getElementById('themeBtn');
+  var isDark = function () { return root.dataset.theme ? root.dataset.theme === 'dark' : media.matches; };
+  var paint = function () {
+    var d = isDark();
+    root.classList.toggle('is-dark', d);
+    if (themeBtn) themeBtn.setAttribute('aria-label', d ? 'Switch to light theme' : 'Switch to dark theme');
+  };
+  if (themeBtn) {
+    themeBtn.addEventListener('click', function () {
+      root.dataset.theme = isDark() ? 'light' : 'dark';
+      try { localStorage.setItem('theme', root.dataset.theme); } catch (e) {}
+      paint();
     });
+  }
+  if (media.addEventListener) media.addEventListener('change', paint);
+  paint();
+
+  // Setup tabs, with arrow keys.
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs [role="tab"]'));
+  var select = function (t) {
+    tabs.forEach(function (x) {
+      var on = x === t;
+      x.setAttribute('aria-selected', on ? 'true' : 'false');
+      x.tabIndex = on ? 0 : -1;
+      document.getElementById(x.getAttribute('aria-controls')).hidden = !on;
+    });
+  };
+  tabs.forEach(function (t, i) {
+    t.addEventListener('click', function () { select(t); });
+    t.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      var n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+      select(n);
+      n.focus();
+    });
+  });
+
+  // Copy buttons.
+  document.querySelectorAll('.copy-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var code = btn.parentElement.querySelector('code').textContent;
+      var done = function (ok) {
+        btn.textContent = ok ? 'Copied' : 'Select';
+        btn.classList.toggle('ok', ok);
+        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 1600);
+      };
+      if (navigator.clipboard) navigator.clipboard.writeText(code).then(function () { done(true); }, function () { done(false); });
+      else done(false);
+    });
+  });
+
+  // Demo video in a dialog. Closing it pauses the video.
+  var dialog = document.getElementById('demo');
+  var open = document.getElementById('openDemo');
+  if (dialog && open && typeof dialog.showModal === 'function') {
+    var video = dialog.querySelector('video');
+    open.addEventListener('click', function () {
+      dialog.showModal();
+      video.play().catch(function () {});
+    });
+    dialog.querySelector('.demo-x').addEventListener('click', function () { dialog.close(); });
+    dialog.addEventListener('click', function (e) { if (e.target === dialog) dialog.close(); });
+    dialog.addEventListener('close', function () { video.pause(); });
+  } else if (open) {
+    open.addEventListener('click', function () { window.location.href = 'media/heimdall-demo.mp4'; });
   }
 
   // GitHub star count on the nav button. Hidden unless the API answers.
@@ -29,108 +94,4 @@
       })
       .catch(function () {});
   }
-
-  // Try to cheat the tests. Rules and levels from internal/domain/testintegrity (doc.go); diffs are examples.
-  var moves = [
-    {
-      label: 'Edit the pinned test until it passes', level: 'block', rule: 'pinned-test-edited',
-      diff: [['p', 'refund_test.go (pinned)'], ['del', '-	if got != 1 {'], ['add', '+	if got > 2 {'], ['p', '  	t.Fatalf("refund ran %d times, want 1", got)']],
-      title: 'Blocked',
-      body: 'Pinned tests are read-only. Any edit, delete or move of a pinned test blocks the merge until a policy owner approves the head commit.'
-    },
-    {
-      label: 'Skip the failing test', level: 'warn', rule: 'skip-added',
-      diff: [['p', 'refund_test.go'], ['p', '  func TestRefundRunsOnceWhenRetried(t *testing.T) {'], ['add', '+	t.Skip("flaky on CI")']],
-      title: 'Flagged',
-      body: 'A new skip is named on the check: t.Skip, pytest skip and xfail, it.skip, describe.skip, @Disabled, #[ignore] and more. In a file pinned as a whole, it blocks.'
-    },
-    {
-      label: 'Delete the assertion', level: 'warn', rule: 'assertion-deleted',
-      diff: [['p', 'refund_test.go'], ['del', '-	if got != 1 {'], ['del', '-		t.Fatalf("refund ran %d times, want 1", got)'], ['del', '-	}']],
-      title: 'Flagged',
-      body: 'When a change removes more assertions than it adds, the check says so and names the test.'
-    },
-    {
-      label: 'Assert something that cannot fail', level: 'warn', rule: 'tautological-assertion',
-      diff: [['p', 'refund.test.ts'], ['del', '-  expect(refunds(order)).toBe(1)'], ['add', '+  expect(true).toBe(true)']],
-      title: 'Flagged',
-      body: 'An added assertion on a constant, or one that compares a value with itself, is a tautology. It cannot catch a bug, so the check names it.'
-    },
-    {
-      label: 'Mock the code you just changed', level: 'warn', rule: 'mocks-changed-file',
-      diff: [['p', 'refund.test.ts'], ['add', "+jest.mock('../src/refund')"], ['p', '  // src/refund.ts is edited by this same pull request']],
-      title: 'Flagged',
-      body: 'A test that mocks a file the same change edits tests the mock, not the code. Go fakes, gomock, Python patch targets, jest.mock and vi.mock are read.'
-    },
-    {
-      label: 'Raise the timeout', level: 'warn', rule: 'timeout-loosened',
-      diff: [['p', 'refund_test.go'], ['del', '-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)'], ['add', '+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)']],
-      title: 'Flagged',
-      body: 'A timeout number that grows is named on the check, with Go time units and ms, s, m and h suffixes. A raised retry count is caught the same way.'
-    },
-    {
-      label: 'Rerun until it goes green', level: 'note', rule: 'flaky',
-      diff: [['p', 'heimdall proof'], ['p', '  run 1 on a1b2c3d ... FAIL'], ['p', '  run 2 on a1b2c3d ... PASS']],
-      title: 'Not proof, not a pass',
-      body: 'Results that differ on one tree are flaky. A rerun that passes is never a clean pass, and one red run is never proof.'
-    }
-  ];
-
-  var list = document.getElementById('moves');
-  var panel = document.getElementById('verdict');
-  if (!list || !panel) return;
-  var tagText = { block: 'blocks', warn: 'warns', note: 'not proof' };
-
-  function show(i) {
-    var m = moves[i];
-    Array.prototype.forEach.call(list.children, function (b, j) {
-      b.setAttribute('aria-selected', j === i ? 'true' : 'false');
-      b.tabIndex = j === i ? 0 : -1;
-    });
-    panel.setAttribute('aria-labelledby', 'move-' + i);
-    panel.innerHTML = '';
-    var pre = document.createElement('pre');
-    m.diff.forEach(function (d, k) {
-      var span = document.createElement('span');
-      span.className = d[0];
-      span.textContent = d[1] + (k < m.diff.length - 1 ? '\n' : '');
-      pre.appendChild(span);
-    });
-    var res = document.createElement('div');
-    res.className = 'res';
-    var dot = document.createElement('span');
-    dot.className = 'dot ' + (m.level === 'note' ? '' : m.level);
-    var t = document.createElement('span');
-    t.textContent = m.title + ' ';
-    var c = document.createElement('code');
-    c.textContent = m.rule;
-    res.append(dot, t, c);
-    var p = document.createElement('p');
-    p.textContent = m.body;
-    panel.append(pre, res, p);
-  }
-
-  moves.forEach(function (m, i) {
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.setAttribute('role', 'tab');
-    b.id = 'move-' + i;
-    b.setAttribute('aria-controls', 'verdict');
-    var l = document.createElement('span');
-    l.textContent = m.label;
-    var tag = document.createElement('span');
-    tag.className = 'tag' + (m.level === 'block' ? ' block' : '');
-    tag.textContent = tagText[m.level];
-    b.append(l, tag);
-    b.addEventListener('click', function () { show(i); });
-    b.addEventListener('keydown', function (e) {
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-      e.preventDefault();
-      var n = (i + (e.key === 'ArrowDown' ? 1 : moves.length - 1)) % moves.length;
-      show(n);
-      list.children[n].focus();
-    });
-    list.appendChild(b);
-  });
-  show(0);
 })();

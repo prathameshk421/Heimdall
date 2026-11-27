@@ -385,3 +385,24 @@ Mattermost, Teams; models; the bots it referees) → demo → VII questions → 
 requests, fonts load locally. Proof lab ran to "Merged e4f5a6b"; cheat widget, setup tabs, copy buttons and the video
 cover work. **Not verified:** Safari and Firefox, reduced-motion rendering, LCP on a throttled network, the deployed
 Vercel copy.
+
+## 9. v12 "Glass" (27 November 2026)
+
+The owner asked for far less text, glass panels, no flat white, and the rest of the page held to the cover's level in
+both themes. Page is now: hero (name, claim, two CTAs, four glass stats on the field) → how it works (four steps and
+one proof console) → six feature cards (each with its number) → integrations → set up (coding agent or CLI) → close.
+The proof lab, cheat widget, problem chart and FAQ were cut; the demo opens in a dialog from the hero.
+
+- **Atmosphere:** `art/temple-blur.webp` (2 KB, the painting pre-blurred) is fixed behind every section and veiled:
+  `rgba(2, 8, 34, .72)` at night, `rgba(222, 234, 255, .62)` by day, hue-rotated -12 degrees so it reads cobalt.
+- **Glass:** `.glass` is a 16 px radius panel, translucent fill, 1 px light edge, inset top highlight and
+  `backdrop-filter: blur(20px) saturate(1.4)`. Turned off under `prefers-reduced-transparency`.
+- **Themes:** system by default; the header toggle sets `data-theme` and remembers it. A tiny inline script applies
+  the stored theme before CSS loads, so there is no flash.
+- **System:** all values are tokens in `css/site.css`: spacing 4 to 128 px, radius 8 / 12 / 16, type 12 / 14 / 16 /
+  18 / 20 plus three clamped display sizes, 44 and 36 px buttons, 64 px header, 128 / 96 / 72 px section rhythm.
+- **Removed tells:** tracked all-caps eyebrows, middle-dot meta lines, two-tone headings, page grain, decorative glows.
+
+Checks (T3 preview, Chromium): 1440 px dark and light, 390 px dark; no sideways scroll; tabs, copy, theme toggle and
+dialog wired. **Not verified:** Safari and Firefox (backdrop-filter rendering), a fresh 390 px light pass (the preview
+window stopped redrawing), LCP on a slow network.

@@ -1,3 +1,12 @@
+# Claims on site/index.html (v12)
+
+| Claim | Source |
+|---|---|
+| 9 test-integrity rules, 5 language families (Go, Python, JS/TS, Java/Kotlin, Rust) | `internal/domain/testintegrity/facts.go:103-113`, `doc.go:23` |
+| No inbound ports | `docs/SETUP.md:60` |
+| One static binary in CI | `docs/product/SECURITY_AND_PERF_AUDIT.md:262` (22.9 MiB, linux/amd64) |
+| Everything else | Same sources as v11 below |
+
 # Claims on site/index.html (v11)
 
 v11 keeps the v10 sources and reframes these numbers. Paths are on `main`.
