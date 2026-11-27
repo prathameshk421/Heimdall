@@ -118,22 +118,30 @@
       </div>
 
       <div class="supports card" aria-label="What Heimdall supports">
-        <div class="sup"><p class="sup-k">Team chat</p><ul><li><img src="brands/slack.svg" alt="">Slack</li><li><img src="brands/discord.svg" alt="">Discord</li><li><img src="brands/telegram.svg" alt="">Telegram</li><li><img src="brands/mattermost-light.svg" alt="" class="lt"><img src="brands/mattermost-dark.svg" alt="" class="dk">Mattermost</li><li><img src="brands/microsoft-teams.svg" alt="">Microsoft Teams</li></ul></div>
-        <div class="sup"><p class="sup-k">Code and tickets</p><ul><li><img src="brands/github_light.svg" alt="" class="lt"><img src="brands/github_dark.svg" alt="" class="dk">GitHub</li><li><img src="brands/github-actions.svg" alt="">GitHub Actions</li><li><img src="brands/jira.svg" alt="">Jira</li></ul></div>
-        <div class="sup"><p class="sup-k">Models</p><ul><li><img src="brands/openrouter_light.svg" alt="" class="lt"><img src="brands/openrouter_dark.svg" alt="" class="dk">OpenRouter</li><li><img src="brands/ollama_light.svg" alt="" class="lt"><img src="brands/ollama_dark.svg" alt="" class="dk">Ollama</li><li><img src="brands/deepseek.svg" alt="">DeepSeek</li><li><span class="mono-ic" aria-hidden="true">v</span>vLLM</li><li><span class="mono-ic" aria-hidden="true">{ }</span>Any OpenAI-compatible API</li></ul></div>
+        <div class="sup"><p class="sup-k">Team chat</p><p class="sup-d">Findings and commands in your room.</p><ul><li><span class="tile"><img src="brands/slack.svg" alt=""></span>Slack</li><li><span class="tile"><img src="brands/discord.svg" alt=""></span>Discord</li><li><span class="tile"><img src="brands/telegram.svg" alt=""></span>Telegram</li><li><span class="tile"><img src="brands/mattermost-light.svg" alt="" class="lt"><img src="brands/mattermost-dark.svg" alt="" class="dk"></span>Mattermost</li><li><span class="tile"><img src="brands/microsoft-teams.svg" alt=""></span>Teams</li></ul></div>
+        <div class="sup"><p class="sup-k">Code and tickets</p><p class="sup-d">Where the work starts and merges.</p><ul><li><span class="tile"><img src="brands/github_light.svg" alt="" class="lt"><img src="brands/github_dark.svg" alt="" class="dk"></span>GitHub</li><li><span class="tile"><img src="brands/github-actions.svg" alt=""></span>Actions</li><li><span class="tile"><img src="brands/jira.svg" alt=""></span>Jira</li></ul></div>
+        <div class="sup"><p class="sup-k">Models</p><p class="sup-d">Any OpenAI-compatible API.</p><ul><li><span class="tile"><img src="brands/openrouter_light.svg" alt="" class="lt"><img src="brands/openrouter_dark.svg" alt="" class="dk"></span>OpenRouter</li><li><span class="tile"><img src="brands/ollama_light.svg" alt="" class="lt"><img src="brands/ollama_dark.svg" alt="" class="dk"></span>Ollama</li><li><span class="tile"><img src="brands/deepseek.svg" alt=""></span>DeepSeek</li><li><span class="tile"><span class="mono-ic">v</span></span>vLLM</li></ul></div>
       </div>
 
       <div class="chat-row">
         <div class="chat-text">
           <p class="eyebrow">Team chat</p>
-          <h3>Decide from your phone</h3>
+          <h3>Decide from anywhere</h3>
           <p>Heimdall posts each finding to your team room. A proven finding says so. A finding without proof says that it cannot block the merge. A person answers with one command.</p>
           <ul class="cmd-list"><li><code>heimdall uphold F1</code><span>Keep the block</span></li><li><code>heimdall dismiss F1 reason</code><span>Remove it, with a reason</span></li></ul>
-          <p class="real">Real captures from a live run.</p>
+          <p class="real">Real captures from a live run on Telegram and GitHub.</p>
         </div>
-        <div class="shots">
-          <figure class="phone"><img src="shots/proof-telegram.webp" width="718" height="534" alt="Telegram: Heimdall reports finding F1, proven by a failing test, and finding F2, with no proof yet, so it cannot block the merge." loading="lazy"></figure>
-          <figure class="gh-shot card"><img src="shots/proof-github.webp" width="650" height="326" alt="GitHub comment: finding F1, high severity, correctness, in internal/payments/refund.go line 36, proven by a failing test." loading="lazy"></figure>
+        <div class="stage">
+          <figure class="win tg">
+            <div class="win-bar"><img src="brands/telegram.svg" alt=""><b>Heimdall</b><span>bot</span></div>
+            <img class="shot" src="shots/proof-telegram.webp" width="488" height="538" alt="Telegram: Heimdall reports finding F1, proven by a failing test, and finding F2, with no proof yet, so it cannot block the merge." loading="lazy">
+            <span class="tagp red" style="top: 26%">F1 proven: blocks</span>
+            <span class="tagp" style="top: 66%">F2 no proof: cannot block</span>
+          </figure>
+          <figure class="win gh">
+            <div class="win-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span class="url">github.com &rsaquo; pull/9</span></div>
+            <img class="shot" src="shots/proof-github.webp" width="650" height="326" alt="GitHub comment: finding F1, high severity, correctness, in internal/payments/refund.go line 36, proven by a failing test." loading="lazy">
+          </figure>
         </div>
       </div>
     </div>
