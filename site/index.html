@@ -7,7 +7,7 @@
 <meta name="description" content="Open-source, self-hosted agent harness for high-volume pull request review. AI reviewers find issues, Heimdall writes the CI tests and proves each finding with a failing test before it can block a merge.">
 <meta name="color-scheme" content="light dark">
 <meta property="og:title" content="Heimdall: the self-hosted harness for AI code review">
-<meta property="og:description" content="AI reviewers on every pull request, real CI tests, and only proven findings can block a merge. Open source, Apache-2.0.">
+<meta property="og:description" content="AI reviewers on every pull request, real CI tests, and only proven findings can block a merge. Open source, MIT license.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://heimdall-sage.vercel.app/shots/og-v7.png">
 <meta property="og:image:width" content="1200">
@@ -441,7 +441,7 @@ video.demo { display: block; width: 100%; height: auto; border: 1px solid var(--
   <article>
   <header class="head" id="top">
     <h1>Heimdall: the self-hosted harness for AI code review</h1>
-    <p class="date">Open source · Apache-2.0 · Runs in your CI or on your server · Any OpenAI-compatible model</p>
+    <p class="date">Open source · MIT · Runs in your CI or on your server · Any OpenAI-compatible model</p>
   </header>
 
   <p class="lede">Coding agents now write pull requests faster than people can read them. Heimdall puts AI review agents on every pull request, writes the CI tests your code is missing, and turns each finding into a test. Only a finding that a test proves can block the merge. A person approves the exact commit.</p>
@@ -696,7 +696,7 @@ CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall</code></pre><button type="butt
 
   <section id="open" aria-labelledby="h-open">
     <h2 id="h-open"><a class="anchor" href="#open" aria-label="Link to this section">#</a>8. Open source</h2>
-    <p>Heimdall is open source under the <a href="https://github.com/prathameshk421/Heimdall/blob/main/LICENSE">Apache License 2.0</a>. It is written in Go, and CI builds it for Linux, macOS and Windows on every push.</p>
+    <p>Heimdall is open source under the <a href="https://github.com/prathameshk421/Heimdall/blob/main/LICENSE">MIT License</a>. It is written in Go, and CI builds it for Linux, macOS and Windows on every push.</p>
     <div class="tbl" role="region" tabindex="0" aria-label="Table 4">
       <table>
         <caption><b>Table 4:</b> Where each part runs. Team-mode commands manage Unix owner-only secret files, so on Windows use WSL2.</caption>
@@ -751,7 +751,7 @@ CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall</code></pre><button type="butt
 
 <footer>
   <a class="logo" href="#top" aria-label="Heimdall, back to top"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg></a>
-  <span>Heimdall, Apache-2.0. Every number on this page links to its source.</span>
+  <span>Heimdall, MIT license. Every number on this page links to its source.</span>
   <a href="https://github.com/prathameshk421/Heimdall/blob/main/CONTRIBUTING.md">Contribute</a>
   <a href="https://github.com/prathameshk421/Heimdall">GitHub</a>
 </footer>

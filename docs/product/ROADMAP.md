@@ -43,7 +43,7 @@ Product WPs avoid the packages that session is changing (`internal/domain/change
 | B4 | **Local MCP server and rule-file export.** Agents read approved cards (MCP); export to AGENTS.md, CLAUDE.md, Cursor rules | Sonnet | Contract test with an MCP client |
 | B5 | **Signed sync to the server.** DSSE envelope with ed25519; cards scoped to code their owner approves at the merge base; E3 check in the fast check | Opus | Tampered card rejected in a test |
 | B6 | **Card outcomes.** Kept, dismissed, overridden per card, shown to the card's owner only | Sonnet | Unit tests; no manager view exists |
-| B7 | **Open-source split.** `heimdall memory` builds and ships alone, Apache-2.0 | Haiku | Separate build target and README |
+| B7 | **Open-source split.** `heimdall memory` builds and ships alone, MIT (the whole repository is MIT since Nov 27) | Haiku | Separate build target and README |
 
 ## Stage C: the company VM and proof jobs (starts only with one signed self-hosted partner)
 

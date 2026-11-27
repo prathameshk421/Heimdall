@@ -163,8 +163,8 @@ numbers instead of adjectives, and link each number to its source.
 
 ## License
 
-Heimdall is licensed under the [Apache License 2.0](LICENSE). By contributing, you agree that your contributions are
-licensed under the same license (section 5 of the license). You keep the copyright of your work.
+Heimdall is licensed under the [MIT License](LICENSE). By contributing, you agree that your contributions are licensed
+under the same license. You keep the copyright of your work.
 
 ## Code of Conduct
 

@@ -2,7 +2,7 @@
 
 ## Open source, setup and polish (Nov 27, 2026, branch `heimdall-build`, merged to `main`)
 
-**Open source.** Apache-2.0 (`LICENSE`, `NOTICE`), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` (GitHub
+**Open source.** MIT (`LICENSE`; first Apache-2.0, switched to MIT by the owner the same day), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` (GitHub
 private reporting is on), issue forms, PR template, `CODEOWNERS`. Repo description, website and topics set. README and
 website (https://heimdall-sage.vercel.app, deployed Nov 27) rewritten as a product page: what it does, demo video,
 setup, agent skill, results, platforms. Blog and hackathon-era docs moved to `docs/blog/` and `docs/archive/hackathon/`.

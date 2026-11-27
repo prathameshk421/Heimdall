@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="https://github.com/prathameshk421/Heimdall/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/prathameshk421/Heimdall/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
   <a href="go.mod"><img alt="Go 1.27" src="https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white"></a>
   <a href="#platforms"><img alt="Linux, macOS, Windows" src="https://img.shields.io/badge/CLI-Linux%20%7C%20macOS%20%7C%20Windows-555"></a>
   <a href="https://heimdall-sage.vercel.app"><img alt="Website" src="https://img.shields.io/badge/website-heimdall--sage.vercel.app-5b5fc7"></a>
@@ -214,7 +214,7 @@ Do not open a public issue for it.
 
 ## License
 
-[Apache License 2.0](LICENSE).
+[MIT](LICENSE).
 
 ## Acknowledgements
 
