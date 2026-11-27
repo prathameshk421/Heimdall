@@ -50,6 +50,27 @@
     });
   });
 
+  // Real captures: tabs that also step on their own until someone picks one.
+  var sc = document.getElementById('showcase');
+  if (sc) {
+    var st = Array.prototype.slice.call(sc.querySelectorAll('[role="tab"]'));
+    var pickTab = function (t) {
+      st.forEach(function (x) { var on = x === t; x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1; document.getElementById(x.getAttribute('aria-controls')).hidden = !on; });
+    };
+    var auto = !reduceMotionSc(), idx = 0, scHover = false;
+    function reduceMotionSc() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    st.forEach(function (t, i) {
+      t.addEventListener('click', function () { auto = false; idx = i; pickTab(t); });
+      t.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        auto = false; idx = (i + (e.key === 'ArrowRight' ? 1 : st.length - 1)) % st.length; pickTab(st[idx]); st[idx].focus();
+      });
+    });
+    sc.addEventListener('pointerenter', function () { scHover = true; });
+    sc.addEventListener('pointerleave', function () { scHover = false; });
+    setInterval(function () { if (auto && !scHover && !document.hidden) { idx = (idx + 1) % st.length; pickTab(st[idx]); } }, 5000);
+  }
+
   // Copy: the visible panel's commands, without comments or "$" prompts.
   document.querySelectorAll('.copy-btn').forEach(function (btn) {
     var label = btn.querySelector('span');

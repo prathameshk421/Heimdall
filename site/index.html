@@ -28,7 +28,7 @@
 <header class="top" id="siteTop">
   <div class="wrap">
     <a class="brand" href="#main" aria-label="Heimdall, back to top">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 3h20v3H2zM4 7.5h6V9H4zM14 7.5h6V9h-6zM5.25 9h3.5v9.5h-3.5zM15.25 9h3.5v9.5h-3.5zM2 19.5h20v2H2z"/></svg>
       <b>Heimdall</b>
     </a>
     <nav aria-label="Main">
@@ -129,19 +129,11 @@
           <h3>Decide from anywhere</h3>
           <p>Heimdall posts each finding to your team room. A proven finding says so. A finding without proof says that it cannot block the merge. A person answers with one command.</p>
           <ul class="cmd-list"><li><code>heimdall uphold F1</code><span>Keep the block</span></li><li><code>heimdall dismiss F1 reason</code><span>Remove it, with a reason</span></li></ul>
-          <p class="real">Real captures from a live run on Telegram and GitHub.</p>
+          <p class="real">Real captures from a live run.</p>
         </div>
-        <div class="stage">
-          <figure class="win tg">
-            <div class="win-bar"><img src="brands/telegram.svg" alt=""><b>Heimdall</b><span>bot</span></div>
-            <img class="shot" src="shots/proof-telegram.webp" width="488" height="538" alt="Telegram: Heimdall reports finding F1, proven by a failing test, and finding F2, with no proof yet, so it cannot block the merge." loading="lazy">
-            <span class="tagp red" style="top: 26%">F1 proven: blocks</span>
-            <span class="tagp" style="top: 66%">F2 no proof: cannot block</span>
-          </figure>
-          <figure class="win gh">
-            <div class="win-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span class="url">github.com &rsaquo; pull/9</span></div>
-            <img class="shot" src="shots/proof-github.webp" width="650" height="326" alt="GitHub comment: finding F1, high severity, correctness, in internal/payments/refund.go line 36, proven by a failing test." loading="lazy">
-          </figure>
+        <div class="showcase card" id="showcase">
+          <div class="sc-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><div class="sc-tabs" role="tablist" aria-label="Real captures"><button type="button" role="tab" id="sc-slack" aria-controls="scp-slack" aria-selected="true"><img src="brands/slack.svg" alt="">Slack</button><button type="button" role="tab" id="sc-thread" aria-controls="scp-thread" aria-selected="false" tabindex="-1"><span class="dotg"></span>Review thread</button><button type="button" role="tab" id="sc-telegram" aria-controls="scp-telegram" aria-selected="false" tabindex="-1"><img src="brands/telegram.svg" alt="">Telegram</button><button type="button" role="tab" id="sc-github" aria-controls="scp-github" aria-selected="false" tabindex="-1"><img src="brands/github_light.svg" alt="" class="lt"><img src="brands/github_dark.svg" alt="" class="dk">GitHub</button></div></div>
+          <figure role="tabpanel" id="scp-slack" aria-labelledby="sc-slack"><div class="sc-view"><img src="shots/cap-slack.webp" width="976" height="552" alt="The test agent reports each step in your channel." loading="lazy"></div><figcaption>The test agent reports each step in your channel.</figcaption></figure><figure role="tabpanel" id="scp-thread" aria-labelledby="sc-thread" hidden><div class="sc-view"><img src="shots/cap-thread.webp" width="1280" height="700" alt="Two findings. F1 is proven by a failing test. F2 has no proof, so it cannot block." loading="lazy"></div><figcaption>Two findings. F1 is proven by a failing test. F2 has no proof, so it cannot block.</figcaption></figure><figure role="tabpanel" id="scp-telegram" aria-labelledby="sc-telegram" hidden><div class="sc-view"><img src="shots/cap-telegram.webp" width="848" height="686" alt="The same report on your phone." loading="lazy"></div><figcaption>The same report on your phone.</figcaption></figure><figure role="tabpanel" id="scp-github" aria-labelledby="sc-github" hidden><div class="sc-view"><img src="shots/cap-github.webp" width="650" height="326" alt="The finding on the exact line, with the test that proves it." loading="lazy"></div><figcaption>The finding on the exact line, with the test that proves it.</figcaption></figure>
         </div>
       </div>
     </div>
@@ -280,7 +272,7 @@
 <footer>
   <div class="wrap">
     <a class="brand" href="#main" aria-label="Heimdall, back to top">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 3h20v3H2zM4 7.5h6V9H4zM14 7.5h6V9h-6zM5.25 9h3.5v9.5h-3.5zM15.25 9h3.5v9.5h-3.5zM2 19.5h20v2H2z"/></svg>
       <b>Heimdall</b>
     </a>
     <nav aria-label="Footer">
