@@ -1,379 +1,26 @@
 <!doctype html>
-<html lang="en" data-type="software">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Heimdall: code review for teams that ship more pull requests than they can read</title>
-<meta name="description" content="Heimdall puts AI reviewers on every pull request and turns each finding into a test. Only a bug that a test proves can block the merge. Open source, runs in GitHub Actions or on a small VM.">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
+<title>Heimdall: only proven bugs block the merge</title>
+<meta name="description" content="Heimdall is an open-source pull request gate for teams whose agents write more code than anyone can review. Each AI finding becomes a test in a no-network sandbox. Only a finding its test proves can block the merge.">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#eceefb" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#11133a" media="(prefers-color-scheme: dark)">
-<meta property="og:title" content="Heimdall: code review for teams that ship more pull requests than they can read">
-<meta property="og:description" content="AI reviewers on every pull request. Only a bug that a test proves can block the merge. Open source, MIT, runs on a small VM or in your CI.">
+<meta name="theme-color" content="#3965fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#02062e" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Heimdall: only proven bugs block the merge">
+<meta property="og:description" content="Every AI review finding becomes a test. If it fails on the pull request and passes on the fix, the merge stops. Open source, self-hosted, MIT.">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://heimdall-sage.vercel.app/shots/og-v7.png">
+<meta property="og:url" content="https://heimdall-sage.vercel.app/">
+<meta property="og:image" content="https://heimdall-sage.vercel.app/art/og-temple.jpg">
 <meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
+<meta property="og:image:height" content="674">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sofia+Sans+Condensed:wght@300;600;700&family=Sofia+Sans:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<style>
-/* Site v10 "Temple". The v7 periwinkle mist and its fluted gateposts, with condensed, clean type.
-   One rose accent marks only proven things. Design contract: site/DESIGN.md section 7.
-   Every number links to its source (site/CLAIMS.md). */
-:root {
-  color-scheme: light;
-  --paper: #eceefb;
-  --fill: #e0e3f7;
-  --rule: #c3c8ee;
-  --muted: #4b5096;
-  --text: #242862;
-  --ink: #161946;
-  --accent: #a3245f;
-  --accent-soft: rgba(163, 36, 95, .08);
-  --night: #11133a;
-  --night-2: #191c4a;
-  --night-rule: #2f3474;
-  --night-text: #d8dbf7;
-  --night-muted: #a6abe8;
-  --lamp-proven: #ff8db5;
-  --lamp-run: #ffd98a;
-  --lamp-clear: #9fe6c4;
-  --grain: .07;
-  /* Hero art */
-  --sky0: #8692e8; --sky1: #a0aaef; --sky2: #d9d6f4; --glow: #fbeef6;
-  --hill-far: #aab2ef; --hill-near: #929ce8; --ground: #a7afee;
-  --col-dark: #3a3fa3; --col-mid: #7a85dc; --col-lit: #f3e6f0; --figure: #23276b;
-  --mist: #f6eef8; --mist-o: 1;
-  --display: "Sofia Sans Condensed", "Arial Narrow", sans-serif;
-  --sans: "Sofia Sans", ui-sans-serif, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
-  --wrap: min(1240px, 90vw);
-  --ease: cubic-bezier(.2, .7, .2, 1);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --paper: #11133a; --fill: #191c4a; --rule: #2f3474;
-    --muted: #a6abe8; --text: #d8dbf7; --ink: #f3e6f0;
-    --accent: #f4a9cf; --accent-soft: rgba(244, 169, 207, .09); --grain: .06;
-    --night: #0b0d2c; --night-2: #14173f; --night-rule: #2a2f6c;
-    --sky0: #090b2c; --sky1: #1b1f5e; --sky2: #3b3e93; --glow: #f3e6f0;
-    --hill-far: #262a73; --hill-near: #1e2265; --ground: #1b1e57;
-    --col-dark: #0f1247; --col-mid: #353a98; --col-lit: #e7d3ea; --figure: #080a2a;
-    --mist: #8e8fd6; --mist-o: .55;
-  }
-}
-
-*, *::before, *::after { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 76px; }
-body { margin: 0; background: var(--paper); color: var(--text); font: 400 18px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
-body::after {
-  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 100; opacity: var(--grain);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); transition: text-decoration-color .25s, color .25s; }
-a:hover { text-decoration-color: currentColor; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
-code, pre { font-family: var(--mono); font-size: .86em; }
-p { margin: 0 0 1em; max-width: 66ch; }
-h1, h2, h3 { color: var(--ink); margin: 0; font-family: var(--display); }
-h2 { font-weight: 700; font-size: 60px; line-height: .98; letter-spacing: -.012em; max-width: 18ch; text-wrap: balance; }
-h2 .thin { display: block; font-weight: 300; color: var(--muted); }
-h3 { font-weight: 600; font-size: 26px; line-height: 1.1; letter-spacing: -.005em; }
-.wrap { width: var(--wrap); margin-inline: auto; }
-.skip { position: absolute; left: 12px; top: -60px; z-index: 200; background: var(--ink); color: var(--paper); padding: 12px 16px; text-decoration: none; }
-.skip:focus { top: 12px; }
-.vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-
-/* Buttons: one pair. 4 px radius, a 1 px rise on hover, a press on click. */
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 24px;
-  font: 600 16px/1 var(--sans); letter-spacing: .01em; text-decoration: none; cursor: pointer;
-  border: 1px solid var(--ink); border-radius: 4px; background: var(--ink); color: var(--paper);
-  transition: transform .15s var(--ease), background-color .25s, color .25s, box-shadow .25s, border-color .25s;
-}
-.btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--ink) 45%, transparent); }
-.btn:active { transform: translateY(1px); box-shadow: none; }
-.btn.line { background: transparent; color: var(--ink); border-color: color-mix(in srgb, var(--ink) 45%, transparent); }
-.btn.line:hover { border-color: var(--ink); }
-.btn[disabled] { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
-
-/* Header */
-.top { position: fixed; inset: 0 0 auto 0; z-index: 50; transition: background-color .3s, border-color .3s; border-bottom: 1px solid transparent; }
-.top.scrolled { background: var(--paper); border-bottom-color: var(--rule); }
-.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 68px; }
-.brand { display: inline-flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; min-height: 44px; }
-.brand b { font: 600 19px/1 var(--display); letter-spacing: .22em; text-transform: uppercase; }
-.top nav { display: flex; align-items: center; gap: 30px; font: 600 15px/1 var(--sans); }
-.top nav a { text-decoration: none; color: var(--muted); padding: 14px 0; }
-.top nav a:hover { color: var(--ink); }
-.top nav .btn { color: var(--paper); min-height: 40px; padding: 0 18px; font-size: 15px; }
-@media (max-width: 900px) { .top nav a:not(.btn) { display: none; } }
-
-/* Hero: the art above, the words on the misty plain below. */
-.hero { position: relative; padding: 0; overflow: hidden; }
-.art-box { position: relative; height: clamp(340px, 60svh, 600px); }
-.art-box svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.art-box .layer { transition: transform 1.2s var(--ease); }
-.art-box .mist { animation: drift 40s ease-in-out infinite alternate; }
-.art-box .glow { animation: breathe 9s ease-in-out infinite alternate; transform-origin: 720px 330px; }
-.art-box .check-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1.4s .6s var(--ease) forwards; }
-.art-box .halo-check { opacity: 0; animation: lightup 1.6s 1.1s var(--ease) forwards; }
-@keyframes drift { from { transform: translateX(-14px); } to { transform: translateX(14px); } }
-@keyframes breathe { from { opacity: .8; transform: scale(.98); } to { opacity: 1; transform: scale(1.02); } }
-@keyframes draw { to { stroke-dashoffset: 0; } }
-@keyframes lightup { to { opacity: .55; } }
-.hero-copy { position: relative; z-index: 2; margin-top: -40px; padding-bottom: 80px; display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 32px 64px; align-items: end; }
-.hero h1 { font-weight: 700; font-size: 76px; line-height: .95; letter-spacing: -.015em; text-wrap: balance; }
-.hero h1 .thin { display: block; font-weight: 300; color: var(--muted); text-wrap: balance; }
-.lede { font: 400 19px/1.55 var(--sans); margin-bottom: 26px; }
-.ctas { display: flex; flex-wrap: wrap; gap: 12px; }
-.facts { margin: 22px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 14px; color: var(--muted); }
-.facts b { color: var(--ink); font-weight: 600; }
-@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-[data-enter] > * { animation: rise .9s var(--ease) both; }
-[data-enter] > :nth-child(2) { animation-delay: .15s; }
-@media (max-width: 960px) {
-  .hero-copy { grid-template-columns: minmax(0, 1fr); margin-top: -24px; padding-bottom: 64px; }
-  .hero h1 { font-size: 58px; }
-}
-@media (max-width: 480px) {
-  .art-box { height: 300px; }
-  .hero h1 { font-size: 44px; }
-  .ctas .btn { flex: 1 1 100%; }
-}
-
-/* Sections */
-section { position: relative; padding: 120px 0; }
-.rule-top { border-top: 1px solid var(--rule); }
-.head { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 24px 64px; align-items: end; margin-bottom: 56px; }
-.head p { margin: 0; color: var(--muted); }
-.note { font-size: 14px; line-height: 1.5; color: var(--muted); max-width: 84ch; margin-top: 18px; }
-@media (max-width: 900px) {
-  section { padding: 84px 0; }
-  .head { grid-template-columns: minmax(0, 1fr); margin-bottom: 36px; }
-  h2 { font-size: 46px; }
-}
-
-/* Who it is for */
-.who { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 64px; align-items: start; }
-.who ul { list-style: none; margin: 28px 0 0; padding: 0; }
-.who li { padding: 16px 0; border-top: 1px solid var(--rule); }
-.who li b { display: block; color: var(--ink); font-weight: 600; }
-.who li span { color: var(--muted); font-size: 16px; }
-.big { font: 700 150px/.82 var(--display); color: var(--ink); letter-spacing: -.02em; display: block; text-decoration: none; }
-.big-cap { font-size: 18px; color: var(--muted); margin-top: 14px; max-width: 30ch; }
-.bars { width: 100%; border-collapse: collapse; font-size: 16px; margin-top: 40px; }
-.bars caption { caption-side: bottom; text-align: left; }
-.bars th, .bars td { text-align: left; padding: 14px 0; border-bottom: 1px solid var(--rule); font-weight: 400; vertical-align: middle; }
-.bars thead th { font-size: 13px; font-weight: 600; color: var(--muted); padding-top: 0; }
-.bars th[scope="row"] { font-weight: 600; color: var(--ink); width: 8.5em; }
-.bars td.num { width: 6em; font-variant-numeric: tabular-nums; }
-.bar { position: relative; height: 24px; background: var(--fill); border-radius: 3px; overflow: hidden; }
-.bar i { position: absolute; inset: 0 auto 0 0; width: var(--w); background: var(--col-dark); border-radius: 3px; }
-.bar span { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font: 500 12px/1 var(--mono); color: var(--muted); }
-@media (max-width: 900px) { .who { grid-template-columns: minmax(0, 1fr); gap: 32px; } .big { font-size: 110px; } .bars th[scope="row"], .bars td.num { width: auto; } }
-
-/* Outcomes */
-.outcomes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 64px; }
-.outcomes li { padding: 32px 0; border-top: 1px solid var(--rule); display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 20px; }
-.outcomes li.wide { grid-column: 1 / -1; grid-template-columns: 240px minmax(0, 1fr); border-top: 2px solid var(--ink); }
-.outcomes .v { font: 700 40px/.95 var(--display); color: var(--ink); letter-spacing: -.01em; }
-.outcomes li.wide .v { font-size: 96px; color: var(--accent); }
-.outcomes .v a { text-decoration: none; }
-.outcomes h3 { margin-bottom: 6px; }
-.outcomes p { margin: 0; color: var(--muted); font-size: 16px; }
-@media (max-width: 900px) {
-  .outcomes { grid-template-columns: minmax(0, 1fr); }
-  .outcomes li, .outcomes li.wide { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .outcomes li.wide .v { font-size: 72px; }
-}
-
-/* Night band: the proof lab. */
-.night { background: var(--night); color: var(--night-text); }
-.night h2, .night h3 { color: #f3e6f0; }
-.night h2 .thin, .night .head p, .night .note { color: var(--night-muted); }
-.night a { color: #f3e6f0; }
-.night .btn { background: #f3e6f0; color: var(--night); border-color: #f3e6f0; }
-.night .btn.line { background: transparent; color: #f3e6f0; border-color: rgba(243, 230, 240, .4); }
-.night .btn.line:hover { border-color: #f3e6f0; }
-.night::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(50% 40% at 50% 0%, rgba(251, 238, 246, .08), transparent 70%); }
-.lamp { width: 10px; height: 10px; border-radius: 50%; background: #3a3f7a; flex: none; transition: background-color .3s, box-shadow .3s; }
-.lamp.red { background: var(--lamp-proven); box-shadow: 0 0 12px var(--lamp-proven); }
-.lamp.amber { background: var(--lamp-run); box-shadow: 0 0 12px var(--lamp-run); }
-.lamp.green { background: var(--lamp-clear); box-shadow: 0 0 12px var(--lamp-clear); }
-.lab {
-  --light: transparent;
-  position: relative; display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  border: 1px solid var(--night-rule); border-radius: 8px; overflow: hidden; background: var(--night-2);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--light) 45%, transparent), 0 40px 120px -50px var(--light);
-  transition: box-shadow .5s;
-}
-.lab[data-light="red"] { --light: rgba(255, 141, 181, .55); }
-.lab[data-light="amber"] { --light: rgba(255, 217, 138, .4); }
-.lab[data-light="green"] { --light: rgba(159, 230, 196, .45); }
-.lab-bar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--night-rule); }
-.pr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
-.pr strong { font: 600 17px/1.3 var(--sans); color: #f3e6f0; }
-.pr span { font: 400 13px/1 var(--mono); color: var(--night-muted); }
-.pr .sha { color: var(--night-text); padding: 4px 6px; border: 1px solid var(--night-rule); border-radius: 3px; }
-.lab-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.lab-actions .btn, .gate-actions .btn { min-height: 42px; font-size: 15px; padding: 0 18px; }
-.thread { list-style: none; margin: 0; padding: 0; max-height: 560px; overflow: auto; border-right: 1px solid var(--night-rule); }
-.thread li { border-bottom: 1px solid var(--night-rule); }
-.thread li:last-child { border-bottom: 0; }
-.c { width: 100%; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 14px 20px; text-align: left; cursor: pointer; background: transparent; color: var(--night-text); border: 0; font: inherit; transition: background-color .15s; }
-.c:hover { background: rgba(255, 255, 255, .04); }
-.c[aria-pressed="true"] { background: rgba(255, 255, 255, .07); }
-.c .lamp { margin-top: 7px; }
-.c .who { display: block; font: 500 12px/1.2 var(--mono); color: var(--night-muted); margin-bottom: 4px; }
-.c .what { display: block; font-size: 15px; line-height: 1.45; }
-.c .where { display: block; font: 400 12px/1.4 var(--mono); color: var(--night-muted); margin-top: 4px; }
-.c .st { font: 500 12px/1 var(--mono); color: var(--night-muted); white-space: nowrap; padding-top: 4px; }
-.c.done-unproven .what { color: var(--night-muted); text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, .25); }
-.c.done-proven .st { color: var(--lamp-proven); }
-.c.done-cleared .st { color: var(--lamp-clear); }
-.side { display: grid; grid-template-rows: minmax(0, 1fr) auto; max-height: 560px; }
-.term { margin: 0; padding: 18px 20px; overflow: auto; min-height: 220px; font: 400 13px/1.7 var(--mono); color: var(--night-text); white-space: pre-wrap; word-break: break-word; }
-.term .p { color: var(--night-muted); }
-.term .r { color: var(--lamp-proven); }
-.term .g { color: var(--lamp-clear); }
-.term .a { color: var(--lamp-run); }
-.term .w { color: #f3e6f0; font-weight: 500; }
-.term .cursor { display: inline-block; width: .6em; height: 1.1em; vertical-align: -2px; background: var(--night-text); animation: blink 1s steps(1) infinite; }
-@keyframes blink { 50% { opacity: 0; } }
-.gate { border-top: 1px solid var(--night-rule); padding: 18px 20px; display: grid; gap: 12px; }
-.gate-state { display: flex; align-items: center; gap: 12px; font: 600 17px/1.3 var(--sans); color: #f3e6f0; }
-.gate-state .lamp { width: 13px; height: 13px; }
-.gate-sub { margin: 0; font-size: 14px; color: var(--night-muted); }
-.tally { display: flex; gap: 24px; font: 500 13px/1 var(--mono); color: var(--night-muted); }
-.tally b { color: #f3e6f0; font-weight: 500; }
-.gate-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-@media (max-width: 960px) {
-  .lab { grid-template-columns: minmax(0, 1fr); }
-  .thread { border-right: 0; border-bottom: 1px solid var(--night-rule); max-height: 380px; }
-  .side { max-height: none; }
-}
-
-/* Honest tests: try to cheat. */
-.cheat { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--fill) 60%, var(--paper)); }
-.moves { list-style: none; margin: 0; padding: 8px; border-right: 1px solid var(--rule); }
-.moves button {
-  width: 100%; text-align: left; display: flex; justify-content: space-between; gap: 12px; align-items: center;
-  min-height: 52px; padding: 12px 14px; border: 0; border-radius: 6px; background: transparent; color: var(--text);
-  font: 400 16px/1.35 var(--sans); cursor: pointer; transition: background-color .15s, color .15s;
-}
-.moves button:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
-.moves button[aria-selected="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 0 0 1px var(--rule); }
-.moves .tag { font: 500 11px/1 var(--mono); padding: 5px 7px; border-radius: 3px; border: 1px solid var(--rule); color: var(--muted); white-space: nowrap; }
-.moves .tag.block { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
-.verdict { padding: 28px 32px; display: grid; align-content: start; gap: 16px; min-height: 360px; }
-.verdict pre { margin: 0; padding: 16px 18px; border-radius: 6px; background: var(--night); color: var(--night-text); font-size: 13px; line-height: 1.7; overflow-x: auto; }
-.verdict pre .del { color: #ff9fbf; }
-.verdict pre .add { color: #a9f0cb; }
-.verdict pre .p { color: var(--night-muted); }
-.verdict .res { display: flex; align-items: center; gap: 12px; font: 600 20px/1.3 var(--sans); color: var(--ink); }
-.verdict .res code { font-size: 13px; color: var(--muted); font-weight: 400; }
-.verdict p { margin: 0; color: var(--muted); font-size: 16px; }
-.dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--muted); }
-.dot.block { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
-.dot.warn { background: #c08a2a; box-shadow: 0 0 0 4px rgba(192, 138, 42, .14); }
-@media (max-width: 900px) { .cheat { grid-template-columns: minmax(0, 1fr); } .moves { border-right: 0; border-bottom: 1px solid var(--rule); } .verdict { min-height: 0; padding: 22px; } }
-
-/* Footprint */
-.light { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
-.mode { border: 1px solid var(--rule); border-radius: 8px; padding: 32px; background: color-mix(in srgb, var(--fill) 45%, var(--paper)); }
-.mode h3 { font-size: 32px; margin-bottom: 4px; }
-.mode .for { color: var(--muted); font-size: 16px; margin-bottom: 24px; }
-.mode dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 20px; align-items: baseline; }
-.mode dt { font: 700 34px/1 var(--display); color: var(--ink); white-space: nowrap; }
-.mode dt a { text-decoration: none; }
-.mode dd { margin: 0; color: var(--text); font-size: 16px; }
-@media (max-width: 900px) { .light { grid-template-columns: minmax(0, 1fr); } .mode { padding: 24px; } .mode dt { font-size: 28px; } }
-
-/* Trust */
-.trust { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 48px; }
-.trust > div { padding: 26px 0; border-top: 1px solid var(--rule); }
-.trust > div.lead { grid-column: 1 / -1; border-top: 2px solid var(--ink); display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 32px; align-items: baseline; }
-.trust .lead .v { font: 700 112px/.85 var(--display); color: var(--ink); text-decoration: none; }
-.trust h3 { font-size: 22px; margin-bottom: 8px; }
-.trust p { margin: 0; color: var(--muted); font-size: 16px; }
-@media (max-width: 900px) { .trust { grid-template-columns: minmax(0, 1fr); } .trust > div.lead { grid-template-columns: minmax(0, 1fr); } .trust .lead .v { font-size: 84px; } }
-
-/* Results */
-table.plain { width: 100%; border-collapse: collapse; font-size: 16px; }
-table.plain caption { caption-side: bottom; text-align: left; font-size: 14px; color: var(--muted); padding-top: 14px; }
-table.plain th, table.plain td { text-align: left; vertical-align: baseline; padding: 16px 16px 16px 0; border-bottom: 1px solid var(--rule); }
-table.plain thead th { font-weight: 600; color: var(--muted); font-size: 14px; border-bottom: 2px solid var(--ink); }
-table.plain td.v { font: 700 30px/1 var(--display); color: var(--ink); white-space: nowrap; }
-table.plain td.v a { text-decoration: none; }
-.scroll-x { overflow-x: auto; }
-
-/* Demo */
-.video { border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: #000; aspect-ratio: 16 / 9; }
-.video video { display: block; width: 100%; height: 100%; }
-
-/* Set up */
-.tabs { display: inline-flex; padding: 4px; gap: 4px; border: 1px solid var(--rule); border-radius: 6px; margin-bottom: 36px; background: color-mix(in srgb, var(--fill) 50%, var(--paper)); }
-.tabs button { font: 600 15px/1 var(--sans); min-height: 42px; padding: 0 18px; cursor: pointer; background: transparent; color: var(--muted); border: 0; border-radius: 4px; }
-.tabs button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
-.setup-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 64px; }
-.cmds { list-style: none; margin: 0; padding: 0; }
-.cmds > li { padding-bottom: 30px; }
-.cmds h3 { font-size: 22px; margin-bottom: 10px; }
-.cmd { display: flex; align-items: flex-start; gap: 12px; background: var(--night); color: var(--night-text); border-radius: 6px; padding: 16px 16px 16px 20px; }
-.cmd pre { margin: 0; flex: 1; overflow-x: auto; font-size: 13.5px; line-height: 1.65; }
-.cmd pre::before { content: "$ "; color: var(--night-muted); }
-.copy-btn { flex: none; font: 500 12px/1 var(--mono); color: var(--night-text); background: transparent; border: 1px solid var(--night-rule); border-radius: 3px; min-height: 36px; min-width: 64px; padding: 0 10px; cursor: pointer; }
-.copy-btn:hover { background: rgba(255, 255, 255, .08); }
-.copy-btn.ok { color: var(--lamp-clear); border-color: var(--lamp-clear); }
-.cmds p { margin: 12px 0 0; font-size: 16px; color: var(--muted); }
-.aside { border-left: 1px solid var(--rule); padding-left: 28px; }
-.aside h3 { margin-bottom: 12px; }
-.aside p, .aside dd { color: var(--muted); font-size: 16px; }
-.aside dl { margin: 0; }
-.aside dt { font-weight: 600; color: var(--ink); margin-top: 16px; }
-.aside dd { margin: 4px 0 0; }
-[role="tabpanel"][hidden] { display: none; }
-@media (max-width: 960px) { .setup-grid { grid-template-columns: minmax(0, 1fr); gap: 36px; } }
-
-/* Questions */
-.qa { border-top: 2px solid var(--ink); max-width: 900px; }
-.qa details { border-bottom: 1px solid var(--rule); }
-.qa summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 20px 0; font: 600 22px/1.3 var(--display); color: var(--ink); min-height: 44px; }
-.qa summary::-webkit-details-marker { display: none; }
-.qa summary::after { content: "+"; font: 300 34px/1 var(--display); color: var(--muted); transition: transform .25s var(--ease); }
-.qa details[open] summary::after { transform: rotate(45deg); }
-.qa details p { margin: 0 0 22px; }
-
-/* Close: the mark drawn in light. */
-.close { background: var(--night); color: var(--night-text); text-align: center; padding: 140px 0 120px; overflow: hidden; }
-.close::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(36% 46% at 50% 34%, rgba(251, 238, 246, .18), transparent 70%); }
-.close .wrap { position: relative; display: grid; justify-items: center; gap: 28px; }
-.close svg { width: 120px; height: 120px; color: #f3e6f0; filter: drop-shadow(0 0 18px rgba(251, 238, 246, .55)); }
-.close h2 { color: #f3e6f0; max-width: 20ch; font-size: 72px; }
-.close h2 .thin { color: var(--night-muted); }
-.close .btn { background: #f3e6f0; color: var(--night); border-color: #f3e6f0; }
-.close .btn.line { background: transparent; color: #f3e6f0; border-color: rgba(243, 230, 240, .4); }
-.close .ctas { justify-content: center; }
-footer { background: var(--night); color: var(--night-muted); border-top: 1px solid var(--night-rule); padding: 24px 0 36px; font-size: 14px; }
-footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
-footer nav { display: flex; flex-wrap: wrap; gap: 4px 20px; }
-footer a { display: inline-block; padding: 10px 0; color: var(--night-text); }
-@media (max-width: 900px) { .close h2 { font-size: 48px; } }
-
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  *, *::before, *::after { animation: none !important; transition: none !important; }
-  .art-box .check-line { stroke-dashoffset: 0; }
-  .art-box .halo-check { opacity: .55; }
-}
-</style>
+<link rel="preload" href="fonts/mona-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" as="image" href="art/temple-hero-1600.webp" imagesrcset="art/temple-hero-1000.webp 1000w, art/temple-hero-1600.webp 1600w, art/temple-hero-2000.webp 2000w" imagesizes="100vw">
+<script>try{var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t;}catch(e){}</script>
+<link rel="stylesheet" href="css/site.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -381,15 +28,16 @@ footer a { display: inline-block; padding: 10px 0; color: var(--night-text); }
 <header class="top" id="siteTop">
   <div class="wrap">
     <a class="brand" href="#main" aria-label="Heimdall, back to top">
-      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg>
       <b>Heimdall</b>
     </a>
     <nav aria-label="Main">
-      <a href="#outcomes">Outcomes</a>
-      <a href="#lab">Proof lab</a>
-      <a href="#light">Footprint</a>
+      <a href="#how">How it works</a>
+      <a href="#stack">Integrations</a>
       <a href="#setup">Set up</a>
-      <a class="btn" href="https://github.com/prathameshk421/Heimdall">GitHub</a>
+      <a href="#why">Why Heimdall</a>
+      <span class="tools"><button class="theme" type="button" id="themeBtn" aria-label="Switch to dark theme"><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></g></svg></button>
+      <a class="btn sm line gh" href="https://github.com/prathameshk421/Heimdall"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub<span class="count" data-stars hidden></span></a></span>
     </nav>
   </div>
 </header>
@@ -397,347 +45,233 @@ footer a { display: inline-block; padding: 10px 0; color: var(--night-text); }
 <main id="main">
   <section class="hero" aria-labelledby="h-hero">
     <div class="art-box">
-      <svg class="art" viewBox="0 0 1440 560" preserveAspectRatio="xMidYMax slice" id="heroArt" role="img" aria-labelledby="artT artD">
-<title id="artT">The gate at first light</title>
-<desc id="artD">An illustration of the Heimdall mark: two tall fluted columns stand on a misty plain. A pale light passes through the gap between them and draws a check. Soft hills and a far colonnade fade into the sky. One small figure walks toward the gate.</desc>
-<defs>
-<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--sky0)"/><stop offset=".55" style="stop-color:var(--sky1)"/><stop offset=".82" style="stop-color:var(--sky2)"/></linearGradient>
-<linearGradient id="top" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".06" stop-color="#fff" stop-opacity=".04"/><stop offset=".14" stop-color="#fff" stop-opacity=".2"/><stop offset=".23" stop-color="#fff" stop-opacity=".52"/><stop offset=".32" stop-color="#fff" stop-opacity=".84"/><stop offset=".42" stop-color="#fff"/><stop offset=".9" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-<mask id="topM" x="0" y="0" width="1440" height="560" maskUnits="userSpaceOnUse"><rect width="1440" height="560" fill="url(#top)"/></mask>
-<radialGradient id="halo" cx=".5" cy=".5" r=".5"><stop offset="0" style="stop-color:var(--glow)" stop-opacity=".95"/><stop offset=".22" style="stop-color:var(--glow)" stop-opacity=".55"/><stop offset=".5" style="stop-color:var(--glow)" stop-opacity=".18"/><stop offset=".78" style="stop-color:var(--glow)" stop-opacity=".04"/><stop offset="1" style="stop-color:var(--glow)" stop-opacity="0"/></radialGradient>
-<radialGradient id="rise" cx=".5" cy="1" r=".5" gradientTransform="matrix(1 0 0 2 0 -1)"><stop offset="0" style="stop-color:var(--mist)" stop-opacity=".9"/><stop offset=".45" style="stop-color:var(--mist)" stop-opacity=".45"/><stop offset="1" style="stop-color:var(--mist)" stop-opacity="0"/></radialGradient>
-<linearGradient id="beam" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--glow)" stop-opacity=".9"/><stop offset="1" style="stop-color:var(--glow)" stop-opacity="0"/></linearGradient>
-<linearGradient id="colL" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--col-mid)"/><stop offset=".1" style="stop-color:var(--col-dark)"/><stop offset=".34" style="stop-color:var(--col-dark)"/><stop offset=".58" style="stop-color:var(--col-mid)"/><stop offset=".82" style="stop-color:var(--col-lit)"/><stop offset="1" style="stop-color:var(--col-lit)"/></linearGradient>
-<linearGradient id="colR" href="#colL" x1="1" x2="0"/>
-<linearGradient id="grvL" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--col-dark)" stop-opacity=".25"/><stop offset="1" style="stop-color:var(--col-dark)" stop-opacity=".6"/></linearGradient>
-<linearGradient id="grvR" href="#grvL" x1="1" x2="0"/>
-<linearGradient id="ridL" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--col-lit)" stop-opacity="0"/><stop offset=".35" style="stop-color:var(--col-lit)" stop-opacity=".1"/><stop offset=".7" style="stop-color:var(--col-lit)" stop-opacity=".5"/><stop offset="1" style="stop-color:var(--col-lit)" stop-opacity=".9"/></linearGradient>
-<linearGradient id="ridR" href="#ridL" x1="1" x2="0"/>
-<linearGradient id="ao" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--col-dark)" stop-opacity=".6"/><stop offset="1" style="stop-color:var(--col-dark)" stop-opacity="0"/></linearGradient>
-<linearGradient id="pTop" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--col-mid)"/><stop offset=".5" style="stop-color:var(--col-lit)"/><stop offset="1" style="stop-color:var(--col-mid)"/></linearGradient>
-<linearGradient id="plain" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--ground)"/><stop offset=".5" style="stop-color:var(--ground)"/><stop offset="1" style="stop-color:var(--paper)"/></linearGradient>
-<linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--paper)" stop-opacity="0"/><stop offset="1" style="stop-color:var(--paper)"/></linearGradient>
-<filter id="b2" x="-5%" y="-20%" width="110%" height="140%"><feGaussianBlur stdDeviation="2"/></filter>
-<filter id="b4" x="-10%" y="-40%" width="120%" height="180%"><feGaussianBlur stdDeviation="4"/></filter>
-<filter id="b8" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="8"/></filter>
-<filter id="b22" x="-30%" y="-200%" width="160%" height="500%"><feGaussianBlur stdDeviation="22"/></filter>
-<filter id="grainA" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" stitchTiles="stitch" result="n"/><feColorMatrix in="n" values="2.2 0 0 0 -.6 2.2 0 0 0 -.6 2.2 0 0 0 -.6 0 0 0 0 1"/></filter>
-</defs>
-<g mask="url(#topM)">
-<rect width="1440" height="560" fill="url(#sky)"/>
-<g class="layer" data-depth="0.35"><g class="glow"><ellipse cx="720" cy="340" rx="600" ry="340" fill="url(#halo)"/></g>
-<path d="M0 418C150 372 300 366 470 404C560 424 620 432 720 432C860 432 920 392 1050 366C1190 340 1320 372 1440 402V470H0Z" fill="var(--hill-far)" opacity=".85" filter="url(#b2)"/>
-<g fill="var(--hill-near)" opacity=".45" filter="url(#b4)"><rect x="230" y="386" width="102" height="6"/><rect x="236" y="392" width="6" height="30"/><rect x="251" y="392" width="6" height="30"/><rect x="266" y="392" width="6" height="30"/><rect x="281" y="392" width="6" height="30"/><rect x="296" y="392" width="6" height="30"/><rect x="311" y="392" width="6" height="30"/><rect x="326" y="392" width="6" height="30"/></g>
-<ellipse cx="282" cy="420" rx="120" ry="16" style="fill:var(--sky2)" opacity=".7" filter="url(#b8)"/>
-<path d="M0 452C90 418 210 410 330 434C392 446 440 454 500 458H0Z" fill="var(--hill-near)" filter="url(#b2)"/>
-<path d="M880 456C990 404 1120 392 1260 420C1340 436 1400 448 1440 452V470H880Z" fill="var(--hill-near)" filter="url(#b2)"/>
-</g><g class="layer" data-depth="0.8"><path d="M0 448C400 440 1040 440 1440 448V560H0Z" fill="url(#plain)"/>
-<path d="M664 300L776 300L1000 560H440Z" fill="url(#beam)" opacity=".5" filter="url(#b22)"/>
-<path d="M590 447H850L868 456H572Z" fill="url(#pTop)" opacity=".9"/>
-<path d="M572 456H868V465H572Z" fill="var(--col-dark)" opacity=".5"/>
-<g fill="var(--col-dark)" filter="url(#b4)" opacity=".75"><path d="M612 448H668L648 458H574Z"/><path d="M772 448H828L866 458H792Z"/></g>
-<ellipse cx="720" cy="452" rx="66" ry="5" style="fill:var(--glow)" opacity=".8" filter="url(#b4)"/>
-<path d="M620 446L622 176H658L660 446Z" fill="url(#colL)"/>
-<path d="M626 182V444M631 182V444M636 182V444M641 182V444M646 182V444M651 182V444M656 182V444" stroke="url(#grvL)" stroke-width="1.6"/>
-<path d="M627.6 182V444M632.6 182V444M637.6 182V444M642.6 182V444M647.6 182V444M652.6 182V444M657.2 182V444" stroke="url(#ridL)" stroke-width="1.2"/>
-<rect x="620" y="176" width="40" height="26" fill="url(#ao)"/>
-<path d="M621 176L613 163H667L659 176Z" fill="url(#colL)"/>
-<rect x="609" y="152" width="62" height="11" fill="url(#colL)"/>
-<path d="M640 152H671M640 163H667" stroke="var(--col-lit)" stroke-opacity=".5"/>
-<rect x="613" y="440" width="54" height="9" fill="url(#colL)"/>
-<path d="M780 446L782 176H818L820 446Z" fill="url(#colR)"/>
-<path d="M784 182V444M789 182V444M794 182V444M799 182V444M804 182V444M809 182V444M814 182V444" stroke="url(#grvR)" stroke-width="1.6"/>
-<path d="M782.8 182V444M787.4 182V444M792.4 182V444M797.4 182V444M802.4 182V444M807.4 182V444M812.4 182V444" stroke="url(#ridR)" stroke-width="1.2"/>
-<rect x="780" y="176" width="40" height="26" fill="url(#ao)"/>
-<path d="M781 176L773 163H827L819 176Z" fill="url(#colR)"/>
-<rect x="769" y="152" width="62" height="11" fill="url(#colR)"/>
-<path d="M769 152H800M773 163H800" stroke="var(--col-lit)" stroke-opacity=".5"/>
-<rect x="773" y="440" width="54" height="9" fill="url(#colR)"/>
-<path d="M659 446L657 168M781 446L783 168" stroke="var(--glow)" stroke-width="7" opacity=".3" filter="url(#b4)"/>
-<path d="M658.6 446L656.8 176M781.4 446L783.2 176" stroke="var(--col-lit)" stroke-opacity=".85" stroke-width="1.6"/>
-<path class="check halo-check" d="M676 300L704 328L762 262" fill="none" stroke="var(--glow)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" opacity=".55" filter="url(#b8)"/>
-<path class="check-line" pathLength="1" d="M676 300L704 328L762 262" fill="none" stroke="var(--glow)" stroke-width="7" opacity=".9"/>
-</g><g class="layer" data-depth="1.4"><ellipse cx="720" cy="470" rx="250" ry="96" fill="url(#rise)" style="opacity:var(--mist-o)"/>
-<g class="mist" style="fill:var(--mist);opacity:var(--mist-o)" filter="url(#b22)"><ellipse cx="720" cy="452" rx="760" ry="26" opacity=".5"/><ellipse cx="300" cy="476" rx="420" ry="22" opacity=".35"/><ellipse cx="1150" cy="470" rx="380" ry="20" opacity=".3"/><ellipse cx="720" cy="440" rx="200" ry="16" opacity=".5"/></g>
-<g fill="var(--figure)" stroke="var(--figure)" stroke-linecap="round" stroke-linejoin="round">
-<ellipse cx="1012" cy="507" rx="9" ry="1.6" opacity=".25" stroke="none"/>
-<circle cx="1010.6" cy="477" r="3.3" stroke="none"/>
-<path d="M1012.6 481.5L1011.2 494" stroke-width="4.6"/>
-<path d="M1011.2 493.5L1006 506M1011.2 493.5L1016.4 505.6" stroke-width="2.6" fill="none"/>
-<path d="M1012.4 483.4L1008.4 491.6M1012.4 483.4L1015.6 491" stroke-width="2" fill="none"/>
-</g>
-</g><rect width="1440" height="560" filter="url(#grainA)" opacity=".3" style="mix-blend-mode:soft-light"/>
-<rect y="470" width="1440" height="90" fill="url(#fade)"/>
-</g>
-</svg>
+      <img class="hero-img" src="art/temple-hero-1600.webp" srcset="art/temple-hero-1000.webp 1000w, art/temple-hero-1600.webp 1600w, art/temple-hero-2000.webp 2000w" sizes="100vw" width="2000" height="1123" alt="A Greek temple in cobalt mist, light raking along its colonnade. A walker and a stag cross the field toward it." fetchpriority="high" decoding="async">
     </div>
-    <div class="wrap hero-copy" data-enter>
-      <h1 id="h-hero">Code review for teams that ship<span class="thin">more pull requests than they can read</span></h1>
-      <div>
-        <p class="lede">Heimdall puts AI reviewers on every pull request and turns each finding into a test. Only a bug that a test proves can block the merge. It runs in your GitHub Actions or on a small VM, and it keeps your tests honest.</p>
-        <div class="ctas">
-          <a class="btn" href="#setup">Set it up in 4 steps</a>
-          <a class="btn line" href="#lab">Watch it prove a bug</a>
-        </div>
-        <ul class="facts">
-          <li>Install to first summary <b><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/TRACKER.md?plain=1#L81">3 min 10 s</a></b></li>
-          <li>False blocks <b><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/sota/BENCH.md">0</a></b></li>
-          <li>Open source, <b>MIT</b></li>
-        </ul>
+    <div class="hero-copy" data-enter>
+      <h1 id="h-hero"><span class="name">Heimdall</span><span class="tag">Only proven bugs block the merge.</span></h1>
+      <p class="lede">Heimdall writes a test for each AI review finding and runs it in a sealed sandbox. If the test fails on your pull request and passes on the fix, the merge stops.</p>
+      <div class="ctas">
+        <a class="btn" href="#setup">Get started</a>
+        <button class="btn line" type="button" id="openDemo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>Watch the demo</button>
       </div>
     </div>
-  </section>
-
-  <section id="who" class="rule-top" aria-labelledby="h-who">
-    <div class="wrap who">
-      <div>
-        <a class="big" href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L9">411</a>
-        <p class="big-cap">bot review comments on <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L10">30 merged pull requests</a> of pingdotgg/t3code. A median of <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L70">10 per pull request</a>.</p>
-      </div>
-      <div>
-        <h2 id="h-who">Agents write the code<span class="thin">and nobody has time to read it</span></h2>
-        <ul>
-          <li><b>A startup with no spare reviewer</b><span>Your agents open pull requests all day. You merge on a skim, or the queue grows.</span></li>
-          <li><b>A maintainer under a flood of bot comments</b><span>Each pull request gets ten opinions. Few change the code, and you cannot tell which few.</span></li>
-          <li><b>A team that wants its tests to mean something</b><span>An agent can make red go green by editing the test. You need a gate that notices.</span></li>
-        </ul>
-        <table class="bars">
-          <caption class="note">Table 1: Bot comments on 30 merged t3code pull requests. "Changed" means a later commit in the same pull request touched the commented lines: a proxy, not proof the bug was real. <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L30-L41">Method and limits</a>.</caption>
-          <thead><tr><th scope="col">Reviewer</th><th scope="col">Comments</th><th scope="col">Code changed</th></tr></thead>
-          <tbody>
-            <tr><th scope="row">CodeRabbit</th><td class="num"><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L54">60</a></td><td><div class="bar" style="--w:48.33%"><i></i><span>29 (48%)</span></div></td></tr>
-            <tr><th scope="row">Macroscope</th><td class="num"><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L52">175</a></td><td><div class="bar" style="--w:42.86%"><i></i><span>75 (43%)</span></div></td></tr>
-            <tr><th scope="row">Bugbot</th><td class="num"><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L53">135</a></td><td><div class="bar" style="--w:23.7%"><i></i><span>32 (24%)</span></div></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <section id="outcomes" class="rule-top" aria-labelledby="h-outcomes">
-    <div class="wrap">
-      <div class="head">
-        <h2 id="h-outcomes">What changes in your repo<span class="thin">from the first pull request</span></h2>
-        <p>Heimdall applies one rule to every finding, from its own reviewers and from the bots you already use. A finding counts only when its test fails twice on the pull request and passes on the fix.</p>
-      </div>
-      <ul class="outcomes">
-        <li class="wide"><span class="v"><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/sota/BENCH.md">0</a></span><div><h3>Good code is never blocked by a guess</h3><p>False blocks on clean changes, in every live Proof Bench run. A gate that blocks good code gets switched off, so we protect this number first.</p></div></li>
-        <li><span class="v">1 of 12</span><div><h3>You read the proven bug, not the noise</h3><p>Unproven comments are hidden and counted, and anyone can open the list. The proof lab below shows a pull request with twelve comments and one proven bug.</p></div></li>
-        <li><span class="v"><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/PROGRESS.md">3 of 3</a></span><div><h3>Real bugs, proven on a live pull request</h3><p>On our payment fixture, the proof run proved the refund cap, the removed refund reference and a missing merchant check. Each test failed twice on the head and passed on the fix.</p></div></li>
-        <li><span class="v"><a href="https://github.com/prathameshk421/Heimdall/blob/main/internal/domain/testintegrity/doc.go">5</a></span><div><h3>Agents cannot game your tests</h3><p>Pinned tests are read-only. A skipped test, a deleted assertion, an assertion that cannot fail and a mock of the changed code are flagged, in test files of 5 language families. Try it below.</p></div></li>
-        <li><span class="v"><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/PROGRESS.md">$0.20</a></span><div><h3>Spend stays small and capped</h3><p>Live proof runs cost $0.20 and $0.23. The default cap is $0.50 a pull request and $50 a month, checked before every model call.</p></div></li>
-        <li><span class="v">2</span><div><h3>Two people on every merge</h3><p>The author, and a person who approves the exact commit. An approval from the author or on an older commit does not count, so a new push needs a new approval.</p></div></li>
-        <li><span class="v"><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/STRATEGY.md?plain=1#L72">2 wk</a></span><div><h3>Nothing blocks on day one</h3><p>A new install starts in shadow mode: it says what would block and blocks nothing. The plan is two weeks of that, with a weekly digest. Then you turn on enforce.</p></div></li>
+    <div class="wrap stats-wrap">
+      <ul class="stats" aria-label="Measured results">
+        <li class="glass"><span class="v num">0</span><span class="k">Clean pull requests blocked by mistake</span></li>
+        <li class="glass"><span class="v">Sealed</span><span class="k">Sandbox with no network and no privileges</span></li>
+        <li class="glass"><span class="v num">42&#8201;MiB</span><span class="k">RAM at idle. Runs on a 1&#8201;GiB VM</span></li>
+        <li class="glass"><span class="v num">$0.20</span><span class="k">Model cost for one proof run</span></li>
       </ul>
     </div>
   </section>
 
-  <section id="lab" class="night" aria-labelledby="h-lab">
-    <div class="wrap" style="position:relative">
-      <div class="head">
-        <h2 id="h-lab">Watch it prove a bug<span class="thin">Twelve comments, one gate</span></h2>
-        <p>Prove one comment or all twelve. Then push the fix, approve the new commit and merge.</p>
+  <section id="how" aria-labelledby="h-how">
+    <div class="wrap how">
+      <div class="how-text">
+        <p class="eyebrow">How it works</p>
+        <h2 id="h-how">A finding blocks the merge only when a test proves it</h2>
+        <ol class="steps">
+          <li><b>Review</b><span>AI reviewers read the pull request. Heimdall also reads the comments from your review bots.</span></li>
+          <li><b>Reproduce</b><span>Heimdall writes a test for each finding. The test runs in a sealed sandbox.</span></li>
+          <li><b>Prove</b><span>The test must fail two times on the pull request and pass on the fix.</span></li>
+          <li><b>Gate</b><span>A proven bug blocks the merge. Other comments stay out of your way.</span></li>
+        </ol>
       </div>
-      <div class="lab" id="labApp">
-        <div class="lab-bar">
-          <div class="pr"><strong>Retry refunds on timeout</strong><span>#412</span><span>head <span class="sha" id="labSha">a1b2c3d</span></span></div>
-          <div class="lab-actions">
-            <button class="btn" type="button" id="proveAll">Prove all 12</button>
-            <button class="btn line" type="button" id="labReset">Reset</button>
+      <figure class="proofrun card shine" id="proofrun" aria-label="Animation: Heimdall checks six review comments and proves one bug">
+        <div class="pr-head"><span class="dot-live" aria-hidden="true"></span><b>heimdall/proof</b><span>PR #412 &middot; a1b2c3d</span><span class="pr-state" id="prState">Checking</span></div>
+        <div class="pr-body">
+          <ul class="pr-list" id="prList"></ul>
+          <div class="pr-pipe" aria-hidden="true">
+            <p class="pr-now" id="prNow">&nbsp;</p>
+            <ol class="pipe" id="prPipe">
+              <li data-k="test"><span>Write the test</span><i></i></li>
+              <li data-k="r1"><span>Run 1 on the pull request</span><i></i></li>
+              <li data-k="r2"><span>Run 2 on the pull request</span><i></i></li>
+              <li data-k="fix"><span>Run on the fix</span><i></i></li>
+            </ol>
+            <p class="pr-verdict" id="prVerdict">&nbsp;</p>
           </div>
         </div>
-        <ul class="thread" id="thread" aria-label="Review comments on the pull request"></ul>
-        <div class="side">
-          <pre class="term" id="term" aria-live="polite" aria-label="Proof log"><span class="p">heimdall proof (sandbox: no network)
-Pick a comment, or press "Prove all 12".</span>
-<span class="cursor"></span></pre>
-          <div class="gate">
-            <div class="gate-state"><span class="lamp" id="gateLamp"></span><span id="gateText">Not checked yet</span></div>
-            <p class="gate-sub" id="gateSub">No finding is proven, so nothing blocks. Shadow mode would say the same.</p>
-            <div class="tally"><span>proven <b id="tProven">0</b></span><span>unproven, hidden <b id="tHidden">0</b></span><span>open <b id="tOpen">12</b></span></div>
-            <div class="gate-actions" id="gateActions"></div>
+        <figcaption>Example pull request. The rule is real: two failed runs on the pull request and one passed run on the fix.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="stack" aria-labelledby="h-stack">
+    <div class="wrap">
+      <div class="wheel card" id="wheel">
+        <div class="wheel-head">
+          <p class="eyebrow">Integrations</p>
+          <h2 id="h-stack">Heimdall works where your team works</h2>
+          <p class="sub">It reads your code and tickets, runs in your CI, uses the model you pick and talks in your team chat.</p>
+        </div>
+        <svg class="wheel-svg" viewBox="0 0 939 780" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+          <defs><linearGradient id="comet" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity="0"/><stop offset="1" stop-color="currentColor"/></linearGradient></defs>
+          <circle class="ring" cx="469" cy="180" r="391"/>
+          <line class="conn" x1="469" y1="410" x2="469" y2="500"/>
+          <line class="comet" id="comet" x1="469" y1="410" x2="469" y2="440"/>
+        </svg>
+        <div class="wheel-hub" aria-hidden="true"><span class="hub shine"></span></div>
+        <div class="wheel-items" id="wheelItems" aria-hidden="true"></div>
+        <div class="wheel-glyphs" id="wheelGlyphs" aria-hidden="true"></div>
+        <p class="wheel-label" id="wheelLabel" aria-live="polite"><b>&nbsp;</b><span>&nbsp;</span></p>
+      </div>
+
+      <div class="supports card" aria-label="What Heimdall supports">
+        <div class="sup"><p class="sup-k">Team chat</p><p class="sup-d">Findings and commands in your room.</p><ul><li><span class="tile"><img src="brands/slack.svg" alt=""></span>Slack</li><li><span class="tile"><img src="brands/discord.svg" alt=""></span>Discord</li><li><span class="tile"><img src="brands/telegram.svg" alt=""></span>Telegram</li><li><span class="tile"><img src="brands/mattermost-light.svg" alt="" class="lt"><img src="brands/mattermost-dark.svg" alt="" class="dk"></span>Mattermost</li><li><span class="tile"><img src="brands/microsoft-teams.svg" alt=""></span>Teams</li></ul></div>
+        <div class="sup"><p class="sup-k">Code and tickets</p><p class="sup-d">Where the work starts and merges.</p><ul><li><span class="tile"><img src="brands/github_light.svg" alt="" class="lt"><img src="brands/github_dark.svg" alt="" class="dk"></span>GitHub</li><li><span class="tile"><img src="brands/github-actions.svg" alt=""></span>Actions</li><li><span class="tile"><img src="brands/jira.svg" alt=""></span>Jira</li></ul></div>
+        <div class="sup"><p class="sup-k">Models</p><p class="sup-d">Any OpenAI-compatible API.</p><ul><li><span class="tile"><img src="brands/openrouter_light.svg" alt="" class="lt"><img src="brands/openrouter_dark.svg" alt="" class="dk"></span>OpenRouter</li><li><span class="tile"><img src="brands/ollama_light.svg" alt="" class="lt"><img src="brands/ollama_dark.svg" alt="" class="dk"></span>Ollama</li><li><span class="tile"><img src="brands/deepseek.svg" alt=""></span>DeepSeek</li><li><span class="tile"><span class="mono-ic">v</span></span>vLLM</li></ul></div>
+      </div>
+
+      <div class="chat-row">
+        <div class="chat-text">
+          <p class="eyebrow">Team chat</p>
+          <h3>Decide from anywhere</h3>
+          <p>Heimdall posts each finding to your team room. A proven finding says so. A finding without proof says that it cannot block the merge. A person answers with one command.</p>
+          <ul class="cmd-list"><li><code>heimdall uphold F1</code><span>Keep the block</span></li><li><code>heimdall dismiss F1 reason</code><span>Remove it, with a reason</span></li></ul>
+          <p class="real">Real captures from a live run on Telegram and GitHub.</p>
+        </div>
+        <div class="stage">
+          <figure class="win tg">
+            <div class="win-bar"><img src="brands/telegram.svg" alt=""><b>Heimdall</b><span>bot</span></div>
+            <img class="shot" src="shots/proof-telegram.webp" width="488" height="538" alt="Telegram: Heimdall reports finding F1, proven by a failing test, and finding F2, with no proof yet, so it cannot block the merge." loading="lazy">
+            <span class="tagp red" style="top: 26%">F1 proven: blocks</span>
+            <span class="tagp" style="top: 66%">F2 no proof: cannot block</span>
+          </figure>
+          <figure class="win gh">
+            <div class="win-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span class="url">github.com &rsaquo; pull/9</span></div>
+            <img class="shot" src="shots/proof-github.webp" width="650" height="326" alt="GitHub comment: finding F1, high severity, correctness, in internal/payments/refund.go line 36, proven by a failing test." loading="lazy">
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="setup" aria-labelledby="h-setup">
+    <div class="wrap setup">
+      <div class="setup-text">
+        <p class="eyebrow">Set up</p>
+        <h2 id="h-setup">Live on your repo in three minutes</h2>
+        <p>Heimdall starts in report-only mode. It blocks nothing until you turn on enforcement.</p>
+        <p class="req">You need admin access to the repository, the <a href="https://cli.github.com">gh CLI</a>, <a href="https://go.dev/dl/">Go 1.27</a> and a model key.</p>
+        <p class="more"><a href="https://github.com/prathameshk421/Heimdall/blob/main/deploy/action/README.md">Action guide &#8599;</a><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/SETUP.md">Self-hosted guide &#8599;</a></p>
+      </div>
+      <div class="setup-box">
+        <div class="tabs" role="tablist" aria-label="Setup method">
+          <button type="button" role="tab" id="tab-agent" aria-controls="panel-agent" aria-selected="true">Coding agent</button>
+          <button type="button" role="tab" id="tab-cli" aria-controls="panel-cli" aria-selected="false" tabindex="-1">Terminal</button>
+        </div>
+        <div role="tabpanel" id="panel-agent" aria-labelledby="tab-agent">
+          <div class="prompt card shine">
+            <div class="prompt-text"><code>Set up Heimdall on OWNER/REPO in GitHub Action mode. Follow https://github.com/prathameshk421/Heimdall/blob/main/skills/heimdall-setup/SKILL.md</code></div>
+            <div class="prompt-bar">
+              <span class="chip">Claude Code</span><span class="chip">Codex</span><span class="chip">Cursor</span>
+              <button class="copy-btn" type="button" aria-label="Copy the prompt"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Copy</span></button>
+            </div>
           </div>
+          <p class="hint">Paste it into your coding agent. The agent shows the plan first, never reads your key and opens a pull request for you to merge.</p>
         </div>
-      </div>
-      <p class="note">Figure 1: Illustration. The pull request, its title, the eleven other comments, the test output and the second commit are made up. The F1 text, file, lines, test name and commit come from a <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/internal/domain/summary/testdata/enforce_one_e1_bug.golden.md?plain=1#L9-L10">test golden</a>. The rules are the real ones, from <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/STRATEGY.md?plain=1#L20-L21">STRATEGY.md</a>.</p>
-    </div>
-  </section>
-
-  <section id="honest" aria-labelledby="h-honest">
-    <div class="wrap">
-      <div class="head">
-        <h2 id="h-honest">Try to cheat the tests<span class="thin">the way an agent would</span></h2>
-        <p>An agent under pressure can turn a red check green without a fix. Heimdall reads the diff of every test file and names the move. Pick one.</p>
-      </div>
-      <div class="cheat" id="cheat">
-        <div class="moves" role="tablist" aria-label="Agent moves" aria-orientation="vertical" id="moves"></div>
-        <div class="verdict" role="tabpanel" id="verdict" aria-live="polite"></div>
-      </div>
-      <p class="note">The rules and their levels come from <a href="https://github.com/prathameshk421/Heimdall/blob/main/internal/domain/testintegrity/doc.go">internal/domain/testintegrity</a>. The diffs are examples. A warning shows on the <code>heimdall/fast</code> check; a block stops the merge.</p>
-    </div>
-  </section>
-
-  <section id="light" class="rule-top" aria-labelledby="h-light">
-    <div class="wrap">
-      <div class="head">
-        <h2 id="h-light">Runs on almost nothing<span class="thin">No platform to adopt</span></h2>
-        <p>Pick the mode that fits. Both use the same rules. Start in your CI today and move to a VM later.</p>
-      </div>
-      <div class="light">
-        <div class="mode">
-          <h3>GitHub Action mode</h3>
-          <p class="for">For a repo that wants proof on each pull request. No server, no database.</p>
-          <dl>
-            <dt><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/product/SECURITY_AND_PERF_AUDIT.md?plain=1#L262">22.9 MiB</a></dt><dd>One static binary in your own runner. The CLI runs on Linux, macOS and Windows.</dd>
-            <dt>9 s</dt><dd>To write the workflows, the environment and the secrets, on our test repository.</dd>
-            <dt><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/TRACKER.md?plain=1#L81">3 min 10 s</a></dt><dd>From install to the first summary on a pull request.</dd>
-          </dl>
-        </div>
-        <div class="mode">
-          <h3>Heimdall Lite on a small VM</h3>
-          <p class="for">For a team that wants the full loop: tests from the ticket, reviewers, chat commands.</p>
-          <dl>
-            <dt><a href="https://github.com/prathameshk421/Heimdall/blob/main/deploy/lite/compose.yaml">128 MiB</a></dt><dd>Memory cap per container, with half a CPU. Read-only file systems, every Linux capability dropped.</dd>
-            <dt><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/STRATEGY.md">42 MiB</a></dt><dd>The server at idle. The whole stack is not measured yet.</dd>
-            <dt><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/SETUP.md">0</a></dt><dd>Inbound ports. Heimdall polls GitHub and Jira. Chat goes through Slack, Discord, Telegram, Mattermost or Teams.</dd>
-          </dl>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="trust" class="rule-top" aria-labelledby="h-trust">
-    <div class="wrap">
-      <div class="head">
-        <h2 id="h-trust">A sandbox you can trust<span class="thin">It runs code from the pull request</span></h2>
-        <p>Code under test is untrusted. The sandbox, the rules and the log are built so that a pull request cannot judge itself.</p>
-      </div>
-      <div class="trust">
-        <div class="lead"><a class="v" href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/design/ACTION_MODE_SPIKE.md?plain=1#L541">70 / 70</a><p style="font-size:18px;color:var(--text)">On a GitHub-hosted runner, code under test tried to escape the sandbox 70 ways: 34 fetch and 36 exec probes. All 70 were blocked.</p></div>
-        <div><h3>No network for tests</h3><p>Tests run with no network. Installs reach only an allowlisted proxy.</p></div>
-        <div><h3>Rules from the merge base</h3><p>Heimdall reads <code>heimdall.yaml</code> at the merge base, so a pull request cannot change the rules that judge it.</p></div>
-        <div><h3>No model in the gate</h3><p>A model may propose a finding. Only a test or a tool result decides. A missing fact is "unknown", never a pass.</p></div>
-        <div><h3>A signed log</h3><p>Each change has a log on one git ref, with an HMAC over each chain head. A bad MAC fails closed.</p></div>
-        <div><h3>Your model, your keys</h3><p>Any OpenAI-compatible endpoint works, including a local one. Only that endpoint sees the code it reads.</p></div>
-        <div><h3>Break-glass with a name</h3><p>In an emergency, a named person can override with a reason. It is recorded and stays open until another approver reviews it. An agent cannot use it.</p></div>
-      </div>
-    </div>
-  </section>
-
-  <section id="results" class="rule-top" aria-labelledby="h-results">
-    <div class="wrap">
-      <div class="head">
-        <h2 id="h-results">Measured on live systems<span class="thin">Each number links to its source</span></h2>
-        <p>The Proof Bench holds real bugs and clean changes with known answers. A case counts only when its test is red before the fix and green after it, on <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/sota/BENCH.md?plain=1#L28-L30">two runs</a>.</p>
-      </div>
-      <div class="scroll-x">
-        <table class="plain">
-          <caption>Table 2: What we measured on live systems.</caption>
-          <thead><tr><th scope="col">Result</th><th scope="col">Measure</th></tr></thead>
-          <tbody>
-            <tr><td class="v"><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/sota/BENCH.md?plain=1#L831">28</a></td><td>Validated bench cases: Go open-source repositories, t3code (TypeScript and Rust) and our own payment service</td></tr>
-            <tr><td class="v"><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/sota/BENCH.md">None</a></td><td>Prompt injections planted in a pull request that got through</td></tr>
-            <tr><td class="v"><a href="#demo">End to end</a></td><td>Team mode on Slack: ticket, red tests, 3 reviews, 2 real findings, fix, human approval, green gate, merge</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <section id="demo" class="rule-top" aria-labelledby="h-demo">
-    <div class="wrap">
-      <div class="head">
-        <h2 id="h-demo">The whole loop<span class="thin">in 2 minutes 39 seconds</span></h2>
-        <p>Team mode on a real payment service. A ticket becomes red tests. Three reviewers find a double-refund bug and prove it with a failing test. A person types <code>heimdall uphold</code> in Slack, the author fixes it, and the gate turns green only after a human approval.</p>
-      </div>
-      <div class="video">
-        <video controls preload="none" playsinline poster="shots/poster.webp" width="1920" height="1080">
-          <source src="media/heimdall-demo.mp4" type="video/mp4">
-          <track kind="captions" src="media/heimdall-demo.vtt" srclang="en" label="English" default>
-          <a href="media/heimdall-demo.mp4">Download the demo video (MP4, 8 MB)</a>
-        </video>
-      </div>
-      <p class="note">Video 1: recorded on our live system. Captions are on.</p>
-    </div>
-  </section>
-
-  <section id="setup" class="rule-top" aria-labelledby="h-setup">
-    <div class="wrap">
-      <div class="head">
-        <h2 id="h-setup">Set it up<span class="thin">in four steps</span></h2>
-        <p>You need admin rights on the repository, the <a href="https://cli.github.com">gh CLI</a>, <a href="https://go.dev/dl/">Go 1.27</a> and a key for an OpenAI-compatible model endpoint.</p>
-      </div>
-      <div class="tabs" role="tablist" aria-label="Setup method">
-        <button type="button" role="tab" id="tab-cli" aria-controls="panel-cli" aria-selected="true">With the CLI</button>
-        <button type="button" role="tab" id="tab-agent" aria-controls="panel-agent" aria-selected="false" tabindex="-1">With your coding agent</button>
-      </div>
-      <div role="tabpanel" id="panel-cli" aria-labelledby="tab-cli">
-        <div class="setup-grid">
-          <ol class="cmds">
-            <li><h3>Build the CLI</h3>
-              <div class="cmd"><pre><code>git clone https://github.com/prathameshk421/Heimdall.git &amp;&amp; cd Heimdall
-CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall</code></pre><button class="copy-btn" type="button">Copy</button></div></li>
-            <li><h3>Read the plan</h3>
-              <div class="cmd"><pre><code>./heimdall action init -repo OWNER/REPO -dir PATH/TO/CHECKOUT</code></pre><button class="copy-btn" type="button">Copy</button></div>
-              <p>It lists every step and changes nothing.</p></li>
-            <li><h3>Apply it</h3>
-              <div class="cmd"><pre><code>./heimdall action init -repo OWNER/REPO -dir PATH/TO/CHECKOUT \
-  -apply -model-key-stdin &lt; KEY_FILE</code></pre><button class="copy-btn" type="button">Copy</button></div>
-              <p>It creates a GitHub environment and the secrets, sets the model, and writes three workflows and a shadow-mode <code>heimdall.yaml</code>, pinned to the exact commit you built. The key goes to gh on stdin and is never printed.</p></li>
-            <li><h3>Merge the files</h3>
-              <p>Commit the workflows and <code>heimdall.yaml</code> through your normal review. Open any pull request: Heimdall posts <code>heimdall/fast</code>, <code>heimdall/proof</code> and one summary comment.</p></li>
-          </ol>
-          <div class="aside">
-            <h3>Next</h3>
-            <p>Another model, enforce mode and removal: <a href="https://github.com/prathameshk421/Heimdall/blob/main/deploy/action/README.md">the install guide</a>. Team mode on your own VM: <a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/SETUP.md">the setup guide</a>.</p>
+        <div role="tabpanel" id="panel-cli" aria-labelledby="tab-cli" hidden>
+          <div class="term card shine">
+            <div class="term-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span class="term-t">~/your-repo</span>
+              <button class="copy-btn" type="button" aria-label="Copy the commands"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Copy</span></button></div>
+<pre><code><span class="c"># Build the CLI</span>
+<span class="pr">$</span> git clone https://github.com/prathameshk421/Heimdall.git &amp;&amp; cd Heimdall
+<span class="pr">$</span> CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall
+<span class="c"># See the plan, then apply it</span>
+<span class="pr">$</span> ./heimdall action init -repo OWNER/REPO -dir CHECKOUT
+<span class="pr">$</span> ./heimdall action init -repo OWNER/REPO -dir CHECKOUT -apply -model-key-stdin &lt; KEY_FILE</code></pre>
+<pre class="out" aria-hidden="true"><span class="ok">&#10003;</span> environment and secrets created
+<span class="ok">&#10003;</span> 3 workflows and heimdall.yaml written (report-only)
+<span class="ok">&#10003;</span> done in 9 s. Merge the files to start.</pre>
           </div>
-        </div>
-      </div>
-      <div role="tabpanel" id="panel-agent" aria-labelledby="tab-agent" hidden>
-        <div class="setup-grid">
-          <ol class="cmds">
-            <li><h3>Install the skill</h3>
-              <div class="cmd"><pre><code>./heimdall skill install</code></pre><button class="copy-btn" type="button">Copy</button></div>
-              <p>The setup skill ships inside the CLI. For another agent, print it with <code>./heimdall skill</code>, or install it into any folder with <code>-dir</code>.</p></li>
-            <li><h3>Ask your agent</h3>
-              <div class="cmd"><pre><code>Set up Heimdall on OWNER/REPO.</code></pre><button class="copy-btn" type="button">Copy</button></div>
-              <p><a href="https://github.com/prathameshk421/Heimdall/blob/main/skills/heimdall-setup/SKILL.md">Read the skill</a> before you run it.</p></li>
-          </ol>
-          <div class="aside">
-            <h3>What the agent does</h3>
-            <dl>
-              <dt>It shows the plan first</dt><dd>It runs every init without <code>-apply</code> and shows you the steps.</dd>
-              <dt>It never sees your secrets</dt><dd>The agent passes each key file on stdin and never prints, pastes or commits a value.</dd>
-              <dt>It leaves the default branch to you</dt><dd>It writes the files on a branch and opens a pull request. You merge it.</dd>
-              <dt>It checks its work</dt><dd>It ends with a list of what it could not verify.</dd>
-            </dl>
-          </div>
+          <p class="hint">The command writes three workflows and a policy file. You merge them like any other change.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <section id="questions" class="rule-top" aria-labelledby="h-questions">
+  <section id="why" aria-labelledby="h-why">
     <div class="wrap">
-      <div class="head"><h2 id="h-questions">Questions<span class="thin">before you install</span></h2></div>
-      <div class="qa">
-        <details><summary>Does it replace our AI reviewer?</summary><p>No. Keep CodeRabbit, Copilot, Bugbot or any other bot. Heimdall checks their findings, and its own, with the same proof rule.</p></details>
-        <details><summary>What if Heimdall is wrong?</summary><p>Unproven means not shown, not false. A test can prove a bug is real, but never that a finding is false. Anyone can open the list of unproven findings and read them.</p></details>
-        <details><summary>Will it block our merges on day one?</summary><p>No. A new install runs in shadow mode: the checks say what would block and block nothing. <code>heimdall action digest</code> gives a weekly report. You switch to enforce mode when the report matches what your reviewers would say.</p></details>
-        <details><summary>What does it cost to run?</summary><p>Heimdall is free and open source. You pay your own model provider. The default cap is $0.50 per pull request and $50 a month, and a call that could pass the cap does not run.</p></details>
-        <details><summary>Where does our code go?</summary><p>Nowhere new. Heimdall runs in your CI or on your server. Tests run with no network. Only the model endpoint you choose sees the code it reads.</p></details>
-        <details><summary>Which languages does it cover?</summary><p>The Proof Bench covers Go, TypeScript and Rust. The test-integrity rules read test files in Go, Python, JavaScript and TypeScript, Java and Kotlin, and Rust.</p></details>
+      <p class="eyebrow">Why Heimdall</p>
+      <h2 id="h-why">Merge agent code with evidence</h2>
+      <div class="bento">
+        <article class="card b-proof">
+          <h3>Proof, not opinion</h3>
+          <p>A model can suggest a bug. Only a test can block the merge.</p>
+          <div class="viz runs-viz" aria-hidden="true">
+            <div><span>Run 1 on the pull request</span><i class="f">Fail</i></div>
+            <div><span>Run 2 on the pull request</span><i class="f">Fail</i></div>
+            <div><span>Run 3 on the fix</span><i class="p">Pass</i></div>
+            <div class="verdict-row"><span>Verdict</span><b>Merge blocked</b></div>
+          </div>
+        </article>
+        <article class="card b-sandbox">
+          <h3>Agents cannot go rogue</h3>
+          <p>Code under test has no network and no extra privileges. If the sandbox cannot start, the run stops.</p>
+          <ul class="viz locks" aria-hidden="true">
+            <li>Network<span>Blocked</span></li>
+            <li>Host sockets<span>Blocked</span></li>
+            <li>Other processes<span>Blocked</span></li>
+            <li>Escape tests<span>70 of 70 blocked</span></li>
+          </ul>
+        </article>
+        <article class="card b-ram">
+          <h3>Runs on almost nothing</h3>
+          <p>One binary in your CI, or a small VM for the whole team.</p>
+          <div class="viz meter" aria-hidden="true"><div class="meter-bar"><i style="--w:4.1%"></i></div><div class="meter-k"><span><b>42 MiB</b> RAM at idle</span><span>1 GiB VM</span></div></div>
+        </article>
+        <article class="card b-cost">
+          <h3>Low, capped cost</h3>
+          <p>A cost check runs before each model call.</p>
+          <div class="viz meter" aria-hidden="true"><div class="meter-bar"><i style="--w:40%"></i></div><div class="meter-k"><span><b>$0.20</b> per proof run</span><span>$0.50 cap</span></div></div>
+        </article>
+        <article class="card b-cheat">
+          <h3>Catches fake green tests</h3>
+          <p>Heimdall reads each test change. It flags 9 types of cheats in 5 language families.</p>
+<pre class="viz diff" aria-hidden="true"><span class="del">-  if got != 1 {</span>
+<span class="add">+  t.Skip("flaky on CI")</span>
+<span class="flag">skip-added</span></pre>
+        </article>
+        <article class="card b-human">
+          <h3>People approve the merge</h3>
+          <p>Only a person who is not the author can approve, and only the latest commit.</p>
+          <div class="viz approve" aria-hidden="true"><span class="av">MR</span><span><b>Maria approved</b> e4f5a6b</span><i>Not the author</i></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="open" aria-labelledby="h-open">
+    <div class="wrap">
+      <p class="eyebrow">Open by design</p>
+      <h2 id="h-open">Your models. Your servers. Your bots.</h2>
+      <div class="open-grid">
+        <article class="card">
+          <h3>Any model</h3>
+          <p>Use any OpenAI-compatible API. A local model needs no key.</p>
+          <div class="logos-row"><span><img src="brands/openrouter_light.svg" alt="" class="lt"><img src="brands/openrouter_dark.svg" alt="" class="dk">OpenRouter</span><span><img src="brands/ollama_light.svg" alt="" class="lt"><img src="brands/ollama_dark.svg" alt="" class="dk">Ollama</span><span><img src="brands/deepseek.svg" alt="">DeepSeek</span><span class="txt">vLLM</span></div>
+        </article>
+        <article class="card">
+          <h3>Self-hosted</h3>
+          <p>Run it in your GitHub Actions, or on your own VM. Your code stays with you. No inbound ports.</p>
+          <div class="logos-row"><span><img src="brands/github-actions.svg" alt="">Actions</span><span class="txt">Linux VM</span><span class="txt">MIT license</span></div>
+        </article>
+        <article class="card">
+          <h3>Checks your review bots</h3>
+          <p>Keep the bots you have. Heimdall applies the same proof rule to their comments.</p>
+          <div class="logos-row"><span class="txt">CodeRabbit</span><span><img src="brands/copilot.svg" alt="" class="lt"><img src="brands/copilot_dark.svg" alt="" class="dk">Copilot</span><span><img src="brands/cursor_light.svg" alt="" class="lt"><img src="brands/cursor_dark.svg" alt="" class="dk">Bugbot</span><span class="txt">Greptile</span></div>
+        </article>
       </div>
     </div>
   </section>
 
   <section class="close" aria-labelledby="h-close">
     <div class="wrap">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg>
-      <h2 id="h-close">Put a gate on your next pull request<span class="thin">It takes four steps</span></h2>
+      <h2 id="h-close">Ship agent pull requests. Block only what a test proves.</h2>
       <div class="ctas">
-        <a class="btn" href="#setup">Set it up</a>
-        <a class="btn line" href="https://github.com/prathameshk421/Heimdall">Star it on GitHub</a>
+        <a class="btn" href="#setup">Get started</a>
+        <a class="btn line" href="https://github.com/prathameshk421/Heimdall">Star on GitHub</a>
       </div>
     </div>
   </section>
@@ -745,17 +279,31 @@ CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall</code></pre><button class="cop
 
 <footer>
   <div class="wrap">
-    <span>Heimdall is open source under the MIT License. Every number on this page links to its source.</span>
+    <a class="brand" href="#main" aria-label="Heimdall, back to top">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg>
+      <b>Heimdall</b>
+    </a>
     <nav aria-label="Footer">
       <a href="https://github.com/prathameshk421/Heimdall">GitHub</a>
-      <a href="https://github.com/prathameshk421/Heimdall/blob/main/CONTRIBUTING.md">Contributing</a>
-      <a href="https://github.com/prathameshk421/Heimdall/security/advisories/new">Security</a>
-      <a href="archive/previous-v9.html">Previous site</a>
+      <a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/README.md">Docs</a>
+      <a href="https://github.com/prathameshk421/Heimdall/blob/main/site/CLAIMS.md">Sources for every number</a>
+      <a href="https://github.com/prathameshk421/Heimdall/blob/main/SECURITY.md">Security</a>
+      <a href="https://github.com/prathameshk421/Heimdall/blob/main/LICENSE">MIT License</a>
     </nav>
   </div>
 </footer>
 
-<script src="js/lab.js" defer></script>
+<dialog class="demo" id="demo" aria-label="Heimdall demo video">
+  <div class="demo-inner">
+    <button class="demo-x" type="button" aria-label="Close the demo">&times;</button>
+    <video controls preload="none" playsinline width="1920" height="1080">
+      <source src="media/heimdall-demo.mp4" type="video/mp4">
+      <track kind="captions" src="media/heimdall-demo.vtt" srclang="en" label="English" default>
+      <a href="media/heimdall-demo.mp4">Download the demo video (MP4)</a>
+    </video>
+  </div>
+</dialog>
+
 <script src="js/site.js" defer></script>
 </body>
 </html>

@@ -1,3 +1,43 @@
+# Claims on site/index.html (v15)
+
+| Claim | Source |
+|---|---|
+| Telegram and GitHub captures are from a live run | `site/shots/telegram-finding.webp`, `site/shots/github-line.webp` (demo recording, Nov 2026) |
+| Integrations: GitHub, Actions, Jira, Slack, Discord, Telegram, Mattermost, Teams; any OpenAI-compatible model; checks CodeRabbit, Copilot, Bugbot, Greptile | `README.md` (Two ways to run it), `internal/adapters/openrouter/doc.go`, `internal/domain/external/doc.go` |
+| `heimdall uphold F1`, `heimdall dismiss F1 reason` | `docs/TECH_SPEC.md:920-928` |
+| Proof run and the Slack-style rows are examples | Labelled on the page |
+
+# Claims on site/index.html (v12)
+
+| Claim | Source |
+|---|---|
+| 9 test-integrity rules, 5 language families (Go, Python, JS/TS, Java/Kotlin, Rust) | `internal/domain/testintegrity/facts.go:103-113`, `doc.go:23` |
+| No inbound ports | `docs/SETUP.md:60` |
+| One static binary in CI | `docs/product/SECURITY_AND_PERF_AUDIT.md:262` (22.9 MiB, linux/amd64) |
+| Everything else | Same sources as v11 below |
+
+# Claims on site/index.html (v11)
+
+v11 keeps the v10 sources and reframes these numbers. Paths are on `main`.
+
+| Claim on the page | Source |
+|---|---|
+| 0 good pull requests blocked across every live benchmark run | `docs/sota/BENCH.md` (false-positive rows, 0 in every run) |
+| 100% of 70 sandbox escape attempts stopped (34 network, 36 process and file, 0 unknown) | `docs/product/design/ACTION_MODE_SPIKE.md:541`, `internal/adapters/uidsandbox/doc.go:105-108` |
+| 42 MiB server memory at idle | `docs/product/STRATEGY.md:131` |
+| Lite stack fits a 1 vCPU, 1 GiB VM; server and Postgres capped at 256 MiB | `deploy/lite/compose.yaml:1-3`, `deploy/lite/README.md:12` |
+| $0.20 model cost of a full proof run on a live PR; $0.50 per PR and $50 a month default caps | `docs/PROGRESS.md` ("Open source, setup and polish"), `deploy/action/README.md:79-82` |
+| 3 min install to first summary; 9 s for `init -apply` | `docs/PROGRESS.md`, `deploy/action/README.md:110-113` |
+| Tests run loopback only; installs via an allowlisted proxy; no sudo, no capabilities, fails closed | `internal/adapters/uidsandbox/doc.go:1-31` |
+| Test-integrity rules and languages | `internal/domain/testintegrity/doc.go`, `facts.go:93-112` |
+| Chat platforms Slack, Discord, Telegram, Mattermost, Teams (team mode) | `README.md` ("Two ways to run it") |
+| Bots it referees: CodeRabbit, Copilot, Bugbot, Greptile, Macroscope | `internal/domain/external/doc.go` |
+| `heimdall uphold F1`; dismiss needs a reason; only listed people can approve | `docs/TECH_SPEC.md:920-928`, `CLAUDE.md` (people list) |
+| Agent setup prompt points at `skills/heimdall-setup/SKILL.md`; `heimdall skill install` | `skills/heimdall-setup/SKILL.md`, `cmd/heimdall/skill.go` |
+
+Removed from the page as internal or unclear: fixture repository names, test logins, ticket ids, the "1 of 12" and
+"2 people" outcome tiles, and the "Measured on live systems" table.
+
 # Claims on site/index.html (v10)
 
 v10 keeps every v9 claim and adds these. Paths are on `main`.
