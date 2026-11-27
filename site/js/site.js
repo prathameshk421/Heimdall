@@ -110,10 +110,27 @@
     var beats = Array.prototype.slice.call(story.querySelectorAll('[role="tab"]'));
     var panels = beats.map(function (b) { return document.getElementById(b.getAttribute('aria-controls')); });
     var stState = document.getElementById('stState'), stBar = document.getElementById('stBar');
+    var stIc = document.getElementById('stIc'), stLabel = document.getElementById('stLabel'), stCtx = document.getElementById('stCtx');
+    var stPanels = story.querySelector('.st-panels');
+    // Each step shows the tool it happens in, so the frame above the panel is never just Jira.
+    var toolIcon = {
+      jira: '<img src="brands/jira.svg" alt="" width="16" height="16">',
+      heimdall: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 3h20v3H2zM4 7.5h6V9H4zM14 7.5h6V9h-6zM5.25 9h3.5v9.5h-3.5zM15.25 9h3.5v9.5h-3.5zM2 19.5h20v2H2z"/></svg>',
+      claude: '<img src="brands/claude-ai-icon.svg" alt="" width="16" height="16">',
+      lock: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+      github: '<img class="lt" src="brands/github_light.svg" alt="" width="16" height="16"><img class="dk" src="brands/github_dark.svg" alt="" width="16" height="16">'
+    };
+    var setTool = function (i) {
+      var key = panels[i].getAttribute('data-tool') || 'heimdall';
+      stIc.innerHTML = toolIcon[key] || toolIcon.heimdall;
+      stLabel.textContent = panels[i].getAttribute('data-label');
+      stCtx.innerHTML = panels[i].getAttribute('data-ctx');
+    };
     var cur = 0, timer = null, thenTimer = null, auto = !reduceMotion, visible = false, hover = false, startedAt = 0, left = 0;
     var stateClass = { 'Merge blocked': 'blocked', 'Merged': 'merged' };
     var show = function (i, focus) {
       cur = i;
+      setTool(i);
       beats.forEach(function (b, k) {
         var on = k === i;
         b.setAttribute('aria-selected', on ? 'true' : 'false');
@@ -123,6 +140,13 @@
         if (on) panels[k].removeAttribute('inert'); else panels[k].setAttribute('inert', '');
       });
       if (!reduceMotion) { void panels[i].offsetWidth; panels[i].classList.add('play'); }
+      // The panel is out of flow: give the frame the height of this step.
+      var setH = function () {
+        var pad = parseFloat(getComputedStyle(stPanels).paddingTop) || 0;
+        stPanels.style.height = (panels[i].offsetHeight + pad * 2) + 'px';
+      };
+      setH();
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(setH);
       var setState = function (s) { stState.textContent = s; stState.className = 'st-state' + (stateClass[s] ? ' ' + stateClass[s] : ''); };
       clearTimeout(thenTimer);
       var then = panels[i].getAttribute('data-then');

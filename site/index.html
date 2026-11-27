@@ -84,116 +84,123 @@
         </div>
 
         <div class="stage card shine">
-          <div class="st-head"><img src="brands/jira.svg" alt="" width="16" height="16"><b>KAN-21</b><span class="st-title">Add refunds to the pay API</span><span class="st-state" id="stState">In progress</span></div>
+          <div class="st-head">
+            <span class="st-ic" id="stIc" aria-hidden="true"></span>
+            <b id="stLabel">Jira</b>
+            <span class="st-title" id="stCtx">KAN-21 &middot; Add refunds to the pay API</span>
+            <span class="st-state" id="stState">In progress</span>
+          </div>
           <div class="st-panels">
 
-            <div class="sp" role="tabpanel" id="sp-1" aria-labelledby="bt-1" data-state="In progress" data-dur="5200">
+            <div class="sp" role="tabpanel" id="sp-1" aria-labelledby="bt-1" data-tool="jira" data-label="Jira" data-ctx="KAN-21 &middot; Add refunds to the pay API" data-state="In progress" data-dur="5200">
               <div class="tk in" style="--d:0">
                 <p class="tk-top"><img src="brands/jira.svg" alt="" width="14" height="14">KAN-21<span class="pill">In Progress</span></p>
                 <h4>Add refunds to the pay API</h4>
                 <p class="lbl">Acceptance criteria</p>
                 <ul class="ac">
-                  <li class="in" style="--d:250"><code>AC1</code>A refund up to the amount charged returns 201.</li>
-                  <li class="in" style="--d:450"><code>AC2</code>A refund for an unknown payment returns 404.</li>
-                  <li class="in" style="--d:650"><code>AC3</code>A refund above the amount charged returns 422.</li>
+                  <li class="in" style="--d:112"><code>AC1</code>A refund up to the amount charged returns 201.</li>
+                  <li class="in" style="--d:202"><code>AC2</code>A refund for an unknown payment returns 404.</li>
+                  <li class="in" style="--d:292"><code>AC3</code>A refund above the amount charged returns 422.</li>
                 </ul>
                 <p class="lbl">Money rules</p>
                 <ul class="ac rules">
-                  <li class="in" style="--d:850">A merchant can refund only its own payments.</li>
-                  <li class="in" style="--d:1000">Refunds never add up to more than the amount charged.</li>
+                  <li class="in" style="--d:382">A merchant can refund only its own payments.</li>
+                  <li class="in" style="--d:450">Refunds never add up to more than the amount charged.</li>
                 </ul>
               </div>
-              <p class="note in" style="--d:1600">Heimdall opens a branch and a team room for the ticket.</p>
+              <p class="note in" style="--d:720">Heimdall opens a branch and a team room for the ticket.</p>
             </div>
 
-            <div class="sp" role="tabpanel" id="sp-2" aria-labelledby="bt-2" data-state="Tests committed" data-dur="5600" inert>
+            <div class="sp" role="tabpanel" id="sp-2" aria-labelledby="bt-2" data-tool="heimdall" data-label="Test agent" data-ctx="tests/heimdall/KAN-21" data-state="Tests locked" data-dur="5600" inert>
               <p class="path in" style="--d:0">tests/heimdall/KAN-21/refund_test.go</p>
               <ul class="rows">
-                <li class="in" style="--d:300"><code>AC1</code><span>TestRefundUpToCharge</span><em class="f">Fails on current code</em></li>
-                <li class="in" style="--d:600"><code>AC2</code><span>TestRefundUnknownPayment</span><em class="f">Fails on current code</em></li>
-                <li class="in" style="--d:900"><code>AC3</code><span>TestRefundAboveCharge</span><em class="f">Fails on current code</em></li>
+                <li class="in" style="--d:90"><code>AC1</code><span>TestRefundUpToCharge</span><em class="f">Fails now</em></li>
+                <li class="in" style="--d:180"><code>AC2</code><span>TestRefundUnknownPayment</span><em class="f">Fails now</em></li>
+                <li class="in" style="--d:270"><code>AC3</code><span>TestRefundAboveCharge</span><em class="f">Fails now</em></li>
               </ul>
-              <p class="note in" style="--d:1400">Red first. A test that passes now proves nothing, so Heimdall refuses it. A build error is refused too.</p>
-              <p class="done in" style="--d:2300"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>Committed and pinned. The coding agent cannot change these tests.</p>
+              <p class="note in" style="--d:540">Each test must fail before the code exists. A test that already passes proves nothing, so Heimdall refuses it. So is a build error.</p>
+              <p class="done in" style="--d:900"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>Tests locked. The coding agent cannot edit them.</p>
             </div>
 
-            <div class="sp" role="tabpanel" id="sp-3" aria-labelledby="bt-3" data-state="Coding" data-dur="5600" inert>
+            <div class="sp" role="tabpanel" id="sp-3" aria-labelledby="bt-3" data-tool="claude" data-label="Your coding agent" data-ctx="branch KAN-21-add-refunds" data-state="Coding" data-dur="5600" inert>
               <div class="agents in" style="--d:0">
                 <span><img src="brands/claude-ai-icon.svg" alt="" width="16" height="16">Claude Code</span>
                 <span><img class="lt" src="brands/openai.svg" alt="" width="16" height="16"><img class="dk" src="brands/openai_dark.svg" alt="" width="16" height="16">Codex</span>
                 <span><img class="dk" src="brands/cursor_dark.svg" alt="" width="16" height="16"><img class="lt" src="brands/cursor_light.svg" alt="" width="16" height="16">Cursor</span>
                 <span><img class="lt" src="brands/opencode.svg" alt="" width="16" height="16"><img class="dk" src="brands/opencode-dark.svg" alt="" width="16" height="16">OpenCode</span>
               </div>
-              <p class="lbl in" style="--d:300">Team rules the agent reads over MCP</p>
+              <p class="lbl in" style="--d:135">Team rules it reads. Read only</p>
               <ul class="cards">
-                <li class="in" style="--d:500"><em>money</em><span>Refunds never add up to more than the amount charged.</span><small>Approved by the owner</small></li>
-                <li class="in" style="--d:800"><em>security</em><span>Check that the merchant owns the payment before a refund.</span><small>Approved by the owner</small></li>
+                <li class="in" style="--d:225"><em>money</em><span>Refunds never add up to more than the amount charged.</span><small>Approved by the owner</small></li>
+                <li class="in" style="--d:337"><em>security</em><span>Check that the merchant owns the payment before a refund.</span><small>Approved by the owner</small></li>
               </ul>
-              <p class="note in" style="--d:1300">The agent can read the rules. It cannot write or change them.</p>
-              <p class="done in" style="--d:2200"><img class="dk" src="brands/github_dark.svg" alt="" width="14" height="14"><img class="lt" src="brands/github_light.svg" alt="" width="14" height="14">Pull request #9 opened. 4 files changed.</p>
+              <p class="note in" style="--d:630">It can read the rules over MCP. It cannot write or change them.</p>
+              <p class="done in" style="--d:945"><img class="dk" src="brands/github_dark.svg" alt="" width="14" height="14"><img class="lt" src="brands/github_light.svg" alt="" width="14" height="14">Pull request #9 opened. 4 files changed.</p>
             </div>
 
-            <div class="sp" role="tabpanel" id="sp-4" aria-labelledby="bt-4" data-state="In review" data-dur="5600" inert>
-              <p class="lbl in" style="--d:0">Heimdall reviewers, each with lenses for this change</p>
+            <div class="sp" role="tabpanel" id="sp-4" aria-labelledby="bt-4" data-tool="heimdall" data-label="Review" data-ctx="Pull request #9" data-state="In review" data-dur="5600" inert>
+              <p class="lbl in" style="--d:0">Review agents. Bring your own</p>
               <ul class="seats">
-                <li class="in" style="--d:200"><b>Reviewer 1</b><span class="lens">correctness</span><span class="lens">money</span></li>
-                <li class="in" style="--d:400"><b>Reviewer 2</b><span class="lens">security</span></li>
-                <li class="in" style="--d:600"><b>Reviewer 3</b><span class="lens">contract</span><span class="lens">tests</span></li>
+                <li class="in" style="--d:67"><img class="lt" src="brands/opencode.svg" alt="" width="16" height="16"><img class="dk" src="brands/opencode-dark.svg" alt="" width="16" height="16"><b>OpenCode</b><span class="lens">money</span><span class="lens">correctness</span></li>
+                <li class="in" style="--d:157"><img src="brands/claude-ai-icon.svg" alt="" width="16" height="16"><b>Claude Code</b><span class="lens">security</span></li>
+                <li class="in" style="--d:247"><img class="lt" src="brands/openai.svg" alt="" width="16" height="16"><img class="dk" src="brands/openai_dark.svg" alt="" width="16" height="16"><b>Codex</b><span class="lens">contract</span></li>
               </ul>
-              <p class="note in" style="--d:900">Each reviewer reads its own context: the team rules for the changed paths, a map of the code and past findings.</p>
-              <p class="lbl in" style="--d:1500">Your review bots</p>
-              <div class="agents bots in" style="--d:1700">
+              <p class="note in" style="--d:405">Each agent reads its own context: the team rules for the changed paths, a map of the code and past findings.</p>
+              <p class="lbl in" style="--d:630">Your review bots too, if you use them</p>
+              <div class="agents bots in" style="--d:697">
                 <span><img src="brands/coderabbit.svg" alt="" width="16" height="16">CodeRabbit</span>
                 <span><img class="dk" src="brands/copilot_dark.svg" alt="" width="16" height="16"><img class="lt" src="brands/copilot.svg" alt="" width="16" height="16">Copilot</span>
                 <span><img class="dk" src="brands/cursor_dark.svg" alt="" width="16" height="16"><img class="lt" src="brands/cursor_light.svg" alt="" width="16" height="16">Bugbot</span>
                 <span><img src="brands/greptile.webp" alt="" width="16" height="16">Greptile</span>
-                <span class="more">+3 more</span>
               </div>
-              <p class="done in" style="--d:2400">5 claims to check. The same rule applies to every one.</p>
+              <p class="done in" style="--d:990">5 claims found. One rule applies to every one.</p>
             </div>
 
-            <div class="sp" role="tabpanel" id="sp-5" aria-labelledby="bt-5" data-state="Proving" data-dur="7600" inert>
-              <div class="sandbox in" style="--d:0"><span>Sealed sandbox</span><span>No network</span><span>Read-only root</span><span>No privileges</span></div>
+            <div class="sp" role="tabpanel" id="sp-5" aria-labelledby="bt-5" data-tool="lock" data-label="Sealed sandbox" data-ctx="No network &middot; no privileges" data-state="Proving" data-dur="7600" inert>
+              <ol class="rule in" style="--d:0">
+                <li><b>1</b><span>Write a test for the claim.</span></li>
+                <li><b>2</b><span>Run it twice on the pull request. It must fail both times.</span></li>
+                <li><b>3</b><span>Revert the suspect lines. It must pass.</span></li>
+              </ol>
               <div class="proof">
-                <div class="ph"><span>Claim</span><span>PR run 1</span><span>PR run 2</span><span>Reverted</span><span>Result</span></div>
-                <div class="pr-row"><span class="cl in" style="--d:200"><b>F1</b> Refunds can add up to more than the charge<small>Heimdall · money</small></span><em class="f in" style="--d:700">Bug</em><em class="f in" style="--d:1100">Bug</em><em class="p in" style="--d:1500">Passes</em><strong class="r-proven in" style="--d:1900">Proven</strong></div>
-                <div class="pr-row"><span class="cl in" style="--d:2400"><b>F2</b> Any merchant can refund any payment<small>Heimdall · security</small></span><em class="n in" style="--d:2800">No test</em><em class="n in" style="--d:2800">&ndash;</em><em class="n in" style="--d:2800">&ndash;</em><strong class="r-note in" style="--d:3100">Shown, no block</strong></div>
-                <div class="pr-row"><span class="cl in" style="--d:3500"><b>F3</b> Nil check on the refund lookup<small>CodeRabbit</small></span><em class="p in" style="--d:3900">No bug</em><em class="n in" style="--d:3900">&ndash;</em><em class="n in" style="--d:3900">&ndash;</em><strong class="r-hide in" style="--d:4200">Hidden</strong></div>
-                <div class="pr-row"><span class="cl in" style="--d:4600"><b>F4</b> Race on the retry counter<small>Bugbot</small></span><em class="f in" style="--d:5000">Bug</em><em class="p in" style="--d:5300">No bug</em><em class="n in" style="--d:5300">&ndash;</em><strong class="r-hide in" style="--d:5600">Hidden. Flaky</strong></div>
-                <div class="pr-row"><span class="cl in" style="--d:6000"><b>F5</b> Rename the variable r<small>Copilot</small></span><em class="n in" style="--d:6300">Style</em><em class="n in" style="--d:6300">&ndash;</em><em class="n in" style="--d:6300">&ndash;</em><strong class="r-hide in" style="--d:6500">Hidden</strong></div>
+                <div class="ph"><span>Claim</span><span>PR 1</span><span>PR 2</span><span>Reverted</span><span>Result</span></div>
+                <div class="pr-row in" style="--d:108"><span class="cl"><b>F1</b> Refunds add up to more than the charge<small>OpenCode &middot; money</small></span><i class="m x">&#10005;</i><i class="m x">&#10005;</i><i class="m v">&#10003;</i><strong class="vd block">Blocks merge</strong></div>
+                <div class="pr-row in" style="--d:216"><span class="cl"><b>F2</b> Any merchant can refund any payment<small>Claude Code &middot; security</small></span><i class="m o">&ndash;</i><i class="m o">&ndash;</i><i class="m o">&ndash;</i><strong class="vd show">No test. Shown only</strong></div>
+                <div class="pr-row in" style="--d:324"><span class="cl"><b>F3</b> Nil check on the refund lookup<small>CodeRabbit</small></span><i class="m v">&#10003;</i><i class="m o">&ndash;</i><i class="m o">&ndash;</i><strong class="vd hide">No bug. Hidden</strong></div>
+                <div class="pr-row in" style="--d:432"><span class="cl"><b>F4</b> Race on the retry counter<small>Bugbot</small></span><i class="m x">&#10005;</i><i class="m v">&#10003;</i><i class="m o">&ndash;</i><strong class="vd hide">Flaky. Hidden</strong></div>
+                <div class="pr-row in" style="--d:540"><span class="cl"><b>F5</b> Rename the variable r<small>Copilot</small></span><i class="m o">&ndash;</i><i class="m o">&ndash;</i><i class="m o">&ndash;</i><strong class="vd hide">Style. Hidden</strong></div>
               </div>
-              <p class="note in" style="--d:6900">Proof is a test that finds the bug two times on the pull request and passes when the suspect lines are reverted.</p>
+              <p class="legend in" style="--d:675"><span><i class="m x">&#10005;</i>test fails: bug found</span><span><i class="m v">&#10003;</i>test passes</span><span><i class="m o">&ndash;</i>not run</span></p>
             </div>
 
-            <div class="sp" role="tabpanel" id="sp-6" aria-labelledby="bt-6" data-state="Merge blocked" data-then="Merged" data-then-at="5300" data-dur="7000" inert>
+            <div class="sp" role="tabpanel" id="sp-6" aria-labelledby="bt-6" data-tool="github" data-label="GitHub" data-ctx="Pull request #9 &middot; checks" data-state="Merge blocked" data-then="Merged" data-then-at="5200" data-dur="7000" inert>
               <ul class="checks">
-                <li class="in" style="--d:0"><span class="ok">&#10003;</span><code>heimdall/fast</code><span>Tests and integrity checks passed</span></li>
-                <li class="in" style="--d:300"><span class="no">&#10005;</span><code>heimdall/proof</code><span>1 proven bug: F1. Merge blocked</span></li>
+                <li class="in" style="--d:0"><span class="ok">&#10003;</span><code>heimdall/fast</code><span>Tests pass. No cheats</span></li>
+                <li class="in" style="--d:135"><span class="no">&#10005;</span><code>heimdall/proof</code><span>1 proven bug: F1. Merge blocked</span></li>
               </ul>
               <div class="chat">
-                <p class="msg me in" style="--d:1000"><span class="av">P</span><span class="bub"><b>Priya</b><code>heimdall uphold F1</code></span></p>
-                <p class="msg in" style="--d:1700"><span class="av hd"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 3h20v3H2zM4 7.5h6V9H4zM14 7.5h6V9h-6zM5.25 9h3.5v9.5h-3.5zM15.25 9h3.5v9.5h-3.5zM2 19.5h20v2H2z"/></svg></span><span class="bub"><b>Heimdall</b>F1 upheld by Priya. The block stays until the fix.</span></p>
+                <p class="msg me in" style="--d:450"><span class="av">P</span><span class="bub"><b>Priya</b><code>heimdall uphold F1</code></span></p>
+                <p class="msg in" style="--d:765"><span class="av hd"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 3h20v3H2zM4 7.5h6V9H4zM14 7.5h6V9h-6zM5.25 9h3.5v9.5h-3.5zM15.25 9h3.5v9.5h-3.5zM2 19.5h20v2H2z"/></svg></span><span class="bub"><b>Heimdall</b>F1 upheld by Priya. The block stays until the fix.</span></p>
               </div>
               <ul class="checks">
-                <li class="in" style="--d:3000"><span class="dot"></span><code>e4c19a2</code><span>The agent pushes a fix for F1</span></li>
-                <li class="in" style="--d:3800"><span class="ok">&#10003;</span><code>heimdall/proof</code><span>F1 test passes. No proven bugs</span></li>
-                <li class="in" style="--d:4500"><span class="ok">&#10003;</span><code>approval</code><span>A teammate approves commit e4c19a2</span></li>
+                <li class="in" style="--d:1305"><span class="ok">&#10003;</span><code>heimdall/proof</code><span>F1 test passes. No proven bugs</span></li>
+                <li class="in" style="--d:1665"><span class="ok">&#10003;</span><code>approval</code><span>A teammate approves commit e4c19a2</span></li>
               </ul>
-              <p class="merged in" style="--d:5300">Merged</p>
+              <p class="merged in" style="--d:2340">Merged</p>
             </div>
 
-            <div class="sp" role="tabpanel" id="sp-7" aria-labelledby="bt-7" data-state="Merged" data-dur="6400" inert>
+            <div class="sp" role="tabpanel" id="sp-7" aria-labelledby="bt-7" data-tool="heimdall" data-label="Team rules" data-ctx="Learned from people" data-state="Merged" data-dur="5800" inert>
               <div class="chat">
                 <p class="msg me in" style="--d:0"><span class="av">S</span><span class="bub"><b>Sam</b><code>heimdall dismiss F3 lookups return an error, never nil</code></span></p>
               </div>
               <ul class="cards">
-                <li class="in" style="--d:900"><em>proposed</em><span>Refund lookups return an error, never nil.</span><small>From a decision by Sam. Waits for the owner</small></li>
+                <li class="in" style="--d:405"><em>proposed</em><span>Refund lookups return an error, never nil.</span><small>From a decision by Sam. Waits for the owner</small></li>
               </ul>
               <ul class="checks">
-                <li class="in" style="--d:1900"><span class="ok">&#10003;</span><code>approved</code><span>The owner approves the rule</span></li>
-                <li class="in" style="--d:2600"><span class="ok">&#10003;</span><code>next change</code><span>Reviewers and coding agents read it</span></li>
+                <li class="in" style="--d:855"><span class="ok">&#10003;</span><code>approved</code><span>The owner approves the rule</span></li>
+                <li class="in" style="--d:1170"><span class="ok">&#10003;</span><code>next change</code><span>Review agents and coding agents read it</span></li>
               </ul>
-              <p class="note in" style="--d:3400">Only a person can create a rule. A model never writes its own rules.</p>
+              <p class="note in" style="--d:1485">Only a person can create a rule. A model never writes its own.</p>
             </div>
 
           </div>
@@ -296,9 +303,9 @@
           <h3>Proof, not opinion</h3>
           <p>A model can suggest a bug. Only a test can block the merge.</p>
           <div class="viz runs-viz" aria-hidden="true">
-            <div><span>Run 1 on the pull request</span><i class="f">Fail</i></div>
-            <div><span>Run 2 on the pull request</span><i class="f">Fail</i></div>
-            <div><span>Run 3 on the fix</span><i class="p">Pass</i></div>
+            <div><span>PR, run 1</span><i class="f">Fails</i></div>
+            <div><span>PR, run 2</span><i class="f">Fails</i></div>
+            <div><span>Same lines reverted</span><i class="p">Passes</i></div>
             <div class="verdict-row"><span>Verdict</span><b>Merge blocked</b></div>
           </div>
         </article>
@@ -309,7 +316,7 @@
             <li>Network<span>Blocked</span></li>
             <li>Host sockets<span>Blocked</span></li>
             <li>Other processes<span>Blocked</span></li>
-            <li>Escape tests<span>70 of 70 blocked</span></li>
+            <li>Escape attempts<span>70 of 70 stopped</span></li>
           </ul>
         </article>
         <article class="card b-ram">
