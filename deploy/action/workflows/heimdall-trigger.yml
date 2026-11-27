@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # Replace the SHA with the Heimdall commit you install (deploy/action/README.md). Pin a full SHA, never a tag.
+      # heimdall action init -dir pins this to the Heimdall commit you install. Pin a full SHA, never a tag.
       - uses: prathameshk421/Heimdall/deploy/action@0000000000000000000000000000000000000000 # heimdall-pin
         with:
           step: trigger

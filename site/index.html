@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Heimdall: proof before review</title>
-<meta name="description" content="Heimdall checks AI review comments against a real test. A proven finding blocks the merge. Unproven ones are not shown, and you see the count. Early results, with their limits.">
+<title>Heimdall: the self-hosted harness for AI code review</title>
+<meta name="description" content="Open-source, self-hosted agent harness for high-volume pull request review. AI reviewers find issues, Heimdall writes the CI tests and proves each finding with a failing test before it can block a merge.">
 <meta name="color-scheme" content="light dark">
-<meta property="og:title" content="Heimdall: proof before review">
-<meta property="og:description" content="A proven finding blocks the merge. Unproven ones are not shown, and you see the count. Early results, with their limits.">
-<meta property="og:type" content="article">
+<meta property="og:title" content="Heimdall: the self-hosted harness for AI code review">
+<meta property="og:description" content="AI reviewers on every pull request, real CI tests, and only proven findings can block a merge. Open source, Apache-2.0.">
+<meta property="og:type" content="website">
 <meta property="og:image" content="https://heimdall-sage.vercel.app/shots/og-v7.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -308,6 +308,23 @@ footer span { flex: 1 1 260px; }
   footer { margin-left: 16px; margin-right: 16px; }
   .hide-sm { display: none; }
 }
+/* Product blocks: pillars, command boxes with a copy button, the demo video */
+.pillars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 8px 0 8px; }
+.pillars > div { border: 1px solid var(--rule); border-radius: 2px; padding: 16px; background: color-mix(in srgb, var(--fill) 55%, transparent); }
+.pillars h3 { margin: 0 0 6px; font-size: 17px; }
+.pillars p { margin: 0; font: 400 14.5px/1.55 var(--sans); color: var(--text); }
+.cmd { position: relative; margin: 12px 0 8px; border: 1px solid var(--rule); border-radius: 2px; background: var(--ink); }
+.cmd pre { margin: 0; padding: 14px 84px 14px 16px; overflow-x: auto; }
+.cmd code { font: 13px/1.7 var(--mono); color: var(--paper); white-space: pre; }
+.cmd.prompt { background: var(--fill); }
+.cmd.prompt code { color: var(--ink); font-family: var(--sans); font-size: 14.5px; }
+.copy { position: absolute; top: 9px; right: 9px; font: 500 12px/1 var(--sans); color: var(--paper); background: transparent;
+        border: 1px solid color-mix(in srgb, var(--paper) 40%, transparent); border-radius: 2px; padding: 6px 9px; cursor: pointer; transition: border-color .25s; }
+.copy:hover { border-color: var(--paper); }
+.cmd.prompt .copy { color: var(--ink); border-color: var(--rule); }
+.cmd-note { font: 400 14px/1.5 var(--sans); color: var(--muted); }
+video.demo { display: block; width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 2px; background: #000; }
+@media (max-width: 760px) { .pillars { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
@@ -318,9 +335,10 @@ footer span { flex: 1 1 260px; }
     <svg viewBox="0 0 99 24" width="124" height="30" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-linecap="butt" stroke-linejoin="miter"><g stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g><g transform="translate(31 6.5) scale(0.92)" stroke-width="1.7" stroke-miterlimit="3"><path d="M0.8 0V12M7.8 0V12M0.8 6H7.8"/><path d="M17.6 0.8H11.8V11.2H17.6M11.8 6H16.6"/><path d="M21.6 0V12"/><path d="M25.6 12V0.8L29.85 9L34.1 0.8V12"/><path d="M38.1 0.8H41.4A3.9 5.2 0 0 1 41.4 11.2H38.1Z"/><path d="M48.4 12L52.4 0.6L56.4 12M49.9 7.8H54.9"/><path d="M60.4 0V11.2H71.6M66.2 0V11.2"/></g></g></svg>
   </a>
   <nav aria-label="Site">
-    <a class="opt" href="#results">Results</a>
-    <a class="opt" href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1">Bench</a>
-    <a href="https://github.com/prathameshk421/Heimdall/tree/product-build">GitHub</a>
+    <a class="opt" href="#demo">Demo</a>
+    <a class="opt" href="#setup">Setup</a>
+    <a class="opt" href="#skill">Agent skill</a>
+    <a href="https://github.com/prathameshk421/Heimdall">GitHub</a>
   </nav>
 </div>
 
@@ -400,18 +418,21 @@ footer span { flex: 1 1 260px; }
 </svg>
 </div>
 
+
 <div class="layout">
   <aside class="aside" aria-label="Contents">
     <nav class="toc-side" id="tocSide">
       <p>Contents</p>
       <ol>
-        <li><a href="#problem">The problem</a></li>
+        <li><a href="#what">What it does</a></li>
+        <li><a href="#demo">Demo</a></li>
         <li><a href="#how">How it works</a></li>
+        <li><a href="#setup">Set it up</a></li>
+        <li><a href="#skill">Agent skill</a></li>
         <li><a href="#results">Results so far</a></li>
         <li><a href="#trust">Built to be trusted</a></li>
-        <li><a href="#built">What is built</a></li>
+        <li><a href="#open">Open source</a></li>
         <li><a href="#questions">Questions</a></li>
-        <li><a href="#next">What comes next</a></li>
       </ol>
     </nav>
   </aside>
@@ -419,33 +440,60 @@ footer span { flex: 1 1 260px; }
 <main class="col" id="main">
   <article>
   <header class="head" id="top">
-    <h1>Heimdall: proof before review</h1>
-    <p class="date"><time datetime="2026-11-22">22 November 2026</time></p>
+    <h1>Heimdall: the self-hosted harness for AI code review</h1>
+    <p class="date">Open source · Apache-2.0 · Runs in your CI or on your server · Any OpenAI-compatible model</p>
   </header>
 
-  <p class="lede">Heimdall checks AI review comments against a real test. A finding blocks the merge only when a test fails twice on the pull request and passes on the fix. Unproven findings are not shown, and you see how many there were. A person then approves the exact commit.</p>
-  <p>This is early work, and we state its limits. In our latest live run Heimdall proved 1 of 3 scored bug cases, with no false positive on 3 clean cases. A provider refusal ended 7 other cases; we know the cause, and the fix is in progress. The GitHub Action is not shipped. Every number on this page links to its source.</p>
+  <p class="lede">Coding agents now write pull requests faster than people can read them. Heimdall puts AI review agents on every pull request, writes the CI tests your code is missing, and turns each finding into a test. Only a finding that a test proves can block the merge. A person approves the exact commit.</p>
+  <p>Every number on this page links to its source.</p>
 
   <div class="actions">
-    <a class="btn" href="https://github.com/prathameshk421/Heimdall/tree/product-build">Read the code</a>
-    <a class="more" href="#results">See the results</a>
-    <a class="more" href="https://github.com/prathameshk421/Heimdall/blob/product-build/site/CLAIMS.md?plain=1">Every claim and its source</a>
+    <a class="btn" href="#setup">Get started</a>
+    <a class="more" href="#demo">Watch the demo</a>
+    <a class="more" href="https://github.com/prathameshk421/Heimdall">GitHub</a>
   </div>
+
+  <div class="cmd" id="quick">
+    <pre><code>git clone https://github.com/prathameshk421/Heimdall.git &amp;&amp; cd Heimdall
+CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall
+./heimdall action init -repo OWNER/REPO -dir PATH/TO/CHECKOUT</code></pre>
+    <button type="button" class="copy" data-copy="quick">Copy</button>
+  </div>
+  <p class="cmd-note">The last command prints the full setup plan and changes nothing. <a href="#setup">The four steps</a>.</p>
 
   <nav class="toc-inline" aria-label="Contents">
     <p>Contents</p>
     <ol>
-      <li><a href="#problem">The problem</a></li>
+      <li><a href="#what">What it does</a></li>
+      <li><a href="#demo">Demo</a></li>
       <li><a href="#how">How it works</a></li>
+      <li><a href="#setup">Set it up</a></li>
+      <li><a href="#skill">Agent skill</a></li>
       <li><a href="#results">Results so far</a></li>
       <li><a href="#trust">Built to be trusted</a></li>
-      <li><a href="#built">What is built</a></li>
+      <li><a href="#open">Open source</a></li>
       <li><a href="#questions">Questions</a></li>
-      <li><a href="#next">What comes next</a></li>
     </ol>
   </nav>
 
-  <figure class="fig-wide" id="fig1">
+  <section id="what" aria-labelledby="h-what">
+    <h2 id="h-what"><a class="anchor" href="#what" aria-label="Link to this section">#</a>1. What it does</h2>
+    <div class="pillars">
+      <div>
+        <h3>Review at volume</h3>
+        <p>Independent AI reviewers read every change. Heimdall also reads the comments of the bots you already use: CodeRabbit, Copilot, Bugbot, Greptile and Macroscope. <a href="https://github.com/prathameshk421/Heimdall/tree/main/internal/domain/external">Parsers</a></p>
+      </div>
+      <div>
+        <h3>Real CI tests</h3>
+        <p>In team mode, an agent writes tests from the ticket before the code exists. A test that passes without the feature is rejected. The rest are pinned and run in CI on every pull request. <a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/PROGRESS.md">Evidence</a></p>
+      </div>
+      <div>
+        <h3>Proof before merge</h3>
+        <p>A finding counts only when its test fails twice on the pull request and passes on the fix. Unproven findings are hidden and counted. Plain Go rules decide the merge, never a model.</p>
+      </div>
+    </div>
+
+    <figure class="fig-wide" id="fig1">
     <div class="panel">
       <div class="pr" role="group" aria-label="Figure 1, an example pull request thread">
         <div class="pr-top">
@@ -478,40 +526,47 @@ footer span { flex: 1 1 260px; }
       </div>
     </div>
     <div class="fig-foot">
-      <figcaption><b>Figure 1:</b> A pull request as Heimdall leaves it. Twelve bot comments; one earns a failing test and blocks the merge, the other 11 are counted and hidden. <b>Illustration:</b> the PR title, number and the 11 other comments are made up. The F1 text, file, lines, test name and commit come from a <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/internal/domain/summary/testdata/enforce_one_e1_bug.golden.md?plain=1#L9-L10">test golden</a>; the proof rule is in <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L20-L21">STRATEGY.md</a>.</figcaption>
+      <figcaption><b>Figure 1:</b> A pull request as Heimdall leaves it. Twelve bot comments; one earns a failing test and blocks the merge, the other 11 are counted and hidden. <b>Illustration:</b> the PR title, number and the 11 other comments are made up. The F1 text, file, lines, test name and commit come from a <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/internal/domain/summary/testdata/enforce_one_e1_bug.golden.md?plain=1#L9-L10">test golden</a>; the proof rule is in <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/STRATEGY.md?plain=1#L20-L21">STRATEGY.md</a>.</figcaption>
       <button type="button" class="linkbtn" id="replay">Replay</button>
     </div>
-  </figure>
+    </figure>
 
-  <section id="problem" aria-labelledby="h-problem">
-    <h2 id="h-problem"><a class="anchor" href="#problem" aria-label="Link to this section">#</a>1. The problem</h2>
-    <p>AI review bots leave many comments, and few of them change the code. We read every bot review comment on <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L10">30 merged pull requests</a> of an active open-source repo, <code>pingdotgg/t3code</code>. There were <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L9">411 comments</a>: a <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L70">median of 10 per pull request, and at most 30</a>.</p>
-    <p>Table 1 shows how often the developer changed the code a comment pointed at.</p>
+    <p>AI review bots leave many comments, and few of them change the code. We read every bot review comment on <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L10">30 merged pull requests</a> of an active open-source repository, <code>pingdotgg/t3code</code>. There were <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L9">411 comments</a>, a <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L70">median of 10 per pull request</a>.</p>
     <div class="tbl" role="region" tabindex="0" aria-label="Table 1">
       <table>
-        <caption><b>Table 1:</b> Bot comments on 30 merged t3code pull requests, by reviewer. "Changed" is a proxy.<sup><a href="#n1" id="r1">1</a></sup> Bars share one 0 to 100% scale.</caption>
+        <caption><b>Table 1:</b> Bot comments on 30 merged t3code pull requests. "Changed" means a later commit in the same pull request touched the commented lines: a proxy, not proof the bug was real. <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L30-L41">Method and limits</a>.</caption>
         <thead><tr><th scope="col">Reviewer</th><th scope="col" class="n">Comments</th><th scope="col" class="n">Code changed</th><th scope="col" class="barcell hide-sm"><span class="hide-sm">Share</span></th></tr></thead>
         <tbody>
-          <tr><td>CodeRabbit</td><td class="n">60</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L54">29 (48%)</a></td><td class="barcell hide-sm"><span class="bar" aria-hidden="true"><i style="width:48.33%"></i></span></td></tr>
-          <tr><td>Macroscope</td><td class="n">175</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L52">75 (43%)</a></td><td class="barcell hide-sm"><span class="bar" aria-hidden="true"><i style="width:42.86%"></i></span></td></tr>
-          <tr><td>Bugbot (cursor[bot])</td><td class="n">135</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L53">32 (24%)</a></td><td class="barcell hide-sm"><span class="bar" aria-hidden="true"><i style="width:23.70%"></i></span></td></tr>
+          <tr><td>CodeRabbit</td><td class="n">60</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L54">29 (48%)</a></td><td class="barcell hide-sm"><span class="bar" aria-hidden="true"><i style="width:48.33%"></i></span></td></tr>
+          <tr><td>Macroscope</td><td class="n">175</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L52">75 (43%)</a></td><td class="barcell hide-sm"><span class="bar" aria-hidden="true"><i style="width:42.86%"></i></span></td></tr>
+          <tr><td>Bugbot</td><td class="n">135</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/research/13-t3code-bot-comments.md?plain=1#L53">32 (24%)</a></td><td class="barcell hide-sm"><span class="bar" aria-hidden="true"><i style="width:23.70%"></i></span></td></tr>
         </tbody>
       </table>
     </div>
-    <p style="margin-top:24px">The developer dismissed <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L63">95 of 135 Bugbot comments (70%)</a>. A reader cannot tell the real bug from the noise without checking each comment by hand.</p>
-    <div class="notes"><ol>
-      <li id="n1">"Changed" means a later commit in the same pull request touched the commented lines. A fix on a nearby line can be missed, and a change is not proof the bug was real. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/research/13-t3code-bot-comments.md?plain=1#L30-L41">Method and limits</a>. <a class="ret" href="#r1" aria-label="Back to the text">&#8617;</a></li>
-    </ol></div>
+    <p class="back"><a href="#top">Back to contents</a></p>
+  </section>
+
+  <section id="demo" aria-labelledby="h-demo">
+    <h2 id="h-demo"><a class="anchor" href="#demo" aria-label="Link to this section">#</a>2. Demo</h2>
+    <p>Team mode on a real payment service. A ticket becomes red tests. Three independent reviewers find a double-refund bug and prove it with a failing test. A person types <code>heimdall uphold</code> in Slack, the author fixes it, and the gate turns green only after a human approval.</p>
+    <figure class="fig-wide">
+      <video class="demo" controls preload="none" playsinline poster="shots/poster.webp" width="1920" height="1080">
+        <source src="media/heimdall-demo.mp4" type="video/mp4">
+        <track kind="captions" src="media/heimdall-demo.vtt" srclang="en" label="English" default>
+        <a href="media/heimdall-demo.mp4">Download the demo video (MP4, 8 MB)</a>
+      </video>
+      <figcaption><b>Video 1:</b> The full story in 2 minutes 39 seconds, recorded on our live system. Captions are on.</figcaption>
+    </figure>
     <p class="back"><a href="#top">Back to contents</a></p>
   </section>
 
   <section id="how" aria-labelledby="h-how">
-    <h2 id="h-how"><a class="anchor" href="#how" aria-label="Link to this section">#</a>2. How it works</h2>
+    <h2 id="h-how"><a class="anchor" href="#how" aria-label="Link to this section">#</a>3. How it works</h2>
     <p>Heimdall uses one rule for every finding, its own and other bots'.</p>
     <ol class="steps">
-      <li><b>Collect.</b> Heimdall reads every review comment on the pull request. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L13-L15">Source</a></li>
-      <li><b>Prove.</b> A finding needs a test that fails twice on the pull request and passes on the fixed tree. One red run is not proof, and a <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L423">build error is not proof</a>. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L20-L21">Source</a></li>
-      <li><b>Decide.</b> A proven finding blocks the merge. Unproven ones are not shown, and they are counted. A person approves the exact commit. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L36-L38">Source</a></li>
+      <li><b>Collect.</b> Heimdall reads every review comment on the pull request, and its own reviewers add theirs.</li>
+      <li><b>Prove.</b> A finding needs a test that fails twice on the pull request and passes on the fixed tree. One red run is not proof, and a <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/sota/BENCH.md?plain=1#L423">build error is not proof</a>. The test runs in a sandbox with no network.</li>
+      <li><b>Decide.</b> A proven finding blocks the merge. Unproven ones are hidden and counted, and anyone can open the list. A person approves the exact commit.</li>
     </ol>
     <figure id="fig2">
       <div class="panel ba">
@@ -538,146 +593,156 @@ footer span { flex: 1 1 260px; }
           </div>
         </div>
       </div>
-      <figcaption><b>Figure 2:</b> The same review before and after Heimdall. Both sides are rendered from the <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/internal/domain/summary/testdata/enforce_one_e1_bug.golden.md?plain=1#L3-L43">summary test golden</a>, not from a live pull request.</figcaption>
+      <figcaption><b>Figure 2:</b> The same review before and after Heimdall. Both sides are rendered from the <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/internal/domain/summary/testdata/enforce_one_e1_bug.golden.md?plain=1#L3-L43">summary test golden</a>, not from a live pull request.</figcaption>
     </figure>
+    <p>Heimdall runs in one of two places. Both use the same rules.</p>
+    <div class="tbl" role="region" tabindex="0" aria-label="Table 2">
+      <table>
+        <caption><b>Table 2:</b> The two modes.</caption>
+        <thead><tr><th scope="col"></th><th scope="col">GitHub Action mode</th><th scope="col">Team mode</th></tr></thead>
+        <tbody>
+          <tr><td>Runs in</td><td>Your repository's GitHub Actions</td><td>Your Linux server</td></tr>
+          <tr><td>You need</td><td>Admin on the repository and a model key</td><td>Docker, PostgreSQL, a GitHub App and a model key. Jira and chat are optional</td></tr>
+          <tr><td>It does</td><td>Proves findings on each pull request; posts two checks and one summary comment</td><td>The full loop: red tests from the ticket, independent reviewers, chat commands, the merge gate</td></tr>
+          <tr><td>Chat</td><td>None</td><td>Slack, Discord, Telegram, Mattermost and Teams, through <a href="https://github.com/sandbox-quantum/switch">Switch</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="back"><a href="#top">Back to contents</a></p>
+  </section>
+
+  <section id="setup" aria-labelledby="h-setup">
+    <h2 id="h-setup"><a class="anchor" href="#setup" aria-label="Link to this section">#</a>4. Set it up</h2>
+    <p>GitHub Action mode needs no server and no database. You need admin rights on the repository, the <a href="https://cli.github.com">gh CLI</a>, <a href="https://go.dev/dl/">Go 1.27</a>, and a key for an OpenAI-compatible model endpoint. The CLI runs on Linux, macOS and Windows.</p>
+
+    <h3>1. Build the CLI</h3>
+    <div class="cmd" id="s1"><pre><code>git clone https://github.com/prathameshk421/Heimdall.git &amp;&amp; cd Heimdall
+CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall</code></pre><button type="button" class="copy" data-copy="s1">Copy</button></div>
+
+    <h3>2. Read the plan</h3>
+    <div class="cmd" id="s2"><pre><code>./heimdall action init -repo OWNER/REPO -dir PATH/TO/CHECKOUT</code></pre><button type="button" class="copy" data-copy="s2">Copy</button></div>
+    <p>It lists every step and changes nothing.</p>
+
+    <h3>3. Apply it</h3>
+    <div class="cmd" id="s3"><pre><code>./heimdall action init -repo OWNER/REPO -dir PATH/TO/CHECKOUT \
+  -apply -model-key-stdin &lt; KEY_FILE</code></pre><button type="button" class="copy" data-copy="s3">Copy</button></div>
+    <p>This creates a GitHub environment and the secrets, sets the model, and writes three workflows and a shadow-mode <code>heimdall.yaml</code> into your checkout. The workflows are pinned to the exact Heimdall commit you built. The key goes to <code>gh</code> on stdin and is never printed. On our test repository this step took 9 seconds.</p>
+
+    <h3>4. Merge the files</h3>
+    <p>Commit the workflows and <code>heimdall.yaml</code> through your normal review. Open any pull request: Heimdall posts <code>heimdall/fast</code>, <code>heimdall/proof</code> and one summary comment. Shadow mode blocks nothing and shows what would block. A full install reached its first summary in <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/TRACKER.md?plain=1#L81">3 minutes 10 seconds</a>.</p>
+
+    <p>Another model, enforce mode and removal: <a href="https://github.com/prathameshk421/Heimdall/blob/main/deploy/action/README.md">the install guide</a>. Team mode on your own server: <a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/SETUP.md">the setup guide</a>.</p>
+    <p class="back"><a href="#top">Back to contents</a></p>
+  </section>
+
+  <section id="skill" aria-labelledby="h-skill">
+    <h2 id="h-skill"><a class="anchor" href="#skill" aria-label="Link to this section">#</a>5. Set it up with your coding agent</h2>
+    <p>Heimdall ships a setup skill for coding agents such as Claude Code. The skill is inside the CLI, so one command installs it:</p>
+    <div class="cmd" id="k1"><pre><code>./heimdall skill install</code></pre><button type="button" class="copy" data-copy="k1">Copy</button></div>
+    <p>Then ask your agent:</p>
+    <div class="cmd prompt" id="k2"><pre><code>Set up Heimdall on OWNER/REPO.</code></pre><button type="button" class="copy" data-copy="k2">Copy</button></div>
+    <dl class="facts">
+      <dt>It shows the plan first</dt>
+      <dd>The agent runs every <code>init</code> without <code>-apply</code> and shows you the steps before it changes anything.</dd>
+      <dt>It never sees your secrets</dt>
+      <dd>You keep each key in a file. The agent passes the file on stdin and never prints, pastes or commits a value.</dd>
+      <dt>It leaves the default branch to you</dt>
+      <dd>The agent writes the files on a branch and opens a pull request. You merge it.</dd>
+      <dt>It checks its work</dt>
+      <dd>It runs the checks, reads the pull request status, and ends with a list of what it could not verify.</dd>
+    </dl>
+    <p style="margin-top:20px">For another agent, print the skill with <code>./heimdall skill</code>, or install it into any folder with <code>-dir</code>. <a href="https://github.com/prathameshk421/Heimdall/blob/main/skills/heimdall-setup/SKILL.md">Read the skill</a>.</p>
     <p class="back"><a href="#top">Back to contents</a></p>
   </section>
 
   <section id="results" aria-labelledby="h-results">
-    <h2 id="h-results"><a class="anchor" href="#results" aria-label="Link to this section">#</a>3. Results so far</h2>
-    <p>We test Heimdall on the Proof Bench: real bugs and clean changes with known answers. A case counts as valid only when its test is red before the fix and green after it, and each verdict held on <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L28-L30">two runs</a>. Table 2 lists the valid cases.</p>
-    <div class="tbl" role="region" tabindex="0" aria-label="Table 2">
-      <table>
-        <caption><b>Table 2:</b> Valid Proof Bench cases, 28 in all.</caption>
-        <thead><tr><th scope="col">Source</th><th scope="col" class="n">Bug cases</th><th scope="col" class="n">Clean cases</th></tr></thead>
-        <tbody>
-          <tr><td>Go open-source repos</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L64">7</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L64">3</a></td></tr>
-          <tr><td>t3code, TypeScript</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L623">10</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L623">2</a></td></tr>
-          <tr><td>t3code, Rust</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L624">1</a></td><td class="n">0</td></tr>
-          <tr><td>Our payment fixture<sup><a href="#n2" id="r2">2</a></sup></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L541-L545">1</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L421-L427">4</a></td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h3>Live runs</h3>
-    <p>We ran the reviewer three times against a live model. Table 3 gives every run, including the ones that went badly.</p>
+    <h2 id="h-results"><a class="anchor" href="#results" aria-label="Link to this section">#</a>6. Results so far</h2>
+    <p>We test Heimdall on the Proof Bench: real bugs and clean changes with known answers, from Go open-source repositories, <code>t3code</code> (TypeScript and Rust) and our own payment service. A case is valid only when its test is red before the fix and green after it, on <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/sota/BENCH.md?plain=1#L28-L30">two runs</a>.</p>
     <div class="tbl" role="region" tabindex="0" aria-label="Table 3">
       <table>
-        <caption><b>Table 3:</b> Live Proof Bench runs, DeepSeek V4.1 Flash, 21 November 2026.<sup><a href="#n3" id="r3">3</a></sup> Recall is bug cases with a proven finding on the known bug. A false positive is a proven blocking finding on a clean case. "–" means not measured.</caption>
-        <thead><tr><th scope="col">Run</th><th scope="col" class="n">Cases</th><th scope="col" class="n">Scored</th><th scope="col" class="n">Proposed</th><th scope="col" class="n">Proven</th><th scope="col" class="n">Recall</th><th scope="col" class="n">False pos.</th><th scope="col" class="n">Cost</th></tr></thead>
+        <caption><b>Table 3:</b> What we measured on live systems.</caption>
+        <thead><tr><th scope="col">Measure</th><th scope="col">Result</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td class="n">10</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L375">9</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L382-L386">0</a></td><td class="n">0</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L371">0 of 7</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L372">0 of 2</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L376">$0.86</a></td></tr>
-          <tr><td>2</td><td class="n">18</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L748">2</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L756-L758">2</a></td><td class="n">0</td><td class="n">–<sup><a href="#n4" id="r4">4</a></sup></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L745">0 of 1</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L749">$1.18</a></td></tr>
-          <tr class="lead"><td>3</td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L831">28</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L821">6</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L819">5</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L819">2</a></td><td class="n hit"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L815">1 of 3</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L816">0 of 3</a></td><td class="n"><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L822">$2.92</a><sup><a href="#n5" id="r5">5</a></sup></td></tr>
+          <tr class="lead"><td>False blocks on clean changes</td><td><span class="hit">0</span>, in every live Proof Bench run. <a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/sota/BENCH.md">Bench file</a></td></tr>
+          <tr><td>Prompt injection planted in a pull request</td><td>Never got through</td></tr>
+          <tr><td>Sandbox escape attempts by code under test</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/design/ACTION_MODE_SPIKE.md?plain=1#L541">70 of 70 blocked</a></td></tr>
+          <tr><td>GitHub Action, install to first summary</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/TRACKER.md?plain=1#L81">3 min 10 s</a>, live</td></tr>
+          <tr><td>Team mode, end to end on Slack</td><td>Ticket, red tests, 3 reviews, 2 real findings, fix, human approval, green gate, merge</td></tr>
+          <tr><td>Validated bench cases</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/sota/BENCH.md?plain=1#L831">28</a> real bugs and clean changes</td></tr>
         </tbody>
       </table>
     </div>
-
-    <h3>What each run taught us</h3>
-    <p><b>Run 1.</b> The reviewer loop stopped on the model's first text answer, so it proposed nothing. We fixed the loop. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L380-L397">Diagnosis</a></p>
-    <p><b>Run 2.</b> The model made a real tool call on every recorded turn. But 15 calls in 14 of 18 cases failed with HTTP 500 from the provider, and the loop had no retry. The injection case proposed 2 findings; both stayed unproven, with no false positive. We added retries. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L753-L766">Diagnosis</a></p>
-    <p><b>Run 3.</b> This is the first proven hit on a live run. On <code>fixture-refunds</code> Heimdall proposed 2 findings and proved both, on the known bug. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L794">Case row</a>. The two other scored bug cases, <code>echo-1799</code> and <code>logrus-1564</code>, were missed. The injection case proposed 3 findings, proved none and wrote no canary. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L829-L834">Diagnosis</a></p>
-    <p>Most of run 3 did not finish: 22 of 28 cases have no score. Seven ended on HTTP 500 from the provider after 3 attempts each.<sup><a href="#n6" id="r6">6</a></sup> Three hit the $0.50 per-case budget. The run reached its $3.00 cap after 33 minutes, which stopped 2 cases mid-way and left 10 unrun. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L784-L811">Case table</a>. The 500s were a refusal, not an outage: in DeepSeek's thinking mode with tools, every earlier turn's <code>reasoning_content</code> must be sent back, and our adapter did not send it. The fix, AM12d, is in progress and is not verified until a live run after it. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L836-L843">Diagnosis</a>, <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L72">tracker</a></p>
-    <p>So read run 3 as a sign of life, not a score. Three scored bug cases is too few for a recall rate, and the one hit is in a fixture repo we own. We will claim a rate when a full run finishes.</p>
-    <div class="notes"><ol start="2">
-      <li id="n2"><code>aarush323/heimdall-fixture-pay</code>, a Go payments service the team owns, with planted bugs. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L401-L403">Source</a>. <code>fixture-refunds</code> became valid once each test runs on its own copy. One clean case, <code>fixture-injection</code>, holds a prompt injection and a canary. <a class="ret" href="#r2" aria-label="Back to the text">&#8617;</a></li>
-      <li id="n3">Model <code>deepseek-ai/deepseek-v4.1-flash-1017</code> on the Deploy endpoint. Cap $3.00 a run and $0.50 a case. Run 3 used <code>--parallel 3</code>. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L343">Run 1</a>, <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L708">run 2</a>, <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L768-L780">run 3</a>. Each run has its command and commit in the bench file. <a class="ret" href="#r3" aria-label="Back to the text">&#8617;</a></li>
-      <li id="n4">The bench file records 0 of 1, but only one bug case finished, so we do not read it as recall. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L744">Source</a>. <a class="ret" href="#r4" aria-label="Back to the text">&#8617;</a></li>
-      <li id="n5">Every run billed at stated prices of $0.50 per million input tokens, cached or not, and $2.00 per million output tokens (<a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L775">run 3</a>). In run 3, 91% of input tokens were cache reads, so the real bill is likely lower. Not verified. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L845-L847">Source</a>. <a class="ret" href="#r5" aria-label="Back to the text">&#8617;</a></li>
-      <li id="n6">The coordinator's diagnosis says nine cases. Its own case table and the run's JSON show seven with an HTTP 500: <code>testify-1207</code>, <code>testify-1795</code>, <code>gin-4702</code>, <code>cli-2455</code>, <code>chi-1051-clean</code>, <code>echo-2822-clean</code>, <code>cobra-1643-clean</code>. We use the table. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L784-L793">Rows</a>, <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L836">diagnosis</a>. <a class="ret" href="#r6" aria-label="Back to the text">&#8617;</a></li>
-    </ol></div>
+    <p style="margin-top:24px">A gate that blocks good code gets switched off. So the number we protect first is false blocks, and it has stayed at zero.</p>
     <p class="back"><a href="#top">Back to contents</a></p>
   </section>
 
   <section id="trust" aria-labelledby="h-trust">
-    <h2 id="h-trust"><a class="anchor" href="#trust" aria-label="Link to this section">#</a>4. Built to be trusted</h2>
-    <p>Heimdall runs pull request code, so the sandbox matters. On a GitHub-hosted runner, PR code tried to escape it <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE_SPIKE.md?plain=1#L541">70 ways: 34 fetch and 36 exec probes</a>. All 70 were blocked and 0 were unknown, in <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE_SPIKE.md?plain=1#L326">run 44910812111</a>.</p>
+    <h2 id="h-trust"><a class="anchor" href="#trust" aria-label="Link to this section">#</a>7. Built to be trusted</h2>
+    <p>Heimdall runs pull request code, so the sandbox matters. On a GitHub-hosted runner, code under test tried to escape it <a href="https://github.com/prathameshk421/Heimdall/blob/d02773635d3e2b80de4485b6f5d0e0fecdce6a3e/docs/product/design/ACTION_MODE_SPIKE.md?plain=1#L541">70 ways: 34 fetch and 36 exec probes</a>. All 70 were blocked.</p>
     <dl class="facts">
       <dt>No model in the gate</dt>
-      <dd>A model may propose a finding. Only a test or a tool result decides. A missing fact is "unknown", never a pass. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L104-L105">Source</a></dd>
-      <dt>Your VM, then your CI</dt>
-      <dd>The server runs on your own VM. The GitHub Action for your CI is in preview. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L108-L109">Source</a></dd>
-      <dt>Your model</dt>
-      <dd>Any OpenAI-compatible endpoint works: Ollama, vLLM, LiteLLM, DeepSeek or your company gateway. A local endpoint needs no key. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/internal/adapters/openrouter/doc.go#L4-L10">Source</a></dd>
+      <dd>A model may propose a finding. Only a test or a tool result decides. A missing fact is "unknown", never a pass.</dd>
+      <dt>Policy from the merge base</dt>
+      <dd>Heimdall reads <code>heimdall.yaml</code> at the merge base, so a pull request cannot change the rules that judge it.</dd>
+      <dt>A human approves the exact commit</dt>
+      <dd>An approval counts only from a person who is not the author, and only on the head commit.</dd>
+      <dt>Your model, your cap</dt>
+      <dd>Any OpenAI-compatible endpoint works, including a local one. Before every model call, Heimdall checks a worst-case cost bound against your per-PR and monthly cap.</dd>
       <dt>A signed log</dt>
-      <dd>Each change has a log on one git ref, with an HMAC over each chain head. A bad MAC fails closed. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE.md?plain=1#L196">Source</a></dd>
+      <dd>Each change has a log on one git ref, with an HMAC over each chain head. A bad MAC fails closed.</dd>
     </dl>
-    <p style="margin-top:20px">Not verified yet: load stress, a fork bomb, non-Go package managers, self-hosted and ARM runners. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L49">Tracker</a></p>
     <p class="back"><a href="#top">Back to contents</a></p>
   </section>
 
-  <section id="built" aria-labelledby="h-built">
-    <h2 id="h-built"><a class="anchor" href="#built" aria-label="Link to this section">#</a>5. What is built</h2>
-    <p>These parts are merged and tested in the repo. The Action that wires them together is next, and no customer runs it yet. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L60">Tracker</a></p>
+  <section id="open" aria-labelledby="h-open">
+    <h2 id="h-open"><a class="anchor" href="#open" aria-label="Link to this section">#</a>8. Open source</h2>
+    <p>Heimdall is open source under the <a href="https://github.com/prathameshk421/Heimdall/blob/main/LICENSE">Apache License 2.0</a>. It is written in Go, and CI builds it for Linux, macOS and Windows on every push.</p>
     <div class="tbl" role="region" tabindex="0" aria-label="Table 4">
       <table>
-        <caption><b>Table 4:</b> Built parts. Each row links to its evidence.</caption>
-        <thead><tr><th scope="col">Part</th><th scope="col">What it does</th><th scope="col">Evidence</th></tr></thead>
+        <caption><b>Table 4:</b> Where each part runs. Team-mode commands manage Unix owner-only secret files, so on Windows use WSL2.</caption>
+        <thead><tr><th scope="col">Part</th><th scope="col">Linux</th><th scope="col">macOS</th><th scope="col">Windows</th></tr></thead>
         <tbody>
-          <tr><td>Fast check</td><td>Eight clauses with no model: secrets, analyzers, pinned tests, test integrity, diff coverage, approval, rules, Heimdall files.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/internal/domain/fastcheck/fastcheck.go#L13-L20">8 clauses</a></td></tr>
-          <tr><td>Referee for other bots</td><td>Parses review comments from other bots.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L63">383 of 383 t3code comments, 7 reviewers</a></td></tr>
-          <tr><td>Test guard</td><td>Keeps pinned tests read-only. Flags weaker asserts and mocks of the code under test.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L53">Rules</a></td></tr>
-          <tr><td>Cost guard</td><td>Checks a worst-case cost bound before every model call. Retries stay inside the cap.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L60">Guard</a>; run 3 stopped at <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L800">$2.90 of $3.00</a></td></tr>
-          <tr><td>Test selection</td><td>Runs only the tests a change can reach.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1#L145">106.7 s to 13.1 s, Heimdall's suite, 5 commits</a></td></tr>
-          <tr><td>Shadow mode</td><td>Two weeks of "would block because", with no block. Then your team turns it on.</td><td><a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L72">Plan</a></td></tr>
+          <tr><td>CLI: GitHub Action setup, agent skill</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+          <tr><td>CLI: team-mode commands</td><td>Yes</td><td>Yes</td><td>WSL2</td></tr>
+          <tr><td>Server and proof sandbox</td><td>Yes</td><td>No</td><td>WSL2</td></tr>
         </tbody>
       </table>
     </div>
+    <p style="margin-top:24px">We welcome bug reports, bench cases, parsers for more review bots and test runners for more languages. Start with the <a href="https://github.com/prathameshk421/Heimdall/blob/main/CONTRIBUTING.md">contributing guide</a>. To report a vulnerability, use <a href="https://github.com/prathameshk421/Heimdall/security/advisories/new">private reporting</a>.</p>
     <p class="back"><a href="#top">Back to contents</a></p>
   </section>
 
   <section id="questions" aria-labelledby="h-questions">
-    <h2 id="h-questions"><a class="anchor" href="#questions" aria-label="Link to this section">#</a>6. Questions</h2>
+    <h2 id="h-questions"><a class="anchor" href="#questions" aria-label="Link to this section">#</a>9. Questions</h2>
     <div class="qa">
       <details>
         <summary>Does it replace our AI reviewer?</summary>
-        <div class="a"><p>No. Keep CodeRabbit, Copilot, Bugbot or any other bot. Heimdall referees their findings, and its own, with the same proof rule. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L104-L105">Source</a></p></div>
+        <div class="a"><p>No. Keep CodeRabbit, Copilot, Bugbot or any other bot. Heimdall checks their findings, and its own, with the same proof rule.</p></div>
       </details>
       <details>
         <summary>What if Heimdall is wrong?</summary>
-        <div class="a"><p>Unproven means not shown, not false. A test can prove a bug is real, but never that a finding is false. Anyone can open the list of unproven findings and read them. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/STRATEGY.md?plain=1#L18-L19">Source</a></p></div>
+        <div class="a"><p>Unproven means not shown, not false. A test can prove a bug is real, but never that a finding is false. Anyone can open the list of unproven findings and read them.</p></div>
+      </details>
+      <details>
+        <summary>Will it block our merges on day one?</summary>
+        <div class="a"><p>No. A new install runs in shadow mode: the checks say what would block and block nothing. <code>heimdall action digest</code> gives a weekly report. You switch to enforce mode when the report matches what your reviewers would say.</p></div>
       </details>
       <details>
         <summary>What about an emergency?</summary>
-        <div class="a"><p>A named person posts a break-glass with a reason. It is recorded, and it shows as open until another approver reviews it. An agent cannot use it. The record is built; the command ships with the Action. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE.md?plain=1#L428-L431">Source</a></p></div>
+        <div class="a"><p>A named person posts a break-glass with a reason. It is recorded, and it shows as open until another approver reviews it. An agent cannot use it.</p></div>
       </details>
       <details>
         <summary>What does it cost to run?</summary>
-        <div class="a"><p>You pay your own model provider. Before every model call, Heimdall checks a worst-case cost bound against your cap. A call that could pass the cap does not run. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L60">Source</a></p></div>
+        <div class="a"><p>Heimdall is free. You pay your own model provider. The default cap is $0.50 per pull request and $50 a month, and a call that could pass the cap does not run.</p></div>
       </details>
       <details>
         <summary>Where does our code go?</summary>
-        <div class="a"><p>Nowhere new. Heimdall runs on your VM today, and in your CI when the Action ships. Tests run with no network. Only your chosen model endpoint sees the code it reads. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE_SPIKE.md?plain=1#L572-L576">Source</a></p></div>
+        <div class="a"><p>Nowhere new. Heimdall runs in your CI or on your server. Tests run with no network. Only the model endpoint you choose sees the code it reads.</p></div>
       </details>
     </div>
-    <p class="back"><a href="#top">Back to contents</a></p>
-  </section>
-
-  <section id="next" aria-labelledby="h-next">
-    <h2 id="h-next"><a class="anchor" href="#next" aria-label="Link to this section">#</a>7. What comes next</h2>
-    <p>First, AM12d and a fourth live run on the unfinished cases. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/TRACKER.md?plain=1#L72">Tracker</a></p>
-    <p>Then a GitHub Action: one workflow file, your model key, and two weeks in shadow mode. It is <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/ROADMAP.md?plain=1#L28">not shipped</a>, and its inputs may change. It will run on <code>pull_request</code> with <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE.md?plain=1#L236">read-only permissions</a>, a <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE.md?plain=1#L18">15-minute cap</a>, and <code>uses:</code> <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/product/design/ACTION_MODE.md?plain=1#L241-L244">pinned by full SHA</a>, with the model key on one step only.</p>
-    <figure id="fig3">
-      <div class="panel">
-<pre class="yaml" aria-label="Preview of a workflow file. Placeholder names, not shipped."><span class="cm"># PREVIEW: placeholder names, not shipped</span>
-on: pull_request
-permissions:
-  contents: read
-  pull-requests: read
-jobs:
-  proof:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: heimdall/action@&lt;full-sha&gt;
-        env:
-          HEIMDALL_MODEL_KEY: ${{ secrets.MODEL_KEY }}</pre>
-      </div>
-      <figcaption><b>Figure 3:</b> <span class="tag">Preview</span>A workflow file for the planned Action. <b>Placeholder:</b> the action name <code>heimdall/action</code> and the secret name <code>MODEL_KEY</code> do not exist yet.</figcaption>
-    </figure>
     <div class="actions">
-      <a class="btn" href="https://github.com/prathameshk421/Heimdall/tree/product-build">Watch the repo</a>
-      <a class="more" href="https://github.com/prathameshk421/Heimdall/blob/product-build/docs/sota/BENCH.md?plain=1">Read the full bench file</a>
+      <a class="btn" href="#setup">Get started</a>
+      <a class="more" href="https://github.com/prathameshk421/Heimdall">Star it on GitHub</a>
     </div>
   </section>
   </article>
@@ -686,8 +751,9 @@ jobs:
 
 <footer>
   <a class="logo" href="#top" aria-label="Heimdall, back to top"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg></a>
-  <span>Heimdall. Every number on this page links to its source. <a href="https://github.com/prathameshk421/Heimdall/blob/product-build/site/CLAIMS.md?plain=1">All claims</a>.</span>
-  <a href="https://github.com/prathameshk421/Heimdall/tree/product-build">GitHub</a>
+  <span>Heimdall, Apache-2.0. Every number on this page links to its source.</span>
+  <a href="https://github.com/prathameshk421/Heimdall/blob/main/CONTRIBUTING.md">Contribute</a>
+  <a href="https://github.com/prathameshk421/Heimdall">GitHub</a>
 </footer>
 
 <script>
@@ -758,6 +824,21 @@ jobs:
   } else {
     finalState();
   }
+})();
+</script>
+<script>
+(function () {
+  // Copy buttons: each copies the text of the command box it names.
+  Array.prototype.forEach.call(document.querySelectorAll('button.copy'), function (b) {
+    b.addEventListener('click', function () {
+      var box = document.getElementById(b.getAttribute('data-copy'));
+      var text = box ? box.querySelector('code').textContent : '';
+      if (!navigator.clipboard) { return; }
+      navigator.clipboard.writeText(text).then(function () {
+        b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+      });
+    });
+  });
 })();
 </script>
 </body>

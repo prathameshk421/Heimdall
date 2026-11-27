@@ -4,91 +4,112 @@
   </a>
 </p>
 
-<h3 align="center">The open-source proof layer for AI-written code.</h3>
+<h3 align="center">The self-hosted agent harness for high-volume pull request review.</h3>
 
 <p align="center">
-  Heimdall checks every AI review comment against a real test.<br>
-  A finding blocks the merge only when the test proves it. A person approves the exact commit.
+  AI agents review every pull request and write the CI tests your code is missing.<br>
+  Each finding must earn a failing test before it can block a merge. A person approves the exact commit.
 </p>
 
 <p align="center">
   <a href="https://github.com/prathameshk421/Heimdall/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/prathameshk421/Heimdall/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
   <a href="go.mod"><img alt="Go 1.27" src="https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white"></a>
+  <a href="#platforms"><img alt="Linux, macOS, Windows" src="https://img.shields.io/badge/CLI-Linux%20%7C%20macOS%20%7C%20Windows-555"></a>
   <a href="https://heimdall-sage.vercel.app"><img alt="Website" src="https://img.shields.io/badge/website-heimdall--sage.vercel.app-5b5fc7"></a>
-  <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
 </p>
 
 <p align="center">
   <a href="https://heimdall-sage.vercel.app"><b>Website</b></a> ·
+  <a href="https://heimdall-sage.vercel.app/#demo"><b>Demo video</b></a> ·
   <a href="#quickstart"><b>Quickstart</b></a> ·
+  <a href="#set-it-up-with-your-coding-agent"><b>Agent skill</b></a> ·
   <a href="#how-it-works"><b>How it works</b></a> ·
-  <a href="#results-so-far"><b>Results</b></a> ·
-  <a href="docs/README.md"><b>Docs</b></a> ·
-  <a href="CONTRIBUTING.md"><b>Contribute</b></a>
+  <a href="docs/README.md"><b>Docs</b></a>
 </p>
 
 ---
 
-AI review bots leave many comments, and few of them change the code. Heimdall is a **CI merge gate** that sits after
-those bots. It reads every review comment, its own and third-party ones (CodeRabbit, Copilot, Bugbot, Greptile,
-Macroscope). Each finding must earn a **failing test** in a sandbox. Proven findings block the merge. Unproven ones are
-hidden and counted, so a reviewer sees one real bug instead of twelve opinions.
+Coding agents now write pull requests faster than people can read them. Review bots add more comments, and few of them
+point at a real bug. **Heimdall** is an open-source harness that you run on your own infrastructure. It puts AI review
+agents on every pull request, turns each finding into a test, and lets only the findings that a test proves reach the
+merge decision.
 
-No model sits in the gate. The gate is plain Go rules, and only a person can approve, on the exact commit SHA.
+- **Review at volume.** Independent AI reviewers read each change. Heimdall also ingests the comments of the bots you
+  already use (CodeRabbit, Copilot, Bugbot, Greptile, Macroscope) and checks them the same way.
+- **Real CI tests.** In team mode, an agent writes tests from the ticket before the code exists. A test that passes
+  without the feature is rejected. The tests that survive are pinned and run in CI on every pull request.
+- **Proof, not opinions.** A finding counts only when its test fails twice on the pull request and passes on the fix.
+  Unproven findings are hidden and counted, so a reviewer reads one real bug instead of twelve guesses.
+- **A gate no model can talk past.** Plain Go rules decide the merge. Only a person can approve, on the exact commit.
 
-> [!NOTE]
-> **Heimdall is early, and we state its limits.** The GitHub Action and the self-hosted server run on real
-> repositories, but proof recall on live models is still low. Every number below links to its source, and
-> [`docs/PROGRESS.md`](docs/PROGRESS.md) lists what is **not verified**.
+## Quickstart
 
-## Highlights
+GitHub Action mode runs inside your repository's own CI: no server, no database. You need admin rights on the
+repository, the [`gh` CLI](https://cli.github.com), [Go 1.27](https://go.dev/dl/), and a key for an OpenAI-compatible
+model endpoint (OpenRouter by default).
 
-- **Proof, not opinion.** A finding counts only when its test fails twice on the pull request and passes on the fix.
-  One red run is not proof, and a build error is not proof.
-- **Works with the review bots you already use.** Heimdall ingests their comments and proves or hides each one.
-- **Model-free merge gate.** Deterministic Go rules decide. A model cannot talk its way past the gate.
-- **Installs in minutes.** GitHub Action mode needs no server and no database. A live install reached its first
-  proof summary in **3 min 10 s** ([tracker](docs/product/TRACKER.md)).
-- **Shadow mode first.** Checks report what *would* block, and block nothing, until you switch to enforce.
-- **Sandboxed test runs.** Untrusted code runs in rootless containers with no network, a read-only filesystem, and
-  CPU, memory and process limits.
-- **Bring your own model.** Any OpenAI-compatible endpoint, with a per-PR and a monthly cost cap.
-- **Small footprint.** One static Go binary. The server idles at about 42 MiB of memory.
+**1. Build the CLI** (Linux, macOS or Windows):
 
-## The problem
+```bash
+git clone https://github.com/prathameshk421/Heimdall.git && cd Heimdall && CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall
+```
 
-We read every bot review comment on 30 merged pull requests of an active open-source repository,
-[`pingdotgg/t3code`](https://github.com/pingdotgg/t3code). There were **411 comments**, a median of 10 per pull
-request. The developer dismissed **95 of 135 Bugbot comments (70%)**.
-[Method and limits](https://heimdall-sage.vercel.app/#problem).
+**2. See the plan** for your repository. This changes nothing:
 
-| Reviewer | Comments | Code changed after the comment |
-|---|---:|---:|
-| CodeRabbit | 60 | 29 (48%) |
-| Macroscope | 175 | 75 (43%) |
-| Bugbot | 135 | 32 (24%) |
+```bash
+./heimdall action init -repo OWNER/REPO -dir PATH/TO/YOUR/CHECKOUT
+```
 
-A reader cannot tell the real bug from the noise without a check of each comment by hand. Heimdall does that check
-with a test.
+**3. Apply it.** This creates the GitHub environment and secrets, sets the model, and writes three workflows (pinned
+to the exact Heimdall commit you built) and a shadow-mode `heimdall.yaml` into your checkout:
+
+```bash
+./heimdall action init -repo OWNER/REPO -dir PATH/TO/YOUR/CHECKOUT -apply -model-key-stdin < PATH/TO/KEY_FILE
+```
+
+**4. Merge the files** in your checkout through your normal review. Open any pull request: Heimdall posts
+`heimdall/fast`, `heimdall/proof` and one summary comment. Shadow mode blocks nothing. It shows what *would* block.
+
+On our test repository, `init -apply` took 9 s, and a full install reached its first proof summary in
+**3 min 10 s** ([tracker](docs/product/TRACKER.md)). Options, another model and enforce mode:
+[`deploy/action/README.md`](deploy/action/README.md).
+
+## Set it up with your coding agent
+
+Heimdall ships a setup skill for coding agents such as Claude Code. It walks the agent through both modes, runs every
+check, and never handles your secrets.
+
+```bash
+./heimdall skill install
+```
+
+Then ask your agent: *"Set up Heimdall on OWNER/REPO."* The skill is in
+[`skills/heimdall-setup/SKILL.md`](skills/heimdall-setup/SKILL.md). For other agents, print it with
+`./heimdall skill` or pass `-dir` with your agent's skills folder.
+
+## Demo
+
+[![Watch the 2-minute demo](docs/assets/hook.gif)](https://heimdall-sage.vercel.app/#demo)
+
+A ticket becomes red tests, three independent reviewers find a real double-refund bug, a person types
+`heimdall uphold` in Slack, and the gate turns green only after the fix and a human approval.
+[Watch it (2 min 39 s)](https://heimdall-sage.vercel.app/#demo).
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  PR["Pull request<br/>(person, agent or bot)"] --> C["1. Collect<br/>every review comment"]
-  C --> P["2. Prove<br/>test fails twice on the PR,<br/>passes on the fix"]
+  T["Ticket<br/>(team mode)"] --> W["Test agent writes<br/>red tests first"]
+  W --> CI["Pinned tests run<br/>in CI on every PR"]
+  PR["Pull request<br/>(person, agent or bot)"] --> R["AI reviewers +<br/>your review bots"]
+  R --> P["Prove each finding:<br/>test fails twice on the PR,<br/>passes on the fix"]
   P -->|proven| B["Blocks the merge"]
   P -->|unproven| H["Hidden and counted"]
-  B --> D["3. Decide<br/>a person approves<br/>the exact commit"]
-  H --> D
+  CI --> G{"Gate: plain Go rules<br/>+ human approval<br/>on the exact commit"}
+  B --> G
+  H --> G
 ```
-
-1. **Collect.** Heimdall reads every review comment on the pull request.
-2. **Prove.** An agent writes a test for each finding. The test runs in a sandbox, at least twice on the head commit
-   and once on a tree with the fix.
-3. **Decide.** A proven finding blocks the merge. One summary comment lists the proven findings, the unproven count
-   and the cost. A person approves the exact commit SHA.
 
 ### Evidence tiers
 
@@ -99,144 +120,105 @@ flowchart LR
 | E3 | A confirmed fact from team memory | Yes |
 | E4 | Model reasoning | Never alone |
 
-## Two ways to run it
+### Two ways to run it
 
-| | **GitHub Action mode** | **Self-hosted team mode** |
+| | **GitHub Action mode** | **Team mode** (self-hosted) |
 |---|---|---|
-| For | Any repository on GitHub | Teams that want the full loop from ticket to merge |
-| Needs | GitHub Actions and a model key | A Linux VM, PostgreSQL, a GitHub App, Jira and [Switch](https://github.com/sandbox-quantum/switch) |
-| Does | Proves review comments on each PR; posts `heimdall/fast`, `heimdall/proof` and one summary | Writes red tests from the Jira ticket before the code, runs independent AI reviewers, and gates the merge |
-| Chat | None | Slack, Discord, Telegram, Mattermost (through Switch) |
+| Runs in | Your repository's GitHub Actions | Your Linux server |
+| You need | Admin on the repo, a model key | Docker, PostgreSQL, a GitHub App, a model key. Jira and chat are optional |
+| It does | Reviews and proves findings on each PR, posts two checks and one summary | The full loop: red tests from the Jira ticket, independent reviewers, chat commands, the merge gate |
+| Chat | None | Slack, Discord, Telegram, Mattermost, Teams (through [Switch](https://github.com/sandbox-quantum/switch)) |
 | Guide | [`deploy/action/README.md`](deploy/action/README.md) | [`docs/SETUP.md`](docs/SETUP.md) |
 
-## Quickstart
+## The problem, in numbers
 
-### GitHub Action mode (about 10 minutes)
+We read every bot review comment on 30 merged pull requests of an active open-source repository,
+[`pingdotgg/t3code`](https://github.com/pingdotgg/t3code). There were **411 comments**, a median of 10 per pull
+request. The developer dismissed **95 of 135 Bugbot comments (70%)**.
+[Method](docs/product/research/13-t3code-bot-comments.md).
 
-You need admin rights on the repository, the `gh` CLI, Go 1.27, and a key for an OpenAI-compatible model endpoint.
-
-```bash
-git clone https://github.com/prathameshk421/Heimdall.git && cd Heimdall
-```
-
-```bash
-CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall
-```
-
-```bash
-./heimdall action init -repo OWNER/REPO
-```
-
-The last command prints the setup plan and changes nothing. Add `-apply -model-key-stdin < key-file` to apply it. Then
-copy the three workflows from [`deploy/action/workflows/`](deploy/action/workflows) and add one line of policy to
-`heimdall.yaml`:
-
-```yaml
-action: { mode: shadow, budget: { per_pr_usd: 0.50, monthly_usd: 50 } }
-```
-
-The full install guide, with the model variables and the pin rules, is in
-[`deploy/action/README.md`](deploy/action/README.md).
-
-### Build and test from source
-
-You need **Go 1.27** and **Docker**.
-
-```bash
-make tools
-```
-
-```bash
-make fast
-```
-
-`make fast` runs format, vet, the dependency rule, lint and about 5,900 unit tests in under a minute. `make verify` adds
-the race detector, component tests, rule self-tests, `govulncheck` and a `gitleaks` scan of the git history. CI runs
-`make verify` on every push.
+| Reviewer | Comments | Code changed after the comment |
+|---|---:|---:|
+| CodeRabbit | 60 | 29 (48%) |
+| Macroscope | 175 | 75 (43%) |
+| Bugbot | 135 | 32 (24%) |
 
 ## Results so far
 
-We measure Heimdall on the **Proof Bench**: real bugs and clean changes with known answers, from Go open-source
-repositories, `t3code` (TypeScript and Rust) and our own payment fixture. A case is valid only when its test is red
-before the fix and green after it. Details and every run: [`docs/sota/BENCH.md`](docs/sota/BENCH.md).
-
 | What | Result | Source |
 |---|---|---|
-| Valid bench cases | 28 | [BENCH.md](docs/sota/BENCH.md) |
-| Best live run | 1 of 3 scored bug cases proven, 0 false positives on 3 clean cases, $2.92 | [BENCH.md](docs/sota/BENCH.md) |
-| Latest live run (`t3code`, uncapped) | 0 of 9 bug cases proven, 0 false positives | [BENCH.md](docs/sota/BENCH.md) |
-| Action mode install to first summary | 3 min 10 s, live | [TRACKER.md](docs/product/TRACKER.md) |
-| Team mode, full story on Slack | Ticket, red tests, 3 reviews, 2 real findings, fix, human approval, green gate, merge | [PROGRESS.md](docs/PROGRESS.md) |
+| False blocks on clean changes | **0**, in every live Proof Bench run | [BENCH.md](docs/sota/BENCH.md) |
+| Prompt injection planted in a pull request | Never got through | [BENCH.md](docs/sota/BENCH.md) |
+| Sandbox escape attempts by code under test | **70 of 70 blocked** (34 network, 36 exec) | [spike report](docs/product/design/ACTION_MODE_SPIKE.md) |
+| GitHub Action, install to first summary | **3 min 10 s**, live | [TRACKER.md](docs/product/TRACKER.md) |
+| Team mode, end to end on Slack | Ticket, red tests, 3 reviews, 2 real findings, fix, human approval, green gate, merge | [PROGRESS.md](docs/PROGRESS.md) |
+| Proof Bench | 28 validated cases: real bugs and clean changes in Go, TypeScript and Rust | [BENCH.md](docs/sota/BENCH.md) |
 
-Read the live runs as a sign of life, not a score. Too few cases finished for a recall rate. The false-positive count
-is the number we protect first: a gate that blocks good code gets switched off.
+The **Proof Bench** uses real bugs and clean changes with known answers. A case is valid only when its test is red
+before the fix and green after it.
 
 ## Built to be trusted
 
-- **No model in the gate.** Ten plain Go rules decide the merge. Model output is evidence for a rule, never a vote.
-- **Policy from the merge base.** Heimdall reads `heimdall.yaml` at the merge base, so a pull request cannot change
-  its own rules.
-- **Human approval on the head commit.** An approval counts only from a person who is not the PR author, and only on
-  the exact commit.
-- **Isolated test runs.** Rootless Podman containers with no network, read-only filesystems, dropped capabilities and
-  resource limits.
-- **Secrets stay secret.** No command takes a secret as an argument. Secret scans run on the staged diff and the full
+- **No model in the gate.** Plain Go rules decide the merge. Model output is evidence for a rule, never a vote.
+- **Policy from the merge base.** A pull request cannot change the rules that judge it.
+- **Human approval on the head commit,** from a person who is not the author.
+- **Isolated test runs.** Rootless containers with no network, a read-only filesystem, dropped capabilities, and CPU,
+  memory and process limits.
+- **Secrets stay secret.** No command takes a secret as an argument. Secret scans run on every commit and on the full
   history. Proof artifacts mask secrets.
-- **Audit trail.** Hash-chained events and a transactional outbox in PostgreSQL. Team rule cards carry signed
-  approvals (DSSE).
+- **Bring your own model** through any OpenAI-compatible endpoint, with a per-PR and a monthly cost cap.
+- **Audit trail.** Hash-chained events in PostgreSQL. Team rule cards carry signed approvals (DSSE).
+
+## Platforms
+
+| Part | Linux | macOS | Windows |
+|---|:---:|:---:|:---:|
+| `heimdall` CLI: GitHub Action setup, agent skill, digest | ✓ | ✓ | ✓ |
+| `heimdall` CLI: team-mode operator commands (`admin`, `connect`, `doctor`) | ✓ | ✓ | WSL2 |
+| Server and proof sandbox | ✓ | | WSL2 |
+| Building and testing this repository (`make verify`) | ✓ | ✓ | WSL2 |
+
+CI builds every binary for Linux, macOS and Windows (amd64 and arm64) and runs the tests on all three systems. The
+team-mode commands manage Unix owner-only secret files, so on Windows use WSL2.
 
 ## Tech stack
 
 **Go** · **PostgreSQL** (pgx, goose migrations, River job queue) · **GitHub Actions** and the GitHub REST API ·
-**Model Context Protocol (MCP)** · **OpenCode** agents · **OpenAI-compatible LLM APIs** (OpenRouter, DeepSeek) ·
-**Rootless Podman** and **Docker Compose** · **Knowledge-graph memory** (Graphiti on FalkorDB) · **OIDC** login ·
-**age** encryption · **golangci-lint**, **govulncheck**, **gitleaks**, **actionlint**, **zizmor** in CI.
+**Model Context Protocol (MCP)** · **OpenCode** agents · **OpenAI-compatible LLM APIs** · **Rootless Podman** and
+**Docker Compose** · **Knowledge-graph memory** (Graphiti on FalkorDB) · **OIDC** login · **age** encryption ·
+**golangci-lint**, **govulncheck**, **gitleaks**, **actionlint**, **zizmor** in CI.
 
 ## Repository layout
 
 | Path | What it holds |
 |---|---|
-| [`cmd/heimdall`](cmd/heimdall) | The CLI, including `heimdall action` ([reference](docs/CLI.md)) |
-| [`cmd/heimdall-server`](cmd/heimdall-server) | The self-hosted server |
-| [`cmd/heimdall-runner`](cmd/heimdall-runner) | The sandbox runner |
+| [`cmd/heimdall`](cmd/heimdall) | The CLI ([reference](docs/CLI.md)) |
+| [`cmd/heimdall-server`](cmd/heimdall-server), [`cmd/heimdall-runner`](cmd/heimdall-runner) | The team-mode server and the sandbox runner |
 | [`cmd/heimdall-bench`](cmd/heimdall-bench) | The Proof Bench |
 | [`internal/domain`](internal/domain) | Pure rules and types, including the gate. No I/O |
-| [`internal/app`](internal/app) | Use cases |
-| [`internal/adapters`](internal/adapters) | GitHub, Jira, Switch, PostgreSQL, Graphiti, model APIs, runners |
-| [`internal/transport`](internal/transport) | MCP, dashboard, webhooks, auth |
-| [`skills/`](skills) | Prompts for the test author, reviewers and resolver |
+| [`internal/app`](internal/app), [`internal/adapters`](internal/adapters), [`internal/transport`](internal/transport) | Use cases; GitHub, Jira, Switch, PostgreSQL and model adapters; MCP, dashboard and webhooks |
+| [`skills/`](skills) | The agents' instructions, and the setup skill |
 | [`deploy/`](deploy) | The GitHub Action, Compose stack, service units, config templates |
 | [`docs/`](docs) | Setup, CLI, spec, runbook, progress, bench ([index](docs/README.md)) |
 | [`e2e/`](e2e), [`testdata/`](testdata) | Real-system checks, scenarios and recorded payloads |
-| [`site/`](site) | The [landing page](https://heimdall-sage.vercel.app) |
-
-## Documentation
-
-| Guide | For |
-|---|---|
-| [`deploy/action/README.md`](deploy/action/README.md) | GitHub Action mode install |
-| [`docs/SETUP.md`](docs/SETUP.md) | Self-hosted team mode, from VM to first ticket |
-| [`docs/CLI.md`](docs/CLI.md) | Every `heimdall` command and chat command |
-| [`docs/TECH_SPEC.md`](docs/TECH_SPEC.md) | State machine, evidence, gate, sandbox |
-| [`docs/product/ROADMAP.md`](docs/product/ROADMAP.md) | What we build next |
-| [`docs/README.md`](docs/README.md) | Every doc, by purpose |
+| [`site/`](site) | The [website](https://heimdall-sage.vercel.app) |
 
 ## Contributing
 
-We welcome bug reports, bench cases, adapters and fixes. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). It covers the
-dev setup, the architecture rules, the test policy and the pull request checklist. Good first areas: new Proof Bench
-cases, parsers for more review bots, and test runners for more languages.
+We welcome bug reports, bench cases, adapters and fixes. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md): setup, the
+checks, the architecture rules and the pull request checklist. Good first areas: new Proof Bench cases, parsers for more
+review bots, and test runners for more languages.
 
-Please follow the [Code of Conduct](CODE_OF_CONDUCT.md). To report a vulnerability, read [`SECURITY.md`](SECURITY.md)
-and do not open a public issue.
+Please follow the [Code of Conduct](CODE_OF_CONDUCT.md). To report a vulnerability, read [`SECURITY.md`](SECURITY.md).
+Do not open a public issue for it.
 
 ## License
 
-Heimdall is licensed under the [Apache License 2.0](LICENSE).
+[Apache License 2.0](LICENSE).
 
 ## Acknowledgements
 
-Heimdall started at the Flip the Switch hackathon (Track 01, Best Business Workflow) and runs its team mode on
+Heimdall started at the Flip the Switch hackathon and runs its team mode on
 [Switch](https://github.com/sandbox-quantum/switch). Built by [@prathameshk421](https://github.com/prathameshk421) and
 [@aarush323](https://github.com/aarush323).
 

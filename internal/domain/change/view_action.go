@@ -44,6 +44,8 @@ type ProofInfo struct {
 	Reason      proof.Reason `json:"reason,omitempty"`
 	Counts      ProofCounts  `json:"counts"`
 	Cost        Cost         `json:"cost"`
+	// Own are the run's own findings, which no finding.filed names (ProofReported.Own).
+	Own []OwnFinding `json:"own,omitempty"`
 }
 
 // sameRun reports whether two infos are one run. The workflow run id names a run; the head, base and policy hash are
@@ -146,7 +148,7 @@ func (v *View) applyRun(p Payload) {
 		a.startProof(ProofInfo{WorkflowRun: p.WorkflowRun, Head: p.Head, Base: p.Base, PolicyHash: p.PolicyHash, Model: p.Model})
 	case ProofReported:
 		a.Proof = &ProofInfo{WorkflowRun: p.WorkflowRun, Head: p.Head, Base: p.Base, PolicyHash: p.PolicyHash, Model: p.Model,
-			Done: true, Kind: p.Kind, Reason: p.Reason, Counts: p.Counts, Cost: p.Cost}
+			Done: true, Kind: p.Kind, Reason: p.Reason, Counts: p.Counts, Cost: p.Cost, Own: p.Own}
 		v.applyCandidateResults(p)
 	}
 }

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/proof"
 )
@@ -272,6 +274,12 @@ func (a ProofArtifact) Payload() change.ProofReported {
 	p := change.ProofReported{WorkflowRun: a.WorkflowRun, Head: a.Head, Base: a.Base, PolicyHash: a.PolicyHash,
 		Model: a.Model, Kind: a.Kind, Reason: a.Reason, Counts: a.Counts, Cost: a.Cost}
 	for _, c := range a.Candidates {
+		if c.Ref == "" {
+			if own, ok := ownFinding(c); ok {
+				p.Own = append(p.Own, own)
+			}
+			continue
+		}
 		ref, err := id.ParseFindingRef(c.Ref)
 		if err != nil {
 			continue
@@ -280,6 +288,18 @@ func (a ProofArtifact) Payload() change.ProofReported {
 			Reason: c.Reason, Blocking: c.Blocking})
 	}
 	return p
+}
+
+// ownFinding is a candidate the run's own reviewer raised, with its place and claim. A candidate without a place, a
+// severity or a claim cannot be listed, and stays only in the counts.
+func ownFinding(c ArtifactCandidate) (change.OwnFinding, bool) {
+	sev, err := finding.ParseSeverity(c.Severity)
+	if err != nil || c.File == "" || c.First < 1 || c.Last < c.First || strings.TrimSpace(c.Claim) == "" {
+		return change.OwnFinding{}, false
+	}
+	return change.OwnFinding{Location: finding.Location{File: c.File, Lines: [2]int{c.First, c.Last}}, Severity: sev,
+		Claim: c.Claim, CandidateResultCore: change.CandidateResultCore{Class: c.Class, Dropped: c.Dropped,
+			Reason: c.Reason, Blocking: c.Blocking}}, true
 }
 
 // CostRecorded is the cost.recorded payload of the artifact.

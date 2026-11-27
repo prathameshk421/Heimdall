@@ -3,6 +3,8 @@ package action
 import (
 	"maps"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
@@ -71,7 +73,37 @@ func summaryFindings(events []change.Event, v change.View, head id.SHA) []summar
 			Tier: f.Tier, State: f.State, Severity: f.Severity, Location: places[ref], Claim: f.Claim,
 			Result: findingResult(f, head)})
 	}
+	return append(out, ownFindings(v, head, nextRefNumber(refs))...)
+}
+
+// ownFindings are the proof run's own findings for this head, numbered after the findings the log names. A test
+// proved a proven one, so it is E1; the others are model reasoning, E4, and are never shown as proven.
+func ownFindings(v change.View, head id.SHA, next int) []summary.Finding {
+	if v.Action == nil || v.Action.Proof == nil || (head != "" && v.Action.Proof.Head != head) {
+		return nil
+	}
+	out := make([]summary.Finding, 0, len(v.Action.Proof.Own))
+	for i, o := range v.Action.Proof.Own {
+		tier := finding.TierE4
+		if o.Class == proof.ClassProven {
+			tier = finding.TierE1
+		}
+		out = append(out, summary.Finding{ID: "F" + strconv.Itoa(next+i), Reporters: []summary.Reviewer{summary.ReviewerHeimdall},
+			Tier: tier, State: finding.StateOpen, Severity: o.Severity, Location: o.Location, Claim: o.Claim,
+			Result: proof.Finding{Class: o.Class, Dropped: o.Dropped, Reason: o.Reason, Blocking: o.Blocking}})
+	}
 	return out
+}
+
+// nextRefNumber is one more than the highest F number among refs, so an own finding never reuses a name.
+func nextRefNumber(refs []string) int {
+	high := 0
+	for _, r := range refs {
+		if n, err := strconv.Atoi(strings.TrimPrefix(r, "F")); err == nil && n > high {
+			high = n
+		}
+	}
+	return high + 1
 }
 
 // placesOf maps a finding ref to the place its finding.filed event named.

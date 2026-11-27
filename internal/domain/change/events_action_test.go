@@ -9,6 +9,7 @@ import (
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/fastcheck"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/gate"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/proof"
@@ -382,4 +383,39 @@ func TestProofResultsAreBoundedAtTheCandidateLimit(t *testing.T) {
 	require.Contains(t, err.Error(), "results")
 	p.Results, p.Counts = rs[:change.MaxProofResults], change.ProofCounts{In: change.MaxProofResults, Proven: change.MaxProofResults, NeedsPerson: change.MaxProofResults}
 	require.NoError(t, p.Validate())
+}
+
+// A proof run's own finding needs a place, a severity and a claim, and the named and own results together never pass
+// the candidate count.
+func TestProofOwnFindingsAreValidated(t *testing.T) {
+	good := func() change.ProofReported {
+		return change.ProofReported{WorkflowRun: 1, Head: "9f1c2ab", Base: "7d3e9a1", PolicyHash: aHash, Kind: proof.KindBlocked,
+			Counts: change.ProofCounts{In: 1, Proven: 1, Blocking: 1},
+			Own: []change.OwnFinding{{Location: finding.Location{File: "internal/pay/refund.go", Lines: [2]int{56, 58}},
+				Severity: finding.SeverityHigh, Claim: "A refund can run twice.",
+				CandidateResultCore: change.CandidateResultCore{Class: proof.ClassProven, Blocking: true}}}}
+	}
+	require.NoError(t, good().Validate())
+	for _, tt := range []struct {
+		name   string
+		mutate func(*change.ProofReported)
+		want   string
+	}{
+		{"path outside the repository", func(p *change.ProofReported) { p.Own[0].Location.File = "../etc/passwd" }, "own[0].location.file"},
+		{"lines reversed", func(p *change.ProofReported) { p.Own[0].Location.Lines = [2]int{9, 3} }, "own[0].location.lines"},
+		{"no severity", func(p *change.ProofReported) { p.Own[0].Severity = "" }, "own[0].severity"},
+		{"blank claim", func(p *change.ProofReported) { p.Own[0].Claim = " " }, "own[0].claim"},
+		{"more results than candidates", func(p *change.ProofReported) { p.Own = append(p.Own, p.Own[0]) }, "own"},
+		{"dropped and blocking", func(p *change.ProofReported) {
+			p.Own[0].Class, p.Own[0].Dropped = proof.ClassDropped, proof.DropRefuted
+		}, "own[0]"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p := good()
+			tt.mutate(&p)
+			err := p.Validate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.want)
+		})
+	}
 }

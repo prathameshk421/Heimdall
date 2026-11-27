@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/proof"
 )
@@ -24,6 +25,25 @@ type ProofReported struct {
 	Counts      ProofCounts       `json:"counts"`
 	Cost        Cost              `json:"cost"`
 	Results     []CandidateResult `json:"results,omitempty"`
+	// Own are the run's own candidates: findings Heimdall's reviewer raised during the run, which no log event names.
+	// Each carries its place and claim, so the summary can list it. Older records have none.
+	Own []OwnFinding `json:"own,omitempty"`
+}
+
+// OwnFinding is one of the proof run's own candidates and what became of it.
+type OwnFinding struct {
+	Location finding.Location `json:"location"`
+	Severity finding.Severity `json:"severity"`
+	Claim    string           `json:"claim"`
+	CandidateResultCore
+}
+
+// CandidateResultCore is what became of a candidate, without its name.
+type CandidateResultCore struct {
+	Class    proof.Class      `json:"class"`
+	Dropped  proof.DropReason `json:"dropped,omitempty"`
+	Reason   proof.Reason     `json:"reason,omitempty"`
+	Blocking bool             `json:"blocking,omitempty"`
 }
 
 // CandidateResult is what became of one candidate finding (ACTION_MODE 6.3): proven, dropped with a reason, or not
@@ -51,6 +71,7 @@ func (p ProofReported) Validate() error {
 	v.add("cost", p.Cost.Validate())
 	p.checkOutcome(&v)
 	p.checkResults(&v)
+	p.checkOwn(&v)
 	return v.join()
 }
 
@@ -91,6 +112,22 @@ func (p ProofReported) checkResults(v *problems) {
 		v.require(at+".ref", !seen[r.Ref], "appears twice")
 		seen[r.Ref] = true
 		r.check(at, v)
+	}
+}
+
+// checkOwn checks the run's own candidates: each has a place in the repository, a severity and a claim, and the named
+// and the own results together are no more than the candidates the counts hold.
+func (p ProofReported) checkOwn(v *problems) {
+	v.require("own", len(p.Own) <= MaxProofResults, fmt.Sprintf("must hold at most %d items", MaxProofResults))
+	v.require("own", len(p.Results)+len(p.Own) <= p.Counts.In, "results and own findings are more than the counts have candidates")
+	for i, o := range p.Own {
+		at := fmt.Sprintf("own[%d]", i)
+		v.add(at+".location.file", finding.CheckRepoPath(o.Location.File))
+		v.require(at+".location.lines", o.Location.Lines[0] >= 1 && o.Location.Lines[1] >= o.Location.Lines[0],
+			"must be 1-based with the first at most the last")
+		v.require(at+".severity", o.Severity.Valid(), fmt.Sprintf("%q is not a severity", o.Severity))
+		v.add(at+".claim", checkLongText(o.Claim))
+		CandidateResult{Class: o.Class, Dropped: o.Dropped, Reason: o.Reason, Blocking: o.Blocking}.check(at, v)
 	}
 }
 

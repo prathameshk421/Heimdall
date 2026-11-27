@@ -1,4 +1,4 @@
-# Heimdall Action mode: install in under 10 minutes
+# Heimdall GitHub Action mode: install in under 10 minutes
 
 Heimdall Action mode runs on GitHub Actions alone: no server and no database. Three workflows check each pull request
 and post two check runs (`heimdall/fast`, `heimdall/proof`) and one summary comment. Start in shadow mode. Shadow
@@ -8,9 +8,10 @@ mode posts `neutral` checks that say what would block, and blocks nothing. The d
 ## What you need
 
 - Admin rights on the repository. Creating the environment `heimdall` needs them.
-- The `gh` CLI logged in as that admin, and a `heimdall` binary (`CGO_ENABLED=0 go build ./cmd/heimdall`).
-- A model key for any OpenAI-compatible endpoint. Use a dedicated key with a spend limit at the provider: anyone who
-  can push a branch to the repository can read a repository secret (ACTION_MODE 3.5).
+- The [`gh` CLI](https://cli.github.com) logged in as that admin, and Go 1.27 to build `heimdall`.
+- A local checkout of the repository.
+- A model key for any OpenAI-compatible endpoint, in a file. Use a dedicated key with a spend limit at the provider:
+  anyone who can push a branch to the repository can read a repository secret (ACTION_MODE 3.5).
 
 On a fork, check that Actions are enabled before you add the workflows. A repository with Actions off accepts the
 workflow files and then starts no run:
@@ -19,59 +20,88 @@ workflow files and then starts no run:
 gh api -X PUT repos/OWNER/REPO/actions/permissions -F enabled=true -f allowed_actions=all
 ```
 
-The repository also needs the action at the commit you pin. `uses:` takes a path in a repository GitHub can read, so a
-pinned SHA must be on a branch of that repository. A fork of the customer's repository is enough.
+## 1. Build the CLI (1 minute)
 
-## 1. Set up the environment and the keys (2 minutes)
-
-```sh
-heimdall action init -repo OWNER/REPO            # prints the steps, changes nothing
-heimdall action init -repo OWNER/REPO -apply -model-key-stdin < path/to/model-key-file
-```
-
-The first run of `heimdall action init` on a repository the login administers takes about 7 seconds. It prints one
-`done <step>` line per step and ends with `heimdall action init: done`. Without admin it stops at step 1 with
-`gh: Must have admin rights to Repository. (HTTP 403)`.
-
-`init` creates environment `heimdall`, which only the default branch may deploy to. It also puts a new random log key
-in that environment and sets the model key as the repository secret `HEIMDALL_MODEL_KEY`. The key goes from the file to
-`gh` on stdin and is never printed. Run it again safely: an existing log key is kept.
-
-Then set the model variables (no secret here):
+Build from a clean clone. The binary then knows its own commit and pins the workflows to it:
 
 ```sh
-gh variable set HEIMDALL_MODEL_BASE_URL --repo OWNER/REPO --body https://openrouter.ai/api/v1
-gh variable set HEIMDALL_MODEL --repo OWNER/REPO --body deepseek/deepseek-v4-flash
-gh variable set HEIMDALL_MODEL_PRICE_INPUT --repo OWNER/REPO --body 0.50          # USD per million tokens
-gh variable set HEIMDALL_MODEL_PRICE_CACHED_INPUT --repo OWNER/REPO --body 0.50
-gh variable set HEIMDALL_MODEL_PRICE_OUTPUT --repo OWNER/REPO --body 2.00
+git clone https://github.com/prathameshk421/Heimdall.git && cd Heimdall
+CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall
+./heimdall version          # prints the full commit SHA the workflows will pin
 ```
 
-The prices are required. Without them the cost cap cannot see the spend, and the proof step refuses to start.
+The CLI builds on Linux, macOS and Windows.
 
-## 2. Add the policy (1 minute)
+## 2. Run init (2 minutes)
 
-Add an `action` area to `heimdall.yaml` at the repository root. Heimdall reads the policy at the merge base, never from
-the pull request. An absent area means shadow mode with a $0.50 cap per PR.
+First the plan. It runs no command and writes no file:
+
+```sh
+./heimdall action init -repo OWNER/REPO -dir PATH/TO/CHECKOUT
+```
+
+Then apply it:
+
+```sh
+./heimdall action init -repo OWNER/REPO -dir PATH/TO/CHECKOUT -apply -model-key-stdin < PATH/TO/KEY_FILE
+```
+
+`init` prints one `done <step>` line per step and ends with `heimdall action init: done`. It does this:
+
+| Step | What happens |
+|---|---|
+| environment, branch policy | Creates the environment `heimdall`, which only the default branch may deploy to |
+| log key | Puts a new random 32-byte key in that environment. An existing key is kept |
+| model key | Sets the repository secret `HEIMDALL_MODEL_KEY` from stdin. The key goes to `gh` on stdin and is never printed |
+| model settings | Sets `HEIMDALL_MODEL_BASE_URL`, `HEIMDALL_MODEL` and the three `HEIMDALL_MODEL_PRICE_*` variables |
+| workflows | Writes `.github/workflows/heimdall-{trigger,proof,gate}.yml` into the checkout, pinned to the full Heimdall SHA |
+| policy | Writes a shadow-mode `heimdall.yaml` when the repository has none. An existing file is never changed |
+
+The default model is `deepseek/deepseek-v4-flash` on OpenRouter, at $0.50 / $0.50 / $2.00 per million input, cached
+input and output tokens. For another model, pass all of these (the cost cap needs the prices):
+
+```sh
+./heimdall action init -repo OWNER/REPO -dir PATH/TO/CHECKOUT -apply -model-key-stdin < KEY_FILE \
+  -model MODEL_ID -model-base-url https://your-endpoint/v1 \
+  -price-input 0.50 -price-cached-input 0.50 -price-output 2.00
+```
+
+Run `init` again at any time. It keeps the log key and leaves files that are up to date. Without admin it stops at the
+first step with `gh: Must have admin rights to Repository. (HTTP 403)`. A binary built from a checkout with local
+changes does not know its commit: commit or stash them, or pass `-ref <full SHA>`. Pin a full SHA, never a tag or a
+branch.
+
+The policy that `init` writes, which you can edit:
 
 ```yaml
-action: { mode: shadow, budget: { per_pr_usd: 0.50, monthly_usd: 50 } }
+action:
+  mode: shadow
+  budget:
+    per_pr_usd: 0.50
+    monthly_usd: 50
 ```
 
-## 3. Copy the three workflows (3 minutes)
+Heimdall reads the policy at the merge base, never from the pull request. An absent `action` area means shadow mode with
+a $0.50 cap per PR.
 
-Copy `heimdall-trigger.yml`, `heimdall-proof.yml` and `heimdall-gate.yml` from `deploy/action/workflows/` into
-`.github/workflows/` on the default branch. In each file, replace the `0000...` in every line marked `# heimdall-pin`
-with the full Heimdall commit SHA you install. Pin a full SHA, never a tag or a branch.
+## 3. Merge the files (your review)
 
-The gate must be on the default branch. GitHub starts `workflow_run` and `schedule` workflows only from there, and only
-default-branch jobs reach the environment `heimdall`. Merge the workflows through your usual review.
+In the checkout, commit the three workflows and `heimdall.yaml` on a branch and merge them through your usual review.
+The gate must be on the default branch: GitHub starts `workflow_run` and `schedule` workflows only from there, and only
+default-branch jobs reach the environment `heimdall`.
 
 The gate writes `refs/heimdall/state` and creates that ref on its first run. It needs `contents: write` for it, which
-the file already asks for. A token without that permission stops the gate before it posts anything.
+the workflow already asks for. Do not add steps to the proof job: any process that runs as the runner user can read
+the model key (ACTION_MODE 3.2 rule 4).
 
-Do not add steps to the proof job. Any process that runs as the runner user can read the model key (ACTION_MODE 3.2
-rule 4).
+<details>
+<summary>Without <code>-dir</code>: copy the workflows by hand</summary>
+
+Copy `heimdall-trigger.yml`, `heimdall-proof.yml` and `heimdall-gate.yml` from `deploy/action/workflows/` into
+`.github/workflows/`. In each file, replace the `0000...` in every line marked `# heimdall-pin` with the full Heimdall
+commit SHA you install.
+
+</details>
 
 ## 4. Open a pull request
 

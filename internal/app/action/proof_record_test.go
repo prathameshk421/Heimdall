@@ -128,3 +128,25 @@ func TestARecordedProofIsIdempotent(t *testing.T) {
 	require.Empty(t, second.Appended, "the log already holds this run's result")
 	require.Equal(t, 1, countOf(h.log(t), change.EventProofReported))
 }
+
+// TestTheSummaryListsTheProofRunsOwnFindings is the live run of Nov 27 (heimdall-fixture-pay #1): Heimdall's own
+// reviewer proved 3 findings that no comment had named. The headline said a finding is proven and the list said
+// "Nothing is proven", because a candidate without a log ref was dropped when the gate recorded the run.
+func TestTheSummaryListsTheProofRunsOwnFindings(t *testing.T) {
+	h := newHarness(t, policy.ActionModeEnforce)
+	h.run(t)
+
+	a := h.proofArtifact(proof.KindBlocked)
+	a.Counts = change.ProofCounts{In: 1, Proven: 1, Blocking: 1}
+	a.Candidates = []action.ArtifactCandidate{{File: "internal/pay/refund.go", First: 56, Last: 58, Severity: "high",
+		Claim: "The cap check compares one refund against the payment and never subtracts earlier refunds.",
+		Class: proof.ClassProven, Blocking: true, Why: "fails_twice_passes_fixed"}}
+	rec := h.recordProof(t, mustJSON(t, a))
+	require.True(t, rec.Accepted, rec.Refused)
+
+	h.run(t)
+	body := h.summary.body()
+	require.NotContains(t, body, "Nothing is proven.")
+	require.Contains(t, body, "never subtracts earlier refunds")
+	require.Contains(t, body, "internal/pay/refund.go:56-58")
+}
