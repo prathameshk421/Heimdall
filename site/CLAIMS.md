@@ -1,3 +1,19 @@
+# Claims on site/index.html (v10)
+
+v10 keeps every v9 claim and adds these. Paths are on `main`.
+
+| Claim | Source |
+|---|---|
+| 22.9 MiB static binary (linux/amd64, stripped) | `docs/product/SECURITY_AND_PERF_AUDIT.md:262` |
+| Lite VM: 128 MiB memory cap and half a CPU per container, read-only, all capabilities dropped | `deploy/lite/compose.yaml:22-34` |
+| Server idles at 42 MiB; whole stack not measured | `docs/product/STRATEGY.md:131` |
+| No inbound ports; Heimdall polls GitHub and Jira | `docs/SETUP.md:60` |
+| 3 of 3 findings proven on a live pull request; $0.20 and $0.23 per run | `docs/PROGRESS.md`, section "Open source, setup and polish" |
+| Test-integrity rules, levels and 5 language families; the cheat widget's rule ids | `internal/domain/testintegrity/doc.go` (Rules, API) |
+| Two weeks of shadow mode is the plan, then enforce | `docs/product/STRATEGY.md:72` |
+| "1 of 12" | The proof lab illustration (Figure 1), labelled as such |
+| Cheat widget diffs | Examples, labelled as such under the widget |
+
 # Claims on site/index.html (v9)
 
 v9 (27 November 2026) rebuilds the page from the v8 product page, kept as `site/archive/previous-v8.html`. Every

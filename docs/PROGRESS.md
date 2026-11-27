@@ -1,5 +1,14 @@
 # Heimdall progress
 
+## Website v10 "Temple" (Nov 27, 2026, branch `heimdall-build`)
+
+Owner's call: back to the v7 blue pillars in mist, cleaner condensed type, no Three.js, sell the outcomes. Built: the v7
+SVG art as the full hero with pointer depth and a check that draws itself; Sofia Sans Condensed, Sofia Sans and IBM
+Plex Mono; sections for who it is for, outcomes, the proof lab, a new "try to cheat the tests" widget, the footprint
+(22.9 MiB binary, 128 MiB Lite containers), the sandbox, results, demo, setup and questions. Contract:
+`site/DESIGN.md` section 7; claims: `site/CLAIMS.md` (v10). Checked at 1440 light and dark and 390 light: no sideways
+scroll, no console errors. **Not verified:** Safari, Firefox, reduced motion, slow-network LCP.
+
 ## Website v9 "Interlock" (Nov 27, 2026, branch `heimdall-build`)
 
 The owner asked for a stronger, interactive product page with Three.js, built from the Anthropic frontend-design article

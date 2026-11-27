@@ -296,3 +296,36 @@ The owner said v9 was still too plain and asked for light effects. Light now car
 Checked in the Claude Browser pane at 1440 x 900 and 390 x 844: no sideways scroll, no console errors, the idle,
 testing and locked light states, the lamp, the lab light and the close. Scanner unchanged (P0 0, P1 2, P2 1).
 **Not verified:** frame rate on a low-end GPU with bloom on, Safari and Firefox.
+
+## 7. v10 "Temple" (27 November 2026)
+
+The owner asked to bring back the v7 blue pillars in mist, keep the condensed type direction with cleaner type, drop the
+Three.js scene (it looked cheap), and sell the product from its outcomes. v9 is kept as `site/archive/previous-v9.html`
+(its scripts in `site/archive/js/`).
+
+### Direction
+
+- **Art:** the v7 illustration of the Gateposts mark as two fluted columns in periwinkle mist, now the full hero. Three
+  depth layers (far hills, the gate, near mist) move a few pixels with the pointer. The check of light draws itself
+  once on load, the halo breathes, the mist drifts. Plain SVG and CSS, no library. Reduced motion shows the final art.
+- **Palette:** the v7 tokens, light (periwinkle paper) and dark (indigo night). One rose accent marks only proven
+  things. The proof lab and the close are indigo night bands.
+- **Type:** Sofia Sans Condensed 700 and 300 for headings, sentence case; Sofia Sans for text; IBM Plex Mono for code
+  and test output. It keeps the tall, column-like letters of v9 without the shouting.
+- **Story:** who it is for (startups and maintainers with more agent pull requests than reviewers), what changes in the
+  repo (outcomes, each with a number and a source), the proof lab, honest tests, the footprint, the sandbox, results,
+  the demo, setup, questions.
+- **New moment:** "Try to cheat the tests". Seven moves an agent can make; each shows an example diff, the rule id and
+  its level from `internal/domain/testintegrity/doc.go`.
+
+### Scanner (`avoid-ai-design` 0.5.0)
+
+Final run: P0 0, P1 4, P2 1. C2 (indigo buttons) and SD9 (indigo night ground) are the owner's palette, so they stay.
+L11 flags "411", which opens section 2, not the hero. SD5 flags the light second line of each heading, the type system.
+C5 is the glow on lit lamps in the proof lab. We removed the gradient bar fill and the header blur.
+
+### Checks (Claude Browser pane, Chromium)
+
+1440 x 900 light and dark, 390 x 844 light: art renders, no sideways scroll, no failed requests, no console errors. The
+cheat widget switches moves. The proof lab is unchanged from v9. **Not verified:** Safari and Firefox, reduced motion,
+LCP on a slow network.
