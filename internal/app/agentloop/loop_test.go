@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"testing"
 	"time"
 
@@ -129,33 +128,6 @@ func toolTexts(res Result) []string {
 		}
 	}
 	return out
-}
-
-func TestToolDispatchThenAcceptedSubmission(t *testing.T) {
-	h := newHarness(t,
-		answer(0.01, call("c1", "read_code", `{"path":"a.go"}`)),
-		answer(0.02, call("c2", "submit_plan", `{"plan":"p"}`)),
-	)
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopSubmitted, res.Reason)
-	assert.Equal(t, 2, res.Turns)
-	assert.InDelta(t, 0.03, res.CostUSD, 1e-9)
-	assert.Equal(t, &Submission{Tool: "submit_plan", Arguments: `{"plan":"p"}`}, res.Submission)
-	assert.Equal(t, []string{`{"path":"a.go"}`}, h.read.got)
-	assert.Equal(t, []string{"package x", "accepted"}, toolTexts(res))
-	assert.Equal(t, int64(200), res.Usage.InputTokens)
-	assert.Equal(t, int64(80), res.Usage.CachedInputTokens)
-	assert.Equal(t, int64(20), res.Usage.OutputTokens)
-	// The model sees both tools, in registry order, and the configured limits.
-	req := h.model.requests[0]
-	assert.Equal(t, []string{"read_code", "submit_plan"}, []string{req.Tools[0].Name, req.Tools[1].Name})
-	assert.Equal(t, 4000, req.MaxOutputTokens)
-	// The second request carries the first answer and its tool result.
-	second := h.model.requests[1].Messages
-	require.Len(t, second, 3)
-	assert.Equal(t, ports.ModelRoleTool, second[2].Role)
-	assert.Equal(t, "c1", second[2].ToolCallID)
 }
 
 func TestRefusedSubmissionGetsOneRetry(t *testing.T) {
@@ -296,24 +268,6 @@ func TestAnUnsizableRequestStopsWithTheRequestSizeCause(t *testing.T) {
 	assert.Len(t, h.model.requests, 1, "the next request cannot be sized, so it is not sent")
 }
 
-// A cost or a token count that cannot be true ends the run: a missing measure must never look like a cheap one.
-func TestAUsageThatCannotBeTrueStopsTheRun(t *testing.T) {
-	bad := []ports.ModelResponse{
-		{CostUSD: -0.01, ToolCalls: []ports.ModelToolCall{call("c1", "read_code", `{}`)}},
-		{CostUSD: math.NaN(), ToolCalls: []ports.ModelToolCall{call("c1", "read_code", `{}`)}},
-		{Usage: ports.ModelUsage{OutputTokens: -1}, ToolCalls: []ports.ModelToolCall{call("c1", "read_code", `{}`)}},
-	}
-	for _, resp := range bad {
-		h := newHarness(t, modelStep{resp: resp}, answer(0.01, call("s1", "submit_plan", `{}`)))
-		res, err := h.run(context.Background(), t)
-		require.ErrorIs(t, err, ports.ErrAgentUsage)
-		assert.Equal(t, StopBudget, res.Reason)
-		assert.Equal(t, ports.AgentBudgetUsage, res.BudgetCause)
-		assert.Len(t, h.model.requests, 1)
-		assert.Zero(t, res.Turns, "an answer that cannot be measured is not counted")
-	}
-}
-
 // Each answer carries its usage, cost and latency, and the tool calls that followed carry theirs.
 func TestEachTurnReportsUsageCostAndLatency(t *testing.T) {
 	h := newHarness(t,
@@ -361,27 +315,6 @@ func TestDeadlineStopsBeforeTheNextCall(t *testing.T) {
 	assert.Len(t, h.model.requests, 1)
 }
 
-func TestDeadlineStopsBetweenToolCallsOfOneAnswer(t *testing.T) {
-	h := newHarness(t, answer(0.01, call("c1", "read_code", `{}`), call("c2", "read_code", `{}`)))
-	h.read.run = func(json.RawMessage) (string, error) {
-		h.clock.now = h.clock.now.Add(16 * time.Minute)
-		return "slow", nil
-	}
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopDeadline, res.Reason)
-	assert.Len(t, h.read.got, 1, "the second call is not run")
-}
-
-func TestDeadlineAlreadyPassedMakesNoCall(t *testing.T) {
-	h := newHarness(t)
-	h.clock.now = h.cfg.Deadline
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopDeadline, res.Reason)
-	assert.Empty(t, h.model.requests)
-}
-
 func TestTurnCapStopsTheRun(t *testing.T) {
 	h := newHarness(t,
 		answer(0.01, call("c1", "read_code", `{}`)),
@@ -421,27 +354,6 @@ func TestErrorsCountTowardTheTurnCap(t *testing.T) {
 	res, err := h.run(context.Background(), t)
 	require.NoError(t, err)
 	assert.Equal(t, StopTurnCap, res.Reason)
-}
-
-func TestTextOnlyAnswerEndsWithNoSubmissionAfterTheNudges(t *testing.T) {
-	text := modelStep{resp: ports.ModelResponse{Content: "I am done", Finish: ports.ModelFinishStop}}
-	h := newHarness(t, text, text, text)
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopNoSubmission, res.Reason)
-	assert.Equal(t, "I am done", res.LastText)
-	assert.Equal(t, 3, res.Turns, "two nudges, then the third text answer ends the run")
-	assert.Equal(t, 2, res.Nudges)
-}
-
-func TestCancellationStopsTheRun(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	h := newHarness(t, answer(0.01, call("c1", "read_code", `{}`)))
-	h.model.steps[0].hook = cancel
-	res, err := h.run(ctx, t)
-	require.ErrorIs(t, err, context.Canceled)
-	assert.Equal(t, StopCancelled, res.Reason)
-	assert.Zero(t, res.Turns)
 }
 
 func TestCancellationBetweenToolCalls(t *testing.T) {

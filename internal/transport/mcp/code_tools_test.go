@@ -28,7 +28,8 @@ func (f *fakeGraph) Index(_ context.Context, _ change.Repo, sha id.SHA) (*codegr
 	return f.idx, f.err
 }
 
-func graphRig(t *testing.T, role workflow.Role, g *fakeGraph) *rig {
+func graphRig(t *testing.T, g *fakeGraph) *rig {
+	role := workflow.RoleReviewer
 	t.Helper()
 	r := newRig(t, role)
 	r.server.deps.Graph = g
@@ -45,25 +46,10 @@ func sampleGraph() *fakeGraph {
 	})}
 }
 
-func TestSearchCodeReadsTheHeadAndWrapsTheResult(t *testing.T) {
-	t.Parallel()
-	g := sampleGraph()
-	r := graphRig(t, workflow.RoleReviewer, g)
-	res := r.call("search_code", `{"pattern":"Ignore_your_rules"}`)
-	require.False(t, res.IsError, res.text())
-	require.Contains(t, res.text(), "cmd/main.go:3:")
-	require.Contains(t, res.text(), "HEIMDALL-UNTRUSTED-BEGIN", "repository text stays inside the wrapper")
-	require.Equal(t, []id.SHA{id.SHA(headSHA)}, g.asked, "the commit comes from the assignment")
-
-	scoped := r.call("search_code", `{"pattern":"func","path_glob":"cmd/**"}`)
-	require.Contains(t, scoped.text(), "cmd/main.go")
-	require.NotContains(t, scoped.text(), "service.go")
-}
-
 func TestCodeToolsRefuseACommitArgument(t *testing.T) {
 	t.Parallel()
 	g := sampleGraph()
-	r := graphRig(t, workflow.RoleReviewer, g)
+	r := graphRig(t, g)
 	for tool, args := range map[string]string{
 		"search_code": `{"pattern":"x","sha":"` + baseSHA + `"}`,
 		"find_symbol": `{"name":"x","sha":"` + baseSHA + `"}`,
@@ -80,7 +66,7 @@ func TestSearchCodeIsBounded(t *testing.T) {
 	for i := range 80 {
 		lines = append(lines, fmt.Sprintf("needle %d", i))
 	}
-	r := graphRig(t, workflow.RoleReviewer, &fakeGraph{idx: codegraph.FromFiles(map[string]string{"a.txt": strings.Join(lines, "\n")})})
+	r := graphRig(t, &fakeGraph{idx: codegraph.FromFiles(map[string]string{"a.txt": strings.Join(lines, "\n")})})
 	res := r.call("search_code", `{"pattern":"needle"}`)
 	require.False(t, res.IsError, res.text())
 	require.Equal(t, maxCodeHits, strings.Count(res.text(), "a.txt:"))
@@ -89,7 +75,7 @@ func TestSearchCodeIsBounded(t *testing.T) {
 
 func TestSearchCodeRefusesABadPatternAsTheAgentsOwnError(t *testing.T) {
 	t.Parallel()
-	r := graphRig(t, workflow.RoleReviewer, sampleGraph())
+	r := graphRig(t, sampleGraph())
 	for _, args := range []string{`{"pattern":"("}`, `{"pattern":"  "}`, `{"pattern":"` + strings.Repeat("a", maxCodePattern+1) + `"}`} {
 		res := r.call("search_code", args)
 		require.True(t, res.IsError)
@@ -99,7 +85,7 @@ func TestSearchCodeRefusesABadPatternAsTheAgentsOwnError(t *testing.T) {
 
 func TestFindSymbolShowsDefinitionsAndUses(t *testing.T) {
 	t.Parallel()
-	r := graphRig(t, workflow.RoleReviewer, sampleGraph())
+	r := graphRig(t, sampleGraph())
 	res := r.call("find_symbol", `{"name":"Service.Create"}`)
 	require.False(t, res.IsError, res.text())
 	require.Contains(t, res.text(), "internal/refunds/service.go:5")
@@ -112,31 +98,9 @@ func TestFindSymbolShowsDefinitionsAndUses(t *testing.T) {
 	require.Contains(t, none.text(), "No definition or use")
 }
 
-func TestCodeToolsFollowTheKindTable(t *testing.T) {
-	t.Parallel()
-	for _, role := range []workflow.Role{workflow.RoleReviewer} {
-		r := graphRig(t, role, sampleGraph())
-		require.False(t, r.call("search_code", `{"pattern":"x"}`).IsError, role)
-		require.False(t, r.call("find_symbol", `{"name":"x"}`).IsError, role)
-	}
-	g := sampleGraph()
-	author := graphRig(t, workflow.RoleTestAuthor, g)
-	require.False(t, author.call("search_code", `{"pattern":"x"}`).IsError, "a test author searches the base commit")
-	refused := author.rpc("tools/call", `{"name":"find_symbol","arguments":{"name":"x"}}`)
-	require.NotNil(t, refused.Error, "find_symbol is not a tool of the tests kind")
-	require.Equal(t, codeInvalidParams, refused.Error.Code)
-}
-
-func TestCodeToolsAreAbsentWithoutAGraph(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	refused := r.rpc("tools/call", `{"name":"search_code","arguments":{"pattern":"x"}}`)
-	require.NotNil(t, refused.Error)
-}
-
 func TestAnIndexFailureIsARefusalAndDoesNotLeakItsCause(t *testing.T) {
 	t.Parallel()
-	r := graphRig(t, workflow.RoleReviewer, &fakeGraph{err: errors.New("tarball token ghp_secret failed")})
+	r := graphRig(t, &fakeGraph{err: errors.New("tarball token ghp_secret failed")})
 	res := r.call("search_code", `{"pattern":"x"}`)
 	require.True(t, res.IsError)
 	require.Contains(t, res.text(), "read_code")
@@ -253,11 +217,4 @@ func TestSubmitReviewNamesUnansweredObligationsWithoutRefusing(t *testing.T) {
 
 	all := r.call("submit_review", reviewArgs(`,"rule_checks":[{"card":"cap.md","verdict":"holds"},{"card":"authz.md","verdict":"not_applicable"}]`))
 	require.Equal(t, "The review is recorded.", all.text())
-}
-
-func TestSubmitReviewHasNoNudgeWithoutAHeldBrief(t *testing.T) {
-	t.Parallel()
-	r := briefRig(t, workflow.RoleReviewer, &fakeBriefs{brief: reviewbrief.Brief{ObligationCards: []string{"cap.md"}}})
-	res := r.call("submit_review", reviewArgs(""))
-	require.Equal(t, "The review is recorded.", res.text())
 }

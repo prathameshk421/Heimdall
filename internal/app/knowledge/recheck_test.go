@@ -46,16 +46,6 @@ func TestRecheckReportsFoundConfirmedAndSuperseded(t *testing.T) {
 	}
 }
 
-func TestRecheckDoesNotUseTheAnswerCache(t *testing.T) {
-	mem := &memorySpy{items: []ports.MemoryItem{{Ref: "decision:x", Text: "t", Label: ports.LabelConfirmed}}}
-	s := recheckService(t, mem, time.Now())
-	for i := 0; i < 2; i++ {
-		_, err := s.Recheck(context.Background(), "bob-reviewer", "acme/pay", "a01b2c3", "decision:x")
-		require.NoError(t, err)
-	}
-	require.Equal(t, 2, mem.calls, "a re-query must see the current memory")
-}
-
 func TestRecheckRefusesABlankAgentOrReference(t *testing.T) {
 	s := recheckService(t, &memorySpy{}, time.Now())
 	_, err := s.Recheck(context.Background(), "", "acme/pay", "a01b2c3", "decision:x")

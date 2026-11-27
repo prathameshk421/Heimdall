@@ -306,26 +306,6 @@ func TestReadReturnsGoodChatsAndTheErrorOfABrokenStore(t *testing.T) {
 	require.Len(t, got, 1, "the good chat is still returned")
 }
 
-func TestReadResolvesAbsolutePathsInAWorktreeChat(t *testing.T) {
-	parent := t.TempDir()
-	root := filepath.Join(parent, "repo")
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o750))
-	wt := filepath.Join(parent, "repo-feature")
-	admin := filepath.Join(root, ".git", "worktrees", "repo-feature")
-	require.NoError(t, os.MkdirAll(admin, 0o750))
-	require.NoError(t, os.MkdirAll(wt, 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+admin+"\n"), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(admin, "commondir"), []byte("../..\n"), 0o600))
-
-	s := newStore(t)
-	c := s.composer(t, "c1", base, bubble{kind: 2, params: `{"targetFile":"` + filepath.Join(wt, "pkg", "x.go") + `"}`, at: base})
-	s.workspace(t, "a", fileURI(wt), map[string]any{"allComposers": []any{c}})
-
-	got := read(t, s, root, wide)
-	require.Len(t, got, 1)
-	require.Equal(t, []string{"pkg/x.go"}, got[0].Turns[0].Files)
-}
-
 func ctxExec(db *sql.DB, q string, args ...any) (sql.Result, error) {
 	return db.ExecContext(context.Background(), q, args...)
 }

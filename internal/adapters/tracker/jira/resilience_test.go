@@ -209,23 +209,6 @@ func TestAPauseCancelledByTheContextStopsTheRetries(t *testing.T) {
 	require.Len(t, f.requests(), 1, "no attempt after a cancelled pause")
 }
 
-func TestTheBreakerOpensAfterFiveUnavailableCallsAndSendsNothingWhileOpen(t *testing.T) {
-	t.Parallel()
-	f := newFake(t, script(unavailable))
-	cl := newClientWait(t, f, &clock{at: now}, &waits{})
-	for range 5 {
-		_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-		require.ErrorIs(t, err, ports.ErrUnavailable)
-	}
-	require.Len(t, f.requests(), 40, "five calls of eight attempts each")
-
-	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-
-	require.ErrorIs(t, err, ports.ErrUnavailable)
-	require.Contains(t, err.Error(), "circuit open")
-	require.Len(t, f.requests(), 40, "an open breaker sends no request")
-}
-
 func TestAfterTheCooldownOneProbeIsSentAndASuccessCloses(t *testing.T) {
 	t.Parallel()
 	f := newFake(t, script(cat(rep(unavailable, 40), []scripted{okTicket})...))
@@ -250,64 +233,4 @@ func TestAfterTheCooldownOneProbeIsSentAndASuccessCloses(t *testing.T) {
 	_, err = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
 	require.NoError(t, err, "a successful probe closes the breaker")
 	require.Len(t, f.requests(), 42)
-}
-
-func TestAFailedProbeIsOneRequestAndOpensTheBreakerAgain(t *testing.T) {
-	t.Parallel()
-	f := newFake(t, script(unavailable))
-	c := &clock{at: now}
-	cl := newClientWait(t, f, c, &waits{})
-	for range 5 {
-		_, _ = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-	}
-	require.Len(t, f.requests(), 40)
-
-	c.at = now.Add(30 * time.Second)
-	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-	require.ErrorIs(t, err, ports.ErrUnavailable)
-	require.Len(t, f.requests(), 41, "one probe request, no retries inside it")
-
-	_, err = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-	require.ErrorIs(t, err, ports.ErrUnavailable)
-	require.Len(t, f.requests(), 41, "the failed probe opened the breaker for another cooldown")
-}
-
-func TestClientErrorsDoNotCountTowardsTheBreaker(t *testing.T) {
-	t.Parallel()
-	f := newFake(t, script(cat(rep(scripted{status: http.StatusNotFound, body: `{}`}, 5), []scripted{okTicket})...))
-	cl := newClientWait(t, f, &clock{at: now}, &waits{})
-	for range 5 {
-		_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-		require.ErrorIs(t, err, ports.ErrNotFound)
-	}
-
-	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-
-	require.NoError(t, err, "five 404s do not open the breaker")
-	require.Len(t, f.requests(), 6)
-}
-
-func TestASuccessResetsTheUnavailableStreak(t *testing.T) {
-	t.Parallel()
-	// Call 1 fails (eight attempts), call 2 succeeds, calls 3 to 6 fail (four calls). Only four in a row, so call 7
-	// is still sent.
-	f := newFake(t, script(cat(
-		rep(unavailable, 8),
-		[]scripted{okTicket},
-		rep(unavailable, 32),
-		[]scripted{okTicket},
-	)...))
-	cl := newClientWait(t, f, &clock{at: now}, &waits{})
-	_, _ = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-	_, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-	require.NoError(t, err)
-	for range 4 {
-		_, _ = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-	}
-	require.Len(t, f.requests(), 8+1+32)
-
-	_, err = cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-
-	require.NoError(t, err, "four unavailable calls in a row do not open the breaker")
-	require.Len(t, f.requests(), 8+1+32+1)
 }

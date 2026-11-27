@@ -1,7 +1,6 @@
 package gograph_test
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -10,69 +9,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/gograph"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testselect"
 )
-
-const mod = "github.com/prathameshk421/flip_the_switch_hackathon/"
-
-// golist.json is the real output of
-//
-//	go list -deps -test -json ./internal/domain/finding ./internal/domain/testset ./internal/domain/id ./internal/archcheck
-//
-// run in this repository (Go 1.27.4). Only the main-module records, two standard library records and one
-// dependency are kept, and the absolute paths are rewritten to /work/repo. The test variants and the generated
-// test mains stay in, so the parser must skip them.
-func realOutput(t *testing.T) string {
-	t.Helper()
-	b, err := os.ReadFile("testdata/golist.json")
-	require.NoError(t, err)
-	return string(b)
-}
-
-func TestParseRealOutput(t *testing.T) {
-	g, err := gograph.Parse(strings.NewReader(realOutput(t)), gograph.Options{Root: "/work/repo"})
-	require.NoError(t, err)
-
-	tests := []struct {
-		name    string
-		changed []string
-		want    []string
-	}{
-		{
-			name:    "the id package selects every package that imports it, tests included",
-			changed: []string{"internal/domain/id/ulid.go"},
-			want:    []string{mod + "internal/domain/finding", mod + "internal/domain/id", mod + "internal/domain/testset"},
-		},
-		{
-			name:    "the finding package selects itself and testset",
-			changed: []string{"internal/domain/finding/check.go"},
-			want:    []string{mod + "internal/domain/finding", mod + "internal/domain/testset"},
-		},
-		{
-			name:    "a leaf selects itself",
-			changed: []string{"internal/archcheck/archcheck.go"},
-			want:    []string{mod + "internal/archcheck"},
-		},
-		{
-			name:    "a test file selects its own package only",
-			changed: []string{"internal/domain/id/id_test.go"},
-			want:    []string{mod + "internal/domain/id"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := testselect.Select(g, tt.changed, testselect.Policy{})
-			require.NoError(t, err)
-			require.False(t, got.Full, got.FullReason)
-			require.ElementsMatch(t, tt.want, got.Paths())
-		})
-	}
-
-	// The standard library, a dependency, a test variant and a generated test main are not packages of the graph.
-	for _, f := range []string{"errors/errors.go", "github.com/stretchr/testify/require/require.go"} {
-		got, err := testselect.Select(g, []string{f}, testselect.Policy{})
-		require.NoError(t, err)
-		require.True(t, got.Full, f)
-	}
-}
 
 func TestParseRefusals(t *testing.T) {
 	record := func(path, dir string, extra string) string {

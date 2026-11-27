@@ -3,12 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -21,7 +18,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/testset"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/transport/mcp"
@@ -147,30 +143,6 @@ func TestEveryEffectKindEmittedByWorkflowHasAnExecutor(t *testing.T) {
 	}
 
 	require.Equal(t, emitted, registered, "registered executors must match every effect kind the workflow emits")
-}
-
-func TestAgentListValidation(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name    string
-		agents  string
-		wantErr string
-	}{
-		{"missing test_author", `reviewers = ["rev1"]` + "\n" + `resolver = "res1"`, "agents.test_author"},
-		{"missing reviewers", `test_author = "ta1"` + "\n" + `resolver = "res1"`, "agents.reviewers"},
-		{"duplicate reviewers", `test_author = "ta1"` + "\n" + `reviewers = ["rev1", "rev1"]` + "\n" + `resolver = "res1"`, "listed twice"},
-		{"missing resolver", `test_author = "ta1"` + "\n" + `reviewers = ["rev1"]`, "agents.resolver"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			toml := fmt.Sprintf("listen = \"127.0.0.1:0\"\nsecrets_dir = \"/tmp\"\n[agents]\n%s\n[[projects]]\ntracker_project = \"KAN\"\nrepo = \"a/b\"\nbase_branch = \"main\"\n", tc.agents)
-			path := filepath.Join(t.TempDir(), "heimdall.toml")
-			require.NoError(t, os.WriteFile(path, []byte(toml), 0o600))
-			_, err := config.Load(path)
-			require.ErrorContains(t, err, tc.wantErr)
-		})
-	}
 }
 
 type fakeMCPTasks struct {

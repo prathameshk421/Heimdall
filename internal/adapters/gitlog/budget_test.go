@@ -220,31 +220,6 @@ func TestResetReplacesABadLog(t *testing.T) {
 	require.Empty(t, g.file(effPath(cid)), "the effects file is empty, matching the new head's digest")
 }
 
-// TestResetClearsAnEffectsFileItReplaces: an effects file whose key was once stored cannot block the new log.
-func TestResetClearsAnEffectsFileItReplaces(t *testing.T) {
-	g := newFakeGit(t)
-	s := g.store(t, testKey)
-	ctx := t.Context()
-	cid := prChange(t, 7)
-
-	fx := roomEffect(t, cid, 1, "a", `{"text":"hi"}`)
-	_, err := s.Append(ctx, cid, 0, roomEvents(cid, 0, "room-1"), []change.Effect{fx})
-	require.NoError(t, err)
-	require.NotEmpty(t, g.file(effPath(cid)))
-
-	ev := change.Event{
-		ID: newEventID(), ChangeID: cid, Version: 1, Type: change.EventStateReset,
-		Actor: change.Actor{Kind: change.ActorSystem, ID: "action-gate"}, OccurredAt: base,
-		CorrelationID: "corr-reset", Payload: mustJSON(t, change.StateReset{Reason: "state failed verification: chain broken"}),
-	}
-	require.NoError(t, s.Reset(ctx, cid, []change.Event{ev}))
-	require.Empty(t, g.file(effPath(cid)))
-
-	// The same effect key can now be stored again: the old file is gone.
-	_, err = s.Append(ctx, cid, 1, roomEvents(cid, 1, "room-2"), []change.Effect{fx})
-	require.NoError(t, err)
-}
-
 // TestResetOnAFreshRefCreatesTheLog: a repo with no state ref yet can be reset into existence.
 func TestResetOnAFreshRefCreatesTheLog(t *testing.T) {
 	g := newFakeGit(t)

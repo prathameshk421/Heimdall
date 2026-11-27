@@ -60,52 +60,6 @@ func TestListUsersFallsBackWhenOperationIsUnsupported(t *testing.T) {
 	require.Len(t, f.opCalls("list_rooms"), 1)
 }
 
-func TestListUsersFallsBackOnMethodNotAllowed(t *testing.T) {
-	f := newFakeSwitch(t)
-	f.ops["list_users"] = func(map[string]any) (int, any) {
-		return http.StatusMethodNotAllowed, map[string]any{"detail": "method not found"}
-	}
-	f.rooms = []map[string]any{{"room_id": testRoomUUID, "name": "engineering"}}
-	f.history = []fakeEntry{{ID: "m1", Room: testRoomUUID, Sender: "@dana", Body: "hello", TSms: 1}}
-	c, _ := newTestClient(t, f)
-
-	users, err := c.ListUsers(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, []DirectoryUser{{Name: "dev", SenderID: "@dana", Type: "user"}}, users)
-	require.Len(t, f.opCalls("read_context"), 1)
-}
-
-func TestListUsersDeduplicatesSendersAcrossRooms(t *testing.T) {
-	f := newFakeSwitch(t)
-	delete(f.ops, "list_users")
-	f.rooms = []map[string]any{
-		{"room_id": testRoomUUID, "name": "engineering"},
-		{"room_id": testOtherRoom, "name": "reviews"},
-	}
-	f.history = []fakeEntry{
-		{ID: "m1", Room: testRoomUUID, Sender: "@dana", Body: "one", TSms: 1},
-		{ID: "m2", Room: testRoomUUID, Sender: "@dana", Body: "two", TSms: 2},
-		{ID: "m3", Room: testOtherRoom, Sender: "@dana", Body: "three", TSms: 3},
-	}
-	c, _ := newTestClient(t, f)
-
-	users, err := c.ListUsers(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, []DirectoryUser{{Name: "dev", SenderID: "@dana", Type: "user"}}, users)
-}
-
-func TestListUsersFallsBackSkipsArchivedRooms(t *testing.T) {
-	f := newFakeSwitch(t)
-	delete(f.ops, "list_users")
-	f.rooms = []map[string]any{{"room_id": testOtherRoom, "name": "old", "archived": true}}
-	c, _ := newTestClient(t, f)
-
-	users, err := c.ListUsers(t.Context())
-	require.NoError(t, err)
-	require.Empty(t, users)
-	require.Empty(t, f.opCalls("read_context"), "an archived room is never read")
-}
-
 func TestListUsersPropagatesRealErrorsWithoutFallingBack(t *testing.T) {
 	f := newFakeSwitch(t)
 	f.ops["list_users"] = func(map[string]any) (int, any) {

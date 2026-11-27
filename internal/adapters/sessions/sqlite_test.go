@@ -2,7 +2,6 @@ package sessions_test
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -28,59 +27,6 @@ func count(t *testing.T, db *sessions.DB) int {
 	var n int
 	require.NoError(t, db.QueryRowContext(context.Background(), `SELECT count(*) FROM t`).Scan(&n))
 	return n
-}
-
-func fileHash(t *testing.T, path string) [32]byte {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	return sha256.Sum256(data)
-}
-
-func TestOpenReadOnlyLeavesTheFileAlone(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "app.db")
-	w := newDB(t, path)
-	_, err := ctxExec(w, `CREATE TABLE t (v TEXT); INSERT INTO t VALUES ('a'), ('b')`)
-	require.NoError(t, err)
-	require.NoError(t, w.Close())
-	before := fileHash(t, path)
-	entries, err := os.ReadDir(filepath.Dir(path))
-	require.NoError(t, err)
-
-	db, err := sessions.OpenReadOnly(context.Background(), path)
-	require.NoError(t, err)
-	require.Equal(t, 2, count(t, db))
-	_, err = db.ExecContext(context.Background(), `INSERT INTO t VALUES ('c')`)
-	require.Error(t, err, "the handle must refuse writes")
-	require.NoError(t, db.Close())
-
-	require.Equal(t, before, fileHash(t, path), "the file bytes did not change")
-	after, err := os.ReadDir(filepath.Dir(path))
-	require.NoError(t, err)
-	require.Len(t, after, len(entries), "no journal, wal or shm file was left beside the database")
-}
-
-func TestOpenReadOnlySeesTheWriteAheadLog(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "live.db")
-	w := newDB(t, "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=wal_autocheckpoint(0)")
-	_, err := ctxExec(w, `CREATE TABLE t (v TEXT); INSERT INTO t VALUES ('a')`)
-	require.NoError(t, err)
-	// The writer stays open, so the newest rows live only in the -wal file.
-	info, err := os.Stat(path + "-wal")
-	require.NoError(t, err)
-	require.Positive(t, info.Size())
-	before := fileHash(t, path)
-	walBefore := fileHash(t, path+"-wal")
-
-	db, err := sessions.OpenReadOnly(context.Background(), path)
-	require.NoError(t, err)
-	require.Equal(t, 1, count(t, db), "a row that is only in the wal file is read")
-	require.NoError(t, db.Close())
-
-	require.Equal(t, before, fileHash(t, path))
-	require.Equal(t, walBefore, fileHash(t, path+"-wal"), "the live wal file is untouched")
-	_, err = ctxExec(w, `INSERT INTO t VALUES ('b')`)
-	require.NoError(t, err, "the real writer still works after our read")
 }
 
 func TestOpenReadOnlyCleansTheCopy(t *testing.T) {

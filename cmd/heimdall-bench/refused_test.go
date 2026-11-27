@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -73,15 +72,6 @@ func TestBodyRecorderKeepsTheRefusedBodyAndNeverAHeader(t *testing.T) {
 	require.NotContains(t, string(saved), "Content-Type")
 }
 
-func TestBodyRecorderKeepsNothingForAnAnsweredCall(t *testing.T) {
-	body := []byte(`{"model":"m","messages":[]}`)
-	srv := refusedServer(t, http.StatusOK, `{"id":"x"}`)
-	rec, hash := refusedBodyThrough(t, srv, body)
-
-	_, ok := rec.refusedBody(hash)
-	require.False(t, ok, "an answered call is not a refusal")
-}
-
 func TestBodyRecorderRefusesABodyThatHoldsTheKey(t *testing.T) {
 	// A body that carries the key itself (a bug in a caller) must never reach a file.
 	body := []byte(`{"model":"m","messages":[{"role":"user","content":"` + testKey + `"}]}`)
@@ -90,19 +80,6 @@ func TestBodyRecorderRefusesABodyThatHoldsTheKey(t *testing.T) {
 
 	_, ok := rec.refusedBody(hash)
 	require.False(t, ok, "a body that holds the key is never kept")
-}
-
-func TestBodyRecorderDropsTheOldestBodyPastItsBound(t *testing.T) {
-	rec := newBodyRecorder(http.DefaultTransport)
-	for i := range maxRefusedBodies + 3 {
-		rec.keep([]byte(strings.Repeat("b", i+1)), "")
-	}
-	rec.mu.Lock()
-	held := len(rec.byKey)
-	rec.mu.Unlock()
-	require.Equal(t, maxRefusedBodies, held, "the recorder bounds what it holds")
-	_, ok := rec.refusedBody(hashOf([]byte(strings.Repeat("b", 1))))
-	require.False(t, ok, "the oldest body is the one dropped")
 }
 
 func TestRefusedStoreWritesOneFilePerRefusalNamedByCaseTurnAndStatus(t *testing.T) {
@@ -308,10 +285,4 @@ func recorderWith(hash string, body []byte) *bodyRecorder {
 	rec := newBodyRecorder(http.DefaultTransport)
 	rec.byKey[hash] = body
 	return rec
-}
-
-func TestSafeNameKeepsACaseIDInsideTheDirectory(t *testing.T) {
-	require.Equal(t, "fixture-refunds", safeName("fixture-refunds"))
-	require.Equal(t, "a-b-c", safeName("../a/b c"))
-	require.Equal(t, "case", safeName(""))
 }

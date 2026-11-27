@@ -21,7 +21,7 @@ func TestBootAfterDowntimeAppendsMissedPushAndCIOnce(t *testing.T) {
 	r.prs.prs[testRepo] = []ports.PR{pr}
 	changeID := id.ChangeID("PAY-10")
 	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
+	r.seedInitialPROpened(changeID, 10)
 	_, err := r.syncer.SyncOnce(context.Background())
 	require.NoError(t, err)
 

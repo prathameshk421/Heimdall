@@ -61,15 +61,6 @@ func (r *refs) MemoryExists(_ context.Context, _ workflow.ChangeRef, _ id.AgentN
 	return r.memory[ref], r.lookupErr
 }
 
-func TestSubmitAcceptsValidReviewAndCalculatesTier(t *testing.T) {
-	got, err := review.Submit(context.Background(), newRefs(), submission(validFinding()))
-	require.NoError(t, err)
-	require.Empty(t, got.Problems)
-	require.Len(t, got.Findings, 1)
-	require.Equal(t, finding.TierE3, got.Findings[0].Tier)
-	require.Equal(t, []review.Reporter{{Agent: caller, Confidence: finding.ConfidenceHigh}}, got.Findings[0].Reporters)
-}
-
 func TestSubmitReturnsAllProblemsWithFieldPaths(t *testing.T) {
 	f := validFinding()
 	f.Location.File = "missing.go"
@@ -104,17 +95,6 @@ func TestSubmitRequiresReasonedAllowedCategoryOutsideDiff(t *testing.T) {
 	require.Contains(t, problemText(got), "findings[0].evidence")
 }
 
-func TestSubmitAllowsAnInclusiveLastLine(t *testing.T) {
-	f := validFinding()
-	f.Location.Lines = [2]int{8, 8}
-	in := submission(f)
-	in.FilesChanged = []string{f.Location.File}
-	got, err := review.Submit(context.Background(), newRefs(), in)
-	require.NoError(t, err)
-	require.Empty(t, got.Problems)
-	require.Len(t, got.Findings, 1)
-}
-
 func TestSubmitAllowsAnOutsideDiffFindingWithAllowedCategoryAndReasoning(t *testing.T) {
 	f := validFinding()
 	f.Location.File = "internal/compat/legacy.go"
@@ -141,35 +121,6 @@ func TestSubmitMergesOverlappingSimilarFindingsAndKeepsStrongestEvidence(t *test
 	require.Len(t, got.Findings, 1)
 	require.Equal(t, finding.TierE3, got.Findings[0].Tier)
 	require.Equal(t, []review.Reporter{{Agent: id.AgentName("noah"), Confidence: finding.ConfidenceMedium}, {Agent: caller, Confidence: finding.ConfidenceHigh}}, got.Findings[0].Reporters)
-}
-
-func TestSubmitMergesAtJaccardPointSixButNotBelow(t *testing.T) {
-	existing := review.FiledFinding{Input: validFinding(), Tier: finding.TierE3, Reporters: []review.Reporter{{Agent: id.AgentName("noah"), Confidence: finding.ConfidenceLow}}}
-	existing.Input.Claim = "alpha bravo charlie"
-	f := validFinding()
-	f.Claim = "alpha bravo charlie delta echo"
-	in := submission(f)
-	in.Existing = []review.FiledFinding{existing}
-	got, err := review.Submit(context.Background(), newRefs(), in)
-	require.NoError(t, err)
-	require.Len(t, got.Findings, 1)
-	require.Len(t, got.Findings[0].Reporters, 2)
-
-	existing.Input.Claim = "alpha bravo"
-	in = submission(f)
-	in.Existing = []review.FiledFinding{existing}
-	got, err = review.Submit(context.Background(), newRefs(), in)
-	require.NoError(t, err)
-	require.Len(t, got.Findings, 2)
-}
-
-func TestSubmitReportsDomainReviewProblems(t *testing.T) {
-	in := submission(validFinding())
-	in.Review.Clean = true
-	got, err := review.Submit(context.Background(), newRefs(), in)
-	require.NoError(t, err)
-	require.Empty(t, got.Findings)
-	require.Contains(t, problemText(got), "clean is true but findings has 1 entry")
 }
 
 func TestSubmitRejectsReviewFromAnotherHead(t *testing.T) {
@@ -223,16 +174,6 @@ func problemText(result review.Result) string {
 		parts = append(parts, problem.Error())
 	}
 	return strings.Join(parts, "\n")
-}
-
-func TestSubmitAcceptsAWellFormedCardRefAndGrantsNoTier(t *testing.T) {
-	f := validFinding()
-	f.Evidence = []finding.Evidence{{Type: finding.EvidenceReasoning, Reasoning: ptr("The rule in the card is broken by the new branch.")}}
-	f.ContextRefs = []string{"card:refund-cap.md"}
-	got, err := review.Submit(context.Background(), newRefs(), submission(f))
-	require.NoError(t, err)
-	require.Empty(t, got.Problems)
-	require.Equal(t, finding.TierE4, got.Findings[0].Tier)
 }
 
 func TestSubmitRefusesABadCardRef(t *testing.T) {

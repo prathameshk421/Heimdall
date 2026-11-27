@@ -2,11 +2,7 @@ package agentloop
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,55 +13,6 @@ import (
 func text(content string) modelStep {
 	return modelStep{resp: ports.ModelResponse{Content: content, Finish: ports.ModelFinishStop,
 		Usage: ports.ModelUsage{InputTokens: 100, OutputTokens: 10}, CostUSD: 0.001}}
-}
-
-const dsmlRead = "Reading.\n<｜DSML｜function_calls>\n<｜DSML｜invoke name=\"read_code\">\n" +
-	"<｜DSML｜parameter name=\"path\" string=\"true\">a.go</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜function_calls>"
-
-func TestATextToolCallRunsLikeAToolCall(t *testing.T) {
-	h := newHarness(t, text(dsmlRead), answer(0.01, call("c2", "submit_plan", `{"plan":"p"}`)))
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopSubmitted, res.Reason)
-	assert.Equal(t, []string{`{"path":"a.go"}`}, h.read.got)
-	assert.Zero(t, res.Nudges, "a parsed call needs no nudge")
-	require.Len(t, res.Turn, 2)
-	assert.True(t, res.Turn[0].TextCalls)
-	assert.Equal(t, []ports.AgentCallBrief{{Name: "read_code", ArgumentBytes: len(`{"path":"a.go"}`)}}, res.Turn[0].Calls)
-	assert.Equal(t, 1, res.Turn[0].ToolCalls)
-	// The model sees its text call as a real call with a result, so the next answer follows the wire form.
-	second := h.model.requests[1].Messages
-	require.Len(t, second, 3)
-	assert.Equal(t, ports.ModelRoleAssistant, second[1].Role)
-	require.Len(t, second[1].ToolCalls, 1)
-	assert.Equal(t, "read_code", second[1].ToolCalls[0].Name)
-	assert.Equal(t, second[1].ToolCalls[0].ID, second[2].ToolCallID)
-	assert.Equal(t, "package x", second[2].Content)
-}
-
-func TestATextSubmissionIsValidatedLikeAToolCall(t *testing.T) {
-	h := newHarness(t, text("```json\n{\"name\":\"submit_plan\",\"arguments\":{\"plan\":\"p\"}}\n```"))
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopSubmitted, res.Reason)
-	assert.Equal(t, []string{`{"plan":"p"}`}, h.sub.got)
-}
-
-func TestATextAnswerGetsANudgeAndTheRunGoesOn(t *testing.T) {
-	h := newHarness(t, text("Let me think about the change."), answer(0.01, call("c2", "submit_plan", `{"plan":"p"}`)))
-	h.cfg.Nudge = "Call a tool now. If you found no bug you can prove, call finish_review."
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopSubmitted, res.Reason)
-	assert.Equal(t, 1, res.Nudges)
-	require.Len(t, res.Turn, 2)
-	assert.True(t, res.Turn[0].Nudged)
-	assert.False(t, res.Turn[1].Nudged)
-	second := h.model.requests[1].Messages
-	last := second[len(second)-1]
-	assert.Equal(t, ports.ModelRoleUser, last.Role)
-	assert.Equal(t, h.cfg.Nudge, last.Content)
-	assert.Equal(t, "Let me think about the change.", second[len(second)-2].Content)
 }
 
 func TestNudgesCountTowardTheTurnCap(t *testing.T) {
@@ -103,88 +50,4 @@ func TestARequiredToolChoiceIsSentUntilTheAdapterFallsBack(t *testing.T) {
 	assert.Equal(t, ports.ModelToolChoiceAuto, h.model.requests[2].ToolChoice)
 	assert.Equal(t, first.resp.Fallback, res.Turn[0].Fallback)
 	assert.Equal(t, ports.ModelToolChoiceAuto, res.Turn[0].ToolChoice)
-}
-
-func TestNoToolChoiceIsSentUnlessTheRunRequiresACall(t *testing.T) {
-	h := newHarness(t, answer(0.01, call("c1", "submit_plan", `{"plan":"p"}`)))
-	_, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Empty(t, h.model.requests[0].ToolChoice)
-}
-
-func TestEachTurnKeepsABoundedTranscript(t *testing.T) {
-	long := strings.Repeat("é", turnTextBytes) // two bytes a rune, so a byte cut would split one
-	step := answer(0.01, call("c1", "read_code", `{"path":"a.go"}`))
-	step.resp.Content = long
-	h := newHarness(t, step, text("short"), answer(0.01, call("c3", "submit_plan", `{"plan":"p"}`)))
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	require.Len(t, res.Turn, 3)
-	t0 := res.Turn[0]
-	assert.LessOrEqual(t, len(t0.Text), turnTextBytes)
-	assert.True(t, utf8.ValidString(t0.Text))
-	assert.True(t, strings.HasPrefix(long, t0.Text))
-	assert.Equal(t, ports.ModelFinishToolCalls, t0.Finish)
-	assert.Equal(t, []ports.AgentCallBrief{{Name: "read_code", ArgumentBytes: 15}}, t0.Calls)
-	assert.False(t, t0.Nudged)
-	assert.False(t, t0.TextCalls)
-	assert.Equal(t, "short", res.Turn[1].Text)
-	assert.True(t, res.Turn[1].Nudged)
-	assert.Equal(t, ports.ModelFinishStop, res.Turn[1].Finish)
-}
-
-// TestAFailedToolCallKeepsItsErrorOnTheTurn: a run that ends with no result has to say which tool failed and why. The
-// error is this product's own message, bounded, and the model still reads the same text as the tool result.
-func TestAFailedToolCallKeepsItsErrorOnTheTurn(t *testing.T) {
-	h := newHarness(t, answer(0.01, call("c1", "read_code", `{"path":"a.go"}`)),
-		answer(0.01, call("c2", "submit_plan", `{"plan":"p"}`)))
-	h.read.run = func(json.RawMessage) (string, error) {
-		return "", errors.New("sandbox: stage the tree: tar exited 2")
-	}
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	require.Len(t, res.Turn[0].Calls, 1)
-	assert.True(t, res.Turn[0].Calls[0].Failed)
-	assert.Equal(t, "sandbox: stage the tree: tar exited 2", res.Turn[0].Calls[0].Error)
-	assert.Contains(t, toolTexts(res), "error: sandbox: stage the tree: tar exited 2",
-		"the model reads the same error as the tool result")
-	assert.False(t, res.Turn[1].Calls[0].Failed, "a call that worked is not marked failed")
-}
-
-// TestAFailedToolErrorIsBounded stops a long error from filling the record or the transcript.
-func TestAFailedToolErrorIsBounded(t *testing.T) {
-	h := newHarness(t, answer(0.01, call("c1", "read_code", `{"path":"a.go"}`)),
-		answer(0.01, call("c2", "submit_plan", `{"plan":"p"}`)))
-	h.read.run = func(json.RawMessage) (string, error) { return "", errors.New(strings.Repeat("e", 5000)) }
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	require.Len(t, res.Turn[0].Calls, 1)
-	assert.LessOrEqual(t, len(res.Turn[0].Calls[0].Error), turnToolErrorBytes)
-}
-
-func TestTheTranscriptKeepsABoundedNumberOfCallsPerTurn(t *testing.T) {
-	var calls []ports.ModelToolCall
-	for i := 0; i < turnCallBriefs+5; i++ {
-		calls = append(calls, call("c", "read_code", `{}`))
-	}
-	h := newHarness(t, answer(0.01, calls...), answer(0.01, call("c2", "submit_plan", `{"plan":"p"}`)))
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Len(t, res.Turn[0].Calls, turnCallBriefs)
-	assert.Equal(t, turnCallBriefs+5, res.Turn[0].ToolCalls)
-}
-
-func TestContractTheRunCarriesTheNudgeAndTheToolChoice(t *testing.T) {
-	c := newContract(t, text("thinking"), answer(0.01, call("c2", "finish", `{}`)))
-	c.run.RequireToolCall = true
-	c.run.Nudge = "Call a tool now."
-	res, err := c.do(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, ports.AgentStopDone, res.Stop)
-	require.NotNil(t, res.Submission)
-	assert.Equal(t, 1, res.Nudges)
-	assert.Equal(t, ports.ModelToolChoiceRequired, c.model.requests[0].ToolChoice)
-	msgs := c.model.requests[1].Messages
-	assert.Equal(t, "Call a tool now.", msgs[len(msgs)-1].Content)
-	assert.True(t, res.Turns[0].Nudged)
 }

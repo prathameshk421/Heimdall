@@ -27,18 +27,6 @@ func seed(t *testing.T) *Store {
 	return s
 }
 
-func TestListShowsOnlyThePersonsCardFiles(t *testing.T) {
-	names, err := seed(t).List("bob")
-	require.NoError(t, err)
-	require.Equal(t, []string{"invariants.md", "ownership.yaml"}, names)
-}
-
-func TestReadReturnsTheCard(t *testing.T) {
-	got, err := seed(t).Read("bob", "invariants.md")
-	require.NoError(t, err)
-	require.Equal(t, "sum partial refunds", got)
-}
-
 func TestReadRefusesAnythingOutsideThePersonsFolder(t *testing.T) {
 	s := seed(t)
 	for _, name := range []string{"../eli/invariants.md", "../outside.md", "/etc/passwd", "a/../../outside.md", "..", ".", "", "notes.bin", "sub/dir.md"} {

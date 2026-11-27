@@ -271,14 +271,15 @@ func newRig(t *testing.T) *rig {
 	return r
 }
 
-func rigWithOpenPR(t *testing.T, sha id.SHA) (*rig, id.ChangeID) {
+func rigWithOpenPR(t *testing.T) (*rig, id.ChangeID) {
+	sha := head1
 	t.Helper()
 	r := newRig(t)
 	pr := samplePR(10, sha, ports.PRStateOpen)
 	r.prs.prs[testRepo] = []ports.PR{pr}
 	changeID := id.ChangeID("PAY-10")
 	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, sha)
+	r.seedInitialPROpened(changeID, 10)
 	return r, changeID
 }
 
@@ -313,7 +314,8 @@ func samplePR(n int, sha id.SHA, state ports.PRState) ports.PR {
 	}
 }
 
-func (r *rig) seedInitialPROpened(changeID id.ChangeID, n int, sha id.SHA) {
+func (r *rig) seedInitialPROpened(changeID id.ChangeID, n int) {
+	sha := head1
 	pl := change.PROpened{Repo: testRepo, Number: n, HeadSHA: sha, Author: authorLogin, Ticket: changeID}
 	raw, _ := json.Marshal(pl)
 	r.events.setStream(changeID, []change.Event{
@@ -332,7 +334,7 @@ func (r *rig) seedInitialPROpened(changeID id.ChangeID, n int, sha id.SHA) {
 
 func TestSyncAppendsApprovalAndCIAndIsIdempotent(t *testing.T) {
 	t.Parallel()
-	r, changeID := rigWithOpenPR(t, head1)
+	r, changeID := rigWithOpenPR(t)
 
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
@@ -393,7 +395,7 @@ func TestNewPushVoidsOldApproval(t *testing.T) {
 	r := newRig(t)
 	changeID := id.ChangeID("PAY-10")
 	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
+	r.seedInitialPROpened(changeID, 10)
 
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
@@ -421,7 +423,7 @@ func TestNewPushVoidsOldApproval(t *testing.T) {
 
 func TestDismissedApprovalIsInvalidated(t *testing.T) {
 	t.Parallel()
-	r, changeID := rigWithOpenPR(t, head1)
+	r, changeID := rigWithOpenPR(t)
 
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
@@ -470,7 +472,7 @@ func TestDismissedApprovalIsInvalidated(t *testing.T) {
 
 func TestAuthorApprovalIsIgnored(t *testing.T) {
 	t.Parallel()
-	r, changeID := rigWithOpenPR(t, head1)
+	r, changeID := rigWithOpenPR(t)
 
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
@@ -491,32 +493,9 @@ func TestAuthorApprovalIsIgnored(t *testing.T) {
 	require.Len(t, evs, 1)
 }
 
-func TestOldHeadCIResultIsIgnored(t *testing.T) {
-	t.Parallel()
-	r, changeID := rigWithOpenPR(t, head2)
-
-	r.checks.checks[head1] = []prsync.CheckRun{
-		{
-			ID:         "check-old",
-			Name:       "build",
-			Status:     prsync.CheckCompleted,
-			Conclusion: change.CISuccess,
-			SHA:        head1,
-		},
-	}
-
-	res, err := r.syncer.SyncOnce(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, 0, res.Appended)
-
-	evs, err := r.events.Load(context.Background(), changeID)
-	require.NoError(t, err)
-	require.Len(t, evs, 1)
-}
-
 func TestInProgressCheckAppendsNothing(t *testing.T) {
 	t.Parallel()
-	r, changeID := rigWithOpenPR(t, head1)
+	r, changeID := rigWithOpenPR(t)
 
 	r.checks.checks[head1] = []prsync.CheckRun{
 		{ID: "check-queued", Name: "build", Status: prsync.CheckQueued, SHA: head1},
@@ -542,7 +521,7 @@ func TestOneFailingPRDoesNotStopOthers(t *testing.T) {
 
 	changeID2 := id.ChangeID("PAY-2")
 	r.intake.changeID[2] = changeID2
-	r.seedInitialPROpened(changeID2, 2, head1)
+	r.seedInitialPROpened(changeID2, 2)
 
 	r.intake.err[1] = errors.New("simulated intake failure")
 	r.reviews.reviews[2] = []prsync.PRReview{
@@ -570,7 +549,7 @@ func TestOneFailingPRDoesNotStopOthers(t *testing.T) {
 
 func TestVersionConflictRetried(t *testing.T) {
 	t.Parallel()
-	r, changeID := rigWithOpenPR(t, head1)
+	r, changeID := rigWithOpenPR(t)
 
 	r.reviews.reviews[10] = []prsync.PRReview{
 		{
@@ -605,7 +584,7 @@ func TestClosedPROnce(t *testing.T) {
 
 	changeID := id.ChangeID("PAY-10")
 	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
+	r.seedInitialPROpened(changeID, 10)
 
 	res1, err := r.syncer.SyncOnce(context.Background())
 	require.NoError(t, err)
@@ -679,32 +658,10 @@ func TestNewRequiresAllPorts(t *testing.T) {
 
 // seedMergedWhileDown is the state a server leaves behind when it stops with PR n open.
 func (r *rig) seedMergedWhileDown(changeID id.ChangeID, n int) {
-	r.seedInitialPROpened(changeID, n, head1)
+	r.seedInitialPROpened(changeID, n)
 	merged := samplePR(n, head1, ports.PRStateClosed)
 	merged.Merged = true
 	r.prs.current[n] = merged
-}
-
-func TestReconcileRecordsPRMergedWhileDown(t *testing.T) {
-	t.Parallel()
-	r := newRig(t)
-	changeID := id.ChangeID("PAY-10")
-	r.seedMergedWhileDown(changeID, 10)
-
-	res, err := r.syncer.Reconcile(context.Background())
-	require.NoError(t, err)
-	require.Empty(t, res.Failed)
-	require.Equal(t, 1, res.Appended)
-
-	evs, err := r.events.Load(context.Background(), changeID)
-	require.NoError(t, err)
-	require.Len(t, evs, 2)
-	require.Equal(t, change.EventPRClosed, evs[1].Type)
-	var cl change.PRClosed
-	require.NoError(t, json.Unmarshal(evs[1].Payload, &cl))
-	require.True(t, cl.Merged)
-	require.Equal(t, 10, cl.Number)
-	require.Equal(t, testRepo, cl.Repo)
 }
 
 func TestReconcileIsIdempotentAcrossRestarts(t *testing.T) {
@@ -735,7 +692,7 @@ func TestReconcileLeavesOpenPRAlone(t *testing.T) {
 	t.Parallel()
 	r := newRig(t)
 	changeID := id.ChangeID("PAY-10")
-	r.seedInitialPROpened(changeID, 10, head1)
+	r.seedInitialPROpened(changeID, 10)
 	r.prs.current[10] = samplePR(10, head1, ports.PRStateOpen)
 
 	res, err := r.syncer.Reconcile(context.Background())

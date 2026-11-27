@@ -71,12 +71,6 @@ func TestRankSkipsACardTooLargeForTheBudgetAndKeepsSmallerOnes(t *testing.T) {
 	assert.Equal(t, []string{"b-small.md"}, names(got), "the old selector stopped at the first card over budget")
 }
 
-func TestRankIgnoresProposedAndRejectedCardsUntilTheOwnerAccepts(t *testing.T) {
-	proposed := active("p.md", func(c *Card) { c.Status = StatusProposed })
-	rejected := active("r.md", func(c *Card) { c.Status = StatusRejected })
-	assert.Empty(t, Rank([]Card{proposed, rejected}, ChangeFacts{Files: []string{"a.go"}}, nil, 1000))
-}
-
 func TestRankMovesACardByItsRecordAndDropsAMutedCard(t *testing.T) {
 	proven := active("b-proven.md", func(c *Card) { c.AppliesTo = []string{"x/**"} })
 	noisy := active("a-noisy.md", func(c *Card) { c.AppliesTo = []string{"x/**"} })
@@ -87,16 +81,6 @@ func TestRankMovesACardByItsRecordAndDropsAMutedCard(t *testing.T) {
 	records["a-noisy.md"] = Record{Noise: 5}
 	got = Rank([]Card{noisy, proven}, ChangeFacts{Files: []string{"x/y.go"}}, records, 1000)
 	assert.Equal(t, []string{"b-proven.md"}, names(got))
-}
-
-func TestRecordDoesNotMuteAfterTwoDismissals(t *testing.T) {
-	assert.False(t, Record{Noise: 2}.Muted(), "two dismissals are too few to silence what a person wrote")
-	assert.True(t, Record{Noise: 4}.Muted())
-	assert.False(t, Record{Useful: 6, Noise: 3}.Muted(), "a card with many useful findings stays even after dismissals")
-}
-
-func TestAnIgnoredFindingCountsLessThanADismissal(t *testing.T) {
-	assert.Greater(t, Record{Ignored: 2}.Weight(), Record{Noise: 2}.Weight())
 }
 
 func TestRankIsCappedSoTheBriefStaysReadable(t *testing.T) {

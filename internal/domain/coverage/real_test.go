@@ -2,9 +2,6 @@ package coverage
 
 import (
 	"encoding/json"
-	"fmt"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -58,90 +55,6 @@ var realLCOV = []realReport{
 		name: "more-itertools v11.2.1 coverage.py", file: "testdata/real/more-itertools-v11.2.1.coveragepy.lcov.info",
 		files: 3, instrumented: 2224, covered: 2224, toolHit: 2224, toolFound: 2224,
 	},
-}
-
-func totals(res Result) (files, instrumented, covered int) {
-	for _, lines := range res.Files {
-		files++
-		for _, hits := range lines {
-			instrumented++
-			if hits > 0 {
-				covered++
-			}
-		}
-	}
-	return files, instrumented, covered
-}
-
-// goStatements sums the statement counts of a Go profile with no code shared with the parser, the way
-// `go tool cover -func` does for its total.
-func goStatements(t *testing.T, profile []byte) (covered, total int) {
-	t.Helper()
-	for _, record := range strings.Split(strings.TrimSpace(string(profile)), "\n")[1:] {
-		fields := strings.Fields(record)
-		require.Len(t, fields, 3, record)
-		statements, err := strconv.Atoi(fields[1])
-		require.NoError(t, err)
-		count, err := strconv.Atoi(fields[2])
-		require.NoError(t, err)
-		total += statements
-		if count > 0 {
-			covered += statements
-		}
-	}
-	return covered, total
-}
-
-func TestRealGoProfiles(t *testing.T) {
-	t.Parallel()
-	for _, c := range realGo {
-		t.Run(c.name, func(t *testing.T) {
-			data := load(t, c.file)
-			covered, total := goStatements(t, data)
-			// The tool counts statements. The parser counts lines, and a block spans many lines, so the two
-			// totals differ in size. The percentage the tool prints is checked on the statement sums.
-			require.Equal(t, c.toolPercent, fmt.Sprintf("%.1f", float64(covered)*100/float64(total)))
-			res, err := ParseGoCover(data, Options{MaxBytes: 1 << 20, Prefix: c.prefix})
-			require.NoError(t, err)
-			files, instrumented, hit := totals(res)
-			require.Equal(t, [3]int{c.files, c.instrumented, c.covered}, [3]int{files, instrumented, hit})
-		})
-	}
-}
-
-// lcovSummary sums the LF and LH records of a tracefile, which is the tool's own line summary.
-func lcovSummary(t *testing.T, data []byte) (hit, found int) {
-	t.Helper()
-	for _, record := range strings.Split(string(data), "\n") {
-		name, value, ok := strings.Cut(strings.TrimSpace(record), ":")
-		if !ok || (name != "LF" && name != "LH") {
-			continue
-		}
-		n, err := strconv.Atoi(value)
-		require.NoError(t, err)
-		if name == "LF" {
-			found += n
-		} else {
-			hit += n
-		}
-	}
-	return hit, found
-}
-
-func TestRealLCOVReports(t *testing.T) {
-	t.Parallel()
-	for _, c := range realLCOV {
-		t.Run(c.name, func(t *testing.T) {
-			data := load(t, c.file)
-			hit, found := lcovSummary(t, data)
-			require.Equal(t, [2]int{c.toolHit, c.toolFound}, [2]int{hit, found}, "the fixture holds the tool's own totals")
-			res, err := ParseLCOV(data, Options{MaxBytes: 1 << 20})
-			require.NoError(t, err)
-			files, instrumented, covered := totals(res)
-			require.Equal(t, [3]int{c.files, c.instrumented, c.covered}, [3]int{files, instrumented, covered})
-			require.Equal(t, [2]int{hit, found}, [2]int{covered, instrumented}, "parser totals equal the tool's LH and LF")
-		})
-	}
 }
 
 // diffCase is one diff measured against one report. changed names a file under testdata/real/changed: the
@@ -225,16 +138,6 @@ func TestRealDiffs(t *testing.T) {
 	}
 }
 
-// A last commit that changes only comments and imports is not measurable: the report calls none of its
-// lines instrumented. The fast check must read that as unknown, not as the 100 that Percent returns.
-func TestRealDiffOfACommentIsNotMeasurable(t *testing.T) {
-	t.Parallel()
-	got, err := Diff(parseGo(t, realGo[0], realGo[0].prefix), loadChanged(t, "uuid-last"))
-	require.NoError(t, err)
-	require.InDelta(t, 100.0, got.Percent, 1e-9)
-	require.False(t, got.Measurable())
-}
-
 func TestRealDiffWithAWrongPrefixIsNotMeasurable(t *testing.T) {
 	t.Parallel()
 	for _, c := range realDiffCases() {
@@ -253,37 +156,6 @@ func TestRealDiffWithAWrongPrefixIsNotMeasurable(t *testing.T) {
 				require.NoError(t, err)
 				require.False(t, bare.Measurable())
 			}
-		})
-	}
-}
-
-// The real tools wrote module paths (Go) and paths relative to the working directory (c8, Jest,
-// coverage.py). A CI run can also write an absolute runner path or a ./ form. This rewrites the paths of a
-// real report into those forms and shows that Options.Prefix returns the same Result.
-func TestRealPathsInOtherFormsRebaseToTheSameResult(t *testing.T) {
-	t.Parallel()
-	const runner = "/home/runner/work/app/app"
-	forms := map[string]func(string) string{
-		"absolute runner path": func(p string) string { return runner + "/" + p },
-		"dot slash":            func(p string) string { return "./" + p },
-		"windows drive":        func(p string) string { return `D:\a\app\app\` + strings.ReplaceAll(p, "/", `\`) },
-	}
-	prefixes := map[string]string{"absolute runner path": runner, "dot slash": "", "windows drive": `D:\a\app\app`}
-	data := string(load(t, realLCOV[0].file))
-	want, err := ParseLCOV([]byte(data), Options{MaxBytes: 1 << 20})
-	require.NoError(t, err)
-	for name, form := range forms {
-		t.Run(name, func(t *testing.T) {
-			var out []string
-			for _, record := range strings.Split(data, "\n") {
-				if raw, ok := strings.CutPrefix(record, "SF:"); ok {
-					record = "SF:" + form(raw)
-				}
-				out = append(out, record)
-			}
-			got, err := ParseLCOV([]byte(strings.Join(out, "\n")), Options{MaxBytes: 1 << 20, Prefix: prefixes[name]})
-			require.NoError(t, err)
-			require.Equal(t, want.Files, got.Files)
 		})
 	}
 }

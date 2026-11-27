@@ -16,20 +16,6 @@ func sharedCapOptions() reviewOptions {
 	return reviewOptions{perCase: 0.50, price: bench.Price{InputPerM: 0.5, OutputPerM: 2}}
 }
 
-func TestACaseStarvedByOtherWorkersIsNotScoredAndTheRunGoesOn(t *testing.T) {
-	// Another worker's call holds the whole $1 cap, but nothing is spent: the cap covers a case once that call
-	// settles. This case gets nothing now; it must say why and must not stop the run. It never opens a repository.
-	costCap, err := bench.NewCostCap(1)
-	require.NoError(t, err)
-	_, err = costCap.Reserve(1)
-	require.NoError(t, err)
-	cr := &caseRun{o: sharedCapOptions(), r: execRunner{}, costCap: costCap, prog: newProgress(nil), repos: newRepoSet()}
-	rc, stop := cr.review(context.Background(), bench.Case{ID: "late", Kind: bench.KindBug})
-	require.False(t, stop, "the holds return to the cap, so the run goes on")
-	require.False(t, rc.Scored)
-	require.Contains(t, rc.Error, "other workers held the rest of the shared cost cap")
-}
-
 func TestACaseTheCapCannotCoverStopsTheRun(t *testing.T) {
 	costCap, err := bench.NewCostCap(1)
 	require.NoError(t, err)

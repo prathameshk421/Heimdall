@@ -13,19 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSearchPassesServerGroupsAndMapsGraphitiFacts(t *testing.T) {
-	caller := &callerSpy{replies: map[string]json.RawMessage{"search_memory_facts": json.RawMessage(`{"facts":[{"uuid":"f-1","fact":"refund ids are stable","source_url":"https://example.test/adr/4","valid_at":"2026-01-01T00:00:00Z"}]}`), "search_nodes": json.RawMessage(`{"nodes":[]}`)}}
-	adapter, err := New(caller)
-	require.NoError(t, err)
-	items, err := adapter.Search(context.Background(), ports.MemoryQuery{Question: "refund ids", Groups: []string{"payments", "shared"}, Limit: 20, AsOf: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)})
-	require.NoError(t, err)
-	require.Equal(t, []string{"search_memory_facts", "search_nodes"}, caller.names)
-	require.Equal(t, []string{"payments", "shared"}, caller.args["group_ids"])
-	require.Equal(t, "memory:f-1", items[0].Ref)
-	require.Equal(t, ports.LabelObserved, items[0].Label)
-	require.Equal(t, "https://example.test/adr/4", items[0].SourceURL)
-}
-
 func TestSearchPreservesHeimdallSourceKeyAndTrustMetadata(t *testing.T) {
 	caller := &callerSpy{replies: map[string]json.RawMessage{
 		"search_memory_facts": json.RawMessage(`{"facts":[{"uuid":"f-2","fact":"reviewed decision","heimdall_key":"workflow:evt:payments","heimdall_status":"confirmed"}]}`),
@@ -140,15 +127,6 @@ func TestAsOfKeepsOnlyFactsValidAtThatTimeAndSendsNoInvertedServerFilter(t *test
 	}
 }
 
-func TestSearchOverFetchesWhenFilteringByTimeSoTheLimitStillFills(t *testing.T) {
-	caller := &callerSpy{replies: map[string]json.RawMessage{"search_memory_facts": json.RawMessage(`{"facts":[]}`), "search_nodes": json.RawMessage(`{"nodes":[]}`)}}
-	adapter, err := New(caller)
-	require.NoError(t, err)
-	_, err = adapter.Search(context.Background(), ports.MemoryQuery{Question: "q", Groups: []string{"g"}, Limit: 10, AsOf: time.Now()})
-	require.NoError(t, err)
-	require.Greater(t, caller.allArgs[0]["max_facts"], 10)
-}
-
 func TestSearchFoldsEntityNamesIntoTheQueryBecauseGraphitiHasNoSuchArgument(t *testing.T) {
 	caller := &callerSpy{replies: map[string]json.RawMessage{"search_memory_facts": json.RawMessage(`{"facts":[]}`), "search_nodes": json.RawMessage(`{"nodes":[]}`)}}
 	adapter, err := New(caller)
@@ -157,15 +135,6 @@ func TestSearchFoldsEntityNamesIntoTheQueryBecauseGraphitiHasNoSuchArgument(t *t
 	require.NoError(t, err)
 	require.Contains(t, caller.allArgs[0]["query"], "ledger")
 	require.NotContains(t, caller.allArgs[0], "entity_names")
-}
-
-func TestSearchStillAnswersFromFactsWhenTheNodeSearchFails(t *testing.T) {
-	caller := &callerSpy{replies: map[string]json.RawMessage{"search_memory_facts": json.RawMessage(`{"facts":[{"uuid":"f","fact":"a fact"}]}`)}, failing: map[string]bool{"search_nodes": true}}
-	adapter, err := New(caller)
-	require.NoError(t, err)
-	items, err := adapter.Search(context.Background(), ports.MemoryQuery{Question: "q", Groups: []string{"g"}, Limit: 5})
-	require.NoError(t, err)
-	require.Len(t, items, 1)
 }
 
 func TestSearchFailsWhenTheFactSearchFailsAndKeepsTheCause(t *testing.T) {

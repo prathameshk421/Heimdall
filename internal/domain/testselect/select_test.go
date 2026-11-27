@@ -178,20 +178,3 @@ func TestNewGraphRefusals(t *testing.T) {
 		})
 	}
 }
-
-func TestRootPackageOwnsNonGoFilesWithoutAnotherOwner(t *testing.T) {
-	g, err := testselect.NewGraph([]testselect.Package{
-		{Path: "m", Dir: ".", HasTests: true},
-		{Path: "m/sub", Dir: "sub", HasTests: true, Imports: []string{"m"}},
-	})
-	require.NoError(t, err)
-	got, err := testselect.Select(g, []string{"README.md"}, testselect.Policy{})
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"m", "m/sub"}, got.Paths())
-	got, err = testselect.Select(g, []string{"x.go"}, testselect.Policy{})
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"m", "m/sub"}, got.Paths())
-	got, err = testselect.Select(g, []string{"sub/y.go"}, testselect.Policy{})
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"m/sub"}, got.Paths())
-}

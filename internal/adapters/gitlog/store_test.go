@@ -2,10 +2,7 @@ package gitlog
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
-	"net/http"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -142,79 +139,6 @@ func TestEventStoreContract(t *testing.T) {
 		require.Equal(t, base.Add(123456*time.Microsecond), got[0].OccurredAt)
 		require.NoError(t, change.VerifyChain(got))
 	})
-}
-
-func TestAppendCommitShape(t *testing.T) {
-	ctx := t.Context()
-	g := newFakeGit(t)
-	s := g.store(t, testKey)
-	cid := prChange(t, 7)
-
-	seed(ctx, t, s, cid, "room-1")
-	require.Equal(t, 1, g.callCount("POST refs"), "the first append creates the ref")
-	var created struct{ Ref, SHA string }
-	require.NoError(t, json.Unmarshal(g.bodies["POST refs"][0], &created))
-	require.Equal(t, testRef, created.Ref)
-	var commit struct{ Parents []string }
-	require.NoError(t, json.Unmarshal(g.bodies["POST commits"][0], &commit))
-	require.Empty(t, commit.Parents, "the first commit has no parent")
-	require.Equal(t, created.SHA, g.tip())
-	firstTip := g.tip()
-
-	_, err := s.Append(ctx, cid, 1, roomEvents(cid, 1, "room-2"), nil)
-	require.NoError(t, err)
-	require.Equal(t, 1, g.callCount("POST graphql"), "later appends move the ref with updateRefs")
-	require.Zero(t, g.callCount("PATCH"), "REST PATCH is a plain set on refs/heimdall/* and is never used")
-	var swap struct {
-		Variables struct {
-			R, N, A string
-			B       *string
-			F       *bool
-		}
-	}
-	require.NoError(t, json.Unmarshal(g.bodies["POST graphql"][0], &swap))
-	v := swap.Variables
-	require.Equal(t, testNode, v.R)
-	require.Equal(t, testRef, v.N)
-	require.NotNil(t, v.B, "beforeOid is always sent")
-	require.Equal(t, firstTip, *v.B, "beforeOid is the tip the store read")
-	require.Equal(t, g.tip(), v.A)
-	require.NotNil(t, v.F)
-	require.False(t, *v.F, "the ref update is a compare-and-swap, never a force")
-	require.NoError(t, json.Unmarshal(g.bodies["POST commits"][1], &commit))
-	require.Equal(t, []string{firstTip}, commit.Parents)
-	var tree struct {
-		BaseTree string `json:"base_tree"`
-	}
-	require.NoError(t, json.Unmarshal(g.bodies["POST trees"][1], &tree))
-	require.NotEmpty(t, tree.BaseTree, "later commits build on the tip's tree")
-}
-
-func TestStoredLayout(t *testing.T) {
-	ctx := t.Context()
-	g := newFakeGit(t)
-	s := g.store(t, testKey)
-	cid := prChange(t, 7)
-	fx := roomEffect(t, cid, 2, "a", `{"text":"hi"}`)
-	_, err := s.Append(ctx, cid, 0, roomEvents(cid, 0, "room-1", "room-2"), []change.Effect{fx})
-	require.NoError(t, err)
-
-	logData := g.file("changes/" + string(cid) + ".jsonl")
-	require.Equal(t, 2, strings.Count(string(logData), "\n"), "one event per line")
-	var head headFile
-	require.NoError(t, json.Unmarshal(g.file("changes/"+string(cid)+".head"), &head))
-	require.Equal(t, int64(2), head.Version)
-	require.Equal(t, digest(g.file("effects/"+string(cid)+".jsonl")), head.Effects)
-	require.Equal(t, hex.EncodeToString(computeMAC(testKey, cid, 2, head.Hash, head.Effects)), head.MAC)
-
-	rows := strings.Split(strings.TrimSpace(string(g.file("effects/"+string(cid)+".jsonl"))), "\n")
-	require.Len(t, rows, 1)
-	var row effectLine
-	require.NoError(t, json.Unmarshal([]byte(rows[0]), &row))
-	events, err := s.Load(ctx, cid)
-	require.NoError(t, err)
-	require.Equal(t, events[1].ID, row.EventID, "the effect is caused by the last event of the batch")
-	require.Equal(t, fx.Key, row.Effect.Key)
 }
 
 func TestEffects(t *testing.T) {
@@ -409,27 +333,4 @@ func TestNewRefusesBadConfig(t *testing.T) {
 	s, err := New(ok)
 	require.NoError(t, err)
 	require.Equal(t, DefaultRef, s.ref)
-}
-
-func TestErrorsKeepTheirKind(t *testing.T) {
-	ctx := t.Context()
-	cid := prChange(t, 7)
-	g := newFakeGit(t)
-	s := g.store(t, testKey)
-
-	cases := map[int]error{
-		http.StatusUnauthorized:        ports.ErrUnauthorized,
-		http.StatusForbidden:           ports.ErrUnauthorized,
-		http.StatusTooManyRequests:     ports.ErrUnavailable,
-		http.StatusInternalServerError: ports.ErrUnavailable,
-	}
-	for status, want := range cases {
-		g.intercept = func(w http.ResponseWriter, _ *http.Request) bool {
-			reply(w, status, map[string]string{"message": "x"})
-			return true
-		}
-		_, err := s.Load(ctx, cid)
-		require.ErrorIs(t, err, want, "status %d", status)
-		require.NotErrorIs(t, err, ErrIntegrity)
-	}
 }

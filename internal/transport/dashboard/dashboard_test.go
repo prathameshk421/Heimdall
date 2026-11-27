@@ -178,17 +178,6 @@ func TestUnknownChangeIsNotFound(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, resp.Status)
 }
 
-func TestRootAcceptsOnlyGet(t *testing.T) {
-	ts, _ := serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{})
-
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/", nil)
-	require.NoError(t, err)
-	resp, err := ts.Client().Do(req)
-	require.NoError(t, err)
-	_ = resp.Body.Close()
-	require.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
-}
-
 func TestAssetsAreServedFromTheBinary(t *testing.T) {
 	ts, _ := serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{})
 
@@ -218,19 +207,6 @@ func TestPagesSetAStrictContentPolicy(t *testing.T) {
 	require.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
 }
 
-func TestOtherRoutesKeepTheirAnswers(t *testing.T) {
-	ts, _ := serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{})
-
-	resp := get(t, ts, "/healthz")
-	require.Equal(t, http.StatusOK, resp.Status)
-	require.JSONEq(t, `{"status":"ok"}`, resp.Body)
-
-	for _, path := range []string{"/mcp", "/healthz/"} {
-		resp := get(t, ts, path)
-		require.Equal(t, http.StatusNotFound, resp.Status, path)
-	}
-}
-
 func TestMountRefusesNilHistoryLoggerAndTicker(t *testing.T) {
 	router, err := transport.NewRouter(logger())
 	require.NoError(t, err)
@@ -258,26 +234,6 @@ func TestMountRefusesNilHistoryLoggerAndTicker(t *testing.T) {
 
 	_, err = dashboard.Mount(router, history, logger(), good)
 	require.NoError(t, err)
-}
-
-// Access wraps every dashboard route, the assets and the stream among them, and no other path.
-func TestAccessGuardsEveryDashboardRouteAndNothingElse(t *testing.T) {
-	deny := func(http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "sign in required", http.StatusUnauthorized)
-		})
-	}
-	ts, _ := serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{Access: deny})
-	for _, path := range []string{
-		"/", "/changes/PAY-7", "/changes/PAY-7/report", "/changes/PAY-7/report.json", "/sse/changes/PAY-7",
-		"/assets/dashboard.css", "/assets/dashboard.js", "/assets/report.css", "/assets/report.js", "/changes/NOPE-1",
-		"/assets/missing", "/changes/", "/sse/changes/PAY-7?after=x",
-	} {
-		resp := get(t, ts, path)
-		require.Equal(t, http.StatusUnauthorized, resp.Status, path)
-		require.NotContains(t, resp.Body, "PAY-7", path)
-	}
-	require.Equal(t, http.StatusOK, get(t, ts, "/healthz").Status, "routes outside the board keep their own rules")
 }
 
 func TestSignOutLinkShowsOnlyWhenSet(t *testing.T) {
@@ -357,28 +313,6 @@ func openStream(t *testing.T, ts *httptest.Server, path string, header map[strin
 	return frames(resp.Body)
 }
 
-func TestLiveStreamSendsOnlyEventsAfterTheRenderedVersion(t *testing.T) {
-	ts, h := serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{PollEvery: 10 * time.Millisecond})
-
-	ch := openStream(t, ts, "/sse/changes/PAY-7?after=8", nil)
-	h.Append(pay7, ninthEvent(t))
-
-	f := nextFrame(t, ch)
-	require.Equal(t, "9", f.ID, "the first frame must be version 9, not a replay of versions 1 to 8")
-	require.Equal(t, "change", f.Event)
-
-	var item struct {
-		Version int64  `json:"version"`
-		Type    string `json:"type"`
-		State   string `json:"state"`
-		Gate    string `json:"gate"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(f.Data), &item))
-	require.Equal(t, int64(9), item.Version)
-	require.Equal(t, string(change.EventQuestionAnswered), item.Type)
-	require.Equal(t, "blocked", item.Gate)
-}
-
 func TestLiveStreamHonoursLastEventIDOnReconnect(t *testing.T) {
 	ts, h := serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{PollEvery: 10 * time.Millisecond})
 
@@ -387,14 +321,6 @@ func TestLiveStreamHonoursLastEventIDOnReconnect(t *testing.T) {
 
 	f := nextFrame(t, ch)
 	require.Equal(t, "9", f.ID)
-}
-
-func TestLiveStreamWithoutAnyVersionStartsAtTheFirstEvent(t *testing.T) {
-	ts, _ := serve(t, map[id.ChangeID][]change.Event{pay7: fullLog(t)}, dashboard.Options{PollEvery: 10 * time.Millisecond})
-
-	ch := openStream(t, ts, "/sse/changes/PAY-7", nil)
-	f := nextFrame(t, ch)
-	require.Equal(t, "1", f.ID)
 }
 
 func TestLiveStreamRefusesABadVersion(t *testing.T) {

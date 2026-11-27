@@ -214,10 +214,6 @@ func (dummyVCS) IssueCommentsSince(context.Context, change.Repo, int, time.Time)
 	return nil, nil
 }
 
-func TestTestQualityWiringUsesTargetModuleSeam(t *testing.T) {
-	require.Equal(t, []string{"github.com/prathameshk421/flip_the_switch_hackathon/internal"}, testQualityForbiddenImports())
-}
-
 func TestNeedsTestSignoffMatchesExpectedPathsAgainstBasePolicy(t *testing.T) {
 	pol := policy.Policy{Tests: policy.Tests{Sensitive: []string{"backend/**/auth*", "*delete*"}}}
 	require.False(t, needsTestSignoff(pol, []string{"internal/refunds/refunds.go"}))

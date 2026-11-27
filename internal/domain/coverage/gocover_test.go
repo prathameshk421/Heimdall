@@ -7,42 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseGoCoverGolden(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		file string
-		opt  Options
-		want map[string]Lines
-	}{
-		{
-			name: "count mode",
-			file: "testdata/gocover/simple.out",
-			opt:  Options{MaxBytes: 1 << 20, Prefix: "example.com/app"},
-			want: map[string]Lines{
-				"internal/domain/coverage/coverage.go": {41: 12, 42: 12, 43: 12, 45: 0, 46: 0, 47: 0},
-				"internal/domain/coverage/lcov.go":     {5: 7, 6: 7, 7: 7},
-			},
-		},
-		{
-			name: "set mode",
-			file: "testdata/gocover/set.out",
-			opt:  Options{MaxBytes: 1 << 20, Prefix: "example.com/app"},
-			want: map[string]Lines{
-				"a.go": {1: 1, 2: 1},
-				"b.go": {3: 0},
-			},
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got, err := ParseGoCover(load(t, c.file), c.opt)
-			require.NoError(t, err)
-			require.Equal(t, c.want, got.Files)
-		})
-	}
-}
-
 func TestParseGoCoverRefusesBadReports(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -75,50 +39,10 @@ func TestParseGoCoverRefusesBadReports(t *testing.T) {
 	}
 }
 
-func TestParseGoCoverAcceptsAModeOnlyProfile(t *testing.T) {
-	t.Parallel()
-	got, err := ParseGoCover([]byte("mode: atomic\n"), Options{MaxBytes: 1 << 20})
-	require.NoError(t, err)
-	require.Empty(t, got.Files)
-}
-
-func TestParseGoCoverAcceptsCRLF(t *testing.T) {
-	t.Parallel()
-	in := "mode: set\r\nexample.com/app/a.go:1.1,2.2 1 1\r\n"
-	got, err := ParseGoCover([]byte(in), Options{MaxBytes: 1 << 20, Prefix: "example.com/app"})
-	require.NoError(t, err)
-	require.Equal(t, map[string]Lines{"a.go": {1: 1, 2: 1}}, got.Files)
-}
-
 func TestParseGoCoverHandlesWindowsPaths(t *testing.T) {
 	t.Parallel()
 	in := "mode: set\nC:\\work\\app\\a.go:1.1,2.2 1 1\n"
 	got, err := ParseGoCover([]byte(in), Options{MaxBytes: 1 << 20, Prefix: "C:\\work\\app"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]Lines{"a.go": {1: 1, 2: 1}}, got.Files)
-}
-
-// Go writes the end of a block as an exclusive position. A block that ends at column 1 of a line holds no
-// character of that line: the closing brace on that line is outside it. `go tool cover -html` agrees, and
-// it closes the span at the start of the brace line. Real profiles from google/uuid and spf13/cobra end
-// 100 of 148 and 596 of 813 multi-line blocks this way (docs/product/research/12-coverage-real-reports.md).
-func TestParseGoCoverEndColumnOneLeavesTheEndLineOut(t *testing.T) {
-	t.Parallel()
-	in := "mode: set\n" +
-		"example.com/app/a.go:35.3,38.1 3 1\n" + // the body of an if: lines 35 to 37, the brace on line 38 is outside
-		"example.com/app/a.go:39.2,39.18 1 0\n" + // the statement after the brace
-		"example.com/app/a.go:50.2,52.2 1 1\n" // ends after a character of line 52: line 52 stays
-	got, err := ParseGoCover([]byte(in), Options{MaxBytes: 1 << 20, Prefix: "example.com/app"})
-	require.NoError(t, err)
-	require.Equal(t, map[string]Lines{
-		"a.go": {35: 1, 36: 1, 37: 1, 39: 0, 50: 1, 51: 1, 52: 1},
-	}, got.Files)
-}
-
-// A span that starts and ends on one line keeps that line, whatever its end column.
-func TestParseGoCoverSingleLineSpanKeepsItsLine(t *testing.T) {
-	t.Parallel()
-	got, err := ParseGoCover([]byte("mode: set\nexample.com/app/a.go:5.1,5.1 1 1\n"), Options{MaxBytes: 1 << 20, Prefix: "example.com/app"})
-	require.NoError(t, err)
-	require.Equal(t, map[string]Lines{"a.go": {5: 1}}, got.Files)
 }

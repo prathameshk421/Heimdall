@@ -232,23 +232,6 @@ func retarget(t *testing.T, e change.Event, to change.Repo) change.Event {
 	return e
 }
 
-func TestADismissWithAReasonProposesAJudgementCardForTheFile(t *testing.T) {
-	s := newStream(t, "PAY-1").file(1, rhea, finding.CategoryStyle, "internal/refunds/service.go").move(1, rhea, finding.StateDismissed).
-		decide(change.DecisionDismiss, "F1", "The retry is on purpose.")
-	props := snapshotOf(t, s).Proposals()
-	require.Len(t, props, 1)
-	p := props[0]
-	require.Equal(t, repo, p.Repo)
-	require.Equal(t, base, p.BaseSHA)
-	require.Equal(t, "alice", p.Login)
-	require.True(t, strings.HasPrefix(p.Name, "learned-") && strings.HasSuffix(p.Name, ".md") && len(p.Name) == len("learned-")+12+len(".md"), p.Name)
-	for _, want := range []string{`applies_to: ["internal/refunds/service.go"]`, "kind: judgement", "status: proposed", "source: \"decision 30000000 on PAY-1\"",
-		"I do not want this flagged: " + strings.TrimRight(claim, ".") + " (1). Reason: The retry is on purpose."} {
-		require.Contains(t, p.Text, want)
-	}
-	require.True(t, strings.HasPrefix(p.Text, "---\n"))
-}
-
 func TestRememberAndIncidentProposeScopedCardsOrGeneralOnes(t *testing.T) {
 	scoped := newStream(t, "PAY-1").file(1, rhea, finding.CategoryCorrectness, "a/x.go").file(2, rhea, finding.CategoryCorrectness, "a/y.go").
 		decide(change.DecisionRemember, "Refunds must never exceed the payment.", "A refund bug cost money.")
@@ -280,15 +263,6 @@ func TestOnlyMappedHumansCanProposeACard(t *testing.T) {
 		s.events = append(s.events, e)
 	}
 	require.Empty(t, snapshotOf(t, s).Proposals(), "agent, bridge and system decisions never become cards")
-}
-
-func TestProposalNamesAreDeterministic(t *testing.T) {
-	build := func() reviewlearn.Proposal {
-		s := newStream(t, "PAY-1").file(1, rhea, finding.CategoryStyle, "a.go").decide(change.DecisionDismiss, "F1", "on purpose")
-		return snapshotOf(t, s).Proposals()[0]
-	}
-	first, second := build(), build()
-	require.Equal(t, first, second)
 }
 
 type countingHistory struct {

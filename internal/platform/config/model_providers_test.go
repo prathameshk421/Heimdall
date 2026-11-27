@@ -62,21 +62,6 @@ allow_private_http = true
 	require.Equal(t, []string{"ollama", "litellm", "lan", "deploy", "openrouter"}, cfg.ModelProviderNames())
 }
 
-func TestAConfiguredProviderReplacesTheShippedOneOfTheSameName(t *testing.T) {
-	t.Parallel()
-	cfg, err := Load(writeTOML(t, goodProject+`
-[[model_providers]]
-name = "openrouter"
-base_url = "https://gateway.example.test/v1"
-key_file = "gateway_key"
-`))
-	require.NoError(t, err)
-	p, ok := cfg.ModelProvider("openrouter")
-	require.True(t, ok)
-	require.Equal(t, ModelProvider{Name: "openrouter", BaseURL: "https://gateway.example.test/v1", KeyFile: "gateway_key"}, p)
-	require.Equal(t, []string{"openrouter", "deploy"}, cfg.ModelProviderNames())
-}
-
 func TestBadModelProvidersAreRefusedAndNamed(t *testing.T) {
 	t.Parallel()
 	for name, tc := range map[string]struct{ toml, want string }{

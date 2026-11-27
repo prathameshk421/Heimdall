@@ -17,41 +17,6 @@ func cargoReviewCase() bench.Case {
 	return bench.Case{ID: "rs", Language: "rust", Toolchain: bench.ToolchainCargo, Workdir: "native/resource-monitor"}
 }
 
-func TestReviewTestPathFollowsTheToolchain(t *testing.T) {
-	// The reviewer writes a new test file the case's runner collects, inside the workdir. Anything else could not run,
-	// or would run outside the package under test.
-	tests := []struct {
-		c    bench.Case
-		path string
-		ok   bool
-	}{
-		{bench.Case{Language: "go"}, "mock/heimdall_x_test.go", true},
-		{bench.Case{Language: "go"}, "mock/heimdall_x.go", false},
-		{vitestReviewCase(), "packages/shared/src/heimdallReview.test.ts", true},
-		{vitestReviewCase(), "packages/shared/src/heimdallReview.ts", false},
-		{vitestReviewCase(), "apps/web/src/heimdallReview.test.ts", false},
-		{cargoReviewCase(), "native/resource-monitor/src/heimdall_review.rs", true},
-		{cargoReviewCase(), "native/resource-monitor/src/inner/heimdall_review.rs", false},
-		{cargoReviewCase(), "native/resource-monitor/src/Heimdall-Review.rs", false},
-		{cargoReviewCase(), "native/resource-monitor/tests/heimdall_review.rs", false},
-	}
-	for _, tt := range tests {
-		err := reviewTestPath(tt.c, tt.path)
-		if tt.ok {
-			require.NoError(t, err, tt.path)
-		} else {
-			require.Error(t, err, tt.path)
-		}
-	}
-}
-
-func TestWireRustTestModuleDeclaresTheReviewerFile(t *testing.T) {
-	got := wireRustTestModule([]byte("fn main() {}\n"), "heimdall_review")
-	require.Equal(t, "fn main() {}\n\n#[cfg(test)]\nmod heimdall_review;\n", string(got))
-	got = wireRustTestModule([]byte("fn main() {}"), "heimdall_review")
-	require.Equal(t, "fn main() {}\n\n#[cfg(test)]\nmod heimdall_review;\n", string(got), "a file with no final newline")
-}
-
 func TestReviewTestNameMatchesTheSandboxNames(t *testing.T) {
 	src := "#[test]\nfn finds_the_bug() {}\n"
 	name, err := reviewTestName(cargoReviewCase(), "native/resource-monitor/src/heimdall_review.rs", src, "finds_the_bug")

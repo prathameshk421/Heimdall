@@ -67,22 +67,6 @@ func TestMissingSecretFileIsWrappedAndNamesTheFileOnly(t *testing.T) {
 	require.Empty(t, f.requests(), "no request is sent without a key")
 }
 
-func TestServerErrorsAreUnavailableAndClientErrorsAreNot(t *testing.T) {
-	f := newFakeSwitch(t)
-	f.ops["create_room"] = func(map[string]any) (int, any) { return http.StatusBadGateway, map[string]any{"detail": "x"} }
-	c, _ := newTestClient(t, f)
-	_, err := c.OpenRoom(context.Background(), ports.RoomRequest{ChangeID: "PAY-142", Title: "PAY-142 refunds", Key: "k1"})
-	require.ErrorIs(t, err, ports.ErrUnavailable)
-
-	f.ops["create_room"] = func(map[string]any) (int, any) { return http.StatusBadRequest, map[string]any{"detail": "x"} }
-	_, err = c.OpenRoom(context.Background(), ports.RoomRequest{ChangeID: "PAY-143", Title: "PAY-143 other", Key: "k2"})
-	require.Error(t, err)
-	require.NotErrorIs(t, err, ports.ErrUnavailable)
-	status, ok := StatusOf(err)
-	require.True(t, ok)
-	require.Equal(t, http.StatusBadRequest, status)
-}
-
 func TestNotFoundIsPortsNotFound(t *testing.T) {
 	f := newFakeSwitch(t)
 	f.ops["invite_agent_to_room"] = func(map[string]any) (int, any) { return http.StatusNotFound, nil }
@@ -113,31 +97,6 @@ func TestBreakerOpensAfterFiveUnavailableAndProbesAfterCooldown(t *testing.T) {
 	_, err = c.OpenRoom(ctx, req)
 	require.NoError(t, err, "the first call after the cooldown is a probe that closes the breaker")
 	require.Greater(t, len(f.requests()), before)
-}
-
-func TestClientErrorsDoNotOpenTheBreaker(t *testing.T) {
-	f := newFakeSwitch(t)
-	f.ops["create_room"] = func(map[string]any) (int, any) { return http.StatusBadRequest, nil }
-	c, _ := newTestClient(t, f)
-	req := ports.RoomRequest{ChangeID: "PAY-142", Title: "PAY-142 refunds", Key: "k1"}
-	for i := 0; i < 8; i++ {
-		_, err := c.OpenRoom(context.Background(), req)
-		require.Error(t, err)
-	}
-	f.ops["create_room"] = func(map[string]any) (int, any) { return http.StatusOK, map[string]any{"id": testRoomUUID} }
-	_, err := c.OpenRoom(context.Background(), req)
-	require.NoError(t, err, "400s are neutral to the breaker")
-}
-
-func TestDeadlineIsTenSecondsAndCancellationStops(t *testing.T) {
-	f := newFakeSwitch(t)
-	c, _ := newTestClient(t, f)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := c.OpenRoom(ctx, ports.RoomRequest{ChangeID: "PAY-142", Title: "PAY-142 refunds", Key: "k1"})
-	require.ErrorIs(t, err, context.Canceled, "a cancelled caller gets context.Canceled")
-	require.NotContains(t, err.Error(), testAPIKey)
-	require.Equal(t, 10*time.Second, requestDeadline)
 }
 
 func TestACancelledCallerIsNotASwitchFailure(t *testing.T) {

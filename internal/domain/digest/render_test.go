@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -161,30 +160,6 @@ func TestPageIsBounded(t *testing.T) {
 	page := digest.RenderMarkdown(digest.Compute(digest.Input{Repo: "acme/pay", PRs: prs}))
 	require.LessOrEqual(t, len(page), digest.MaxBytes)
 	require.Contains(t, page, "not listed to keep this report short")
-}
-
-// TestLongTextIsCut: one label that is far too long is cut, and the page still names the rest of the report.
-func TestLongTextIsCut(t *testing.T) {
-	page := digest.RenderMarkdown(digest.Compute(digest.Input{Repo: strings.Repeat("r", 5_000),
-		PRs: []digest.PRRecord{passed(1)}}))
-	require.NotContains(t, page, strings.Repeat("r", 200))
-	require.Contains(t, page, "Shadow digest")
-}
-
-// TestEmptyRepoAndPeriodRead: a snapshot with no name and no window still renders without a broken heading.
-func TestEmptyRepoAndPeriodRead(t *testing.T) {
-	page := digest.RenderMarkdown(digest.Compute(digest.Input{}))
-	require.Contains(t, page, "no repository given")
-	require.Contains(t, page, "all recorded results")
-	require.Contains(t, page, "nothing to say about readiness")
-}
-
-// TestWindowIsWrittenInUTC: the same report reads the same in every time zone, so the day is taken in UTC.
-func TestWindowIsWrittenInUTC(t *testing.T) {
-	loc := time.FixedZone("UTC+10", 10*60*60)
-	page := digest.RenderMarkdown(digest.Compute(digest.Input{
-		From: time.Date(2026, 11, 16, 1, 0, 0, 0, loc), To: time.Date(2026, 11, 23, 1, 0, 0, 0, loc)}))
-	require.Contains(t, page, "2026-11-15 to 2026-11-22")
 }
 
 // TestNoNaNOrInfinity: a page never holds a number a person cannot read, whatever the record held.

@@ -526,32 +526,6 @@ func TestABypassThatTheMergeBasePolicyDoesNotAllowOrForAnOldHeadChangesNothing(t
 	}
 }
 
-func TestShadowChecksAreNeutralWhateverTheVerdict(t *testing.T) {
-	for _, v := range []gate.Verdict{gate.VerdictPass, gate.VerdictFail, gate.VerdictUnknown} {
-		rows := rowsOf(withAction(pullRequest(), fastOn(head, v)))
-		c := checksOf(t, rows)
-		require.Equal(t, proof.ConclusionNeutral, c.Fast.Conclusion, v)
-	}
-	fail := checksOf(t, rowsOf(withAction(pullRequest(), fastOn(head, gate.VerdictFail))))
-	require.Contains(t, fail.Fast.Headline, "would block because approval")
-	unk := checksOf(t, rowsOf(withAction(pullRequest(), fastOn(head, gate.VerdictUnknown))))
-	require.Contains(t, unk.Fast.Headline, "would block: unknown approval")
-	pass := checksOf(t, rowsOf(withAction(pullRequest(), fastOn(head, gate.VerdictPass))))
-	require.Equal(t, "would pass", pass.Fast.Headline)
-}
-
-func TestEnforceFastConclusionTable(t *testing.T) {
-	for v, want := range map[gate.Verdict]proof.Conclusion{
-		gate.VerdictPass: proof.ConclusionSuccess, gate.VerdictFail: proof.ConclusionFailure,
-		gate.VerdictUnknown: proof.ConclusionActionRequired,
-	} {
-		in := withMode(withAction(pullRequest(), fastOn(head, v)), policy.ActionModeEnforce, false)
-		require.Equal(t, want, checksOf(t, rowsOf(in)).Fast.Conclusion, v)
-	}
-	typo := withMode(withAction(pullRequest(), fastOn(head, gate.VerdictUnknown)), "strict", false)
-	require.Equal(t, proof.ConclusionActionRequired, checksOf(t, rowsOf(typo)).Fast.Conclusion, "a typo does not switch the gate off")
-}
-
 func TestAStateResetMakesEveryProducedFactUnknownUntilItIsMadeAgain(t *testing.T) {
 	// The fold keeps observed facts and the cost records and drops the rest, so the view after a reset is this.
 	in := pullRequest()

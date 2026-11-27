@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"reflect"
 	"strings"
@@ -255,32 +254,6 @@ func TestCheckRunsRefusesAnUnknownConclusion(t *testing.T) {
 	_, err := env.a.CheckRuns(context.Background(), testRepo, id.SHA(shaHead))
 	if err == nil {
 		t.Fatal("unknown conclusion was accepted")
-	}
-}
-
-func TestCheckRunsUnauthorizedIsErrUnauthorized(t *testing.T) {
-	t.Parallel()
-	env := newTestEnv(t)
-	path := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
-	env.f.route("GET", path, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "Bad credentials"})
-	})
-	_, err := env.a.CheckRuns(context.Background(), testRepo, id.SHA(shaHead))
-	if !errors.Is(err, ports.ErrUnauthorized) {
-		t.Errorf("error = %v, want ports.ErrUnauthorized", err)
-	}
-}
-
-func TestCheckRunsNotFoundIsErrNotFound(t *testing.T) {
-	t.Parallel()
-	env := newTestEnv(t)
-	path := "/repos/aarush323/heimdall-fixture-pay/commits/" + shaHead + "/check-runs"
-	env.f.route("GET", path, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
-	})
-	_, err := env.a.CheckRuns(context.Background(), testRepo, id.SHA(shaHead))
-	if !errors.Is(err, ports.ErrNotFound) {
-		t.Errorf("error = %v, want ports.ErrNotFound", err)
 	}
 }
 

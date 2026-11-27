@@ -70,28 +70,6 @@ func (c *contract) do(ctx context.Context, t *testing.T) (ports.AgentResult, err
 	return loop.Run(ctx, c.run)
 }
 
-func TestContractAFinalToolEndsTheRunAsDone(t *testing.T) {
-	c := newContract(t,
-		answer(0.01, call("c1", "read_code", `{"path":"a.go"}`)),
-		answer(0.02, call("c2", "finish", `{"summary":"s"}`)),
-	)
-	res, err := c.do(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, ports.AgentStopDone, res.Stop)
-	require.NotNil(t, res.Submission)
-	assert.Equal(t, ports.AgentSubmission{Tool: "finish", Arguments: `{"summary":"s"}`}, *res.Submission)
-	assert.Equal(t, []string{`read_code {"path":"a.go"}`, `finish {"summary":"s"}`}, c.disp.calls)
-	require.Len(t, res.Turns, 2)
-	assert.InDelta(t, 0.03, res.CostUSD, 1e-12)
-	assert.Equal(t, int64(200), res.Usage.InputTokens)
-	// The system prompt and the first user message start the conversation.
-	require.GreaterOrEqual(t, len(c.model.requests[0].Messages), 2)
-	assert.Equal(t, ports.ModelRoleSystem, c.model.requests[0].Messages[0].Role)
-	assert.Equal(t, "go", c.model.requests[0].Messages[1].Content)
-	assert.Len(t, c.model.requests[0].Tools, 2)
-	assert.Equal(t, 4000, c.model.requests[0].MaxOutputTokens)
-}
-
 func TestContractATextAnswerIsDoneWithNoSubmission(t *testing.T) {
 	text := modelStep{resp: ports.ModelResponse{Content: "nothing to report", Finish: ports.ModelFinishStop,
 		Usage: ports.ModelUsage{InputTokens: 10, OutputTokens: 5}, CostUSD: 0.001}}

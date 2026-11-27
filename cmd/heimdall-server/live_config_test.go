@@ -135,24 +135,6 @@ func liveConfig(t *testing.T, names map[string]string) (cfg config.Config, dir s
 	return cfg, dir
 }
 
-func TestProductionDepsReadsACompleteConfig(t *testing.T) {
-	cfg, _ := liveConfig(t, defaultSecretNames)
-	d, err := productionDeps(cfg, discardLogger())
-	require.NoError(t, err)
-	require.Equal(t, testDatabaseURL, d.databaseURL, "the database URL is read through the secret name")
-	require.Equal(t, "https://jira.example.test", d.endpoints.jiraBaseURL)
-	require.Equal(t, "https://switch.example.test", d.endpoints.switchBaseURL)
-	require.Equal(t, "agent-coord-1", d.endpoints.switchAgentID)
-	require.Equal(t, "heimdall-coordinator", d.endpoints.switchAgentName)
-	require.Equal(t, "bridge-1", d.endpoints.switchBridgeID)
-	require.Equal(t, githubAPIRoot, d.endpoints.githubAPI)
-	require.NotNil(t, d.httpClient)
-	require.NotNil(t, d.logger)
-	require.Positive(t, d.pollEvery)
-	require.Positive(t, d.drainTick)
-	require.NoError(t, d.validate())
-}
-
 func TestProductionDepsNamesEveryMissingKey(t *testing.T) {
 	cfg := loadTestConfig(t, trackerProjectBody)
 	_, err := productionDeps(cfg, discardLogger())

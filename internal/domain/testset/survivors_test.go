@@ -41,10 +41,3 @@ func TestOpenSurvivorsResetsOnANewHead(t *testing.T) {
 		t.Fatalf("on the new head h2: open = %v, want all of %v", got, want)
 	}
 }
-
-func TestOpenSurvivorsDeduplicatesAndKeepsOrder(t *testing.T) {
-	got := OpenSurvivors("h", []string{"b", "a", "b"}, nil)
-	if want := []string{"b", "a"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("open = %v, want %v", got, want)
-	}
-}

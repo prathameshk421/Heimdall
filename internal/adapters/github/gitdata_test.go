@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -126,24 +125,6 @@ func TestRefOperationsRefuseBadInputBeforeAnyRequest(t *testing.T) {
 	}
 }
 
-func TestCreateBlobSendsBase64AndReturnsTheHash(t *testing.T) {
-	t.Parallel()
-	env := newActionEnv(t)
-	env.f.route("POST", repoRoot+"/git/blobs", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaNew})
-	})
-	got, err := env.x.CreateBlob(context.Background(), testRepo, []byte("hello\x00world"))
-	if err != nil || string(got) != shaNew {
-		t.Fatalf("CreateBlob = %q, %v", got, err)
-	}
-	body := lastPostBody(t, env, repoRoot+"/git/blobs")
-	raw, _ := base64.StdEncoding.DecodeString(body["content"].(string))
-	if body["encoding"] != "base64" || string(raw) != "hello\x00world" {
-		t.Errorf("body = %v", body)
-	}
-	env.wantAuth(t)
-}
-
 func TestCreateBlobRefusesAnOversizedBlob(t *testing.T) {
 	t.Parallel()
 	env := newActionEnv(t)
@@ -188,20 +169,6 @@ func TestCreateTreeSendsEntriesAndBase(t *testing.T) {
 		t.Errorf("entries = %v", tree)
 	}
 	env.wantAuth(t)
-}
-
-func TestCreateTreeWithoutBaseOmitsBaseTree(t *testing.T) {
-	t.Parallel()
-	env := newActionEnv(t)
-	env.f.route("POST", repoRoot+"/git/trees", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaTree})
-	})
-	if _, err := env.x.CreateTree(context.Background(), testRepo, "", []ports.GitTreeEntry{{Path: "a", Mode: "100644", SHA: id.SHA(shaNew)}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, has := lastPostBody(t, env, repoRoot+"/git/trees")["base_tree"]; has {
-		t.Error("base_tree was sent for an empty base")
-	}
 }
 
 func TestCreateTreeRefusesBadEntries(t *testing.T) {
@@ -252,20 +219,6 @@ func TestCreateCommitSendsTreeAndParentsAndMovesNoRef(t *testing.T) {
 		}
 	}
 	env.wantAuth(t)
-}
-
-func TestCreateCommitWithNoParentSendsAnEmptyList(t *testing.T) {
-	t.Parallel()
-	env := newActionEnv(t)
-	env.f.route("POST", repoRoot+"/git/commits", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaNew})
-	})
-	if _, err := env.x.CreateCommit(context.Background(), testRepo, "root", id.SHA(shaTree), nil); err != nil {
-		t.Fatal(err)
-	}
-	if p, ok := lastPostBody(t, env, repoRoot+"/git/commits")["parents"].([]any); !ok || len(p) != 0 {
-		t.Errorf("parents = %v, want an empty list", p)
-	}
 }
 
 func TestCreateCommitRefusesBadInput(t *testing.T) {

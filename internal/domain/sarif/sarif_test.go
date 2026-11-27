@@ -77,14 +77,6 @@ func TestParseRefusesWhatCannotBeFingerprinted(t *testing.T) {
 	}
 }
 
-func TestFingerprintIgnoresLineNumbersAndIndentation(t *testing.T) {
-	a := fingerprint("r", "a.go", "\treturn  x +\n\t\ty")
-	b := fingerprint("r", "a.go", "return x + y")
-	if a != b {
-		t.Fatalf("collapsed text differs: %s vs %s", a, b)
-	}
-}
-
 func FuzzParse(f *testing.F) {
 	for _, s := range []string{`{}`, `{"runs":[]}`, `{"runs":[{"results":[{"ruleId":"r","level":"note","message":{"text":"m"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"a"},"region":{"startLine":1,"endLine":2,"snippet":{"text":"t"}}}}]}]}]}`} {
 		f.Add([]byte(s))

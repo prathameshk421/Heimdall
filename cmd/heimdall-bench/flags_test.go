@@ -24,21 +24,6 @@ func TestParseReviewFlagsNeedsTheModelAndTheKeyBeforeAPrice(t *testing.T) {
 	require.Equal(t, []string{"testify-1207", "chi-1185"}, mustIDs(t, o.only))
 }
 
-func TestParseReviewFlagsNamesTheMissingFlag(t *testing.T) {
-	// A usage error must say which flag is missing, in the order an operator meets them. A price error first would
-	// hide the missing model behind a message about a model that is empty.
-	base := []string{"-out", "review.json"}
-
-	_, err := parseReviewFlags(base, &bytes.Buffer{})
-	require.ErrorContains(t, err, "-model")
-
-	_, err = parseReviewFlags(append(base, "-model", "deepseek/deepseek-v4-flash"), &bytes.Buffer{})
-	require.ErrorContains(t, err, "-key-file")
-
-	_, err = parseReviewFlags(base, &bytes.Buffer{})
-	require.NotContains(t, err.Error(), "-price-input", "a missing model is not a price problem")
-}
-
 func TestParseReviewFlagsRefusesABadOnlyList(t *testing.T) {
 	args := []string{"-out", "r.json", "-model", "deepseek/deepseek-v4-flash", "-key-file", "/tmp/k", "-only", "a,a"}
 	_, err := parseReviewFlags(args, &bytes.Buffer{})

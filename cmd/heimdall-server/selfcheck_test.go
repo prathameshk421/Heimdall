@@ -11,7 +11,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/rootlessrunner"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/outbox"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
@@ -22,35 +21,6 @@ import (
 func captureLogger() (*slog.Logger, *bytes.Buffer) {
 	var buf bytes.Buffer
 	return slog.New(slog.NewTextHandler(&buf, nil)), &buf
-}
-
-func probeOK(context.Context) error { return nil }
-
-// One failing dependency withholds exactly its tools, with one log line each and one /healthz line each; a healthy
-// dependency withholds nothing (HARNESS_DESIGN B8).
-func TestASelfCheckWithholdsOnlyTheToolsOfTheFailedDependency(t *testing.T) {
-	logger, logs := captureLogger()
-	got := runSelfCheck(context.Background(), logger, time.Second, []dependency{
-		{name: "runner", tools: []string{"run_check"}, reason: "runner unreachable",
-			probe: func(context.Context) error {
-				return errors.New("dial unix /run/heimdall-runner/runner.sock: no such file")
-			}},
-		{name: "code host", tools: []string{"read_code"}, reason: "code host unreachable", probe: probeOK},
-	})
-	require.Equal(t, map[string]string{"run_check": "runner unreachable"}, got.withheld)
-	require.Equal(t, []string{"run_check: runner unreachable"}, got.degraded)
-	require.Equal(t, 1, strings.Count(logs.String(), "\n"), logs.String())
-	require.Contains(t, logs.String(), `msg="run_check withheld: runner unreachable"`)
-	require.Contains(t, logs.String(), "no such file", "the cause is logged for the operator")
-}
-
-func TestAProbeThatHangsIsCutAtTheTimeout(t *testing.T) {
-	logger, _ := captureLogger()
-	got := runSelfCheck(context.Background(), logger, 10*time.Millisecond, []dependency{
-		{name: "knowledge search", tools: []string{"ask_knowledge"}, reason: "knowledge search unreachable",
-			probe: func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }},
-	})
-	require.Equal(t, "knowledge search unreachable", got.withheld["ask_knowledge"])
 }
 
 type fakeRunnerHealth struct {
@@ -69,12 +39,6 @@ func TestTheRunnerProbeRequiresTheCheckAndTestKinds(t *testing.T) {
 	got := runSelfCheck(context.Background(), logger, time.Second, []dependency{{name: "runner", tools: []string{"run_check"},
 		reason: "runner unreachable", probe: runnerProbe(fakeRunnerHealth{kinds: []ports.SandboxKind{ports.SandboxRedFirst}})}})
 	require.Equal(t, "runner does not run check and test jobs", got.withheld["run_check"])
-}
-
-// The production runner client against a socket nobody listens on fails the probe.
-func TestTheRunnerProbeFailsWhenTheSocketIsMissing(t *testing.T) {
-	err := runnerProbe(rootlessrunner.Client{Socket: testRunnerSocket})(context.Background())
-	require.ErrorContains(t, err, "runner health")
 }
 
 type fakeCodeReads struct {

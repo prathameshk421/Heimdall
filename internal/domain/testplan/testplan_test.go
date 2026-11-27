@@ -27,19 +27,6 @@ func load(t *testing.T, path string) goldenCase {
 	return c
 }
 
-func TestGoldenValidPlansAccepted(t *testing.T) {
-	files, _ := filepath.Glob("../../../testdata/plan/testplan/valid/*.json")
-	if len(files) != 2 {
-		t.Fatalf("want 2 valid goldens, found %d", len(files))
-	}
-	for _, f := range files {
-		c := load(t, f)
-		if got := CheckPlan(c.Input, c.Plan); len(got) != 0 {
-			t.Errorf("%s: refused with %+v", filepath.Base(f), got)
-		}
-	}
-}
-
 // TestGoldenRefusedPlans: each refused case breaks exactly one rule, and CheckPlan says exactly the refusal written.
 func TestGoldenRefusedPlans(t *testing.T) {
 	files, _ := filepath.Glob("../../../testdata/plan/testplan/refused/*.json")

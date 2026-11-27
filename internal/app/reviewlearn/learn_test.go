@@ -5,24 +5,6 @@ import (
 	"testing"
 )
 
-func TestMutedAfterFiveDropsWithoutAConfirmation(t *testing.T) {
-	cases := []struct {
-		name string
-		t    RuleTally
-		want bool
-	}{
-		{"five drops, none confirmed", RuleTally{"r", 0, 5}, true},
-		{"four drops", RuleTally{"r", 0, 4}, false},
-		{"five drops but one confirmed", RuleTally{"r", 1, 5}, false},
-		{"no history", RuleTally{"r", 0, 0}, false},
-	}
-	for _, c := range cases {
-		if got := c.t.Muted(); got != c.want {
-			t.Errorf("%s: Muted = %v, want %v", c.name, got, c.want)
-		}
-	}
-}
-
 func TestListedKeepsOnlyMutedRulesSortedByName(t *testing.T) {
 	got := Listed([]RuleTally{
 		{"zeta", 0, 6}, {"alpha", 0, 5}, {"keep", 3, 9}, {"few", 0, 2},

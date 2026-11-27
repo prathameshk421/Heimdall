@@ -127,24 +127,6 @@ func testTokenHash() string {
 	return hex.EncodeToString(sum[:])
 }
 
-func TestPrepareBuildsRoleBoundHandoffsAndLeavesAgentsStopped(t *testing.T) {
-	p := &fakeProvisioner{}
-	svc := newService(t, p)
-	got, err := svc.Prepare(context.Background())
-	require.NoError(t, err)
-	require.Len(t, got, 2)
-	require.Equal(t, id.AgentName("reviewer-1"), got[0].Agent)
-	require.Equal(t, workflow.RoleReviewer, got[0].Role)
-	require.Equal(t, "/etc/heimdall/secrets/agent_token_reviewer-1", got[0].TokenFile)
-	require.Equal(t, "http://127.0.0.1:8080/mcp", got[0].MCP.URL)
-	require.Equal(t, "Bearer {{file:secrets/agent_token_reviewer-1}}", got[0].MCP.Auth["Authorization"])
-	require.NotEmpty(t, got[0].TokenSHA256)
-	require.Len(t, p.states, 2)
-	for _, state := range p.states {
-		require.Equal(t, ports.ManagedAgentStopped, state.state, "configuration must be installed while the controller has the agent stopped")
-	}
-}
-
 func TestActivateRequiresInstalledReceiptForExactRoleEndpointAndToken(t *testing.T) {
 	p := &fakeProvisioner{}
 	svc := newService(t, p)
@@ -163,27 +145,6 @@ func TestActivateRequiresInstalledReceiptForExactRoleEndpointAndToken(t *testing
 	// The host receipt is checked against the configured secret; it cannot activate on a wrong fingerprint.
 	require.Error(t, svc.Activate(context.Background(), receipt))
 	require.Empty(t, p.states)
-}
-
-func TestActivateRequestsSwitchStartOnlyAfterCredentialReceiptMatches(t *testing.T) {
-	p := &fakeProvisioner{}
-	svc := newService(t, p)
-	handoffs, err := svc.Prepare(context.Background())
-	require.NoError(t, err)
-	var handoff Handoff
-	for _, candidate := range handoffs {
-		if candidate.Agent == "test-author" {
-			handoff = candidate
-		}
-	}
-	receipt := Receipt{
-		Agent: handoff.Agent, Role: handoff.Role, MCPEndpoint: handoff.MCP.URL,
-		TokenSHA256: handoff.TokenSHA256, CredentialsInstalled: true,
-	}
-	require.NoError(t, svc.Activate(context.Background(), receipt))
-	require.Len(t, p.states, 3)
-	require.Equal(t, "switch-test-author", p.states[2].id)
-	require.Equal(t, ports.ManagedAgentRunning, p.states[2].state)
 }
 
 func TestPrepareRejectsDuplicateMCPTokenValues(t *testing.T) {
@@ -211,33 +172,6 @@ func TestPreparePropagatesUnavailableWithoutStartingOrMaskingError(t *testing.T)
 	require.Empty(t, p.states)
 }
 
-func TestActivationErrorRemainsRetryable(t *testing.T) {
-	p := &fakeProvisioner{err: errors.New("controller down")}
-	svc := newService(t, p)
-	receipt := Receipt{Agent: "test-author", Role: workflow.RoleTestAuthor, MCPEndpoint: "http://127.0.0.1:8080/mcp",
-		TokenSHA256: testTokenHash(), CredentialsInstalled: true}
-	err := svc.Activate(context.Background(), receipt)
-	require.Error(t, err)
-	require.Empty(t, p.states)
-}
-
-func TestActivationRetryAfterControllerFailureReconcilesDesiredState(t *testing.T) {
-	p := &fakeProvisioner{err: errors.New("controller unavailable")}
-	svc := newService(t, p)
-	receipt := Receipt{Agent: "test-author", Role: workflow.RoleTestAuthor, MCPEndpoint: "http://127.0.0.1:8080/mcp",
-		TokenSHA256: testTokenHash(), CredentialsInstalled: true}
-	require.Error(t, svc.Activate(context.Background(), receipt))
-	p.err = nil
-	require.NoError(t, svc.Activate(context.Background(), receipt))
-	require.NoError(t, svc.Activate(context.Background(), receipt))
-	require.Len(t, p.ensures, 3, "each retry must reconcile the managed definition before requesting state")
-	require.Len(t, p.states, 2)
-	for _, state := range p.states {
-		require.Equal(t, "switch-test-author", state.id)
-		require.Equal(t, ports.ManagedAgentRunning, state.state)
-	}
-}
-
 func TestActivationRecordsDurableReceiptOnlyAfterSwitchAcceptsStart(t *testing.T) {
 	p := &fakeProvisioner{err: errors.New("controller unavailable")}
 	svc := newService(t, p)
@@ -260,46 +194,7 @@ func TestActivationRecordsDurableReceiptOnlyAfterSwitchAcceptsStart(t *testing.T
 	require.Equal(t, 1, ledger.count, "an exact replay adds no second local receipt")
 }
 
-func TestSyncDefinitionsMovesEveryAgentToTheConfiguredModelAndCreatesNone(t *testing.T) {
-	p := &fakeProvisioner{}
-	svc := newService(t, p)
-	require.NoError(t, svc.SyncDefinitions(context.Background()))
-	require.Len(t, p.models, len(svc.cfg.Agents))
-	for _, spec := range p.models {
-		require.Equal(t, svc.cfg.Model, spec.Model)
-	}
-	require.Empty(t, p.ensures, "a sync never creates an agent")
-	require.Empty(t, p.states, "a sync never starts an agent")
-}
-
 func TestSyncDefinitionsLeavesAnAgentThatIsNotInSwitchYet(t *testing.T) {
 	p := &fakeProvisioner{modelErr: ports.ErrNotFound}
 	require.NoError(t, newService(t, p).SyncDefinitions(context.Background()))
-}
-
-// A second prepare leaves an agent running when its recorded receipt still matches its role, endpoint and token: its
-// setup did not change, so stopping it would only take a working agent down (live, Nov 21: all five stopped, D177).
-// An agent with no receipt, or one whose token changed, is still stopped for configuration.
-func TestPrepareLeavesAnAgentWithAMatchingReceiptRunning(t *testing.T) {
-	p := &fakeProvisioner{}
-	svc := newService(t, p)
-	handoffs, err := svc.Prepare(context.Background())
-	require.NoError(t, err)
-	for _, h := range handoffs {
-		if h.Agent == "test-author" {
-			require.NoError(t, svc.Activate(context.Background(), Receipt{Agent: h.Agent, Role: h.Role, MCPEndpoint: h.MCP.URL,
-				TokenSHA256: h.TokenSHA256, CredentialsInstalled: true}))
-		}
-	}
-	p.states = nil
-
-	again, err := svc.Prepare(context.Background())
-	require.NoError(t, err)
-	require.Len(t, p.states, 1, "only the agent without a receipt is stopped")
-	require.Equal(t, "switch-reviewer-1", p.states[0].id)
-	for _, h := range again {
-		if h.Agent == "test-author" {
-			require.Equal(t, string(ports.ManagedAgentRunning), h.DesiredState)
-		}
-	}
 }

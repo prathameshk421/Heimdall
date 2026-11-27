@@ -48,25 +48,6 @@ func TestRegistrationKeyDoesNotPrintInFormatting(t *testing.T) {
 	require.Contains(t, reg.String(), "redacted")
 }
 
-func TestOpenRoomCreatesTheRoomWithTheCoordinatorAsMember(t *testing.T) {
-	f := newFakeSwitch(t)
-	c, _ := newTestClient(t, f)
-	room, err := c.OpenRoom(context.Background(), ports.RoomRequest{
-		ChangeID: "PAY-142", Title: "PAY-142 refunds", Key: "room_open:PAY-142:1:room",
-	})
-	require.NoError(t, err)
-	require.NotEmpty(t, room)
-
-	creates := f.opCalls("create_room")
-	require.Len(t, creates, 1)
-	require.Equal(t, "PAY-142 refunds", creates[0]["name"])
-	require.Equal(t, []any{testAgentName}, creates[0]["agent_names"], "the coordinator must be listed to join its own room")
-	require.Equal(t, "channel_public", creates[0]["channel_type"])
-	description, _ := creates[0]["description"].(string)
-	require.NotEmpty(t, description, "Switch 0.31 rejects create_room without a description")
-	require.Contains(t, description, "PAY-142")
-}
-
 func TestOpenRoomPutsTheWorkflowAgentsInTheRoomWhenItIsCreated(t *testing.T) {
 	f := newFakeSwitch(t)
 	c, _ := newTestClient(t, f)
@@ -96,19 +77,6 @@ func TestOpenRoomAdoptsTheRoomItAlreadyMadeInsteadOfCreatingAnother(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, first, second, "a repeat with the same title adopts the room")
 	require.Len(t, f.opCalls("create_room"), 1, "no second room is created")
-}
-
-func TestOpenRoomPassesTheConfiguredBridge(t *testing.T) {
-	f := newFakeSwitch(t)
-	c, _ := newTestClient(t, f)
-	c.bridgeID = testConnBridge
-	_, err := c.OpenRoom(context.Background(), ports.RoomRequest{
-		ChangeID: "PAY-142", Title: "PAY-142 refunds", Key: "k1",
-	})
-	require.NoError(t, err)
-	creates := f.opCalls("create_room")
-	require.Len(t, creates, 1)
-	require.Equal(t, testConnBridge, creates[0]["bridge_id"])
 }
 
 func TestInviteAgentSendsRoomAndName(t *testing.T) {

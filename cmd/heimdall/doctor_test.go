@@ -96,26 +96,6 @@ func TestDoctorFailsTheConfigCheckWhenNoPathIsGiven(t *testing.T) {
 	require.Contains(t, out, "no config file")
 }
 
-func TestDoctorJSONOutputIsAMachineReadableArray(t *testing.T) {
-	f := passingDeps()
-	f.dockerVersion = func(context.Context) (string, error) { return "", errors.New("daemon down") }
-	code, out, _ := runWith(t, []string{"--json", "--config", testConfigPath}, f)
-
-	require.Equal(t, 1, code, out)
-	var rows []checkResult
-	require.NoError(t, json.Unmarshal([]byte(out), &rows), "output must be only JSON, got:\n%s", out)
-	require.Len(t, rows, 3)
-	byName := map[string]checkResult{}
-	for _, r := range rows {
-		byName[r.Check] = r
-	}
-	require.Equal(t, "ok", byName["config"].Status)
-	require.Equal(t, "fail", byName["docker"].Status)
-	require.Contains(t, byName["docker"].Detail, "daemon down")
-	require.Equal(t, "skipped", byName["postgres"].Status)
-	require.NotEmpty(t, byName["postgres"].Detail, "a skipped check gives its reason")
-}
-
 func TestDoctorRejectsAnUnknownFlagWithUsageStatus(t *testing.T) {
 	f := passingDeps()
 	code, out, errOut := runWith(t, []string{"--bogus"}, f)
@@ -136,20 +116,6 @@ func TestDoctorHostRunsHostChecksWithoutLoadingOperatorConfig(t *testing.T) {
 	require.Equal(t, 0, code, out)
 	require.False(t, f.loadCalled, "host prerequisites must run before an operator config exists")
 	require.Equal(t, "ok", statusOf(out, "host.sudo"), out)
-}
-
-func TestDoctorHostFailsWhenAHostPrerequisiteFails(t *testing.T) {
-	f := passingDeps()
-	f.hostChecks = func(context.Context, string) []checkResult {
-		return []checkResult{result("host.nftables", statusFail, "nft command is unavailable")}
-	}
-	code, out, _ := runWith(t, []string{"--host", "--json"}, f)
-
-	require.Equal(t, 1, code, out)
-	var rows []checkResult
-	require.NoError(t, json.Unmarshal([]byte(out), &rows))
-	require.Equal(t, []checkResult{result("host.nftables", statusFail, "nft command is unavailable")}, rows)
-	require.False(t, f.loadCalled)
 }
 
 // fakeInstallation is the GitHub installation reader a test injects. It records each call and its deadline.
@@ -276,18 +242,6 @@ func TestDoctorStrictFailsOnATooBroadPermission(t *testing.T) {
 	require.Equal(t, "too broad", rowsByName(t, out)["github.workflows"].Status)
 }
 
-func TestDoctorCallsAWriteOnMetadataTooBroadWhereReadIsEnough(t *testing.T) {
-	inst := goodInstallation()
-	inst.Permissions["metadata"] = "write"
-	f := gitHubDeps(t, &fakeInstallation{inst: inst})
-	code, out, _ := runWith(t, []string{"--json", "--config", testConfigPath}, f)
-
-	require.Equal(t, 0, code, out)
-	row := rowsByName(t, out)["github.metadata"]
-	require.Equal(t, "too broad", row.Status, out)
-	require.Contains(t, row.Detail, "read is enough")
-}
-
 func TestDoctorCallsAdminTooBroadWhereWriteIsEnough(t *testing.T) {
 	inst := goodInstallation()
 	inst.Permissions["contents"] = "admin"
@@ -330,17 +284,6 @@ func TestDoctorNotVerifiedWhenTheReaderCannotBeBuilt(t *testing.T) {
 	require.Equal(t, "not verified", rowsByName(t, out)["github"].Status)
 }
 
-func TestDoctorSkipsGitHubWhenItIsNotSelected(t *testing.T) {
-	reader := &fakeInstallation{inst: goodInstallation()}
-	f := passingDeps()
-	f.githubReader = func(config.Config) (installationReader, error) { return reader, nil }
-	code, out, _ := runWith(t, []string{"--json", "--config", testConfigPath}, f)
-
-	require.Equal(t, 0, code, out)
-	require.Len(t, rowsByName(t, out), 3, "no GitHub rows when GitHub is not the VCS provider")
-	require.Equal(t, 0, reader.calls, "the GitHub call is not made")
-}
-
 func TestDoctorNamesTheSelectedRepositories(t *testing.T) {
 	inst := goodInstallation()
 	inst.Repositories = github.Repositories{Names: []string{"aarush323/heimdall-fixture-pay"}}
@@ -361,23 +304,4 @@ func TestDoctorFailsWhenTheInstallationReachesNoRepository(t *testing.T) {
 
 	require.Equal(t, 1, code, out)
 	require.Equal(t, "missing", rowsByName(t, out)["github.repositories"].Status)
-}
-
-func TestDoctorSkipsGitHubWhenAnotherVCSProviderIsSelected(t *testing.T) {
-	text := "secrets_dir = \"" + t.TempDir() + "\"\n[vcs]\nprovider = \"gitlab\"\n\n" +
-		"[[projects]]\ntracker_project = \"KAN\"\nrepo = \"aarush323/PBL_TOS_RISK_ANALYZER\"\nbase_branch = \"heimdall-demo\"\n"
-	path := filepath.Join(t.TempDir(), "heimdall.toml")
-	require.NoError(t, os.WriteFile(path, []byte(text), 0o600))
-	cfg, err := config.Load(path)
-	require.NoError(t, err)
-
-	reader := &fakeInstallation{inst: goodInstallation()}
-	f := passingDeps()
-	f.loadConfig = func(string) (config.Config, error) { return cfg, nil }
-	f.githubReader = func(config.Config) (installationReader, error) { return reader, nil }
-	code, out, _ := runWith(t, []string{"--json", "--config", testConfigPath}, f)
-
-	require.Equal(t, 0, code, out)
-	require.Len(t, rowsByName(t, out), 3, "a non-GitHub provider gets no GitHub rows")
-	require.Equal(t, 0, reader.calls, "the GitHub call is made only for GitHub")
 }

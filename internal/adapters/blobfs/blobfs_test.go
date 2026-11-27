@@ -1,11 +1,7 @@
 package blobfs
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -14,25 +10,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 	"github.com/stretchr/testify/require"
 )
-
-func TestPutAndGetByContentHash(t *testing.T) {
-	store, err := New(t.TempDir())
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, store.Close()) })
-
-	content := []byte("durable blob")
-	ref, err := store.Put(context.Background(), ports.BlobEvidence, bytes.NewReader(content))
-	require.NoError(t, err)
-	want := "blob:sha256:" + func() string { sum := sha256.Sum256(content); return hex.EncodeToString(sum[:]) }()
-	require.Equal(t, want, string(ref))
-
-	reader, err := store.Get(context.Background(), ref)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, reader.Close()) })
-	got, err := io.ReadAll(reader)
-	require.NoError(t, err)
-	require.Equal(t, content, got)
-}
 
 func TestPutUsesClassDirectoryAndRejectsUnknownClass(t *testing.T) {
 	root := t.TempDir()

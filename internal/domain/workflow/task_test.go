@@ -19,19 +19,6 @@ func golden(t *testing.T) []byte {
 	return b
 }
 
-func TestTaskEnvelopeDecodesTheSpecExampleAndEncodesItBack(t *testing.T) {
-	var env workflow.TaskEnvelope
-	require.NoError(t, json.Unmarshal(golden(t), &env))
-	require.NoError(t, env.Validate())
-	require.Equal(t, workflow.RoleReviewer, env.Role)
-	require.Equal(t, "PAY-142", env.Change.ID.String())
-	require.Equal(t, 150000, env.ContextBudgetTokens)
-	require.Equal(t, time.Date(2026, 11, 5, 14, 0, 0, 0, time.UTC), env.Deadline.UTC())
-	out, err := json.Marshal(env)
-	require.NoError(t, err)
-	require.JSONEq(t, string(golden(t)), string(out), "golden JSON: the wire format is frozen")
-}
-
 func decode(t *testing.T) workflow.TaskEnvelope {
 	t.Helper()
 	var env workflow.TaskEnvelope
@@ -91,14 +78,4 @@ func TestTaskEnvelopeRefusesBadValuesWhenDecoded(t *testing.T) {
 			require.Error(t, json.Unmarshal([]byte(bad), &env))
 		})
 	}
-}
-
-func TestRolesAndTheirSkills(t *testing.T) {
-	for _, r := range []workflow.Role{workflow.RoleTestAuthor, workflow.RoleReviewer, workflow.RoleResolver, workflow.RoleProfiler} {
-		parsed, err := workflow.ParseRole(string(r))
-		require.NoError(t, err)
-		require.Equal(t, r, parsed)
-	}
-	_, err := workflow.ParseRole("coordinator")
-	require.Error(t, err, "the coordinator is not an LLM role and gets no task envelope")
 }

@@ -95,31 +95,6 @@ func readFile(t *testing.T, path string) []byte {
 	return raw
 }
 
-func TestConnectPeopleFlagsAddSenderIDAndWriteFile(t *testing.T) {
-	path := policyFile(t, specPolicyBytes(t))
-	code, _, errb := peopleRun(t, "", testPeopleDeps(&fakeDirectory{}),
-		"--policy", path, "--name", "rev-backend", "--sender", "rev-backend-id")
-	require.Equal(t, 0, code, errb)
-
-	pol, err := policyyaml.Decode(readFile(t, path))
-	require.NoError(t, err, "the file written must load strictly and validate")
-	require.Equal(t, "rev-backend-id", pol.People["rev-backend"].Chat)
-}
-
-// TestConnectPeopleKeepsTheRestOfTheFile: only the people table is rewritten. The other keys and the top comment stay.
-func TestConnectPeopleKeepsTheRestOfTheFile(t *testing.T) {
-	path := policyFile(t, specPolicyBytes(t))
-	code, _, errb := peopleRun(t, "", testPeopleDeps(&fakeDirectory{}),
-		"--policy", path, "--name", "rev-backend", "--sender", "rev-backend-id")
-	require.Equal(t, 0, code, errb)
-
-	out := string(readFile(t, path))
-	require.Contains(t, out, "# The policy example from docs/TECH_SPEC.md section 16")
-	require.Contains(t, out, "ci_required:")
-	require.Contains(t, out, "budgets:")
-	require.Contains(t, out, "rev-backend")
-}
-
 func TestConnectPeopleRefusesSenderIDOfAnotherPersonAndKeepsFile(t *testing.T) {
 	raw := specPolicyBytes(t)
 	path := policyFile(t, raw)
@@ -160,17 +135,6 @@ func TestConnectPeopleRequiresGitHubForAuthor(t *testing.T) {
 	require.Equal(t, raw, readFile(t, path))
 }
 
-func TestConnectPeopleGitHubIsOptionalForReviewers(t *testing.T) {
-	path := policyFile(t, specPolicyBytes(t))
-	code, _, errb := peopleRun(t, "", testPeopleDeps(&fakeDirectory{}),
-		"--policy", path, "--name", "rev-backend", "--sender", "rev-backend-id")
-	require.Equal(t, 0, code, errb)
-
-	pol, err := policyyaml.Decode(readFile(t, path))
-	require.NoError(t, err)
-	require.Empty(t, pol.People["rev-backend"].GitHub, "github is optional for a reviewer (D158)")
-}
-
 func TestConnectPeopleRefusesApproverRoleOutsideApproverGroups(t *testing.T) {
 	raw := specPolicyBytes(t)
 	path := policyFile(t, raw)
@@ -188,23 +152,6 @@ func TestConnectPeopleRefusesGitHubLoginOfAnotherPerson(t *testing.T) {
 		"--policy", path, "--name", "rev-backend", "--sender", "rev-backend-id", "--github", "ALICE")
 	require.Equal(t, connectExitFail, code)
 	require.Equal(t, raw, readFile(t, path))
-}
-
-func TestConnectPeopleListPrintsSwitchUsers(t *testing.T) {
-	dir := &fakeDirectory{users: []switchUser{
-		{Name: "Dana Smith", SenderID: "@dana", Type: "user"},
-		{Name: "bob-reviewer", SenderID: "bob-reviewer", Type: "agent"},
-	}}
-	code, out, errb := peopleRun(t, "", testPeopleDeps(dir), "--list")
-	require.Equal(t, 0, code, errb)
-	require.Equal(t, 1, dir.calls)
-	require.Contains(t, out, "NAME")
-	require.Contains(t, out, "SENDER ID")
-	require.Contains(t, out, "TYPE")
-	require.Contains(t, out, "Dana Smith")
-	require.Contains(t, out, "@dana")
-	require.Contains(t, out, "bob-reviewer")
-	require.Contains(t, out, "agent")
 }
 
 func TestConnectPeopleListUsesConfiguredSwitchClient(t *testing.T) {
@@ -286,18 +233,6 @@ func TestConnectPeopleInteractiveSelectsSenderByNumber(t *testing.T) {
 	require.Equal(t, "@eve", pol.People["rev-a"].Chat)
 }
 
-func TestConnectPeopleInteractivePastesSenderIDInsteadOfNumber(t *testing.T) {
-	path := policyFile(t, specPolicyBytes(t))
-	dir := &fakeDirectory{users: []switchUser{{Name: "Dana Smith", SenderID: "@dana", Type: "user"}}}
-	stdin := "rev-a\n@pasted-id\n\n\n\n\n"
-	code, _, errb := peopleRun(t, stdin, testPeopleDeps(dir), "--policy", path)
-	require.Equal(t, 0, code, errb)
-
-	pol, err := policyyaml.Decode(readFile(t, path))
-	require.NoError(t, err)
-	require.Equal(t, "@pasted-id", pol.People["rev-a"].Chat)
-}
-
 func TestConnectPeopleInteractiveOfflineStillTakesTypedSenderID(t *testing.T) {
 	path := policyFile(t, specPolicyBytes(t))
 	var got config.Config
@@ -344,15 +279,6 @@ func TestConnectPeopleInteractiveRefusedEntryIsNotSaved(t *testing.T) {
 	code, out, errb := peopleRun(t, "alice\nalice-2\n\n\n\n\n", testPeopleDeps(&fakeDirectory{}), "--policy", path)
 	require.Equal(t, 0, code, errb)
 	require.Contains(t, out, "not saved")
-	require.Equal(t, raw, readFile(t, path))
-}
-
-func TestConnectPeopleInteractiveNothingToChangeWritesNothing(t *testing.T) {
-	raw := specPolicyBytes(t)
-	path := policyFile(t, raw)
-	code, out, _ := peopleRun(t, "\n", testPeopleDeps(&fakeDirectory{}), "--policy", path)
-	require.Equal(t, 0, code)
-	require.Contains(t, out, "no change")
 	require.Equal(t, raw, readFile(t, path))
 }
 

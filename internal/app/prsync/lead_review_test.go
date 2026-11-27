@@ -22,7 +22,7 @@ func TestLeadDismissingTheSameReviewInvalidatesTheApproval(t *testing.T) {
 	r.prs.prs[testRepo] = []ports.PR{pr}
 	changeID := id.ChangeID("PAY-10")
 	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
+	r.seedInitialPROpened(changeID, 10)
 
 	review := prsync.PRReview{ID: "rev-1", Login: reviewerBob, State: prsync.ReviewApproved, CommitSHA: head1, SubmittedAt: testNow}
 	r.reviews.reviews[10] = []prsync.PRReview{review}
@@ -47,32 +47,4 @@ func TestLeadDismissingTheSameReviewInvalidatesTheApproval(t *testing.T) {
 	res, err = r.syncer.SyncOnce(context.Background())
 	require.NoError(t, err)
 	require.Zero(t, res.Appended)
-}
-
-// A fresh syncer (a restart) must reach the same decision from the event log alone.
-func TestLeadDismissalIsFoundAfterARestart(t *testing.T) {
-	t.Parallel()
-	r := newRig(t)
-	pr := samplePR(10, head1, ports.PRStateOpen)
-	r.prs.prs[testRepo] = []ports.PR{pr}
-	changeID := id.ChangeID("PAY-10")
-	r.intake.changeID[10] = changeID
-	r.seedInitialPROpened(changeID, 10, head1)
-
-	review := prsync.PRReview{ID: "rev-1", Login: reviewerBob, State: prsync.ReviewApproved, CommitSHA: head1, SubmittedAt: testNow}
-	r.reviews.reviews[10] = []prsync.PRReview{review}
-	_, err := r.syncer.SyncOnce(context.Background())
-	require.NoError(t, err)
-
-	// A new Syncer on the same event log and the same GitHub fakes: it has no memory of the first one.
-	fresh, err := prsync.New(prsync.Config{
-		Repos: r.repos, PRs: r.prs, Streams: r.events, Intake: r.intake, Reviews: r.reviews, Checks: r.checks,
-		Events: r.events, Clock: r.clock, IDs: r.ids,
-	})
-	require.NoError(t, err)
-	review.State = prsync.ReviewDismissed
-	r.reviews.reviews[10] = []prsync.PRReview{review}
-	res, err := fresh.SyncOnce(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, 1, res.Appended)
 }

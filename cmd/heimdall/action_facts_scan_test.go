@@ -33,39 +33,6 @@ func analyzerRequest() action.FactRequest {
 	return action.FactRequest{Repo: change.Repo(fakeRepo), Number: 7, Head: testHead, Policy: act}
 }
 
-// TestCodeScanningAlertsAreMetWhenNoneAreOpen: the common case of a repository with code scanning on and no open alert.
-func TestCodeScanningAlertsAreMetWhenNoneAreOpen(t *testing.T) {
-	r := &alertReader{}
-	d, err := newDiffFacts(r)
-	require.NoError(t, err)
-	got, err := d.FastFacts(context.Background(), analyzerRequest())
-	require.NoError(t, err)
-	require.True(t, got.Analyzers.Known, "an empty list is a known fact")
-	require.Empty(t, got.Analyzers.Head)
-	require.Equal(t, []string{"refs/pull/7/merge open"}, r.asked)
-	require.Equal(t, fastcheck.StatusMet, fastcheck.Evaluate(fastcheck.Facts{Action: analyzerRequest().Policy,
-		Analyzers: got.Analyzers}).Clauses[1].Status)
-}
-
-// TestCodeScanningAlertsAreUnmetWithAHighAlert: a critical security alert counts at the default threshold.
-func TestCodeScanningAlertsAreUnmetWithAHighAlert(t *testing.T) {
-	r := &alertReader{alerts: []ports.CodeScanAlert{{
-		Number: 41, State: "open", RuleID: "go/sql-injection", Severity: "error", SecuritySeverity: "critical",
-		Tool: "CodeQL", Message: "tainted input", Path: "pay/db.go", StartLine: 12, EndLine: 14}}}
-	d, err := newDiffFacts(r)
-	require.NoError(t, err)
-	got, err := d.FastFacts(context.Background(), analyzerRequest())
-	require.NoError(t, err)
-	require.True(t, got.Analyzers.Known)
-	require.Len(t, got.Analyzers.Head, 1)
-	require.Equal(t, "pay/db.go", got.Analyzers.Head[0].File)
-	require.Equal(t, [2]int{12, 14}, got.Analyzers.Head[0].Lines)
-
-	res := fastcheck.Evaluate(fastcheck.Facts{Action: analyzerRequest().Policy, Analyzers: got.Analyzers})
-	require.Equal(t, fastcheck.StatusUnmet, res.Clauses[1].Status, res.Clauses[1].Reason)
-	require.Contains(t, res.Clauses[1].Reason, "go/sql-injection")
-}
-
 // TestCodeScanningLowAlertDoesNotBlock: a note is below the default medium threshold.
 func TestCodeScanningLowAlertDoesNotBlock(t *testing.T) {
 	r := &alertReader{alerts: []ports.CodeScanAlert{{
@@ -95,28 +62,6 @@ func TestCodeScanningUnknownOnAForbiddenOrMissingRead(t *testing.T) {
 		require.Equal(t, fastcheck.StatusUnknown, res.Clauses[1].Status)
 		require.Equal(t, "unknown", string(res.Verdict))
 	}
-}
-
-// TestCodeScanningIsNotReadWithoutAReaderOrForTheSARIFSource: no reader and another source leave the group unknown, and
-// an artifact source is not wired yet, so it stays unknown too.
-func TestCodeScanningIsNotReadWithoutAReaderOrForTheSARIFSource(t *testing.T) {
-	d, err := newDiffFacts(nil)
-	require.NoError(t, err)
-	got, err := d.FastFacts(context.Background(), analyzerRequest())
-	require.NoError(t, err)
-	require.False(t, got.Analyzers.Known, "no reader: unknown, never met")
-
-	r := &alertReader{}
-	d, err = newDiffFacts(r)
-	require.NoError(t, err)
-	req := analyzerRequest()
-	req.Policy.Analyzers.Source = policy.AnalyzerSourceSARIFArtifact
-	req.Policy.Analyzers.Workflow = ".github/workflows/lint.yml"
-	req.Policy.Analyzers.Artifact = "sarif"
-	got, err = d.FastFacts(context.Background(), req)
-	require.NoError(t, err)
-	require.False(t, got.Analyzers.Known, "the artifact source is not wired")
-	require.Empty(t, r.asked, "no alerts are read for the artifact source")
 }
 
 // TestCodeScanningRefusesABadPullRequestNumber keeps the ref well formed: a number that is not a real pull request

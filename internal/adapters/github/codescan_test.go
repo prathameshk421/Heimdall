@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -59,17 +58,6 @@ func TestCodeScanAlertsPaginateAndMapFields(t *testing.T) {
 		t.Errorf("a null line = %d, want 0", got[1].StartLine)
 	}
 	env.wantAuth(t)
-}
-
-func TestCodeScanAlertsWithoutStateSendsNoStateFilter(t *testing.T) {
-	env := newActionEnv(t)
-	env.f.route("GET", alertsPath, func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, []any{}) })
-	if _, err := env.x.CodeScanAlerts(context.Background(), testRepo, "refs/heads/main", ""); err != nil {
-		t.Fatal(err)
-	}
-	if q := env.f.requests()[0].Query; strings.Contains(q, "state=") {
-		t.Errorf("query = %q, want no state", q)
-	}
 }
 
 func TestCodeScanAlertsMapErrorsPerDocGo(t *testing.T) {

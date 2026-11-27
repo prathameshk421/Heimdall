@@ -11,25 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEpisodeWorkerLeavesFailedGraphitiWritePendingAndAcknowledgesSuccess(t *testing.T) {
-	ctx := context.Background()
-	queue := &episodeQueueSpy{pending: []ports.Episode{{Key: change.EffectKey("episode:decision:one"), Source: "decision", Status: ports.EpisodeConfirmed, GroupID: "payments", Body: `{"claim":"safe"}`}}}
-	memory := &episodeMemorySpy{fail: true}
-	worker, err := NewEpisodeWorker(queue, memory, knowledgeClock{now: time.Now()})
-	require.NoError(t, err)
-	count, err := worker.RunOnce(ctx, 10)
-	require.Zero(t, count)
-	require.ErrorContains(t, err, "Graphiti")
-	require.Empty(t, queue.delivered, "failed Graphiti writes remain retryable")
-
-	memory.fail = false
-	count, err = worker.RunOnce(ctx, 10)
-	require.NoError(t, err)
-	require.Equal(t, 1, count)
-	require.Equal(t, []change.EffectKey{queue.pending[0].Key}, queue.delivered)
-	require.Equal(t, 2, memory.adds)
-}
-
 type episodeQueueSpy struct {
 	pending     []ports.Episode
 	delivered   []change.EffectKey

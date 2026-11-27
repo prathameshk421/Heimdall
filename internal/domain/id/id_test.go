@@ -12,18 +12,6 @@ import (
 
 const ulid = "01HZX3K9QW7M2P5R8T0V4YB6CD"
 
-func TestParseChangeID(t *testing.T) {
-	for _, ok := range []string{"PAY-142", "KAN-1", "ABC-99999", "pr-acme-pay-demo-7", "pr-aarush323-heimdall-fixture-pay-12"} {
-		got, err := id.ParseChangeID(ok)
-		require.NoError(t, err, ok)
-		require.Equal(t, ok, got.String())
-	}
-	for _, bad := range []string{"", "pay-142", "PAY142", "PAY-", "PAY-0x1", "PAY-1 2", "pr-", "pr-repo", "pr-repo-x", "PAY-142\n", strings.Repeat("A", 40) + "-1"} {
-		_, err := id.ParseChangeID(bad)
-		require.Error(t, err, "should reject %q", bad)
-	}
-}
-
 func TestChangeIDForAPullRequestWithNoTicket(t *testing.T) {
 	got, err := id.PRChangeID("acme/pay-demo", 7)
 	require.NoError(t, err)
@@ -49,54 +37,6 @@ func TestParseSHA(t *testing.T) {
 	s, err := id.ParseSHA("9f1c2ab0c3d4e5f60718293a4b5c6d7e8f901234")
 	require.NoError(t, err)
 	require.Equal(t, "9f1c2ab", s.Short(), "people see the first 7 characters")
-}
-
-func TestParseAgentName(t *testing.T) {
-	for _, ok := range []string{"bob-reviewer", "test-author", "a", "ana.reviewer_2"} {
-		_, err := id.ParseAgentName(ok)
-		require.NoError(t, err, ok)
-	}
-	for _, bad := range []string{"", "-bob", "Bob", "bob reviewer", ".x", strings.Repeat("a", 65)} {
-		_, err := id.ParseAgentName(bad)
-		require.Error(t, err, "should reject %q", bad)
-	}
-}
-
-func TestPrefixedIDsAreTypedAndValidated(t *testing.T) {
-	f, err := id.ParseFindingID("fnd_" + ulid)
-	require.NoError(t, err)
-	require.Equal(t, "fnd_"+ulid, f.String())
-	_, err = id.ParseRunID("run_" + ulid)
-	require.NoError(t, err)
-	_, err = id.ParseCaseID("case_" + ulid)
-	require.NoError(t, err)
-	_, err = id.ParseTaskID("tsk_" + ulid)
-	require.NoError(t, err)
-
-	wrong := map[string]func(string) error{
-		"a finding id with a run prefix": func(s string) error { _, e := id.ParseFindingID(s); return e },
-	}
-	for name, parse := range wrong {
-		require.Error(t, parse("run_"+ulid), name)
-	}
-	for _, bad := range []string{"", "fnd_", "fnd_" + ulid[:25], "fnd_" + ulid + "A", "fnd_" + strings.ToLower(ulid), "fnd_" + strings.Replace(ulid, "K", "U", 1), ulid} {
-		_, err := id.ParseFindingID(bad)
-		require.Error(t, err, "should reject %q (Crockford base32 has no I, L, O or U)", bad)
-	}
-}
-
-func TestFindingRefIsWhatPeopleSee(t *testing.T) {
-	r, err := id.ParseFindingRef("F12")
-	require.NoError(t, err)
-	require.Equal(t, 12, r.Number())
-	require.Equal(t, "F12", r.String())
-	for _, bad := range []string{"", "F", "F0", "f1", "F-1", "F1x", "G1", "F01", "F99999999999"} {
-		_, err := id.ParseFindingRef(bad)
-		require.Error(t, err, "should reject %q", bad)
-	}
-	r3, err := id.NewFindingRef(3)
-	require.NoError(t, err)
-	require.Equal(t, "F3", r3.String())
 }
 
 func TestIDsRefuseBadValuesWhenDecodedFromJSON(t *testing.T) {

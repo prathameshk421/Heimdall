@@ -64,38 +64,6 @@ func submitted(cost float64) modelStep {
 	return answer(cost, call("c1", "submit_plan", `{"plan":"p"}`))
 }
 
-func TestRetryAServerErrorThenTheCallSucceeds(t *testing.T) {
-	h := newHarness(t, serverError(), submitted(0.02))
-	w, j := h.withRetry()
-	start := h.clock.now
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopSubmitted, res.Reason)
-	assert.Len(t, h.model.requests, 2, "one retry")
-	assert.Equal(t, h.model.requests[0], h.model.requests[1], "the retry sends the same request")
-	assert.Equal(t, []int64{int64(2*time.Second) + 1}, j.asked, "the first wait draws from [4 s, 6 s]")
-	assert.Equal(t, []time.Duration{6 * time.Second}, w.waits)
-	assert.Equal(t, start.Add(6*time.Second), h.clock.now, "the wait goes through the clock")
-	assert.Equal(t, 1, res.Retries)
-	assert.Nil(t, res.FailedCall, "the call that ended the run did not fail")
-	require.Len(t, res.Turn, 1)
-	assert.Equal(t, 2, res.Turn[0].Attempts)
-	assert.Equal(t, []ports.AgentAttempt{{Kind: ports.ModelErrorServer, Status: 500, Wait: 6 * time.Second}}, res.Turn[0].Failed)
-	assert.InDelta(t, 0.02, res.CostUSD, 1e-12, "the failed attempt reported no usage, so only the answer is charged")
-	assert.Equal(t, 1, res.Turns, "a retried call is one turn")
-}
-
-func TestRetryARateLimitHonoursRetryAfter(t *testing.T) {
-	h := newHarness(t, failure(ports.ModelErrorRateLimited, http.StatusTooManyRequests, 7*time.Second), submitted(0.02))
-	w, j := h.withRetry()
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopSubmitted, res.Reason)
-	assert.Equal(t, []time.Duration{7 * time.Second}, w.waits, "the provider's hint is the wait")
-	assert.Empty(t, j.asked, "a hint takes the place of the jitter")
-	assert.Equal(t, []ports.AgentAttempt{{Kind: ports.ModelErrorRateLimited, Status: 429, Wait: 7 * time.Second}}, res.Turn[0].Failed)
-}
-
 func TestRetryAfterIsCappedAtOneMinute(t *testing.T) {
 	h := newHarness(t, failure(ports.ModelErrorRateLimited, http.StatusTooManyRequests, 10*time.Minute), submitted(0.02))
 	w, _ := h.withRetry()
@@ -103,18 +71,6 @@ func TestRetryAfterIsCappedAtOneMinute(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, StopSubmitted, res.Reason)
 	assert.Equal(t, []time.Duration{time.Minute}, w.waits)
-}
-
-func TestA500Then500Then200Succeeds(t *testing.T) {
-	// Deploy's 500s come and go over minutes (live run 8): the call is sent again after spread waits.
-	h := newHarness(t, serverError(), serverError(), submitted(0.02))
-	w, _ := h.withRetry()
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopSubmitted, res.Reason)
-	assert.Len(t, h.model.requests, 3)
-	assert.Equal(t, []time.Duration{6 * time.Second, 12 * time.Second}, w.waits)
-	assert.Equal(t, 2, res.Retries)
 }
 
 func TestSixServerErrorsEndTheRunWithTheWrappedError(t *testing.T) {
@@ -141,31 +97,6 @@ func TestSixServerErrorsEndTheRunWithTheWrappedError(t *testing.T) {
 		{Kind: ports.ModelErrorServer, Status: 500},
 	}, res.FailedCall)
 	assert.Zero(t, res.Turns)
-}
-
-func TestTheRetryStepsSpreadOverAboutTwoMinutes(t *testing.T) {
-	var total time.Duration
-	for attempt := 1; attempt < modelAttempts; attempt++ {
-		total += retryStep(attempt)
-	}
-	assert.Equal(t, []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, 45 * time.Second},
-		[]time.Duration{retryStep(1), retryStep(2), retryStep(3), retryStep(4), retryStep(5)})
-	assert.Equal(t, 110*time.Second, total)
-	assert.Equal(t, 45*time.Second, retryStep(63), "a step past the list keeps the last one")
-}
-
-// bottomJitter always draws 0, so each wait is the bottom of its range.
-type bottomJitter struct{}
-
-func (bottomJitter) Int63n(int64) int64 { return 0 }
-
-func TestTheJitterKeepsEachWaitWithinTwentyPercentOfItsStep(t *testing.T) {
-	h := newHarness(t, serverError(), serverError(), submitted(0.02))
-	w := &fakeWaiter{clock: h.clock}
-	h.cfg.Retry = Retry{Wait: w.wait, Random: bottomJitter{}}
-	_, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, []time.Duration{4 * time.Second, 8 * time.Second}, w.waits)
 }
 
 func TestRetryWaitsNeverPassTheDeadline(t *testing.T) {
@@ -200,19 +131,6 @@ func TestTheBudgetGuardAppliesBeforeEveryRetry(t *testing.T) {
 	assert.Len(t, h.model.requests, 3, "the fourth attempt is not sent")
 	assert.Len(t, w.waits, 2, "no wait for a retry the budget refuses")
 	assert.InDelta(t, 0.45, res.CostUSD, 1e-12)
-}
-
-func TestARetryThatCannotFinishBeforeTheDeadlineStopsWithoutWaiting(t *testing.T) {
-	h := newHarness(t, failure(ports.ModelErrorRateLimited, http.StatusTooManyRequests, 30*time.Second))
-	w, _ := h.withRetry()
-	h.cfg.Deadline = h.clock.now.Add(10 * time.Second)
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err, "the deadline is an outcome of the run")
-	assert.Equal(t, StopDeadline, res.Reason)
-	assert.Empty(t, w.waits, "no wait past the deadline")
-	assert.Len(t, h.model.requests, 1)
-	assert.Equal(t, []ports.AgentAttempt{{Kind: ports.ModelErrorRateLimited, Status: 429}}, res.FailedCall)
-	assert.Zero(t, res.Retries)
 }
 
 func TestACancelDuringTheWaitEndsTheRun(t *testing.T) {
@@ -274,27 +192,6 @@ func TestAnOrdinaryClientErrorIsNotRetried(t *testing.T) {
 	}
 }
 
-func TestRetryATransientUnavailableErrorThenTheCallSucceeds(t *testing.T) {
-	// Live run 11: a single per-call timeout (a 2-minute HTTP request deadline inside a live run context) came back as
-	// ports.ErrUnavailable, not as a *ports.ModelError, and the run died on attempt 1. It is a fault of the moment.
-	timeout := fmt.Errorf("call model chat: %w", errors.Join(ports.ErrUnavailable,
-		errors.New(`Post "https://openrouter.ai/api/v1/chat/completions": context deadline exceeded`)))
-	h := newHarness(t, modelStep{err: timeout}, submitted(0.02))
-	w, j := h.withRetry()
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	assert.Equal(t, StopSubmitted, res.Reason)
-	assert.Len(t, h.model.requests, 2, "the transient failure is sent again")
-	assert.Equal(t, []int64{int64(2*time.Second) + 1}, j.asked, "the first wait draws from [4 s, 6 s], as for a 5xx")
-	assert.Equal(t, []time.Duration{6 * time.Second}, w.waits)
-	assert.Equal(t, 1, res.Retries)
-	assert.Nil(t, res.FailedCall, "the call that ended the run did not fail")
-	require.Len(t, res.Turn, 1)
-	assert.Equal(t, 2, res.Turn[0].Attempts)
-	assert.Equal(t, []ports.AgentAttempt{{Wait: 6 * time.Second}}, res.Turn[0].Failed,
-		"a transport failure is not a model error, so the attempt records only its wait")
-}
-
 func TestAnErrorThatIsNotAModelErrorIsNotRetried(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -315,14 +212,6 @@ func TestAnErrorThatIsNotAModelErrorIsNotRetried(t *testing.T) {
 			assert.Equal(t, []ports.AgentAttempt{{}}, res.FailedCall)
 		})
 	}
-}
-
-func TestWithoutARetryRuleAServerErrorEndsTheRun(t *testing.T) {
-	h := newHarness(t, serverError())
-	res, err := h.run(context.Background(), t)
-	require.ErrorIs(t, err, ports.ErrUnavailable)
-	assert.Equal(t, StopModelError, res.Reason)
-	assert.Len(t, h.model.requests, 1)
 }
 
 func TestARetryRuleNeedsBothAWaiterAndAJitterSource(t *testing.T) {

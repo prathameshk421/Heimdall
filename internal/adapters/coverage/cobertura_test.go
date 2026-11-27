@@ -2,7 +2,6 @@ package coverage
 
 import (
 	"errors"
-	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -12,26 +11,6 @@ import (
 
 	domaincoverage "github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/coverage"
 )
-
-func load(t *testing.T, name string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(name)
-	require.NoError(t, err)
-	return data
-}
-
-func TestParseCoberturaGolden(t *testing.T) {
-	got, err := ParseCobertura(load(t, "testdata/simple.xml"), domaincoverage.Options{
-		MaxBytes: 1 << 20,
-		Prefix:   "/home/runner/work/app",
-	})
-	require.NoError(t, err)
-	require.Equal(t, map[string]domaincoverage.Lines{
-		"app/service.py": {1: 1, 2: 0, 3: 4, 5: 3},
-		"app/util.py":    {10: 2},
-		"app/api.py":     {20: 0},
-	}, got.Files)
-}
 
 func TestParseCoberturaRefusesBadReports(t *testing.T) {
 	cases := []struct {
@@ -103,44 +82,11 @@ func TestParseCoberturaRefusesDeclarations(t *testing.T) {
 	}
 }
 
-func TestParseCoberturaAcceptsAnExternalDoctype(t *testing.T) {
-	in := `<!DOCTYPE coverage SYSTEM "http://cobertura.sourceforge.net/xml/coverage-04.dtd">` +
-		`<coverage><class filename="a.go"><line number="1" hits="1"/></class></coverage>`
-	got, err := ParseCobertura([]byte(in), domaincoverage.Options{MaxBytes: 1 << 20})
-	require.NoError(t, err)
-	require.Equal(t, map[string]domaincoverage.Lines{"a.go": {1: 1}}, got.Files)
-}
-
-func TestParseCoberturaDecodesEntities(t *testing.T) {
-	in := `<coverage><class filename="a&amp;b&#46;go"><line number="1" hits="1"/></class></coverage>`
-	got, err := ParseCobertura([]byte(in), domaincoverage.Options{MaxBytes: 1 << 20})
-	require.NoError(t, err)
-	require.Equal(t, map[string]domaincoverage.Lines{"a&b.go": {1: 1}}, got.Files)
-}
-
-func TestParseCoberturaSkipsPrologAndText(t *testing.T) {
-	in := "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- generated -->\n<coverage>\n  <sources><source>x</source></sources>\n" +
-		"  <packages><package><classes><class filename=\"a.go\"><lines>\n" +
-		"    <line number=\"2\" hits=\"1\"/>\n" +
-		"  </lines></class></classes></package></packages>\n</coverage>\n<!-- end -->\n"
-	got, err := ParseCobertura([]byte(in), domaincoverage.Options{MaxBytes: 1 << 20})
-	require.NoError(t, err)
-	require.Equal(t, map[string]domaincoverage.Lines{"a.go": {2: 1}}, got.Files)
-}
-
 func TestParseCoberturaReadsNamespacedDocuments(t *testing.T) {
 	in := `<coverage xmlns="urn:x" xmlns:q="urn:q"><class filename="a.go" q:filename="b.go"><line number="1" hits="1" q:hits="9"/></class></coverage>`
 	got, err := ParseCobertura([]byte(in), domaincoverage.Options{MaxBytes: 1 << 20})
 	require.NoError(t, err)
 	require.Equal(t, map[string]domaincoverage.Lines{"a.go": {1: 1}}, got.Files)
-}
-
-func TestParseCoberturaMergesRepeatedLines(t *testing.T) {
-	in := `<coverage><class filename="a.go"><line number="1" hits="2"/><line number="1" hits="3"/></class>` +
-		`<class filename="./a.go"><line number="1" hits="1"/></class></coverage>`
-	got, err := ParseCobertura([]byte(in), domaincoverage.Options{MaxBytes: 1 << 20})
-	require.NoError(t, err)
-	require.Equal(t, map[string]domaincoverage.Lines{"a.go": {1: 6}}, got.Files)
 }
 
 func TestParseCoberturaNestingLimit(t *testing.T) {

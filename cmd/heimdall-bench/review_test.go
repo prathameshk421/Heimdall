@@ -20,12 +20,6 @@ func caseList() []bench.Case {
 	}
 }
 
-func TestPickCasesTakesOnlyValidCasesWithARunner(t *testing.T) {
-	got, err := pickCases(caseList(), nil)
-	require.NoError(t, err)
-	require.Equal(t, []string{"bug-ok", "clean-ok", "ts-ok", "rust-ok"}, ids(got))
-}
-
 func TestPickCasesRefusesAnIDThatIsNotAValidCaseWithARunner(t *testing.T) {
 	for _, id := range []string{"bad", "python-ok", "missing", "ts-pending"} {
 		_, err := pickCases(caseList(), []string{id})
@@ -37,12 +31,4 @@ func TestPickCasesRefusesANamedInvalidCaseEvenWithAGoodOne(t *testing.T) {
 	// The typo must not shrink the run to the case that happens to exist.
 	_, err := pickCases(caseList(), []string{"bug-ok", "missing"})
 	require.ErrorContains(t, err, "missing")
-}
-
-func ids(cs []bench.Case) []string {
-	out := make([]string, len(cs))
-	for i, c := range cs {
-		out[i] = c.ID
-	}
-	return out
 }

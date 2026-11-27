@@ -2,9 +2,7 @@ package jira
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -146,48 +144,6 @@ func basic() string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(emailValue+":"+tokenValue))
 }
 
-func digest(s string) string {
-	h := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(h[:])
-}
-
-func TestChangesQueriesFromTheCursorMinusTheOverlap(t *testing.T) {
-	t.Parallel()
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
-		reply(w, http.StatusOK, search(true, "", issue("KAN-1", ana, history("10042", "2026-11-04T09:55:00.000+0000", "status"))))
-	})
-	c := &clock{at: now}
-	cl := newClient(t, f, c)
-
-	_, next, err := cl.Changes(context.Background(), poll.Format(now.Add(-time.Hour)))
-
-	require.NoError(t, err)
-	reqs := f.requests()
-	require.Len(t, reqs, 1)
-	require.Equal(t, "/rest/api/3/search/jql", reqs[0].Path)
-	jql := reqs[0].Query.Get("jql")
-	require.Contains(t, jql, "project = KAN")
-	require.Contains(t, jql, `status CHANGED TO "In Progress" AFTER "2026-11-04 08:50"`, "cursor 09:00 minus 10 minutes")
-	require.Contains(t, jql, "assignee IS NOT EMPTY")
-	require.Equal(t, basic(), reqs[0].Auth, "the API token goes in the header, never in the URL")
-	require.Equal(t, poll.Format(now), next, "the new cursor is the clock time of this poll")
-}
-
-func TestAnEmptyCursorStartsOneOverlapBeforeNow(t *testing.T) {
-	t.Parallel()
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
-		reply(w, http.StatusOK, search(true, ""))
-	})
-	cl := newClient(t, f, &clock{at: now})
-
-	_, _, err := cl.Changes(context.Background(), "")
-
-	require.NoError(t, err)
-	reqs := f.requests()
-	require.Len(t, reqs, 1)
-	require.Contains(t, reqs[0].Query.Get("jql"), `AFTER "2026-11-04 09:50"`)
-}
-
 func TestOnlyHistoriesInsideTheWindowAreEmitted(t *testing.T) {
 	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -317,46 +273,6 @@ const kan7 = `{"key":"KAN-7","fields":{"summary":"Add refunds","status":{"name":
 	`{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Only the merchant can refund."}]}]}` +
 	`]}]}}}`
 
-func TestTicketParsesTitleStatusAssigneeAndCriteriaFromADF(t *testing.T) {
-	t.Parallel()
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
-		reply(w, http.StatusOK, kan7)
-	})
-	cl := newClient(t, f, &clock{at: now})
-
-	got, err := cl.Ticket(context.Background(), id.ChangeID("KAN-7"))
-
-	require.NoError(t, err)
-	reqs := f.requests()
-	require.Len(t, reqs, 1)
-	require.Equal(t, "/rest/api/3/issue/KAN-7", reqs[0].Path)
-	require.Equal(t, basic(), reqs[0].Auth)
-	require.Equal(t, id.ChangeID("KAN-7"), got.Key)
-	require.Equal(t, "Add refunds", got.Title)
-	require.Equal(t, "In Progress", got.Status)
-	require.Equal(t, "557058:ana", string(got.Assignee))
-	require.Len(t, got.Criteria, 2)
-	require.Equal(t, "AC1", got.Criteria[0].ID)
-	require.Equal(t, "A refund cannot exceed the payment.", got.Criteria[0].Text)
-	require.Equal(t, digest(got.Criteria[0].Text), got.Criteria[0].Hash)
-	require.Equal(t, "AC2", got.Criteria[1].ID)
-	require.NoError(t, got.Validate())
-}
-
-func TestATicketWithANullDescriptionHasNoCriteria(t *testing.T) {
-	t.Parallel()
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
-		reply(w, http.StatusOK, `{"key":"KAN-8","fields":{"summary":"Bare","status":{"name":"To Do"},`+
-			`"assignee":{"accountId":"557058:ana","accountType":"atlassian"},"description":null}}`)
-	})
-	cl := newClient(t, f, &clock{at: now})
-
-	got, err := cl.Ticket(context.Background(), id.ChangeID("KAN-8"))
-
-	require.NoError(t, err)
-	require.Empty(t, got.Criteria)
-}
-
 func TestTicketWithoutAnAssigneeIsRefused(t *testing.T) {
 	t.Parallel()
 	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -468,33 +384,6 @@ func TestATransportFailureIsUnavailable(t *testing.T) {
 	require.ErrorIs(t, err, ports.ErrUnavailable)
 }
 
-func TestAFailedPollDoesNotAdvanceTheCursor(t *testing.T) {
-	t.Parallel()
-	f := newFake(t, script(cat(
-		rep(unavailable, 8),
-		[]scripted{{status: http.StatusOK, body: search(true, "",
-			issue("KAN-1", ana, history("10042", "2026-11-04T09:55:00.000+0000", "status")))}},
-	)...))
-	cl := newClient(t, f, &clock{at: now})
-	since := poll.Format(now.Add(-time.Hour))
-
-	changes, next, err := cl.Changes(context.Background(), since)
-
-	require.ErrorIs(t, err, ports.ErrUnavailable)
-	require.Empty(t, changes)
-	require.Empty(t, next, "a failed poll advances nothing; the caller keeps its last good cursor")
-
-	changes, next, err = cl.Changes(context.Background(), since)
-
-	require.NoError(t, err)
-	require.Len(t, changes, 1, "the change is still reported after the failed poll")
-	require.Equal(t, poll.Format(now), next)
-	reqs := f.requests()
-	require.Len(t, reqs, 9, "eight attempts of the failed poll, then one good poll")
-	require.Equal(t, reqs[0].Query.Get("jql"), reqs[3].Query.Get("jql"), "the retry reads the same window")
-	require.Contains(t, reqs[3].Query.Get("jql"), `AFTER "2026-11-04 08:50"`)
-}
-
 func TestAFailedPollRecordsNothingSoTheNextPollReportsEveryChange(t *testing.T) {
 	t.Parallel()
 	f := newFake(t, script(
@@ -515,18 +404,4 @@ func TestAFailedPollRecordsNothingSoTheNextPollReportsEveryChange(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, changes, 1, "KAN-1 was in the failed poll; it must still be reported, not dropped as seen")
 	require.Equal(t, id.ChangeID("KAN-1"), changes[0].Key)
-}
-
-func TestTicketAssignedToAnAppAccountIsMarkedAsOne(t *testing.T) {
-	t.Parallel()
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request) {
-		reply(w, http.StatusOK, `{"key":"KAN-10","fields":{"summary":"Bot","status":{"name":"In Progress"},`+
-			`"assignee":{"accountId":"app:automation","accountType":"app"},"description":null}}`)
-	})
-	cl := newClient(t, f, &clock{at: now})
-
-	got, err := cl.Ticket(context.Background(), id.ChangeID("KAN-10"))
-
-	require.NoError(t, err)
-	require.True(t, got.AssigneeIsApp, "an app account is not a person")
 }

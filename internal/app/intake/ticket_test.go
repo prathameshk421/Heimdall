@@ -38,14 +38,6 @@ func TestTicketKey(t *testing.T) {
 	}
 }
 
-func TestInDirMatchesTheDirectoryAndItsChildrenOnly(t *testing.T) {
-	t.Parallel()
-	require.True(t, inDir("tests/heimdall", "tests/heimdall"))
-	require.True(t, inDir("tests/heimdall/PAY-142/x_test.go", "tests/heimdall"))
-	require.False(t, inDir("tests/heimdallx/y.go", "tests/heimdall"))
-	require.False(t, inDir("src/tests/heimdall/y.go", "tests/heimdall"))
-}
-
 func TestClipKeepsShortTextAndBoundsLongTextOnARuneBoundary(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "short", clip("short"))

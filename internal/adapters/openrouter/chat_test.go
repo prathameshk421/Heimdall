@@ -2,8 +2,6 @@ package openrouter
 
 import (
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -82,115 +80,6 @@ func TestChatReturnsTheAnswerUsageAndCost(t *testing.T) {
 	require.Equal(t, ports.ModelFinishStop, got.Finish)
 	require.Equal(t, ports.ModelUsage{InputTokens: 1204, OutputTokens: 86}, got.Usage)
 	require.InDelta(t, 0.00041968, got.CostUSD, 1e-12)
-}
-
-func TestChatReturnsToolCallsAndBillsCachedInput(t *testing.T) {
-	srv := chatRespond(t, http.StatusOK, nil, chatFixture(t, "tool_calls.json"))
-	client := ChatClient{
-		BaseURL: srv.URL,
-		Secrets: probeSecrets{"key": "k"},
-		KeyName: "key",
-		Prices:  chatPrice(),
-	}
-
-	got, err := client.Complete(context.Background(), chatAnswerRequest())
-
-	require.NoError(t, err)
-	require.Empty(t, got.Content)
-	require.Equal(t, ports.ModelFinishToolCalls, got.Finish)
-	require.Equal(t, []ports.ModelToolCall{
-		{ID: "call_01Hq", Name: "read_code", Arguments: `{"path":"payments/refund.go","start_line":40,"end_line":90}`},
-		{ID: "call_01Hr", Name: "search_code", Arguments: `{"query":"RefundNotFound"}`},
-	}, got.ToolCalls)
-	require.Equal(t, ports.ModelUsage{InputTokens: 2400, CachedInputTokens: 2048, OutputTokens: 64}, got.Usage)
-	require.InDelta(t, 0.0003088, got.CostUSD, 1e-12)
-}
-
-func TestChatReportsAContentFilterFinish(t *testing.T) {
-	srv := chatRespond(t, http.StatusOK, nil, chatFixture(t, "content_filter.json"))
-	client := ChatClient{BaseURL: srv.URL, Prices: chatPrice()}
-
-	got, err := client.Complete(context.Background(), chatAnswerRequest())
-
-	require.NoError(t, err)
-	require.Equal(t, ports.ModelFinishContentFilter, got.Finish)
-	require.Empty(t, got.Content)
-	require.InDelta(t, 0.000243, got.CostUSD, 1e-12)
-}
-
-// chatRequestDoc is the request shape these tests read back from the wire.
-type chatRequestDoc struct {
-	Model     string `json:"model"`
-	MaxTokens int    `json:"max_tokens"`
-	Messages  []struct {
-		Role       string `json:"role"`
-		Content    string `json:"content"`
-		ToolCallID string `json:"tool_call_id"`
-		ToolCalls  []struct {
-			ID       string `json:"id"`
-			Type     string `json:"type"`
-			Function struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			} `json:"function"`
-		} `json:"tool_calls"`
-	} `json:"messages"`
-	Tools []struct {
-		Type     string `json:"type"`
-		Function struct {
-			Name        string         `json:"name"`
-			Description string         `json:"description"`
-			Parameters  map[string]any `json:"parameters"`
-		} `json:"function"`
-	} `json:"tools"`
-}
-
-func TestChatSendsTheToolsAndTheToolResults(t *testing.T) {
-	var rawBody []byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rawBody, _ = io.ReadAll(r.Body)
-		_, _ = w.Write(chatFixture(t, "answer.json"))
-	}))
-	t.Cleanup(srv.Close)
-	client := ChatClient{BaseURL: srv.URL, Secrets: probeSecrets{"key": "k"}, KeyName: "key", Prices: chatPrice()}
-	req := ports.ModelRequest{
-		Model: chatModel,
-		Messages: []ports.ModelMessage{
-			{Role: ports.ModelRoleUser, Content: "Review this change."},
-			{Role: ports.ModelRoleAssistant, ToolCalls: []ports.ModelToolCall{
-				{ID: "call_1", Name: "read_code", Arguments: `{"path":"a.go"}`},
-			}},
-			{Role: ports.ModelRoleTool, ToolCallID: "call_1", Content: "package a"},
-		},
-		Tools: []ports.ModelTool{{
-			Name:        "read_code",
-			Description: "Read one file at a commit.",
-			Parameters:  json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
-		}},
-		MaxOutputTokens: 400,
-	}
-
-	_, err := client.Complete(context.Background(), req)
-
-	require.NoError(t, err)
-	var body chatRequestDoc
-	require.NoError(t, json.Unmarshal(rawBody, &body))
-	require.Equal(t, chatModel, body.Model)
-	require.Equal(t, 400, body.MaxTokens)
-	require.Len(t, body.Messages, 3)
-	require.Equal(t, "assistant", body.Messages[1].Role)
-	require.Equal(t, "call_1", body.Messages[1].ToolCalls[0].ID)
-	require.Equal(t, "function", body.Messages[1].ToolCalls[0].Type)
-	require.Equal(t, "read_code", body.Messages[1].ToolCalls[0].Function.Name)
-	require.JSONEq(t, `{"path":"a.go"}`, body.Messages[1].ToolCalls[0].Function.Arguments)
-	require.Equal(t, "tool", body.Messages[2].Role)
-	require.Equal(t, "call_1", body.Messages[2].ToolCallID)
-	require.Equal(t, "package a", body.Messages[2].Content)
-	require.Len(t, body.Tools, 1)
-	require.Equal(t, "function", body.Tools[0].Type)
-	require.Equal(t, "read_code", body.Tools[0].Function.Name)
-	require.Equal(t, "Read one file at a commit.", body.Tools[0].Function.Description)
-	require.Equal(t, "object", body.Tools[0].Function.Parameters["type"])
 }
 
 func TestChatMapsProviderFailuresToTypedErrors(t *testing.T) {

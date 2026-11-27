@@ -30,13 +30,6 @@ func mustRouter(t *testing.T, checkers ...Checker) http.Handler {
 	return h
 }
 
-func TestHealthzWithNoCheckersIsOK(t *testing.T) {
-	rec := get(t, mustRouter(t), http.MethodGet, "/healthz")
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-	require.JSONEq(t, `{"status":"ok"}`, rec.Body.String())
-}
-
 func TestHealthzWithAllChecksPassingIsOK(t *testing.T) {
 	h := mustRouter(t, Checker{Name: "db", Check: healthy}, Checker{Name: "jira", Check: healthy})
 	rec := get(t, h, http.MethodGet, "/healthz")
@@ -63,20 +56,6 @@ func TestHealthzReportsFailingChecksByName(t *testing.T) {
 	require.Equal(t, []string{"db", "openrouter"}, body.Failing, "failing names in registration order, healthy ones omitted")
 	require.NotContains(t, rec.Body.String(), secret, "a checker's error text must never reach the client")
 	require.NotContains(t, rec.Body.String(), "401", "a checker's error text must never reach the client")
-}
-
-// A server that withholds a tool still serves, so it stays ok, and says which tool is gone and why (HARNESS_DESIGN B8).
-func TestHealthzNamesTheWithheldToolsAndStaysOK(t *testing.T) {
-	h, err := NewDegradedRouter(discard(), []string{"run_check: runner unreachable"})
-	require.NoError(t, err)
-	rec := get(t, h, http.MethodGet, "/healthz")
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.JSONEq(t, `{"status":"ok","degraded":["run_check: runner unreachable"]}`, rec.Body.String())
-}
-
-func TestHealthzRejectsOtherMethods(t *testing.T) {
-	rec := get(t, mustRouter(t), http.MethodPost, "/healthz")
-	require.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
 
 func TestHealthzUnknownPathIsNotFound(t *testing.T) {

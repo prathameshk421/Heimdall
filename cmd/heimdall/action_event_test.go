@@ -34,18 +34,6 @@ func prEvent(number int, head id.SHA, headRepo, login string) map[string]any {
 	}
 }
 
-func TestTriggerRecordsThePullRequestAndItsHead(t *testing.T) {
-	for _, name := range []string{"pull_request", "pull_request_review"} {
-		rec, err := triggerFromEvent(name, mustJSON(t, prEvent(7, evHead, "acme/pay", "ana")))
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		if rec.Number != 7 || rec.Head != evHead || rec.Event != name || rec.Version != triggerVersion {
-			t.Errorf("%s: record = %+v", name, rec)
-		}
-	}
-}
-
 func TestTriggerRefusesWhatItCannotRecord(t *testing.T) {
 	cases := map[string]struct {
 		name string

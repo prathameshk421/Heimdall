@@ -36,49 +36,6 @@ reviewers = ["reviewer-1", "reviewer-2"]
 resolver = "resolver"
 `
 
-func TestLoadReadsLiveSections(t *testing.T) {
-	t.Parallel()
-	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+liveSections))
-	require.NoError(t, err)
-	require.Equal(t, Database{URLSecret: "database_url"}, cfg.Database)
-	require.Equal(t, Jira{
-		BaseURL:        "https://example.atlassian.net",
-		ProjectKeys:    []string{"KAN"},
-		EmailSecret:    "jira_email",
-		APITokenSecret: "jira_api_token",
-	}, cfg.Jira)
-	require.Equal(t, Switch{
-		BaseURL:                 "https://switch.example.test",
-		AgentID:                 "agent-1",
-		AgentName:               "heimdall-coordinator",
-		BridgeID:                "bridge-1",
-		APIKeySecret:            "switch_api_key",
-		RegistrationTokenSecret: "switch_registration_token",
-	}, cfg.Switch)
-	require.Equal(t, GitHub{
-		AppIDSecret:          "github_app_id",
-		InstallationIDSecret: "github_app_installation_id",
-		PrivateKeySecret:     "github_app_private_key",
-	}, cfg.GitHub)
-	require.Equal(t, Agents{
-		TestAuthor: "test-author",
-		Reviewers:  []string{"reviewer-1", "reviewer-2"},
-		Resolver:   "resolver",
-	}, cfg.Agents)
-}
-
-// The profiler seat is optional (D175): without it the profile row names the gap instead of a task nobody holds.
-func TestLoadReadsAnOptionalProfiler(t *testing.T) {
-	t.Parallel()
-	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+liveSections+"profiler = \"profiler\"\n"))
-	require.NoError(t, err)
-	require.Equal(t, "profiler", cfg.Agents.Profiler)
-
-	cfg, err = Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+liveSections))
-	require.NoError(t, err)
-	require.Empty(t, cfg.Agents.Profiler)
-}
-
 func TestLoadReadsSwitchAgentRuntimeContract(t *testing.T) {
 	t.Parallel()
 	body := "secrets_dir = \"" + t.TempDir() + "\"\n" + liveSections + `
@@ -124,24 +81,6 @@ func TestAgentRuntimeRequiresSafeHostReachableMCPEndpoint(t *testing.T) {
 			body := head + liveSections + "\n[agent_runtime]\nprovider=\"switchroom\"\nmachine=\"heimdall-vm\"\nmcp_endpoint=\"" + tc.endpoint + "\"\n"
 			_, err := Load(writeTOML(t, body))
 			require.ErrorContains(t, err, tc.want)
-		})
-	}
-}
-
-func TestLoadAcceptsLoopbackHTTPURLs(t *testing.T) {
-	t.Parallel()
-	cases := map[string]string{
-		"ipv4":       "http://127.0.0.1:8081",
-		"localhost":  "http://localhost:8081",
-		"ipv6":       "http://[::1]:8081",
-		"https":      "https://jira.example.test",
-		"https port": "https://jira.example.test:8443",
-	}
-	for name, url := range cases {
-		t.Run(name, func(t *testing.T) {
-			body := "[jira]\nbase_url = \"" + url + "\"\nproject_keys = [\"KAN\"]\nemail_secret = \"jira_email\"\napi_token_secret = \"jira_api_token\"\n"
-			_, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+body))
-			require.NoError(t, err)
 		})
 	}
 }

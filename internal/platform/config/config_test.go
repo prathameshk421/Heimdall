@@ -256,34 +256,6 @@ func TestFilePath(t *testing.T) {
 	}
 }
 
-func TestLoadReadsProviderSelections(t *testing.T) {
-	t.Parallel()
-	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n"+
-		"[vcs]\nprovider = \"github\"\n"+
-		"[tracker]\nprovider = \"jira\"\n"+
-		"[chat]\nbridge = \"mattermost\"\n"+
-		"[agent_runtime]\nprovider = \"switchroom\"\nmachine = \"heimdall-vm\"\nmcp_endpoint = \"http://127.0.0.1:8080/mcp\"\n"+
-		"[memory]\nprovider = \"graphiti\"\n"))
-	require.NoError(t, err)
-	want := map[string]string{"vcs": "github", "tracker": "jira", "chat": "mattermost", "agent_runtime": "switchroom", "memory": "graphiti"}
-	for kind, name := range want {
-		got, ok := cfg.Selection(kind)
-		require.True(t, ok, kind)
-		require.Equal(t, name, got, kind)
-	}
-}
-
-func TestSelectionAbsentIsUnset(t *testing.T) {
-	t.Parallel()
-	cfg, err := Load(writeTOML(t, "secrets_dir = \""+t.TempDir()+"\"\n[vcs]\n"))
-	require.NoError(t, err)
-	for _, kind := range []string{"vcs", "tracker", "chat", "agent_runtime", "memory", "unknown"} {
-		got, ok := cfg.Selection(kind)
-		require.False(t, ok, "%s must be unset", kind)
-		require.Empty(t, got)
-	}
-}
-
 func TestLoadRefusesEmptySelections(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

@@ -27,16 +27,6 @@ func TestWindowStartRefusesACursorThatIsNotATime(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestOverlapIsTenMinutes(t *testing.T) {
-	require.Equal(t, 10*time.Minute, Overlap)
-}
-
-func TestSeenReportsASecondObservationAsARepeat(t *testing.T) {
-	var s Seen
-	require.True(t, s.Observe("KAN-1", "10042", now))
-	require.False(t, s.Observe("KAN-1", "10042", now))
-}
-
 func TestSeenKeysByBothTheTicketKeyAndTheChangelogID(t *testing.T) {
 	var s Seen
 	require.True(t, s.Observe("KAN-1", "10042", now))

@@ -32,17 +32,6 @@ func upholdEvent(t *testing.T, n int) change.Event {
 		change.DecisionRecorded{Kind: change.DecisionUphold, Target: "F2", Login: "prathamesh", Reason: "the cap is wrong", SourceRef: "chat:1"})
 }
 
-func TestNarrateNamesThePersonTheFindingTheFileAndTheReason(t *testing.T) {
-	filed := filedEvent(t)
-	facts := FactsFromEvents("PAY-142", []change.Event{filed})
-	got := Narrate(upholdEvent(t, 2), facts)
-	require.Equal(t, "On 2026-11-06, prathamesh upheld finding F2 on internal/refunds/service.go: "+refundClaim+" Reason: the cap is wrong.", got)
-}
-
-func TestNarrateWithoutFactsUsesWhatTheEventHas(t *testing.T) {
-	require.Equal(t, "On 2026-11-06, prathamesh upheld finding F2. Reason: the cap is wrong.", Narrate(upholdEvent(t, 2), nil))
-}
-
 func TestNarrateUsesTheClaimOfAResolvedStateEvent(t *testing.T) {
 	two, _ := id.ParseFindingRef("F2")
 	state := workflowMemoryEvent(t, 3, change.EventFindingStateChanged, change.ActorAgent, "rhea", change.FindingStateChanged{

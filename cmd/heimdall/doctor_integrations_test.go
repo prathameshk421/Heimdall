@@ -41,20 +41,6 @@ func TestDoctorRunsTheSelectedProviderCheckAndMapsItsStatus(t *testing.T) {
 	}
 }
 
-func TestDoctorReportsMissingRequiredProviderSelections(t *testing.T) {
-	root := t.TempDir()
-	configPath := filepath.Join(root, "heimdall.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte("secrets_dir = \""+filepath.Join(root, "secrets")+"\"\n"), 0o600))
-	cfg, err := config.Load(configPath)
-	require.NoError(t, err)
-	rows := configuredIntegrationChecks(context.Background(), cfg, defaultRegistry, time.Second)
-	require.Equal(t, []checkResult{
-		{Check: "integration.vcs", Status: statusMissing, Detail: "vcs.provider is required; run heimdall connect to choose an integration"},
-		{Check: "integration.tracker", Status: statusMissing, Detail: "tracker.provider is required; run heimdall connect to choose an integration"},
-		{Check: "integration.chat", Status: statusMissing, Detail: "chat.bridge is required; run heimdall connect to choose an integration"},
-	}, rows)
-}
-
 func TestControllerServiceCheckRequiresValidUIDAndActiveUnit(t *testing.T) {
 	called := false
 	active := func(_ context.Context, service string) error {

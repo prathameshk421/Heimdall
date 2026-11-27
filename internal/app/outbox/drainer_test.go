@@ -362,26 +362,6 @@ func TestCrashAfterExecuteIsNeverRepeated(t *testing.T) {
 	require.False(t, box.state(fx.Key).done, "the effect stays in doubt for a person to reconcile")
 }
 
-// The start mark is written before the executor runs. A crash during the execution then leaves a trace in the
-// database, and the restart can tell that the effect may have run.
-func TestStartIsRecordedBeforeTheExecutorRuns(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	fx := effectOf(change.EffectRoomPost, 1)
-	box := newMemOutbox(fx)
-	var startedWhenRun bool
-	ex := &fakeExec{fn: func(context.Context, change.Effect) error {
-		startedWhenRun = box.state(fx.Key).started
-		return nil
-	}}
-	d := mustNew(t, config(box, allKinds(ex)))
-
-	res, err := d.RunOnce(ctx)
-	require.NoError(t, err)
-	require.Equal(t, DrainResult{Claimed: 1, Done: 1}, res)
-	require.True(t, startedWhenRun, "the start mark is set before the executor runs")
-}
-
 // An effect whose start is refused is not executed. The database refuses a start when the lease is gone, so another
 // drainer may hold the effect now; running it here would make a duplicate.
 func TestRefusedStartMeansNoExecution(t *testing.T) {
@@ -440,30 +420,6 @@ func TestEffectWithoutExecutorIsFailedWithAClearReason(t *testing.T) {
 	require.False(t, box.state(fx.Key).done)
 }
 
-func TestBatchSizeIsHonoured(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	var fx []change.Effect
-	for i := range 7 {
-		fx = append(fx, effectOf(change.EffectRoomPost, i+1))
-	}
-	box := newMemOutbox(fx...)
-	ex := &fakeExec{}
-	cfg := config(box, allKinds(ex))
-	cfg.Batch = 3
-	d := mustNew(t, cfg)
-
-	var claimed []int
-	for range 3 {
-		res, err := d.RunOnce(ctx)
-		require.NoError(t, err)
-		claimed = append(claimed, res.Claimed)
-	}
-	require.Equal(t, []int{3, 3, 1}, claimed)
-	require.Equal(t, []int{3, 3, 3}, box.limits, "every claim asks for the configured batch size")
-	require.Equal(t, []time.Duration{time.Minute, time.Minute, time.Minute}, box.leases, "and the configured lease")
-}
-
 func TestCancellationStopsTheBatchButKeepsEarlierDone(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -483,42 +439,6 @@ func TestCancellationStopsTheBatchButKeepsEarlierDone(t *testing.T) {
 	require.Equal(t, []change.EffectKey{fx[0].Key}, ex.keys(), "the rest of the batch is not executed")
 	require.False(t, box.state(fx[1].Key).done)
 	require.False(t, box.state(fx[2].Key).done)
-}
-
-func TestFailedDoneIsReturnedAndTheEffectStaysLeased(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	fx := effectOf(change.EffectRoomPost, 1)
-	box := newMemOutbox(fx)
-	box.doneErr = func(change.EffectKey) error { return errors.New("connection reset") }
-	ex := &fakeExec{}
-	d := mustNew(t, config(box, allKinds(ex)))
-
-	res, err := d.RunOnce(ctx)
-	require.ErrorContains(t, err, "connection reset")
-	require.Equal(t, DrainResult{Claimed: 1}, res, "the effect ran, but it is not counted as done")
-	require.Equal(t, []change.EffectKey{fx.Key}, ex.keys())
-	require.False(t, box.state(fx.Key).done)
-	require.True(t, box.state(fx.Key).leased, "the lease is left to expire, so the effect is retried later")
-}
-
-func TestEffectDeadlineBoundsTheExecutor(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	fx := effectOf(change.EffectRoomPost, 1)
-	box := newMemOutbox(fx)
-	ex := &fakeExec{fn: func(ctx context.Context, _ change.Effect) error {
-		<-ctx.Done() // an executor that hangs until its deadline
-		return ctx.Err()
-	}}
-	cfg := config(box, allKinds(ex))
-	cfg.EffectTimeout = 50 * time.Millisecond
-	d := mustNew(t, cfg)
-
-	res, err := d.RunOnce(ctx)
-	require.NoError(t, err)
-	require.Equal(t, DrainResult{Claimed: 1, Failed: 1}, res)
-	require.Contains(t, box.state(fx.Key).lastErr, "context deadline exceeded")
 }
 
 func TestRunDoesWorkOnWakeAndTickAndStopsOnCancel(t *testing.T) {

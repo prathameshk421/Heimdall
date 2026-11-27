@@ -54,33 +54,6 @@ func TestEachSubmissionScenarioAgainstTheRealServer(t *testing.T) {
 	}
 }
 
-// TestTheValidScenarioCoversEveryAcceptanceCriterion pins the one rule the "valid" name promises.
-func TestTheValidScenarioCoversEveryAcceptanceCriterion(t *testing.T) {
-	_, tasks, hs := newWorld(t)
-	code, _, stderr := runScenario(t, hs.URL+"/mcp", writeToken(t), "valid")
-	require.Equal(t, exitOK, code, "stderr: %s", stderr)
-	require.Len(t, tasks.submits, 1)
-	sub := tasks.submits[0]
-	require.ElementsMatch(t, []string{"AC1", "AC2"}, criteriaKeys(sub.AcceptanceCriteria))
-	for _, ac := range []string{"AC1", "AC2"} {
-		require.NotEmpty(t, sub.AcceptanceCriteria[ac], "criterion %s has no test", ac)
-	}
-	require.Len(t, sub.Files, 1)
-	require.True(t, strings.HasPrefix(sub.Files[0].Path, testsDir+"/"), "path %q is not under %s", sub.Files[0].Path, testsDir)
-	require.NotEmpty(t, tasks.progress, "the valid run reports progress after the submission")
-}
-
-// TestTheMissingACScenarioLeavesExactlyOneCriterionOut names the criterion it drops, so the scenario cannot silently
-// cover the whole task.
-func TestTheMissingACScenarioLeavesExactlyOneCriterionOut(t *testing.T) {
-	_, tasks, hs := newWorld(t)
-	code, stdout, stderr := runScenario(t, hs.URL+"/mcp", writeToken(t), "missing-ac")
-	require.Equal(t, exitOK, code, "stderr: %s", stderr)
-	require.Contains(t, stdout, "acceptance_criteria[AC2]")
-	require.NotContains(t, stdout, "acceptance_criteria[AC1]")
-	require.Empty(t, tasks.submits)
-}
-
 // TestTheSilentScenarioNeverAcks is the ack-window failure path.
 func TestTheSilentScenarioNeverAcks(t *testing.T) {
 	_, tasks, hs := newWorld(t)

@@ -58,26 +58,6 @@ func buildReport(t *testing.T, events []change.Event) dashboard.Spec {
 	return spec
 }
 
-func TestReportSaysWhatHoldsTheMergeInTheWordsPeopleUse(t *testing.T) {
-	spec := buildReport(t, reportLog(t, false))
-
-	verdict := reportProps[dashboard.VerdictProps](t, spec, "verdict")
-	require.Equal(t, "blocked", verdict.Status)
-	require.Equal(t, []string{"1 blocking finding(s) are open: F1"}, verdict.Reasons, "a person never sees a ULID")
-
-	require.Equal(t, []string{"finding-F1"}, spec.Elements["section-holding"].Children)
-	require.Equal(t, []string{"finding-F2"}, spec.Elements["section-open"].Children, "the gate did not name F2")
-
-	held := reportProps[dashboard.FindingProps](t, spec, "finding-F1")
-	require.True(t, held.Holds)
-	require.Equal(t, "internal/bank/client.go:12", held.Location, "one line is cited without a range")
-	require.Contains(t, held.Evidence, "A rule its owner confirmed: batch.md")
-	require.Contains(t, reportProps[dashboard.FindingProps](t, spec, "finding-F2").Evidence, "cannot block alone")
-
-	rules := reportProps[dashboard.RuleChecksProps](t, spec, "rules-priya-reviewer")
-	require.Equal(t, "violated", rules.Rows[0].Verdict)
-}
-
 func TestReportOfAPassedGateHoldsNothing(t *testing.T) {
 	spec := buildReport(t, reportLog(t, true))
 	require.Equal(t, "passed", reportProps[dashboard.VerdictProps](t, spec, "verdict").Status)

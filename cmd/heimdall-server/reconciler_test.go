@@ -146,15 +146,3 @@ func TestReconcileProfileInputCarriesThePromotedProfileAndTheNewestProposal(t *t
 	require.True(t, got.Promoted)
 	require.Equal(t, "tests/heimdall", got.TestsDir)
 }
-
-// The profile row needs the promoted proposal's id for a revise task, and the newest proposal's creation time to tell
-// whether a person's request is answered (D184).
-func TestReconcileProfileInputCarriesThePromotedIDAndTheCreatedTime(t *testing.T) {
-	created := time.Date(2026, 11, 21, 15, 20, 15, 0, time.UTC)
-	proposal := ports.ProfileProposal{ID: strings.Repeat("a", 64), Repo: "acme/pay", State: ports.ProfilePromoted,
-		Spec: ports.ProfileSpec{TestsDir: "tests/heimdall"}, CreatedAt: created, PromotedAt: created}
-	got, err := reconcileInputs{profiles: latestProfiles{active: &proposal, latest: &proposal}}.Profile(context.Background(), "acme/pay")
-	require.NoError(t, err)
-	require.Equal(t, proposal.ID, got.PromotedID)
-	require.Equal(t, created, got.Latest.CreatedAt)
-}

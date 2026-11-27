@@ -319,7 +319,8 @@ func connectionState(connID string, gen int64, rooms ...string) map[string]any {
 }
 
 // messageFrame is a room message as the stream sends it.
-func messageFrame(room, msgID, sender, body string, tsMS int64) map[string]any {
+func messageFrame(msgID, sender, body string, tsMS int64) map[string]any {
+	room := testRoomUUID
 	return map[string]any{
 		"type": "message", "room_id": room, "bridge_id": testConnBridge, "channel_type": "channel_public",
 		"payload": map[string]any{

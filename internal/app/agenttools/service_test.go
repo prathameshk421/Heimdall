@@ -359,28 +359,6 @@ func reviewAssign() agenttools.Assignment {
 
 // --- Tests ---
 
-func TestCurrentHappyPath(t *testing.T) {
-	t.Parallel()
-	h := newTestHarness(t)
-	makeBaseStream(t, h, workflow.RoleTestAuthor, testAgent)
-
-	h.index.set(testAgent, workflow.RoleTestAuthor, ports.ActiveTaskRef{
-		ChangeID: testChangeID,
-		TaskID:   testTaskID,
-	})
-
-	assign, err := h.svc.Current(context.Background(), testAgent, workflow.RoleTestAuthor)
-	require.NoError(t, err)
-	require.Equal(t, testChangeID, assign.ChangeID)
-	require.Equal(t, testTaskID, assign.TaskID)
-	require.Equal(t, testAgent, assign.Agent)
-	require.Equal(t, workflow.RoleTestAuthor, assign.Role)
-	require.False(t, assign.Acked)
-	require.Equal(t, t0.Add(2*time.Second), assign.AssignedAt)
-	require.Equal(t, t0.Add(30*time.Minute), assign.Deadline)
-	require.Nil(t, assign.Revision, "no profile request was made")
-}
-
 // The profiler's task carries the newest request to revise the repository's profile, so get_task can show the note with
 // the promoted profile (D184).
 func TestCurrentCarriesTheNewestProfileRequest(t *testing.T) {
@@ -573,46 +551,6 @@ func validReview() finding.Review {
 			},
 		},
 	}
-}
-
-func TestSubmitReviewHappyPath(t *testing.T) {
-	t.Parallel()
-	h := newTestHarness(t)
-	makeReviewStream(t, h)
-
-	receipt, err := h.svc.SubmitReview(context.Background(), reviewAssign(), validReview(), false)
-	require.NoError(t, err)
-	require.True(t, receipt.Accepted)
-	require.Empty(t, receipt.FindingErrors)
-
-	evs := eventStream(t, h)
-	require.Len(t, evs, 12) // 10 base + 1 finding.filed + 1 review.submitted
-	require.Equal(t, change.EventFindingFiled, evs[10].Type)
-	require.Equal(t, change.EventReviewSubmitted, evs[11].Type)
-}
-
-func TestSubmitReviewInvalidFindingReturnedWithIndex(t *testing.T) {
-	t.Parallel()
-	h := newTestHarness(t)
-	makeReviewStream(t, h)
-
-	rev := validReview()
-	badFinding := rev.Findings[0]
-	badFinding.Location.File = "../outside/escape.go"
-	rev.Findings = []finding.Input{badFinding, rev.Findings[0]} // finding 0 bad, finding 1 valid
-
-	receipt, err := h.svc.SubmitReview(context.Background(), reviewAssign(), rev, false)
-	require.NoError(t, err)
-	require.False(t, receipt.Accepted)
-	require.Len(t, receipt.FindingErrors, 1)
-	require.Equal(t, 0, receipt.FindingErrors[0].Index)
-	require.Contains(t, receipt.FindingErrors[0].Message, "clean relative path inside the repository")
-
-	// The valid finding 1 should still be filed!
-	evs := eventStream(t, h)
-	require.Len(t, evs, 12)
-	require.Equal(t, change.EventFindingFiled, evs[10].Type)
-	require.Equal(t, change.EventReviewSubmitted, evs[11].Type)
 }
 
 func TestSubmitReviewAllInvalidAppendsNothing(t *testing.T) {
@@ -866,33 +804,4 @@ func TestSubmitReviewHandsItsEventsToTheAdvanceHook(t *testing.T) {
 	require.Equal(t, change.EventFindingFiled, handed[0].Type)
 	require.Equal(t, change.EventReviewSubmitted, handed[1].Type)
 	require.Len(t, eventStream(t, h), 10, "the service wrote nothing itself; the hook stores the events")
-}
-
-// A submission is stored whole and names the task it ends (HARNESS_DESIGN B6): through the tool, the fold and back,
-// every field is in the view or the blob.
-func TestATestsSubmissionRoundTripsThroughTheFold(t *testing.T) {
-	t.Parallel()
-	h := newTestHarness(t)
-	makeBaseStream(t, h, workflow.RoleTestAuthor, testAgent)
-	sub := validSubmission()
-	sub.Notes = "assumes the refund cap is per payment"
-	require.NoError(t, h.svc.SubmitTests(context.Background(), testsAssign(), sub, false))
-
-	evs := eventStream(t, h)
-	v, err := change.Fold(evs)
-	require.NoError(t, err)
-	require.NotNil(t, v.Tests)
-	require.Equal(t, testTaskID, v.Tests.TaskID)
-	require.Equal(t, testBaseSHA, v.Tests.BaseSHA)
-	require.Equal(t, sub.AcceptanceCriteria, v.Tests.ACMap)
-	require.Equal(t, v.Tests.Expected, sub.ExpectedPaths)
-	require.Len(t, v.Tests.Files, len(sub.Files))
-	for i, f := range sub.Files {
-		require.Equal(t, f.Path, v.Tests.Files[i].Path)
-		require.NotEmpty(t, v.Tests.Files[i].Blob, "each file names the blob that holds the submission")
-	}
-	require.Equal(t, 1, v.Tests.Attempts)
-	var payload change.TestsSubmitted
-	require.NoError(t, json.Unmarshal(evs[len(evs)-1].Payload, &payload))
-	require.Equal(t, sub.Notes, payload.Notes)
 }

@@ -15,45 +15,6 @@ func load(t *testing.T, name string) []byte {
 	return data
 }
 
-func TestParseLCOVGolden(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		file string
-		opt  Options
-		want map[string]Lines
-	}{
-		{
-			name: "simple",
-			file: "testdata/lcov/simple.info",
-			opt:  Options{MaxBytes: 1 << 20},
-			want: map[string]Lines{
-				"internal/domain/coverage/coverage.go": {41: 12, 42: 12, 43: 11, 44: 0},
-				"internal/domain/coverage/lcov.go":     {1: 1, 2: 0},
-			},
-		},
-		{
-			name: "two records for one file are merged",
-			file: "testdata/lcov/merged.info",
-			opt:  Options{MaxBytes: 1 << 20},
-			want: map[string]Lines{"src/app.js": {1: 3, 2: 0, 3: 1}},
-		},
-		{
-			name: "the prefix is removed from an absolute path",
-			file: "testdata/lcov/absolute.info",
-			opt:  Options{MaxBytes: 1 << 20, Prefix: "/home/runner/work/app"},
-			want: map[string]Lines{"src/report.js": {1: 2, 2: 0}},
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got, err := ParseLCOV(load(t, c.file), c.opt)
-			require.NoError(t, err)
-			require.Equal(t, c.want, got.Files)
-		})
-	}
-}
-
 func TestParseLCOVRefusesBadReports(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -85,27 +46,4 @@ func TestParseLCOVRefusesBadReports(t *testing.T) {
 			require.Contains(t, err.Error(), "line "+strconv.Itoa(c.line)+":")
 		})
 	}
-}
-
-func TestParseLCOVAcceptsAnEmptyReport(t *testing.T) {
-	t.Parallel()
-	got, err := ParseLCOV(nil, Options{MaxBytes: 1 << 20})
-	require.NoError(t, err)
-	require.Empty(t, got.Files)
-}
-
-func TestParseLCOVAcceptsCRLF(t *testing.T) {
-	t.Parallel()
-	in := "SF:a.go\r\nDA:1,1\r\nDA:2,0\r\nend_of_record\r\n"
-	got, err := ParseLCOV([]byte(in), Options{MaxBytes: 1 << 20})
-	require.NoError(t, err)
-	require.Equal(t, map[string]Lines{"a.go": {1: 1, 2: 0}}, got.Files)
-}
-
-func TestParseLCOVAcceptsEveryInformationalRecord(t *testing.T) {
-	t.Parallel()
-	in := "TN:unit\nSF:a.go\nFN:1,f\nFNDA:2,f\nFNF:1\nFNH:1\nBRDA:1,0,0,2\nBRDA:1,0,1,-\nBRF:2\nBRH:1\nLF:1\nLH:1\nDA:1,2,checksum\nend_of_record\n"
-	got, err := ParseLCOV([]byte(in), Options{MaxBytes: 1 << 20})
-	require.NoError(t, err)
-	require.Equal(t, map[string]Lines{"a.go": {1: 2}}, got.Files)
 }

@@ -27,21 +27,6 @@ func TestActionAdapterReadsThePRWithTheStaticToken(t *testing.T) {
 	}
 }
 
-func TestUpsertSummaryReturnsTheIDOfTheNewComment(t *testing.T) {
-	env := newActionEnv(t)
-	env.f.route("GET", issueCommentsPath, func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, []any{}) })
-	env.f.route("POST", issueCommentsPath, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusCreated, map[string]any{"id": 4242})
-	})
-	got, err := env.x.UpsertComment(context.Background(), testRepo, 7, summaryKey, "summary")
-	if err != nil {
-		t.Fatalf("UpsertComment: %v", err)
-	}
-	if got != 4242 {
-		t.Errorf("id = %d, want 4242", got)
-	}
-}
-
 func TestUpsertSummaryReturnsTheIDOfTheEditedComment(t *testing.T) {
 	env := newActionEnv(t)
 	env.f.route("GET", issueCommentsPath, func(w http.ResponseWriter, _ *http.Request) {

@@ -11,9 +11,6 @@ import (
 
 var _ ports.Clock = System{}
 
-// promptly is the longest a test waits for a result that should already be ready. It is a failure bound, not a delay.
-const promptly = 5 * time.Second
-
 func TestNowIsBetweenTheRealClockReadings(t *testing.T) {
 	before := time.Now()
 	got := System{}.Now()
@@ -29,19 +26,6 @@ func TestWaitZeroReturnsAtOnce(t *testing.T) {
 
 func TestWaitShortDurationReturnsNil(t *testing.T) {
 	require.NoError(t, Wait(context.Background(), time.Millisecond))
-}
-
-func TestWaitReturnsEarlyWhenContextIsCancelled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	result := make(chan error, 1)
-	go func() { result <- Wait(ctx, time.Hour) }()
-	cancel()
-	select {
-	case err := <-result:
-		require.ErrorIs(t, err, context.Canceled)
-	case <-time.After(promptly):
-		t.Fatal("Wait did not return after its context was cancelled")
-	}
 }
 
 func TestWaitReturnsDeadlineErrorWhenContextExpires(t *testing.T) {

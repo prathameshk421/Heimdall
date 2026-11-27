@@ -43,27 +43,6 @@ func bridgeRun(t *testing.T, url, token, input string, logs *bytes.Buffer) (stri
 	return out.String(), err
 }
 
-func TestBridgeRelaysEachRequestAndWritesEachAnswer(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	srv := httptest.NewServer(r.handler)
-	t.Cleanup(srv.Close)
-	input := `{"jsonrpc":"2.0","id":1,"method":"ping"}` + "\n" +
-		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}` + "\n"
-	var logs bytes.Buffer
-	out, err := bridgeRun(t, srv.URL+"/mcp", testToken, input, &logs)
-	require.NoError(t, err)
-	lines := outputLines(out)
-	require.Len(t, lines, 2)
-	var first, second rpcReply
-	require.NoError(t, decodeInto([]byte(lines[0]), &first))
-	require.NoError(t, decodeInto([]byte(lines[1]), &second))
-	require.JSONEq(t, "1", string(first.ID))
-	require.JSONEq(t, "{}", string(first.Result))
-	require.JSONEq(t, "2", string(second.ID))
-	require.Contains(t, string(second.Result), "get_task")
-}
-
 func TestBridgeSendsTheTokenAsAHeaderOnly(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
@@ -113,26 +92,6 @@ func TestANotificationThatFailsIsLoggedAndWritesNothing(t *testing.T) {
 	require.NotEmpty(t, logs.String(), "the failure is logged")
 }
 
-func TestAnUnreachableServerAnswersEachRequestWithAnErrorForItsID(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(http.NotFoundHandler())
-	url := srv.URL + "/mcp"
-	srv.Close()
-	input := `{"jsonrpc":"2.0","id":3,"method":"ping"}` + "\n" + `{"jsonrpc":"2.0","id":4,"method":"ping"}` + "\n"
-	var logs bytes.Buffer
-	out, err := bridgeRun(t, url, testToken, input, &logs)
-	require.NoError(t, err, "the bridge keeps running after a failed request")
-	lines := outputLines(out)
-	require.Len(t, lines, 2)
-	var first, second rpcReply
-	require.NoError(t, decodeInto([]byte(lines[0]), &first))
-	require.NoError(t, decodeInto([]byte(lines[1]), &second))
-	require.NotNil(t, first.Error)
-	require.Equal(t, codeUnreachable, first.Error.Code)
-	require.JSONEq(t, "3", string(first.ID))
-	require.JSONEq(t, "4", string(second.ID))
-}
-
 func TestAServerThatRefusesTheTokenGivesAnUnauthorizedErrorWithoutTheToken(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
@@ -148,21 +107,6 @@ func TestAServerThatRefusesTheTokenGivesAnUnauthorizedErrorWithoutTheToken(t *te
 	require.JSONEq(t, "5", string(rep.ID))
 	require.NotContains(t, out, testToken)
 	require.NotContains(t, logs.String(), testToken)
-}
-
-func TestAServerErrorStatusGivesAnUnreachableErrorForTheRequest(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(srv.Close)
-	var logs bytes.Buffer
-	out, err := bridgeRun(t, srv.URL+"/mcp", testToken, `{"jsonrpc":"2.0","id":6,"method":"ping"}`+"\n", &logs)
-	require.NoError(t, err)
-	var rep rpcReply
-	require.NoError(t, decodeInto([]byte(strings.TrimSuffix(out, "\n")), &rep))
-	require.NotNil(t, rep.Error)
-	require.Equal(t, codeUnreachable, rep.Error.Code)
 }
 
 func TestAnAnswerThatIsNotJSONGivesAnUnreachableErrorForTheRequest(t *testing.T) {

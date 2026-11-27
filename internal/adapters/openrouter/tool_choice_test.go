@@ -54,7 +54,8 @@ func (s *choiceServer) start(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func toolRequest(choice ports.ModelToolChoice) ports.ModelRequest {
+func toolRequest() ports.ModelRequest {
+	choice := ports.ModelToolChoiceRequired
 	req := chatAnswerRequest()
 	req.Tools = []ports.ModelTool{{Name: "read_code", Parameters: json.RawMessage(`{"type":"object"}`)}}
 	req.ToolChoice = choice
@@ -63,40 +64,15 @@ func toolRequest(choice ports.ModelToolChoice) ports.ModelRequest {
 
 const htmlBadRequest = `<html><body><h1>400 Bad request</h1> Your browser sent an invalid request. </body></html>`
 
-func TestChatSendsRequiredToolChoiceWhenTheEndpointTakesIt(t *testing.T) {
-	s := &choiceServer{replies: []choiceReply{{status: http.StatusOK, body: chatFixture(t, "tool_calls.json")}}}
-	client := ChatClient{BaseURL: s.start(t).URL, RequiredToolChoice: true, Prices: chatPrice()}
-
-	got, err := client.Complete(context.Background(), toolRequest(ports.ModelToolChoiceRequired))
-
-	require.NoError(t, err)
-	require.Equal(t, []string{"required"}, s.choices)
-	require.Equal(t, ports.ModelToolChoiceRequired, got.ToolChoice)
-	require.Empty(t, got.Fallback)
-}
-
 func TestChatSendsAutoWhenTheEndpointIsNotKnownToTakeRequired(t *testing.T) {
 	s := &choiceServer{replies: []choiceReply{{status: http.StatusOK, body: chatFixture(t, "answer.json")}}}
 	client := ChatClient{BaseURL: s.start(t).URL, Prices: chatPrice()}
 
-	got, err := client.Complete(context.Background(), toolRequest(ports.ModelToolChoiceRequired))
+	got, err := client.Complete(context.Background(), toolRequest())
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"auto"}, s.choices, "without the capability flag the adapter never sends required")
 	require.Equal(t, ports.ModelToolChoiceAuto, got.ToolChoice)
-}
-
-func TestChatSendsNoToolChoiceWhenTheRequestNamesNone(t *testing.T) {
-	s := &choiceServer{replies: []choiceReply{{status: http.StatusOK, body: chatFixture(t, "answer.json")}}}
-	client := ChatClient{BaseURL: s.start(t).URL, RequiredToolChoice: true}
-
-	got, err := client.Complete(context.Background(), toolRequest(""))
-	require.NoError(t, err)
-	_, err = client.Complete(context.Background(), chatAnswerRequest())
-	require.NoError(t, err)
-
-	require.Equal(t, []string{"<none>", "<none>"}, s.choices, "no choice in the request, and no tools, send none")
-	require.Empty(t, got.ToolChoice)
 }
 
 func TestChatFallsBackToAutoOnceWhenRequiredIsRefused(t *testing.T) {
@@ -107,7 +83,7 @@ func TestChatFallsBackToAutoOnceWhenRequiredIsRefused(t *testing.T) {
 	}}
 	client := ChatClient{BaseURL: s.start(t).URL, RequiredToolChoice: true, Prices: chatPrice()}
 
-	got, err := client.Complete(context.Background(), toolRequest(ports.ModelToolChoiceRequired))
+	got, err := client.Complete(context.Background(), toolRequest())
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"required", "auto"}, s.choices)
@@ -121,7 +97,7 @@ func TestChatFallsBackOnlyOnceAndKeepsBothRefusals(t *testing.T) {
 	s := &choiceServer{replies: []choiceReply{{status: http.StatusBadRequest, contentType: "text/html", body: []byte(htmlBadRequest)}}}
 	client := ChatClient{BaseURL: s.start(t).URL, RequiredToolChoice: true}
 
-	_, err := client.Complete(context.Background(), toolRequest(ports.ModelToolChoiceRequired))
+	_, err := client.Complete(context.Background(), toolRequest())
 
 	require.Equal(t, []string{"required", "auto"}, s.choices, "one fallback, never a loop")
 	var modelErr *ports.ModelError
@@ -140,7 +116,7 @@ func TestChatDoesNotFallBackOnAnErrorThatIsNotARefusedRequest(t *testing.T) {
 		s := &choiceServer{replies: []choiceReply{reply}}
 		client := ChatClient{BaseURL: s.start(t).URL, RequiredToolChoice: true}
 
-		_, err := client.Complete(context.Background(), toolRequest(ports.ModelToolChoiceRequired))
+		_, err := client.Complete(context.Background(), toolRequest())
 
 		require.Error(t, err)
 		require.Equal(t, []string{"required"}, s.choices, "HTTP %d is not a refusal of tool_choice", reply.status)

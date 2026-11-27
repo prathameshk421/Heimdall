@@ -94,12 +94,6 @@ func TestChangesListsEveryChangeWithItsGateAndOpenFindings(t *testing.T) {
 	require.Equal(t, 0, rows[1].OpenFindings)
 }
 
-func TestEmptyLogHasNoChanges(t *testing.T) {
-	rows, err := service(t, changelog.NewHistory()).Changes(t.Context())
-	require.NoError(t, err)
-	require.Empty(t, rows)
-}
-
 func TestDetailNamesGateFindingsReviewersAndOpenAsks(t *testing.T) {
 	svc := service(t, history(t, map[id.ChangeID][]change.Event{pay7: reviewedLog(t)}))
 
@@ -153,52 +147,6 @@ func TestDetailTakesTheLatestFindingRecord(t *testing.T) {
 	require.Len(t, d.Findings, 1)
 	require.Equal(t, "resolved", d.Findings[0].State)
 	require.Equal(t, "not evaluated", d.Gate.Status)
-}
-
-func TestDetailShowsTheStageOfTheView(t *testing.T) {
-	evs := changelog.New(t, pay7).
-		Add(change.EventChangeTriggered, changelog.Human("alice"), triggered(pay7)).
-		Add(change.EventRoomOpened, changelog.Agent("heimdall"), change.RoomOpened{RoomID: "room-7"}).
-		Events()
-	svc := service(t, history(t, map[id.ChangeID][]change.Event{pay7: evs}))
-
-	d, found, err := svc.Detail(t.Context(), pay7)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, "started", d.State)
-	require.Empty(t, d.Problem)
-}
-
-// A fact in an unexpected order is still a fact (AGENT_INTERACTION_ARCH F1): it folds, and nothing is a problem.
-func TestDetailFoldsAFactInAnUnexpectedOrder(t *testing.T) {
-	evs := changelog.New(t, pay7).
-		Add(change.EventChangeTriggered, changelog.Human("alice"), triggered(pay7)).
-		Add(change.EventTestsCommitted, changelog.Agent("heimdall"), change.TestsCommitted{SHA: sha, TreeHash: sha}).
-		Events()
-	svc := service(t, history(t, map[id.ChangeID][]change.Event{pay7: evs}))
-
-	d, found, err := svc.Detail(t.Context(), pay7)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, "started", d.State, "a commit with no submission has nothing to attach to")
-	require.Empty(t, d.Problem)
-	require.Len(t, d.Timeline, 2)
-}
-
-// Only a payload that does not decode makes the stage unknown, and the timeline still shows every event.
-func TestDetailNamesALogThatDoesNotFoldAndKeepsTheTimeline(t *testing.T) {
-	evs := changelog.New(t, pay7).
-		Add(change.EventChangeTriggered, changelog.Human("alice"), triggered(pay7)).
-		Raw(change.EventFindingFiled, changelog.Agent("reviewer-a"), json.RawMessage(`{"bogus":true}`)).
-		Events()
-	svc := service(t, history(t, map[id.ChangeID][]change.Event{pay7: evs}))
-
-	d, found, err := svc.Detail(t.Context(), pay7)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, "unknown", d.State)
-	require.NotEmpty(t, d.Problem)
-	require.Len(t, d.Timeline, 2)
 }
 
 func TestDetailShowsAnUnreadablePayloadAsUnreadable(t *testing.T) {

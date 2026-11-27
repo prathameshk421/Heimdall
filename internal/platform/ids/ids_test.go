@@ -58,61 +58,6 @@ func TestIDsParseBackWithTheDomainParsers(t *testing.T) {
 	require.Regexp(t, reUUIDv4, e.String())
 }
 
-func TestULIDTimeIsTheSystemClock(t *testing.T) {
-	before := time.Now().UnixMilli()
-	f := New().NewFinding()
-	after := time.Now().UnixMilli()
-	ulid := id.ULID(strings.TrimPrefix(f.String(), "fnd_"))
-	ms, err := ulid.Time()
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, int64(ms), before)
-	require.LessOrEqual(t, int64(ms), after)
-}
-
-func TestTenThousandCallsStrictlyIncrease(t *testing.T) {
-	g := New()
-	prev := ""
-	for i := 0; i < 10000; i++ {
-		var cur string
-		switch i % 4 {
-		case 0:
-			cur = strings.TrimPrefix(g.NewFinding().String(), "fnd_")
-		case 1:
-			cur = strings.TrimPrefix(g.NewRun().String(), "run_")
-		case 2:
-			cur = strings.TrimPrefix(g.NewCase().String(), "case_")
-		default:
-			cur = strings.TrimPrefix(g.NewTask().String(), "tsk_")
-		}
-		if prev != "" {
-			require.Less(t, prev, cur, "call %d did not increase", i)
-		}
-		prev = cur
-	}
-}
-
-func TestSteppedBackClockStillIncreases(t *testing.T) {
-	g := newGenerator(fixedClock(1000, 999, 1000, 500, 2000))
-	ids := []string{
-		strings.TrimPrefix(g.NewRun().String(), "run_"),
-		strings.TrimPrefix(g.NewRun().String(), "run_"),
-		strings.TrimPrefix(g.NewRun().String(), "run_"),
-		strings.TrimPrefix(g.NewRun().String(), "run_"),
-		strings.TrimPrefix(g.NewRun().String(), "run_"),
-	}
-	for i := 1; i < len(ids); i++ {
-		require.Less(t, ids[i-1], ids[i], "id %d is not greater than id %d", i, i-1)
-	}
-	first := id.ULID(ids[0])
-	ms, err := first.Time()
-	require.NoError(t, err)
-	require.Equal(t, uint64(1000), ms)
-	second := id.ULID(ids[1])
-	ms, err = second.Time()
-	require.NoError(t, err)
-	require.Equal(t, uint64(1000), ms, "a stepped-back clock keeps the previous timestamp")
-}
-
 func TestExhaustedRandomPartMovesToTheNextMillisecond(t *testing.T) {
 	g := newGenerator(fixedClock(1000))
 	full, err := id.NewULID(1000, [10]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})

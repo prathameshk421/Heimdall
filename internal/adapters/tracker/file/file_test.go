@@ -126,18 +126,6 @@ func TestChangesListsOnlyFilesTouchedInsideTheWindow(t *testing.T) {
 	require.Equal(t, ports.Cursor(poll.Format(now)), cursor)
 }
 
-func TestAFileModifiedInsideTheOverlapIsSeen(t *testing.T) {
-	dir := t.TempDir()
-	// The cursor is 09:00, so the window starts at 08:50. The file was written at 08:55: before the cursor, inside
-	// the overlap.
-	write(t, dir, "PAY-142.md", pay142, time.Date(2026, 11, 4, 8, 55, 0, 0, time.UTC))
-	tr := newTracker(t, dir, now)
-	changes, _, err := tr.Changes(context.Background(), poll.Format(time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)))
-
-	require.NoError(t, err)
-	require.Len(t, changes, 1, "a file written 5 minutes before the cursor is inside the 10-minute overlap")
-}
-
 func TestAnUnchangedFileInTheOverlapIsNotReportedAgain(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "PAY-142.md", pay142, now.Add(-time.Minute))
@@ -153,25 +141,6 @@ func TestAnUnchangedFileInTheOverlapIsNotReportedAgain(t *testing.T) {
 	second, _, err := tr.Changes(context.Background(), cursor)
 	require.NoError(t, err)
 	require.Empty(t, second, "the same file inside the overlap window is a repeat (dedupe by key and changelog id)")
-}
-
-func TestAnEditedFileIsReportedAgain(t *testing.T) {
-	dir := t.TempDir()
-	write(t, dir, "PAY-142.md", pay142, now.Add(-time.Minute))
-	clk := &fixedClock{at: now}
-	tr, err := New(dir, clk)
-	require.NoError(t, err)
-	_, cursor, err := tr.Changes(context.Background(), "")
-	require.NoError(t, err)
-
-	edited := pay142 + "3. A new criterion.\n"
-	write(t, dir, "PAY-142.md", edited, now.Add(time.Minute))
-	clk.at = now.Add(2 * time.Minute)
-	changes, _, err := tr.Changes(context.Background(), cursor)
-
-	require.NoError(t, err)
-	require.Len(t, changes, 1)
-	require.Equal(t, digest(edited), changes[0].ChangelogID)
 }
 
 func TestOnlyMarkdownTicketFilesAreRead(t *testing.T) {

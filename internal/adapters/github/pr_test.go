@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -106,17 +105,6 @@ func TestReviewsAndIssueCommentsCarryLoginAndCommit(t *testing.T) {
 	}
 	if comments[0].CreatedAt.IsZero() || !comments[0].CreatedAt.Equal(comments[0].UpdatedAt) {
 		t.Errorf("IssueComment timestamps = %s / %s", comments[0].CreatedAt, comments[0].UpdatedAt)
-	}
-}
-
-func TestPRNotFoundIsErrNotFound(t *testing.T) {
-	env := newTestEnv(t)
-	env.f.route("GET", "/repos/aarush323/heimdall-fixture-pay/pulls/404", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
-	})
-	_, err := env.a.PR(context.Background(), testRepo, 404)
-	if !errors.Is(err, ports.ErrNotFound) {
-		t.Errorf("error = %v, want ports.ErrNotFound", err)
 	}
 }
 

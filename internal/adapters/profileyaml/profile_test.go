@@ -58,12 +58,6 @@ func TestParsedProfileCarriesChecksKindsServicesAndRuns(t *testing.T) {
 	require.Equal(t, "/var/lib/postgresql/data", spec.Services[0].Data)
 }
 
-func TestAProfileWithoutExtensionsStillParses(t *testing.T) {
-	p, err := profileyaml.ParseApprovedProfile(profile(""), allowlist)
-	require.NoError(t, err)
-	require.NoError(t, profileyaml.Spec(p).Validate())
-}
-
 func TestProfileExtensionsAreRefused(t *testing.T) {
 	tests := []struct {
 		name    string

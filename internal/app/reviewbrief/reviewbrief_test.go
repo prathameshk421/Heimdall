@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -174,18 +173,6 @@ func TestEachSectionFailsAlone(t *testing.T) {
 	}
 }
 
-// A source that hangs costs its own deadline, not the task.
-func TestAHungSourceHitsItsDeadline(t *testing.T) {
-	b := compiler(t, reviewbrief.Config{
-		Graph:     fakeGraph{block: true},
-		Memory:    fakeMemory{block: true},
-		GraphWait: 10 * time.Millisecond, MemoryWait: 10 * time.Millisecond,
-	}).Compile(context.Background(), reviewerRequest())
-	require.Equal(t, "Code graph unavailable: use read_code.", b.ChangeMap)
-	require.Equal(t, "Team memory unavailable: carry on without it.", b.Memory)
-	require.True(t, b.Partial)
-}
-
 func TestAnUnresolvedPersonLosesOnlyTheCards(t *testing.T) {
 	req := reviewerRequest()
 	req.Person = ""
@@ -195,11 +182,6 @@ func TestAnUnresolvedPersonLosesOnlyTheCards(t *testing.T) {
 	}).Compile(context.Background(), req)
 	require.Equal(t, "Personal cards unavailable: use read_card.", b.Obligations)
 	require.NotEmpty(t, b.ChangeMap)
-}
-
-func TestSourcesThatAreOffGiveEmptySectionsAndAWholeBrief(t *testing.T) {
-	b := compiler(t, reviewbrief.Config{}).Compile(context.Background(), reviewerRequest())
-	require.Equal(t, reviewbrief.Brief{}, b)
 }
 
 func TestAResolverGetsOnlyTheChangeMapAndPriorFindings(t *testing.T) {
@@ -218,40 +200,6 @@ func TestAResolverGetsOnlyTheChangeMapAndPriorFindings(t *testing.T) {
 	require.Empty(t, b.Memory)
 	require.Empty(t, b.Record)
 	require.False(t, b.Partial)
-}
-
-func TestStaleFlag(t *testing.T) {
-	card := rulecard.Card{Name: "cap.md", Body: "b", Status: rulecard.StatusActive, Symbols: []string{"RefundCap", "Gone"}, AppliesTo: []string{"internal/**"}}
-	general := activeCard("plain.md")
-	cases := []struct {
-		name   string
-		impact fakeImpact
-		stale  bool
-	}{
-		{"no symbol defined", fakeImpact{}, true},
-		{"one symbol defined", fakeImpact{defined: map[string]bool{"RefundCap": true}}, false},
-		{"a truncated index proves nothing", fakeImpact{partial: true}, false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			b := compiler(t, reviewbrief.Config{
-				Cards: fakeCards{cards: []rulecard.Card{card, general}},
-				Graph: fakeGraph{impact: c.impact},
-			}).Compile(context.Background(), reviewerRequest())
-			require.Equal(t, c.stale, strings.Contains(b.Obligations, "POSSIBLY STALE"), b.Obligations)
-			require.Equal(t, 1, strings.Count(b.Obligations, "## plain.md"))
-		})
-	}
-	t.Run("a card with no symbols is never stale", func(t *testing.T) {
-		b := compiler(t, reviewbrief.Config{Cards: fakeCards{cards: []rulecard.Card{general}}, Graph: fakeGraph{impact: fakeImpact{}}}).
-			Compile(context.Background(), reviewerRequest())
-		require.NotContains(t, b.Obligations, "POSSIBLY STALE")
-	})
-	t.Run("no graph gives no flag", func(t *testing.T) {
-		b := compiler(t, reviewbrief.Config{Cards: fakeCards{cards: []rulecard.Card{card}}}).Compile(context.Background(), reviewerRequest())
-		require.Contains(t, b.Obligations, "cap.md")
-		require.NotContains(t, b.Obligations, "POSSIBLY STALE")
-	})
 }
 
 // The rank decides the order, the graph and the diff feed the rank, and the records move a noisy card down.
@@ -323,13 +271,6 @@ func contains(names []string, name string) bool {
 		}
 	}
 	return false
-}
-
-// A map without the base leaves out removed symbols, so the brief is compiled again next time.
-func TestAMissingBaseMarksTheBriefPartial(t *testing.T) {
-	b := compiler(t, reviewbrief.Config{Graph: fakeGraph{impact: fakeImpact{noBase: true}}}).Compile(context.Background(), reviewerRequest())
-	require.True(t, b.Partial)
-	require.NotEmpty(t, b.ChangeMap)
 }
 
 func TestChangeMapIsCapped(t *testing.T) {

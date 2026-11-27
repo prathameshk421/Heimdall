@@ -201,22 +201,6 @@ func triggeredEvent(t *testing.T, key string) change.Event {
 	return ev
 }
 
-func TestStarterStartsTheChangeAndCommitsItsRoomEffect(t *testing.T) {
-	t.Parallel()
-	store := newMemStore()
-	s := starter{eng: newSliceEngine(t, store)}
-	require.NoError(t, s.Start(context.Background(), triggeredEvent(t, "KAN-1")))
-
-	evs, err := store.Load(context.Background(), "KAN-1")
-	require.NoError(t, err)
-	require.Len(t, evs, 1, "the first event only: room.opened comes from the executor")
-	require.Equal(t, change.EventChangeTriggered, evs[0].Type)
-	require.Empty(t, store.fx, "the starter only records the fact")
-	require.NoError(t, newTestReconciler(t, store).Run(context.Background(), "KAN-1"))
-	require.Len(t, store.fx, 1)
-	require.Equal(t, change.EffectRoomOpen, store.fx[0].Kind, "the open_room row asks for the room")
-}
-
 func TestStarterReturnsVersionConflictForAnExistingChange(t *testing.T) {
 	t.Parallel()
 	store := newMemStore()

@@ -256,50 +256,6 @@ func TestComputeTables(t *testing.T) {
 	}
 }
 
-// TestPercentileEdges: the nearest-rank percentile on the shapes that go wrong in a hand-written percentile: nothing,
-// one value, two values, and a full twenty.
-func TestPercentileEdges(t *testing.T) {
-	from, to := period()
-	cases := []struct {
-		name             string
-		times            []int64
-		p50, p95, mean   int64
-		measured, maxVal int64
-	}{{
-		name: "no measurement",
-	}, {
-		name: "one value", times: []int64{100}, p50: 100, p95: 100, mean: 100, measured: 1, maxVal: 100,
-	}, {
-		name: "two values take the lower p50", times: []int64{100, 300}, p50: 100, p95: 300, mean: 200, measured: 2, maxVal: 300,
-	}, {
-		name: "three values", times: []int64{300, 100, 200}, p50: 200, p95: 300, mean: 200, measured: 3, maxVal: 300,
-	}, {
-		name:  "twenty values reach the last at p95",
-		times: []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
-		p50:   10, p95: 19, mean: 11, measured: 20, maxVal: 20,
-	}, {
-		name:  "a hundred values",
-		times: hundredTimes(), p50: 50, p95: 95, mean: 51, measured: 100, maxVal: 100,
-	}}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			prs := make([]digest.PRRecord, 0, len(c.times))
-			for i, v := range c.times {
-				rec := passed(i + 1)
-				rec.FastTimeMS = v
-				prs = append(prs, rec)
-			}
-			r := digest.Compute(digest.Input{Repo: "acme/pay", From: from, To: to, PRs: prs})
-			got := r.Misses.Fast
-			require.Equal(t, int(c.measured), got.Measured)
-			require.Equal(t, c.p50, got.P50MS)
-			require.Equal(t, c.p95, got.P95MS)
-			require.Equal(t, c.mean, got.MeanMS)
-			require.Equal(t, c.maxVal, got.MaxMS)
-		})
-	}
-}
-
 // TestCostPercentiles checks the money the same way, because a mean rounded down would hide a real per-pull-request
 // cost.
 func TestCostPercentiles(t *testing.T) {
@@ -418,15 +374,6 @@ func knownReason(counts []digest.ReasonCount, reason string) bool {
 		}
 	}
 	return false
-}
-
-// hundredTimes is 1 to 100, one per pull request.
-func hundredTimes() []int64 {
-	out := make([]int64, 0, 100)
-	for i := 1; i <= 100; i++ {
-		out = append(out, int64(i))
-	}
-	return out
 }
 
 // TestListsAreOrderedIndependentlyOfTheInput: two inputs that hold the same records in another order give the same

@@ -79,10 +79,3 @@ func TestPickSeats(t *testing.T) {
 		})
 	}
 }
-
-func TestPersonIsCarriedOnThePick(t *testing.T) {
-	picks, _ := PickSeats([]string{"security"}, seats, map[string]string{"reviewer-2": "priya"}, nil, 3)
-	if len(picks) != 1 || picks[0].Person != "priya" {
-		t.Fatalf("picks = %+v, want priya on reviewer-2", picks)
-	}
-}

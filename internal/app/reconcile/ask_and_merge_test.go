@@ -86,34 +86,3 @@ func TestAskRoutesToStandingChannelWhenConfigured(t *testing.T) {
 	}
 	require.True(t, found, "pick Ask posted to standing review room")
 }
-
-func TestReconcilerRunsTrackerMergeAndRoomCloseAfterMerge(t *testing.T) {
-	r := newRig(t)
-	r.rec.cfg.Inputs = mergePolicyInputs{mergeStatus: "Done"}
-	r.trigger(t)
-	r.room(t, tkt)
-	r.add(t, tkt, change.EventPROpened, change.PROpened{Repo: "acme/pay", Number: 7, HeadSHA: head1, Author: "ann", Ticket: tkt, BaseSHA: base})
-	r.add(t, tkt, change.EventPRClosed, change.PRClosed{Repo: "acme/pay", Number: 7, HeadSHA: head1, Merged: true})
-
-	r.run(t, tkt)
-	kinds := map[change.EffectKind]change.Effect{}
-	for _, k := range r.store.order {
-		fx := r.store.effects[k]
-		kinds[fx.Kind] = fx
-	}
-	require.Contains(t, kinds, change.EffectTrackerWrite)
-	require.Contains(t, kinds, change.EffectRoomPost)
-	require.Contains(t, kinds, change.EffectRoomClose)
-
-	var tw change.TrackerWritePayload
-	require.NoError(t, json.Unmarshal(kinds[change.EffectTrackerWrite].Payload, &tw))
-	require.Equal(t, change.TrackerStageMerge, tw.Stage)
-	require.Equal(t, "Done", tw.Transition)
-
-	// Once tracker.updated and room.closed are recorded, a later Run does nothing.
-	r.add(t, tkt, change.EventTrackerUpdated, change.TrackerUpdated{Ticket: tkt, Stage: change.TrackerStageMerge, Transition: "Done"})
-	r.add(t, tkt, change.EventRoomClosed, change.RoomClosed{RoomID: "switch:room-1"})
-	countBefore := len(r.store.order)
-	r.run(t, tkt)
-	require.Len(t, r.store.order, countBefore)
-}

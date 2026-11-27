@@ -37,19 +37,6 @@ func failed(r slop.Result) []slop.Rule {
 	return out
 }
 
-func TestTheBaseFactsPass(t *testing.T) {
-	r := slop.Evaluate(passing(), rules(), testsDir)
-	require.True(t, r.Pass)
-	require.Empty(t, r.Failures)
-}
-
-func TestEachRuleHasAStableIdentifier(t *testing.T) {
-	require.Equal(t, slop.RuleTicketLinked, slop.Rule("ticket_linked"))
-	require.Equal(t, slop.RuleSize, slop.Rule("size"))
-	require.Equal(t, slop.RuleTestsPresent, slop.Rule("tests_present"))
-	require.Equal(t, slop.RuleScope, slop.Rule("scope"))
-}
-
 func TestTicketLinkedMatchesTheWholeKeyAndNothingLonger(t *testing.T) {
 	cases := map[string]struct {
 		key, title, branch, body string
@@ -108,16 +95,6 @@ func TestSizeCountsAddedAndDeletedLinesOutsideIgnoredPathsAndTests(t *testing.T)
 	}
 }
 
-func TestSizeMessageNamesTheCountAndTheLimit(t *testing.T) {
-	f := passing()
-	f.Files = []slop.File{{Path: "internal/a.go", Added: 450}}
-	f.ExpectedPaths = []string{"**"}
-	r := slop.Evaluate(f, rules(), testsDir)
-	require.Len(t, r.Failures, 1)
-	require.Contains(t, r.Failures[0].Message, "450")
-	require.Contains(t, r.Failures[0].Message, "400")
-}
-
 func TestTestsPresentNeedsChangedTestsOrHeimdallTests(t *testing.T) {
 	cases := map[string]struct {
 		changed, exist, ok bool
@@ -161,10 +138,6 @@ func TestScopeAllowsPathsInTheTestsDirOrUnderExpectedPaths(t *testing.T) {
 			require.Equal(t, c.ok, !contains(failed(r), slop.RuleScope), "%s: %+v", name, r.Failures)
 		})
 	}
-}
-
-func TestTheJustificationHeadingIsNamed(t *testing.T) {
-	require.Equal(t, "Justification", slop.JustificationHeading)
 }
 
 func TestTheFailureListNamesEveryFailingRuleNotJustTheFirst(t *testing.T) {

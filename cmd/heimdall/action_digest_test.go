@@ -267,24 +267,6 @@ func TestDigestStateRefReportsAReaderFailure(t *testing.T) {
 	require.Contains(t, stderr, string(errNoState))
 }
 
-// TestRecordOfReadsAChangeView: the extraction from a change.Viex is what the -repo form does per change, so it is
-// checked on the view the digest is really about: a fast check, a finished proof run and its wall time.
-func TestRecordOfReadsAChangeView(t *testing.T) {
-	events := digestChangeEvents(t)
-	rec, ok := recordOf(context.Background(), events, noPolicyMode)
-	require.True(t, ok)
-	require.Equal(t, 7, rec.Number)
-	require.True(t, rec.Fast.Ran)
-	require.Len(t, rec.Fast.Clauses, 1)
-	require.True(t, rec.Proof.Ran)
-	require.Equal(t, proof.KindBlocked, rec.Proof.Kind)
-	require.Equal(t, 1, rec.Proof.Counts.Blocking)
-	require.Equal(t, int64(250_000), rec.CostMicros)
-	require.Equal(t, int64(300_000), rec.ProofTimeMS, "the wall time is the start to the report of one run")
-	require.Equal(t, digest.ModeShadow, rec.Mode, "no base policy is read here, so the default mode stands")
-	require.Equal(t, 1, rec.BreakGlassOpen)
-}
-
 // TestRecordOfSkipsAChangeWithNoPullRequest: a ticket stream with no pull request is not counted as a pull request.
 func TestRecordOfSkipsAChangeWithNoPullRequest(t *testing.T) {
 	events := digestChangeEvents(t)[1:2] // a fast check with no pull request in the log

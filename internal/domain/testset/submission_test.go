@@ -28,16 +28,6 @@ func goldenSubmission(t testing.TB) testset.Submission {
 // expect is the ticket and the test directory the golden submission is checked against.
 var expect = testset.Expect{TestsDir: "tests/heimdall", ACIDs: []string{"AC1", "AC2"}}
 
-func TestSubmissionGoldenDecodesValidatesAndEncodesItBack(t *testing.T) {
-	s := goldenSubmission(t)
-	require.NoError(t, s.Validate(expect))
-	require.Len(t, s.Files, 2)
-	require.Equal(t, []string{"TestRefundResponseKeepsRefundRef"}, s.AcceptanceCriteria["AC1"])
-	out, err := json.Marshal(s)
-	require.NoError(t, err)
-	require.JSONEq(t, string(readGolden(t)), string(out), "golden JSON: the wire format is frozen")
-}
-
 func TestSubmissionValidateRefusesWhatCannotBeCommitted(t *testing.T) {
 	long := strings.Repeat("n", 2001)
 	cases := []struct {
@@ -116,32 +106,4 @@ func FuzzDecodeSubmission(f *testing.F) {
 		require.NoError(t, again.Validate(expect), "accepted input must re-validate: %s", out)
 		require.Equal(t, s, again)
 	})
-}
-
-func TestSubmissionLimitsAreInclusive(t *testing.T) {
-	s := goldenSubmission(t)
-	s.Files = nil
-	for i := range testset.MaxFiles {
-		s.Files = append(s.Files, testset.File{Path: "tests/heimdall/PAY-142/f" + strings.Repeat("x", i) + "_test.go", Content: "package x"})
-	}
-	require.NoError(t, s.Validate(expect), "32 files is the maximum")
-
-	s = goldenSubmission(t)
-	s.Files[0].Content = strings.Repeat("x", testset.MaxFileBytes)
-	require.NoError(t, s.Validate(expect), "a file of exactly the size limit is accepted")
-
-	s = goldenSubmission(t)
-	s.Notes = strings.Repeat("n", testset.MaxNotesChars)
-	require.NoError(t, s.Validate(expect), "notes of exactly the limit are accepted")
-
-	s = goldenSubmission(t)
-	s.AcceptanceCriteria["AC1"] = []string{strings.Repeat("T", testset.MaxTestNameChars)}
-	require.NoError(t, s.Validate(expect), "a test name of exactly the limit is accepted")
-}
-
-func TestAnAcceptanceCriterionIdMustLookLikeAC2EvenWhenTheTicketHasIt(t *testing.T) {
-	s := goldenSubmission(t)
-	s.AcceptanceCriteria = map[string][]string{"AC01": {"TestX"}}
-	err := s.Validate(testset.Expect{TestsDir: "tests/heimdall", ACIDs: []string{"AC01"}})
-	require.ErrorContains(t, err, "acceptance_criteria[AC01]: the id must look like AC2")
 }

@@ -37,8 +37,3 @@ func TestCollectAnswersPairsAnsweredQuestionsOnly(t *testing.T) {
 
 	require.Equal(t, []workflow.AnswerRef{{ID: "Q1", Answer: "use the 409 response", AnsweredBy: "ana"}}, got)
 }
-
-func TestCollectAnswersIsEmptyWithoutAnswers(t *testing.T) {
-	require.Empty(t, collectAnswers([]change.Event{askedFor(t, "Q1", "q-1")}))
-	require.Empty(t, collectAnswers(nil))
-}

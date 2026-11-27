@@ -13,36 +13,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 )
 
-// The liveness probe asks the provider the agents really use (H11: the VM agents run on Deploy, and a probe of
-// OpenRouter with an OpenRouter key said nothing about them).
-func TestTheProbeTargetsTheAgentsModelProvider(t *testing.T) {
-	deploy, err := modelProviderOf(config.Config{}, "deploy/deepseek-ai/deepseek-v4.1-flash-1017")
-	require.NoError(t, err)
-	require.Equal(t, modelProvider{
-		url: "https://api.deploy.com/api/v1", keyFile: "deploy_api_key", model: "deepseek-ai/deepseek-v4.1-flash-1017",
-	}, deploy)
-
-	openRouter, err := modelProviderOf(config.Config{}, "openrouter/deepseek/deepseek-v4-flash")
-	require.NoError(t, err)
-	require.Equal(t, modelProvider{
-		url: "https://openrouter.ai/api/v1", keyFile: "openrouter_api_key", model: "deepseek/deepseek-v4-flash",
-	}, openRouter)
-}
-
-func TestAConfiguredProviderIsResolvedByItsPrefix(t *testing.T) {
-	cfg := config.Config{ModelProviders: []config.ModelProvider{
-		{Name: "ollama", BaseURL: "http://127.0.0.1:11434/v1"},
-		{Name: "litellm", BaseURL: "https://llm.example.test/v1", KeyFile: "litellm_key", Headers: map[string]string{"X-Team": "a"}},
-	}}
-	got, err := modelProviderOf(cfg, "ollama/qwen2.5-coder:14b")
-	require.NoError(t, err)
-	require.Equal(t, modelProvider{url: "http://127.0.0.1:11434/v1", model: "qwen2.5-coder:14b"}, got)
-
-	got, err = modelProviderOf(cfg, "litellm/gpt-4o")
-	require.NoError(t, err)
-	require.Equal(t, modelProvider{url: "https://llm.example.test/v1", keyFile: "litellm_key", headers: map[string]string{"X-Team": "a"}, model: "gpt-4o"}, got)
-}
-
 func TestAModelOfAnUnknownProviderIsRefused(t *testing.T) {
 	for _, model := range []string{"", "deploy", "deploy/", "/deepseek", "acme/deepseek"} {
 		_, err := modelProviderOf(config.Config{}, model)

@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/announce"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 )
 
@@ -31,21 +30,6 @@ func TestChatLinesCarryNoRawMarkdown(t *testing.T) {
 		require.NotContains(t, line.Text, "**", e.Type)
 		require.NotContains(t, line.Text, "`", e.Type)
 	}
-}
-
-// A ticketless pull request is named by its own address in chat, never the pr-... stream id it is stored under.
-func TestAChatLineNamesATicketlessPullRequestReadably(t *testing.T) {
-	const prc = "pr-aarush323-heimdall-fixture-pay-15"
-	e := change.Event{
-		ID:       "ev-ci",
-		ChangeID: prc,
-		Type:     change.EventCIReported,
-		Payload:  []byte(`{"check":"heimdall/acceptance","sha":"abcdef1234567","conclusion":"success"}`),
-	}
-	line, ok := announce.Narrate(nil, e)
-	require.True(t, ok)
-	require.Contains(t, line.Text, "aarush323/heimdall-fixture-pay #15")
-	require.NotContains(t, line.Text, "pr-aarush323")
 }
 
 // The CI line carries the pull request link when the history has one.

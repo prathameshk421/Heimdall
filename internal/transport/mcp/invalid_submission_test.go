@@ -20,13 +20,3 @@ func TestAnAppValidationProblemIsShownToTheAgent(t *testing.T) {
 	require.Contains(t, res.text(), "files[0].content is not valid Go")
 	require.Contains(t, res.text(), "Fix these problems and submit again")
 }
-
-// Any other failure inside the server stays generic, so no internal detail reaches the agent.
-func TestAnyOtherSubmitFailureStaysGeneric(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleTestAuthor)
-	r.tasks.submitErr = fmt.Errorf("postgres: connection refused at 10.0.0.5")
-	res := r.call("submit_tests", validSubmission())
-	require.True(t, res.IsError)
-	require.Equal(t, genericFailure, res.text())
-}

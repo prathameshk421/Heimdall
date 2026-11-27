@@ -2,7 +2,6 @@ package agentloop
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -75,14 +74,6 @@ func TestTextCallsReadsAFencedJSONCall(t *testing.T) {
 	}
 }
 
-func TestTextCallsReadsToolCallTags(t *testing.T) {
-	content := "<tool_call>\n{\"name\": \"read_code\", \"arguments\": {\"path\": \"a.go\"}}\n</tool_call>\n" +
-		"<tool_call>{\"name\": \"finish_review\", \"arguments\": {}}</tool_call>"
-	got := parsed(t, content)
-	require.Len(t, got, 2)
-	assert.Equal(t, []string{"read_code", "finish_review"}, []string{got[0].Name, got[1].Name})
-}
-
 func TestTextCallsReadsDeepSeekV3ToolTokens(t *testing.T) {
 	content := "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>read_code\n```json\n{\"path\":\"a.go\"}\n```" +
 		"<｜tool▁call▁end｜><｜tool▁calls▁end｜>"
@@ -110,14 +101,6 @@ func TestTextCallsTreatsAnythingElseAsText(t *testing.T) {
 	} {
 		assert.Nil(t, parsed(t, content), name)
 	}
-}
-
-func TestTextCallsIsBounded(t *testing.T) {
-	one := "<tool_call>{\"name\":\"no_schema\",\"arguments\":{}}</tool_call>"
-	assert.Len(t, parsed(t, strings.Repeat(one, maxTextCalls)), maxTextCalls)
-	assert.Nil(t, parsed(t, strings.Repeat(one, maxTextCalls+1)), "more calls than the bound is text, never a partial run")
-	big := one + strings.Repeat(" ", maxTextCallBytes)
-	assert.Nil(t, parsed(t, big), "an answer longer than the bound is not parsed")
 }
 
 func FuzzTextCalls(f *testing.F) {

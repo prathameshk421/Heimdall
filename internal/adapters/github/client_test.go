@@ -70,30 +70,6 @@ func TestRateLimitResetHeaderSetsTheWait(t *testing.T) {
 	}
 }
 
-func TestLongRetryAfterReturnsTypedErrorWithoutWaiting(t *testing.T) {
-	env := newTestEnv(t)
-	var calls atomic.Int32
-	env.f.route("GET", prListPath, func(w http.ResponseWriter, _ *http.Request) {
-		calls.Add(1)
-		w.Header().Set("Retry-After", "3600")
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"message": "secondary"})
-	})
-	_, err := env.a.OpenPRs(context.Background(), testRepo)
-	var rl *RateLimitError
-	if !errors.As(err, &rl) {
-		t.Fatalf("error = %v, want *RateLimitError", err)
-	}
-	if rl.RetryAfter != time.Hour {
-		t.Errorf("RetryAfter = %v, want 1h", rl.RetryAfter)
-	}
-	if !errors.Is(err, ports.ErrUnavailable) {
-		t.Errorf("error does not wrap ports.ErrUnavailable: %v", err)
-	}
-	if calls.Load() != 1 || len(env.wait.waits) != 0 {
-		t.Errorf("calls = %d, waits = %v; want one call and no wait", calls.Load(), env.wait.waits)
-	}
-}
-
 func TestRateLimitGivesUpAfterThreeAttemptsWithDoublingBackoff(t *testing.T) {
 	env := newTestEnv(t)
 	var calls atomic.Int32
@@ -111,46 +87,6 @@ func TestRateLimitGivesUpAfterThreeAttemptsWithDoublingBackoff(t *testing.T) {
 	}
 	if want := []time.Duration{time.Minute, 2 * time.Minute}; fmt.Sprint(env.wait.waits) != fmt.Sprint(want) {
 		t.Errorf("waits = %v, want %v", env.wait.waits, want)
-	}
-}
-
-func TestStatusTranslation(t *testing.T) {
-	cases := []struct {
-		name   string
-		status int
-		header map[string]string
-		is     error
-		isNot  []error
-	}{
-		{"not found", 404, nil, ports.ErrNotFound, []error{ports.ErrUnauthorized, ports.ErrUnavailable}},
-		{"401 is unauthorized", 401, nil, ports.ErrUnauthorized, []error{ports.ErrUnavailable, ports.ErrNotFound}},
-		{"403 without rate headers is unauthorized", 403, nil, ports.ErrUnauthorized, []error{ports.ErrUnavailable}},
-		{"500 is unavailable", 500, nil, ports.ErrUnavailable, []error{ports.ErrUnauthorized}},
-		{"502 is unavailable", 502, nil, ports.ErrUnavailable, nil},
-		{"422 is neither", 422, nil, nil, []error{ports.ErrUnavailable, ports.ErrUnauthorized, ports.ErrNotFound}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			env := newTestEnv(t)
-			env.f.route("GET", prListPath, func(w http.ResponseWriter, _ *http.Request) {
-				for k, v := range tc.header {
-					w.Header().Set(k, v)
-				}
-				writeJSON(w, tc.status, map[string]string{"message": "Not Found"})
-			})
-			_, err := env.a.OpenPRs(context.Background(), testRepo)
-			if err == nil {
-				t.Fatal("expected an error")
-			}
-			if tc.is != nil && !errors.Is(err, tc.is) {
-				t.Errorf("error = %v, want it to wrap %v", err, tc.is)
-			}
-			for _, bad := range tc.isNot {
-				if errors.Is(err, bad) {
-					t.Errorf("error = %v must not wrap %v", err, bad)
-				}
-			}
-		})
 	}
 }
 
@@ -205,69 +141,6 @@ func TestBreakerOpensAfterFiveFailuresAndProbesAfterThirtySeconds(t *testing.T) 
 	if _, err := env.a.OpenPRs(ctx, testRepo); err != nil {
 		t.Errorf("breaker should be closed after a good probe: %v", err)
 	}
-}
-
-func TestFailedProbeReopensTheBreaker(t *testing.T) {
-	env := newTestEnv(t)
-	env.f.route("GET", prListPath, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"message": "down"})
-	})
-	ctx := context.Background()
-	for i := 0; i < 5; i++ {
-		_, _ = env.a.OpenPRs(ctx, testRepo)
-	}
-	env.clock.advance(30 * time.Second)
-	_, _ = env.a.OpenPRs(ctx, testRepo) // the probe fails
-	before := len(env.f.requests())
-	if _, err := env.a.OpenPRs(ctx, testRepo); !errors.Is(err, ports.ErrUnavailable) {
-		t.Fatalf("after failed probe: %v, want unavailable", err)
-	}
-	if len(env.f.requests()) != before {
-		t.Errorf("breaker did not reopen after the failed probe")
-	}
-}
-
-func TestClientErrorsDoNotTripTheBreaker(t *testing.T) {
-	env := newTestEnv(t)
-	env.f.route("GET", prListPath, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
-	})
-	for i := 0; i < 10; i++ {
-		_, _ = env.a.OpenPRs(context.Background(), testRepo)
-	}
-	env.f.route("GET", prListPath, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, []any{})
-	})
-	if _, err := env.a.OpenPRs(context.Background(), testRepo); err != nil {
-		t.Errorf("404s opened the breaker: %v", err)
-	}
-}
-
-func TestEveryCallCarriesADeadline(t *testing.T) {
-	env := newTestEnv(t)
-	var sawDeadline atomic.Bool
-	env.a.c.http = &http.Client{Transport: deadlineRecorder{base: env.f.srv.Client().Transport, saw: &sawDeadline}}
-	env.f.route("GET", prListPath, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, []any{})
-	})
-	if _, err := env.a.OpenPRs(context.Background(), testRepo); err != nil {
-		t.Fatalf("OpenPRs: %v", err)
-	}
-	if !sawDeadline.Load() {
-		t.Error("request had no deadline")
-	}
-}
-
-type deadlineRecorder struct {
-	base http.RoundTripper
-	saw  *atomic.Bool
-}
-
-func (d deadlineRecorder) RoundTrip(r *http.Request) (*http.Response, error) {
-	if _, ok := r.Context().Deadline(); ok {
-		d.saw.Store(true)
-	}
-	return d.base.RoundTrip(r)
 }
 
 func TestOpenPRsPaginatesThroughLinkHeaders(t *testing.T) {

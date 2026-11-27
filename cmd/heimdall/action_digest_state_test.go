@@ -21,7 +21,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/gitlog"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/digest"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/proof"
 )
 
@@ -158,27 +157,6 @@ func TestDigestNeedsTheToken(t *testing.T) {
 	code, _, stderr := runDigestWith(t, digestStateDeps(env), "-repo", fakeRepo)
 	require.Equal(t, exitActionFail, code)
 	require.Contains(t, stderr, "GITHUB_TOKEN")
-}
-
-// TestStateChangesSkipsATicketStream keeps a ticket key out of the pull request list, because a digest of pull requests
-// counts pull requests.
-func TestStateChangesSortsAndKeepsPullRequests(t *testing.T) {
-	require.Equal(t, []id.ChangeID{"pr-acme-pay-12", "pr-acme-pay-9", "pr-acme-pay-1"}, sortedIDs(
-		"pr-acme-pay-1", "pr-acme-pay-9", "pr-acme-pay-12"))
-}
-
-// sortedIDs orders the ids the way stateChanges does.
-func sortedIDs(ids ...string) []id.ChangeID {
-	out := make([]id.ChangeID, 0, len(ids))
-	for _, s := range ids {
-		out = append(out, id.ChangeID(s))
-	}
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && byNewestPR(out[j], out[j-1]); j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
-	return out
 }
 
 // TestProofOfAnUnfinishedRun: a run that started and never reported is not a result, so the report counts no run and

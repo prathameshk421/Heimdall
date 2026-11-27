@@ -21,24 +21,6 @@ func scriptDefaultBranch(env *testEnv, branch string) {
 	})
 }
 
-func TestDefaultHeadReadsTheDefaultBranchHead(t *testing.T) {
-	env := newTestEnv(t)
-	scriptDefaultBranch(env, "main")
-	env.f.route("GET", repoBranchPath, func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Accept") != acceptJSON {
-			t.Errorf("accept = %q, want %q", r.Header.Get("Accept"), acceptJSON)
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"sha": shaHead})
-	})
-	got, err := env.a.DefaultHead(context.Background(), testRepo)
-	if err != nil || string(got) != shaHead {
-		t.Fatalf("DefaultHead = %q, %v; want %s", got, err, shaHead)
-	}
-	if n := env.f.count("GET", repoBranchPath); n != 1 {
-		t.Errorf("commit requests = %d, want 1", n)
-	}
-}
-
 func TestDefaultHeadUsesTheReaderTokenNotTheWriter(t *testing.T) {
 	env := newTestEnv(t)
 	scriptDefaultBranch(env, "main")

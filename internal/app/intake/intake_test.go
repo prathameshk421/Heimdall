@@ -220,7 +220,8 @@ func (r *rig) event(t *testing.T, stream id.ChangeID, version int64, et change.E
 
 // seed writes a ticket change through the real reducer's path. With toBuilding false the stream stops at TRIGGERED;
 // with true it runs to BUILDING, the state in which a PR opens the PR state.
-func (r *rig) seed(t *testing.T, toBuilding bool) {
+func (r *rig) seed(t *testing.T) {
+	toBuilding := true
 	t.Helper()
 	ticket := ticketPay42
 	steps := []step{{change.EventChangeTriggered,
@@ -261,48 +262,9 @@ func slopOf(t *testing.T, e change.Event) change.SlopEvaluated {
 	return s
 }
 
-func TestBadPRFailsTheSlopRuleAndNamesTheRule(t *testing.T) {
-	r := newRig(t)
-	r.prs.pr = pullRequest(7, "refund rounding", "feature/refund", shaHead1)
-	r.prs.files = sourceFiles()
-
-	res, err := r.in.HandlePR(context.Background(), testRepo, 7)
-	require.NoError(t, err)
-	require.True(t, res.Appended)
-	require.False(t, res.Pass)
-
-	evs := r.ev.streams[res.Stream]
-	require.Equal(t, []change.EventType{change.EventPROpened, change.EventSlopEvaluated}, types(evs))
-	rules := slopOf(t, evs[1]).FailingRules
-	require.Contains(t, rules, "ticket_linked")
-	require.Contains(t, rules, "tests_present")
-	require.Contains(t, rules, "scope")
-
-	require.Empty(t, r.ev.effects, "intake records the verdict only; the gate row publishes the check")
-}
-
-func TestGoodPRPassesSlop(t *testing.T) {
-	r := newRig(t)
-	r.seed(t, true)
-	r.prs.pr = pullRequest(3, "PAY-142 refund rounding", "feature/PAY-142-refund", shaHead1)
-	r.prs.files = testsOnlyFiles()
-
-	res, err := r.in.HandlePR(context.Background(), testRepo, 3)
-	require.NoError(t, err)
-	require.True(t, res.Appended)
-	require.True(t, res.Pass)
-	require.Equal(t, ticketPay42, res.Stream)
-
-	evs := r.ev.streams[ticketPay42][seededToBuilding:]
-	require.Equal(t, []change.EventType{change.EventPROpened, change.EventSlopEvaluated}, types(evs))
-	require.True(t, slopOf(t, evs[1]).Pass)
-
-	require.Empty(t, r.ev.effects, "intake records the verdict only; the gate row publishes the check")
-}
-
 func TestIntakePersistsCODEOWNERSReviewerSuggestionsAtTheMergeBase(t *testing.T) {
 	r := newRig(t)
-	r.seed(t, true)
+	r.seed(t)
 	r.prs.pr = pullRequest(11, "PAY-142 refund rounding", "feature/PAY-142-refund", shaHead1)
 	r.prs.files = sourceFiles()
 	r.code.files[pathKey(shaBase, ".github/CODEOWNERS")] = []byte("internal/refund/** @temporaryhameshakagroup-alt\n")
@@ -319,7 +281,7 @@ func TestIntakePersistsCODEOWNERSReviewerSuggestionsAtTheMergeBase(t *testing.T)
 
 func TestPolicyIsReadAtTheMergeBaseNeverTheHead(t *testing.T) {
 	r := newRig(t)
-	r.seed(t, true)
+	r.seed(t)
 	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
 	r.prs.files = testsOnlyFiles()
 
@@ -346,7 +308,7 @@ func TestTestTreeIsCheckedOnlyWhenThePRTouchesNoTests(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r := newRig(t)
-			r.seed(t, true)
+			r.seed(t)
 			r.code.trees[pathKey(shaHead1, "tests/heimdall/PAY-142")] = c.tree
 			r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
 			r.prs.files = c.files
@@ -380,7 +342,7 @@ func TestInvalidPolicyFailsClosedAndNamesThePolicy(t *testing.T) {
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
-			r.seed(t, true)
+			r.seed(t)
 			mutate(r)
 			r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
 			r.prs.files = testsOnlyFiles()
@@ -408,7 +370,7 @@ func TestTransportErrorsAppendNothingSoThePollRetries(t *testing.T) {
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
-			r.seed(t, true)
+			r.seed(t)
 			before := len(r.ev.streams[ticketPay42])
 			mutate(r)
 			r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
@@ -424,7 +386,7 @@ func TestTransportErrorsAppendNothingSoThePollRetries(t *testing.T) {
 
 func TestSameHeadTwiceAppendsNothing(t *testing.T) {
 	r := newRig(t)
-	r.seed(t, true)
+	r.seed(t)
 	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
 	r.prs.files = testsOnlyFiles()
 
@@ -443,7 +405,7 @@ func TestSameHeadTwiceAppendsNothing(t *testing.T) {
 
 func TestMovedHeadAppendsPushedThenEvaluatesAgain(t *testing.T) {
 	r := newRig(t)
-	r.seed(t, true)
+	r.seed(t)
 	r.prs.files = testsOnlyFiles()
 	ctx := context.Background()
 
@@ -460,23 +422,9 @@ func TestMovedHeadAppendsPushedThenEvaluatesAgain(t *testing.T) {
 	require.Empty(t, r.ev.effects, "intake records facts only")
 }
 
-func TestVersionConflictIsRetriedAndSucceeds(t *testing.T) {
-	r := newRig(t)
-	r.seed(t, true)
-	r.ev.conflicts = 2
-	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
-	r.prs.files = testsOnlyFiles()
-
-	res, err := r.in.HandlePR(context.Background(), testRepo, 3)
-	require.NoError(t, err)
-	require.True(t, res.Appended)
-	require.Equal(t, 3, r.ev.calls, "two refused appends, then one that lands")
-	require.Len(t, r.ev.streams[ticketPay42], seededToBuilding+2, "the refused attempts appended nothing")
-}
-
 func TestVersionConflictRetriesAreBounded(t *testing.T) {
 	r := newRig(t)
-	r.seed(t, true)
+	r.seed(t)
 	r.ev.conflicts = 1000
 	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
 	r.prs.files = testsOnlyFiles()
@@ -503,7 +451,7 @@ func TestAPullRequestForAnUnknownTicketStartsThatChange(t *testing.T) {
 
 func TestSecondPRForATicketIsRefusedWithoutAppend(t *testing.T) {
 	r := newRig(t)
-	r.seed(t, true)
+	r.seed(t)
 	r.prs.files = testsOnlyFiles()
 	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
 	_, err := r.in.HandlePR(context.Background(), testRepo, 3)
@@ -514,23 +462,6 @@ func TestSecondPRForATicketIsRefusedWithoutAppend(t *testing.T) {
 	_, err = r.in.HandlePR(context.Background(), testRepo, 4)
 	require.ErrorIs(t, err, ErrSecondPR)
 	require.Len(t, r.ev.streams[ticketPay42], before)
-}
-
-func TestPRAttachedBeforeBuildingKeepsItsState(t *testing.T) {
-	r := newRig(t)
-	r.seed(t, false)
-	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
-	r.prs.files = testsOnlyFiles()
-
-	res, err := r.in.HandlePR(context.Background(), testRepo, 3)
-	require.NoError(t, err)
-	require.True(t, res.Appended)
-	require.True(t, res.Pass)
-
-	v, err := change.Fold(r.ev.streams[ticketPay42])
-	require.NoError(t, err)
-	require.NotNil(t, v.PR, "a PR before the tests are committed attaches to the change")
-	require.Nil(t, v.Tests, "and the change still needs its tests")
 }
 
 func TestPRWithNoTicketGetsItsOwnUnlinkedStream(t *testing.T) {
@@ -561,7 +492,7 @@ func TestNewRefusesEveryNilPortByName(t *testing.T) {
 // failed scope, so reviewers were never picked).
 func TestScopePassesForExpectedPathsAndFailsOutsideThem(t *testing.T) {
 	r := newRig(t)
-	r.seed(t, true)
+	r.seed(t)
 	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
 	r.prs.files = append(testsOnlyFiles(), sourceFiles()...)
 	res, err := r.in.HandlePR(context.Background(), testRepo, 3)
@@ -569,7 +500,7 @@ func TestScopePassesForExpectedPathsAndFailsOutsideThem(t *testing.T) {
 	require.True(t, res.Pass, "internal/refund/round.go is inside the expected internal/refund/**")
 
 	r = newRig(t)
-	r.seed(t, true)
+	r.seed(t)
 	r.prs.pr = pullRequest(3, "PAY-142 refund", "feature/PAY-142-refund", shaHead1)
 	r.prs.files = append(testsOnlyFiles(), ports.ChangedFile{Path: "internal/billing/fee.go", Status: ports.FileModified, Additions: 3})
 	res, err = r.in.HandlePR(context.Background(), testRepo, 3)

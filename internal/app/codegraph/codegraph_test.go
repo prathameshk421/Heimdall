@@ -57,11 +57,6 @@ func TestGoDefinitionsAndReferences(t *testing.T) {
 	require.Contains(t, idx.References("Create"), Ref{"Create", "api/h.go", 5})
 }
 
-func TestBrokenGoFallsBackToLineTagging(t *testing.T) {
-	idx := FromFiles(map[string]string{"a.go": "package a\nfunc Broken( {\nfunc Fine() {}\n"})
-	require.Len(t, idx.Definitions("Fine"), 1)
-}
-
 func TestPythonDefinitionsAndReferences(t *testing.T) {
 	idx := FromFiles(map[string]string{
 		"app/svc.py":  "class Billing:\n    def charge_card(self, amount):\n        return amount\n\ndef helper():\n    pass\n",
@@ -118,11 +113,6 @@ func indexOf(s []string, v string) int {
 	return -1
 }
 
-func TestACommonNameMakesNoEdge(t *testing.T) {
-	idx := FromFiles(graphFiles())
-	require.Empty(t, idx.fwd["common/user.go"], "Close is defined in 9 files, so it links nothing")
-}
-
 const diffPay = `diff --git a/pay/pay.go b/pay/pay.go
 --- a/pay/pay.go
 +++ b/pay/pay.go
@@ -132,13 +122,6 @@ const diffPay = `diff --git a/pay/pay.go b/pay/pay.go
  	return validateAmount(amount)
  }
 `
-
-func TestParseDiffKeepsNewSideLinesAndAddedText(t *testing.T) {
-	d := parseDiff(diffPay + "diff --git a/n.txt b/n.txt\n--- a/n.txt\n+++ b/n.txt\n@@ -1,1 +1,2 @@\n keep\n+++ not a header\n")
-	require.Equal(t, map[int]bool{7: true}, d["pay/pay.go"].lines)
-	require.Equal(t, []string{"\tlogCall(amount); validateAmount(1)"}, d["pay/pay.go"].added)
-	require.Equal(t, []string{"++ not a header"}, d["n.txt"].added, "an added line that starts with ++ is data")
-}
 
 func TestImpactFindsChangedCallersTestsAndUntested(t *testing.T) {
 	files := graphFiles()

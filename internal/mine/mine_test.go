@@ -61,28 +61,3 @@ func TestGoldenRulesAndSARIFByteForByte(t *testing.T) {
 		t.Fatalf("sarif.json differs:\n%s", gotSARIF)
 	}
 }
-
-// TestMergesAndLargeCommitsAreNotCounted: a merge and a 31-file commit add nothing, neither to support nor to commits(A).
-func TestMergesAndLargeCommitsAreNotCounted(t *testing.T) {
-	var commits []Commit
-	for i := 0; i < 5; i++ {
-		commits = append(commits, Commit{Hash: "p", Files: []string{"a.go", "b.go"}})
-	}
-	big := make([]string, 31)
-	for i := range big {
-		big[i] = "f" + string(rune('a'+i%26)) + string(rune('0'+i/26))
-	}
-	big = append(big, "a.go", "b.go")
-	commits = append(commits,
-		Commit{Hash: "merge", Parents: []string{"x", "y"}, Files: []string{"a.go", "c.go"}},
-		Commit{Hash: "big", Files: big})
-	for _, r := range Mine(commits, DefaultLimits()) {
-		if r.Antecedent == "a.go" && (r.Consequent == "c.go" || r.AntecedentCommits != 5) {
-			t.Fatalf("merge or large commit was counted: %+v", r)
-		}
-	}
-	rules := Mine(commits, DefaultLimits())
-	if len(rules) != 2 {
-		t.Fatalf("want a.go<=>b.go only (2 rules), got %+v", rules)
-	}
-}

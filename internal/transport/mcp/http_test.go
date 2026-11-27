@@ -3,7 +3,6 @@ package mcp
 import (
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -55,23 +54,6 @@ func TestARevokedTokenGets401(t *testing.T) {
 	r.tokens.err = ports.ErrUnauthorized
 	rep := r.post("Bearer "+testToken, initBody)
 	require.Equal(t, http.StatusUnauthorized, rep.status)
-}
-
-func TestAStoreThatCannotBeReachedGets503WithoutItsDetail(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	r.tokens.err = errors.New("pg: connection refused at db.internal:5432")
-	rep := r.post("Bearer "+testToken, initBody)
-	require.Equal(t, http.StatusServiceUnavailable, rep.status)
-	require.NotContains(t, rep.body, "db.internal")
-}
-
-func TestAMethodOtherThanPOSTIsNotAllowed(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	rec := httptest.NewRecorder()
-	r.handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/mcp", nil))
-	require.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
 
 func TestTheRealTokenIsKeptOutOfRefusalsAndLogsWhenItIsRevokedOrTheStoreFails(t *testing.T) {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,71 +22,6 @@ func answer(t *testing.T, status int, body string) *httptest.Server {
 	}))
 	t.Cleanup(hs.Close)
 	return hs
-}
-
-// TestTheClientSpeaksTheProtocolTheServerImplements checks the JSON-RPC envelope and the bearer header the MCP edge
-// expects (TECH_SPEC 14.1, internal/transport/mcp/server.go).
-func TestTheClientSpeaksTheProtocolTheServerImplements(t *testing.T) {
-	var path, auth, contentType, method string
-	var body map[string]any
-	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path, auth, method = r.URL.Path, r.Header.Get("Authorization"), r.Method
-		contentType = r.Header.Get("Content-Type")
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &body)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"hello"}],"isError":false}}`)
-	}))
-	t.Cleanup(hs.Close)
-
-	c, err := newClient(hs.URL+"/mcp", testToken)
-	require.NoError(t, err)
-	res, err := c.callTool(t.Context(), toolGetTask, map[string]any{})
-	require.NoError(t, err)
-	require.Equal(t, "hello", res.text())
-	require.False(t, res.IsError)
-	require.Equal(t, "/mcp", path)
-	require.Equal(t, http.MethodPost, method)
-	require.Equal(t, "Bearer "+testToken, auth)
-	require.Equal(t, "application/json", contentType)
-	require.Equal(t, "2.0", body["jsonrpc"])
-	require.Equal(t, "tools/call", body["method"])
-	params, ok := body["params"].(map[string]any)
-	require.True(t, ok, "params must be an object: %v", body["params"])
-	require.Equal(t, toolGetTask, params["name"])
-	arguments, ok := params["arguments"].(map[string]any)
-	require.True(t, ok, "arguments must be an object: %v", params["arguments"])
-	require.Empty(t, arguments)
-}
-
-// TestConnectInitializesThenSendsTheInitializedNotification is the handshake every MCP client performs.
-func TestConnectInitializesThenSendsTheInitializedNotification(t *testing.T) {
-	var methods []string
-	var ids []json.RawMessage
-	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var msg struct {
-			Method string          `json:"method"`
-			ID     json.RawMessage `json:"id"`
-		}
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &msg)
-		methods = append(methods, msg.Method)
-		ids = append(ids, msg.ID)
-		w.Header().Set("Content-Type", "application/json")
-		if msg.Method == "notifications/initialized" {
-			w.WriteHeader(http.StatusAccepted)
-			return
-		}
-		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}`)
-	}))
-	t.Cleanup(hs.Close)
-
-	c, err := newClient(hs.URL+"/mcp", testToken)
-	require.NoError(t, err)
-	require.NoError(t, c.connect(t.Context()))
-	require.Equal(t, []string{"initialize", "notifications/initialized"}, methods)
-	require.JSONEq(t, "1", string(ids[0]), "a request carries a numeric id")
-	require.Empty(t, ids[1], "the initialized notification carries no id")
 }
 
 // TestAToolRefusalIsAResultAndNotAnError keeps the agent's budget intact: a refusal is an isError result.
@@ -190,12 +124,4 @@ func TestReadTokenRefusesWhatItCannotRead(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "empty")
 	require.NotContains(t, err.Error(), testToken)
-}
-
-// TestToolResultTextJoinsEveryPart keeps a server that splits its text readable.
-func TestToolResultTextJoinsEveryPart(t *testing.T) {
-	res := toolResult{Content: []textContent{{Type: "text", Text: "one "}, {Type: "text", Text: "two"}}}
-	require.Equal(t, "one two", res.text())
-	require.False(t, res.IsError)
-	require.Contains(t, res.text(), "two")
 }

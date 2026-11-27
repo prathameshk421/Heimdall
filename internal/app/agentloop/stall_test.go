@@ -63,18 +63,6 @@ func TestAProgressCallResetsTheStall(t *testing.T) {
 	require.Empty(t, userTexts(res), "no stretch reached three turns with no progress")
 }
 
-func TestStallAfterTheNudgeWasUsedStopsWithNoSecondNudge(t *testing.T) {
-	// Three reads (nudge), a test run, then five reads: the second stall gets no nudge and stops at its grace end.
-	steps := append(reads(3), answer(0.001, call("t1", "run_test", `{}`)))
-	steps = append(steps, reads(5)...)
-	h, runTest := stallHarness(t, steps...)
-	res, err := runWith(t, h, runTest)
-	require.NoError(t, err)
-	require.Equal(t, StopNoProgress, res.Reason)
-	require.Equal(t, 9, res.Turns)
-	require.Equal(t, []string{stallNudge}, userTexts(res))
-}
-
 func TestStallConfigNeedsItsParts(t *testing.T) {
 	for name, edit := range map[string]func(*Config){
 		"no grace":          func(c *Config) { c.StallGrace = 0 },

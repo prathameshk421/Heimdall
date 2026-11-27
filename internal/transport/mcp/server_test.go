@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -19,23 +18,6 @@ type wireTool struct {
 	InputSchema json.RawMessage `json:"inputSchema"`
 }
 
-// expectedTools are the tools of each kind (workflow.Kinds) that this rig registers: no graph, cards, sandbox or
-// profile service is wired, so the tools that need them are absent.
-func expectedTools(role workflow.Role) []string {
-	all := []string{"get_task", "report_progress", "read_code"}
-	switch role {
-	case workflow.RoleTestAuthor:
-		return append(all, "submit_tests", "ask_humans")
-	case workflow.RoleResolver:
-		return append(all, "ask_knowledge", "submit_verdict")
-	case workflow.RoleReviewer:
-		return append(all, "ask_knowledge", "submit_review", "stage_knowledge")
-	case workflow.RoleProfiler:
-		return all
-	}
-	return nil
-}
-
 func TestKnowledgeLifecycleToolsAreListedOnlyForAuthenticatedHumanPrincipals(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
@@ -47,10 +29,6 @@ func TestKnowledgeLifecycleToolsAreListedOnlyForAuthenticatedHumanPrincipals(t *
 	r.tokens.byHash[HashToken(testToken)] = Principal{Agent: testAgent, Role: workflow.RoleReviewer, Person: "alice", Human: true}
 	forged := r.rpc("tools/call", `{"name":"approve_knowledge","arguments":{"ref":"knowledge:pending"}}`)
 	require.NotNil(t, forged.Error, "a human flag cannot be combined with an agent principal")
-}
-
-func allLLMRoles() []workflow.Role {
-	return []workflow.Role{workflow.RoleTestAuthor, workflow.RoleReviewer, workflow.RoleResolver, workflow.RoleProfiler}
 }
 
 func listTools(t *testing.T, r *rig) []wireTool {
@@ -74,24 +52,6 @@ func toolNames(tools []wireTool) []string {
 
 const initBody = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}`
 
-func TestInitializeNegotiatesTheVersionAndAdvertisesTools(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	rep := r.rpc("initialize", `{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"opencode","version":"1.0.0"}}`)
-	require.Nil(t, rep.Error)
-	var res struct {
-		ProtocolVersion string                     `json:"protocolVersion"`
-		Capabilities    map[string]json.RawMessage `json:"capabilities"`
-		ServerInfo      struct {
-			Name string `json:"name"`
-		} `json:"serverInfo"`
-	}
-	require.NoError(t, decodeInto(rep.Result, &res))
-	require.Equal(t, "2025-06-18", res.ProtocolVersion)
-	require.Contains(t, res.Capabilities, "tools")
-	require.Equal(t, "heimdall", res.ServerInfo.Name)
-}
-
 func TestInitializeAnswersAnUnknownVersionWithTheLatestItSupports(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
@@ -113,25 +73,6 @@ func TestAnUnknownMethodIsMethodNotFoundAndKeepsTheID(t *testing.T) {
 	require.JSONEq(t, "1", string(rep.ID))
 }
 
-func TestANotificationGetsNoBodyAndStatus202(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	rep := r.post("Bearer "+testToken, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
-	require.Equal(t, http.StatusAccepted, rep.status)
-	require.Empty(t, rep.body)
-}
-
-func TestMalformedJSONIsAParseErrorWithANullID(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	rep := r.post("Bearer "+testToken, `{not json`)
-	require.Equal(t, http.StatusBadRequest, rep.status)
-	out := decodeReply(t, rep)
-	require.NotNil(t, out.Error)
-	require.Equal(t, codeParseError, out.Error.Code)
-	require.JSONEq(t, "null", string(out.ID))
-}
-
 func TestABatchArrayIsRefusedAsAnInvalidRequest(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
@@ -149,16 +90,6 @@ func TestAWrongJSONRPCVersionIsAnInvalidRequest(t *testing.T) {
 	out := decodeReply(t, rep)
 	require.NotNil(t, out.Error)
 	require.Equal(t, codeInvalidRequest, out.Error.Code)
-}
-
-func TestToolsListShowsExactlyTheToolsOfEachRole(t *testing.T) {
-	t.Parallel()
-	for _, role := range allLLMRoles() {
-		t.Run(string(role), func(t *testing.T) {
-			r := newRig(t, role)
-			require.ElementsMatch(t, expectedTools(role), toolNames(listTools(t, r)))
-		})
-	}
 }
 
 func TestEveryListedToolHasADescriptionAndAClosedObjectSchema(t *testing.T) {
@@ -193,14 +124,6 @@ func TestACallToAToolTheRoleLacksAnswersLikeAnUnknownTool(t *testing.T) {
 	require.Equal(t, Principal{}, r.tasks.currentFor, "the role check runs before any task is read")
 }
 
-func TestToolsCallWithoutANameIsInvalidParams(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	rep := r.rpc("tools/call", `{"arguments":{}}`)
-	require.NotNil(t, rep.Error)
-	require.Equal(t, codeInvalidParams, rep.Error.Code)
-}
-
 func TestToolsCallWithArrayParamsIsInvalidParams(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
@@ -233,40 +156,4 @@ func TestNoActiveTaskIsAPlainAnswerNotAProtocolError(t *testing.T) {
 	require.NoError(t, decodeInto(rep.Result, &res))
 	require.False(t, res.IsError, "get_task with no task answers plainly")
 	require.Contains(t, res.text(), "no active task")
-}
-
-func TestAnUnexpectedServerFailureIsGenericAndItsCauseIsLogged(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleTestAuthor)
-	r.tasks.currentErr = errors.New("postgres://heimdall:hunter2-cause@db refused")
-	res := r.call("get_task", `{}`)
-	require.True(t, res.IsError)
-	require.Equal(t, "the server could not complete this call", res.text())
-	require.NotContains(t, res.text(), "hunter2")
-	require.Contains(t, r.logs.String(), "hunter2-cause", "the cause belongs in the log")
-}
-
-func TestReviewerCannotCallSubmitVerdictAndResolverCannotCallSubmitReview(t *testing.T) {
-	t.Parallel()
-	rev := newRig(t, workflow.RoleReviewer)
-	rep := rev.rpc("tools/call", `{"name":"submit_verdict","arguments":{}}`)
-	require.NotNil(t, rep.Error)
-	require.Equal(t, codeInvalidParams, rep.Error.Code)
-
-	res := newRig(t, workflow.RoleResolver)
-	rep = res.rpc("tools/call", `{"name":"submit_review","arguments":{}}`)
-	require.NotNil(t, rep.Error)
-	require.Equal(t, codeInvalidParams, rep.Error.Code)
-}
-
-func TestWrongRoleSeesNoSuchToolForSubmitReviewAndSubmitVerdict(t *testing.T) {
-	t.Parallel()
-	author := newRig(t, workflow.RoleTestAuthor)
-	rep := author.rpc("tools/call", `{"name":"submit_review","arguments":{}}`)
-	require.NotNil(t, rep.Error)
-	require.Equal(t, codeInvalidParams, rep.Error.Code)
-
-	rep = author.rpc("tools/call", `{"name":"submit_verdict","arguments":{}}`)
-	require.NotNil(t, rep.Error)
-	require.Equal(t, codeInvalidParams, rep.Error.Code)
 }

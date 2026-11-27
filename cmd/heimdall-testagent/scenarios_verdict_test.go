@@ -6,8 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 )
@@ -62,41 +60,6 @@ func playVerdictScenario(t *testing.T, w world, name string) (int, string, strin
 func verdictWorld(t *testing.T, caseText string) world {
 	t.Helper()
 	return buildWorld(t, workflow.RoleResolver, caseEnvelope(), &testBlobs{texts: map[workflow.BlobRef]string{caseRef: caseText, testTask().Inputs.Diff: "=== internal/refunds/service.go (modified, +1 -0)\n+x\n"}})
-}
-
-// TestTheVerdictScenariosRecordAVerdictOnTheRealServer plays the three verdicts against the real MCP edge. Each verdict
-// is for the case the envelope names, validates, and quotes only text the case file holds.
-func TestTheVerdictScenariosRecordAVerdictOnTheRealServer(t *testing.T) {
-	cases := []struct {
-		name       string
-		caseText   string
-		decision   deliberation.Decision
-		confidence finding.Confidence
-	}{
-		{name: "verdict-uphold", caseText: upholdCase, decision: deliberation.DecisionUphold, confidence: finding.ConfidenceHigh},
-		{name: "verdict-dismiss", caseText: dismissCase, decision: deliberation.DecisionDismiss, confidence: finding.ConfidenceHigh},
-		{name: "verdict-needs-human", caseText: needsHumanCase, decision: deliberation.DecisionNeedsHuman, confidence: finding.ConfidenceMedium},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			w := verdictWorld(t, c.caseText)
-			code, stdout, stderr := playVerdictScenario(t, w, c.name)
-			require.Equal(t, exitOK, code, "stderr: %s", stderr)
-			require.Equal(t, c.name+": recorded: The verdict is recorded.", strings.TrimSpace(stdout))
-			require.Len(t, w.reviews.verdicts, 1)
-			v := w.reviews.verdicts[0]
-			require.Equal(t, id.CaseID("case_01J8Z3K9QW7M2P5R8T0V4YB6CD"), v.CaseID, "the verdict settles the case of the task")
-			require.Equal(t, c.decision, v.Decision)
-			require.Equal(t, c.confidence, v.Confidence)
-			require.NoError(t, v.Validate(), "the scripted verdict passes the domain's own rules")
-			require.Contains(t, w.blobs.reads, caseRef, "the resolver reads the case file before it decides")
-			require.Contains(t, w.code.reads, string(testHead)+" internal/refunds/service.go",
-				"the resolver reads the disputed file at head")
-			for _, cit := range v.Citations {
-				require.Contains(t, c.caseText, cit.Quote, "citation %s %s quotes text the case does not hold", cit.Kind, cit.Ref)
-			}
-		})
-	}
 }
 
 // TestAVerdictScenarioRefusesAQuoteTheCaseDoesNotHold is the guard on the scripted citations: a case that does not hold

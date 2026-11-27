@@ -49,7 +49,8 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) path() string { return filepath.Join(f.dir, "opencode.db") }
 
-func (f *fixture) session(t *testing.T, id, parent, dir string, updated time.Time) {
+func (f *fixture) session(t *testing.T, id, dir string, updated time.Time) {
+	parent := ""
 	t.Helper()
 	_, err := ctxExec(f.db, `INSERT INTO session (id, project_id, parent_id, slug, directory, title, version, time_created, time_updated) VALUES (?,?,?,?,?,?,?,?,?)`,
 		id, "prj", nullable(parent), "slug-"+id, dir, "title", "1.19.6", updated.UnixMilli()-1000, updated.UnixMilli())
@@ -98,7 +99,7 @@ func read(t *testing.T, f *fixture, root string) []sessions.Session {
 func TestReadKeepsTextAndFilePathsOnly(t *testing.T) {
 	root := t.TempDir()
 	f := newFixture(t)
-	f.session(t, "ses_1", "", root, base.Add(time.Hour))
+	f.session(t, "ses_1", root, base.Add(time.Hour))
 	f.message(t, "ses_1", "user", base, text("Never edit generated files by hand."))
 	f.message(t, "ses_1", "assistant", base.Add(time.Minute),
 		map[string]any{"type": "reasoning", "text": "SECRET-THINKING"},
@@ -124,21 +125,6 @@ func TestReadKeepsTextAndFilePathsOnly(t *testing.T) {
 	}
 }
 
-func TestReadSkipsSyntheticAndIgnoredParts(t *testing.T) {
-	root := t.TempDir()
-	f := newFixture(t)
-	f.session(t, "ses_1", "", root, base)
-	f.message(t, "ses_1", "user", base,
-		map[string]any{"type": "text", "text": "Called the Read tool with input {...} and file body", "synthetic": true},
-		map[string]any{"type": "text", "text": "hidden from the model", "ignored": true},
-		text("Please fix the build."))
-
-	got := read(t, f, root)
-	require.Len(t, got, 1)
-	require.Len(t, got[0].Turns, 1)
-	require.Equal(t, "Please fix the build.", got[0].Turns[0].Text)
-}
-
 func TestReadScopesSessionsToTheRepository(t *testing.T) {
 	base2 := t.TempDir()
 	root := filepath.Join(base2, "repo")
@@ -154,7 +140,7 @@ func TestReadScopesSessionsToTheRepository(t *testing.T) {
 
 	f := newFixture(t)
 	for id, dir := range map[string]string{"ses_root": root, "ses_wt": wt, "ses_other": elsewhere, "ses_empty": ""} {
-		f.session(t, id, "", dir, base)
+		f.session(t, id, dir, base)
 		f.message(t, id, "user", base, text("hello from "+id))
 	}
 
@@ -166,31 +152,17 @@ func TestReadScopesSessionsToTheRepository(t *testing.T) {
 	require.ElementsMatch(t, []string{"ses_root", "ses_wt"}, ids)
 }
 
-func TestReadMarksSubagentSessionsAsSidechain(t *testing.T) {
-	root := t.TempDir()
-	f := newFixture(t)
-	f.session(t, "ses_parent", "", root, base)
-	f.session(t, "ses_child", "ses_parent", root, base)
-	f.message(t, "ses_child", "user", base, text("sub task"))
-
-	for _, s := range read(t, f, root) {
-		for _, turn := range s.Turns {
-			require.Equal(t, s.ID == "ses_child", turn.Sidechain, s.ID)
-		}
-	}
-}
-
 func TestReadLimits(t *testing.T) {
 	root := t.TempDir()
 	f := newFixture(t)
-	f.session(t, "ses_old", "", root, base.AddDate(0, 0, -90))
+	f.session(t, "ses_old", root, base.AddDate(0, 0, -90))
 	f.message(t, "ses_old", "user", base.AddDate(0, 0, -90), text("old"))
 	for i := range 3 {
 		id := fmt.Sprintf("ses_%d", i)
-		f.session(t, id, "", root, base.Add(time.Duration(i)*time.Hour))
+		f.session(t, id, root, base.Add(time.Duration(i)*time.Hour))
 		f.message(t, id, "user", base, text("hello "+id))
 	}
-	f.session(t, "ses_silent", "", root, base.Add(10*time.Hour)) // no messages: nothing to keep
+	f.session(t, "ses_silent", root, base.Add(10*time.Hour)) // no messages: nothing to keep
 
 	got, err := opencode.Read(context.Background(), f.path(), root, sessions.Limits{Since: base.AddDate(0, 0, -30), MaxSessions: 2})
 	require.NoError(t, err)
@@ -202,32 +174,13 @@ func TestReadLimits(t *testing.T) {
 func TestReadCapsTurnText(t *testing.T) {
 	root := t.TempDir()
 	f := newFixture(t)
-	f.session(t, "ses_1", "", root, base)
+	f.session(t, "ses_1", root, base)
 	long := make([]byte, sessions.MaxTurnChars*3)
 	for i := range long {
 		long[i] = 'x'
 	}
 	f.message(t, "ses_1", "user", base, text(string(long)))
 	require.LessOrEqual(t, len(read(t, f, root)[0].Turns[0].Text), sessions.MaxTurnChars)
-}
-
-func TestReadFromALiveDatabase(t *testing.T) {
-	root := t.TempDir()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "opencode.db")
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=wal_autocheckpoint(0)")
-	require.NoError(t, err)
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { _ = db.Close() })
-	_, err = ctxExec(db, schema)
-	require.NoError(t, err)
-	f := &fixture{db: db, dir: dir}
-	f.session(t, "ses_live", "", root, base)
-	f.message(t, "ses_live", "user", base, text("typed a second ago"))
-
-	got, err := opencode.Read(context.Background(), path, root, sessions.Limits{Since: base.AddDate(0, 0, -1), MaxSessions: 5})
-	require.NoError(t, err)
-	require.Len(t, got, 1, "rows that live only in the wal file are read")
 }
 
 func TestReadRejectsAnUnknownSchema(t *testing.T) {

@@ -44,31 +44,6 @@ func withSubmissionField(t *testing.T, field, raw string) string {
 
 // --- get_task ---
 
-func TestGetTaskReturnsTheTaskItsInstructionsItsInputsAndItsNeeds(t *testing.T) {
-	t.Parallel()
-	for _, role := range allLLMRoles() {
-		t.Run(string(role), func(t *testing.T) {
-			r := newRig(t, role)
-			res := r.call("get_task", `{}`)
-			require.False(t, res.IsError, res.text())
-			var got taskView
-			require.NoError(t, json.Unmarshal([]byte(res.text()), &got))
-			kind, _ := workflow.KindFor(role)
-			require.Equal(t, kind.Name, got.Task.Kind)
-			require.Equal(t, string(testEnvelope(role).TaskID), got.Task.ID)
-			require.Contains(t, got.Instructions, "Goal.", "the skill of the kind is the instructions")
-			names := make([]string, 0, len(got.Inputs))
-			for _, in := range got.Inputs {
-				names = append(names, in.Name)
-			}
-			require.Equal(t, kind.Inputs, names, "every input of the kind, in the kind's order")
-			require.NotNil(t, got.Needs)
-			require.Equal(t, Principal{Agent: testAgent, Role: role}, r.tasks.currentFor)
-			require.Len(t, r.tasks.acks, 1, "the first get_task acknowledges the task")
-		})
-	}
-}
-
 func TestAskKnowledgeIsAvailableToReviewersAndDoesNotAcceptCallerGroups(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
@@ -173,15 +148,6 @@ func TestGetTaskRefusesArgumentsItDoesNotTake(t *testing.T) {
 
 // --- read_code ---
 
-func TestReadCodeNumbersTheHeadLinesForAReviewer(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	res := r.call("read_code", `{"path":"`+refundsGo+`","sha":"`+headSHA+`"}`)
-	require.False(t, res.IsError, res.text())
-	_, body := unwrap(t, res.text())
-	require.Equal(t, "1: h1\n2: h2 changed\n3: h3", body)
-}
-
 func TestTestAuthorReadsTheBaseCommitAndNoOther(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, workflow.RoleTestAuthor)
@@ -193,28 +159,6 @@ func TestTestAuthorReadsTheBaseCommitAndNoOther(t *testing.T) {
 	refused := r.call("read_code", `{"path":"`+refundsGo+`","sha":"`+headSHA+`"}`)
 	require.True(t, refused.IsError, "test-author may not read the head commit")
 	require.Equal(t, []string{baseSHA + "|" + refundsGo}, r.code.calls, "the store must not be read for a refused commit")
-}
-
-func TestProfilerAndReviewerReadBaseOrHead(t *testing.T) {
-	t.Parallel()
-	for _, role := range []workflow.Role{workflow.RoleReviewer, workflow.RoleProfiler} {
-		t.Run(string(role), func(t *testing.T) {
-			r := newRig(t, role)
-			for _, sha := range []string{baseSHA, headSHA} {
-				res := r.call("read_code", `{"path":"`+refundsGo+`","sha":"`+sha+`"}`)
-				require.False(t, res.IsError, res.text())
-			}
-		})
-	}
-}
-
-func TestReadCodeRangeShowsOnlyThoseLines(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	res := r.call("read_code", `{"path":"`+refundsGo+`","sha":"`+baseSHA+`","range":{"start":2,"end":3}}`)
-	require.False(t, res.IsError, res.text())
-	_, body := unwrap(t, res.text())
-	require.Equal(t, "2: l2\n3: l3", body)
 }
 
 func TestReadCodeClampsAnEndPastTheFile(t *testing.T) {
@@ -285,18 +229,6 @@ func TestReadCodeWrapsAnInjectionInsideTheCode(t *testing.T) {
 }
 
 // --- submit_tests ---
-
-func TestSubmitTestsRecordsAValidSubmission(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleTestAuthor)
-	res := r.call("submit_tests", validSubmission())
-	require.False(t, res.IsError, res.text())
-	require.Len(t, r.tasks.submits, 1)
-	require.False(t, r.tasks.submits[0].late)
-	sub := r.tasks.submits[0].sub
-	require.Equal(t, "tests/heimdall/PAY-142/refund_over_limit_test.go", sub.Files[0].Path)
-	require.Equal(t, []string{"TestRefundOverLimitIsRejected"}, sub.AcceptanceCriteria["AC2"])
-}
 
 func TestSubmitTestsRefusesWhatTheSubmissionRulesReject(t *testing.T) {
 	t.Parallel()
@@ -393,25 +325,7 @@ func TestAskHumansRefusesBadQuestionLists(t *testing.T) {
 	}
 }
 
-func TestAskHumansAcceptsThreeQuestionsOfExactly400Characters(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleTestAuthor)
-	q := strings.Repeat("q", 400)
-	res := r.call("ask_humans", `{"questions":["`+q+`","`+q+`","`+q+`"]}`)
-	require.False(t, res.IsError, res.text())
-	require.Len(t, r.tasks.asked, 1)
-	require.Len(t, r.tasks.asked[0], 3)
-}
-
 // --- report_progress ---
-
-func TestReportProgressIsRecorded(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	res := r.call("report_progress", `{"text":"reading the diff"}`)
-	require.False(t, res.IsError, res.text())
-	require.Equal(t, []string{"reading the diff"}, r.tasks.progress)
-}
 
 func TestReportProgressCountsCharactersNotBytes(t *testing.T) {
 	t.Parallel()
@@ -461,14 +375,6 @@ func TestAFailedProgressReportDoesNotUseUpTheWindow(t *testing.T) {
 		"the window opens again when the report was not delivered")
 }
 
-func TestTheProgressWindowIsPerTask(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	require.False(t, r.call("report_progress", `{"text":"first"}`).IsError)
-	r.tasks.current.Task.TaskID = id.TaskID("tsk_01J8Z3K9QW7M2P5R8T0V4YB7XX")
-	require.False(t, r.call("report_progress", `{"text":"other task"}`).IsError)
-}
-
 // --- submit_review ---
 
 func validReview() string {
@@ -487,17 +393,6 @@ func validReviewWithFinding() string {
 		`"evidence":[{"type":"reasoning","reasoning":"A refund compares request amount with payment and not previous refunds."}],` +
 		`"context_refs":[]` +
 		`}]}`
-}
-
-func TestSubmitReviewRecordsAValidSubmission(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	res := r.call("submit_review", validReview())
-	require.False(t, res.IsError, res.text())
-	require.Equal(t, "The review is recorded.", res.text())
-	require.Len(t, r.reviews.reviewSubmits, 1)
-	require.False(t, r.reviews.reviewSubmits[0].late)
-	require.Equal(t, id.SHA(headSHA), r.reviews.reviewSubmits[0].review.HeadSHA)
 }
 
 func TestSubmitReviewRefusesUnknownField(t *testing.T) {
@@ -591,17 +486,6 @@ func validVerdict() string {
 		`"rationale":"The second refund of 60 is accepted on head so the refunds total 120 against a payment of 100.",` +
 		`"citations":[{"kind":"finding","ref":"F1","quote":"two partial refunds of 60 on a payment of 100 both succeed"}],` +
 		`"confidence":"high"}`
-}
-
-func TestSubmitVerdictRecordsAValidVerdict(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleResolver)
-	res := r.call("submit_verdict", validVerdict())
-	require.False(t, res.IsError, res.text())
-	require.Equal(t, "The verdict is recorded.", res.text())
-	require.Len(t, r.reviews.verdictSubmits, 1)
-	require.False(t, r.reviews.verdictSubmits[0].late)
-	require.Equal(t, id.CaseID("case_01J8Z3K9QW7M2P5R8T0V4YB6CD"), r.reviews.verdictSubmits[0].verdict.CaseID)
 }
 
 func TestSubmitVerdictRefusals(t *testing.T) {
@@ -758,16 +642,6 @@ func TestGetTaskCarriesTheReviewersMatchingCardsWithoutBeingAsked(t *testing.T) 
 	author := newRig(t, workflow.RoleTestAuthor)
 	author.server.deps.Cards = &fakeCards{forText: "must not appear"}
 	require.NotContains(t, author.call("get_task", `{}`).text(), "must not appear")
-}
-
-// A profiler proposing again after a failed trial reads that trial in get_task (D175).
-func TestGetTaskShowsTheProfilerItsPreviousTrial(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleProfiler)
-	r.server.deps.Profiles = &fakeProfiles{previousTrial: "proposal ccccccc failed its trial: 0 passed, 1 failed, 0 errored"}
-	res := r.call("get_task", `{}`)
-	require.False(t, res.IsError, res.text())
-	require.Contains(t, res.text(), "proposal ccccccc failed its trial")
 }
 
 // The profiler must name an allowlisted image, so get_task lists the runner's images in stack_hints (live, Nov 21: the

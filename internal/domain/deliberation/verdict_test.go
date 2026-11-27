@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/deliberation"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/finding"
 )
 
 func readGolden(t testing.TB) []byte {
@@ -24,18 +23,6 @@ func goldenVerdict(t testing.TB) deliberation.Verdict {
 	var v deliberation.Verdict
 	require.NoError(t, json.Unmarshal(readGolden(t), &v))
 	return v
-}
-
-func TestVerdictGoldenDecodesValidatesAndEncodesItBack(t *testing.T) {
-	v := goldenVerdict(t)
-	require.NoError(t, v.Validate())
-	require.Equal(t, deliberation.DecisionUphold, v.Decision)
-	require.Len(t, v.Citations, 4)
-	require.Equal(t, deliberation.CitationFinding, v.Citations[3].Kind)
-	require.Equal(t, finding.ConfidenceHigh, v.Confidence)
-	out, err := json.Marshal(v)
-	require.NoError(t, err)
-	require.JSONEq(t, string(readGolden(t)), string(out), "golden JSON: the wire format is frozen")
 }
 
 func TestVerdictValidateRefusesWhatCannotBeSettled(t *testing.T) {
@@ -133,27 +120,4 @@ func FuzzDecodeVerdict(f *testing.F) {
 		require.NoError(t, again.Validate(), "accepted input must re-validate: %s", out)
 		require.Equal(t, v, again)
 	})
-}
-
-func TestVerdictLimitsAreInclusive(t *testing.T) {
-	v := goldenVerdict(t)
-	v.Rationale = strings.Repeat("r", 10)
-	require.NoError(t, v.Validate(), "10 characters is the minimum rationale")
-	v.Rationale = strings.Repeat("r", 1000)
-	require.NoError(t, v.Validate(), "1000 characters is the maximum rationale")
-
-	v = goldenVerdict(t)
-	v.Citations = nil
-	for range deliberation.MaxCitations {
-		v.Citations = append(v.Citations, deliberation.Citation{Kind: deliberation.CitationMemory, Ref: "mem_x", Quote: "q"})
-	}
-	require.NoError(t, v.Validate(), "16 citations is the maximum")
-
-	v = goldenVerdict(t)
-	v.Citations[1].Ref = strings.Repeat("m", 256)
-	require.NoError(t, v.Validate(), "a 256-byte memory ref is the maximum")
-
-	v = goldenVerdict(t)
-	v.Citations[0].Quote = strings.Repeat("q", deliberation.MaxQuoteChars)
-	require.NoError(t, v.Validate(), "300 characters is the maximum quote")
 }

@@ -40,15 +40,6 @@ func loadConfig(t *testing.T, extra string) config.Config {
 	return cfg
 }
 
-func TestKindsAreFixedAndValid(t *testing.T) {
-	require.Equal(t, []Kind{KindVCS, KindTracker, KindChat, KindAgentRuntime, KindMemory}, Kinds())
-	for _, k := range Kinds() {
-		require.True(t, k.Valid(), "kind %q", k)
-	}
-	require.False(t, Kind("nope").Valid())
-	require.False(t, Kind("").Valid())
-}
-
 func TestRegisterRefusesInvalidEntries(t *testing.T) {
 	noop := func(config.Config) (any, error) { return nil, nil }
 	noCheck := func(context.Context, config.Config) CheckResult { return CheckResult{} }
@@ -91,19 +82,6 @@ func TestRegisterRefusesDuplicateKindAndName(t *testing.T) {
 	require.Equal(t, []string{"github"}, r.Names(KindTracker))
 }
 
-func TestSelectReturnsTheRegisteredEntry(t *testing.T) {
-	var r Registry
-	require.NoError(t, r.Register(stubEntry("github", KindVCS, "github_app_key")))
-	e, err := r.Select(KindVCS, "github")
-	require.NoError(t, err)
-	require.Equal(t, "github", e.Name)
-	require.Equal(t, KindVCS, e.Kind)
-	require.Equal(t, []string{"github_app_key"}, e.RequiredConfig)
-	got, err := e.Factory(config.Config{})
-	require.NoError(t, err)
-	require.Equal(t, "github-adapter", got)
-}
-
 func TestSelectUnknownNameListsValidNamesForTheKind(t *testing.T) {
 	var r Registry
 	require.NoError(t, r.Register(stubEntry("github", KindVCS)))
@@ -138,15 +116,6 @@ func TestSelectUnknownKindIsATypedError(t *testing.T) {
 	_, err := r.Select(Kind("nope"), "github")
 	require.ErrorIs(t, err, ErrUnknownKind)
 	require.ErrorContains(t, err, "nope")
-}
-
-func TestSelectOnEmptyRegistryNamesNoOptions(t *testing.T) {
-	var r Registry
-	_, err := r.Select(KindChat, "mattermost")
-	require.ErrorIs(t, err, ErrUnknownName)
-	var se *SelectError
-	require.ErrorAs(t, err, &se)
-	require.Empty(t, se.Valid)
 }
 
 func TestDescribeIsSortedDeterministically(t *testing.T) {

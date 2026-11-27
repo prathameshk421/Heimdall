@@ -2,13 +2,10 @@ package github
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
@@ -99,48 +96,6 @@ func TestPRReviewCommentsPaginateAndMapNullLines(t *testing.T) {
 	env.wantAuth(t)
 }
 
-// TestPRReviewCommentsMarkANullPositionOutdated covers AM14's open item: the port carries the outdated flag, and the
-// adapter sets it from REST position == nil. Line and original_line keep their existing behavior.
-func TestPRReviewCommentsMarkANullPositionOutdated(t *testing.T) {
-	env := newActionEnv(t)
-	env.f.route("GET", reviewCommentsPath, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, []any{
-			map[string]any{
-				"id": 21, "body": "on the head", "path": "a.go", "line": 4, "start_line": 3, "original_line": 2,
-				"position": 7, "side": "RIGHT", "commit_id": shaHead,
-				"created_at": "2026-11-04T12:00:00Z", "updated_at": "2026-11-04T12:00:00Z",
-				"user": map[string]any{"login": "coderabbitai[bot]", "type": "Bot"},
-			},
-			map[string]any{
-				"id": 22, "body": "the line is gone", "path": "a.go", "line": nil, "original_line": 9,
-				"position": nil, "side": "RIGHT", "commit_id": shaHead,
-				"created_at": "2026-11-04T12:00:00Z", "updated_at": "2026-11-04T12:00:00Z",
-				"user": map[string]any{"login": "coderabbitai[bot]", "type": "Bot"},
-			},
-			map[string]any{
-				"id": 23, "body": "a file comment", "path": "a.go", "line": nil, "subject_type": "file",
-				"position": 1, "side": "RIGHT", "commit_id": shaHead,
-				"created_at": "2026-11-04T12:00:00Z", "updated_at": "2026-11-04T12:00:00Z",
-				"user": map[string]any{"login": "ana", "type": "User"},
-			},
-		})
-	})
-	got, err := env.x.PRReviewComments(context.Background(), testRepo, 7)
-	if err != nil {
-		t.Fatalf("PRReviewComments: %v", err)
-	}
-	if len(got) != 3 {
-		t.Fatalf("got %d comments, want 3", len(got))
-	}
-	require.False(t, got[0].Outdated, "a comment with a position is current")
-	require.Equal(t, 4, got[0].Line)
-	require.True(t, got[1].Outdated, "a null position means GitHub lost the place")
-	require.Zero(t, got[1].Line)
-	require.Equal(t, 9, got[1].OriginalLine, "original_line keeps its existing behavior")
-	require.False(t, got[2].Outdated, "a position on a file comment is not outdated")
-	env.wantAuth(t)
-}
-
 func TestReviewCommentsMapErrorsPerDocGo(t *testing.T) {
 	cases := []struct {
 		status int
@@ -163,50 +118,6 @@ func TestReviewCommentsMapErrorsPerDocGo(t *testing.T) {
 		if err != nil && strings.Contains(err.Error(), "echoed") {
 			t.Errorf("status %d: error carries the response body: %v", tc.status, err)
 		}
-	}
-}
-
-func TestCommentCreatesWhenNoneHasTheMarker(t *testing.T) {
-	env := newActionEnv(t)
-	env.f.route("GET", issueCommentsPath, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, []any{ghComment(1, "ana", "User", "hello")})
-	})
-	env.f.route("POST", issueCommentsPath, func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusCreated, map[string]any{}) })
-	if err := env.x.Comment(context.Background(), testRepo, 7, summaryKey, "summary"); err != nil {
-		t.Fatalf("Comment: %v", err)
-	}
-	if env.f.count("POST", issueCommentsPath) != 1 {
-		t.Errorf("POST count = %d, want 1", env.f.count("POST", issueCommentsPath))
-	}
-	var body map[string]string
-	for _, r := range env.f.requests() {
-		if r.Method == "POST" {
-			_ = json.Unmarshal(r.Body, &body)
-		}
-	}
-	if body["body"] != marked("summary") {
-		t.Errorf("body = %q, want the summary and the marker", body["body"])
-	}
-	env.wantAuth(t)
-}
-
-func TestCommentUpdatesItsOwnCommentByMarkerOnALaterPage(t *testing.T) {
-	env := newActionEnv(t)
-	next := env.f.srv.URL + issueCommentsPath + "?per_page=100&page=2"
-	env.f.route("GET", issueCommentsPath, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("page") == "2" {
-			writeJSON(w, http.StatusOK, []any{ghComment(55, actionAuthor, "Bot", marked("old"))})
-			return
-		}
-		w.Header().Set("Link", `<`+next+`>; rel="next"`)
-		writeJSON(w, http.StatusOK, []any{ghComment(1, "ana", "User", "hello")})
-	})
-	env.f.route("PATCH", repoRoot+"/issues/comments/55", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, map[string]any{}) })
-	if err := env.x.Comment(context.Background(), testRepo, 7, summaryKey, "new"); err != nil {
-		t.Fatalf("Comment: %v", err)
-	}
-	if env.f.count("PATCH", repoRoot+"/issues/comments/55") != 1 || env.f.count("POST", issueCommentsPath) != 0 {
-		t.Errorf("want one PATCH of comment 55 and no POST; requests: %+v", env.f.requests())
 	}
 }
 

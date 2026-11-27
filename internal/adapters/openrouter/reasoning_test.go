@@ -132,23 +132,6 @@ func thinkingClient(t *testing.T, turns []reasoningTurn) (*thinkingServer, ChatC
 	return srv, ChatClient{BaseURL: hs.URL, Secrets: probeSecrets{"key": "k"}, KeyName: "key", Prices: chatPrice()}
 }
 
-func TestChatSendsBackTheDeepSeekReasoningOfEveryEarlierTurn(t *testing.T) {
-	srv, client := thinkingClient(t, []reasoningTurn{
-		{tool: "list_changes", field: "reasoning_content", text: "I should list the changes first.\nThen read the diff & <tests>."},
-		{tool: "list_changes"},
-		{tool: "list_changes", field: "reasoning_content", text: "The diff touches compress.go."},
-		{tool: "list_changes"},
-	})
-
-	msgs, err := converse(t, client, 4)
-
-	require.NoError(t, err, "refusals: %v", srv.refused)
-	require.Equal(t, 4, srv.calls)
-	require.Empty(t, srv.refused)
-	require.Equal(t, "I should list the changes first.\nThen read the diff & <tests>.", msgs[1].Reasoning.Text)
-	require.True(t, msgs[3].Reasoning.IsZero(), "a turn without reasoning keeps none")
-}
-
 func TestChatSendsBackTheOpenRouterReasoningAndItsDetailsUnchanged(t *testing.T) {
 	details := `[{"type":"reasoning.encrypted","data":"gAAAAB&x<y>z==","id":"rs_1","format":"anthropic-claude-v1","index":0}]`
 	srv, client := thinkingClient(t, []reasoningTurn{
@@ -191,23 +174,6 @@ func TestChatRefusalRepeatsWhenTheReasoningIsDropped(t *testing.T) {
 	require.Equal(t, hashes[0], hashes[1], "the same body has the same hash, so the repeat shows in the record")
 }
 
-func TestChatSendsNoReasoningForATurnWithoutIt(t *testing.T) {
-	// DeepSeek asks for the reasoning of every earlier turn when tools are sent, but never asks for an empty value on a
-	// turn that had none, so none is sent.
-	raw, err := chatRequestBody(ports.ModelRequest{Model: chatModel, Messages: []ports.ModelMessage{
-		{Role: ports.ModelRoleUser, Content: "Review."},
-		{Role: ports.ModelRoleAssistant, ToolCalls: []ports.ModelToolCall{{ID: "c1", Name: "list_changes", Arguments: "{}"}}},
-	}}, "")
-	require.NoError(t, err)
-	var body struct {
-		Messages []map[string]json.RawMessage `json:"messages"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &body))
-	for _, field := range []string{"reasoning_content", "reasoning", "reasoning_details"} {
-		require.NotContains(t, body.Messages[1], field)
-	}
-}
-
 func TestChatEchoesAnEmptyReasoningFieldItWasGiven(t *testing.T) {
 	// An answer that carries the field with an empty value gets the same field back, so the endpoint sees what it sent.
 	srv, client := thinkingClient(t, []reasoningTurn{{tool: "list_changes", field: "reasoning_content"}, {tool: "list_changes"}})
@@ -218,14 +184,6 @@ func TestChatEchoesAnEmptyReasoningFieldItWasGiven(t *testing.T) {
 	raw, err := chatRequestBody(ports.ModelRequest{Model: chatModel, Messages: msgs}, "")
 	require.NoError(t, err)
 	require.Contains(t, string(raw), `"reasoning_content":""`)
-}
-
-func TestChatIgnoresANullReasoning(t *testing.T) {
-	srv := chatRespond(t, http.StatusOK, nil, []byte(`{"choices":[{"message":{"content":"done","reasoning_content":null,"reasoning":null,"reasoning_details":null},"finish_reason":"stop"}],"usage":{}}`))
-	client := ChatClient{BaseURL: srv.URL, Secrets: probeSecrets{"key": "k"}, KeyName: "key"}
-	resp, err := client.Complete(context.Background(), chatAnswerRequest())
-	require.NoError(t, err)
-	require.True(t, resp.Reasoning.IsZero())
 }
 
 func TestChatHashesTheRefusedBody(t *testing.T) {

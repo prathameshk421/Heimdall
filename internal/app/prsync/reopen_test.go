@@ -31,7 +31,7 @@ func TestAReopenedPullRequestIsRecordedOnceAndCanCloseAgain(t *testing.T) {
 	r := newRig(t)
 	cid := id.ChangeID("PAY-16")
 	r.intake.changeID[16] = cid
-	r.seedInitialPROpened(cid, 16, head1)
+	r.seedInitialPROpened(cid, 16)
 
 	closed := samplePR(16, head1, ports.PRStateClosed)
 	r.prs.prs[testRepo] = []ports.PR{closed}
@@ -66,7 +66,7 @@ func TestAMergedPullRequestIsNeverReopened(t *testing.T) {
 	r := newRig(t)
 	cid := id.ChangeID("PAY-17")
 	r.intake.changeID[17] = cid
-	r.seedInitialPROpened(cid, 17, head1)
+	r.seedInitialPROpened(cid, 17)
 	merged := samplePR(17, head1, ports.PRStateClosed)
 	merged.Merged = true
 	r.prs.prs[testRepo] = []ports.PR{merged}

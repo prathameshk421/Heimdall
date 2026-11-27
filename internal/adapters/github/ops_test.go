@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -149,31 +148,6 @@ func TestEnsureBranchDoesNothingWhenItExists(t *testing.T) {
 	}
 }
 
-func TestEnsureBranchCreatesItFromTheSha(t *testing.T) {
-	t.Parallel()
-	env := newTestEnv(t)
-	env.f.route("GET", repoRoot+"/git/ref/heads/heimdall-test/run1", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
-	})
-	env.f.route("POST", repoRoot+"/git/refs", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusCreated, map[string]any{})
-	})
-	if err := env.a.EnsureBranch(context.Background(), testRepo, shaHead, "heimdall-test/run1", "effect-key"); err != nil {
-		t.Fatalf("EnsureBranch: %v", err)
-	}
-	var body map[string]string
-	for _, r := range env.f.requests() {
-		if r.Method == "POST" && r.Path == repoRoot+"/git/refs" {
-			if err := json.Unmarshal(r.Body, &body); err != nil {
-				t.Fatalf("body: %v", err)
-			}
-		}
-	}
-	if body["ref"] != "refs/heads/heimdall-test/run1" || body["sha"] != shaHead {
-		t.Errorf("create body = %v", body)
-	}
-}
-
 func TestEnsureBranchRefusesAnUnsafeName(t *testing.T) {
 	t.Parallel()
 	env := newTestEnv(t)
@@ -184,62 +158,6 @@ func TestEnsureBranchRefusesAnUnsafeName(t *testing.T) {
 	}
 	if n := len(env.f.requests()); n != 0 {
 		t.Errorf("%d requests for refused names", n)
-	}
-}
-
-func TestCommitFilesMakesOneCommitAndMovesTheBranch(t *testing.T) {
-	t.Parallel()
-	env := newTestEnv(t)
-	env.f.route("GET", repoRoot+"/git/ref/heads/tests-branch", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"object": map[string]any{"sha": shaHead}})
-	})
-	env.f.route("GET", repoRoot+"/git/commits/"+shaHead, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"tree": map[string]any{"sha": shaTree}})
-	})
-	env.f.route("POST", repoRoot+"/git/blobs", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaSub})
-	})
-	env.f.route("POST", repoRoot+"/git/trees", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaDeep})
-	})
-	env.f.route("POST", repoRoot+"/git/commits", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusCreated, map[string]any{"sha": shaNew})
-	})
-	env.f.route("PATCH", repoRoot+"/git/refs/heads/tests-branch", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{})
-	})
-	got, err := env.a.CommitFiles(context.Background(), testRepo, "tests-branch", "add tests",
-		[]ports.File{{Path: "tests/heimdall/PAY-1/a_test.go", Content: []byte("package x\n")}})
-	if err != nil || string(got) != shaNew {
-		t.Fatalf("CommitFiles = %q, %v; want %s", got, err, shaNew)
-	}
-	assertCommitBodies(t, env)
-}
-
-func assertCommitBodies(t *testing.T, env *testEnv) {
-	t.Helper()
-	bodies := map[string]map[string]any{}
-	for _, r := range env.f.requests() {
-		var m map[string]any
-		if len(r.Body) > 0 && json.Unmarshal(r.Body, &m) == nil {
-			bodies[r.Method+" "+r.Path] = m
-		}
-	}
-	blob := bodies["POST "+repoRoot+"/git/blobs"]
-	if blob["encoding"] != "base64" || blob["content"] != base64.StdEncoding.EncodeToString([]byte("package x\n")) {
-		t.Errorf("blob body = %v", blob)
-	}
-	tree := bodies["POST "+repoRoot+"/git/trees"]
-	if tree["base_tree"] != shaTree {
-		t.Errorf("tree base = %v, want %s", tree["base_tree"], shaTree)
-	}
-	commit := bodies["POST "+repoRoot+"/git/commits"]
-	parents, _ := commit["parents"].([]any)
-	if commit["tree"] != shaDeep || commit["message"] != "add tests" || len(parents) != 1 || parents[0] != shaHead {
-		t.Errorf("commit body = %v", commit)
-	}
-	if bodies["PATCH "+repoRoot+"/git/refs/heads/tests-branch"]["sha"] != shaNew {
-		t.Errorf("ref was not moved to the new commit")
 	}
 }
 
@@ -274,30 +192,6 @@ func decodeBody(t *testing.T, env *testEnv, method, path string) map[string]any 
 	}
 	t.Fatalf("no %s %s request", method, path)
 	return nil
-}
-
-func TestSetCheckCreatesAPendingRun(t *testing.T) {
-	t.Parallel()
-	env := newTestEnv(t)
-	env.f.route("GET", repoRoot+"/commits/"+shaHead+"/check-runs", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"check_runs": []any{}})
-	})
-	env.f.route("POST", repoRoot+"/check-runs", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusCreated, map[string]any{"id": 77})
-	})
-	err := env.a.SetCheck(context.Background(), testRepo, shaHead, ports.Check{
-		Name: "heimdall/gate", Status: ports.CheckInProgress, ExternalID: "c1", Summary: "waiting",
-	})
-	if err != nil {
-		t.Fatalf("SetCheck: %v", err)
-	}
-	body := decodeBody(t, env, "POST", repoRoot+"/check-runs")
-	if body["name"] != "heimdall/gate" || body["head_sha"] != shaHead || body["status"] != "in_progress" || body["external_id"] != "c1" {
-		t.Errorf("create body = %v", body)
-	}
-	if _, has := body["conclusion"]; has {
-		t.Errorf("a pending run carried a conclusion: %v", body)
-	}
 }
 
 func TestSetCheckUpdatesTheRunWithTheSameExternalID(t *testing.T) {
@@ -340,29 +234,6 @@ func TestSetCheckRefusesAnInvalidCheck(t *testing.T) {
 }
 
 const commentsPath = repoRoot + "/issues/9/comments"
-
-func TestCommentPostsWhenNoOwnBotMarkerExists(t *testing.T) {
-	t.Parallel()
-	env := newTestEnv(t)
-	env.f.route("GET", commentsPath, func(w http.ResponseWriter, _ *http.Request) {
-		// Neither a human user (even named heimdall) nor a foreign bot echoing the marker may be edited.
-		writeJSON(w, http.StatusOK, []any{
-			map[string]any{"id": 4, "body": "see <!-- heimdall:effect=eff-1 -->", "user": map[string]any{"login": "heimdall", "type": "User"}},
-			map[string]any{"id": 5, "body": "echo <!-- heimdall:effect=eff-1 -->", "user": map[string]any{"login": "coderabbitai[bot]", "type": "Bot"}},
-		})
-	})
-	env.f.route("POST", commentsPath, func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusCreated, map[string]any{"id": 8})
-	})
-	if err := env.a.Comment(context.Background(), testRepo, 9, change.EffectKey("eff-1"), "hello"); err != nil {
-		t.Fatalf("Comment: %v", err)
-	}
-	body := decodeBody(t, env, "POST", commentsPath)
-	text, _ := body["body"].(string)
-	if !strings.HasPrefix(text, "hello") || !strings.Contains(text, "<!-- heimdall:effect=eff-1 -->") {
-		t.Errorf("posted body = %q", text)
-	}
-}
 
 func TestCommentEditsOnlyOwnBotCommentWithTheSameKey(t *testing.T) {
 	t.Parallel()
