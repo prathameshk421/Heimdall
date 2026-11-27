@@ -2,6 +2,9 @@
 
 Start with the top row of the table that fits you.
 
+The product page is at **https://heimdall-sage.vercel.app**. It covers what Heimdall does, the proof rule in one worked
+example, the integrations, and a two-minute demo.
+
 ## Use it
 
 | Doc | What's in it |
