@@ -152,9 +152,9 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}
 
 	// The 2 s job timeout also covers `go test` compiling the fixture. On a loaded CI runner a cold compile can take
-	// longer than that, so the timeout fired before the child started. A warm private cache leaves the timeout to
-	// measure only the test run.
-	cacheDir := t.TempDir()
+	// longer than that, so the timeout fired before the child started. The test warms the developer's own build cache
+	// (which already holds the standard library) with the fixture, so the timeout measures only the test run.
+	cacheDir := goEnvCache(t)
 	warmGoCache(t, cacheDir, "testdata/timeout")
 
 	var tempDirUsed string
@@ -245,6 +245,16 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 	_ = pidFile
 	require.Eventually(t, func() bool { return !processIsRunning(pid) }, 2*time.Second, 10*time.Millisecond,
 		"spawned child process must not still be running")
+}
+
+// goEnvCache is the build cache of the go command that runs these tests.
+func goEnvCache(t *testing.T) string {
+	t.Helper()
+	out, err := exec.CommandContext(context.Background(), "go", "env", "GOCACHE").Output()
+	require.NoError(t, err)
+	dir := strings.TrimSpace(string(out))
+	require.NotEmpty(t, dir)
+	return dir
 }
 
 // warmGoCache compiles the fixture's test binary (running no test) into cacheDir, with the runner's build settings.

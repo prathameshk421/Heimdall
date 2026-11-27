@@ -12,6 +12,12 @@ import (
 //go:embed tests.md review.md verdict.md profile.md
 var files embed.FS
 
+// SetupSkill is the agent skill that installs Heimdall (heimdall-setup/SKILL.md). `heimdall skill` prints or installs
+// it for a coding agent such as Claude Code.
+//
+//go:embed heimdall-setup/SKILL.md
+var SetupSkill string
+
 // For returns the instructions of a kind, or "" when the kind names no file.
 func For(kind workflow.Kind) string {
 	raw, err := files.ReadFile(kind.Skill)

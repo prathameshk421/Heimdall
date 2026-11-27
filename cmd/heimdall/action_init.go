@@ -96,6 +96,11 @@ type initOptions struct {
 	enforce       bool
 	appCode       string
 	owner         string
+	// dir is a local checkout of the repository; init writes the workflows and the policy into it.
+	dir string
+	// ref is the Heimdall commit the workflows pin.
+	ref   string
+	model modelConfig
 }
 
 func parseInitOptions(args []string, stderr io.Writer) (initOptions, bool) {
@@ -108,8 +113,29 @@ func parseInitOptions(args []string, stderr io.Writer) (initOptions, bool) {
 	fs.BoolVar(&o.rotateLogKey, "rotate-log-key", false, "replace an existing log key; the gate then resets every change's log")
 	fs.BoolVar(&o.enforce, "enforce", false, "enforce mode: create the Heimdall GitHub App from a manifest")
 	fs.StringVar(&o.appCode, "app-code", "", "the code GitHub returned after the App manifest was confirmed")
+	fs.StringVar(&o.dir, "dir", "", "a local checkout of the repository: write the three workflows and heimdall.yaml into it")
+	fs.StringVar(&o.ref, "ref", "", "the full Heimdall commit SHA the workflows pin (default: the commit this binary was built from)")
+	model := fs.String("model", "", "the model id at the endpoint (default "+defaultModel+")")
+	baseURL := fs.String("model-base-url", "", "an OpenAI-compatible endpoint (default "+defaultModelBaseURL+")")
+	priceIn := fs.String("price-input", "", "USD per million input tokens (needed with -model)")
+	priceCached := fs.String("price-cached-input", "", "USD per million cached input tokens (needed with -model)")
+	priceOut := fs.String("price-output", "", "USD per million output tokens (needed with -model)")
 	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
 		return initOptions{}, false
+	}
+	m, err := modelSettings(*model, *baseURL, *priceIn, *priceCached, *priceOut)
+	if err != nil {
+		writeDiagnostic(stderr, "heimdall action init: "+err.Error()+"\n")
+		return initOptions{}, false
+	}
+	o.model = m
+	if o.dir != "" {
+		ref, err := resolvePinRef(o.ref)
+		if err != nil {
+			writeDiagnostic(stderr, "heimdall action init: "+err.Error()+"\n")
+			return initOptions{}, false
+		}
+		o.ref = ref
 	}
 	r, err := change.ParseRepo(*repo)
 	if err != nil {
@@ -136,6 +162,8 @@ type initStep struct {
 	skip func(ctx context.Context) (string, error)
 	// after reads the step's output, for the App conversion.
 	after func(ctx context.Context, out []byte) error
+	// local, when set, is a step on this machine instead of a gh call. It returns what it did.
+	local func() (string, error)
 }
 
 // runActionInit prints the setup steps, and performs them with -apply. It runs on the maintainer's machine with the
@@ -166,6 +194,7 @@ func runActionInit(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		}
 	}
 	writeDiagnostic(stdout, "heimdall action init: done\n")
+	writeDiagnostic(stdout, nextSteps(o))
 	return exitActionOK
 }
 
@@ -188,6 +217,14 @@ func runInitStep(ctx context.Context, gh ghRunner, s initStep, stdout io.Writer)
 			writeDiagnostic(stdout, fmt.Sprintf("skipped %s: %s\n", s.name, why))
 			return nil
 		}
+	}
+	if s.local != nil {
+		did, err := s.local()
+		if err != nil {
+			return err
+		}
+		writeDiagnostic(stdout, "done "+s.name+": "+did+"\n")
+		return nil
 	}
 	var input []byte
 	if s.secret != nil {
@@ -251,6 +288,11 @@ func initSteps(ctx context.Context, o initOptions, stdin io.Reader, deps actionD
 			}},
 	}
 	steps = append(steps, modelKeyStep(o, stdin))
+	for _, v := range o.model.variables() {
+		steps = append(steps, initStep{name: "model setting " + v[0], what: "set the repository variable " + v[0] + " to " + v[1],
+			args: []string{"variable", "set", v[0], "--repo", repo, "--body", v[1]}})
+	}
+	steps = append(steps, filesStep(o))
 	if o.enforce {
 		steps = append(steps, appSteps(o, deps)...)
 	}
@@ -378,4 +420,30 @@ func secretExists(ctx context.Context, gh ghRunner, repo, name, why string) (str
 		}
 	}
 	return "", nil
+}
+
+// filesStep writes the workflows and the policy into the checkout given with -dir. Without -dir it only says how.
+func filesStep(o initOptions) initStep {
+	s := initStep{name: "workflows"}
+	if o.dir == "" {
+		s.what = "write the three workflows and heimdall.yaml: run again with -dir <checkout of " + o.repo.String() + ">"
+		s.skip = func(context.Context) (string, error) {
+			return "no -dir: copy deploy/action/workflows into .github/workflows and pin the Heimdall SHA yourself", nil
+		}
+		return s
+	}
+	s.what = "write .github/workflows/heimdall-{trigger,proof,gate}.yml pinned to " + o.ref + ", and a shadow-mode " +
+		actionPolicyFile + " if there is none, into " + o.dir
+	s.local = func() (string, error) { return writeActionFiles(o.dir, o.ref) }
+	return s
+}
+
+// nextSteps is what is left after init: the files must reach the default branch through the team's own review.
+func nextSteps(o initOptions) string {
+	if o.dir == "" {
+		return "next: run init again with -dir <checkout>, or copy the workflows by hand (deploy/action/README.md step 3)\n"
+	}
+	return "next: in " + o.dir + ", commit .github/workflows/heimdall-*.yml and " + actionPolicyFile +
+		" to the default branch through your usual review. Then open a pull request: Heimdall posts heimdall/fast, " +
+		"heimdall/proof and one summary comment, in shadow mode.\n"
 }

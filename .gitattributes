@@ -1,0 +1,3 @@
+# Check out every text file with LF line endings, on Windows too. Tests compare exact bytes and goldens, and the
+# shell scripts must keep LF to run.
+* text=auto eol=lf

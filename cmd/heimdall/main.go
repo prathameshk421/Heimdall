@@ -62,6 +62,11 @@ func runOutputOnly(subcommand string, rest []string, stdout, stderr io.Writer) i
 		return runSecretsSync(rest, stdout, stderr)
 	case "switch-register":
 		return runSwitchRegister(rest, stdout, stderr)
+	case "skill":
+		return runSkill(rest, stdout, stderr, os.UserHomeDir)
+	case "version", "--version":
+		writeDiagnostic(stdout, "heimdall "+versionString()+"\n")
+		return 0
 	default:
 		writeDiagnostic(stderr, fmt.Sprintf("heimdall: unknown command %q\nRun 'heimdall --help' for usage.\n", subcommand))
 		return exitNotBuilt
@@ -69,28 +74,42 @@ func runOutputOnly(subcommand string, rest []string, stdout, stderr io.Writer) i
 }
 
 func writeCLIUsage(w io.Writer) {
-	_, _ = io.WriteString(w, `heimdall — evidence-based PR gate and company engineering review runtime
+	_, _ = io.WriteString(w, `heimdall: a self-hosted agent harness for pull request review.
+AI reviewers find issues, Heimdall proves each one with a failing test, and only proven findings block a merge.
 
-Action mode (zero-infra GitHub PR gating):
-  heimdall action init -repo owner/name [-apply]   Bootstrap workflows, secrets, and shadow mode
-  heimdall action trigger | proof | gate           Workflow steps (run by deploy/action)
-  heimdall action digest                           Weekly shadow readiness and misses report
+Get started:
+  heimdall action init -repo OWNER/REPO -dir CHECKOUT    Show the full setup plan for a GitHub repository
+  heimdall action init ... -apply -model-key-stdin < F   Apply it: secrets, model settings, workflows, policy
+  heimdall skill install                                 Install the setup skill for your coding agent
+  heimdall doctor                                        Check this machine and every connection
 
-Company & connector setup (server mode):
-  heimdall admin init [--config PATH]              Create heimdall.toml interactively
-  heimdall admin secret ...                        Manage owner-only secret files
-  heimdall connect list [--json] [--config PATH]   List VCS, tracker, chat, runtime, and memory connectors
-  heimdall connect <kind> [name] [--config PATH]   Select & verify a connector (github, jira, switch, telegram, slack, discord, mattermost, teams, switchroom, graphiti)
-  heimdall connect people ...                      Map human Switch sender IDs for chat commands
-  heimdall connect progress [--config PATH]        Show connector setup progress
-  heimdall switch-register ...                     Register coordinator agent with Switch
-  heimdall controller enroll ...                   Enroll headless Switch agent controller
-  heimdall doctor [--strict] [--json]              Verify host, Docker, config, and live connectors
+GitHub Action mode (runs in your repository's CI):
+  heimdall action init      Set up a repository (prints the plan; -apply runs it)
+  heimdall action digest    Weekly report: what shadow mode would have blocked, and what it missed
+  heimdall action trigger | proof | gate    Workflow steps; the workflows run them for you
 
-Memory cards & cost:
-  heimdall cards ...                               Scan, redact, approve, and DSSE-sign team memory cards
-  heimdall cost | budget-check | budget-run        Inspect and enforce LLM spend budgets
-  heimdall secrets-sync                            Sync host secret files safely
+Team mode (self-hosted server):
+  heimdall admin init       Create heimdall.toml, or list the secret files still missing
+  heimdall admin secret set Store one secret from a hidden prompt
+  heimdall connect -list    List the connectors: GitHub, Jira, chat, agent runtime, memory
+  heimdall connect KIND [NAME]   Select and check one connector (github, jira, slack, discord, telegram,
+                                 mattermost, teams, switch, switchroom, graphiti)
+  heimdall connect people   Map a person to their chat id, GitHub login and reviewer
+  heimdall connect -check   Run every connector check
+  heimdall switch-register  Register the coordinator agent with Switch
+  heimdall controller enroll   Enroll the agent controller on the server
+  heimdall doctor -host     Check the server: sudo, systemd, Docker, firewall, resources
+
+Team memory and cost:
+  heimdall cards ...        Scan notes, redact secrets, approve and sign team rule cards
+  heimdall cost             Remaining model budget
+  heimdall secrets-sync     Turn a .env file into owner-only secret files, printing no value
+
+Other:
+  heimdall skill [install [-dir DIR]]   Print the setup skill, or install it (default ~/.claude/skills)
+  heimdall version          The commit this binary was built from
+
+Docs: https://github.com/prathameshk421/Heimdall#readme
 `)
 }
 

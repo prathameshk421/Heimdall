@@ -25,8 +25,9 @@ jobs:
       - name: ci
         run: make ci
 
-  # Linux runs the full suite above. This job proves the CLI and the pure rules build and pass their tests on macOS and
-  # Windows too. The server, the sandbox and the deploy scripts target Linux hosts and are checked on Linux only.
+  # Linux runs the full suite above. This job proves the setup CLI on macOS and Windows: every binary builds, the
+  # Action mode setup and skill tests pass, and the real binary runs. Team-mode operator commands manage Unix owner-only
+  # secret files, and the server and the proof sandbox run on Linux; see README "Platforms".
   portability:
     strategy:
       fail-fast: false
@@ -36,6 +37,9 @@ jobs:
     timeout-minutes: 20
     env:
       CGO_ENABLED: "0"
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,5 +50,16 @@ jobs:
           cache-dependency-path: go.sum
       - name: build every binary
         run: go build ./cmd/...
-      - name: test the CLI and the domain rules
-        run: go test -count=1 ./cmd/heimdall/... ./internal/domain/...
+      - name: test the domain rules and the setup commands
+        run: |
+          go test -count=1 ./internal/domain/...
+          go test -count=1 -run 'TestActionInit|TestPinWorkflow|TestModelSettings|TestWriteActionFiles|TestPinRef|TestDigest' ./cmd/heimdall/
+      - name: run the setup CLI
+        run: |
+          cli="./heimdall-cli$(go env GOEXE)"
+          go build -o "$cli" ./cmd/heimdall
+          "$cli" version
+          "$cli" skill install -dir "$RUNNER_TEMP/skills"
+          test -s "$RUNNER_TEMP/skills/heimdall-setup/SKILL.md"
+          mkdir -p "$RUNNER_TEMP/repo"
+          "$cli" action init -repo octo/demo -dir "$RUNNER_TEMP/repo" -ref 0123456789abcdef0123456789abcdef01234567
