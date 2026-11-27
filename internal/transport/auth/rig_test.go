@@ -119,7 +119,14 @@ func newRig(t *testing.T, o rigOptions) *rig {
 	r.board.Config.Handler = r.handler(gate)
 	r.board.Start()
 	t.Cleanup(r.board.Close)
-	r.client = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	// Each rig has its own transport. httptest.Server.Close closes the idle connections of http.DefaultTransport, so
+	// with a shared transport a parallel test that closes its board broke this test's request.
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	require.True(t, ok)
+	own := transport.Clone()
+	t.Cleanup(own.CloseIdleConnections)
+	r.client = &http.Client{Transport: own,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return r
 }
 
