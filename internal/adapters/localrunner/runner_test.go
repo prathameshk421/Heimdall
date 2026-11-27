@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
+	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -149,9 +151,15 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 	sha := id.SHA(strings.Repeat("6", 40))
 	src := &memorySource{tarballs: map[string][]byte{string(sha): srcTar}}
 
+	// The 2 s job timeout also covers `go test` compiling the fixture. On a loaded CI runner a cold compile can take
+	// longer than that, so the timeout fired before the child started. A warm private cache leaves the timeout to
+	// measure only the test run.
+	cacheDir := t.TempDir()
+	warmGoCache(t, cacheDir, "testdata/timeout")
+
 	var tempDirUsed string
 	var tempDirMu sync.Mutex
-	runner := localrunner.New(src, localrunner.WithTempDirHook(func(dir string) {
+	runner := localrunner.New(src, localrunner.WithGoCache(cacheDir), localrunner.WithTempDirHook(func(dir string) {
 		tempDirMu.Lock()
 		defer tempDirMu.Unlock()
 		tempDirUsed = dir
@@ -237,6 +245,19 @@ func TestTimeoutModuleKillsProcessGroup(t *testing.T) {
 	_ = pidFile
 	require.Eventually(t, func() bool { return !processIsRunning(pid) }, 2*time.Second, 10*time.Millisecond,
 		"spawned child process must not still be running")
+}
+
+// warmGoCache compiles the fixture's test binary (running no test) into cacheDir, with the runner's build settings.
+func warmGoCache(t *testing.T, cacheDir, srcDir string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "test", "-count=1", "-run", "^$", "./...")
+	cmd.Dir = srcDir
+	cmd.Env = []string{"PATH=" + config.Getenv("PATH"), "HOME=" + t.TempDir(), "GOCACHE=" + cacheDir,
+		"CGO_ENABLED=0", "GOPROXY=off"}
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "warm go build cache: %s", out)
 }
 
 func processIsRunning(pid int) bool {
