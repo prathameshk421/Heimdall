@@ -1,164 +1,146 @@
 <p align="center">
-  <img src="docs/assets/banner.jpg" alt="Heimdall: nothing crosses without proof" width="100%">
+  <a href="https://heimdall-sage.vercel.app">
+    <img src="docs/assets/hero.png" alt="Heimdall: proof before review. A proven finding blocks the merge. Unproven ones are counted." width="100%">
+  </a>
+</p>
+
+<h3 align="center">The open-source proof layer for AI-written code.</h3>
+
+<p align="center">
+  Heimdall checks every AI review comment against a real test.<br>
+  A finding blocks the merge only when the test proves it. A person approves the exact commit.
 </p>
 
 <p align="center">
-  <img src="docs/assets/logo.png" alt="Heimdall logo" width="110">
-</p>
-
-<h3 align="center">AI wrote the pull request. Who proved it works?</h3>
-
-<p align="center">
-  Reviewers that carry what each developer knows.<br>
-  Red tests written from the ticket, before the code.<br>
-  A merge gate no model can talk its way past.
+  <a href="https://github.com/prathameshk421/Heimdall/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/prathameshk421/Heimdall/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <a href="go.mod"><img alt="Go 1.27" src="https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white"></a>
+  <a href="https://heimdall-sage.vercel.app"><img alt="Website" src="https://img.shields.io/badge/website-heimdall--sage.vercel.app-5b5fc7"></a>
+  <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
 </p>
 
 <p align="center">
-  <img alt="Built with Go" src="https://img.shields.io/badge/Go-1.27-00ADD8?style=for-the-badge&logo=go&logoColor=white">
-  <img alt="Runs on Switch" src="https://img.shields.io/badge/Runs%20on-Switch-141413?style=for-the-badge">
-  <img alt="Agents in OpenCode" src="https://img.shields.io/badge/Agents-OpenCode-5e5d59?style=for-the-badge">
-  <img alt="Sandbox on Podman" src="https://img.shields.io/badge/Sandbox-Rootless%20Podman-892CA0?style=for-the-badge&logo=podman&logoColor=white">
-  <img alt="Memory on Graphiti" src="https://img.shields.io/badge/Memory-Graphiti-184f95?style=for-the-badge">
-</p>
-
-<p align="center">
-  <a href="#-see-it-work"><b>See it work</b></a> ·
-  <a href="#-how-it-works"><b>How it works</b></a> ·
-  <a href="#-why-switch"><b>Why Switch</b></a> ·
-  <a href="#-quickstart"><b>Quickstart</b></a> ·
-  <a href="docs/CLI.md"><b>CLI</b></a> ·
-  <a href="#-whats-live-today"><b>What's live</b></a> ·
-  <a href="docs/README.md"><b>Docs</b></a>
+  <a href="https://heimdall-sage.vercel.app"><b>Website</b></a> ·
+  <a href="#quickstart"><b>Quickstart</b></a> ·
+  <a href="#how-it-works"><b>How it works</b></a> ·
+  <a href="#results-so-far"><b>Results</b></a> ·
+  <a href="docs/README.md"><b>Docs</b></a> ·
+  <a href="CONTRIBUTING.md"><b>Contribute</b></a>
 </p>
 
 ---
 
-## 🌈 The problem
+AI review bots leave many comments, and few of them change the code. Heimdall is a **CI merge gate** that sits after
+those bots. It reads every review comment, its own and third-party ones (CodeRabbit, Copilot, Bugbot, Greptile,
+Macroscope). Each finding must earn a **failing test** in a sandbox. Proven findings block the merge. Unproven ones are
+hidden and counted, so a reviewer sees one real bug instead of twelve opinions.
 
-<p align="center">
-  <img src="docs/assets/hook.gif" alt="A real pull request of 77,460 lines gets an LGTM and a merge" width="88%">
-</p>
+No model sits in the gate. The gate is plain Go rules, and only a person can approve, on the exact commit SHA.
 
-Agents write most of our code now. Our own build PR was **+77,460 lines across 629 files**. Two things break at that size:
+> [!NOTE]
+> **Heimdall is early, and we state its limits.** The GitHub Action and the self-hosted server run on real
+> repositories, but proof recall on live models is still low. Every number below links to its source, and
+> [`docs/PROGRESS.md`](docs/PROGRESS.md) lists what is **not verified**.
 
-| | What breaks | What Heimdall does |
-|---|---|---|
-| 👀 **Review** | Nobody can read it, so it gets a quick LGTM | Each reviewer carries one developer's context, and a finding comes with a failing test |
-| 🧪 **Testing** | Agents write tests that pass whether the code works or not | Tests come from the ticket, and they must fail first, for the right reason |
+## Highlights
 
-## 🎬 See it work
+- **Proof, not opinion.** A finding counts only when its test fails twice on the pull request and passes on the fix.
+  One red run is not proof, and a build error is not proof.
+- **Works with the review bots you already use.** Heimdall ingests their comments and proves or hides each one.
+- **Model-free merge gate.** Deterministic Go rules decide. A model cannot talk its way past the gate.
+- **Installs in minutes.** GitHub Action mode needs no server and no database. A live install reached its first
+  proof summary in **3 min 10 s** ([tracker](docs/product/TRACKER.md)).
+- **Shadow mode first.** Checks report what *would* block, and block nothing, until you switch to enforce.
+- **Sandboxed test runs.** Untrusted code runs in rootless containers with no network, a read-only filesystem, and
+  CPU, memory and process limits.
+- **Bring your own model.** Any OpenAI-compatible endpoint, with a per-PR and a monthly cost cap.
+- **Small footprint.** One static Go binary. The server idles at about 42 MiB of memory.
 
-These are real screens from our live runs, with names replaced.
+## The problem
 
-<table>
-  <tr>
-    <td width="58%"><img src="docs/assets/tests-discord.png" alt="Heimdall posts test progress in Discord"></td>
-    <td width="42%" rowspan="2"><img src="docs/assets/finding-telegram.png" alt="A reviewer's findings in Telegram"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/assets/switch-ecosystem.png" alt="Heimdall's agents in the Switch ecosystem view"></td>
-  </tr>
-</table>
+We read every bot review comment on 30 merged pull requests of an active open-source repository,
+[`pingdotgg/t3code`](https://github.com/pingdotgg/t3code). There were **411 comments**, a median of 10 per pull
+request. The developer dismissed **95 of 135 Bugbot comments (70%)**.
+[Method and limits](https://heimdall-sage.vercel.app/#problem).
 
-> **"Two refunds of 60 on a payment of 100 both succeed."**<br>
-> A real finding from a Heimdall reviewer, with the failing test it wrote as proof.
+| Reviewer | Comments | Code changed after the comment |
+|---|---:|---:|
+| CodeRabbit | 60 | 29 (48%) |
+| Macroscope | 175 | 75 (43%) |
+| Bugbot | 135 | 32 (24%) |
 
-## ⚡ How it works
+A reader cannot tell the real bug from the noise without a check of each comment by hand. Heimdall does that check
+with a test.
 
-```mermaid
-flowchart LR
-  J["🎫 Jira ticket"] --> H
-  G["🐙 GitHub PR"] --> H
-  subgraph VM["One VM: AWS r6a.large, 2 vCPU, 16 GB"]
-    H["🛡️ Heimdall<br/>Go server"] --> A["🤖 OpenCode agents"]
-    A --> C["📦 Rootless container<br/>no network, no capabilities"]
-    C --> H
-  end
-  H --> R["🚦 heimdall/gate"]
-  H --> S["💬 Switch rooms"]
-  S --> D["Discord"]
-  S --> T["Telegram"]
-  S --> M["Mattermost"]
-  S --> K["Slack"]
-```
-
-1. **A ticket moves to In Progress.** Heimdall opens a room, creates a branch and wakes the Test Agent.
-2. **Red tests first.** The agent writes tests from the ticket. A test that passes before the feature exists is rejected.
-3. **Tests are pinned.** Survivors are committed, pinned by tree hash, and run in CI on every pull request.
-4. **Independent reviews.** Reviewers can't see each other's work. Findings land on the exact line, on the PR and in chat.
-5. **Ten rules decide.** Plain Go, no model in the path. Only a person can approve, and only that exact commit.
-
-### Evidence, not opinion
-
-| Tier | Evidence | Blocks a merge? |
-|---|---|---|
-| 🧪 E1 | A test that fails on this commit | ✅ |
-| 🔧 E2 | A deterministic tool result | ✅ |
-| 🧠 E3 | A confirmed fact from team memory | ✅ |
-| 💭 E4 | Reasoning | ❌ Never alone |
-
-### Each developer's context
+## How it works
 
 ```mermaid
 flowchart LR
-  L["💻 Laptop<br/>docs, git history, coding sessions"] --> X["🔥 Redact secrets"] --> P["📜 Context pack"] --> O["✅ Developer approves"] --> E["🔐 Sign and encrypt"] --> V["🤖 That developer's reviewer"]
+  PR["Pull request<br/>(person, agent or bot)"] --> C["1. Collect<br/>every review comment"]
+  C --> P["2. Prove<br/>test fails twice on the PR,<br/>passes on the fix"]
+  P -->|proven| B["Blocks the merge"]
+  P -->|unproven| H["Hidden and counted"]
+  B --> D["3. Decide<br/>a person approves<br/>the exact commit"]
+  H --> D
 ```
 
-Raw transcripts never leave the laptop. Underneath, a **Graphiti** knowledge graph holds the team's decisions and incidents. This path is built and unit tested, and it is [not live yet](#-whats-live-today).
+1. **Collect.** Heimdall reads every review comment on the pull request.
+2. **Prove.** An agent writes a test for each finding. The test runs in a sandbox, at least twice on the head commit
+   and once on a tree with the fix.
+3. **Decide.** A proven finding blocks the merge. One summary comment lists the proven findings, the unproven count
+   and the cost. A person approves the exact commit SHA.
 
-## 🆚 What's different
+### Evidence tiers
 
-| A typical AI review bot | Heimdall |
-|---|---|
-| Comments on a diff | Gives one developer's context to each reviewer |
-| States an opinion | Proves a finding with a failing test |
-| Arrives after the code | Writes red tests before the code |
-| Suggests a fix | Blocks the merge until the rules hold |
+| Tier | Evidence | Can it block a merge? |
+|---|---|---|
+| E1 | A test that fails on this commit | Yes |
+| E2 | A deterministic tool result | Yes |
+| E3 | A confirmed fact from team memory | Yes |
+| E4 | Model reasoning | Never alone |
 
-## 🔌 Why Switch
+## Two ways to run it
 
-Heimdall stops working without Switch. It provides the rooms, agent identities, chat bridges and shared history.
+| | **GitHub Action mode** | **Self-hosted team mode** |
+|---|---|---|
+| For | Any repository on GitHub | Teams that want the full loop from ticket to merge |
+| Needs | GitHub Actions and a model key | A Linux VM, PostgreSQL, a GitHub App, Jira and [Switch](https://github.com/sandbox-quantum/switch) |
+| Does | Proves review comments on each PR; posts `heimdall/fast`, `heimdall/proof` and one summary | Writes red tests from the Jira ticket before the code, runs independent AI reviewers, and gates the merge |
+| Chat | None | Slack, Discord, Telegram, Mattermost (through Switch) |
+| Guide | [`deploy/action/README.md`](deploy/action/README.md) | [`docs/SETUP.md`](docs/SETUP.md) |
 
-**Agents connected**, all in OpenCode, each as its own Unix user:
+## Quickstart
 
-| Agent | Job |
-|---|---|
-| 🛡️ **Heimdall Coordinator** | Posts progress, reads `heimdall` commands, wakes agents |
-| 🧪 **Test Agent** | Writes failing tests from the ticket, and asks people when a rule is unclear |
-| 🔎 **Code Reviewers 1 to 3** | Review independently, and file findings with evidence |
-| ⚖️ **Resolver** | Handles disputed findings |
+### GitHub Action mode (about 10 minutes)
 
-**How the channels are set up**
-
-- Each ticket gets a private Switch working room, so an agent keeps one session per ticket.
-- `heimdall-tests` and `heimdall-reviews` are public channels, bridged to Discord, Mattermost and Slack.
-- A Telegram group receives both stories.
-- Commands start with the plain word `heimdall`, for example `heimdall uphold KAN-22 F1`. A command counts only if its sender is mapped in `heimdall.yaml`. The full list is in [`docs/CLI.md`](docs/CLI.md#2-chat-and-pr-commands).
-
-Room and bridge settings live in `heimdall.toml`, under `[rooms]` and `[[feeds]]`. See [`deploy/heimdall.example.toml`](deploy/heimdall.example.toml). Slack connects through Switch's Socket Mode bridge, so the VM still needs no public URL.
-
-## 🏎️ Built small, on purpose
-
-| | |
-|---|---|
-| 🐹 **All Go** | The server, runner and CLI |
-| 🪶 **~42 MiB** | Server memory, idle |
-| 🪶 **~10 MB** | Sandbox runner memory, idle |
-| 📦 **Locked containers** | `--network=none --read-only --cap-drop=ALL`, with memory and process limits |
-| 🖥️ **One small VM** | 2 vCPU, 9 containers, 7 agent units |
-| 🚪 **No public ports** | Heimdall polls GitHub and Jira |
-| 🔗 **Event sourced** | Hash-chained events and a transactional outbox in Postgres |
-
-Measured on our VM on Nov 7, 2026.
-
-## 🚀 Quickstart
-
-You need **Go 1.27** and **Docker**.
+You need admin rights on the repository, the `gh` CLI, Go 1.27, and a key for an OpenAI-compatible model endpoint.
 
 ```bash
-git clone https://github.com/prathameshk421/flip_the_switch_hackathon.git heimdall && cd heimdall
+git clone https://github.com/prathameshk421/Heimdall.git && cd Heimdall
 ```
+
+```bash
+CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall
+```
+
+```bash
+./heimdall action init -repo OWNER/REPO
+```
+
+The last command prints the setup plan and changes nothing. Add `-apply -model-key-stdin < key-file` to apply it. Then
+copy the three workflows from [`deploy/action/workflows/`](deploy/action/workflows) and add one line of policy to
+`heimdall.yaml`:
+
+```yaml
+action: { mode: shadow, budget: { per_pr_usd: 0.50, monthly_usd: 50 } }
+```
+
+The full install guide, with the model variables and the pin rules, is in
+[`deploy/action/README.md`](deploy/action/README.md).
+
+### Build and test from source
+
+You need **Go 1.27** and **Docker**.
 
 ```bash
 make tools
@@ -168,118 +150,97 @@ make tools
 make fast
 ```
 
-```bash
-make verify
-```
+`make fast` runs format, vet, the dependency rule, lint and about 5,900 unit tests in under a minute. `make verify` adds
+the race detector, component tests, rule self-tests, `govulncheck` and a `gitleaks` scan of the git history. CI runs
+`make verify` on every push.
 
-`make fast` runs format, vet, the dependency rule, lint and unit tests in under a minute. `make verify` adds race and component tests and the vulnerability and secret scans. CI runs it.
+## Results so far
 
-### Run the whole system
+We measure Heimdall on the **Proof Bench**: real bugs and clean changes with known answers, from Go open-source
+repositories, `t3code` (TypeScript and Rust) and our own payment fixture. A case is valid only when its test is red
+before the fix and green after it. Details and every run: [`docs/sota/BENCH.md`](docs/sota/BENCH.md).
 
-The live system needs a Linux VM, a Switch server, a GitHub App, a Jira project and a model key. The short version:
+| What | Result | Source |
+|---|---|---|
+| Valid bench cases | 28 | [BENCH.md](docs/sota/BENCH.md) |
+| Best live run | 1 of 3 scored bug cases proven, 0 false positives on 3 clean cases, $2.92 | [BENCH.md](docs/sota/BENCH.md) |
+| Latest live run (`t3code`, uncapped) | 0 of 9 bug cases proven, 0 false positives | [BENCH.md](docs/sota/BENCH.md) |
+| Action mode install to first summary | 3 min 10 s, live | [TRACKER.md](docs/product/TRACKER.md) |
+| Team mode, full story on Slack | Ticket, red tests, 3 reviews, 2 real findings, fix, human approval, green gate, merge | [PROGRESS.md](docs/PROGRESS.md) |
 
-```bash
-make setup
-```
+Read the live runs as a sign of life, not a score. Too few cases finished for a recall rate. The false-positive count
+is the number we protect first: a gate that blocks good code gets switched off.
 
-```bash
-cp .env.example .env
-```
+## Built to be trusted
 
-```bash
-make secrets-local
-```
+- **No model in the gate.** Ten plain Go rules decide the merge. Model output is evidence for a rule, never a vote.
+- **Policy from the merge base.** Heimdall reads `heimdall.yaml` at the merge base, so a pull request cannot change
+  its own rules.
+- **Human approval on the head commit.** An approval counts only from a person who is not the PR author, and only on
+  the exact commit.
+- **Isolated test runs.** Rootless Podman containers with no network, read-only filesystems, dropped capabilities and
+  resource limits.
+- **Secrets stay secret.** No command takes a secret as an argument. Secret scans run on the staged diff and the full
+  history. Proof artifacts mask secrets.
+- **Audit trail.** Hash-chained events and a transactional outbox in PostgreSQL. Team rule cards carry signed
+  approvals (DSSE).
 
-```bash
-make deploy
-```
+## Tech stack
 
-`make setup` makes a private workspace with a starter `heimdall.toml`. [`.env.example`](.env.example) lists every key, and `make secrets-local` turns your `.env` into `0600` secret files without printing a value. The full walkthrough, from VM to first ticket, is **[`docs/SETUP.md`](docs/SETUP.md)**.
+**Go** · **PostgreSQL** (pgx, goose migrations, River job queue) · **GitHub Actions** and the GitHub REST API ·
+**Model Context Protocol (MCP)** · **OpenCode** agents · **OpenAI-compatible LLM APIs** (OpenRouter, DeepSeek) ·
+**Rootless Podman** and **Docker Compose** · **Knowledge-graph memory** (Graphiti on FalkorDB) · **OIDC** login ·
+**age** encryption · **golangci-lint**, **govulncheck**, **gitleaks**, **actionlint**, **zizmor** in CI.
 
-| Guide | For |
-|---|---|
-| 📘 [`docs/SETUP.md`](docs/SETUP.md) | Step-by-step setup: workspace, secrets, people, deploy, agents, checks |
-| ⌨️ [`docs/CLI.md`](docs/CLI.md) | Every `heimdall` command, every chat command, the Make targets |
-| 🛠️ [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Switch on the VM, status, logs, recovery |
-| 🏢 [`docs/COMPANY_SETUP.md`](docs/COMPANY_SETUP.md) | A company rollout checklist |
-| 🤖 [`deploy/agents/README.md`](deploy/agents/README.md) | Installing the OpenCode agents |
-| 🗂️ [`docs/README.md`](docs/README.md) | Every doc, by purpose |
-
-### The CLI at a glance
-
-| Command | What it does |
-|---|---|
-| `heimdall admin init` | Create `heimdall.toml`, or resume setup and list missing secret files |
-| `heimdall admin secret set` | Store one secret from a hidden prompt |
-| `heimdall connect` | List, plan and check GitHub, Jira, chat, agent runtime and memory |
-| `heimdall connect people` | Map a person to their Switch id, GitHub login and reviewer |
-| `heimdall doctor` | Check config, Docker, integrations, and the VM with `--host` |
-| `heimdall pack refresh` / `review` | Build and approve a developer's encrypted context pack |
-| `heimdall cost` | Remaining LLM budget |
-
-No command takes a secret as an argument. Build the CLI with `make heimdall-bin`, which writes `.cache/heimdall`.
-
-The test repository is [`heimdall-fixture-pay`](https://github.com/aarush323/heimdall-fixture-pay), base branch `heimdall-test/demo-base`.
-
-## ✅ What's live today
-
-We keep this list honest. Evidence is in [`docs/PROGRESS.md`](docs/PROGRESS.md).
-
-**Seen working on the real system**
-
-- ✅ Jira ticket to room, branch and agent: room in 0.3 to 2.4 s after pickup, agent acknowledged in 11.5 to 23 s
-- ✅ Tests from a ticket, judged red-first in the sandbox, then committed (KAN-14, 16, 17, 19, 20, 21)
-- ✅ The judge rejecting bad tests: `passed without the feature on base`
-- ✅ Reviewers filing findings with a failing test (KAN-20, KAN-21)
-- ✅ Line comments, the Heimdall Review comment, and cards in Discord and Telegram
-- ✅ `heimdall/acceptance`, and a red `heimdall/gate` from real events
-- ✅ A real human approval read from GitHub, and commands recorded from Mattermost and Slack
-- ✅ GitHub Actions on the fixture
-- ✅ **The whole story on Slack (KAN-22):** ticket, tests, PR card, three independent reviews, two real findings, `heimdall uphold` typed in Slack, the fix, a human approval, three clean re-reviews, a green `heimdall/gate`, and the merge
-
-<details>
-<summary><b>🚧 Built and tested, not yet seen live</b></summary>
-
-- 🚧 **Context packs:** code and unit tests exist in `internal/pack`. No pack ran on the live server, and the reviewer prompt does not call `read_pack` yet.
-- 🚧 **Graphiti memory:** Graphiti and FalkorDB run on the VM, but the graph is empty because delivery is blocked.
-- 🚧 **Different context per reviewer:** the three reviewers share one prompt today. The per-developer view is the design.
-- 🚧 **Heimdall re-running a reviewer's proof:** not seen live.
-- 🚧 **The resolver settling a disputed finding:** not seen live.
-- 🚧 **Personal context cards read by a live reviewer:** `heimdall cards`, the ranked brief and the code graph are built and tested on a local bench ([results and limits](docs/REVIEW_MOAT.md)), not yet run on the VM.
-- 🚧 **Discord and Telegram commands typed by a person:** not verified. Slack and Mattermost are.
-
-**Known gaps:** a fake test that imports the product can still pass the judge. A new agent session can time out on first start, and restarting the unit clears it.
-
-</details>
-
-<details>
-<summary><b>🗺️ Repository layout</b></summary>
+## Repository layout
 
 | Path | What it holds |
 |---|---|
-| `cmd/heimdall-server` | The server |
-| `cmd/heimdall-runner` | The sandbox runner |
-| `cmd/heimdall` | The CLI ([reference](docs/CLI.md)) |
-| `internal/domain` | Pure rules and types, including the gate |
-| `internal/app` | Use cases |
-| `internal/adapters` | GitHub, Jira, Switch, Postgres, Graphiti, runners |
-| `internal/transport` | MCP, dashboard, webhooks |
-| `internal/pack` | Context packs |
-| `skills/` | Prompts for the test author, reviewer and resolver |
-| `deploy/` | Compose stack, service units, config template, agent installer, context cards |
-| `docs/` | Setup, CLI, spec, runbook, progress ([index](docs/README.md)) |
-| `e2e/`, `testdata/` | Real-system checks, scenarios and recorded payloads |
-| `site/` | The landing page |
-| `video/` | The demo video |
+| [`cmd/heimdall`](cmd/heimdall) | The CLI, including `heimdall action` ([reference](docs/CLI.md)) |
+| [`cmd/heimdall-server`](cmd/heimdall-server) | The self-hosted server |
+| [`cmd/heimdall-runner`](cmd/heimdall-runner) | The sandbox runner |
+| [`cmd/heimdall-bench`](cmd/heimdall-bench) | The Proof Bench |
+| [`internal/domain`](internal/domain) | Pure rules and types, including the gate. No I/O |
+| [`internal/app`](internal/app) | Use cases |
+| [`internal/adapters`](internal/adapters) | GitHub, Jira, Switch, PostgreSQL, Graphiti, model APIs, runners |
+| [`internal/transport`](internal/transport) | MCP, dashboard, webhooks, auth |
+| [`skills/`](skills) | Prompts for the test author, reviewers and resolver |
+| [`deploy/`](deploy) | The GitHub Action, Compose stack, service units, config templates |
+| [`docs/`](docs) | Setup, CLI, spec, runbook, progress, bench ([index](docs/README.md)) |
+| [`e2e/`](e2e), [`testdata/`](testdata) | Real-system checks, scenarios and recorded payloads |
+| [`site/`](site) | The [landing page](https://heimdall-sage.vercel.app) |
 
-Coding agents start at [`CLAUDE.md`](CLAUDE.md). The design documents were written before the event opened.
+## Documentation
 
-</details>
+| Guide | For |
+|---|---|
+| [`deploy/action/README.md`](deploy/action/README.md) | GitHub Action mode install |
+| [`docs/SETUP.md`](docs/SETUP.md) | Self-hosted team mode, from VM to first ticket |
+| [`docs/CLI.md`](docs/CLI.md) | Every `heimdall` command and chat command |
+| [`docs/TECH_SPEC.md`](docs/TECH_SPEC.md) | State machine, evidence, gate, sandbox |
+| [`docs/product/ROADMAP.md`](docs/product/ROADMAP.md) | What we build next |
+| [`docs/README.md`](docs/README.md) | Every doc, by purpose |
 
----
+## Contributing
+
+We welcome bug reports, bench cases, adapters and fixes. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). It covers the
+dev setup, the architecture rules, the test policy and the pull request checklist. Good first areas: new Proof Bench
+cases, parsers for more review bots, and test runners for more languages.
+
+Please follow the [Code of Conduct](CODE_OF_CONDUCT.md). To report a vulnerability, read [`SECURITY.md`](SECURITY.md)
+and do not open a public issue.
+
+## License
+
+Heimdall is licensed under the [Apache License 2.0](LICENSE).
+
+## Acknowledgements
+
+Heimdall started at the Flip the Switch hackathon (Track 01, Best Business Workflow) and runs its team mode on
+[Switch](https://github.com/sandbox-quantum/switch). Built by [@prathameshk421](https://github.com/prathameshk421) and
+[@aarush323](https://github.com/aarush323).
 
 <p align="center">
   <img src="docs/assets/logo.png" alt="" width="46"><br>
-  <b>Humans bring judgment. Agents bring proof.</b><br>
-  <sub>Built for Flip the Switch, Track 01: Best Business Workflow. Built on <a href="https://github.com/sandbox-quantum/switch">Switch</a>.</sub>
+  <b>Humans bring judgment. Agents bring proof.</b>
 </p>

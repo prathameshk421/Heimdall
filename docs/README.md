@@ -30,6 +30,8 @@ Start with the top row of the table that fits you.
 
 | Doc | What's in it |
 |---|---|
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | **Start here to contribute.** Setup, checks, rules, PR checklist |
+| [../SECURITY.md](../SECURITY.md) | How to report a vulnerability |
 | [../AGENTS.md](../AGENTS.md) | Rules for coding agents (also `CLAUDE.md`) |
 | [CODING_STANDARDS.md](CODING_STANDARDS.md) | Code rules |
 | [TEST_STRATEGY.md](TEST_STRATEGY.md) | Test layers and budget |

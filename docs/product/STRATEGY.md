@@ -13,7 +13,7 @@ check (`research/11`). Owner decisions are in section 9. Claims without a run sa
 2. **Our position is the open, model-free referee.** MergeHarbor's own verifier model confirms its findings and the
    gate uses a model confidence score. Heimdall puts no model in the gate, and it referees every reviewer, its own
    and any third-party bot's (MergeHarbor's included): proven findings block, unproven ones are not shown and are
-   counted. The proof check is source-available (FSL, turning Apache-2.0 after two years, the Sentry model) and runs
+   counted. The proof check is open source (Apache-2.0 since Nov 27, 2026; O7) and runs
    in the customer's own CI with their own key. Closed rivals cannot follow us there.
 3. **Honest words.** A test can prove a bug is real, never that a finding is false. "Dropped" becomes "unproven, not
    shown", and a person can open the list.
@@ -153,11 +153,11 @@ Every PR prints its model cost. A monthly cap per repo is a setting.
 |---|---|---|
 | O1 | Change the first buyer from compliance to the platform lead in an agent rollout | yes |
 | O2 | Lead with a GitHub Action in shadow mode; the VM is the upgrade | yes |
-| O3 | Open-source `heimdall memory` (licence: Apache-2.0 for the CLI, server source-available) | yes, after the core loop works |
+| O3 | Open-source `heimdall memory` (licence: Apache-2.0 for the CLI, server source-available) | superseded by O7 on Nov 27: the whole repository is Apache-2.0 |
 | O4 | No per-person score for managers, ever | yes |
 | O5 | Rename `cards` to `memory` in the CLI | yes |
 | O6 | Switch becomes one optional adapter | yes |
-| O7 | Source-available proof check under FSL (Apache-2.0 after two years); `heimdall memory` Apache-2.0 | yes |
+| O7 | ~~Source-available proof check under FSL (Apache-2.0 after two years)~~. Changed Nov 27, 2026 by the owner: the whole repository, proof check included, is open source under Apache-2.0 (`LICENSE`) | yes |
 | O8 | First company sale is a $5k 30-day paid pilot, not free shadow mode | yes |
 
 ## 10. What we refuse to build (for now)

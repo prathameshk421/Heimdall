@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in Heimdall does not work as documented.
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. For a security problem, do not use this form: follow SECURITY.md.
+        Remove tokens, keys and personal data from everything you paste.
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - GitHub Action mode
+        - Self-hosted team mode
+        - CLI only
+        - Proof Bench
+        - Build or tests of this repository
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command or action, and the result you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `heimdall ...`
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or logs
+      description: Paste the relevant lines. This becomes a code block.
+      render: text
+  - type: input
+    id: sha
+    attributes:
+      label: Heimdall commit SHA
+      description: The output of `git rev-parse HEAD`, or the SHA pinned in your workflows.
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "OS, Go version, Docker or Podman version, model endpoint"

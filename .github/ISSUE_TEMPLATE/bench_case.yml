@@ -1,0 +1,47 @@
+name: Proof Bench case
+description: Propose a real bug or a clean change with a known answer.
+labels: [bench, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A case is valid only when its test is red before the fix and green after it. See CONTRIBUTING.md, "Add a Proof Bench case".
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - Bug (the change introduced a real bug)
+        - Clean (the change has no bug)
+    validations:
+      required: true
+  - type: input
+    id: repo
+    attributes:
+      label: Repository URL
+      description: A public repository with a permissive license.
+    validations:
+      required: true
+  - type: input
+    id: change
+    attributes:
+      label: Change commit or pull request
+      description: The commit or PR that introduced the bug, or the clean PR.
+    validations:
+      required: true
+  - type: input
+    id: fix
+    attributes:
+      label: Fix commit or pull request
+      description: Leave empty for a clean case.
+  - type: input
+    id: language
+    attributes:
+      label: Language and test framework
+      placeholder: "Go, go test"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: The bug in one or two sentences
