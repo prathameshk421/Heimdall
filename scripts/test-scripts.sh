@@ -4,6 +4,8 @@ set -u
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"
 fail=0; total=0
+# mode_of prints a file's octal mode with GNU stat (Linux) or BSD stat (macOS).
+mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 check() { total=$((total + 1)); if [ "$2" -ne 0 ]; then echo "FAIL: $1"; fail=$((fail + 1)); fi; }
 
 # Resolve symlinks (macOS /var is /private/var): the scripts under test compare paths after pwd -P.
@@ -22,7 +24,7 @@ out=$(cd "$root" && DEPLOY_DRY_RUN=1 DEPLOY_ARCH=386 bash scripts/deploy.sh 2>&1
 # setup creates private operator files once, then preserves the operator's config.
 setup_dir="$work/operator"
 out=$(bash "$root/scripts/setup.sh" --dir "$setup_dir" 2>&1); code=$?
-[ "$code" -eq 0 ] && [ "$(stat -c '%a' "$setup_dir")" = 700 ] && [ "$(stat -c '%a' "$setup_dir/secrets")" = 700 ] && [ "$(stat -c '%a' "$setup_dir/heimdall.toml")" = 600 ]; check "setup creates private config and secret paths" $?
+[ "$code" -eq 0 ] && [ "$(mode_of "$setup_dir")" = 700 ] && [ "$(mode_of "$setup_dir/secrets")" = 700 ] && [ "$(mode_of "$setup_dir/heimdall.toml")" = 600 ]; check "setup creates private config and secret paths" $?
 printf '\n# operator edit\n' >> "$setup_dir/heimdall.toml"
 out=$(bash "$root/scripts/setup.sh" --dir "$setup_dir" 2>&1); code=$?
 [ "$code" -eq 0 ] && grep -q 'operator edit' "$setup_dir/heimdall.toml"; check "setup is idempotent and preserves the operator config" $?
@@ -132,7 +134,7 @@ if [[ "$args_text" == *'/mcp' ]]; then
 	while (($#)); do
 		if [[ "$1" == --config ]]; then config_file=$2; shift 2; else shift; fi
 	done
-	[[ -n "$config_file" && "$(stat -c '%a' "$config_file")" == 600 ]] || exit 23
+	[[ -n "$config_file" && "$(stat -c '%a' "$config_file" 2>/dev/null || stat -f '%Lp' "$config_file")" == 600 ]] || exit 23
 	grep -q '^header = "Authorization: Bearer ' "$config_file" || exit 24
 fi
 if [[ "${REMOTE_CURL_FAIL_HEALTH:-0}" == 1 && "$(pwd -P)" == *'/releases/v2.0.0-'* && "$args_text" == *'/healthz' ]]; then exit 22; fi
@@ -311,9 +313,9 @@ controller_agents="$work/installed-agents"
 controller_env="$work/controller.env"
 CONTROLLER_CAPTURE="$work/controller-calls" SYSTEMCTL_CAPTURE="$work/systemctl-calls" PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --controller-user "$(id -un)" --controller-data-dir "$work/controller-state" --secrets-dir "$controller_secrets" --agents-dir "$controller_agents" --env-file "$controller_env" > "$work/controller-output" 2>&1; code=$?
 if [ "$code" -ne 0 ]; then cat "$work/controller-output"; fi
-[ "$code" -eq 0 ] && grep -q 'install-service --separate-users' "$work/controller-calls" && grep -q -- '--data-dir /.*controller-state' "$work/controller-calls" && grep -q -- '--agents-dir' "$work/controller-calls" && grep -q -- '--agent-users 16' "$work/controller-calls" && grep -q 'switch-agent-controller-' "$work/systemctl-calls" && [ "$(stat -c '%a' "$controller_env")" = 600 ] && [ "$(stat -c '%a' "$controller_agents/agent/test-author/opencode.json")" = 600 ] && grep -q 'installed test-author' "$work/controller-output"; check "controller installation configures private env, service, and five role agent runtimes" $?
+[ "$code" -eq 0 ] && grep -q 'install-service --separate-users' "$work/controller-calls" && grep -q -- '--data-dir /.*controller-state' "$work/controller-calls" && grep -q -- '--agents-dir' "$work/controller-calls" && grep -q -- '--agent-users 16' "$work/controller-calls" && grep -q 'switch-agent-controller-' "$work/systemctl-calls" && [ "$(mode_of "$controller_env")" = 600 ] && [ "$(mode_of "$controller_agents/agent/test-author/opencode.json")" = 600 ] && grep -q 'installed test-author' "$work/controller-output"; check "controller installation configures private env, service, and five role agent runtimes" $?
 CONTROLLER_CAPTURE="$work/controller-calls" SYSTEMCTL_CAPTURE="$work/systemctl-calls" PATH="$work/bin:$PATH" bash "$root/deploy/agents/install-controller.sh" --controller-user "$(id -un)" --controller-data-dir "$work/controller-state" --secrets-dir "$controller_secrets" --agents-dir "$controller_agents" --env-file "$controller_env" > "$work/controller-retry-output" 2>&1; code=$?
-[ "$code" -eq 0 ] && grep -q 'service active; agent runtime is ready' "$work/controller-retry-output" && [ "$(grep -c '^install-service --separate-users' "$work/controller-calls")" -eq 2 ] && [ "$(stat -c '%a' "$controller_env")" = 600 ]; check "controller setup and role config installation are repeatable" $?
+[ "$code" -eq 0 ] && grep -q 'service active; agent runtime is ready' "$work/controller-retry-output" && [ "$(grep -c '^install-service --separate-users' "$work/controller-calls")" -eq 2 ] && [ "$(mode_of "$controller_env")" = 600 ]; check "controller setup and role config installation are repeatable" $?
 
 mkdir -p "$work/e2e"
 printf 'package m\n' > "$work/m.go"
@@ -415,7 +417,6 @@ out=$(bash "$root/deploy/tests/deploy-contract.sh" 2>&1); code=$?
 [ "$code" -eq 0 ] && grep -q 'deploy contract passed' <<<"$out"; check "deploy runner contract passes" $?
 
 # make secrets-local fills a private laptop secrets directory from a dotenv file and prints no secret value (D148).
-mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 local_work="$work/secrets-local"
 mkdir -p "$local_work/pem"
 printf '%s\n' '-----BEGIN FAKE KEY-----fake-pem-body-5e1d-----END FAKE KEY-----' > "$local_work/pem/app.pem"

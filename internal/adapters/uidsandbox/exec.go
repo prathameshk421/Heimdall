@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"syscall"
 	"time"
 )
 
@@ -49,7 +48,7 @@ func (OSExec) Run(ctx context.Context, c Cmd) (int, error) {
 	}
 	cmd.Dir = "/"
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = c.Stdin, c.Stdout, c.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	ownProcessGroup(cmd)
 	cmd.Cancel = func() error {
 		var cerr error
 		if c.Cancel != nil {
@@ -57,7 +56,7 @@ func (OSExec) Run(ctx context.Context, c Cmd) (int, error) {
 		}
 		if cmd.Process != nil && cmd.Process.Pid > 0 {
 			// May be EPERM for a root process; the Cancel above is what kills the sandbox user.
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			killProcessGroup(cmd)
 		}
 		return cerr
 	}

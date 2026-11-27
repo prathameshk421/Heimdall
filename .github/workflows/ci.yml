@@ -24,3 +24,27 @@ jobs:
             tools.sum
       - name: ci
         run: make ci
+
+  # Linux runs the full suite above. This job proves the CLI and the pure rules build and pass their tests on macOS and
+  # Windows too. The server, the sandbox and the deploy scripts target Linux hosts and are checked on Linux only.
+  portability:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: build every binary
+        run: go build ./cmd/...
+      - name: test the CLI and the domain rules
+        run: go test -count=1 ./cmd/heimdall/... ./internal/domain/...

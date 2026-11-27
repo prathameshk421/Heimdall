@@ -63,7 +63,7 @@ if [[ ! -r "$secrets_dir/deploy_api_key" || ! -f "$secrets_dir/deploy_api_key" |
   echo "controller install: private regular secret file is required: $secrets_dir/deploy_api_key" >&2
   exit 1
 fi
-mode=$(stat -c '%a' "$secrets_dir/deploy_api_key")
+mode=$(stat -c '%a' "$secrets_dir/deploy_api_key" 2>/dev/null || stat -f '%Lp' "$secrets_dir/deploy_api_key")
 if (( (8#$mode & 077) != 0 )); then echo 'controller install: Deploy key file must be private (mode 0600 or stricter)' >&2; exit 1; fi
 if $dry_run; then
 	printf 'plan controller user=%s uid=%s data_dir=%s agents_dir=%s env_file=%s agent_users=%s service=switch-agent-controller-%s.service\n' "$controller_user" "$controller_uid" "$controller_data_dir" "$agents_dir" "$env_file" "$agent_users" "$controller_uid"

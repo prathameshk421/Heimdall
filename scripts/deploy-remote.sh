@@ -1,6 +1,8 @@
 #!/bin/sh
 # Remote half of scripts/deploy.sh. Kept separate so rollback can be exercised against a disposable root.
 set -eu
+# replace_link moves a new symlink over an old one in one rename. GNU mv takes -T, BSD mv (macOS) takes -h.
+replace_link() { mv -Tf "$1" "$2" 2>/dev/null || mv -hf "$1" "$2"; }
 
 tag=$1
 tmp=$2
@@ -81,7 +83,7 @@ finish() {
 	fi
 	if [ "$status" -ne 0 ] && [ "$cutover" = 1 ]; then
 		if [ -n "$previous_current" ] && [ -f "$previous_current/deploy/compose.yaml" ]; then
-			ln -sfn "$previous_current" "$install_root/current.rollback" && mv -Tf "$install_root/current.rollback" "$current" || rollback_complete=0
+			ln -sfn "$previous_current" "$install_root/current.rollback" && replace_link "$install_root/current.rollback" "$current" || rollback_complete=0
 			cd "$current" || rollback_complete=0
 			export HEIMDALL_CONFIG="$current/deploy/heimdall.toml"
 			export HEIMDALL_SECRETS_DIR=$secrets_root
@@ -149,7 +151,7 @@ chmod 0600 "$secrets_root"/*
 # Compose mounts each file as it is on the host, and the server runs as 65532, so the files must be that user's.
 chown -R 65532:65532 "$secrets_root"
 ln -sfn "$release" "$current.new"
-mv -Tf "$current.new" "$current"
+replace_link "$current.new" "$current"
 cutover=1
 cd "$current"
 export HEIMDALL_CONFIG="$current/deploy/heimdall.toml"

@@ -1,6 +1,8 @@
 #!/bin/sh
 # Remote half of scripts/operate.sh. Kept isolated so reconciliation can be exercised with local fakes.
 set -eu
+# replace_link moves a new symlink over an old one in one rename. GNU mv takes -T, BSD mv (macOS) takes -h.
+replace_link() { mv -Tf "$1" "$2" 2>/dev/null || mv -hf "$1" "$2"; }
 
 action=$1
 agent_user=$2
@@ -83,7 +85,7 @@ if [ -e "$pending_file" ] || [ -L "$pending_file" ]; then
 		exit 1
 	fi
 	ln -sfn "$previous_current" "$install_root/current.recovery"
-	mv -Tf "$install_root/current.recovery" "$current"
+	replace_link "$install_root/current.recovery" "$current"
 	cd "$current"
 	export HEIMDALL_CONFIG="$current/deploy/heimdall.toml"
 	export HEIMDALL_SECRETS_DIR=$secrets_root

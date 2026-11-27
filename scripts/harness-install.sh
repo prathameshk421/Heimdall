@@ -13,6 +13,8 @@ module=$(sed -n 's/^module //p' go.mod | head -1)
 drift=0
 
 report() { echo "harness-install: $1" >&2; drift=1; }
+# mode_of prints a file's octal mode with GNU stat (Linux) or BSD stat (macOS).
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 
 # put <template> <dest> <mode> [sed expression]: write the dest from the template when it differs.
 put() {
@@ -24,8 +26,8 @@ put() {
       mkdir -p "$(dirname "$dest")"; rm -f "$dest"; cp "$want" "$dest"
     fi
   fi
-  if [ -z "$check" ]; then chmod "$mode" "$dest"; elif [ -e "$dest" ] && [ "$(stat -c %a "$dest")" != "$mode" ]; then
-    report "$dest has mode $(stat -c %a "$dest"), want $mode"
+  if [ -z "$check" ]; then chmod "$mode" "$dest"; elif [ -e "$dest" ] && [ "$(mode_of "$dest")" != "$mode" ]; then
+    report "$dest has mode $(mode_of "$dest"), want $mode"
   fi
   rm -f "$want"
 }
