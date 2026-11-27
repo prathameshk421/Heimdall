@@ -1,3 +1,17 @@
+# Claims on site/index.html (v9)
+
+v9 (27 November 2026) rebuilds the page from the v8 product page, kept as `site/archive/previous-v8.html`. Every
+number and source link is the v8 one; no new number was added. Changes that carry meaning:
+
+| Item | Source |
+|---|---|
+| Hero lede and rule line: fails twice on the PR, passes on the fix; a person approves the exact commit | `docs/product/STRATEGY.md:20-21,36-38` |
+| Hero fact: 0 false blocks on clean changes in every live Proof Bench run | Same as v8 Table 3 (`docs/sota/BENCH.md`) |
+| Hero scene (12 comments, 1 proven, 11 hidden) | Illustration, same comments as v8 Figure 1. Labelled in the scene's code and by the lab's Figure 1 note |
+| Proof lab (Figure 1): verdicts per comment, test output, commit `e4f5a6b`, the push, approval and merge | Illustration. The verdict rules come from `docs/product/STRATEGY.md:18-21` and `docs/sota/BENCH.md:423` (a build error is not proof). F1 text, file, lines, test and `a1b2c3d` from the summary golden as in v8 |
+| "Every approval on a1b2c3d is void" after a new push | An approval counts only on the head commit (README, v8 section 7) |
+| 70 / 70 sandbox probes | Shown once, in "Built to be trusted" (v8 showed it in two places) |
+
 # Claims on site/index.html (v7)
 
 Every claim on the landing page, with its source file and line. Paths are relative to the repo root on

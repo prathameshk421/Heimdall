@@ -212,3 +212,68 @@ hills and a faint distant colonnade sit behind. One tiny figure walks toward the
   reduced motion the mist and glow have no animation. The art is 9.4 KB; the HTML is 65,962 bytes (16,860 gzip).
 - LCP on a local server with 150 ms latency, 1.6 Mbit/s and 4x CPU slowdown, 3 runs: v7 516 to 584 ms at 1440 px and
   504 to 556 ms at 360 px; v6 500 to 548 ms and 492 to 536 ms. The LCP element is the lede paragraph in both.
+
+## 6. v9 "Interlock" (27 November 2026)
+
+The owner said the product page looked flat and asked for real interaction and Three.js. The v8 page is kept as
+`site/archive/previous-v8.html`. v9 keeps every fact and source link; it changes the direction, the type, the layout and
+adds two interactive moments.
+
+### Sources we read and what we took
+
+| Source | What we took |
+|---|---|
+| Anthropic, "Improving frontend design through skills" | No Inter, Roboto, Arial or system fonts. Weight extremes (200 against 900) and size jumps of 3x or more. One dominant ground with sharp accents, in CSS variables. One orchestrated page load with staggered reveals, not scattered motion. Atmosphere instead of a flat fill |
+| Leonxlnx/taste-skill | A code-review tool shows its own working UI, red and green, with its action. One effect (the WebGL gate) and one or two dealt moments (the proof lab). The hero enters once. No fade-in on scroll. Anything that moves past 5 s has a pause control. Nothing invented. No violet |
+| LeoStehlik/no-slop-ui | 1 px rules, 2 to 4 px radius, no glass panels, no pill buttons, no eyebrow labels, no decorative gradients |
+| funboy322/avoid-ai-design | The direction comes from the subject, not a style menu. Avoid the second-order defaults (cream with terracotta, near-black with one neon, navy or slate, Space Grotesk and its cluster). Run the scanner before and after |
+| miqdadbadjuber/anti-slop | No three identical feature cards, no stat strip, no logo bar, no template footer. Section order follows the product story |
+| Netxeo/skill-file-design | Asymmetric splits (7/5 and 5/7 columns), a fluid 90% width, varied section rhythm, animate only transform and opacity |
+| GrubbyLee/design-guide | Declare the design system before the build, then verify at 1440, 1024 and 390 px with screenshots |
+| lotfb86/web-design-skills | Commit to one conceptual direction and name the one thing a visitor remembers |
+| alchaincyf/huashu-design | Facts before assumptions, start from existing assets (the Gateposts mark, the golden), and look at your own screenshots before you call it done |
+
+### Direction
+
+The subject is a gate that lets a change through only when a test proves it safe. That is a railway interlocking: a
+signal clears only when the route is proven. The page borrows the signal box, not the trains.
+
+- **Remembered thing:** the Gateposts mark built in iron. Twelve comments rise out of the fog, pass through the gap, and
+  only one is hung on the gate in red.
+- **Ground:** galvanized grey `#e6e9e5` by day, `#121514` by night. Ink is iron `#0d1110`.
+- **Signals:** three lamp colors with fixed meanings. Red: a proven finding blocks. Amber: a test is running. Green:
+  the gate is clear. They appear nowhere else, except the rule line "Fails twice on the PR. Passes on the fix."
+- **Type:** Big Shoulders Display 900 and 200 (tall, condensed signage, like gateposts) for headings, uppercase.
+  Overpass 300 to 800 (from US highway signs) for text. IBM Plex Mono for test output and commits.
+- **Layout:** 90% fluid width up to 1320 px, 7/5 and 5/7 splits, one dark band (the proof lab).
+- **Buttons:** one pair, solid iron and a ruled outline, 2 px radius, a 1 px step on hover and a press on click.
+
+### The two moments
+
+1. **The gate (hero, `site/js/gate.js`).** Three.js 0.170.0 from jsDelivr through an import map. Every pose is a pure
+   function of the scene time, so Replay, Pause and reduced motion need no extra state. Pointer parallax, hover a card
+   to read it. The loop stops when the hero is off screen or the tab is hidden. Without WebGL the page shows the mark as
+   a still. Under `prefers-reduced-motion` the scene shows its final state and never moves.
+2. **The proof lab (`site/js/lab.js`).** Prove one comment or all twelve, then push the fix, approve the new head and
+   merge. Each verdict follows a real rule: two red runs and a green fix prove; a pass on the head, one red run, a build
+   error or a style request do not. It is labelled as an illustration (Figure 1).
+
+### Scanner results (`avoid-ai-design` 0.5.0 `detect.mjs`)
+
+Final run: P0 0, P1 2, P2 1. We keep the three, for these reasons:
+
+- **SD2 (near-black with one signal), dark scheme only.** The page has three signal colors, each with one meaning, and
+  the light scheme is the default.
+- **SD5 (one accented word).** The flagged spans are the second line of every h2, a whole clause in weight 200. It is
+  the type system (weight extremes), used the same way on every heading.
+- **C5 (colored glow shadows).** Only on lamps that are lit, as a lit lamp looks.
+
+### Checks run (27 November 2026, Claude Browser pane, Chromium)
+
+- 1440 x 900 light and dark, 390 x 844 dark: no sideways scroll (`scrollWidth` 390 at 390). Hero copy and both buttons
+  fit the first screen at 1440 x 900.
+- The scene ran to its end state: 12 in, 11 hidden, "Merge locked: F1 proven". Hover shows the card text and verdict.
+  Pause and Replay work. No console errors.
+- The lab ran end to end: Prove all 12 gave 1 proven and 11 hidden, then Push the fix, Approve e4f5a6b, Merge.
+- **Not verified:** reduced-motion rendering (the pane cannot emulate it; the code sets the final state), the no-WebGL
+  still, Safari and Firefox, LCP and weight on a throttled network, and the deployed Vercel copy.

@@ -1,5 +1,20 @@
 # Heimdall progress
 
+## Website v9 "Interlock" (Nov 27, 2026, branch `heimdall-build`)
+
+The owner asked for a stronger, interactive product page with Three.js, built from the Anthropic frontend-design article
+and eight anti-slop skill repositories. `site/index.html` is rebuilt; v8 is `site/archive/previous-v8.html`.
+**Built:** a Three.js hero (`site/js/gate.js`): the Gateposts mark in iron, twelve review comments pass through the gate,
+eleven are hidden and counted, one is proven and locks the merge; hover, parallax, Pause and Replay. A proof lab
+(`site/js/lab.js`): prove one or all twelve comments, push the fix, approve the new head, merge. New type (Big Shoulders
+Display, Overpass, IBM Plex Mono), a galvanized-grey ground and three signal lamps. Every fact and link is the v8 one.
+Design contract, research notes and the scanner judgment: `site/DESIGN.md` section 6. Claims: `site/CLAIMS.md` (v9).
+**Evidence:** Claude Browser pane (Chromium) at 1440 x 900 light and dark and 390 x 844 dark: no sideways scroll, scene
+end state "12 in, 11 hidden, Merge locked: F1 proven", lab run to "Merged e4f5a6b", no console errors.
+`avoid-ai-design detect.mjs`: P0 0, P1 2, P2 1, each kept with a reason.
+**Not verified:** reduced-motion rendering, the no-WebGL still, Safari and Firefox, LCP on a throttled network, and the
+Vercel deploy (not deployed).
+
 ## Open source, setup and polish (Nov 27, 2026, branch `heimdall-build`, merged to `main`)
 
 **Open source.** MIT (`LICENSE`; first Apache-2.0, switched to MIT by the owner the same day), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` (GitHub
