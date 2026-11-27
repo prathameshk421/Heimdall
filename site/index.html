@@ -33,10 +33,9 @@
     </a>
     <nav aria-label="Main">
       <a href="#how">How it works</a>
-      <a href="#why">Why Heimdall</a>
       <a href="#stack">Integrations</a>
-      <a href="#open">Open source</a>
       <a href="#setup">Set up</a>
+      <a href="#why">Why Heimdall</a>
       <span class="tools"><button class="theme" type="button" id="themeBtn" aria-label="Switch to dark theme"><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></g></svg></button>
       <a class="btn sm line gh" href="https://github.com/prathameshk421/Heimdall"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub<span class="count" data-stars hidden></span></a></span>
     </nav>
@@ -78,20 +77,103 @@
           <li><b>Gate</b><span>A proven bug blocks the merge. Other comments stay out of your way.</span></li>
         </ol>
       </div>
-      <figure class="check card shine" aria-label="Example: the Heimdall check on a pull request">
-        <div class="check-head">
-          <span class="x" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
-          <div><b>heimdall/proof</b><span>1 proven finding blocks this merge</span></div>
-          <span class="sha">a1b2c3d</span>
+      <figure class="proofrun card shine" id="proofrun" aria-label="Animation: Heimdall checks six review comments and proves one bug">
+        <div class="pr-head"><span class="dot-live" aria-hidden="true"></span><b>heimdall/proof</b><span>PR #412 &middot; a1b2c3d</span><span class="pr-state" id="prState">Checking</span></div>
+        <div class="pr-body">
+          <ul class="pr-list" id="prList"></ul>
+          <div class="pr-pipe" aria-hidden="true">
+            <p class="pr-now" id="prNow">&nbsp;</p>
+            <ol class="pipe" id="prPipe">
+              <li data-k="test"><span>Write the test</span><i></i></li>
+              <li data-k="r1"><span>Run 1 on the pull request</span><i></i></li>
+              <li data-k="r2"><span>Run 2 on the pull request</span><i></i></li>
+              <li data-k="fix"><span>Run on the fix</span><i></i></li>
+            </ol>
+            <p class="pr-verdict" id="prVerdict">&nbsp;</p>
+          </div>
         </div>
-        <ul class="rows">
-          <li><span class="pill red">Proven</span><span class="t">Refund runs two times on retry<code>pay/refund.go:42</code></span><span class="runs"><i class="f">fail</i><i class="f">fail</i><i class="p">pass</i></span></li>
-          <li><span class="pill">Not reproduced</span><span class="t">Nil client on the error path</span><span class="runs"><i class="p">pass</i></span></li>
-          <li><span class="pill amber">Flaky</span><span class="t">Race on the retry counter</span><span class="runs"><i class="f">fail</i><i class="p">pass</i></span></li>
-          <li><span class="pill">No test</span><span class="t">9 style comments</span><span class="runs"></span></li>
-        </ul>
-        <figcaption>Example check. The rule is real: two failed runs on the pull request, one passed run on the fix.</figcaption>
+        <figcaption>Example pull request. The rule is real: two failed runs on the pull request and one passed run on the fix.</figcaption>
       </figure>
+    </div>
+  </section>
+
+  <section id="stack" aria-labelledby="h-stack">
+    <div class="wrap">
+      <div class="wheel card" id="wheel">
+        <div class="wheel-head">
+          <p class="eyebrow">Integrations</p>
+          <h2 id="h-stack">Heimdall works where your team works</h2>
+          <p class="sub">It reads your code and tickets, runs in your CI, uses the model you pick and talks in your team chat.</p>
+        </div>
+        <svg class="wheel-svg" viewBox="0 0 939 780" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+          <defs><linearGradient id="comet" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity="0"/><stop offset="1" stop-color="currentColor"/></linearGradient></defs>
+          <circle class="ring" cx="469" cy="180" r="391"/>
+          <line class="conn" x1="469" y1="410" x2="469" y2="500"/>
+          <line class="comet" id="comet" x1="469" y1="410" x2="469" y2="440"/>
+        </svg>
+        <div class="wheel-hub" aria-hidden="true"><span class="hub shine"></span></div>
+        <div class="wheel-items" id="wheelItems" aria-hidden="true"></div>
+        <div class="wheel-glyphs" id="wheelGlyphs" aria-hidden="true"></div>
+        <p class="wheel-label" id="wheelLabel" aria-live="polite"><b>&nbsp;</b><span>&nbsp;</span></p>
+      </div>
+
+      <div class="chat-row">
+        <div class="chat-text">
+          <p class="eyebrow">Team chat</p>
+          <h3>Decide from your phone</h3>
+          <p>Heimdall posts each finding to your team room. A proven finding says so. A finding without proof says that it cannot block the merge. A person answers with one command.</p>
+          <ul class="cmd-list"><li><code>heimdall uphold F1</code><span>Keep the block</span></li><li><code>heimdall dismiss F1 reason</code><span>Remove it, with a reason</span></li></ul>
+          <p class="real">Real captures from a live run.</p>
+        </div>
+        <div class="shots">
+          <figure class="phone"><img src="shots/proof-telegram.webp" width="718" height="534" alt="Telegram: Heimdall reports finding F1, proven by a failing test, and finding F2, with no proof yet, so it cannot block the merge." loading="lazy"></figure>
+          <figure class="gh-shot card"><img src="shots/proof-github.webp" width="650" height="326" alt="GitHub comment: finding F1, high severity, correctness, in internal/payments/refund.go line 36, proven by a failing test." loading="lazy"></figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="setup" aria-labelledby="h-setup">
+    <div class="wrap setup">
+      <div class="setup-text">
+        <p class="eyebrow">Set up</p>
+        <h2 id="h-setup">Live on your repo in three minutes</h2>
+        <p>Heimdall starts in report-only mode. It blocks nothing until you turn on enforcement.</p>
+        <p class="req">You need admin access to the repository, the <a href="https://cli.github.com">gh CLI</a>, <a href="https://go.dev/dl/">Go 1.27</a> and a model key.</p>
+        <p class="more"><a href="https://github.com/prathameshk421/Heimdall/blob/main/deploy/action/README.md">Action guide &#8599;</a><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/SETUP.md">Self-hosted guide &#8599;</a></p>
+      </div>
+      <div class="setup-box">
+        <div class="tabs" role="tablist" aria-label="Setup method">
+          <button type="button" role="tab" id="tab-agent" aria-controls="panel-agent" aria-selected="true">Coding agent</button>
+          <button type="button" role="tab" id="tab-cli" aria-controls="panel-cli" aria-selected="false" tabindex="-1">Terminal</button>
+        </div>
+        <div role="tabpanel" id="panel-agent" aria-labelledby="tab-agent">
+          <div class="prompt card shine">
+            <div class="prompt-text"><code>Set up Heimdall on OWNER/REPO in GitHub Action mode. Follow https://github.com/prathameshk421/Heimdall/blob/main/skills/heimdall-setup/SKILL.md</code></div>
+            <div class="prompt-bar">
+              <span class="chip">Claude Code</span><span class="chip">Codex</span><span class="chip">Cursor</span>
+              <button class="copy-btn" type="button" aria-label="Copy the prompt"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Copy</span></button>
+            </div>
+          </div>
+          <p class="hint">Paste it into your coding agent. The agent shows the plan first, never reads your key and opens a pull request for you to merge.</p>
+        </div>
+        <div role="tabpanel" id="panel-cli" aria-labelledby="tab-cli" hidden>
+          <div class="term card shine">
+            <div class="term-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span class="term-t">~/your-repo</span>
+              <button class="copy-btn" type="button" aria-label="Copy the commands"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Copy</span></button></div>
+<pre><code><span class="c"># Build the CLI</span>
+<span class="pr">$</span> git clone https://github.com/prathameshk421/Heimdall.git &amp;&amp; cd Heimdall
+<span class="pr">$</span> CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall
+<span class="c"># See the plan, then apply it</span>
+<span class="pr">$</span> ./heimdall action init -repo OWNER/REPO -dir CHECKOUT
+<span class="pr">$</span> ./heimdall action init -repo OWNER/REPO -dir CHECKOUT -apply -model-key-stdin &lt; KEY_FILE</code></pre>
+<pre class="out" aria-hidden="true"><span class="ok">&#10003;</span> environment and secrets created
+<span class="ok">&#10003;</span> 3 workflows and heimdall.yaml written (report-only)
+<span class="ok">&#10003;</span> done in 9 s. Merge the files to start.</pre>
+          </div>
+          <p class="hint">The command writes three workflows and a policy file. You merge them like any other change.</p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -146,52 +228,6 @@
     </div>
   </section>
 
-  <section id="stack" aria-labelledby="h-stack">
-    <div class="wrap">
-      <p class="eyebrow">Integrations</p>
-      <h2 id="h-stack">Heimdall works where your team works</h2>
-      <p class="sub">Heimdall reads your code and tickets. It sends each proven finding to your team chat. Your team answers there.</p>
-      <div class="flow card" id="flow">
-        <svg class="beams" aria-hidden="true"></svg>
-        <div class="col">
-          <p class="col-k">Code and tickets</p>
-          <span class="node" data-beam="in"><img src="brands/github_light.svg" alt="" class="lt"><img src="brands/github_dark.svg" alt="" class="dk">GitHub</span>
-          <span class="node" data-beam="in"><img src="brands/github-actions.svg" alt="">GitHub Actions</span>
-          <span class="node" data-beam="in"><img src="brands/jira.svg" alt="">Jira</span>
-        </div>
-        <div class="hub-col"><canvas class="sparkles" aria-hidden="true"></canvas><span class="hub shine" id="hub" role="img" aria-label="Heimdall"></span><b>Heimdall</b></div>
-        <div class="col">
-          <p class="col-k">Team chat</p>
-          <span class="node" data-beam="out"><img src="brands/slack.svg" alt="">Slack</span>
-          <span class="node" data-beam="out"><img src="brands/discord.svg" alt="">Discord</span>
-          <span class="node" data-beam="out"><img src="brands/telegram.svg" alt="">Telegram</span>
-          <span class="node" data-beam="out"><img src="brands/mattermost-light.svg" alt="" class="lt"><img src="brands/mattermost-dark.svg" alt="" class="dk">Mattermost</span>
-          <span class="node" data-beam="out"><img src="brands/microsoft-teams.svg" alt="">Microsoft Teams</span>
-        </div>
-      </div>
-      <div class="chat-row">
-        <div class="chat-text">
-          <h3>Decide in chat</h3>
-          <p>Heimdall posts each proven finding to your team room. A person answers with one command. Agents can read the room. They cannot approve.</p>
-          <ul class="cmd-list"><li><code>heimdall uphold F1</code><span>Keep the block</span></li><li><code>heimdall dismiss F1 reason</code><span>Remove it, with a reason</span></li></ul>
-        </div>
-        <div class="chat card shine" aria-label="Example: a proven finding in Slack">
-          <div class="chat-bar"><img src="brands/slack.svg" alt=""><b># payments</b><span>Example</span></div>
-          <div class="msg">
-            <span class="avatar bot" aria-hidden="true"></span>
-            <div><p class="who">Heimdall <span class="app">APP</span><time>10:42</time></p>
-              <div class="attach"><p class="a-t">F1 is proven: refund runs two times on retry</p><p class="a-m"><code>pay/refund.go:42</code> in PR #412</p><p class="a-r"><i class="f">fail</i><i class="f">fail</i><i class="p">pass</i><b>Merge blocked</b></p></div>
-            </div>
-          </div>
-          <div class="msg">
-            <span class="avatar" aria-hidden="true">MR</span>
-            <div><p class="who">Maria <time>10:44</time></p><p><code>heimdall uphold F1</code></p></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <section id="open" aria-labelledby="h-open">
     <div class="wrap">
       <p class="eyebrow">Open by design</p>
@@ -212,43 +248,6 @@
           <p>Keep the bots you have. Heimdall applies the same proof rule to their comments.</p>
           <div class="logos-row"><span class="txt">CodeRabbit</span><span><img src="brands/copilot.svg" alt="" class="lt"><img src="brands/copilot_dark.svg" alt="" class="dk">Copilot</span><span><img src="brands/cursor_light.svg" alt="" class="lt"><img src="brands/cursor_dark.svg" alt="" class="dk">Bugbot</span><span class="txt">Greptile</span></div>
         </article>
-      </div>
-    </div>
-  </section>
-
-  <section id="setup" aria-labelledby="h-setup">
-    <div class="wrap setup">
-      <div class="setup-text">
-        <p class="eyebrow">Set up</p>
-        <h2 id="h-setup">Live on your repo in three minutes</h2>
-        <p>Heimdall starts in report-only mode. It blocks nothing until you turn on enforcement.</p>
-        <p class="req">You need admin access to the repository, the <a href="https://cli.github.com">gh CLI</a>, <a href="https://go.dev/dl/">Go 1.27</a> and a model key.</p>
-        <p class="more"><a href="https://github.com/prathameshk421/Heimdall/blob/main/deploy/action/README.md">Action guide &#8599;</a><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/SETUP.md">Self-hosted guide &#8599;</a></p>
-      </div>
-      <div class="term card shine">
-        <div class="term-bar">
-          <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
-          <div class="tabs" role="tablist" aria-label="Setup method">
-            <button type="button" role="tab" id="tab-agent" aria-controls="panel-agent" aria-selected="true">Coding agent</button>
-            <button type="button" role="tab" id="tab-cli" aria-controls="panel-cli" aria-selected="false" tabindex="-1">Terminal</button>
-          </div>
-          <button class="copy-btn" type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Copy</span></button>
-        </div>
-        <div role="tabpanel" id="panel-agent" aria-labelledby="tab-agent">
-<pre><code><span class="c"># Paste into Claude Code, Codex or Cursor</span>
-Set up Heimdall on OWNER/REPO in GitHub Action mode.
-Follow https://github.com/prathameshk421/Heimdall/blob/main/skills/heimdall-setup/SKILL.md</code></pre>
-          <p class="hint">The agent shows the plan first. It never reads your key. It opens a pull request for you to merge.</p>
-        </div>
-        <div role="tabpanel" id="panel-cli" aria-labelledby="tab-cli" hidden>
-<pre><code><span class="c"># 1. Build the CLI</span>
-<span class="pr">$</span> git clone https://github.com/prathameshk421/Heimdall.git &amp;&amp; cd Heimdall
-<span class="pr">$</span> CGO_ENABLED=0 go build -o heimdall ./cmd/heimdall
-<span class="c"># 2. See the plan, then apply it</span>
-<span class="pr">$</span> ./heimdall action init -repo OWNER/REPO -dir CHECKOUT
-<span class="pr">$</span> ./heimdall action init -repo OWNER/REPO -dir CHECKOUT -apply -model-key-stdin &lt; KEY_FILE</code></pre>
-          <p class="hint">The command writes three workflows and a policy file. You merge them like any other change.</p>
-        </div>
       </div>
     </div>
   </section>

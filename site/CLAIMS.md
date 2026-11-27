@@ -1,3 +1,12 @@
+# Claims on site/index.html (v15)
+
+| Claim | Source |
+|---|---|
+| Telegram and GitHub captures are from a live run | `site/shots/telegram-finding.webp`, `site/shots/github-line.webp` (demo recording, Nov 2026) |
+| Integrations: GitHub, Actions, Jira, Slack, Discord, Telegram, Mattermost, Teams; any OpenAI-compatible model; checks CodeRabbit, Copilot, Bugbot, Greptile | `README.md` (Two ways to run it), `internal/adapters/openrouter/doc.go`, `internal/domain/external/doc.go` |
+| `heimdall uphold F1`, `heimdall dismiss F1 reason` | `docs/TECH_SPEC.md:920-928` |
+| Proof run and the Slack-style rows are examples | Labelled on the page |
+
 # Claims on site/index.html (v12)
 
 | Claim | Source |

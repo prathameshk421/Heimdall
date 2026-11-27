@@ -406,3 +406,19 @@ The proof lab, cheat widget, problem chart and FAQ were cut; the demo opens in a
 Checks (T3 preview, Chromium): 1440 px dark and light, 390 px dark; no sideways scroll; tabs, copy, theme toggle and
 dialog wired. **Not verified:** Safari and Firefox (backdrop-filter rendering), a fresh 390 px light pass (the preview
 window stopped redrawing), LCP on a slow network.
+
+## 10. v15 "Monochrome" (27 November 2026)
+
+Black and white system after the owner said the cobalt-tinted UI read as generated: pure black (`#000`) or white pages,
+grey hairlines, white or black ink, and color only in the painting and in status (red proven, green pass, amber
+flaky). The painting's blue spills into the black for one section under the hero, then stops.
+
+- **How it works:** a live proof run (`#proofrun`) replaces the static check. Six review comments are checked in turn;
+  the pipeline shows each run; one comment ends proven and the state turns to "Merge blocked". It pauses off screen
+  and shows the end state under reduced motion.
+- **Integrations:** a vanilla port of "Tool Wheel" by Louis Studios (21st.dev). Thirteen real logos (svgl.app,
+  `brands/`) ride a 391-unit ring; the bottom slot grows 1.735x, a signal runs from the hub (the temple painting) to it,
+  and its one-line pitch shows below. Under it, two real captures from a live run: Telegram in a phone frame and the
+  GitHub finding table.
+- **Set up:** moved above the features; the coding-agent path is a prompt box, the CLI path a terminal with its output.
+- **Shine border** (after Magic UI) on the proof run, prompt and terminal; pointer spotlight on every card.
