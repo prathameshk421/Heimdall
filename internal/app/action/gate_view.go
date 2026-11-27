@@ -84,12 +84,12 @@ func ownFindings(v change.View, head id.SHA, next int) []summary.Finding {
 	}
 	out := make([]summary.Finding, 0, len(v.Action.Proof.Own))
 	for i, o := range v.Action.Proof.Own {
-		tier := finding.TierE4
+		tier, ev := finding.TierE4, summary.Evidence{}
 		if o.Class == proof.ClassProven {
-			tier = finding.TierE1
+			tier, ev = finding.TierE1, summary.Evidence{Kind: summary.EvidenceTest, Name: o.Test}
 		}
 		out = append(out, summary.Finding{ID: "F" + strconv.Itoa(next+i), Reporters: []summary.Reviewer{summary.ReviewerHeimdall},
-			Tier: tier, State: finding.StateOpen, Severity: o.Severity, Location: o.Location, Claim: o.Claim,
+			Tier: tier, State: finding.StateOpen, Severity: o.Severity, Location: o.Location, Claim: o.Claim, Evidence: ev,
 			Result: proof.Finding{Class: o.Class, Dropped: o.Dropped, Reason: o.Reason, Blocking: o.Blocking}})
 	}
 	return out

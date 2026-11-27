@@ -1,5 +1,40 @@
 # Heimdall progress
 
+## Open source, setup and polish (Nov 27, 2026, branch `heimdall-build`, merged to `main`)
+
+**Open source.** Apache-2.0 (`LICENSE`, `NOTICE`), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` (GitHub
+private reporting is on), issue forms, PR template, `CODEOWNERS`. Repo description, website and topics set. README and
+website (https://heimdall-sage.vercel.app, deployed Nov 27) rewritten as a product page: what it does, demo video,
+setup, agent skill, results, platforms. Blog and hackathon-era docs moved to `docs/blog/` and `docs/archive/hackathon/`.
+
+**Setup.** `heimdall action init -dir CHECKOUT` writes the three workflows pinned to the binary's own commit and a
+shadow-mode `heimdall.yaml`, and sets the five model variables. `heimdall skill install` installs the agent setup skill
+(`skills/heimdall-setup/SKILL.md`). `heimdall version` prints the build commit.
+**Live evidence:** on `prathameshk421/heimdall-fixture-pay`, a binary built from a clean public clone ran `init -apply`
+in 9.4 s (environment, 5 variables, 3 pinned workflows; existing log key and policy kept). After the install PR merged,
+PR #1 got trigger, proof (6 min 45 s) and gate runs. The proof proved 3 of 3 candidates, each by a test that failed
+twice on the head and passed on the fix: the refund cap (`internal/refunds/service.go:56-58`), the removed
+`refund_ref` (`internal/api/refunds.go`), and the missing merchant check on `GET /refunds/{id}`. $0.20 and $0.23 on
+two runs, 19 turns on the first.
+
+**Bug found live and fixed (`e4c8d7e`):** the summary said "Would block because a finding is proven" and listed
+"Nothing is proven": candidates the run's own reviewer raised have no log ref and were dropped. `proof.reported` now
+carries them (`Own`), and the summary lists them as F1 to F3. Verified on the live PR after re-pinning: "Would block
+because 3 findings are proven" with all three listed. The test file name in "Evidence" (added after that run) is
+**not verified** live; it is covered by `TestTheSummaryListsTheProofRunsOwnFindings`.
+
+**Portability.** All 7 binaries build for linux, darwin and windows (amd64, arm64). CI runs `make verify` on Linux and
+the domain and setup tests plus the real CLI on macOS and Windows: green on `ed625bc` and `e4c8d7e`. `make verify` now
+passes on macOS (scripts used GNU-only `stat -c` and `mv -T`). Team-mode operator commands use Unix secret-file modes;
+on Windows they need WSL2 (README "Platforms").
+
+**Flaky tests fixed:** `localrunner.TestTimeoutModuleKillsProcessGroup` (cold compile inside the 2 s timeout; now warms
+the Go cache first) and `transport/auth` (shared `http.DefaultTransport` closed by a parallel `httptest.Server`; not
+reproduced locally in 60 runs, cause is documented Go behavior).
+
+**Tests trimmed:** 51 coverage-redundant tests of wording, format and wiring removed (method in commit `2b115b3`):
+5,932 to 5,874 tests. 329 more coverage-redundant tests were kept because they assert security, cost or gate rules.
+
 ## Chat account linking through GitHub, D194 (Nov 22, 2026, branch `heimdall-build`)
 
 Live: `heimdall help` and `heimdall status KAN-24` from Telegram `prathamesh421` got silence, because that account is not

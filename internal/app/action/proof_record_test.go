@@ -140,7 +140,7 @@ func TestTheSummaryListsTheProofRunsOwnFindings(t *testing.T) {
 	a.Counts = change.ProofCounts{In: 1, Proven: 1, Blocking: 1}
 	a.Candidates = []action.ArtifactCandidate{{File: "internal/pay/refund.go", First: 56, Last: 58, Severity: "high",
 		Claim: "The cap check compares one refund against the payment and never subtracts earlier refunds.",
-		Class: proof.ClassProven, Blocking: true, Why: "fails_twice_passes_fixed"}}
+		Class: proof.ClassProven, Blocking: true, Why: "fails_twice_passes_fixed", Test: "internal/pay/refund_cap_test.go"}}
 	rec := h.recordProof(t, mustJSON(t, a))
 	require.True(t, rec.Accepted, rec.Refused)
 
@@ -149,4 +149,5 @@ func TestTheSummaryListsTheProofRunsOwnFindings(t *testing.T) {
 	require.NotContains(t, body, "Nothing is proven.")
 	require.Contains(t, body, "never subtracts earlier refunds")
 	require.Contains(t, body, "internal/pay/refund.go:56-58")
+	require.Contains(t, body, "failing test `internal/pay/refund_cap_test.go`")
 }

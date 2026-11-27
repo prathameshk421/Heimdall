@@ -35,6 +35,8 @@ type OwnFinding struct {
 	Location finding.Location `json:"location"`
 	Severity finding.Severity `json:"severity"`
 	Claim    string           `json:"claim"`
+	// Test is the path of the test file that proved the finding, when the run wrote one.
+	Test string `json:"test,omitempty"`
 	CandidateResultCore
 }
 
@@ -127,6 +129,9 @@ func (p ProofReported) checkOwn(v *problems) {
 			"must be 1-based with the first at most the last")
 		v.require(at+".severity", o.Severity.Valid(), fmt.Sprintf("%q is not a severity", o.Severity))
 		v.add(at+".claim", checkLongText(o.Claim))
+		if o.Test != "" {
+			v.add(at+".test", finding.CheckRepoPath(o.Test))
+		}
 		CandidateResult{Class: o.Class, Dropped: o.Dropped, Reason: o.Reason, Blocking: o.Blocking}.check(at, v)
 	}
 }

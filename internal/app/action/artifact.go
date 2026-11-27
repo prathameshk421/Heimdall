@@ -298,7 +298,7 @@ func ownFinding(c ArtifactCandidate) (change.OwnFinding, bool) {
 		return change.OwnFinding{}, false
 	}
 	return change.OwnFinding{Location: finding.Location{File: c.File, Lines: [2]int{c.First, c.Last}}, Severity: sev,
-		Claim: c.Claim, CandidateResultCore: change.CandidateResultCore{Class: c.Class, Dropped: c.Dropped,
+		Claim: c.Claim, Test: c.Test, CandidateResultCore: change.CandidateResultCore{Class: c.Class, Dropped: c.Dropped,
 			Reason: c.Reason, Blocking: c.Blocking}}, true
 }
 
