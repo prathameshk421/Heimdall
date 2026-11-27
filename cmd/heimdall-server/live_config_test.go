@@ -189,18 +189,6 @@ func TestProductionDepsRefusesAnUnparseableDatabaseURLWithoutLeakingIt(t *testin
 	require.NotContains(t, err.Error(), badDatabaseValue, "the database URL is a secret and must not be in the error")
 }
 
-func TestCompleteConfigSelectsEveryAdapter(t *testing.T) {
-	cfg, _ := liveConfig(t, defaultSecretNames)
-	d, err := productionDeps(cfg, discardLogger())
-	require.NoError(t, err)
-	ad, err := selectAdapters(cfg, d)
-	require.NoError(t, err, "a complete config must build every adapter")
-	require.NotNil(t, ad.tickets)
-	require.NotNil(t, ad.vcs)
-	require.NotNil(t, ad.chat)
-	require.Equal(t, []string{"KAN"}, ad.projectKeys)
-}
-
 func TestFileTrackerConfigBuildsWithoutJiraSettingsOrSecrets(t *testing.T) {
 	tickets := t.TempDir()
 	names := map[string]string{

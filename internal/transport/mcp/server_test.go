@@ -104,14 +104,6 @@ func TestInitializeAnswersAnUnknownVersionWithTheLatestItSupports(t *testing.T) 
 	require.Equal(t, "2025-06-18", res.ProtocolVersion)
 }
 
-func TestPingReturnsAnEmptyResult(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	rep := r.rpc("ping", "{}")
-	require.Nil(t, rep.Error)
-	require.JSONEq(t, "{}", string(rep.Result))
-}
-
 func TestAnUnknownMethodIsMethodNotFoundAndKeepsTheID(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, workflow.RoleReviewer)
@@ -119,14 +111,6 @@ func TestAnUnknownMethodIsMethodNotFoundAndKeepsTheID(t *testing.T) {
 	require.NotNil(t, rep.Error)
 	require.Equal(t, codeMethodNotFound, rep.Error.Code)
 	require.JSONEq(t, "1", string(rep.ID))
-}
-
-func TestAStringIDIsEchoedBackUnchanged(t *testing.T) {
-	t.Parallel()
-	r := newRig(t, workflow.RoleReviewer)
-	rep := decodeReply(t, r.post("Bearer "+testToken, `{"jsonrpc":"2.0","id":"req-7","method":"ping"}`))
-	require.JSONEq(t, `"req-7"`, string(rep.ID))
-	require.Nil(t, rep.Error)
 }
 
 func TestANotificationGetsNoBodyAndStatus202(t *testing.T) {

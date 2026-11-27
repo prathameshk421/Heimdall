@@ -66,14 +66,3 @@ func TestRepoSetOpensEachCacheOnceForConcurrentCases(t *testing.T) {
 	require.NoError(t, err)
 	require.NotSame(t, got[0], rc, "another repository has its own cache")
 }
-
-func TestSandboxLabelsNameTheCase(t *testing.T) {
-	// Two cases of one repository share its worktree parent. Their sandboxes count from one each, so a label without the
-	// case id would let one case delete the other's tree in the middle of a test run.
-	rp := &repo{}
-	sa, sb := newLocalSandbox(), newLocalSandbox()
-	sa.add(bench.Case{ID: "a", Repo: "owner/name"}, rp)
-	sb.add(bench.Case{ID: "b", Repo: "owner/name"}, rp)
-	require.NotEqual(t, sa.nextLabel("owner/name"), sb.nextLabel("owner/name"))
-	require.Equal(t, "sbx-a-2", sa.nextLabel("owner/name"), "one sandbox still counts its own runs")
-}

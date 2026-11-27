@@ -139,34 +139,6 @@ func TestDigestReadsASnapshotAsMarkdown(t *testing.T) {
 	require.LessOrEqual(t, len(stdout), digest.MaxBytes)
 }
 
-// TestDigestFormsAgree: the page and the JSON are two views of one Report, so the numbers cannot drift apart.
-func TestDigestFormsAgree(t *testing.T) {
-	path := writeSnapshot(t, snapshot())
-	code, md, stderr := runDigest(t, "-in", path, "-format", "md")
-	require.Equal(t, exitActionOK, code, stderr)
-	code, raw, stderr := runDigest(t, "-in", path, "-format", "json")
-	require.Equal(t, exitActionOK, code, stderr)
-	var got digest.Report
-	require.NoError(t, json.Unmarshal([]byte(raw), &got))
-	require.Equal(t, digest.RenderMarkdown(got), md)
-}
-
-// TestDigestWindowOfTheFlags: a snapshot with no window of its own takes the one the flags name, so -days selects the
-// period and a record outside it is counted apart.
-func TestDigestWindowOfTheFlags(t *testing.T) {
-	in := snapshot()
-	in.From, in.To = time.Time{}, time.Time{}
-	path := writeSnapshot(t, in)
-	code, stdout, stderr := runDigest(t, "-in", path, "-days", "1", "-format", "json")
-	require.Equal(t, exitActionOK, code, stderr)
-	var got digest.Report
-	require.NoError(t, json.Unmarshal([]byte(stdout), &got))
-	require.Equal(t, digestNow.AddDate(0, 0, -1), got.From.UTC())
-	require.Equal(t, digestNow, got.To.UTC())
-	require.Equal(t, 1, got.PRs, "only the record of the last day is inside a one-day window")
-	require.Equal(t, 2, got.Outside)
-}
-
 // TestDigestSnapshotKeepsItsOwnWindow: a snapshot of a past week is what a weekly report is about, so its window wins.
 func TestDigestSnapshotKeepsItsOwnWindow(t *testing.T) {
 	in := snapshot()

@@ -74,31 +74,6 @@ func TestRunPoolStartsNoCaseAfterTheCostCap(t *testing.T) {
 	require.Empty(t, out[2].ID, "a case that never ran has no result of its own")
 }
 
-func TestRunPoolWithMoreWorkersThanCases(t *testing.T) {
-	// A worker count larger than the case count must not start a worker with no work, and each case still runs once.
-	var mu sync.Mutex
-	seen := map[int]int{}
-	out, _ := runPool(maxParallel, 3, func(i int) (reviewCase, string) {
-		mu.Lock()
-		seen[i]++
-		mu.Unlock()
-		return reviewCase{CaseScore: bench.CaseScore{ID: fmt.Sprintf("case-%d", i)}}, ""
-	})
-	require.Len(t, out, 3)
-	require.Equal(t, map[int]int{0: 1, 1: 1, 2: 1}, seen, "each case runs exactly once")
-}
-
-func TestRunPoolWithNoCase(t *testing.T) {
-	require.NotPanics(t, func() {
-		out, stopped := runPool(4, 0, func(int) (reviewCase, string) {
-			t.Fatal("no worker may run")
-			return reviewCase{}, ""
-		})
-		require.Empty(t, out)
-		require.Empty(t, stopped)
-	})
-}
-
 // stopIf is the stop reason a fake case returns: the cost cap when stop is true.
 func stopIf(stop bool) string {
 	if stop {

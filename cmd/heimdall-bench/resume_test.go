@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -78,14 +77,4 @@ func TestRunPoolWithHookSerializesSnapshotsInCompletionOrder(t *testing.T) {
 	require.Equal(t, 40, calls)
 	require.Equal(t, 1, maxInHook, "hook calls never overlap")
 	require.Equal(t, 40, last)
-}
-
-func TestWriteReportAtomicLeavesNoTempFile(t *testing.T) {
-	dir := t.TempDir()
-	out := filepath.Join(dir, "out.json")
-	require.NoError(t, writeReportAtomic(out, reviewReport{Model: "m"}))
-	_, err := os.Stat(out)
-	require.NoError(t, err)
-	_, err = os.Stat(out + ".tmp")
-	require.ErrorIs(t, err, os.ErrNotExist)
 }

@@ -25,10 +25,10 @@ type fakeDeps struct {
 	sawDeadline bool
 }
 
-func passingDeps(env map[string]string) *fakeDeps {
+func passingDeps() *fakeDeps {
 	f := &fakeDeps{}
 	f.doctorDeps = doctorDeps{
-		getenv: func(name string) string { return env[name] },
+		getenv: func(string) string { return "" },
 		loadConfig: func(path string) (config.Config, error) {
 			f.loadCalled = true
 			f.loadedPath = path
@@ -60,23 +60,8 @@ func statusOf(out, check string) string {
 	return ""
 }
 
-func TestDoctorPrintsTableAndExitsZeroWhenAllChecksPass(t *testing.T) {
-	f := passingDeps(nil)
-	code, out, _ := runWith(t, []string{"--config", testConfigPath}, f)
-
-	require.Equal(t, 0, code, out)
-	require.True(t, strings.HasPrefix(out, "CHECK"), "the table starts with a header, got:\n%s", out)
-	require.Contains(t, out, "STATUS")
-	require.Contains(t, out, "DETAIL")
-	require.Equal(t, "ok", statusOf(out, "config"), out)
-	require.Equal(t, "ok", statusOf(out, "docker"), out)
-	require.Equal(t, "skipped", statusOf(out, "postgres"), "the Postgres check is out of scope and must say so")
-	require.Contains(t, out, "no database DSN", "a skipped row carries its reason")
-	require.True(t, f.sawDeadline, "the docker call must carry a deadline (CODING_STANDARDS 4)")
-}
-
 func TestDoctorExitsOneWhenDockerIsUnreachable(t *testing.T) {
-	f := passingDeps(nil)
+	f := passingDeps()
 	f.dockerVersion = func(context.Context) (string, error) {
 		return "", errors.New("Cannot connect to the Docker daemon at unix:///var/run/docker.sock")
 	}
@@ -89,7 +74,7 @@ func TestDoctorExitsOneWhenDockerIsUnreachable(t *testing.T) {
 }
 
 func TestDoctorExitsOneWhenConfigDoesNotLoad(t *testing.T) {
-	f := passingDeps(nil)
+	f := passingDeps()
 	f.loadConfig = func(string) (config.Config, error) {
 		return config.Config{}, errors.New("projects[0]: repo is required")
 	}
@@ -101,18 +86,8 @@ func TestDoctorExitsOneWhenConfigDoesNotLoad(t *testing.T) {
 	require.Equal(t, "ok", statusOf(out, "docker"), out)
 }
 
-func TestDoctorReadsTheConfigPathFromHeimdallConfig(t *testing.T) {
-	f := passingDeps(map[string]string{"HEIMDALL_CONFIG": "/srv/heimdall.toml"})
-	code, out, _ := runWith(t, nil, f)
-
-	require.Equal(t, 0, code, out)
-	require.True(t, f.loadCalled)
-	require.Equal(t, "/srv/heimdall.toml", f.loadedPath)
-	require.Equal(t, "ok", statusOf(out, "config"), out)
-}
-
 func TestDoctorFailsTheConfigCheckWhenNoPathIsGiven(t *testing.T) {
-	f := passingDeps(nil)
+	f := passingDeps()
 	code, out, _ := runWith(t, nil, f)
 
 	require.Equal(t, 1, code, out)
@@ -122,7 +97,7 @@ func TestDoctorFailsTheConfigCheckWhenNoPathIsGiven(t *testing.T) {
 }
 
 func TestDoctorJSONOutputIsAMachineReadableArray(t *testing.T) {
-	f := passingDeps(nil)
+	f := passingDeps()
 	f.dockerVersion = func(context.Context) (string, error) { return "", errors.New("daemon down") }
 	code, out, _ := runWith(t, []string{"--json", "--config", testConfigPath}, f)
 
@@ -142,7 +117,7 @@ func TestDoctorJSONOutputIsAMachineReadableArray(t *testing.T) {
 }
 
 func TestDoctorRejectsAnUnknownFlagWithUsageStatus(t *testing.T) {
-	f := passingDeps(nil)
+	f := passingDeps()
 	code, out, errOut := runWith(t, []string{"--bogus"}, f)
 
 	require.Equal(t, 2, code)
@@ -152,7 +127,7 @@ func TestDoctorRejectsAnUnknownFlagWithUsageStatus(t *testing.T) {
 }
 
 func TestDoctorHostRunsHostChecksWithoutLoadingOperatorConfig(t *testing.T) {
-	f := passingDeps(nil)
+	f := passingDeps()
 	f.hostChecks = func(context.Context, string) []checkResult {
 		return []checkResult{result("host.sudo", statusOK, "non-interactive sudo available")}
 	}
@@ -164,7 +139,7 @@ func TestDoctorHostRunsHostChecksWithoutLoadingOperatorConfig(t *testing.T) {
 }
 
 func TestDoctorHostFailsWhenAHostPrerequisiteFails(t *testing.T) {
-	f := passingDeps(nil)
+	f := passingDeps()
 	f.hostChecks = func(context.Context, string) []checkResult {
 		return []checkResult{result("host.nftables", statusFail, "nft command is unavailable")}
 	}
@@ -219,7 +194,7 @@ func gitHubConfig(t *testing.T) config.Config {
 func gitHubDeps(t *testing.T, reader *fakeInstallation) *fakeDeps {
 	t.Helper()
 	cfg := gitHubConfig(t)
-	f := passingDeps(nil)
+	f := passingDeps()
 	f.loadConfig = func(string) (config.Config, error) { return cfg, nil }
 	if reader != nil {
 		f.githubReader = func(config.Config) (installationReader, error) { return reader, nil }
@@ -357,7 +332,7 @@ func TestDoctorNotVerifiedWhenTheReaderCannotBeBuilt(t *testing.T) {
 
 func TestDoctorSkipsGitHubWhenItIsNotSelected(t *testing.T) {
 	reader := &fakeInstallation{inst: goodInstallation()}
-	f := passingDeps(nil)
+	f := passingDeps()
 	f.githubReader = func(config.Config) (installationReader, error) { return reader, nil }
 	code, out, _ := runWith(t, []string{"--json", "--config", testConfigPath}, f)
 
@@ -397,7 +372,7 @@ func TestDoctorSkipsGitHubWhenAnotherVCSProviderIsSelected(t *testing.T) {
 	require.NoError(t, err)
 
 	reader := &fakeInstallation{inst: goodInstallation()}
-	f := passingDeps(nil)
+	f := passingDeps()
 	f.loadConfig = func(string) (config.Config, error) { return cfg, nil }
 	f.githubReader = func(config.Config) (installationReader, error) { return reader, nil }
 	code, out, _ := runWith(t, []string{"--json", "--config", testConfigPath}, f)

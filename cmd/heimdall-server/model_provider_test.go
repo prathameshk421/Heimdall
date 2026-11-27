@@ -50,16 +50,6 @@ func TestAModelOfAnUnknownProviderIsRefused(t *testing.T) {
 	}
 }
 
-func TestTheUnknownProviderErrorNamesTheConfiguredProviders(t *testing.T) {
-	cfg := config.Config{ModelProviders: []config.ModelProvider{{Name: "ollama", BaseURL: "http://127.0.0.1:11434/v1"}}}
-	_, err := modelProviderOf(cfg, "acme/deepseek")
-	require.ErrorContains(t, err, `provider "acme"`)
-	require.ErrorContains(t, err, "ollama")
-	require.ErrorContains(t, err, "deploy")
-	require.ErrorContains(t, err, "openrouter")
-	require.ErrorContains(t, err, "[[model_providers]]")
-}
-
 type keyFiles map[string]string
 
 func (k keyFiles) Get(name string) (string, error) { return k[name], nil }

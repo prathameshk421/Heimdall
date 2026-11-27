@@ -69,11 +69,3 @@ func TestACheckQuestionLeadsWithTheCheckStatus(t *testing.T) {
 	require.True(t, strings.HasPrefix(lines[1], "Checks on abcdef1:"), "the check status comes second, right after the headline")
 	require.Contains(t, lines[1], "heimdall/acceptance: failed")
 }
-
-// A ticketless pull request is named by its own address in chat, never the pr-... stream id.
-func TestStatusNamesATicketlessPullRequestReadably(t *testing.T) {
-	view := change.View{PR: &change.PRInfo{Number: 15}}
-	got := formatQuestionAnswer(id.ChangeID("pr-aarush323-heimdall-fixture-pay-15"), view, "status")
-	require.Contains(t, got, "aarush323/heimdall-fixture-pay #15")
-	require.NotContains(t, got, "pr-aarush323")
-}

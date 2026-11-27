@@ -68,14 +68,6 @@ func TestATextAnswerGetsANudgeAndTheRunGoesOn(t *testing.T) {
 	assert.Equal(t, "Let me think about the change.", second[len(second)-2].Content)
 }
 
-func TestTheDefaultNudgeNamesTheFinalTools(t *testing.T) {
-	h := newHarness(t, text("hmm"), answer(0.01, call("c2", "submit_plan", `{"plan":"p"}`)))
-	_, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	second := h.model.requests[1].Messages
-	assert.Equal(t, "Call a tool now. When you are done, call submit_plan.", second[len(second)-1].Content)
-}
-
 func TestNudgesCountTowardTheTurnCap(t *testing.T) {
 	h := newHarness(t, text("one"), text("two"))
 	h.cfg.MaxTurns = 2

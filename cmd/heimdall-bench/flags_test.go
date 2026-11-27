@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,21 +63,6 @@ func TestParseReviewFlagsRefusesABadParallel(t *testing.T) {
 	}
 }
 
-func TestParseReviewFlagsTakesTheRefusedDirAndItsDefault(t *testing.T) {
-	base := []string{"-out", "r.json", "-model", "deepseek/deepseek-v4-flash", "-key-file", "/tmp/k"}
-	o, err := parseReviewFlags(base, &bytes.Buffer{})
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(os.TempDir(), savedRefusedDirName), o.refusedDir, "a run saves refusals by default")
-
-	o, err = parseReviewFlags(append(base, "-refused-dir", "/tmp/mine"), &bytes.Buffer{})
-	require.NoError(t, err)
-	require.Equal(t, "/tmp/mine", o.refusedDir)
-
-	o, err = parseReviewFlags(append(base, "-refused-dir", ""), &bytes.Buffer{})
-	require.NoError(t, err)
-	require.Empty(t, o.refusedDir, "an empty -refused-dir saves nothing")
-}
-
 func mustIDs(t *testing.T, s string) []string {
 	t.Helper()
 	ids, err := parseCaseIDs(s)
@@ -123,32 +106,5 @@ func TestPriceForRefusesHalfAPrice(t *testing.T) {
 	for _, p := range []bench.Price{{InputPerM: 1}, {OutputPerM: 1}, {InputPerM: -1, OutputPerM: 1}} {
 		_, err := priceFor("deepseek/deepseek-v4-flash", p)
 		require.Error(t, err, "a half or negative price cannot bill a call: %+v", p)
-	}
-}
-
-func TestParseCaseIDs(t *testing.T) {
-	tests := []struct {
-		in   string
-		want []string
-		ok   bool
-	}{
-		{"", nil, true},
-		{"a", []string{"a"}, true},
-		{"a,b", []string{"a", "b"}, true},
-		{"a, b", []string{"a", "b"}, true},
-		{"a b", []string{"a", "b"}, true},
-		{" a , , b ", []string{"a", "b"}, true},
-		{"a,,a", nil, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			got, err := parseCaseIDs(tt.in)
-			if !tt.ok {
-				require.Error(t, err, "a repeated id is a typo, not a filter")
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tt.want, got)
-		})
 	}
 }

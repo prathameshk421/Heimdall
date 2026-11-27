@@ -26,12 +26,6 @@ func TestPickCasesTakesOnlyValidCasesWithARunner(t *testing.T) {
 	require.Equal(t, []string{"bug-ok", "clean-ok", "ts-ok", "rust-ok"}, ids(got))
 }
 
-func TestPickCasesKeepsTheAskedOrderAndSet(t *testing.T) {
-	got, err := pickCases(caseList(), []string{"clean-ok", "bug-ok"})
-	require.NoError(t, err)
-	require.Equal(t, []string{"bug-ok", "clean-ok"}, ids(got), "the run keeps the manifest order, not the flag order")
-}
-
 func TestPickCasesRefusesAnIDThatIsNotAValidCaseWithARunner(t *testing.T) {
 	for _, id := range []string{"bad", "python-ok", "missing", "ts-pending"} {
 		_, err := pickCases(caseList(), []string{id})

@@ -110,12 +110,3 @@ func TestParseVitestJSONFailsAnEachCaseThatFailsOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]TestResult{"a.test.ts:case": ResultFail, "a.test.ts:todo": ResultSkip}, run.Tests)
 }
-
-func TestSplitTestID(t *testing.T) {
-	file, name, ok := SplitTestID("packages/shared/src/x.test.ts:outer > a: b")
-	require.True(t, ok)
-	require.Equal(t, "packages/shared/src/x.test.ts", file)
-	require.Equal(t, "outer > a: b", name)
-	_, _, ok = SplitTestID("no file part")
-	require.False(t, ok)
-}

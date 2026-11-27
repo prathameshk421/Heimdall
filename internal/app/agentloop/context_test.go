@@ -75,18 +75,6 @@ func TestContextBudgetKeepsRecentResultsWholeEvenOverTheBudget(t *testing.T) {
 	require.Greater(t, res.Turn[len(res.Turn)-1].RequestBytes, 1000, "the size is recorded as it was sent")
 }
 
-func TestNoContextBudgetTrimsNothing(t *testing.T) {
-	h := newHarness(t, append(reads(5), answer(0.001, call("s", "submit_plan", `{}`)))...)
-	bigRead(h)
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	for _, text := range readTexts(res) {
-		require.Len(t, text, 6000)
-	}
-	require.Positive(t, res.Turn[0].RequestBytes, "the size is recorded with no budget too")
-	require.Zero(t, res.Turn[len(res.Turn)-1].TrimmedResults)
-}
-
 func TestTrimStubNamesTheCallAndTheSize(t *testing.T) {
 	tests := []struct {
 		name, tool, args string

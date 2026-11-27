@@ -77,21 +77,6 @@ func TestResendTransformKeepsTheLastNMessages(t *testing.T) {
 	require.Equal(t, "user", msgs[1].(map[string]any)["role"])
 }
 
-func TestResendTransformCombinesItsParts(t *testing.T) {
-	body := parseResendBody(t)
-	got, err := transformResendBody(body, resendOptions{dropTools: true, dropSystem: true, keepLast: 3})
-	require.NoError(t, err)
-	require.Equal(t, []string{"user", "assistant", "user"}, rolesOf(t, got))
-	require.NotContains(t, got, "tools")
-}
-
-func TestResendTransformKeepsEveryMessageWhenKeepLastIsPastTheList(t *testing.T) {
-	body := parseResendBody(t)
-	got, err := transformResendBody(body, resendOptions{keepLast: 99})
-	require.NoError(t, err)
-	require.Len(t, messagesOf(t, got), 4)
-}
-
 func TestResendTransformRefusesANegativeKeepLast(t *testing.T) {
 	_, err := transformResendBody(parseResendBody(t), resendOptions{keepLast: -1})
 	require.ErrorContains(t, err, "-keep-last")

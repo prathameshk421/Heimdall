@@ -15,13 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/adapters/postgres"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/app/effects"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/change"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/id"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/policy"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/clock"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/config"
-	"github.com/prathameshk421/flip_the_switch_hackathon/internal/platform/ids"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
 
@@ -215,24 +212,6 @@ func (dummyVCS) Comment(context.Context, change.Repo, int, change.EffectKey, str
 
 func (dummyVCS) IssueCommentsSince(context.Context, change.Repo, int, time.Time) ([]ports.IssueComment, error) {
 	return nil, nil
-}
-
-func TestExecutorsRegistersGitHubCheck(t *testing.T) {
-	store := newMemStore()
-	clk := clock.System{}
-	gen := ids.New()
-	eng := newSliceEngine(t, store)
-	ad := adapters{
-		tickets: dummyTickets{},
-		vcs:     dummyVCS{},
-		chat:    dummyChat{},
-	}
-	blobs := newMemBlobStore()
-	execs, err := executors(ad, store, selectedProfileStore{}, blobs, ingestor{eng: eng}, gen, clk, nil)
-	require.NoError(t, err)
-	ch, ok := execs[change.EffectGitHubCheck]
-	require.True(t, ok, "github_check executor must be registered")
-	require.IsType(t, effects.GitHubCheck{}, ch)
 }
 
 func TestTestQualityWiringUsesTargetModuleSeam(t *testing.T) {

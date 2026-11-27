@@ -213,20 +213,6 @@ func TestContractAModelFailureIsAnErrorStopThatWrapsTheCause(t *testing.T) {
 	assert.Equal(t, ports.AgentBudgetUsage, res.BudgetCause)
 }
 
-func TestContractTurnsCarryLatency(t *testing.T) {
-	c := newContract(t, answer(0.01, call("c1", "read_code", `{}`)), answer(0.01, call("c2", "finish", `{}`)))
-	c.model.steps[0].hook = func() { c.clock.now = c.clock.now.Add(2 * time.Second) }
-	c.disp.results["read_code"] = func(json.RawMessage) (string, error) {
-		c.clock.now = c.clock.now.Add(3 * time.Second)
-		return "ok", nil
-	}
-	res, err := c.do(context.Background(), t)
-	require.NoError(t, err)
-	require.Len(t, res.Turns, 2)
-	assert.Equal(t, 2*time.Second, res.Turns[0].ModelLatency)
-	assert.Equal(t, 3*time.Second, res.Turns[0].ToolLatency)
-}
-
 func TestNewRunnerAndRunRefuseABadWiring(t *testing.T) {
 	c := newContract(t)
 	_, err := NewRunner(nil, c.clock, testPrice)

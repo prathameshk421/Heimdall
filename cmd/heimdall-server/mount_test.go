@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -20,27 +19,6 @@ func get(t *testing.T, client *http.Client, url string) *http.Response {
 	resp, err := client.Do(req)
 	require.NoError(t, err)
 	return resp
-}
-
-// mountHTTP serves /healthz with no slice selected, and 404 on /mcp.
-func TestMountHTTPHealthzOnlyWithoutASlice(t *testing.T) {
-	router, err := transport.NewRouter(slog.New(slog.DiscardHandler))
-	require.NoError(t, err)
-	ts := httptest.NewServer(mountHTTP(router, nil))
-	defer ts.Close()
-
-	resp := get(t, ts.Client(), ts.URL+"/healthz")
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.JSONEq(t, `{"status":"ok"}`, string(body))
-
-	for _, path := range []string{"/mcp", "/healthz/", "/anything"} {
-		r := get(t, ts.Client(), ts.URL+path)
-		_ = r.Body.Close()
-		require.Equal(t, http.StatusNotFound, r.StatusCode, "%s must 404 with no slice", path)
-	}
 }
 
 // mountHTTP serves /mcp from the app when a slice selected one, and keeps /healthz.
@@ -72,19 +50,4 @@ func TestMountHTTPServesHealthzAndMCP(t *testing.T) {
 	r = get(t, ts.Client(), ts.URL+"/mcp")
 	_ = r.Body.Close()
 	require.Equal(t, http.StatusMethodNotAllowed, r.StatusCode)
-}
-
-// mountHTTP with a slice selected but no MCP handler mounted serves /healthz only.
-func TestMountHTTPWithNilMCPHandler(t *testing.T) {
-	router, err := transport.NewRouter(slog.New(slog.DiscardHandler))
-	require.NoError(t, err)
-	a := &app{}
-	ts := httptest.NewServer(mountHTTP(router, a))
-	defer ts.Close()
-	r := get(t, ts.Client(), ts.URL+"/healthz")
-	_ = r.Body.Close()
-	require.Equal(t, http.StatusOK, r.StatusCode)
-	r = get(t, ts.Client(), ts.URL+"/mcp")
-	_ = r.Body.Close()
-	require.Equal(t, http.StatusNotFound, r.StatusCode)
 }

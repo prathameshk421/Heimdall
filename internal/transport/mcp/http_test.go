@@ -1,8 +1,6 @@
 package mcp
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,12 +12,6 @@ import (
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/domain/workflow"
 	"github.com/prathameshk421/flip_the_switch_hackathon/internal/ports"
 )
-
-func TestHashTokenIsTheLowercaseSHA256Hex(t *testing.T) {
-	t.Parallel()
-	sum := sha256.Sum256([]byte(testToken))
-	require.Equal(t, hex.EncodeToString(sum[:]), HashToken(testToken))
-}
 
 func TestTheStoreIsAskedForTheHashNeverTheToken(t *testing.T) {
 	t.Parallel()

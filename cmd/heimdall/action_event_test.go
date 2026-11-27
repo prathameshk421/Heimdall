@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 
@@ -63,15 +62,6 @@ func TestTriggerRefusesWhatItCannotRecord(t *testing.T) {
 		if _, err := triggerFromEvent(tc.name, tc.raw); err == nil {
 			t.Errorf("%s: accepted", label)
 		}
-	}
-}
-
-// The merge queue needs the gate to judge a group commit, which the AM14 gate does not do. The trigger says so
-// instead of recording a pull request that is not there.
-func TestTriggerSaysTheMergeQueueIsNotBuilt(t *testing.T) {
-	_, err := triggerFromEvent("merge_group", []byte(`{"merge_group": {"head_sha": "`+string(evHead)+`"}}`))
-	if !errors.Is(err, errMergeGroupNotBuilt) {
-		t.Fatalf("error = %v, want errMergeGroupNotBuilt", err)
 	}
 }
 

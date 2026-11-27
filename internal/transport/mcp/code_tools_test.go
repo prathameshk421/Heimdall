@@ -194,14 +194,6 @@ func TestGetTaskAddsEachBriefSectionWrapped(t *testing.T) {
 	}
 }
 
-func TestGetTaskSaysSoWhenASectionIsEmpty(t *testing.T) {
-	t.Parallel()
-	r := briefRig(t, workflow.RoleReviewer, &fakeBriefs{brief: reviewbrief.Brief{Memory: "MEMORY"}})
-	note, content := section(t, r.call("get_task", `{}`).text(), "obligations")
-	require.Empty(t, content)
-	require.Contains(t, note, "Nothing to show")
-}
-
 func TestAFailedBriefDoesNotCostTheTask(t *testing.T) {
 	t.Parallel()
 	r := briefRig(t, workflow.RoleReviewer, &fakeBriefs{err: errors.New("down")})

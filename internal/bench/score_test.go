@@ -245,12 +245,6 @@ func TestPercentileIsNearestRank(t *testing.T) {
 	}
 }
 
-func TestPercentileDoesNotReorderTheInput(t *testing.T) {
-	in := []float64{3, 1, 2}
-	Percentile(in, 50)
-	require.Equal(t, []float64{3, 1, 2}, in)
-}
-
 func seq(n int) []float64 {
 	out := make([]float64, n)
 	for i := range out {

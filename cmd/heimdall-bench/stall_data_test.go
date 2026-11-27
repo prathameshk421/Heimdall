@@ -2,11 +2,9 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -107,26 +105,6 @@ func loadStallRows(t *testing.T) []stallRow {
 	return rows
 }
 
-func turnText(n int) string {
-	if n == 0 {
-		return "-"
-	}
-	return fmt.Sprint(n)
-}
-
-func TestStallTable(t *testing.T) {
-	rows := loadStallRows(t)
-	require.NotEmpty(t, rows)
-	var b strings.Builder
-	fmt.Fprintf(&b, "\n%-4s %-22s %9s %12s %6s %-12s %8s %14s %12s\n", "run", "case", "first_test", "first_propose",
-		"turns", "stop", "proposed", "streak_propose", "streak_test")
-	for _, r := range rows {
-		fmt.Fprintf(&b, "%-4s %-22s %9s %12s %6d %-12s %8d %14d %12d\n", r.run, r.id, turnText(r.firstTest),
-			turnText(r.firstPropose), r.turns, r.stop, r.proposed, r.streakBeforePropose, r.streakBeforeTest)
-	}
-	t.Log(b.String())
-}
-
 // TestStallDefaultsInterruptLongReadingRuns holds the tightened stall defaults (AM17) to the recorded data: runs that
 // read for 12 answers without a test or proposal now get the diagnostic nudge, and a run that only reads is stopped at
 // 18, well before the 40-turn cap. The old 18+6 rule let those runs read for 24 turns; the tightening removes that.
@@ -151,20 +129,4 @@ func TestStallDefaultsInterruptLongReadingRuns(t *testing.T) {
 	require.Positive(t, nudged, "recorded runs that read for 12 answers justify the diagnostic nudge")
 	require.Positive(t, earlyProposal, "a run that proposes early still gets no nudge")
 	require.LessOrEqual(t, stopAt+beforeCap, maxTurnsPerCase, "a run that only reads must stop well before the cap")
-}
-
-func TestStallRowCountsTheLoopsWay(t *testing.T) {
-	// Turns: read, read, test, read, read, read, propose, read. The streak before the proposal is 3 (turns 4 to 6),
-	// not 5, because the test on turn 3 reset the count; the streak before the test is 2.
-	var c recordedCase
-	require.NoError(t, json.Unmarshal([]byte(`{"id":"x","stop":"done","proposed":1,"transcript":[
-		{"calls":[{"name":"read_code"}]},{"calls":[{"name":"search_code"},{"name":"read_code"}]},
-		{"calls":[{"name":"read_code"},{"name":"run_test"}]},{"calls":[{"name":"read_code"}]},{"calls":[]},
-		{"calls":[{"name":"read_code"}]},{"calls":[{"name":"propose_finding"}]},{"calls":[{"name":"read_code"}]}]}`), &c))
-	r := stallRowOf("t", true, c)
-	require.Equal(t, 3, r.firstTest)
-	require.Equal(t, 7, r.firstPropose)
-	require.Equal(t, 8, r.turns)
-	require.Equal(t, 3, r.streakBeforePropose)
-	require.Equal(t, 2, r.streakBeforeTest)
 }

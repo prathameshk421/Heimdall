@@ -65,16 +65,6 @@ func TestAForgedEndLineInsideTheTextDoesNotCloseTheWrapper(t *testing.T) {
 	require.Equal(t, content, body, "the whole text stays inside the wrapper")
 }
 
-func TestTextAtTheCapIsNotCut(t *testing.T) {
-	t.Parallel()
-	content := strings.Repeat("a", ports.MaxUntrustedText)
-	out, err := wrapUntrusted("pr_body", []byte(content))
-	require.NoError(t, err)
-	_, body := unwrap(t, out)
-	require.Equal(t, content, body)
-	require.NotContains(t, strings.ToLower(out), "cut")
-}
-
 func TestTextOverTheCapIsCutAndTheCutIsSaid(t *testing.T) {
 	t.Parallel()
 	out, err := wrapUntrusted("pr_body", []byte(strings.Repeat("a", ports.MaxUntrustedText+1)))

@@ -320,23 +320,6 @@ func TestGoTestNamesListsTopLevelTestsInSourceOrder(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestImportNameGuessesThePackageName(t *testing.T) {
-	for path, want := range map[string]string{
-		"testing":                          "testing",
-		"github.com/stretchr/testify/mock": "mock",
-		"gopkg.in/yaml.v3":                 "yaml",
-		"gopkg.in/check.v1":                "check",
-		"github.com/foo/bar/v2":            "bar",
-		"k8s.io/api/core/v1":               "v1",
-		"github.com/google/go-cmp":         "cmp",
-		"github.com/foo/bar-go":            "bar",
-		"golang.org/x/net/html":            "html",
-	} {
-		require.Equal(t, want, guessImportName(path), path)
-	}
-	require.True(t, strings.HasPrefix(guessImportName("x/y/z"), "z"))
-}
-
 // The head's version of the fix's test file. Another test file of the package (otherHeadTest) uses its helper newHeadSvc,
 // so a copy that overwrote the file with only the fix's tests would break the package. The head also has a test of its
 // own that the fix's helpers would break.

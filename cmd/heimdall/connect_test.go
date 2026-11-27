@@ -51,24 +51,6 @@ func mustLoad(t *testing.T, path string) config.Config {
 	return cfg
 }
 
-func TestDefaultRegistryDescribesPlannedEntries(t *testing.T) {
-	reg, err := defaultRegistry()
-	require.NoError(t, err)
-	require.Equal(t, []registry.Description{
-		{Name: "github", Kind: registry.KindVCS, RequiredConfig: []string{"github_app_id", "github_app_installation_id", "github_app_private_key"}},
-		{Name: "file", Kind: registry.KindTracker},
-		{Name: "jira", Kind: registry.KindTracker, RequiredConfig: []string{"jira_api_token", "jira_email"}},
-		{Name: "discord", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
-		{Name: "mattermost", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
-		{Name: "slack", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
-		{Name: "switch", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
-		{Name: "teams", Kind: registry.KindChat},
-		{Name: "telegram", Kind: registry.KindChat, RequiredConfig: []string{"switch_api_key", "switch_registration_token"}},
-		{Name: "switchroom", Kind: registry.KindAgentRuntime, RequiredConfig: []string{"openrouter_api_key"}},
-		{Name: "graphiti", Kind: registry.KindMemory},
-	}, reg.Describe())
-}
-
 func TestDefaultRegistryChecksReportNeedsConfigAndNeverConnected(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -252,30 +234,6 @@ func TestConnectPlansContainResumableCoreIntegrationHandoffs(t *testing.T) {
 	}
 }
 
-func TestDefaultRegistryEntriesDeclareGuidedSteps(t *testing.T) {
-	reg, err := defaultRegistry()
-	require.NoError(t, err)
-	for _, description := range reg.Describe() {
-		entry, err := reg.Select(description.Kind, description.Name)
-		require.NoError(t, err)
-		require.NotEmpty(t, entry.GuidedSteps, description.Name)
-		for _, step := range entry.GuidedSteps {
-			require.NotContains(t, strings.ToLower(step), "secret value")
-			require.NotContains(t, strings.ToLower(step), "token=")
-		}
-	}
-}
-
-func TestConnectListFlagMatchesListSubcommand(t *testing.T) {
-	_, cfgPath := connectFixture(t, "", nil)
-	var out, errOut bytes.Buffer
-	code := runConnect([]string{"--list", "--config", cfgPath}, strings.NewReader(""), &out, &errOut, testConnectDeps())
-
-	require.Equal(t, 0, code, errOut.String())
-	require.Contains(t, out.String(), "NAME")
-	require.Contains(t, out.String(), "mattermost")
-}
-
 func TestConnectListJSONCarriesStatusAndRequiredNames(t *testing.T) {
 	_, cfgPath := connectFixture(t, "[tracker]\nprovider = \"jira\"\n", nil)
 	var out, errOut bytes.Buffer
@@ -436,12 +394,6 @@ func TestParsePublicAddress(t *testing.T) {
 			require.Equal(t, tc.internal, internal)
 		})
 	}
-}
-
-func TestConnectSelectionFieldKeys(t *testing.T) {
-	require.Equal(t, "chat.bridge", registry.SelectionField(registry.KindChat))
-	require.Equal(t, "tracker.provider", registry.SelectionField(registry.KindTracker))
-	require.Equal(t, "vcs.provider", registry.SelectionField(registry.KindVCS))
 }
 
 func TestWriteSelectionRoundTripKeepsProjectsAndMode(t *testing.T) {

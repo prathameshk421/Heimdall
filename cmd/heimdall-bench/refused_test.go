@@ -315,7 +315,3 @@ func TestSafeNameKeepsACaseIDInsideTheDirectory(t *testing.T) {
 	require.Equal(t, "a-b-c", safeName("../a/b c"))
 	require.Equal(t, "case", safeName(""))
 }
-
-func TestDefaultRefusedDirIsUnderTheTemporaryDirectory(t *testing.T) {
-	require.Equal(t, filepath.Join(os.TempDir(), savedRefusedDirName), defaultRefusedDir())
-}

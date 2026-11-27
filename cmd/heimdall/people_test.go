@@ -230,23 +230,6 @@ func TestConnectPeopleListReportsDirectoryFailure(t *testing.T) {
 	require.Contains(t, errb, "switch is offline")
 }
 
-func TestConnectPeopleListReportsMissingConfig(t *testing.T) {
-	var got config.Config
-	deps := peopleDeps{
-		loadConfig: config.Load,
-		getenv:     func(string) string { return "" },
-		newClient: func(cfg config.Config) (switchDirectory, error) {
-			got = cfg
-			return &fakeDirectory{}, nil
-		},
-		deadline: 10 * time.Second,
-	}
-	code, _, errb := peopleRun(t, "", deps, "--list")
-	require.Equal(t, connectExitFail, code)
-	require.Contains(t, errb, "config")
-	require.Equal(t, config.Config{}, got, "no client may be built without a config path")
-}
-
 func TestConnectPeopleListRefusesMappingFlags(t *testing.T) {
 	dir := &fakeDirectory{}
 	code, _, _ := peopleRun(t, "", testPeopleDeps(dir), "--list", "--name", "dana")

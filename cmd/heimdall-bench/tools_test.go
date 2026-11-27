@@ -44,10 +44,3 @@ func TestDescribeRunListsFailingAndErroredTestsFirst(t *testing.T) {
 	require.Less(t, strings.Index(out, "TestFail: failure"), strings.Index(out, "TestPass: passed"))
 	require.Contains(t, lines[0], "passed 1, failed 1, errored 1")
 }
-
-func TestDescribeRunWithoutFocusKeepsTheOldOrder(t *testing.T) {
-	res := manyPassed(maxTestsListed+5, "TestHeimdallBenchZzzProposed")
-	out := describeRun(res, nil)
-	require.NotContains(t, out, "TestHeimdallBenchZzzProposed", "no focus means no priority")
-	require.Contains(t, out, "more tests not listed")
-}

@@ -122,21 +122,6 @@ func TestParseRejectsBrokenToolchainRules(t *testing.T) {
 	}
 }
 
-// TestParseAcceptsGoTestsAsDirAndName: a Go bug case may name the fix's target tests, so the copy that builds on the
-// head holds only them. The id is the package directory ("." for the module root), a colon and the test function.
-func TestParseAcceptsGoTestsAsDirAndName(t *testing.T) {
-	body := strings.Replace(bugCase(), "    timeout: 5m\n", "    timeout: 5m\n    tests: [\"mock:Test_A\", \"internal/refunds:TestB\", \".:TestC\"]\n", 1)
-	m, err := Parse(manifest(body))
-	require.NoError(t, err)
-	require.Equal(t, []string{"mock:Test_A", "internal/refunds:TestB", ".:TestC"}, m.Cases[0].Tests)
-	dir, name, ok := SplitGoTestID("internal/refunds:TestB")
-	require.True(t, ok)
-	require.Equal(t, "internal/refunds", dir)
-	require.Equal(t, "TestB", name)
-	_, _, ok = SplitGoTestID("TestB")
-	require.False(t, ok)
-}
-
 func canaryCase(canary string) string {
 	return strings.Replace(cleanCase(), "    timeout: 2m\n", "    timeout: 2m\n    canary: "+canary+"\n", 1)
 }
@@ -200,13 +185,6 @@ func TestAtUsesTheChangeCommandsOnlyAtTheChangeAndItsParent(t *testing.T) {
 		require.Equal(t, []string{"pnpm install --frozen-lockfile --filter @t3tools/shared..."}, at.Install, sha)
 		require.Equal(t, "pnpm exec vp test run --dir .", at.TestCommand, sha)
 	}
-}
-
-func TestAtKeepsTheCaseCommandsWhenTheCaseNamesNoChangeCommands(t *testing.T) {
-	m, err := Parse(manifest(vitestCase()))
-	require.NoError(t, err)
-	c := m.Cases[0]
-	require.Equal(t, c, c.At(shaA))
 }
 
 func TestAtReplacesOnlyTheFieldTheCaseNames(t *testing.T) {

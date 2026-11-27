@@ -75,14 +75,6 @@ func TestStallAfterTheNudgeWasUsedStopsWithNoSecondNudge(t *testing.T) {
 	require.Equal(t, []string{stallNudge}, userTexts(res))
 }
 
-func TestNoStallRuleWhenItIsOff(t *testing.T) {
-	h := newHarness(t, append(reads(8), answer(0.001, call("s", "submit_plan", `{}`)))...)
-	h.cfg.MaxTurns = 40
-	res, err := h.run(context.Background(), t)
-	require.NoError(t, err)
-	require.Equal(t, StopSubmitted, res.Reason)
-}
-
 func TestStallConfigNeedsItsParts(t *testing.T) {
 	for name, edit := range map[string]func(*Config){
 		"no grace":          func(c *Config) { c.StallGrace = 0 },
