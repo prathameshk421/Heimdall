@@ -6,6 +6,8 @@ comes with proof, and no check gets weaker to make a build pass.
 This guide covers how to report a problem, how to set up the project, the rules the code follows, and what a good pull
 request looks like.
 
+The product page is at **https://heimdall-sage.vercel.app**: what it does, a worked proof, and a two-minute demo.
+
 ## Ways to contribute
 
 | You want to | Do this |

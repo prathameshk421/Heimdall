@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Read the website
+    url: https://heimdall-sage.vercel.app
+    about: What Heimdall does, how the proof rule works, and a two-minute demo.
   - name: Report a security vulnerability
     url: https://github.com/prathameshk421/Heimdall/security/advisories/new
     about: Report security problems in private. Do not open a public issue.
