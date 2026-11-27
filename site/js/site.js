@@ -88,7 +88,7 @@
       var h = hub.getBoundingClientRect();
       var hx = h.left + h.width / 2 - box.left, hy = h.top + h.height / 2 - box.top;
       svg.setAttribute('viewBox', '0 0 ' + box.width + ' ' + box.height);
-      svg.innerHTML = '<defs><linearGradient id="beamGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="' + box.width + '" y2="0"><stop offset="0" stop-color="#6b97ff" stop-opacity="0"/><stop offset=".5" stop-color="#6b97ff"/><stop offset="1" stop-color="#ff9670"/></linearGradient></defs>';
+      svg.innerHTML = '<defs><linearGradient id="beamGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="' + box.width + '" y2="0"><stop offset="0" stop-color="currentColor" stop-opacity="0"/><stop offset=".5" stop-color="currentColor"/><stop offset="1" stop-color="currentColor" stop-opacity=".2"/></linearGradient></defs>';
       flow.querySelectorAll('[data-beam]').forEach(function (n, i) {
         var r = n.getBoundingClientRect();
         var out = n.dataset.beam === 'out';
@@ -124,6 +124,35 @@
     dialog.addEventListener('close', function () { video.pause(); });
   } else if (open) {
     open.addEventListener('click', function () { window.location.href = 'media/heimdall-demo.mp4'; });
+  }
+
+  // Sparkles around the hub: a few points of light that fade in and out.
+  var sp = document.querySelector('.sparkles');
+  if (sp && sp.getContext && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    var ctx = sp.getContext('2d');
+    var dots = [];
+    var size = function () {
+      var r = sp.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+      sp.width = r.width * d; sp.height = r.height * d; ctx.setTransform(d, 0, 0, d, 0, 0);
+      dots = Array.from({ length: 46 }, function () {
+        return { x: Math.random() * r.width, y: Math.random() * r.height, r: Math.random() * 1.2 + .3, p: Math.random() * 6.28, s: Math.random() * .03 + .01 };
+      });
+    };
+    var color = function () { return getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#fff'; };
+    var tick = function () {
+      var r = sp.getBoundingClientRect();
+      ctx.clearRect(0, 0, r.width, r.height);
+      ctx.fillStyle = color();
+      dots.forEach(function (o) {
+        o.p += o.s;
+        ctx.globalAlpha = Math.max(0, Math.sin(o.p)) * .9;
+        ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, 6.283); ctx.fill();
+      });
+      requestAnimationFrame(tick);
+    };
+    size();
+    window.addEventListener('resize', size);
+    requestAnimationFrame(tick);
   }
 
   // GitHub star count on the nav button. Hidden unless the API answers.

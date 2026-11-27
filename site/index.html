@@ -78,7 +78,7 @@
           <li><b>Gate</b><span>A proven bug blocks the merge. Other comments stay out of your way.</span></li>
         </ol>
       </div>
-      <figure class="check card" aria-label="Example: the Heimdall check on a pull request">
+      <figure class="check card shine" aria-label="Example: the Heimdall check on a pull request">
         <div class="check-head">
           <span class="x" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
           <div><b>heimdall/proof</b><span>1 proven finding blocks this merge</span></div>
@@ -159,7 +159,7 @@
           <span class="node" data-beam="in"><img src="brands/github-actions.svg" alt="">GitHub Actions</span>
           <span class="node" data-beam="in"><img src="brands/jira.svg" alt="">Jira</span>
         </div>
-        <div class="hub-col"><span class="hub" id="hub"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg></span><b>Heimdall</b></div>
+        <div class="hub-col"><canvas class="sparkles" aria-hidden="true"></canvas><span class="hub shine" id="hub" role="img" aria-label="Heimdall"></span><b>Heimdall</b></div>
         <div class="col">
           <p class="col-k">Team chat</p>
           <span class="node" data-beam="out"><img src="brands/slack.svg" alt="">Slack</span>
@@ -169,16 +169,25 @@
           <span class="node" data-beam="out"><img src="brands/microsoft-teams.svg" alt="">Microsoft Teams</span>
         </div>
       </div>
-      <div class="chat card" aria-label="Example: a proven finding in team chat">
-        <div class="msg">
-          <span class="avatar bot"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 2.5V21.5M20 2.5V21.5"/><path d="M7.25 12.75L10.5 16L16.75 9"/></g></svg></span>
-          <div><p class="who">Heimdall <span>#payments &middot; PR 412</span></p><p><b>F1 is proven.</b> Refund runs two times on retry, <code>pay/refund.go:42</code>. The test fails on the pull request and passes on the fix. The merge is blocked.</p></div>
+      <div class="chat-row">
+        <div class="chat-text">
+          <h3>Decide in chat</h3>
+          <p>Heimdall posts each proven finding to your team room. A person answers with one command. Agents can read the room. They cannot approve.</p>
+          <ul class="cmd-list"><li><code>heimdall uphold F1</code><span>Keep the block</span></li><li><code>heimdall dismiss F1 reason</code><span>Remove it, with a reason</span></li></ul>
         </div>
-        <div class="msg">
-          <span class="avatar">MR</span>
-          <div><p class="who">Maria</p><p><code>heimdall uphold F1</code></p></div>
+        <div class="chat card shine" aria-label="Example: a proven finding in Slack">
+          <div class="chat-bar"><img src="brands/slack.svg" alt=""><b># payments</b><span>Example</span></div>
+          <div class="msg">
+            <span class="avatar bot" aria-hidden="true"></span>
+            <div><p class="who">Heimdall <span class="app">APP</span><time>10:42</time></p>
+              <div class="attach"><p class="a-t">F1 is proven: refund runs two times on retry</p><p class="a-m"><code>pay/refund.go:42</code> in PR #412</p><p class="a-r"><i class="f">fail</i><i class="f">fail</i><i class="p">pass</i><b>Merge blocked</b></p></div>
+            </div>
+          </div>
+          <div class="msg">
+            <span class="avatar" aria-hidden="true">MR</span>
+            <div><p class="who">Maria <time>10:44</time></p><p><code>heimdall uphold F1</code></p></div>
+          </div>
         </div>
-        <p class="chat-note">Example. Only people on your list can give commands. Agents can read the room but cannot approve.</p>
       </div>
     </div>
   </section>
@@ -216,7 +225,7 @@
         <p class="req">You need admin access to the repository, the <a href="https://cli.github.com">gh CLI</a>, <a href="https://go.dev/dl/">Go 1.27</a> and a model key.</p>
         <p class="more"><a href="https://github.com/prathameshk421/Heimdall/blob/main/deploy/action/README.md">Action guide &#8599;</a><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/SETUP.md">Self-hosted guide &#8599;</a></p>
       </div>
-      <div class="term card">
+      <div class="term card shine">
         <div class="term-bar">
           <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
           <div class="tabs" role="tablist" aria-label="Setup method">
