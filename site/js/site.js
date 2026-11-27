@@ -50,19 +50,65 @@
     });
   });
 
-  // Copy buttons.
+  // Copy: the visible panel's commands, without comments or "$" prompts.
   document.querySelectorAll('.copy-btn').forEach(function (btn) {
+    var label = btn.querySelector('span');
     btn.addEventListener('click', function () {
-      var code = btn.parentElement.querySelector('code').textContent;
+      var panel = btn.closest('.term').querySelector('[role="tabpanel"]:not([hidden]) code');
+      var text = Array.prototype.map.call(panel.childNodes, function (n) {
+        return n.nodeType === 1 && (n.classList.contains('c') || n.classList.contains('pr')) ? '' : n.textContent;
+      }).join('').split('\n').map(function (l) { return l.replace(/^\s+/, ''); }).filter(Boolean).join('\n');
       var done = function (ok) {
-        btn.textContent = ok ? 'Copied' : 'Select';
+        label.textContent = ok ? 'Copied' : 'Select the text';
         btn.classList.toggle('ok', ok);
-        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 1600);
+        setTimeout(function () { label.textContent = 'Copy'; btn.classList.remove('ok'); }, 1600);
       };
-      if (navigator.clipboard) navigator.clipboard.writeText(code).then(function () { done(true); }, function () { done(false); });
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
       else done(false);
     });
   });
+
+  // Cards: a soft light follows the pointer.
+  document.querySelectorAll('.card').forEach(function (card) {
+    card.addEventListener('pointermove', function (e) {
+      var r = card.getBoundingClientRect();
+      card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+      card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    });
+  });
+
+  // Integrations: curved beams from each tool to the hub and from the hub to each chat app.
+  var flow = document.getElementById('flow');
+  var hub = document.getElementById('hub');
+  if (flow && hub) {
+    var svg = flow.querySelector('.beams');
+    var ns = 'http://www.w3.org/2000/svg';
+    var draw = function () {
+      var box = flow.getBoundingClientRect();
+      var h = hub.getBoundingClientRect();
+      var hx = h.left + h.width / 2 - box.left, hy = h.top + h.height / 2 - box.top;
+      svg.setAttribute('viewBox', '0 0 ' + box.width + ' ' + box.height);
+      svg.innerHTML = '<defs><linearGradient id="beamGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="' + box.width + '" y2="0"><stop offset="0" stop-color="#6b97ff" stop-opacity="0"/><stop offset=".5" stop-color="#6b97ff"/><stop offset="1" stop-color="#ff9670"/></linearGradient></defs>';
+      flow.querySelectorAll('[data-beam]').forEach(function (n, i) {
+        var r = n.getBoundingClientRect();
+        var out = n.dataset.beam === 'out';
+        var x = out ? r.left - box.left : r.right - box.left, y = r.top + r.height / 2 - box.top;
+        var x1 = out ? hx + h.width / 2 : x, y1 = out ? hy : y, x2 = out ? x : hx - h.width / 2, y2 = out ? y : hy;
+        var mx = (x1 + x2) / 2;
+        var d = 'M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2;
+        ['base', 'pulse'].forEach(function (cls) {
+          var p = document.createElementNS(ns, 'path');
+          p.setAttribute('d', d);
+          p.setAttribute('class', cls);
+          if (cls === 'pulse') p.style.animationDelay = (i * 0.45) + 's';
+          svg.appendChild(p);
+        });
+      });
+    };
+    if (window.ResizeObserver) new ResizeObserver(draw).observe(flow);
+    window.addEventListener('load', draw);
+    draw();
+  }
 
   // Demo video in a dialog. Closing it pauses the video.
   var dialog = document.getElementById('demo');
