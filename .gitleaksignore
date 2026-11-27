@@ -331,3 +331,8 @@ cdcfcf22545fe357eea47ca6398ca6f2e22478d9:internal/app/record/record_test.go:gene
 2a501bd0cb7c78c301cb03d21a4babfe5c0d739c:cmd/heimdall/action_test.go:generic-api-key:24
 716709ab938b6cb0cce77aef50a7d4dc30a07e77:internal/platform/config/action_test.go:generic-api-key:13
 # Made-up values in the P-AM15 action tests (Nov 21, product-build branch): a counting hex log key and "sk-" + "...-model-key-value".
+# Nov 27: made-up values in tests. AKIAABCDEF... is an alphabet sequence that the card redaction test must scrub;
+# ticket_test.go line 29 is a test-case name. Only these exact findings are ignored.
+2061c6c2c9be924cff0d109c967419508d36abf7:cmd/heimdall/cards_stageb_test.go:aws-access-token:38
+2061c6c2c9be924cff0d109c967419508d36abf7:cmd/heimdall/cards_stageb_test.go:aws-access-token:47
+daaf89bbdc9c8e1c1f65a394945ea7e2e6154f73:internal/app/intake/ticket_test.go:generic-api-key:29
