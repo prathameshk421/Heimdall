@@ -297,9 +297,9 @@ section h2 { max-width: 20ch; }
 @media (max-width: 900px) { .bento > .card { grid-column: span 6; grid-row: auto; } }
 
 /* Integrations: the tool wheel (after Tool Wheel by Louis Studios). */
-.wheel { position: relative; aspect-ratio: 939 / 780; max-height: 760px; margin-inline: auto; overflow: hidden; container-type: inline-size; }
+.wheel { position: relative; height: clamp(600px, 68vw, 800px); overflow: hidden; container-type: inline-size; }
 .wheel-head { position: absolute; z-index: 2; top: 7%; left: 50%; transform: translateX(-50%); width: min(620px, 86%); text-align: center; display: grid; justify-items: center; }
-.wheel-head h2 { max-width: 18ch; font-size: clamp(28px, 4.4cqw, 52px); }
+.wheel-head h2 { max-width: 18ch; font-size: clamp(28px, 4cqw, 52px); }
 .wheel-head .sub { margin-top: var(--s3); font-size: clamp(14px, 1.7cqw, 17px); }
 .wheel-svg { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--ink); }
 .wheel-svg .ring { fill: none; stroke: var(--line-2); stroke-width: 1; }
@@ -317,6 +317,15 @@ section h2 { max-width: 20ch; }
 .wheel-label b { font-size: clamp(14px, 1.8cqw, 18px); color: var(--ink); }
 .wheel-label span { font-size: clamp(12px, 1.5cqw, 15px); color: var(--muted); }
 @media (max-width: 640px) { .wheel { aspect-ratio: auto; height: 640px; } .wheel-head { top: 4%; width: 92%; } }
+.supports { margin-top: var(--s4); display: grid; grid-template-columns: 1.3fr 1fr 1.2fr; }
+.sup { padding: var(--s5) var(--s6); }
+.sup + .sup { border-left: 1px solid var(--line); }
+.sup-k { margin: 0 0 var(--s4); font: 500 var(--t12)/1.4 var(--mono); color: var(--muted); }
+.sup ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+.sup li { display: inline-flex; align-items: center; gap: var(--s2); height: 32px; padding: 0 var(--s3); border: 1px solid var(--line); border-radius: 999px; background: var(--card-2); font-size: var(--t14); font-weight: 520; color: var(--ink); }
+.sup img { width: 16px; height: 16px; }
+.mono-ic { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 2px; border-radius: 4px; border: 1px solid var(--line-2); font: 650 9px/1 var(--mono); color: var(--muted); }
+@media (max-width: 900px) { .supports { grid-template-columns: minmax(0, 1fr); } .sup + .sup { border-left: 0; border-top: 1px solid var(--line); } }
 .chat-row { margin-top: var(--s8); display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--s8); align-items: center; }
 .chat-text h3 { font-size: clamp(26px, 3vw, 36px); font-stretch: 75%; font-weight: 640; line-height: 1.05; margin-bottom: var(--s3); }
 .chat-text p { color: var(--muted); }
