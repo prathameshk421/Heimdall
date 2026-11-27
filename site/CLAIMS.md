@@ -3,12 +3,12 @@
 Every claim on the landing page, with its source file and line. Paths are relative to the repo root on
 `product-build`. The page links each number to the same place on
 `https://github.com/prathameshk421/Heimdall/blob/product-build/`. If a source changes, update the page and this table
-in the same commit. The v5 page is kept as `site/previous-v6.html` (and v4 as `site/previous-v5.html`). The v6 page
+in the same commit. The v5 page is kept as `site/archive/previous-v6.html` (and v4 as `site/archive/previous-v5.html`). The v6 page
 reorders the sections and puts the numbers in tables; the claims below map to its sections as noted.
 
 
 v7 (`site-v7`) changes only color, texture and art. No text moved, so every row below still holds. The v6 page is
-kept as `site/previous-v7.html`. Two new items carry words or meaning:
+kept as `site/archive/previous-v7.html`. Two new items carry words or meaning:
 
 | Item | Source |
 |---|---|

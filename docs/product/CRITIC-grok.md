@@ -16,9 +16,9 @@ Checked:
 
 Repo facts used as measurements, not as marketing:
 
-- 19 Nov 2026, ticket KAN-26: tests were rejected once, then verified red-first in three runs, commit `ab0d649`. Two of three reviewers stopped at an 8000-token reasoning cap with zero output. The gate stayed red. A person closed PR 16. Ticketless PR 15 was not reviewed. `docs/LIVE_RUN_H11.md`
-- Token estimate for that run: about $0.24. OpenCode recorded cost 0. The provider balance was not read. `docs/LIVE_RUN_H11.md`
-- `heimdall-server` idle 41.8 MiB, 63.9 MiB during work on 7 Nov, runner 10.7 MiB. The blog says this is not the whole stack. `docs/BLOG_MEDIUM.md`
+- 19 Nov 2026, ticket KAN-26: tests were rejected once, then verified red-first in three runs, commit `ab0d649`. Two of three reviewers stopped at an 8000-token reasoning cap with zero output. The gate stayed red. A person closed PR 16. Ticketless PR 15 was not reviewed. `docs/archive/hackathon/LIVE_RUN_H11.md`
+- Token estimate for that run: about $0.24. OpenCode recorded cost 0. The provider balance was not read. `docs/archive/hackathon/LIVE_RUN_H11.md`
+- `heimdall-server` idle 41.8 MiB, 63.9 MiB during work on 7 Nov, runner 10.7 MiB. The blog says this is not the whole stack. `docs/blog/BLOG_MEDIUM.md`
 
 ## 1. Verdicts
 

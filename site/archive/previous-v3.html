@@ -3,10 +3,10 @@
 <title>Heimdall</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="description" content="Heimdall makes pull requests safe. No more LGTM. No blind trust in one agent. Tests from the ticket, reviewers with context, and a human approval before main.">
-<link rel="icon" href="art/helm-64.png">
+<link rel="icon" href="../art/helm-64.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preload" as="image" href="art/asgard-xl.webp" fetchpriority="high">
+<link rel="preload" as="image" href="../art/asgard-xl.webp" fetchpriority="high">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
 /* One system, taken from the painting. Pearl paper, plum ink, one gold accent.
@@ -278,7 +278,7 @@ details p { padding: 0 0 18px; color: var(--muted); font-size: 15.5px; max-width
 .foot-top a { display: block; text-decoration: none; color: var(--muted); padding: 3px 0; transition: color .2s; }
 .foot-top a:hover { color: var(--accent); }
 .foot-top p { color: var(--muted); max-width: 32ch; }
-.wordmark { font-family: var(--f-display); font-size: clamp(64px, 17.5vw, 252px); line-height: .82; letter-spacing: .04em; text-align: center; padding-top: 24px; background: url("art/strip.webp") 50% 55% / cover; -webkit-background-clip: text; background-clip: text; color: transparent; user-select: none; }
+.wordmark { font-family: var(--f-display); font-size: clamp(64px, 17.5vw, 252px); line-height: .82; letter-spacing: .04em; text-align: center; padding-top: 24px; background: url("../art/strip.webp") 50% 55% / cover; -webkit-background-clip: text; background-clip: text; color: transparent; user-select: none; }
 .foot-base { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); padding-top: 14px; padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
 .runes { letter-spacing: .35em; color: var(--accent); }
 
@@ -339,7 +339,7 @@ details p { padding: 0 0 18px; color: var(--muted); font-size: 15.5px; max-width
 
 <nav class="nav" id="nav" aria-label="Main">
   <div class="nav-in">
-    <a class="brand" href="#top" aria-label="Heimdall, back to the top"><img src="art/helm.webp" width="32" height="32" alt=""><span>HEIMDALL</span></a>
+    <a class="brand" href="#top" aria-label="Heimdall, back to the top"><img src="../art/helm.webp" width="32" height="32" alt=""><span>HEIMDALL</span></a>
     <div class="nav-links">
       <a href="#why">Why</a>
       <a href="#how" data-film="0.2">How it works</a>
@@ -357,7 +357,7 @@ details p { padding: 0 0 18px; color: var(--muted); font-size: 15.5px; max-width
 <!-- ═════════ THE FILM ═════════ -->
 <header class="film" id="top">
   <div class="stage" id="stage">
-    <img class="cam" id="cam" src="art/asgard-xl.webp" width="2736" height="1536" fetchpriority="high" decoding="async" alt="Heimdall stands on a cliff with his golden horn. A rainbow bridge runs from his feet to the golden city of Asgard, where small glass worlds circle the towers.">
+    <img class="cam" id="cam" src="../art/asgard-xl.webp" width="2736" height="1536" fetchpriority="high" decoding="async" alt="Heimdall stands on a cliff with his golden horn. A rainbow bridge runs from his feet to the golden city of Asgard, where small glass worlds circle the towers.">
     <div class="veil" id="veil"></div>
     <div class="frame">
       <div class="hero" id="hero">
@@ -453,26 +453,26 @@ details p { padding: 0 0 18px; color: var(--muted); font-size: 15.5px; max-width
 
   <div class="moats">
     <article class="card moat rv">
-      <figure><img src="art/m-horn.webp" width="900" height="563" loading="lazy" decoding="async" alt="Heimdall holds his golden horn at the edge of the cliff."></figure>
+      <figure><img src="../art/m-horn.webp" width="900" height="563" loading="lazy" decoding="async" alt="Heimdall holds his golden horn at the edge of the cliff."></figure>
       <div class="moat-body"><span class="no">01</span><h3>No more LGTM</h3><p>The merge stays closed until the tests pass, every finding is closed with evidence, and a human who is not the author approves.</p></div>
     </article>
     <article class="card moat rv">
-      <figure><img src="art/m-realms.webp" width="900" height="562" loading="lazy" decoding="async" alt="Glass worlds circle the golden city of Asgard."></figure>
+      <figure><img src="../art/m-realms.webp" width="900" height="562" loading="lazy" decoding="async" alt="Glass worlds circle the golden city of Asgard."></figure>
       <div class="moat-body"><span class="no">02</span><h3>No blind trust in one agent</h3><p>One agent never writes, tests and approves its own code. A separate agent writes the tests. Agents from other teams review the change.</p></div>
     </article>
     <article class="card moat rv">
-      <figure><img src="art/m-bridge.webp" width="900" height="563" loading="lazy" decoding="async" alt="The bands of the rainbow bridge cross the clouds."></figure>
+      <figure><img src="../art/m-bridge.webp" width="900" height="563" loading="lazy" decoding="async" alt="The bands of the rainbow bridge cross the clouds."></figure>
       <div class="moat-body"><span class="no">03</span><h3>Tests you can trust in CI/CD</h3><p>The tests come from the ticket before the code exists. They fail first, for the right reason. They are locked, and your CI runs them as a required check.</p></div>
     </article>
     <article class="card moat rv">
-      <figure><img src="art/m-ruins.webp" width="900" height="562" loading="lazy" decoding="async" alt="Old stone arches stand on the cliff beside Heimdall."></figure>
+      <figure><img src="../art/m-ruins.webp" width="900" height="562" loading="lazy" decoding="async" alt="Old stone arches stand on the cliff beside Heimdall."></figure>
       <div class="moat-body"><span class="no">04</span><h3>Reviews that know your history</h3><p>Each reviewer agent knows what its owner knows: the code they own, the rules that must hold, and the past incidents.</p></div>
     </article>
   </div>
 </section>
 
 <section class="sec" id="duel">
-  <div class="pstage rv" style="--bgimg:url(art/sky-a.webp)">
+  <div class="pstage rv" style="--bgimg:url(../art/sky-a.webp)">
     <div class="duel-title"><span class="kicker">Same pull request, two reviews</span><h3 style="margin-top:12px">A generic AI reviewer reads the diff. Heimdall reads <em>the diff, the ticket, the decision and the incident.</em></h3></div>
     <div class="duel">
       <div class="card">
@@ -502,7 +502,7 @@ details p { padding: 0 0 18px; color: var(--muted); font-size: 15.5px; max-width
     <h2>No model decides <em>the merge.</em></h2>
     <p class="lede">Agents collect the evidence. A short function decides. It has five conditions, and you can read all of it. Turn them on and off to see the result.</p>
   </div>
-  <div class="pstage rv" style="--bgimg:url(art/sky-b.webp)">
+  <div class="pstage rv" style="--bgimg:url(../art/sky-b.webp)">
     <div class="gate-grid">
       <div class="code" aria-label="The merge rule, simplified">
         <div class="file"><span>gate/rule.go</span><span>simplified</span></div>
@@ -547,7 +547,7 @@ details p { padding: 0 0 18px; color: var(--muted); font-size: 15.5px; max-width
     <h2>Set it up with <em>one prompt.</em></h2>
     <p class="lede">Copy the prompt. Paste it into the coding agent that you use in your repository. The agent does the setup and asks you before it saves your context.</p>
   </div>
-  <div class="pstage rv" style="--bgimg:url(art/sky-a.webp)">
+  <div class="pstage rv" style="--bgimg:url(../art/sky-a.webp)">
     <div class="setup">
       <div class="prompt">
         <div class="prompt-bar"><span>setup-prompt.txt</span><button class="btn" type="button" data-copy><svg aria-hidden="true"><use href="#i-copy"/></svg>Copy</button></div>
@@ -572,7 +572,7 @@ details p { padding: 0 0 18px; color: var(--muted); font-size: 15.5px; max-width
 <!-- ═════════ QUESTIONS ═════════ -->
 <section class="sec" id="questions">
   <div class="cs">
-    <div class="cs-art rv"><img src="art/cs.webp" width="1100" height="906" loading="lazy" decoding="async" alt="Heimdall stands by old stone arches on the cliff, with the rainbow bridge behind him."></div>
+    <div class="cs-art rv"><img src="../art/cs.webp" width="1100" height="906" loading="lazy" decoding="async" alt="Heimdall stands by old stone arches on the cliff, with the rainbow bridge behind him."></div>
     <div class="cs-faq rv">
       <span class="kicker">Questions</span>
       <h2>Asked at <em>the gate.</em></h2>
@@ -588,7 +588,7 @@ details p { padding: 0 0 18px; color: var(--muted); font-size: 15.5px; max-width
 
 <!-- ═════════ ARRIVAL ═════════ -->
 <section class="arrival" aria-labelledby="endTitle">
-  <img src="art/arrival.webp" srcset="art/arrival-sm.webp 1280w, art/arrival.webp 2400w" sizes="100vw" width="2400" height="1347" loading="lazy" decoding="async" alt="Heimdall stands by old stone arches. The rainbow bridge curves over the clouds to Asgard.">
+  <img src="../art/arrival.webp" srcset="art/arrival-sm.webp 1280w, art/arrival.webp 2400w" sizes="100vw" width="2400" height="1347" loading="lazy" decoding="async" alt="Heimdall stands by old stone arches. The rainbow bridge curves over the clouds to Asgard.">
   <div class="in rv">
     <span class="kicker">Start this week</span>
     <h2 id="endTitle">Put a guard <em>on main.</em></h2>

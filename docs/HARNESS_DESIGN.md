@@ -2,7 +2,7 @@
 
 Status: **final**, Nov 17, 2026. Owner decisions after the KAN-24 and KAN-25 live runs. This file is the spec and the
 plan; an agent with no other context executes it step by step (Part C). The *why* is in `docs/HARNESS_ROOT_CAUSES.md`
-(bugs B1 to B14, causes C1 to C8, fixes A1 to A8); the live evidence is in `docs/LIVE_RUN_KAN24.md`. Under D138 this
+(bugs B1 to B14, causes C1 to C8, fixes A1 to A8); the live evidence is in `docs/archive/hackathon/LIVE_RUN_KAN24.md`. Under D138 this
 file outranks `AGENT_INTERACTION_ARCH.md`, `BUILD_PLAN.md` and the parts of `TECH_SPEC.md` it contradicts (section 5
 the workflow engine, 6.2 the task index, 12.4 how the gate is evaluated); step H12 rewrites those sections.
 
@@ -365,7 +365,7 @@ green (except the known `secrets` false positive listed in PROGRESS, which needs
   to this file. One line at the top of `docs/BUILD_PLAN.md` and `docs/AGENT_INTERACTION_ARCH.md`: "Superseded where it
   conflicts by docs/HARNESS_DESIGN.md (D170)."
 - **Done when:** committed `H0: adopt the harness design (D170)` (together with `HARNESS_DESIGN.md`,
-  `HARNESS_ROOT_CAUSES.md`, `LIVE_RUN_KAN24.md` if still untracked).
+  `HARNESS_ROOT_CAUSES.md`, `docs/archive/hackathon/LIVE_RUN_KAN24.md` if still untracked).
 
 ### H1. View fields and new events
 
@@ -593,7 +593,7 @@ green (except the known `secrets` false positive listed in PROGRESS, which needs
   tests task, verified, committed. Then implement the change on the ticket branch of the fixture repo and open a PR to
   `heimdall-test/demo-base`; watch checks, pick, three reviews, verify, gate; approve as `rekdfr` (pass that login's
   token explicitly to `gh`); merge when the gate is green. Open one ticketless PR and see it reviewed.
-- **Record:** `docs/LIVE_RUN_H11.md`: timeline, minutes per row, tool calls and refusals per task (from `tool_call`),
+- **Record:** `docs/archive/hackathon/LIVE_RUN_H11.md`: timeline, minutes per row, tool calls and refusals per task (from `tool_call`),
   cost, every defect. A defect is fixed in code with a failing test first and that part re-run; never patched on the VM.
 - **After:** stop the VM: `aws ec2 stop-instances --profile heimdall --region ap-south-1 --instance-ids
   i-019af6359c549dfb0`.

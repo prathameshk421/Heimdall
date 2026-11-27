@@ -2,7 +2,7 @@
 
 Scope: rows, reconciler, effects and the outbox, the event store, restart and recovery, concurrency, idempotency,
 timeouts, backpressure, observability and failure modes. Sources: `TECH_SPEC.md` 2 to 6, `HARNESS_DESIGN.md` B2 to B8,
-the code at `8dfafd3`, and the live runs H11 (KAN-26, `LIVE_RUN_H11.md`) and H13 (PRs #11 and #18, PROGRESS H13).
+the code at `8dfafd3`, and the live runs H11 (KAN-26, `docs/archive/hackathon/LIVE_RUN_H11.md`) and H13 (PRs #11 and #18, PROGRESS H13).
 
 ## 1. Desired state
 

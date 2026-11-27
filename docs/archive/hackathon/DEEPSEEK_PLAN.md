@@ -204,7 +204,7 @@ Last commit: `092b72c T12: compose verification passed (all services healthy, he
 | `internal/transport/mcp/` | **T28 stubs** (`api.go`, `rpc.go`) + `doc.go` + `fakes_test.go` (rig, **zero** tests) | all tests, then the handler/tools/bridge |
 | `internal/app/engine/` | **T23 stubs** (`engine.go`, `step.go`) + `fakes_test.go` (14 steps, enforcing store, **zero** tests) | design note, all tests, engine |
 | `docs/PROGRESS.md` | modified with T36/T04 notes | keep; fold into the T36 commit |
-| `docs/HANDOFF.md` | untracked handoff | commit as docs in the first docs commit |
+| `docs/archive/hackathon/HANDOFF.md` | untracked handoff | commit as docs in the first docs commit |
 | `testdata/kan/` | synthetic ADF goldens for T36 | **stand-ins**, not real KAN tickets until T93 |
 | `internal/adapters/github/live_test.go` | untracked live test from T04 | decide: commit with T04 evidence or park; it is test code |
 | `heimdall` (repo root) | stray binary | **never commit**; add nothing to `.gitignore` without asking |
@@ -273,7 +273,7 @@ split by file. W9 and W8 are independent of everything else.
 1. `git status --short`, `git log --oneline -3`, `df -h /`.
 2. `export PATH=$HOME/.local/go/bin:$PATH; make fast` — save the full log, record the exact red set.
 3. Confirm the untracked list matches section 2.1. If a file changed under you, read it before touching it.
-4. Do not delete `heimdall`, `docs/HANDOFF.md`, `testdata/kan/` or `internal/adapters/github/live_test.go`.
+4. Do not delete `heimdall`, `docs/archive/hackathon/HANDOFF.md`, `testdata/kan/` or `internal/adapters/github/live_test.go`.
 5. Write the red set into `PROGRESS.md` under the current session.
 
 **Acceptance:** every remaining red is named in section 2.2 or explained in `PROGRESS.md`. No unrelated
@@ -985,7 +985,7 @@ the lead (the half-done work needs judgment and the red is already there).
 ```
 You are a helper on the Heimdall repo at /home/aarush_linux/projects/switch_shi.
 Read, in this order: AGENTS.md, docs/CODING_STANDARDS.md, docs/TEST_STRATEGY.md sections 2, 3 and 5,
-docs/DEEPSEEK_PLAN.md section 1 and the W-item below, and the doc.go of every package you touch.
+docs/archive/hackathon/DEEPSEEK_PLAN.md section 1 and the W-item below, and the doc.go of every package you touch.
 
 Rules:
 - Write the failing test FIRST and run it. Paste the assertion failure in your report. A compile error is
@@ -1066,7 +1066,7 @@ T44: review validation, citation checks, dedup and output filter
 T93: live Jira poll, overlap window and dedupe spike
 ```
 
-One commit per task. Docs/evidence ride with their task. `docs/HANDOFF.md` goes in the first docs commit.
+One commit per task. Docs/evidence ride with their task. `docs/archive/hackathon/HANDOFF.md` goes in the first docs commit.
 
 ---
 

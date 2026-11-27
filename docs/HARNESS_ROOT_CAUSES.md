@@ -1,7 +1,7 @@
 # Harness root causes: what the live runs broke, why, and the architectural fixes
 
 From the live runs KAN-24 and KAN-25 (Nov 16 to 17, 2026) on the overhaul build. Evidence and timelines are in
-`docs/LIVE_RUN_KAN24.md`; the record of every agent tool call is the `tool_call` table on the VM. This file is the
+`docs/archive/hackathon/LIVE_RUN_KAN24.md`; the record of every agent tool call is the `tool_call` table on the VM. This file is the
 thinking: the bug log, the few causes underneath the bugs, and the changes that remove the causes rather than the
 symptoms.
 

@@ -480,7 +480,7 @@ All three are PRs into `heimdall-test/demo-base`. The manifest has no field for 
 |---|---|---|---|
 | fixture-kan22-clean | #10, merged | merge commit `f77ddee`, first parent `4a0f699` | Merged after a person approved it. The reviewers filed 2 findings (1 confirmed, 0 with proof), both about the OpenAPI spec. The last commit of the PR, `59effae`, fixes them. No later commit on `demo-base` touches `healthz`. The only later change to the API is KAN-26 in the payments validation. |
 | fixture-kan24-clean | #13, closed unmerged | commit `c46ec4f`, parent `6c4380a` | I read the diff: another merchant's payment and an unknown id give the same 404, the missing header gives 401, and the tests pass. The PR was closed on 2026-11-19 by `prathameshk421` because it was recorded with the old event shapes, not because of a defect (comment on the PR). Its review never finished, so it has no finding at all. |
-| fixture-kan26-clean | #16, merged | merge commit `d79cd08`, first parent `366f529` | Merged after three reviews with no findings and a person's approval (`docs/LIVE_RUN_H11.md`). It is the tip of `demo-base`, so nothing came later. |
+| fixture-kan26-clean | #16, merged | merge commit `d79cd08`, first parent `366f529` | Merged after three reviews with no findings and a person's approval (`docs/archive/hackathon/LIVE_RUN_H11.md`). It is the tip of `demo-base`, so nothing came later. |
 
 Because KAN-24 was never merged, "no later fix" holds only in the sense that no commit follows it. Its case rests on my
 reading of the diff and on the tests. KAN-24's PR has two commits: the tests (`6c4380a`) and the code (`c46ec4f`).

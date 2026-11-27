@@ -24,11 +24,11 @@ A team connects a repository, a tracker and chat once. From then on:
 
 | Step or branch | Built | Verified live | Evidence |
 |---|---|---|---|
-| Ticket → room → branch → test task → red first → commit | yes | **yes** (KAN-26) | `LIVE_RUN_H11.md` |
-| PR → slop → CI → acceptance → pick → three reviews | yes | **yes** (KAN-26 PR #16, PR #18) | `LIVE_RUN_H11.md`; PR #18 events |
+| Ticket → room → branch → test task → red first → commit | yes | **yes** (KAN-26) | `docs/archive/hackathon/LIVE_RUN_H11.md` |
+| PR → slop → CI → acceptance → pick → three reviews | yes | **yes** (KAN-26 PR #16, PR #18) | `docs/archive/hackathon/LIVE_RUN_H11.md`; PR #18 events |
 | E1 and E2 verification | yes | **yes** (PR #18: 33 verified, 3 E2) | PROGRESS H13 E2 run |
-| Gate → approval on head → merge | yes | **yes** (PR #16 merged `d79cd08`) | `LIVE_RUN_H11.md` finish |
-| Reopen after close | yes (D8) | **yes** | `LIVE_RUN_H11.md` D8 |
+| Gate → approval on head → merge | yes | **yes** (PR #16 merged `d79cd08`) | `docs/archive/hackathon/LIVE_RUN_H11.md` finish |
+| Reopen after close | yes (D8) | **yes** | `docs/archive/hackathon/LIVE_RUN_H11.md` D8 |
 | Ticketless PR reviewed, gate red | yes (D174) | **yes** (PR #18) | PR #18 events 2 to 6 |
 | Push mid-review supersedes tasks | yes | **yes** (PR #18, three heads) | PR #18 events |
 | Quiet agent: re-wake, stall wake, fail, cap | yes (D172, D173) | partly (stall wake yes; cap not hit live) | PR #18 reviewer-2 |

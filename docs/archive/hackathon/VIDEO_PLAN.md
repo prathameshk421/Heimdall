@@ -2,7 +2,7 @@
 
 Rewritten Nov 7, 2026, 21:00 IST, after owner direction. Deadline **23:59 IST**. Internal: upload 23:15, submit 23:30.
 
-**Superseded in part (21:40 IST):** the built film is `video/heimdall/` (first cut `video/heimdall-demo-v1-norm.mp4`, 2:00). Its script is `video/heimdall/vo/script.txt` and its look follows `docs/VIDEO_DESIGN.md`. The film runs on real Jira, Discord, Telegram and GitHub captures, with less text than the script below.
+**Superseded in part (21:40 IST):** the built film is `video/heimdall/` (first cut `video/heimdall-demo-v1-norm.mp4`, 2:00). Its script is `video/heimdall/vo/script.txt` and its look follows `docs/archive/hackathon/VIDEO_DESIGN.md`. The film runs on real Jira, Discord, Telegram and GitHub captures, with less text than the script below.
 
 ## The pitch the whole video sells
 

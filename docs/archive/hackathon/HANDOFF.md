@@ -35,7 +35,7 @@ The branch was pushed to `origin/heimdall-build` on Nov 18, 2026 (81 commits ove
 
 ## Start here (Nov 22, 2026): H0 to H13 are done
 
-- **H11** ran KAN-26 from ticket to merge (PR #16, `d79cd08`); see `docs/LIVE_RUN_H11.md`.
+- **H11** ran KAN-26 from ticket to merge (PR #16, `d79cd08`); see `docs/archive/hackathon/LIVE_RUN_H11.md`.
 - **H13** (D175) built the profiler seat and the `profile` row, live on the fixture repository: propose, owner approval
   in chat (`heimdall approve-profile <ticket> <id>` in `#heimdall-reviews`), Heimdall's trial, owner promotion, and a
   revision with `heimdall reprofile <ticket> <note>` (D184). The active profile is `49423b50` (tests plus a

@@ -2,7 +2,7 @@
 
 Target: Best Blog side track. It is judged on **clarity, accuracy, and how much it helps a first-time Switch user** (DevTools Academy page). So a pure engineering flex loses. The post must teach Switch while it shows the engineering. Publish by 23:30 IST on Nov 7, and link it in the submission.
 
-Raw material: `blog.md` (decision log, some facts now old: it says AWS with 8 vCPU preferred, the VM has 2) and `docs/PROGRESS.md` (the live failures).
+Raw material: `docs/blog/HACKATHON_WRITEUP.md` (decision log, some facts now old: it says AWS with 8 vCPU preferred, the VM has 2) and `docs/PROGRESS.md` (the live failures).
 
 ## 1. What is worth writing about
 

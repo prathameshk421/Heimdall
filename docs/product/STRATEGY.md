@@ -117,7 +117,7 @@ What is not a moat: mining sessions (five open tools do it), approval on the hea
 The engine is solid: event-sourced Go server, reconciler, outbox, pure-Go gate, rootless no-network sandbox, narrowed
 GitHub App tokens, card ranker and learning loop. The shell is a hackathon demo: Switch is the only chat and agent
 runtime (`internal/platform/config/config.go:551`), agents are 5 resident seats, only a Go runner profile ships, the
-board has no auth, install takes an afternoon, and the live run (H11) reached tests but not a merge (`docs/HANDOFF.md`).
+board has no auth, install takes an afternoon, and the live run (H11) reached tests but not a merge (`docs/archive/hackathon/HANDOFF.md`).
 Full inventory: `research/` notes and draft 1 section 3.
 
 ## 7. Lightweight by design (claims to measure, not to write)

@@ -1,6 +1,6 @@
 # Heimdall demo script: shot list (4 minutes)
 
-Source: `docs/DEMO.md` (scene timings and claims). Each claim was checked against `docs/PROGRESS.md` and the test names in `cmd/heimdall-server/`.
+Source: `docs/archive/hackathon/DEMO.md` (scene timings and claims). Each claim was checked against `docs/PROGRESS.md` and the test names in `cmd/heimdall-server/`.
 
 Labels:
 

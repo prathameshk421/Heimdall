@@ -813,7 +813,7 @@ Inputs: a review of the spec's three risk areas (the VM, chat platforms, GitHub 
 
 **D105. Stage 4 is the product stage.** G4 is rescoped around the product experience and agent quality (see TRACKER): `heimdall setup` and `heimdall connect` with platform choice and credential prompts, `doctor`, clear errors, evals, then the remaining hardening. Frontend note (Nov 4): TypeScript is allowed for a frontend if htmx cannot do the job; the server, CLI and every performance path stay Go.
 
-**D106. `blog.md` is the decision journal.** Every decision in this document gets a short entry with the reason and what was given up.
+**D106. `docs/blog/HACKATHON_WRITEUP.md` is the decision journal.** Every decision in this document gets a short entry with the reason and what was given up.
 
 ## Spikes added or changed (D61 list)
 
@@ -1147,7 +1147,7 @@ Every task was walked in build order against what it needs and what the product 
 
 # PART 17. Decisions from the H11 live run (Nov 21, 2026)
 
-The owner asked the agent to choose and build these ("use your own recommendations and do it"). Each was found live on KAN-26 (`docs/LIVE_RUN_H11.md`).
+The owner asked the agent to choose and build these ("use your own recommendations and do it"). Each was found live on KAN-26 (`docs/archive/hackathon/LIVE_RUN_H11.md`).
 
 **D171. Agents get the Deploy key written into their config (amends D163).** The Switch 0.31 controller writes each agent unit's environment only at launch and only for an allowlist (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`), so `{env:DEPLOY_API_KEY}` never resolves (B4). The templates now name `{{file:secrets/deploy_api_key}}`, and `deploy/agents/install.sh` (fresh install) and `scripts/ops/install-agent-configs.sh` (rewrite) fill it from the server's key file, as they do the MCP bearer. The installer refuses before writing anything when the key file is missing. The controller installer's `DEPLOY_API_KEY` line in `agents.env` no longer reaches an agent.
 

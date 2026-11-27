@@ -39,7 +39,7 @@ The cost is verbosity. Our repository has about 115,000 lines of Go, tests inclu
 
 The backend has two programs and one database.
 
-![The Heimdall backend: two Go programs and one database.](assets/medium/fig1-architecture.png)
+![The Heimdall backend: two Go programs and one database.](../assets/medium/fig1-architecture.png)
 *The Heimdall backend: two Go programs and one database.*
 
 **`heimdall-server`** is one process. It polls Jira and GitHub, reads the Switch event stream, runs the workflow engine, serves the tools that agents call, evaluates the merge gate and renders the dashboard. Agents never touch GitHub, Postgres or the sandbox directly. They call tools on the server, and the server decides what to do with each call.
@@ -103,14 +103,14 @@ Each job is a fresh rootless Podman container:
 --mount src.tgz,ro   --mount module-cache,ro
 ```
 
-![One sandbox job, from request to verdict.](assets/medium/fig2-sandbox-job.png)
+![One sandbox job, from request to verdict.](../assets/medium/fig2-sandbox-job.png)
 *One sandbox job, from request to verdict.*
 
 We chose rootless Podman over Docker because Docker needs a daemon that runs as root. We wanted an unprivileged user that forks a container, waits and exits. The job has no network, so a separate warm step fills a read-only module cache through an exact-host allowlist, and the job runs with `GOPROXY=off`.
 
 That choice cost us more time than any other. Each systemd hardening option we added broke the runtime in a way we did not expect:
 
-![The systemd hardening options that broke rootless Podman, and the fixes.](assets/medium/fig3-systemd-problems.png)
+![The systemd hardening options that broke rootless Podman, and the fixes.](../assets/medium/fig3-systemd-problems.png)
 *The systemd hardening options that broke rootless Podman, and the fixes.*
 
 Each option is good advice on its own. Together, under a rootless container runtime, they interact in ways that no single document describes. We now add one option at a time and run a real job after each.
@@ -121,7 +121,7 @@ This is the part we spent the most effort on. Much of the code was written with 
 
 ### Checks in layers
 
-![The checks, in layers.](assets/medium/fig4-check-layers.png)
+![The checks, in layers.](../assets/medium/fig4-check-layers.png)
 *The checks, in layers.*
 
 `make fast` also runs in the git pre-commit hook. A skipped test fails the run.
@@ -130,7 +130,7 @@ This is the part we spent the most effort on. Much of the code was written with 
 
 We enable 24 linters. Most are standard (`errcheck`, `staticcheck`, `gosec`, `errorlint`, `bodyclose`, `contextcheck`). These are the ones that changed how we wrote code:
 
-![The lint rules that changed how we wrote code.](assets/medium/fig5-lint-rules.png)
+![The lint rules that changed how we wrote code.](../assets/medium/fig5-lint-rules.png)
 *The lint rules that changed how we wrote code.*
 
 ### Why cyclomatic complexity
@@ -182,7 +182,7 @@ We found each of these on the live system, and we checked the facts against Swit
 
 ## The decisions in one table
 
-![Each decision, the options and the cost.](assets/medium/fig6-decisions.png)
+![Each decision, the options and the cost.](../assets/medium/fig6-decisions.png)
 *Each decision, the options and the cost.*
 
 ## What we would do differently

@@ -31,7 +31,7 @@ room; person and agent senders; duplicate, replayed, stale and out-of-order inpu
 | Ack | The agent's first tool call on its task records `task.acked`; there is no ack tool | `TECH_SPEC.md` 6.2 item 3 |
 | Liveness | Ack window 3 min, stall 10 min, provider probe, one stall wake, then fail; 2 failures per input, then a person | `internal/domain/liveness/next.go`; `rows.go` `capTask`; live PR #18: reviewer-2 `task.rewoken{stall}` 21:50, ack 21:55, review 21:57 |
 | New head | A live task on an old input is superseded and a fresh one assigned | `tasks.go` (`TaskSuperseded`); live PR #18 three heads |
-| Reopen | `pr.reopened` resumes the change (D8) | `LIVE_RUN_H11.md` D8; `bb04269` |
+| Reopen | `pr.reopened` resumes the change (D8) | `docs/archive/hackathon/LIVE_RUN_H11.md` D8; `bb04269` |
 | Profile | Profile row assigns `first`, `after-<id>` and `revise-<id>-<t>` tasks (D175, D184) | `rows_review.go` `profileNext`; live Nov 21 14:10, 15:07, 19:49 |
 | Commands | Plain `heimdall <verb>` in chat, `/heimdall` on GitHub; parsed only for mapped people; agents' commands ignored | `internal/domain/commands/parse.go:32`; `internal/app/collaboration/commands.go:113-118` |
 | Shared channel | A command must name its ticket unless the channel has one ticket or the verb is repository-scoped (D193) | `commands.go` `HandleSharedRoomMessage` |

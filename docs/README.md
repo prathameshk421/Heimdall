@@ -24,7 +24,7 @@ Start with the top row of the table that fits you.
 | [HEIMDALL_MVP.md](HEIMDALL_MVP.md) | What the MVP does |
 | [TECH_SPEC.md](TECH_SPEC.md) | The technical spec: state machine, evidence, gate, sandbox, commands |
 | [TECH_DESIGN.md](TECH_DESIGN.md) | The first rough design |
-| [BLOG_POST.md](BLOG_POST.md) | How we built it, and why |
+| [BLOG_POST.md](blog/BLOG_POST.md) | How we built it, and why |
 
 ## Build it
 
@@ -55,9 +55,9 @@ Architecture plans written Nov 14, 2026. Nothing in them is built yet.
 
 | Doc | What's in it |
 |---|---|
-| [DEMO.md](DEMO.md), [DEMO_SCRIPT.md](DEMO_SCRIPT.md), [DEMO_RUN.md](DEMO_RUN.md) | Demo script, shot list and run sheet |
-| [VIDEO_PLAN.md](VIDEO_PLAN.md), [VIDEO_DESIGN.md](VIDEO_DESIGN.md) | The demo video |
+| [DEMO.md](archive/hackathon/DEMO.md), [DEMO_SCRIPT.md](archive/hackathon/DEMO_SCRIPT.md), [DEMO_RUN.md](archive/hackathon/DEMO_RUN.md) | Demo script, shot list and run sheet |
+| [VIDEO_PLAN.md](archive/hackathon/VIDEO_PLAN.md), [VIDEO_DESIGN.md](archive/hackathon/VIDEO_DESIGN.md) | The demo video |
 
 ## History
 
-Written during the build and kept as a record: [BRAINSTORM_BACKLOG.md](BRAINSTORM_BACKLOG.md) (decisions D1 to D16x), [STAGE_1_FIXES.md](STAGE_1_FIXES.md), [HANDOFF.md](HANDOFF.md), [DEEPSEEK_PLAN.md](DEEPSEEK_PLAN.md), [WIRING_OWNER_STEPS.md](WIRING_OWNER_STEPS.md), [BLOG_PLAN.md](BLOG_PLAN.md).
+Written during the build and kept as a record: [BRAINSTORM_BACKLOG.md](BRAINSTORM_BACKLOG.md) (decisions D1 to D16x), [STAGE_1_FIXES.md](STAGE_1_FIXES.md), [HANDOFF.md](archive/hackathon/HANDOFF.md), [DEEPSEEK_PLAN.md](archive/hackathon/DEEPSEEK_PLAN.md), [WIRING_OWNER_STEPS.md](archive/hackathon/WIRING_OWNER_STEPS.md), [BLOG_PLAN.md](blog/BLOG_PLAN.md).
