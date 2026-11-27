@@ -277,3 +277,22 @@ Final run: P0 0, P1 2, P2 1. We keep the three, for these reasons:
 - The lab ran end to end: Prove all 12 gave 1 proven and 11 hidden, then Push the fix, Approve e4f5a6b, Merge.
 - **Not verified:** reduced-motion rendering (the pane cannot emulate it; the code sets the final state), the no-WebGL
   still, Safari and Firefox, LCP and weight on a throttled network, and the deployed Vercel copy.
+
+### v9.1 light (27 November 2026)
+
+The owner said v9 was still too plain and asked for light effects. Light now carries the state, as on a real signal:
+
+- **The hero is always a night scene** (its own tokens on `.hero`), in both schemes. Moonlight from behind the gate.
+- **Bloom** (Three.js `UnrealBloomPass`, threshold 0.82): only lamps, the scan line, the check and the shaft glow.
+- **A shaft of light** falls through the gap onto a pool on the ground, with **dust** drifting in it. Its color is the
+  gate's state: warm white at rest, amber while testing, red once F1 is proven. Halos on both lamps and behind F1.
+- **A hand lamp:** a warm point light follows the pointer across the front of the gate.
+- **The rule line** sits dim until a lamp falls on it. It follows the pointer and sweeps slowly at rest. Touch screens
+  and reduced motion show it fully lit.
+- **The proof lab frame** takes the gate's light: amber while testing, red when locked, green when clear.
+- **The close is a night band with a signal head:** red and amber dark, green lit.
+- Cards are pale paper slips in both schemes, so they read under the lamps.
+
+Checked in the Claude Browser pane at 1440 x 900 and 390 x 844: no sideways scroll, no console errors, the idle,
+testing and locked light states, the lamp, the lab light and the close. Scanner unchanged (P0 0, P1 2, P2 1).
+**Not verified:** frame rate on a low-end GPU with bloom on, Safari and Firefox.

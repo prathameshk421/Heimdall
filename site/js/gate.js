@@ -3,6 +3,10 @@
 // it turns red and hangs on the gate, and the gate locks. Illustration; the copy is the lab's (js/lab.js).
 // Every pose is a pure function of the scene time t, so replay, pause and reduced motion need no extra state.
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const COMMENTS = [
   ['Copilot', 'Consider a clearer name for r.'],
@@ -30,7 +34,8 @@ const hero = host && host.closest('.hero');
 const tip = document.getElementById('tip');
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 
-function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+// The hero scopes its own night tokens, so read them from the hero, not the root.
+function css(name) { return getComputedStyle(hero || document.documentElement).getPropertyValue(name).trim(); }
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 const ease = (x) => { x = clamp01(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
 const lerp = (a, b, k) => a + (b - a) * k;
@@ -79,15 +84,15 @@ async function main() {
   if (!host) return;
   let renderer;
   try {
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   } catch (e) {
     document.documentElement.classList.add('no-webgl');
     return;
   }
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const DPR = Math.min(devicePixelRatio, 1.75);
+  renderer.setPixelRatio(DPR);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.setClearColor(0x000000, 0);
   renderer.domElement.setAttribute('aria-hidden', 'true');
   host.prepend(renderer.domElement);
 
@@ -100,18 +105,22 @@ async function main() {
     lampRed: css('--lamp-red'), lampAmber: css('--lamp-amber'), lampGreen: css('--lamp-green'),
   });
   let pal = readPalette();
+  // Cards are paper slips under the lamp, the same in both schemes.
+  const paper = { panel: '#e9ece8', rule: '#bfc7c1', muted: '#4b5651', ink: '#0d1110', red: '#c32e18' };
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(pal.ground, 16, 38);
+  scene.background = new THREE.Color(pal.ground);
+  scene.fog = new THREE.Fog(pal.ground, 15, 36);
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
   const camBase = new THREE.Vector3(2.6, 4.2, 19);
   const look = new THREE.Vector3(-0.6, 2.4, 0);
   const lookWide = look.clone();
 
-  const hemi = new THREE.HemisphereLight(0xffffff, pal.ground2, 1.5);
+  const hemi = new THREE.HemisphereLight(0x9fb0a8, pal.ground2, 0.55);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffffff, 2.4);
-  sun.position.set(-6, 11, 7);
+  // Moonlight from behind and above: rim light on the posts, long shadows toward the viewer.
+  const sun = new THREE.DirectionalLight(0xcfe0ff, 1.1);
+  sun.position.set(-3, 12, -9);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -3, near: 1, far: 40 });
@@ -119,7 +128,7 @@ async function main() {
   scene.add(sun);
 
   // The floor draws only shadows, so the page's own ground shows through and there is no seam.
-  const floorMat = new THREE.ShadowMaterial({ color: pal.iron, opacity: 0.22 });
+  const floorMat = new THREE.ShadowMaterial({ color: 0x000000, opacity: 0.55 });
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
@@ -147,7 +156,7 @@ async function main() {
     lamp.position.set(sx * POST_X, 4.75, 0.33);
     gate.add(lamp);
   }
-  const glow = new THREE.PointLight(pal.lampAmber, 0, 9, 1.6);
+  const glow = new THREE.PointLight(pal.lampAmber, 0, 10, 1.4);
   glow.position.set(0, 4.3, 1.4);
   scene.add(glow);
 
@@ -171,10 +180,92 @@ async function main() {
   const beam = new THREE.Mesh(new THREE.BoxGeometry(2.48, 0.03, 0.03), beamMat);
   scene.add(beam);
 
+  // ---- Light effects. Light is the proof: its color always says the gate's state. ----
+  const radial = (inner, outer) => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, inner); gr.addColorStop(0.25, 'rgba(255,255,255,.35)'); gr.addColorStop(1, outer);
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  };
+  const haloTex = radial('rgba(255,255,255,1)', 'rgba(255,255,255,0)');
+  const additive = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending };
+
+  // A shaft of light falls from behind the gate, through the gap, onto the ground in front.
+  const shaftMat = new THREE.ShaderMaterial({
+    ...additive, side: THREE.DoubleSide,
+    uniforms: { uColor: { value: new THREE.Color(pal.lampAmber) }, uI: { value: 0.6 }, uT: { value: 0 } },
+    vertexShader: `varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+      void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position,1.0);
+        vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform vec3 uColor; uniform float uI; uniform float uT; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+      void main(){ float edge = pow(abs(dot(vN, vV)), 2.2);
+        float fall = pow(vUv.y, 1.4) * smoothstep(0.0, 0.12, vUv.y);
+        float flick = 0.92 + 0.08 * sin(uT * 1.7 + vUv.y * 9.0);
+        float a = edge * fall * uI * flick; gl_FragColor = vec4(uColor * a, a); }`,
+  });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 2.2, 10, 48, 1, true), shaftMat);
+  shaft.position.set(0, 4.6, -1.2);
+  shaft.rotation.x = -0.42;
+  scene.add(shaft);
+
+  // The pool of light where the shaft meets the ground.
+  const poolMat = new THREE.MeshBasicMaterial({ map: haloTex, color: pal.lampAmber, ...additive, opacity: 0.55 });
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 4.5), poolMat);
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.set(0, 0.02, 1.2);
+  scene.add(pool);
+
+  // A halo on each signal lamp, and one behind the proven card.
+  const halos = [-1, 1].map((sx) => {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTex, color: pal.lampAmber, ...additive }));
+    sp.position.set(sx * POST_X, 4.75, 0.45);
+    sp.scale.setScalar(1.4);
+    scene.add(sp);
+    return sp;
+  });
+  const proofHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTex, color: pal.lampRed, ...additive, opacity: 0 }));
+  proofHalo.scale.set(4.2, 2.8, 1);
+  scene.add(proofHalo);
+
+  // Dust caught in the shaft.
+  const DUST = 420;
+  const dustPos = new Float32Array(DUST * 3);
+  const dustSeed = new Float32Array(DUST);
+  for (let i = 0; i < DUST; i++) {
+    dustPos[i * 3] = (Math.random() - 0.5) * 3.2;
+    dustPos[i * 3 + 1] = Math.random() * 8;
+    dustPos[i * 3 + 2] = -2.5 + Math.random() * 4.5;
+    dustSeed[i] = Math.random() * 6.28;
+  }
+  const dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+  const dotTex = radial('rgba(255,255,255,1)', 'rgba(255,255,255,0)');
+  const dustMat = new THREE.PointsMaterial({ map: dotTex, color: pal.lampAmber, size: 0.07, sizeAttenuation: true, ...additive, opacity: 0.75 });
+  const dust = new THREE.Points(dustGeo, dustMat);
+  scene.add(dust);
+  function drift(dt, t) {
+    for (let i = 0; i < DUST; i++) {
+      let y = dustPos[i * 3 + 1] + dt * (0.12 + (dustSeed[i] % 1) * 0.18);
+      if (y > 8) y -= 8;
+      dustPos[i * 3 + 1] = y;
+      dustPos[i * 3] += Math.sin(t * 0.6 + dustSeed[i]) * dt * 0.05;
+    }
+    dustGeo.attributes.position.needsUpdate = true;
+  }
+
+  // A hand lamp: a warm light that follows the pointer across the front of the gate.
+  const torch = new THREE.PointLight(0xffd9a0, 0, 9, 1.6);
+  torch.position.set(0, 2.5, 3);
+  scene.add(torch);
+  const torchTarget = new THREE.Vector3(0, 2.5, 3);
+  const torchPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -2.6);
+
   // Cards.
   const cardGeo = new THREE.PlaneGeometry(1.7, 0.956);
   const cards = COMMENTS.map(([who, what], i) => {
-    const mat = new THREE.MeshStandardMaterial({ map: cardTexture(who, what, pal, false), roughness: 0.85, side: THREE.DoubleSide, transparent: true });
+    const mat = new THREE.MeshStandardMaterial({ map: cardTexture(who, what, paper, false), roughness: 0.85, side: THREE.DoubleSide, transparent: true });
     const m = new THREE.Mesh(cardGeo, mat);
     m.castShadow = true;
     m.userData = { i, who, what };
@@ -186,7 +277,7 @@ async function main() {
     scene.add(m);
     return m;
   });
-  let provenTex = cardTexture(COMMENTS[PROVEN][0], COMMENTS[PROVEN][1], pal, true);
+  let provenTex = cardTexture(COMMENTS[PROVEN][0], COMMENTS[PROVEN][1], paper, true);
   let normalTex = cards[PROVEN].material.map;
   const G0 = new THREE.Vector3(0, 2.0, 3.0);
   const G1 = new THREE.Vector3(0, 2.0, -0.2);
@@ -248,7 +339,7 @@ async function main() {
         m.rotation.set(0, idle ? Math.sin(t * 0.7) * 0.05 : 0, 0);
         m.scale.setScalar(lerp(1, 1.3, k));
         mat.color.copy(white); mat.opacity = 1;
-        mat.emissive.set(pal.red).multiplyScalar(0.12 * k);
+        mat.emissive.set(pal.lampRed).multiplyScalar(0.22 * k);
       } else {
         hidden++;
         const slot = pileSlot(unprovenRank(i));
@@ -271,14 +362,28 @@ async function main() {
     lampMat.emissive.set(lampColor);
     glow.color.set(lampColor);
     const pulse = idle ? 0.85 + Math.sin(t * 2) * 0.15 : 1;
-    lampMat.emissiveIntensity = (locked || scanning ? 2.2 : 0.9) * pulse;
-    glow.intensity = (locked ? 9 : scanning ? 6 : 2) * pulse;
-    scanMat.opacity = scanning ? 0.08 : 0;
-    beamMat.opacity = scanning ? 0.9 : 0;
+    lampMat.emissiveIntensity = (locked || scanning ? 4 : 1.6) * pulse;
+    glow.intensity = (locked ? 14 : scanning ? 9 : 4) * pulse;
+    scanMat.opacity = scanning ? 0.035 : 0;
+    beamMat.opacity = scanning ? 1 : 0;
+    beamMat.color.set(pal.lampAmber).multiplyScalar(3);
+
+    // Light color follows the state: warm white at rest, amber while testing, red once a finding is proven.
+    const lightColor = locked ? pal.lampRed : scanning ? pal.lampAmber : '#ffe7c2';
+    shaftMat.uniforms.uColor.value.set(lightColor);
+    shaftMat.uniforms.uI.value = (locked ? 0.95 : scanning ? 0.8 : 0.55) * pulse;
+    shaftMat.uniforms.uT.value = t;
+    poolMat.color.set(lightColor);
+    poolMat.opacity = (locked ? 0.5 : 0.38) * pulse;
+    dustMat.color.set(lightColor);
+    halos.forEach((h) => { h.material.color.set(lampColor); h.material.opacity = (locked || scanning ? 0.9 : 0.45) * pulse; });
+    const provenAt = startOf(PROVEN) + APPROACH + SCAN;
+    proofHalo.material.opacity = clamp01((t - provenAt) / 0.8) * 0.55 * pulse;
+    proofHalo.position.copy(cards[PROVEN].position).add(tmp.set(0, 0, -0.15));
     const signGone = clamp01((t - (startOf(PROVEN) + APPROACH + SCAN)) / 0.4);
     check.scale.setScalar(1 - signGone);
     check.visible = signGone < 1;
-    checkMat.emissiveIntensity = locked || scanning ? 0 : 0.18;
+    checkMat.emissiveIntensity = locked || scanning ? 0 : 1.6;
     return { entered, hidden, scanning, locked };
   }
 
@@ -299,11 +404,20 @@ async function main() {
     hudLamp.className = 'lamp ' + (h.locked ? 'red' : h.scanning ? 'amber' : h.entered ? 'green' : '');
   }
 
+  // Bloom: only bright things (lamps, the shaft, the scan line, the check) pass the threshold.
+  const composer = new EffectComposer(renderer);
+  composer.setPixelRatio(DPR);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.9, 0.6, 0.82);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+
   // Size
   function resize() {
     const w = host.clientWidth, h = host.clientHeight;
     if (!w || !h) return;
     renderer.setSize(w, h, false);
+    composer.setSize(w, h);
     camera.aspect = w / h;
     // Narrow hosts pull the camera back so the gate and the pile stay in frame.
     const back = w / h < 1 ? 1 + (1 - w / h) * 0.55 : 1;
@@ -325,10 +439,16 @@ async function main() {
     const c = host.getBoundingClientRect();
     ndc.set((e.clientX - c.left) / c.width * 2 - 1, -((e.clientY - c.top) / c.height) * 2 + 1);
     tipAt = { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width };
+    if (Math.abs(ndc.x) <= 1.2 && Math.abs(ndc.y) <= 1.2) {
+      ray.setFromCamera(ndc, camera);
+      ray.ray.intersectPlane(torchPlane, torchTarget);
+      torchOn = 1;
+    }
     needsFrame = true;
   });
-  hero.addEventListener('pointerleave', () => { ndc.set(9, 9); pointer.set(0, 0); needsFrame = true; });
+  hero.addEventListener('pointerleave', () => { ndc.set(9, 9); pointer.set(0, 0); torchOn = 0; needsFrame = true; });
   let tipAt = null;
+  let torchOn = 0;
 
   function hoverCheck(t) {
     if (ndc.x > 1.5) { setTip(null); return; }
@@ -392,10 +512,13 @@ async function main() {
     if (reduce.matches) camera.position.copy(camBase);
     else camera.position.lerp(camTarget, 0.06);
     camera.lookAt(look);
+    if (moving) drift(dt, t);
+    torch.position.lerp(torchTarget, reduce.matches ? 1 : 0.12);
+    torch.intensity = lerp(torch.intensity, torchOn * 7, reduce.matches ? 1 : 0.08);
     hoverCheck(t);
-    renderer.render(scene, camera);
+    composer.render();
     needsFrame = false;
-    const settling = camera.position.distanceToSquared(camTarget) > 1e-4 && !reduce.matches;
+    const settling = (camera.position.distanceToSquared(camTarget) > 1e-4 || Math.abs(torch.intensity - torchOn * 7) > 0.05) && !reduce.matches;
     if (visible && (moving || settling || needsFrame)) loop();
   }
   function loop() { if (!raf && visible) raf = requestAnimationFrame(frame); }
@@ -416,17 +539,17 @@ async function main() {
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     pal = readPalette();
     scene.fog.color.set(pal.ground);
+    scene.background.set(pal.ground);
     hemi.groundColor.set(pal.ground2);
-    floorMat.color.set(pal.iron);
     iron.color.set(pal.iron);
     checkMat.color.set(pal.iron);
     cards.forEach((m, i) => {
-      const fresh = cardTexture(m.userData.who, m.userData.what, pal, false);
+      const fresh = cardTexture(m.userData.who, m.userData.what, paper, false);
       if (i === PROVEN) {
         const wasProven = m.material.map === provenTex;
         normalTex.dispose(); provenTex.dispose();
         normalTex = fresh;
-        provenTex = cardTexture(m.userData.who, m.userData.what, pal, true);
+        provenTex = cardTexture(m.userData.who, m.userData.what, paper, true);
         m.material.map = wasProven ? provenTex : normalTex;
       } else {
         m.material.map.dispose();

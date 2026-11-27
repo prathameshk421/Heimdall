@@ -14,6 +14,9 @@ end state "12 in, 11 hidden, Merge locked: F1 proven", lab run to "Merged e4f5a6
 `avoid-ai-design detect.mjs`: P0 0, P1 2, P2 1, each kept with a reason.
 **Not verified:** reduced-motion rendering, the no-WebGL still, Safari and Firefox, LCP on a throttled network, and the
 Vercel deploy (not deployed).
+**v9.1 light:** night hero with bloom, a light shaft, dust, lamp halos and a pointer lamp; a lamp over the rule line;
+the lab frame lit by the gate state; a signal-head close (`site/DESIGN.md` section 6, v9.1). Checked at 1440 and 390 px.
+**Not verified:** frame rate on a low-end GPU with bloom.
 
 ## Open source, setup and polish (Nov 27, 2026, branch `heimdall-build`, merged to `main`)
 

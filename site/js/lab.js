@@ -93,6 +93,10 @@
     $('tProven').textContent = count('proven');
     $('tHidden').textContent = count('unproven');
     $('tOpen').textContent = count('open') + count('running');
+    // The frame takes the gate's light: amber while testing, red when locked, green when clear.
+    var light = { locked: 'red', fixing: 'amber', approval: 'amber', approved: 'green', merged: 'green' }[state.gate] || '';
+    if (state.gate === 'open' && count('open') < comments.length) light = count('running') ? 'amber' : 'green';
+    $('labApp').dataset.light = light;
 
     if (state.gate === 'open') {
       if (count('open') + count('running') === comments.length) {
@@ -308,9 +312,38 @@
     });
   });
 
-  // Header rule after scroll.
+  // Header: clear over the night hero, ruled after it.
   var top = document.getElementById('top');
-  var onScroll = function () { top.classList.toggle('scrolled', window.scrollY > 8); };
+  var heroEl = document.querySelector('.hero');
+  var onScroll = function () {
+    var over = heroEl && window.scrollY < heroEl.offsetHeight - 64;
+    top.classList.toggle('over-hero', !!over);
+    top.classList.toggle('moved', window.scrollY > 8);
+    top.classList.toggle('scrolled', !over && window.scrollY > 8);
+  };
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
+
+  // Hand lamp over the rule line. It follows the pointer; with no pointer on it, it sweeps slowly while in view.
+  var lampEl = document.getElementById('ruleLamp');
+  var canLamp = window.matchMedia('(hover: hover) and (prefers-reduced-motion: no-preference)');
+  if (lampEl && canLamp.matches) {
+    var hovering = false, inView = false, raf = 0, t0 = performance.now();
+    var setAt = function (x, y) { lampEl.style.setProperty('--mx', x + 'px'); lampEl.style.setProperty('--my', y + 'px'); };
+    var sweep = function (now) {
+      raf = 0;
+      if (hovering || !inView) return;
+      var w = lampEl.clientWidth, h = lampEl.clientHeight, k = (now - t0) / 1000;
+      setAt(w * (0.5 + 0.42 * Math.sin(k * 0.55)), h * (0.5 + 0.32 * Math.sin(k * 0.9)));
+      raf = requestAnimationFrame(sweep);
+    };
+    var go = function () { if (!raf) raf = requestAnimationFrame(sweep); };
+    lampEl.addEventListener('pointermove', function (e) {
+      var r = lampEl.getBoundingClientRect();
+      hovering = true;
+      setAt(e.clientX - r.left, e.clientY - r.top);
+    });
+    lampEl.addEventListener('pointerleave', function () { hovering = false; go(); });
+    new IntersectionObserver(function (es) { inView = es[0].isIntersecting; if (inView) go(); }).observe(lampEl);
+  }
 })();
