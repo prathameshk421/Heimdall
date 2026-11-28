@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Heimdall: only proven bugs block the merge</title>
-<meta name="description" content="Heimdall is an open-source pull request gate for teams whose agents write more code than anyone can review. Each AI finding becomes a test in a no-network sandbox. Only a finding its test proves can block the merge.">
+<title>Heimdall: CI/CD that just works, on a 1 GiB VM</title>
+<meta name="description" content="Heimdall runs on a 1 GiB VM and makes CI/CD just work. Its agents write and improve your tests, review every pull request and block a merge only on a proven bug. Open source, self-hosted, any model, any agent.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#3965fa" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#02062e" media="(prefers-color-scheme: dark)">
-<meta property="og:title" content="Heimdall: only proven bugs block the merge">
-<meta property="og:description" content="Every AI review finding becomes a test. If it fails on the pull request and passes on the fix, the merge stops. Open source, self-hosted, MIT.">
+<meta property="og:title" content="Heimdall: CI/CD that just works. On a 1 GiB VM.">
+<meta property="og:description" content="Agents write and improve your tests, review every pull request and block a merge only on a proven bug. Open source, self-hosted, MIT. Runs on a 1 GiB VM.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://heimdall-sage.vercel.app/">
 <meta property="og:image" content="https://heimdall-sage.vercel.app/art/og-temple.jpg">
@@ -48,8 +48,13 @@
       <img class="hero-img" src="art/temple-hero-1600.webp" srcset="art/temple-hero-1000.webp 1000w, art/temple-hero-1600.webp 1600w, art/temple-hero-2000.webp 2000w" sizes="100vw" width="2000" height="1123" alt="A Greek temple in cobalt mist, light raking along its colonnade. A walker and a stag cross the field toward it." fetchpriority="high" decoding="async">
     </div>
     <div class="hero-copy" data-enter>
-      <h1 id="h-hero"><span class="name">Heimdall</span><span class="tag">Only proven bugs block the merge.</span></h1>
-      <p class="lede">Heimdall writes a test for each AI review finding and runs it in a sealed sandbox. If the test fails on your pull request and passes on the fix, the merge stops.</p>
+      <h1 id="h-hero"><span class="name">Heimdall</span><span class="tag">CI/CD that just works.<br>On a 1 GiB VM.</span></h1>
+      <p class="lede">Heimdall&rsquo;s agents write and improve your tests, review every pull request and block a merge only on a proven bug. Open source, self-hosted, any model, any agent.</p>
+      <ul class="proofs">
+        <li><b>Better tests.</b> Written from each ticket before the code. Agents cannot skip or fake them.</li>
+        <li><b>Real review.</b> Every pull request is reviewed. A finding blocks only when a test proves it in a sealed sandbox.</li>
+        <li><b>Safe merges.</b> People make the final call from Slack, Teams or any chat. Each decision makes the next run smarter.</li>
+      </ul>
       <div class="ctas">
         <a class="btn" href="#setup">Get started</a>
         <button class="btn line" type="button" id="openDemo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>Watch the demo</button>
@@ -77,7 +82,7 @@
           <button type="button" role="tab" id="bt-1" aria-controls="sp-1" aria-selected="true"><i>01</i><b>Ticket</b><span>A Jira ticket moves to In Progress.</span></button>
           <button type="button" role="tab" id="bt-2" aria-controls="sp-2" aria-selected="false" tabindex="-1"><i>02</i><b>Tests first</b><span>Tests from the acceptance criteria. They must fail on the current code.</span></button>
           <button type="button" role="tab" id="bt-3" aria-controls="sp-3" aria-selected="false" tabindex="-1"><i>03</i><b>Your agent codes</b><span>Claude Code, Codex, Cursor or OpenCode. It reads your team rules.</span></button>
-          <button type="button" role="tab" id="bt-4" aria-controls="sp-4" aria-selected="false" tabindex="-1"><i>04</i><b>Review</b><span>Reviewers check through lenses. Your review bots join in.</span></button>
+          <button type="button" role="tab" id="bt-4" aria-controls="sp-4" aria-selected="false" tabindex="-1"><i>04</i><b>Review</b><span>Your own agents review through lenses. Review bots are optional.</span></button>
           <button type="button" role="tab" id="bt-5" aria-controls="sp-5" aria-selected="false" tabindex="-1"><i>05</i><b>Proof</b><span>Each claim gets a test in a sealed sandbox.</span></button>
           <button type="button" role="tab" id="bt-6" aria-controls="sp-6" aria-selected="false" tabindex="-1"><i>06</i><b>Gate</b><span>A proven bug blocks the merge. A person decides in chat.</span></button>
           <button type="button" role="tab" id="bt-7" aria-controls="sp-7" aria-selected="false" tabindex="-1"><i>07</i><b>Learn</b><span>A decision becomes a team rule for the next change.</span></button>
@@ -118,7 +123,7 @@
                 <li class="in" style="--d:180"><code>AC2</code><span>TestRefundUnknownPayment</span><em class="f">Fails now</em></li>
                 <li class="in" style="--d:270"><code>AC3</code><span>TestRefundAboveCharge</span><em class="f">Fails now</em></li>
               </ul>
-              <p class="note in" style="--d:540">Each test must fail before the code exists. A test that already passes proves nothing, so Heimdall refuses it. So is a build error.</p>
+              <p class="note in" style="--d:540">Each test must fail before the code exists. A test that already passes, or does not build, is refused.</p>
               <p class="done in" style="--d:900"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>Tests locked. The coding agent cannot edit them.</p>
             </div>
 
@@ -254,8 +259,12 @@
     <div class="wrap setup">
       <div class="setup-text">
         <p class="eyebrow">Set up</p>
-        <h2 id="h-setup">Live on your repo in three minutes</h2>
+        <h2 id="h-setup">Live on your repo in about three minutes</h2>
         <p>Heimdall starts in report-only mode. It blocks nothing until you turn on enforcement.</p>
+        <ul class="modes">
+          <li><b>GitHub Actions</b><span>No server. Review, proof and the merge gate on every pull request.</span></li>
+          <li><b>Your 1 GiB VM</b><span>The full loop: Jira tickets, tests before code, team chat and learned rules.</span></li>
+        </ul>
         <p class="req">You need admin access to the repository, the <a href="https://cli.github.com">gh CLI</a>, <a href="https://go.dev/dl/">Go 1.27</a> and a model key.</p>
         <p class="more"><a href="https://github.com/prathameshk421/Heimdall/blob/main/deploy/action/README.md">Action guide &#8599;</a><a href="https://github.com/prathameshk421/Heimdall/blob/main/docs/SETUP.md">Self-hosted guide &#8599;</a></p>
       </div>
@@ -371,7 +380,8 @@
 
   <section class="close" aria-labelledby="h-close">
     <div class="wrap">
-      <h2 id="h-close">Ship agent pull requests. Block only what a test proves.</h2>
+      <h2 id="h-close">Let your agents ship. Heimdall checks the proof.</h2>
+      <p class="close-sub">Start in report-only mode. Turn on blocking when you trust it.</p>
       <div class="ctas">
         <a class="btn" href="#setup">Get started</a>
         <a class="btn line" href="https://github.com/prathameshk421/Heimdall">Star on GitHub</a>
