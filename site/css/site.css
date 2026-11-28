@@ -465,6 +465,10 @@ section h2 { max-width: 20ch; }
 /* Set up */
 .setup { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--s8); align-items: center; }
 .setup-text h2 { margin-bottom: var(--s5); }
+.modes { list-style: none; margin: var(--s5) 0; padding: 0; display: grid; gap: var(--s2); }
+.modes li { display: grid; gap: 2px; padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--r2); background: var(--card); }
+.modes b { font-weight: 620; color: var(--ink); }
+.modes span { color: var(--muted); font-size: var(--t14); line-height: 1.5; }
 .setup-text p:not(.eyebrow) { color: var(--muted); font-size: var(--t18); line-height: 1.55; }
 .setup-text .req { margin-top: var(--s5); font-size: var(--t14); }
 .setup-text .more { display: flex; flex-wrap: wrap; gap: var(--s5); margin-top: var(--s5); font-size: var(--t14); font-weight: 560; }
@@ -501,6 +505,7 @@ section h2 { max-width: 20ch; }
 .close::before { content: ""; position: absolute; inset: 0; z-index: -1; background: url("../art/temple-hero-1600.webp") 92% 62% / max(210%, 1400px) auto no-repeat; filter: hue-rotate(-7deg); -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 34%); mask-image: linear-gradient(180deg, transparent 0%, #000 34%); }
 .close::after { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(56% 60% at 50% 56%, rgba(2, 7, 25, .5), rgba(2, 7, 25, 0) 75%), linear-gradient(180deg, rgba(3, 9, 36, 0) 70%, #030924 100%); }
 .close .wrap { display: grid; justify-items: center; gap: var(--s6); }
+.close-sub { margin: calc(-1 * var(--s3)) 0 0; color: rgba(255, 255, 255, .85); font-size: var(--t18); }
 .close h2 { color: #fff; max-width: 18ch; text-shadow: 0 4px 48px rgba(2, 7, 25, .5); }
 .close .btn { background: #fff; color: #06123b; border-color: #fff; }
 .close .btn.line { background: rgba(2, 7, 25, .25); color: #fff; border-color: rgba(255, 255, 255, .5); }
