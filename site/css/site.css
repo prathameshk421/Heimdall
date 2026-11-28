@@ -177,7 +177,9 @@ h3 { font-size: var(--t18); font-weight: 620; line-height: 1.3; }
 .hero h1 { color: #fff; }
 .hero .name { display: block; font: 300 var(--t96)/.9 var(--sans); font-stretch: 125%; letter-spacing: .12em; text-transform: uppercase; margin-left: -.04em; white-space: nowrap; }
 .hero .tag { display: block; margin-top: var(--s5); font: 640 var(--t40)/1.05 var(--sans); font-stretch: 75%; letter-spacing: -.01em; }
-.hero .lede { margin: var(--s5) 0 var(--s6); font-size: var(--t18); line-height: 1.55; max-width: 42ch; color: rgba(255, 255, 255, .9); text-wrap: pretty; }
+.hero .lede { margin: var(--s5) 0 var(--s4); font-size: var(--t18); line-height: 1.55; max-width: 50ch; color: rgba(255, 255, 255, .9); text-wrap: pretty; }
+.traits { list-style: none; margin: 0 0 var(--s6); padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); max-width: 640px; }
+.traits li { padding: 5px var(--s3); border-radius: 999px; border: 1px solid rgba(255, 255, 255, .28); background: rgba(255, 255, 255, .06); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); font: 500 var(--t12)/1.4 var(--mono); color: rgba(255, 255, 255, .88); }
 .ctas { display: flex; flex-wrap: wrap; gap: var(--s3); }
 .hero .btn { background: #fff; border-color: #fff; color: #06123b; }
 .hero .btn.line { background: rgba(255, 255, 255, .08); color: #fff; border-color: rgba(255, 255, 255, .5); }
